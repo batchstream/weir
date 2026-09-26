@@ -30,6 +30,7 @@ type delivery struct {
 	inputDecoded bool
 	stall        time.Duration
 	unary        bool
+	singleInput  bool
 	finished     bool
 	rpcStarted   bool
 	rpcEnded     bool
@@ -41,9 +42,13 @@ type delivery struct {
 
 func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	lifetime := s.limits.UnaryLifetime
-	unary := request.RequestURI != pb.Weir_Bulk_FullMethodName
-	if !unary {
+	bulk := request.RequestURI == pb.Weir_Bulk_FullMethodName
+	scan := request.RequestURI == pb.Weir_Scan_FullMethodName
+	unary := !bulk && !scan
+	if bulk {
 		lifetime = s.limits.BulkLifetime
+	} else if scan {
+		lifetime = s.limits.ScanLifetime
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), lifetime)
 	defer cancel()
@@ -59,7 +64,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	// A ServeHTTP transport dispatches exactly one RPC. Keep that lifecycle
 	// contract explicit, including malformed/unregistered method paths.
 	switch request.RequestURI {
-	case pb.Weir_Read_FullMethodName, pb.Weir_Mutate_FullMethodName, pb.Weir_Bulk_FullMethodName:
+	case pb.Weir_Read_FullMethodName, pb.Weir_Mutate_FullMethodName, pb.Weir_Bulk_FullMethodName, pb.Weir_Scan_FullMethodName:
 	default:
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Grpc-Status", strconv.Itoa(int(codes.Unimplemented)))
@@ -71,7 +76,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("Grpc-Message", status.Convert(err).Message())
 		return
 	}
-	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, slots: s.slots}
+	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, singleInput: !bulk, slots: s.slots}
 	input := newCreditedBody(ctx, request.Body, state)
 	state.input = input
 	defer input.Close()
@@ -108,7 +113,7 @@ func (d *delivery) armRead() error {
 		return io.ErrClosedPipe
 	}
 	d.readDeadline = d.deadline
-	if d.unary && !d.inputDecoded {
+	if (d.unary || d.singleInput) && !d.inputDecoded {
 		if stall := time.Now().Add(d.stall); stall.Before(d.readDeadline) {
 			d.readDeadline = stall
 		}
@@ -117,7 +122,7 @@ func (d *delivery) armRead() error {
 }
 
 func (d *delivery) consumedInput(n int) {
-	if d.unary {
+	if d.unary || d.singleInput {
 		d.mu.Lock()
 		d.inputDecoded = true
 		if !d.finished {

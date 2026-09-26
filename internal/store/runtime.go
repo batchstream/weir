@@ -49,6 +49,7 @@ type Runtime struct {
 	closeOnce                    sync.Once
 	closeErr                     error
 	controller                   controller
+	scan                         *Ticket
 }
 type Session struct {
 	runtime     *Runtime
@@ -69,6 +70,7 @@ type Ticket struct {
 	state            uint8
 	abandoned, acked bool
 	stopWatch        func() bool
+	scan             *scanState
 }
 type batch struct {
 	ctx             context.Context
@@ -82,6 +84,7 @@ type batch struct {
 type Snapshot struct {
 	Pending, PendingBytes, Active, Retained, ResultBytes, Window int
 	Draining, Closed, Overloaded                                 bool
+	ScanSessions, ScanPageBytes, ScanPages, ScanCleanups         int
 }
 
 // New takes ownership of a constructed adapter, including cleanup on validation failure.
@@ -128,6 +131,12 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 	if s != nil && (s.runtime != r || s.closed) {
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "session closed"), changed
 	}
+	if p.Scan && (s != nil || r.scan != nil) {
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "one live Scan per store"), changed
+	}
+	if p.Scan && (p.PageBytes <= 0 || p.PageBytes > maxScanPageBytes) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Scan page budget"), changed
+	}
 	if p.Bytes > r.limits.BatchBytes || p.Bytes > r.limits.PendingBytes {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit singleton bound"), changed
 	}
@@ -135,6 +144,10 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
 	t := &Ticket{runtime: r, session: s, ctx: ctx, plan: p, ready: make(chan struct{})}
+	if p.Scan {
+		t.scan = &scanState{done: make(chan struct{})}
+		r.scan = t
+	}
 	if s != nil {
 		s.outstanding++
 		t.sequence = fmt.Sprintf("%d:%s", s.id, p.Key)
@@ -269,6 +282,14 @@ func (r *Runtime) loop() {
 func (r *Runtime) cancelQueuedLocked() {
 	keep := r.queue[:0]
 	for _, t := range r.queue {
+		if t.scan != nil {
+			if (t.ctx.Err() != nil || t.abandoned || r.closed) && t.state != 1 && t.state != 3 {
+				t.state = 3
+				go r.cleanupScan(t)
+			}
+			keep = append(keep, t)
+			continue
+		}
 		if t.ctx.Err() != nil || t.abandoned || r.closed {
 			r.pendingBytes -= t.plan.Bytes
 			f := protocol.ContextFailure(t.ctx)
@@ -294,6 +315,9 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	bytes := 0
 	var seed *Ticket
 	for _, t := range r.queue {
+		if t.state != 0 {
+			continue
+		}
 		if t.sequence != "" {
 			if seen[t.sequence] || r.keys[t.sequence] {
 				continue
@@ -307,7 +331,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			seed = t
 			token = t.plan.Token
 		}
-		if token != t.plan.Token || record[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes {
+		if token != t.plan.Token || t.plan.Scan != seed.plan.Scan || record[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes {
 			continue
 		}
 		items = append(items, t)
@@ -347,11 +371,19 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		backendDeadline = latest
 	}
 	ctx, cancel := context.WithDeadline(context.Background(), backendDeadline)
-	b := &batch{ctx: ctx, items: items, cancel: cancel, epoch: r.controller.epoch, saturated: r.active+1 >= r.controller.window && len(r.queue) > len(items), backendDeadline: backendDeadline, timeoutOwned: owned}
+	queued := len(r.queue)
+	if r.scan != nil && r.scan.state != 0 {
+		queued--
+	}
+	b := &batch{ctx: ctx, items: items, cancel: cancel, epoch: r.controller.epoch, saturated: r.active+1 >= r.controller.window && queued > len(items), backendDeadline: backendDeadline, timeoutOwned: owned}
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
-			r.pendingBytes -= t.plan.Bytes
+			if t.scan == nil {
+				r.pendingBytes -= t.plan.Bytes
+			} else {
+				keep = append(keep, t)
+			}
 			t.state = 1
 			if t.sequence != "" {
 				r.keys[t.sequence] = true
@@ -371,6 +403,10 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	return b
 }
 func (r *Runtime) execute(b *batch) {
+	if b.items[0].scan != nil {
+		r.fetchScan(b)
+		return
+	}
 	plans := make([]*execution.Plan, len(b.items))
 	for i, t := range b.items {
 		plans[i] = t.plan
@@ -394,6 +430,16 @@ func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, Window: r.controller.window, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
+	if t := r.scan; t != nil {
+		s.ScanSessions = 1
+		s.ScanPageBytes = t.plan.PageBytes
+		if t.scan.page != nil {
+			s.ScanPages = 1
+		}
+		if t.state == 3 {
+			s.ScanCleanups = 1
+		}
+	}
 	return s
 }
 func (r *Runtime) SetOverloaded(v bool) {
@@ -421,13 +467,15 @@ func (r *Runtime) Close(ctx context.Context) error {
 		r.notifyLocked()
 		r.mu.Unlock()
 	}
-	r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
-	// Driver calls obey their cancelled contexts; no new work can enter after drain.
+	// Keep the adapter available until cursor cleanup has completed. Cleanup has
+	// one reserved slot per Store and a two-second deadline, independent of C.
 	select {
 	case <-r.done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
+		r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
 		return fmt.Errorf("backend workers failed to stop")
 	}
+	r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
 	r.mu.Lock()
 	r.closed = true
 	r.notifyLocked()

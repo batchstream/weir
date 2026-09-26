@@ -1233,6 +1233,211 @@ func (*BulkResponseFrame_Result) isBulkResponseFrame_Frame() {}
 
 func (*BulkResponseFrame_End) isBulkResponseFrame_Frame() {}
 
+type ScanRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Resource       string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	Selector       *Document              `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
+	ReadMediaType  string                 `protobuf:"bytes,3,opt,name=read_media_type,json=readMediaType,proto3" json:"read_media_type,omitempty"`
+	FetchItemsHint uint32                 `protobuf:"varint,4,opt,name=fetch_items_hint,json=fetchItemsHint,proto3" json:"fetch_items_hint,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ScanRequest) Reset() {
+	*x = ScanRequest{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanRequest) ProtoMessage() {}
+
+func (x *ScanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanRequest.ProtoReflect.Descriptor instead.
+func (*ScanRequest) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ScanRequest) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *ScanRequest) GetSelector() *Document {
+	if x != nil {
+		return x.Selector
+	}
+	return nil
+}
+
+func (x *ScanRequest) GetReadMediaType() string {
+	if x != nil {
+		return x.ReadMediaType
+	}
+	return ""
+}
+
+func (x *ScanRequest) GetFetchItemsHint() uint32 {
+	if x != nil {
+		return x.FetchItemsHint
+	}
+	return 0
+}
+
+// Counts document frames whose server Send returned successfully. This is not an
+// acknowledgement of client receipt/processing. Success requires this End without
+// failure, matching client frame count, and final gRPC OK (EOF).
+type ScanEnd struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DocumentCount uint64                 `protobuf:"varint,1,opt,name=document_count,json=documentCount,proto3" json:"document_count,omitempty"`
+	Failure       *Failure               `protobuf:"bytes,2,opt,name=failure,proto3" json:"failure,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanEnd) Reset() {
+	*x = ScanEnd{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanEnd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanEnd) ProtoMessage() {}
+
+func (x *ScanEnd) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanEnd.ProtoReflect.Descriptor instead.
+func (*ScanEnd) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ScanEnd) GetDocumentCount() uint64 {
+	if x != nil {
+		return x.DocumentCount
+	}
+	return 0
+}
+
+func (x *ScanEnd) GetFailure() *Failure {
+	if x != nil {
+		return x.Failure
+	}
+	return nil
+}
+
+type ScanResponseFrame struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*ScanResponseFrame_Document
+	//	*ScanResponseFrame_End
+	Frame         isScanResponseFrame_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanResponseFrame) Reset() {
+	*x = ScanResponseFrame{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanResponseFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanResponseFrame) ProtoMessage() {}
+
+func (x *ScanResponseFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanResponseFrame.ProtoReflect.Descriptor instead.
+func (*ScanResponseFrame) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ScanResponseFrame) GetFrame() isScanResponseFrame_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *ScanResponseFrame) GetDocument() *Document {
+	if x != nil {
+		if x, ok := x.Frame.(*ScanResponseFrame_Document); ok {
+			return x.Document
+		}
+	}
+	return nil
+}
+
+func (x *ScanResponseFrame) GetEnd() *ScanEnd {
+	if x != nil {
+		if x, ok := x.Frame.(*ScanResponseFrame_End); ok {
+			return x.End
+		}
+	}
+	return nil
+}
+
+type isScanResponseFrame_Frame interface {
+	isScanResponseFrame_Frame()
+}
+
+type ScanResponseFrame_Document struct {
+	Document *Document `protobuf:"bytes,1,opt,name=document,proto3,oneof"`
+}
+
+type ScanResponseFrame_End struct {
+	End *ScanEnd `protobuf:"bytes,2,opt,name=end,proto3,oneof"`
+}
+
+func (*ScanResponseFrame_Document) isScanResponseFrame_Frame() {}
+
+func (*ScanResponseFrame_End) isScanResponseFrame_Frame() {}
+
 var File_api_weir_v1_weir_proto protoreflect.FileDescriptor
 
 const file_api_weir_v1_weir_proto_rawDesc = "" +
@@ -1302,6 +1507,18 @@ const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\x11BulkResponseFrame\x12-\n" +
 	"\x06result\x18\x01 \x01(\v2\x13.weir.v1.BulkResultH\x00R\x06result\x12$\n" +
 	"\x03end\x18\x02 \x01(\v2\x10.weir.v1.BulkEndH\x00R\x03endB\a\n" +
+	"\x05frame\"\xaa\x01\n" +
+	"\vScanRequest\x12\x1a\n" +
+	"\bresource\x18\x01 \x01(\tR\bresource\x12-\n" +
+	"\bselector\x18\x02 \x01(\v2\x11.weir.v1.DocumentR\bselector\x12&\n" +
+	"\x0fread_media_type\x18\x03 \x01(\tR\rreadMediaType\x12(\n" +
+	"\x10fetch_items_hint\x18\x04 \x01(\rR\x0efetchItemsHint\"\\\n" +
+	"\aScanEnd\x12%\n" +
+	"\x0edocument_count\x18\x01 \x01(\x04R\rdocumentCount\x12*\n" +
+	"\afailure\x18\x02 \x01(\v2\x10.weir.v1.FailureR\afailure\"s\n" +
+	"\x11ScanResponseFrame\x12/\n" +
+	"\bdocument\x18\x01 \x01(\v2\x11.weir.v1.DocumentH\x00R\bdocument\x12$\n" +
+	"\x03end\x18\x02 \x01(\v2\x10.weir.v1.ScanEndH\x00R\x03endB\a\n" +
 	"\x05frame*\x91\x02\n" +
 	"\vFailureCode\x12\x1c\n" +
 	"\x18FAILURE_CODE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -1323,11 +1540,12 @@ const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\vNOT_STARTED\x10\x01\x12\x0f\n" +
 	"\vNOT_APPLIED\x10\x02\x12\v\n" +
 	"\aAPPLIED\x10\x03\x12\v\n" +
-	"\aUNKNOWN\x10\x042\xb7\x01\n" +
+	"\aUNKNOWN\x10\x042\xf3\x01\n" +
 	"\x04Weir\x121\n" +
 	"\x04Read\x12\x14.weir.v1.ReadRequest\x1a\x13.weir.v1.ReadResult\x129\n" +
 	"\x06Mutate\x12\x16.weir.v1.MutateRequest\x1a\x17.weir.v1.MutationResult\x12A\n" +
-	"\x04Bulk\x12\x19.weir.v1.BulkRequestFrame\x1a\x1a.weir.v1.BulkResponseFrame(\x010\x01B0Z.github.com/batchstream/weir/api/weir/v1;weirv1b\x06proto3"
+	"\x04Bulk\x12\x19.weir.v1.BulkRequestFrame\x1a\x1a.weir.v1.BulkResponseFrame(\x010\x01\x12:\n" +
+	"\x04Scan\x12\x14.weir.v1.ScanRequest\x1a\x1a.weir.v1.ScanResponseFrame0\x01B0Z.github.com/batchstream/weir/api/weir/v1;weirv1b\x06proto3"
 
 var (
 	file_api_weir_v1_weir_proto_rawDescOnce sync.Once
@@ -1342,7 +1560,7 @@ func file_api_weir_v1_weir_proto_rawDescGZIP() []byte {
 }
 
 var file_api_weir_v1_weir_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_api_weir_v1_weir_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_api_weir_v1_weir_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_api_weir_v1_weir_proto_goTypes = []any{
 	(FailureCode)(0),          // 0: weir.v1.FailureCode
 	(MutationOutcome)(0),      // 1: weir.v1.MutationOutcome
@@ -1361,6 +1579,9 @@ var file_api_weir_v1_weir_proto_goTypes = []any{
 	(*BulkResult)(nil),        // 14: weir.v1.BulkResult
 	(*BulkEnd)(nil),           // 15: weir.v1.BulkEnd
 	(*BulkResponseFrame)(nil), // 16: weir.v1.BulkResponseFrame
+	(*ScanRequest)(nil),       // 17: weir.v1.ScanRequest
+	(*ScanEnd)(nil),           // 18: weir.v1.ScanEnd
+	(*ScanResponseFrame)(nil), // 19: weir.v1.ScanResponseFrame
 }
 var file_api_weir_v1_weir_proto_depIdxs = []int32{
 	0,  // 0: weir.v1.Failure.code:type_name -> weir.v1.FailureCode
@@ -1387,17 +1608,23 @@ var file_api_weir_v1_weir_proto_depIdxs = []int32{
 	8,  // 21: weir.v1.BulkResult.mutation:type_name -> weir.v1.MutationResult
 	14, // 22: weir.v1.BulkResponseFrame.result:type_name -> weir.v1.BulkResult
 	15, // 23: weir.v1.BulkResponseFrame.end:type_name -> weir.v1.BulkEnd
-	5,  // 24: weir.v1.Weir.Read:input_type -> weir.v1.ReadRequest
-	7,  // 25: weir.v1.Weir.Mutate:input_type -> weir.v1.MutateRequest
-	13, // 26: weir.v1.Weir.Bulk:input_type -> weir.v1.BulkRequestFrame
-	6,  // 27: weir.v1.Weir.Read:output_type -> weir.v1.ReadResult
-	8,  // 28: weir.v1.Weir.Mutate:output_type -> weir.v1.MutationResult
-	16, // 29: weir.v1.Weir.Bulk:output_type -> weir.v1.BulkResponseFrame
-	27, // [27:30] is the sub-list for method output_type
-	24, // [24:27] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	3,  // 24: weir.v1.ScanRequest.selector:type_name -> weir.v1.Document
+	4,  // 25: weir.v1.ScanEnd.failure:type_name -> weir.v1.Failure
+	3,  // 26: weir.v1.ScanResponseFrame.document:type_name -> weir.v1.Document
+	18, // 27: weir.v1.ScanResponseFrame.end:type_name -> weir.v1.ScanEnd
+	5,  // 28: weir.v1.Weir.Read:input_type -> weir.v1.ReadRequest
+	7,  // 29: weir.v1.Weir.Mutate:input_type -> weir.v1.MutateRequest
+	13, // 30: weir.v1.Weir.Bulk:input_type -> weir.v1.BulkRequestFrame
+	17, // 31: weir.v1.Weir.Scan:input_type -> weir.v1.ScanRequest
+	6,  // 32: weir.v1.Weir.Read:output_type -> weir.v1.ReadResult
+	8,  // 33: weir.v1.Weir.Mutate:output_type -> weir.v1.MutationResult
+	16, // 34: weir.v1.Weir.Bulk:output_type -> weir.v1.BulkResponseFrame
+	19, // 35: weir.v1.Weir.Scan:output_type -> weir.v1.ScanResponseFrame
+	32, // [32:36] is the sub-list for method output_type
+	28, // [28:32] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_api_weir_v1_weir_proto_init() }
@@ -1437,6 +1664,10 @@ func file_api_weir_v1_weir_proto_init() {
 		(*BulkResponseFrame_Result)(nil),
 		(*BulkResponseFrame_End)(nil),
 	}
+	file_api_weir_v1_weir_proto_msgTypes[17].OneofWrappers = []any{
+		(*ScanResponseFrame_Document)(nil),
+		(*ScanResponseFrame_End)(nil),
+	}
 	type x struct{}
 	packageMarker := x{}
 	out := protoimpl.TypeBuilder{
@@ -1444,7 +1675,7 @@ func file_api_weir_v1_weir_proto_init() {
 			GoPackagePath: reflect.TypeOf(packageMarker).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_weir_v1_weir_proto_rawDesc), len(file_api_weir_v1_weir_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   15,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

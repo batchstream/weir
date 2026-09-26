@@ -28,7 +28,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 	if o.uri == "" {
 		o.uri = testmongo.URI
 	}
-	opts := options.Client().ApplyURI(o.uri).SetAppName("weir:" + o.database).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetMaxPoolSize(4).SetWriteConcern(writeconcern.Majority()).SetMonitor(o.monitor).SetServerSelectionTimeout(time.Second)
+	opts := options.Client().ApplyURI(o.uri).SetAppName("weir:" + o.database).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetMaxPoolSize(4).SetWriteConcern(writeconcern.Majority()).SetMonitor(o.monitor).SetCompressors(nil).SetDialer(newBoundedDialer()).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(time.Second)
 	c, err := mongo.Connect(opts)
 	if err != nil {
 		t.Fatal(err)

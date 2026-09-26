@@ -20,6 +20,8 @@ const (
 	MaxURI         = 4096
 	ResultOverhead = 512
 	EntryOverhead  = 512
+	MaxSelector    = 16 << 10
+	MaxFetchItems  = 32
 )
 
 var storePattern = regexp.MustCompile(`^[a-z](?:[a-z0-9]|-[a-z0-9]){0,62}$`)
@@ -166,4 +168,28 @@ func Resource(op *pb.BulkOperation) string {
 		return r.Resource
 	}
 	return op.GetMutate().GetResource()
+}
+
+func ValidateScan(req *pb.ScanRequest, store string) *pb.Failure {
+	if req == nil || proto.Size(req) > MaxFrame {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing or oversized Scan")
+	}
+	name, segments, err := ParseResource(req.Resource)
+	if err != nil || name != store || len(segments) == 0 {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or wrong-store Scan resource")
+	}
+	if req.ReadMediaType != "" && !validMedia(req.ReadMediaType) {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Scan media type")
+	}
+	if d := req.Selector; d != nil && (!validMedia(d.MediaType) || len(d.Data) > MaxSelector) {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or oversized selector")
+	}
+	return nil
+}
+
+func FetchItems(hint uint32) int {
+	if hint == 0 || hint > MaxFetchItems {
+		return MaxFetchItems
+	}
+	return int(hint)
 }

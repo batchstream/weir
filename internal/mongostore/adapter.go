@@ -51,7 +51,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil || name != cfg.Store || len(segments) != 0 {
 		return nil, fmt.Errorf("invalid store")
 	}
-	opts := options.Client().ApplyURI(cfg.URI).SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(2).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
+	opts := options.Client().ApplyURI(cfg.URI).SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(2).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetDialer(newBoundedDialer()).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
 	if opts.Timeout != nil {
 		return nil, fmt.Errorf("client timeoutMS is unsupported; runtime owns execution deadlines")
 	}

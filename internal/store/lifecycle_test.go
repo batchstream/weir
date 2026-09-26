@@ -18,6 +18,13 @@ func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan) ([]*pb.Bu
 	return nil, execution.Neutral
 }
 func (a *lifecycleAdapter) Close() error { a.closes.Add(1); return nil }
+func (a *lifecycleAdapter) PrepareScan(*pb.ScanRequest) (*execution.Plan, *pb.Failure) {
+	return nil, nil
+}
+func (a *lifecycleAdapter) FetchScan(context.Context, *execution.Plan) (*execution.ScanPage, execution.Feedback) {
+	return nil, execution.Neutral
+}
+func (a *lifecycleAdapter) CloseScan(context.Context, *execution.Plan) *pb.Failure { return nil }
 
 func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 	for _, valid := range []bool{false, true} {

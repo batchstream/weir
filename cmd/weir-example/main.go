@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
@@ -116,5 +117,54 @@ func run() error {
 	if !ended {
 		return fmt.Errorf("Bulk missing End")
 	}
+	filter := bson.D{{Key: "_id", Value: "example"}}
+	selector := bson.D{{Key: "filter", Value: filter}}
+	encoded, err := bson.Marshal(selector)
+	if err != nil {
+		return err
+	}
+	native := &pb.Document{MediaType: "application/bson", Data: encoded}
+	if *name == "search" {
+		native = &pb.Document{MediaType: "application/json", Data: []byte(`{"query":{"ids":{"values":["example"]}}}`)}
+	}
+	request := &pb.ScanRequest{Resource: strings.TrimSuffix(resource, "/s:example"), Selector: native, FetchItemsHint: 8}
+	scan, err := client.Scan(ctx, request)
+	if err != nil {
+		return err
+	}
+	count, ended = 0, false
+	var failure *pb.Failure
+	for {
+		frame, err := scan.Recv()
+		if err == io.EOF {
+			break
+		} // Final gRPC OK, necessary but not sufficient.
+		if err != nil {
+			return fmt.Errorf("incomplete Scan: %w", err)
+		}
+		if ended {
+			return fmt.Errorf("Scan frame after End")
+		}
+		if doc := frame.GetDocument(); doc != nil {
+			count++
+			// Process this opaque native result here; never collect an unbounded stream.
+			fmt.Printf("Scan document %d: %s, %d bytes\n", count, doc.MediaType, len(doc.Data))
+		} else if end := frame.GetEnd(); end != nil {
+			ended, failure = true, end.Failure
+			if end.DocumentCount != count {
+				return fmt.Errorf("Scan count mismatch")
+			}
+		} else {
+			return fmt.Errorf("invalid Scan frame")
+		}
+	}
+	if !ended {
+		return fmt.Errorf("Scan missing End")
+	}
+	if failure != nil {
+		return fmt.Errorf("Scan traversal failed after %d documents: %s", count, failure.Code)
+	}
+	fmt.Printf("Scan complete: %d documents, matching End, final gRPC OK\n", count)
+	// Search visibility is native: a just-written example may not be refreshed yet.
 	return nil
 }

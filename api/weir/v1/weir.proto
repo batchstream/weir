@@ -6,6 +6,7 @@ service Weir {
   rpc Read(ReadRequest) returns (ReadResult);
   rpc Mutate(MutateRequest) returns (MutationResult);
   rpc Bulk(stream BulkRequestFrame) returns (stream BulkResponseFrame);
+  rpc Scan(ScanRequest) returns (stream ScanResponseFrame);
 }
 message Empty {}
 message Document { string media_type = 1; bytes data = 2; }
@@ -56,3 +57,14 @@ message BulkRequestFrame { oneof frame { BulkOpen open = 1; BulkOperation operat
 message BulkResult { uint64 index = 1; oneof result { ReadResult read = 10; MutationResult mutation = 11; } }
 message BulkEnd { uint64 received_count = 1; uint64 result_count = 2; }
 message BulkResponseFrame { oneof frame { BulkResult result = 1; BulkEnd end = 2; } }
+message ScanRequest {
+  string resource = 1;
+  Document selector = 2;
+  string read_media_type = 3;
+  uint32 fetch_items_hint = 4;
+}
+// Counts document frames whose server Send returned successfully. This is not an
+// acknowledgement of client receipt/processing. Success requires this End without
+// failure, matching client frame count, and final gRPC OK (EOF).
+message ScanEnd { uint64 document_count = 1; Failure failure = 2; }
+message ScanResponseFrame { oneof frame { Document document = 1; ScanEnd end = 2; } }

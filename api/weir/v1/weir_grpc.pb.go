@@ -22,6 +22,7 @@ const (
 	Weir_Read_FullMethodName   = "/weir.v1.Weir/Read"
 	Weir_Mutate_FullMethodName = "/weir.v1.Weir/Mutate"
 	Weir_Bulk_FullMethodName   = "/weir.v1.Weir/Bulk"
+	Weir_Scan_FullMethodName   = "/weir.v1.Weir/Scan"
 )
 
 // WeirClient is the client API for Weir service.
@@ -31,6 +32,7 @@ type WeirClient interface {
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResult, error)
 	Mutate(ctx context.Context, in *MutateRequest, opts ...grpc.CallOption) (*MutationResult, error)
 	Bulk(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[BulkRequestFrame, BulkResponseFrame], error)
+	Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ScanResponseFrame], error)
 }
 
 type weirClient struct {
@@ -75,6 +77,25 @@ func (c *weirClient) Bulk(ctx context.Context, opts ...grpc.CallOption) (grpc.Bi
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Weir_BulkClient = grpc.BidiStreamingClient[BulkRequestFrame, BulkResponseFrame]
 
+func (c *weirClient) Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ScanResponseFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Weir_ServiceDesc.Streams[1], Weir_Scan_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ScanRequest, ScanResponseFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Weir_ScanClient = grpc.ServerStreamingClient[ScanResponseFrame]
+
 // WeirServer is the server API for Weir service.
 // All implementations must embed UnimplementedWeirServer
 // for forward compatibility.
@@ -82,6 +103,7 @@ type WeirServer interface {
 	Read(context.Context, *ReadRequest) (*ReadResult, error)
 	Mutate(context.Context, *MutateRequest) (*MutationResult, error)
 	Bulk(grpc.BidiStreamingServer[BulkRequestFrame, BulkResponseFrame]) error
+	Scan(*ScanRequest, grpc.ServerStreamingServer[ScanResponseFrame]) error
 	mustEmbedUnimplementedWeirServer()
 }
 
@@ -100,6 +122,9 @@ func (UnimplementedWeirServer) Mutate(context.Context, *MutateRequest) (*Mutatio
 }
 func (UnimplementedWeirServer) Bulk(grpc.BidiStreamingServer[BulkRequestFrame, BulkResponseFrame]) error {
 	return status.Errorf(codes.Unimplemented, "method Bulk not implemented")
+}
+func (UnimplementedWeirServer) Scan(*ScanRequest, grpc.ServerStreamingServer[ScanResponseFrame]) error {
+	return status.Errorf(codes.Unimplemented, "method Scan not implemented")
 }
 func (UnimplementedWeirServer) mustEmbedUnimplementedWeirServer() {}
 func (UnimplementedWeirServer) testEmbeddedByValue()              {}
@@ -166,6 +191,18 @@ func _Weir_Bulk_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Weir_BulkServer = grpc.BidiStreamingServer[BulkRequestFrame, BulkResponseFrame]
 
+func _Weir_Scan_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ScanRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	serverStream := &grpc.GenericServerStream[ScanRequest, ScanResponseFrame]{ServerStream: stream}
+	return srv.(WeirServer).Scan(m, serverStream)
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Weir_ScanServer = grpc.ServerStreamingServer[ScanResponseFrame]
+
 // Weir_ServiceDesc is the grpc.ServiceDesc for Weir service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -188,6 +225,11 @@ var Weir_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _Weir_Bulk_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "Scan",
+			Handler:       _Weir_Scan_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "api/weir/v1/weir.proto",

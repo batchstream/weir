@@ -17,8 +17,12 @@ awk '
   print "\tserverStream := &grpc.GenericServerStream[BulkRequestFrame, BulkResponseFrame]{ServerStream: stream}"
   print "\treturn srv.(WeirServer).Bulk(serverStream)"; count++; next
  }
+ index($0,"\treturn srv.(WeirServer).Scan(m, &grpc.GenericServerStream") == 1 {
+  print "\tserverStream := &grpc.GenericServerStream[ScanRequest, ScanResponseFrame]{ServerStream: stream}"
+  print "\treturn srv.(WeirServer).Scan(m, serverStream)"; count++; next
+ }
  { print }
- END { if (count != 2) exit 1 }
+ END { if (count != 3) exit 1 }
 ' api/weir/v1/weir_grpc.pb.go > .tools/weir_grpc.pb.go
 mv .tools/weir_grpc.pb.go api/weir/v1/weir_grpc.pb.go
 awk '

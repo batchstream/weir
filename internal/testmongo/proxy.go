@@ -23,15 +23,18 @@ type WireEvent struct {
 	Dropped      bool
 }
 type Proxy struct {
-	listener      net.Listener
-	mu            sync.Mutex
-	events        []WireEvent
-	conns         map[net.Conn]struct{}
-	group         sync.WaitGroup
-	closed        bool
-	DropCommand   string
-	DropGate      <-chan struct{}
-	DropRemaining atomic.Int64
+	listener       net.Listener
+	mu             sync.Mutex
+	events         []WireEvent
+	conns          map[net.Conn]struct{}
+	group          sync.WaitGroup
+	closed         bool
+	DropCommand    string
+	DropGate       <-chan struct{}
+	DropRemaining  atomic.Int64
+	AlterCommand   string
+	AlterMode      string
+	AlterRemaining atomic.Int64
 }
 
 func StartProxy(t *testing.T) *Proxy {
@@ -138,10 +141,62 @@ func (p *Proxy) relay(client net.Conn) {
 			}
 			return
 		}
+		if name == p.AlterCommand && p.AlterRemaining.Load() > 0 {
+			p.AlterRemaining.Add(-1)
+			response = alterScanReply(response, p.AlterMode)
+		}
 		if _, err = client.Write(response); err != nil {
 			return
 		}
 	}
+}
+
+// Deliberate envelope faults after a real backend reply; this is not evidence
+// of real sharded MongoDB failure handling.
+func alterScanReply(message []byte, mode string) []byte {
+	if len(message) < 21 || binary.LittleEndian.Uint32(message[12:16]) != 2013 || message[20] != 0 {
+		return message
+	}
+	var doc bson.D
+	if bson.Unmarshal(commandDocument(message), &doc) != nil {
+		return message
+	}
+	partial := bson.E{Key: "partialResultsReturned", Value: true}
+	if mode == "partial_top" {
+		doc = append(doc, partial)
+	} else {
+		for i := range doc {
+			if doc[i].Key != "cursor" {
+				continue
+			}
+			cursor, ok := doc[i].Value.(bson.D)
+			if !ok {
+				return message
+			}
+			if mode == "partial" {
+				cursor = append(cursor, partial)
+			}
+			if mode == "missing_batch" {
+				for j := range cursor {
+					if cursor[j].Key == "firstBatch" || cursor[j].Key == "nextBatch" {
+						cursor[j].Key = "unrecognizedBatch"
+					}
+				}
+			}
+			doc[i].Value = cursor
+		}
+	}
+	raw, err := bson.Marshal(doc)
+	if err != nil {
+		return message
+	}
+	result := append([]byte(nil), message[:21]...)
+	result = append(result, raw...)
+	if mode == "truncate" {
+		result = result[:len(result)-1]
+	}
+	binary.LittleEndian.PutUint32(result, uint32(len(result)))
+	return result
 }
 func readMessage(r io.Reader) ([]byte, error) {
 	header := make([]byte, 16)
