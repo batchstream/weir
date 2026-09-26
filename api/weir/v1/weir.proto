@@ -1,0 +1,58 @@
+syntax = "proto3";
+package weir.v1;
+option go_package = "github.com/batchstream/weir/api/weir/v1;weirv1";
+
+service Weir {
+  rpc Read(ReadRequest) returns (ReadResult);
+  rpc Mutate(MutateRequest) returns (MutationResult);
+  rpc Bulk(stream BulkRequestFrame) returns (stream BulkResponseFrame);
+}
+message Empty {}
+message Document { string media_type = 1; bytes data = 2; }
+enum FailureCode {
+  FAILURE_CODE_UNSPECIFIED = 0;
+  INVALID_ARGUMENT = 1;
+  UNAUTHENTICATED = 2;
+  PERMISSION_DENIED = 3;
+  NOT_FOUND = 4;
+  PRECONDITION_FAILED = 5;
+  CONFLICT = 6;
+  UNSUPPORTED = 7;
+  RESOURCE_EXHAUSTED = 8;
+  UNAVAILABLE = 9;
+  CANCELLED = 10;
+  DEADLINE_EXCEEDED = 11;
+  INTERNAL = 12;
+}
+enum MutationOutcome {
+  MUTATION_OUTCOME_UNSPECIFIED = 0;
+  NOT_STARTED = 1;
+  NOT_APPLIED = 2;
+  APPLIED = 3;
+  UNKNOWN = 4;
+}
+message Failure { FailureCode code = 1; string message = 2; }
+message ReadRequest { string resource = 1; string read_media_type = 2; Document adapter_options = 3; }
+message ReadResult {
+  oneof result { Document document = 1; Empty missing = 2; Failure failure = 3; }
+}
+message MutateRequest {
+  string resource = 1;
+  Document adapter_options = 2;
+  oneof action {
+    Document put = 10;
+    Document create = 11;
+    Document replace = 12;
+    Empty delete = 13;
+    Transform atomic_transform = 14;
+  }
+}
+message MutationResult { MutationOutcome outcome = 1; Failure failure = 2; }
+message Transform { oneof form { ProgramTransform program = 1; Document backend_expression = 2; } }
+message ProgramTransform { string runtime = 1; bytes source = 2; Document input = 3; }
+message BulkOpen { string store = 1; }
+message BulkOperation { uint64 index = 1; oneof operation { ReadRequest read = 10; MutateRequest mutate = 11; } }
+message BulkRequestFrame { oneof frame { BulkOpen open = 1; BulkOperation operation = 2; } }
+message BulkResult { uint64 index = 1; oneof result { ReadResult read = 10; MutationResult mutation = 11; } }
+message BulkEnd { uint64 received_count = 1; uint64 result_count = 2; }
+message BulkResponseFrame { oneof frame { BulkResult result = 1; BulkEnd end = 2; } }
