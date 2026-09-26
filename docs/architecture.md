@@ -1392,7 +1392,11 @@ for failed/missing shards.
 Retain and validate at most one bounded page before emitting its hits, so
 metadata that follows the hits cannot escape inspection. A failed page ends the
 stream with a nonempty ScanEnd.failure; previously emitted pages remain partial
-results. The count is only the number actually delivered, not proof of
+results. The count is the number of document-frame Send calls that returned
+successfully at the server; it does not acknowledge client receipt or processing.
+The client must receive one complete End, match its observed document count, and
+then observe final gRPC OK. A Failure-bearing End is a failed traversal even with
+gRPC OK; a missing End or mismatched count is incomplete. Counts alone never prove
 completeness. Timeouts map to DEADLINE_EXCEEDED, temporary shard failures to
 UNAVAILABLE, malformed/contradictory responses to INTERNAL; do not silently
 retry/restart traversal. For these failures, use gRPC OK only when delivering an

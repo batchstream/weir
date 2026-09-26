@@ -618,7 +618,7 @@ cursor/PIT 仅活于一个 RPC，固定 Store/endpoint。每调度一次 open/fe
 
 PIT/cursor 创建及每次 fetch 均关闭 partial（验证过的请求可用 allow_partial_search_results=false），检查完整 envelope，要求 shard 完成、timed_out=false、无意外 early termination、framing 完好 [D10,D15]。字段因后端/版本不同，需 conformance test。缺失或无法验证的证据是失败，不是空页；query 正常 skipped shard 不当作失败。
 
-最多保留一页并验证后才发 hits，避免尾部 metadata 逃过检查。失败页不发送，其前面的已发送页为部分结果，ScanEnd.failure 非空。Count 仅为实际交付数量，不证明完整。timeout -> DEADLINE_EXCEEDED，临时 shard failure -> UNAVAILABLE，畸形/矛盾 response -> INTERNAL，不自动重启。能发明确终态 Failure 时可 gRPC OK，否则非 OK。仅验证原生耗尽后可无 Failure 的 End。Native 不继承 Scan 这个完整性解释契约，仍返回完整原生 envelope。
+最多保留一页并验证后才发 hits，避免尾部 metadata 逃过检查。失败页不发送，其前面的已发送页为部分结果，ScanEnd.failure 非空。Count 仅统计服务端文档帧 Send 返回成功的次数，不表示客户端已经接收或处理。客户端必须收到完整 End、核对自己观察到的文档数，并确认最终 gRPC OK；带 Failure 的 End 即使配合 gRPC OK 仍是遍历失败，缺 End 或计数不符也不是完整结果。计数本身不证明完整。timeout -> DEADLINE_EXCEEDED，临时 shard failure -> UNAVAILABLE，畸形/矛盾 response -> INTERNAL，不自动重启。能发明确终态 Failure 时可 gRPC OK，否则非 OK。仅验证原生耗尽后可无 Failure 的 End。Native 不继承 Scan 这个完整性解释契约，仍返回完整原生 envelope。
 
 V1 不设跨 RPC resume token，因为 snapshot、expiry、授权、混合 key 分页、replica affinity、cleanup 没有共同原生答案。live MongoDB cursor 避免不安全的混合 BSON `_id` keyset 分页；搜索可在同一调用中保留 PIT/search-after，不使 Weir 成为应用 session 服务。
 

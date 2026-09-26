@@ -3,14 +3,14 @@
 A **local-only, synchronous MongoDB and Search data plane**, not complete V1 or a production release.
 One Go module: `github.com/batchstream/weir`.
 
-Implemented: gRPC Read / Mutate / duplex Bulk, independent local MongoDB and Search Stores,
+Implemented: gRPC Read / Mutate / duplex Bulk / server-streaming Scan, independent local MongoDB and Search Stores,
 opaque BSON / JSON, Put / Create / Replace / Delete, bounded admission/results/connections,
 micro-batching, stream-local ordering, explicit AIMD and bounded shutdown.
 
 **AtomicTransform returns UNSUPPORTED.** The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
-Native, Scan, peers, TLS/auth, dynamic configuration, SDKs, queues,
+Native, peers, TLS/auth, dynamic configuration, SDKs, queues,
 production deployment and releases are out of scope.
 
 Qualification correction: the original `37d1454` implementation did not cover unary
@@ -38,7 +38,10 @@ go run ./cmd/weir-example
 ```
 
 The example writes `_id: "example"` in the isolated `weir_m1.records` collection,
-then sends and receives a three-operation Bulk concurrently and verifies End/counts.
+then verifies a three-operation Bulk and a bounded Scan filtered to that example.
+The Scan consumer checks End, document count, Failure, and final gRPC OK. Search
+Scan returns native JSON hits (including metadata), while Read returns `_source`;
+a just-written Search document may not yet be visible before native refresh.
 Use Ctrl-C to drain Weir, then `scripts/mongo-local.sh stop` to stop only the owned
 test replica set. Data/logs remain in ignored `.testdata/mongo-m1`; start can reuse
 that marked directory. Never enable test failpoints on a real database.
@@ -107,6 +110,8 @@ scripts/generate.sh
   limitations and reproduction details.
 - `docs/milestone-2.md`: exact Elasticsearch/OpenSearch profiles, dual-Store examples,
   resource isolation and real-backend fault evidence.
+- `docs/milestone-3.md`: Scan selectors, page/session budgets, integrity and cleanup,
+  separate MongoDB/Elasticsearch/OpenSearch qualification and remaining limits.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits, AIMD and overload guard.
 - `internal/mongostore`: concrete driver ownership, CRUD, codec and transaction state machine.
