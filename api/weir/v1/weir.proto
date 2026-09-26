@@ -6,6 +6,7 @@ service Weir {
   rpc Read(ReadRequest) returns (ReadResult);
   rpc Mutate(MutateRequest) returns (MutationResult);
   rpc Bulk(stream BulkRequestFrame) returns (stream BulkResponseFrame);
+  rpc Native(stream NativeRequestFrame) returns (stream NativeResponseFrame);
   rpc Scan(ScanRequest) returns (stream ScanResponseFrame);
 }
 message Empty {}
@@ -68,3 +69,16 @@ message ScanRequest {
 // failure, matching client frame count, and final gRPC OK (EOF).
 message ScanEnd { uint64 document_count = 1; Failure failure = 2; }
 message ScanResponseFrame { oneof frame { Document document = 1; ScanEnd end = 2; } }
+
+// Response transport evidence only; never a normalized mutation result.
+enum NativeCompletion {
+  NATIVE_COMPLETION_UNSPECIFIED = 0;
+  NATIVE_NOT_STARTED = 1;
+  RESPONSE_COMPLETE = 2;
+  RESPONSE_INCOMPLETE = 3;
+}
+message NativeOpen { string resource = 1; Document descriptor = 2; string body_media_type = 3; }
+message NativeRequestFrame { oneof frame { NativeOpen open = 1; bytes chunk = 2; } }
+message NativeHead { Document metadata = 1; string body_media_type = 2; }
+message NativeEnd { NativeCompletion completion = 1; Failure failure = 2; }
+message NativeResponseFrame { oneof frame { NativeHead head = 1; bytes chunk = 2; NativeEnd end = 3; } }

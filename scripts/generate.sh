@@ -21,8 +21,12 @@ awk '
   print "\tserverStream := &grpc.GenericServerStream[ScanRequest, ScanResponseFrame]{ServerStream: stream}"
   print "\treturn srv.(WeirServer).Scan(m, serverStream)"; count++; next
  }
+ index($0,"\treturn srv.(WeirServer).Native(&grpc.GenericServerStream") == 1 {
+  print "\tserverStream := &grpc.GenericServerStream[NativeRequestFrame, NativeResponseFrame]{ServerStream: stream}"
+  print "\treturn srv.(WeirServer).Native(serverStream)"; count++; next
+ }
  { print }
- END { if (count != 3) exit 1 }
+ END { if (count != 4) exit 1 }
 ' api/weir/v1/weir_grpc.pb.go > .tools/weir_grpc.pb.go
 mv .tools/weir_grpc.pb.go api/weir/v1/weir_grpc.pb.go
 awk '
@@ -32,3 +36,12 @@ awk '
 ' api/weir/v1/weir.pb.go > .tools/weir.pb.go
 mv .tools/weir.pb.go api/weir/v1/weir.pb.go
 gofmt -w api/weir/v1/*.go
+
+PATH="$PWD/.tools/bin:$PATH" .tools/protoc/bin/protoc --go_out=. --go_opt=module=github.com/batchstream/weir api/weir/search/v1/http.proto
+awk '
+ $0 == "\ttype x struct{}" { print; print "\tpackageMarker := x{}"; next }
+ { if (sub(/reflect.TypeOf\(x\{\}\)/,"reflect.TypeOf(packageMarker)")) count++; print }
+ END { if (count != 1) exit 1 }
+' api/weir/search/v1/http.pb.go > .tools/http.pb.go
+mv .tools/http.pb.go api/weir/search/v1/http.pb.go
+gofmt -w api/weir/search/v1/http.pb.go

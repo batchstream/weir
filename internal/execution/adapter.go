@@ -3,6 +3,7 @@ package execution
 
 import (
 	"context"
+	"io"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 )
@@ -12,8 +13,11 @@ type Plan struct {
 	Key, Token         string
 	Bytes, ResultBytes int
 	Batchable          bool
-	// Scan reserves a separate native page/decoder budget for its entire session.
+	// Scan and Native reserve their bounded page/exchange working set for the
+	// lifetime of the one shared live-session slot.
 	Scan      bool
+	Native    bool
+	Exchange  *NativeExchange
 	PageBytes int
 	// Backend is private to the adapter that prepared this plan.
 	Backend any
@@ -33,7 +37,21 @@ type Adapter interface {
 	PrepareScan(*pb.ScanRequest) (*Plan, *pb.Failure)
 	FetchScan(context.Context, *Plan) (*ScanPage, Feedback)
 	CloseScan(context.Context, *Plan) *pb.Failure
+	PrepareNative(*pb.NativeOpen) (*Plan, *pb.Failure)
+	ExecuteNative(context.Context, *Plan, *NativeExchange) (*pb.NativeEnd, Feedback)
 	Close() error
+}
+
+// The source and sink are bounded transport dependencies, not backend semantics.
+// Close interrupts a blocked input read without canceling a completed response.
+type NativeExchange struct {
+	Source io.ReadCloser
+	Sink   NativeSink
+}
+type NativeSink interface {
+	Interrupt()
+	Head(*pb.NativeHead) error
+	Chunk([]byte) error
 }
 
 // A page is completely validated before publication. Only positive native

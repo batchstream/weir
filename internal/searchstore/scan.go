@@ -67,7 +67,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		return page, execution.Neutral
 	}
 	if !n.opened {
-		caps, f, fb := a.inspect(ctx)
+		caps, f, fb := a.inspect(ctx, false)
 		if f != nil {
 			page.Failure = f
 			return page, fb

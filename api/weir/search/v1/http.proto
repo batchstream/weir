@@ -1,0 +1,7 @@
+syntax = "proto3";
+package weir.search.v1;
+option go_package = "github.com/batchstream/weir/api/weir/search/v1;searchv1";
+// Adapter-owned profile: application/vnd.weir.search-http.v1+protobuf.
+message Header { string name = 1; repeated string values = 2; }
+message Request { string method = 1; string path = 2; string query = 3; repeated Header headers = 4; }
+message Response { uint32 status_code = 1; repeated Header headers = 2; }

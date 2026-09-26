@@ -303,3 +303,16 @@ func TestScanCleanupDeadlineAndReservation(t *testing.T) {
 		t.Fatal("cleanup failure leaked local budget", snap)
 	}
 }
+
+func (a *scanTestAdapter) PrepareNative(*pb.NativeOpen) (*execution.Plan, *pb.Failure) {
+	p := &execution.Plan{Native: true, Bytes: 1024, ResultBytes: 1024, PageBytes: 1 << 20, Token: "native"}
+	return p, nil
+}
+func (a *scanTestAdapter) ExecuteNative(ctx context.Context, _ *execution.Plan, _ *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+	a.fetches.Add(1)
+	if a.fetching != nil {
+		a.fetching <- struct{}{}
+	}
+	<-ctx.Done()
+	return protocol.NativeFailure(true, protocol.ContextFailure(ctx)), execution.Neutral
+}

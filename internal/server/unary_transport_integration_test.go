@@ -197,7 +197,7 @@ func TestUnaryRejectedFramesReleaseDeliverySlot(t *testing.T) {
 	}
 	empty := &pb.Empty{}
 	var response pb.Empty
-	for _, method := range []string{"/weir.v1.Weir/Native", "/weir.v1.Weir/Read?alias=1", "/weir.v1.Weir/%52ead"} {
+	for _, method := range []string{"/weir.v1.Weir/Unregistered", "/weir.v1.Weir/Read?alias=1", "/weir.v1.Weir/%52ead"} {
 		err := f.conn.Invoke(ctx, method, empty, &response)
 		if status.Code(err) != codes.Unimplemented {
 			t.Fatal("unregistered or noncanonical method", method, err)

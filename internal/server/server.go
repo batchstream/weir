@@ -25,10 +25,11 @@ type Limits struct {
 	Connections, Sessions              int
 	UnaryLifetime, BulkLifetime, Stall time.Duration
 	ScanLifetime                       time.Duration
+	NativeLifetime                     time.Duration
 }
 
 func DefaultLimits() Limits {
-	l := Limits{Connections: 16, Sessions: 16, UnaryLifetime: 30 * time.Second, BulkLifetime: 15 * time.Minute, ScanLifetime: 5 * time.Minute, Stall: 30 * time.Second}
+	l := Limits{Connections: 16, Sessions: 16, UnaryLifetime: 30 * time.Second, BulkLifetime: 15 * time.Minute, ScanLifetime: 5 * time.Minute, NativeLifetime: 5 * time.Minute, Stall: 30 * time.Second}
 	return l
 }
 
@@ -45,7 +46,7 @@ type Server struct {
 }
 
 func New(stores map[string]*store.Runtime, l Limits) (*Server, error) {
-	if l.Connections < 1 || l.Connections > 64 || l.Sessions < 1 || l.Sessions > 64 || l.UnaryLifetime <= 0 || l.BulkLifetime <= 0 || l.ScanLifetime <= 0 || l.ScanLifetime > 5*time.Minute || l.Stall <= 0 {
+	if l.Connections < 1 || l.Connections > 64 || l.Sessions < 1 || l.Sessions > 64 || l.UnaryLifetime <= 0 || l.BulkLifetime <= 0 || l.ScanLifetime <= 0 || l.ScanLifetime > 5*time.Minute || l.Stall <= 0 || l.NativeLifetime <= 0 || l.NativeLifetime > 5*time.Minute {
 		return nil, status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}
 	if len(stores) == 0 || len(stores) > 16 {

@@ -155,6 +155,59 @@ func (MutationOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{1}
 }
 
+// Response transport evidence only; never a normalized mutation result.
+type NativeCompletion int32
+
+const (
+	NativeCompletion_NATIVE_COMPLETION_UNSPECIFIED NativeCompletion = 0
+	NativeCompletion_NATIVE_NOT_STARTED            NativeCompletion = 1
+	NativeCompletion_RESPONSE_COMPLETE             NativeCompletion = 2
+	NativeCompletion_RESPONSE_INCOMPLETE           NativeCompletion = 3
+)
+
+// Enum value maps for NativeCompletion.
+var (
+	NativeCompletion_name = map[int32]string{
+		0: "NATIVE_COMPLETION_UNSPECIFIED",
+		1: "NATIVE_NOT_STARTED",
+		2: "RESPONSE_COMPLETE",
+		3: "RESPONSE_INCOMPLETE",
+	}
+	NativeCompletion_value = map[string]int32{
+		"NATIVE_COMPLETION_UNSPECIFIED": 0,
+		"NATIVE_NOT_STARTED":            1,
+		"RESPONSE_COMPLETE":             2,
+		"RESPONSE_INCOMPLETE":           3,
+	}
+)
+
+func (x NativeCompletion) Enum() *NativeCompletion {
+	p := new(NativeCompletion)
+	*p = x
+	return p
+}
+
+func (x NativeCompletion) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (NativeCompletion) Descriptor() protoreflect.EnumDescriptor {
+	return file_api_weir_v1_weir_proto_enumTypes[2].Descriptor()
+}
+
+func (NativeCompletion) Type() protoreflect.EnumType {
+	return &file_api_weir_v1_weir_proto_enumTypes[2]
+}
+
+func (x NativeCompletion) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use NativeCompletion.Descriptor instead.
+func (NativeCompletion) EnumDescriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{2}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1438,6 +1491,350 @@ func (*ScanResponseFrame_Document) isScanResponseFrame_Frame() {}
 
 func (*ScanResponseFrame_End) isScanResponseFrame_Frame() {}
 
+type NativeOpen struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	Descriptor_   *Document              `protobuf:"bytes,2,opt,name=descriptor,proto3" json:"descriptor,omitempty"`
+	BodyMediaType string                 `protobuf:"bytes,3,opt,name=body_media_type,json=bodyMediaType,proto3" json:"body_media_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NativeOpen) Reset() {
+	*x = NativeOpen{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeOpen) ProtoMessage() {}
+
+func (x *NativeOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeOpen.ProtoReflect.Descriptor instead.
+func (*NativeOpen) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *NativeOpen) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *NativeOpen) GetDescriptor_() *Document {
+	if x != nil {
+		return x.Descriptor_
+	}
+	return nil
+}
+
+func (x *NativeOpen) GetBodyMediaType() string {
+	if x != nil {
+		return x.BodyMediaType
+	}
+	return ""
+}
+
+type NativeRequestFrame struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*NativeRequestFrame_Open
+	//	*NativeRequestFrame_Chunk
+	Frame         isNativeRequestFrame_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NativeRequestFrame) Reset() {
+	*x = NativeRequestFrame{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeRequestFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeRequestFrame) ProtoMessage() {}
+
+func (x *NativeRequestFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeRequestFrame.ProtoReflect.Descriptor instead.
+func (*NativeRequestFrame) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *NativeRequestFrame) GetFrame() isNativeRequestFrame_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *NativeRequestFrame) GetOpen() *NativeOpen {
+	if x != nil {
+		if x, ok := x.Frame.(*NativeRequestFrame_Open); ok {
+			return x.Open
+		}
+	}
+	return nil
+}
+
+func (x *NativeRequestFrame) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Frame.(*NativeRequestFrame_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+type isNativeRequestFrame_Frame interface {
+	isNativeRequestFrame_Frame()
+}
+
+type NativeRequestFrame_Open struct {
+	Open *NativeOpen `protobuf:"bytes,1,opt,name=open,proto3,oneof"`
+}
+
+type NativeRequestFrame_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+func (*NativeRequestFrame_Open) isNativeRequestFrame_Frame() {}
+
+func (*NativeRequestFrame_Chunk) isNativeRequestFrame_Frame() {}
+
+type NativeHead struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Metadata      *Document              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	BodyMediaType string                 `protobuf:"bytes,2,opt,name=body_media_type,json=bodyMediaType,proto3" json:"body_media_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NativeHead) Reset() {
+	*x = NativeHead{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeHead) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeHead) ProtoMessage() {}
+
+func (x *NativeHead) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeHead.ProtoReflect.Descriptor instead.
+func (*NativeHead) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *NativeHead) GetMetadata() *Document {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *NativeHead) GetBodyMediaType() string {
+	if x != nil {
+		return x.BodyMediaType
+	}
+	return ""
+}
+
+type NativeEnd struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Completion    NativeCompletion       `protobuf:"varint,1,opt,name=completion,proto3,enum=weir.v1.NativeCompletion" json:"completion,omitempty"`
+	Failure       *Failure               `protobuf:"bytes,2,opt,name=failure,proto3" json:"failure,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NativeEnd) Reset() {
+	*x = NativeEnd{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeEnd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeEnd) ProtoMessage() {}
+
+func (x *NativeEnd) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeEnd.ProtoReflect.Descriptor instead.
+func (*NativeEnd) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *NativeEnd) GetCompletion() NativeCompletion {
+	if x != nil {
+		return x.Completion
+	}
+	return NativeCompletion_NATIVE_COMPLETION_UNSPECIFIED
+}
+
+func (x *NativeEnd) GetFailure() *Failure {
+	if x != nil {
+		return x.Failure
+	}
+	return nil
+}
+
+type NativeResponseFrame struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Frame:
+	//
+	//	*NativeResponseFrame_Head
+	//	*NativeResponseFrame_Chunk
+	//	*NativeResponseFrame_End
+	Frame         isNativeResponseFrame_Frame `protobuf_oneof:"frame"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NativeResponseFrame) Reset() {
+	*x = NativeResponseFrame{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeResponseFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeResponseFrame) ProtoMessage() {}
+
+func (x *NativeResponseFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeResponseFrame.ProtoReflect.Descriptor instead.
+func (*NativeResponseFrame) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *NativeResponseFrame) GetFrame() isNativeResponseFrame_Frame {
+	if x != nil {
+		return x.Frame
+	}
+	return nil
+}
+
+func (x *NativeResponseFrame) GetHead() *NativeHead {
+	if x != nil {
+		if x, ok := x.Frame.(*NativeResponseFrame_Head); ok {
+			return x.Head
+		}
+	}
+	return nil
+}
+
+func (x *NativeResponseFrame) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Frame.(*NativeResponseFrame_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+func (x *NativeResponseFrame) GetEnd() *NativeEnd {
+	if x != nil {
+		if x, ok := x.Frame.(*NativeResponseFrame_End); ok {
+			return x.End
+		}
+	}
+	return nil
+}
+
+type isNativeResponseFrame_Frame interface {
+	isNativeResponseFrame_Frame()
+}
+
+type NativeResponseFrame_Head struct {
+	Head *NativeHead `protobuf:"bytes,1,opt,name=head,proto3,oneof"`
+}
+
+type NativeResponseFrame_Chunk struct {
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+type NativeResponseFrame_End struct {
+	End *NativeEnd `protobuf:"bytes,3,opt,name=end,proto3,oneof"`
+}
+
+func (*NativeResponseFrame_Head) isNativeResponseFrame_Frame() {}
+
+func (*NativeResponseFrame_Chunk) isNativeResponseFrame_Frame() {}
+
+func (*NativeResponseFrame_End) isNativeResponseFrame_Frame() {}
+
 var File_api_weir_v1_weir_proto protoreflect.FileDescriptor
 
 const file_api_weir_v1_weir_proto_rawDesc = "" +
@@ -1519,6 +1916,31 @@ const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\x11ScanResponseFrame\x12/\n" +
 	"\bdocument\x18\x01 \x01(\v2\x11.weir.v1.DocumentH\x00R\bdocument\x12$\n" +
 	"\x03end\x18\x02 \x01(\v2\x10.weir.v1.ScanEndH\x00R\x03endB\a\n" +
+	"\x05frame\"\x83\x01\n" +
+	"\n" +
+	"NativeOpen\x12\x1a\n" +
+	"\bresource\x18\x01 \x01(\tR\bresource\x121\n" +
+	"\n" +
+	"descriptor\x18\x02 \x01(\v2\x11.weir.v1.DocumentR\n" +
+	"descriptor\x12&\n" +
+	"\x0fbody_media_type\x18\x03 \x01(\tR\rbodyMediaType\"`\n" +
+	"\x12NativeRequestFrame\x12)\n" +
+	"\x04open\x18\x01 \x01(\v2\x13.weir.v1.NativeOpenH\x00R\x04open\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\a\n" +
+	"\x05frame\"c\n" +
+	"\n" +
+	"NativeHead\x12-\n" +
+	"\bmetadata\x18\x01 \x01(\v2\x11.weir.v1.DocumentR\bmetadata\x12&\n" +
+	"\x0fbody_media_type\x18\x02 \x01(\tR\rbodyMediaType\"r\n" +
+	"\tNativeEnd\x129\n" +
+	"\n" +
+	"completion\x18\x01 \x01(\x0e2\x19.weir.v1.NativeCompletionR\n" +
+	"completion\x12*\n" +
+	"\afailure\x18\x02 \x01(\v2\x10.weir.v1.FailureR\afailure\"\x89\x01\n" +
+	"\x13NativeResponseFrame\x12)\n" +
+	"\x04head\x18\x01 \x01(\v2\x13.weir.v1.NativeHeadH\x00R\x04head\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunk\x12&\n" +
+	"\x03end\x18\x03 \x01(\v2\x12.weir.v1.NativeEndH\x00R\x03endB\a\n" +
 	"\x05frame*\x91\x02\n" +
 	"\vFailureCode\x12\x1c\n" +
 	"\x18FAILURE_CODE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -1540,11 +1962,17 @@ const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\vNOT_STARTED\x10\x01\x12\x0f\n" +
 	"\vNOT_APPLIED\x10\x02\x12\v\n" +
 	"\aAPPLIED\x10\x03\x12\v\n" +
-	"\aUNKNOWN\x10\x042\xf3\x01\n" +
+	"\aUNKNOWN\x10\x04*}\n" +
+	"\x10NativeCompletion\x12!\n" +
+	"\x1dNATIVE_COMPLETION_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12NATIVE_NOT_STARTED\x10\x01\x12\x15\n" +
+	"\x11RESPONSE_COMPLETE\x10\x02\x12\x17\n" +
+	"\x13RESPONSE_INCOMPLETE\x10\x032\xbc\x02\n" +
 	"\x04Weir\x121\n" +
 	"\x04Read\x12\x14.weir.v1.ReadRequest\x1a\x13.weir.v1.ReadResult\x129\n" +
 	"\x06Mutate\x12\x16.weir.v1.MutateRequest\x1a\x17.weir.v1.MutationResult\x12A\n" +
-	"\x04Bulk\x12\x19.weir.v1.BulkRequestFrame\x1a\x1a.weir.v1.BulkResponseFrame(\x010\x01\x12:\n" +
+	"\x04Bulk\x12\x19.weir.v1.BulkRequestFrame\x1a\x1a.weir.v1.BulkResponseFrame(\x010\x01\x12G\n" +
+	"\x06Native\x12\x1b.weir.v1.NativeRequestFrame\x1a\x1c.weir.v1.NativeResponseFrame(\x010\x01\x12:\n" +
 	"\x04Scan\x12\x14.weir.v1.ScanRequest\x1a\x1a.weir.v1.ScanResponseFrame0\x01B0Z.github.com/batchstream/weir/api/weir/v1;weirv1b\x06proto3"
 
 var (
@@ -1559,72 +1987,87 @@ func file_api_weir_v1_weir_proto_rawDescGZIP() []byte {
 	return file_api_weir_v1_weir_proto_rawDescData
 }
 
-var file_api_weir_v1_weir_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_api_weir_v1_weir_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_api_weir_v1_weir_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_api_weir_v1_weir_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_api_weir_v1_weir_proto_goTypes = []any{
-	(FailureCode)(0),          // 0: weir.v1.FailureCode
-	(MutationOutcome)(0),      // 1: weir.v1.MutationOutcome
-	(*Empty)(nil),             // 2: weir.v1.Empty
-	(*Document)(nil),          // 3: weir.v1.Document
-	(*Failure)(nil),           // 4: weir.v1.Failure
-	(*ReadRequest)(nil),       // 5: weir.v1.ReadRequest
-	(*ReadResult)(nil),        // 6: weir.v1.ReadResult
-	(*MutateRequest)(nil),     // 7: weir.v1.MutateRequest
-	(*MutationResult)(nil),    // 8: weir.v1.MutationResult
-	(*Transform)(nil),         // 9: weir.v1.Transform
-	(*ProgramTransform)(nil),  // 10: weir.v1.ProgramTransform
-	(*BulkOpen)(nil),          // 11: weir.v1.BulkOpen
-	(*BulkOperation)(nil),     // 12: weir.v1.BulkOperation
-	(*BulkRequestFrame)(nil),  // 13: weir.v1.BulkRequestFrame
-	(*BulkResult)(nil),        // 14: weir.v1.BulkResult
-	(*BulkEnd)(nil),           // 15: weir.v1.BulkEnd
-	(*BulkResponseFrame)(nil), // 16: weir.v1.BulkResponseFrame
-	(*ScanRequest)(nil),       // 17: weir.v1.ScanRequest
-	(*ScanEnd)(nil),           // 18: weir.v1.ScanEnd
-	(*ScanResponseFrame)(nil), // 19: weir.v1.ScanResponseFrame
+	(FailureCode)(0),            // 0: weir.v1.FailureCode
+	(MutationOutcome)(0),        // 1: weir.v1.MutationOutcome
+	(NativeCompletion)(0),       // 2: weir.v1.NativeCompletion
+	(*Empty)(nil),               // 3: weir.v1.Empty
+	(*Document)(nil),            // 4: weir.v1.Document
+	(*Failure)(nil),             // 5: weir.v1.Failure
+	(*ReadRequest)(nil),         // 6: weir.v1.ReadRequest
+	(*ReadResult)(nil),          // 7: weir.v1.ReadResult
+	(*MutateRequest)(nil),       // 8: weir.v1.MutateRequest
+	(*MutationResult)(nil),      // 9: weir.v1.MutationResult
+	(*Transform)(nil),           // 10: weir.v1.Transform
+	(*ProgramTransform)(nil),    // 11: weir.v1.ProgramTransform
+	(*BulkOpen)(nil),            // 12: weir.v1.BulkOpen
+	(*BulkOperation)(nil),       // 13: weir.v1.BulkOperation
+	(*BulkRequestFrame)(nil),    // 14: weir.v1.BulkRequestFrame
+	(*BulkResult)(nil),          // 15: weir.v1.BulkResult
+	(*BulkEnd)(nil),             // 16: weir.v1.BulkEnd
+	(*BulkResponseFrame)(nil),   // 17: weir.v1.BulkResponseFrame
+	(*ScanRequest)(nil),         // 18: weir.v1.ScanRequest
+	(*ScanEnd)(nil),             // 19: weir.v1.ScanEnd
+	(*ScanResponseFrame)(nil),   // 20: weir.v1.ScanResponseFrame
+	(*NativeOpen)(nil),          // 21: weir.v1.NativeOpen
+	(*NativeRequestFrame)(nil),  // 22: weir.v1.NativeRequestFrame
+	(*NativeHead)(nil),          // 23: weir.v1.NativeHead
+	(*NativeEnd)(nil),           // 24: weir.v1.NativeEnd
+	(*NativeResponseFrame)(nil), // 25: weir.v1.NativeResponseFrame
 }
 var file_api_weir_v1_weir_proto_depIdxs = []int32{
 	0,  // 0: weir.v1.Failure.code:type_name -> weir.v1.FailureCode
-	3,  // 1: weir.v1.ReadRequest.adapter_options:type_name -> weir.v1.Document
-	3,  // 2: weir.v1.ReadResult.document:type_name -> weir.v1.Document
-	2,  // 3: weir.v1.ReadResult.missing:type_name -> weir.v1.Empty
-	4,  // 4: weir.v1.ReadResult.failure:type_name -> weir.v1.Failure
-	3,  // 5: weir.v1.MutateRequest.adapter_options:type_name -> weir.v1.Document
-	3,  // 6: weir.v1.MutateRequest.put:type_name -> weir.v1.Document
-	3,  // 7: weir.v1.MutateRequest.create:type_name -> weir.v1.Document
-	3,  // 8: weir.v1.MutateRequest.replace:type_name -> weir.v1.Document
-	2,  // 9: weir.v1.MutateRequest.delete:type_name -> weir.v1.Empty
-	9,  // 10: weir.v1.MutateRequest.atomic_transform:type_name -> weir.v1.Transform
+	4,  // 1: weir.v1.ReadRequest.adapter_options:type_name -> weir.v1.Document
+	4,  // 2: weir.v1.ReadResult.document:type_name -> weir.v1.Document
+	3,  // 3: weir.v1.ReadResult.missing:type_name -> weir.v1.Empty
+	5,  // 4: weir.v1.ReadResult.failure:type_name -> weir.v1.Failure
+	4,  // 5: weir.v1.MutateRequest.adapter_options:type_name -> weir.v1.Document
+	4,  // 6: weir.v1.MutateRequest.put:type_name -> weir.v1.Document
+	4,  // 7: weir.v1.MutateRequest.create:type_name -> weir.v1.Document
+	4,  // 8: weir.v1.MutateRequest.replace:type_name -> weir.v1.Document
+	3,  // 9: weir.v1.MutateRequest.delete:type_name -> weir.v1.Empty
+	10, // 10: weir.v1.MutateRequest.atomic_transform:type_name -> weir.v1.Transform
 	1,  // 11: weir.v1.MutationResult.outcome:type_name -> weir.v1.MutationOutcome
-	4,  // 12: weir.v1.MutationResult.failure:type_name -> weir.v1.Failure
-	10, // 13: weir.v1.Transform.program:type_name -> weir.v1.ProgramTransform
-	3,  // 14: weir.v1.Transform.backend_expression:type_name -> weir.v1.Document
-	3,  // 15: weir.v1.ProgramTransform.input:type_name -> weir.v1.Document
-	5,  // 16: weir.v1.BulkOperation.read:type_name -> weir.v1.ReadRequest
-	7,  // 17: weir.v1.BulkOperation.mutate:type_name -> weir.v1.MutateRequest
-	11, // 18: weir.v1.BulkRequestFrame.open:type_name -> weir.v1.BulkOpen
-	12, // 19: weir.v1.BulkRequestFrame.operation:type_name -> weir.v1.BulkOperation
-	6,  // 20: weir.v1.BulkResult.read:type_name -> weir.v1.ReadResult
-	8,  // 21: weir.v1.BulkResult.mutation:type_name -> weir.v1.MutationResult
-	14, // 22: weir.v1.BulkResponseFrame.result:type_name -> weir.v1.BulkResult
-	15, // 23: weir.v1.BulkResponseFrame.end:type_name -> weir.v1.BulkEnd
-	3,  // 24: weir.v1.ScanRequest.selector:type_name -> weir.v1.Document
-	4,  // 25: weir.v1.ScanEnd.failure:type_name -> weir.v1.Failure
-	3,  // 26: weir.v1.ScanResponseFrame.document:type_name -> weir.v1.Document
-	18, // 27: weir.v1.ScanResponseFrame.end:type_name -> weir.v1.ScanEnd
-	5,  // 28: weir.v1.Weir.Read:input_type -> weir.v1.ReadRequest
-	7,  // 29: weir.v1.Weir.Mutate:input_type -> weir.v1.MutateRequest
-	13, // 30: weir.v1.Weir.Bulk:input_type -> weir.v1.BulkRequestFrame
-	17, // 31: weir.v1.Weir.Scan:input_type -> weir.v1.ScanRequest
-	6,  // 32: weir.v1.Weir.Read:output_type -> weir.v1.ReadResult
-	8,  // 33: weir.v1.Weir.Mutate:output_type -> weir.v1.MutationResult
-	16, // 34: weir.v1.Weir.Bulk:output_type -> weir.v1.BulkResponseFrame
-	19, // 35: weir.v1.Weir.Scan:output_type -> weir.v1.ScanResponseFrame
-	32, // [32:36] is the sub-list for method output_type
-	28, // [28:32] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	5,  // 12: weir.v1.MutationResult.failure:type_name -> weir.v1.Failure
+	11, // 13: weir.v1.Transform.program:type_name -> weir.v1.ProgramTransform
+	4,  // 14: weir.v1.Transform.backend_expression:type_name -> weir.v1.Document
+	4,  // 15: weir.v1.ProgramTransform.input:type_name -> weir.v1.Document
+	6,  // 16: weir.v1.BulkOperation.read:type_name -> weir.v1.ReadRequest
+	8,  // 17: weir.v1.BulkOperation.mutate:type_name -> weir.v1.MutateRequest
+	12, // 18: weir.v1.BulkRequestFrame.open:type_name -> weir.v1.BulkOpen
+	13, // 19: weir.v1.BulkRequestFrame.operation:type_name -> weir.v1.BulkOperation
+	7,  // 20: weir.v1.BulkResult.read:type_name -> weir.v1.ReadResult
+	9,  // 21: weir.v1.BulkResult.mutation:type_name -> weir.v1.MutationResult
+	15, // 22: weir.v1.BulkResponseFrame.result:type_name -> weir.v1.BulkResult
+	16, // 23: weir.v1.BulkResponseFrame.end:type_name -> weir.v1.BulkEnd
+	4,  // 24: weir.v1.ScanRequest.selector:type_name -> weir.v1.Document
+	5,  // 25: weir.v1.ScanEnd.failure:type_name -> weir.v1.Failure
+	4,  // 26: weir.v1.ScanResponseFrame.document:type_name -> weir.v1.Document
+	19, // 27: weir.v1.ScanResponseFrame.end:type_name -> weir.v1.ScanEnd
+	4,  // 28: weir.v1.NativeOpen.descriptor:type_name -> weir.v1.Document
+	21, // 29: weir.v1.NativeRequestFrame.open:type_name -> weir.v1.NativeOpen
+	4,  // 30: weir.v1.NativeHead.metadata:type_name -> weir.v1.Document
+	2,  // 31: weir.v1.NativeEnd.completion:type_name -> weir.v1.NativeCompletion
+	5,  // 32: weir.v1.NativeEnd.failure:type_name -> weir.v1.Failure
+	23, // 33: weir.v1.NativeResponseFrame.head:type_name -> weir.v1.NativeHead
+	24, // 34: weir.v1.NativeResponseFrame.end:type_name -> weir.v1.NativeEnd
+	6,  // 35: weir.v1.Weir.Read:input_type -> weir.v1.ReadRequest
+	8,  // 36: weir.v1.Weir.Mutate:input_type -> weir.v1.MutateRequest
+	14, // 37: weir.v1.Weir.Bulk:input_type -> weir.v1.BulkRequestFrame
+	22, // 38: weir.v1.Weir.Native:input_type -> weir.v1.NativeRequestFrame
+	18, // 39: weir.v1.Weir.Scan:input_type -> weir.v1.ScanRequest
+	7,  // 40: weir.v1.Weir.Read:output_type -> weir.v1.ReadResult
+	9,  // 41: weir.v1.Weir.Mutate:output_type -> weir.v1.MutationResult
+	17, // 42: weir.v1.Weir.Bulk:output_type -> weir.v1.BulkResponseFrame
+	25, // 43: weir.v1.Weir.Native:output_type -> weir.v1.NativeResponseFrame
+	20, // 44: weir.v1.Weir.Scan:output_type -> weir.v1.ScanResponseFrame
+	40, // [40:45] is the sub-list for method output_type
+	35, // [35:40] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_api_weir_v1_weir_proto_init() }
@@ -1668,14 +2111,23 @@ func file_api_weir_v1_weir_proto_init() {
 		(*ScanResponseFrame_Document)(nil),
 		(*ScanResponseFrame_End)(nil),
 	}
+	file_api_weir_v1_weir_proto_msgTypes[19].OneofWrappers = []any{
+		(*NativeRequestFrame_Open)(nil),
+		(*NativeRequestFrame_Chunk)(nil),
+	}
+	file_api_weir_v1_weir_proto_msgTypes[22].OneofWrappers = []any{
+		(*NativeResponseFrame_Head)(nil),
+		(*NativeResponseFrame_Chunk)(nil),
+		(*NativeResponseFrame_End)(nil),
+	}
 	type x struct{}
 	packageMarker := x{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(packageMarker).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_weir_v1_weir_proto_rawDesc), len(file_api_weir_v1_weir_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   18,
+			NumEnums:      3,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

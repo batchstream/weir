@@ -29,11 +29,12 @@ type Config struct {
 	Pool                             uint64
 }
 type Adapter struct {
-	client     *mongo.Client
-	collection *mongo.Collection
-	config     Config
-	once       sync.Once
-	closeErr   error
+	client         *mongo.Client
+	collection     *mongo.Collection
+	config         Config
+	once           sync.Once
+	closeErr       error
+	nativeNoReplay bool
 }
 type plan struct {
 	id       any
@@ -59,7 +60,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Adapter{client: client, config: cfg, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
+	a := &Adapter{client: client, config: cfg, nativeNoReplay: opts.Auth == nil, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err

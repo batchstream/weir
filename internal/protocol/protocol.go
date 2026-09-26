@@ -193,3 +193,26 @@ func FetchItems(hint uint32) int {
 	}
 	return int(hint)
 }
+
+const NativeChunk = 64 << 10
+const NativeDescriptor = 64 << 10
+
+func ValidateNative(open *pb.NativeOpen, store string) *pb.Failure {
+	if open == nil || proto.Size(open) > NativeDescriptor+MaxURI+256 || open.Descriptor_ == nil || len(open.Descriptor_.Data) > NativeDescriptor {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native Open bounds")
+	}
+	name, _, err := ParseResource(open.Resource)
+	if err != nil || name != store {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native resource")
+	}
+	return nil
+}
+
+func NativeFailure(started bool, failure *pb.Failure) *pb.NativeEnd {
+	completion := pb.NativeCompletion_NATIVE_NOT_STARTED
+	if started {
+		completion = pb.NativeCompletion_RESPONSE_INCOMPLETE
+	}
+	end := &pb.NativeEnd{Completion: completion, Failure: failure}
+	return end
+}

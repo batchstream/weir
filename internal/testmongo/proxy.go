@@ -3,6 +3,7 @@
 package testmongo
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ type WireEvent struct {
 	Session      string
 	Acknowledged bool
 	Dropped      bool
+	ReplyDigest  [32]byte
 }
 type Proxy struct {
 	listener       net.Listener
@@ -124,6 +126,7 @@ func (p *Proxy) relay(client net.Conn) {
 			e.Session = fmt.Sprintf("%x", []byte(lsid))
 		}
 		reply := commandDocument(response)
+		e.ReplyDigest = sha256.Sum256(reply)
 		e.Acknowledged = reply.Lookup("ok").AsInt64() == 1
 		if name == p.DropCommand && p.DropRemaining.Load() > 0 {
 			e.Dropped = true

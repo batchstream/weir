@@ -59,3 +59,10 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 		}
 	}
 }
+
+func (a *lifecycleAdapter) PrepareNative(*pb.NativeOpen) (*execution.Plan, *pb.Failure) {
+	return nil, nil
+}
+func (a *lifecycleAdapter) ExecuteNative(context.Context, *execution.Plan, *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+	return nil, execution.Neutral
+}

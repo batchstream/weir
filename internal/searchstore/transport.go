@@ -24,6 +24,7 @@ type exchange struct {
 	body   []byte
 	limit  int
 	method string
+	native bool
 }
 
 func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, error) {
@@ -51,7 +52,11 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	if body != nil {
 		request.Header.Set("Content-Type", "application/x-ndjson")
 	}
-	response, err := a.client.Do(request)
+	client := a.client
+	if call.native {
+		client = a.nativeClient
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return 0, nil, errTimeout

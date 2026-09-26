@@ -24,18 +24,20 @@ type Config struct {
 	Pool                       int
 }
 type Adapter struct {
-	config    Config
-	client    *http.Client
-	transport *http.Transport
-	ctx       context.Context
-	cancel    context.CancelFunc
-	once      sync.Once
+	config          Config
+	client          *http.Client
+	transport       *http.Transport
+	nativeTransport *http.Transport
+	nativeClient    *http.Client
+	ctx             context.Context
+	cancel          context.CancelFunc
+	once            sync.Once
 }
 type plan struct {
 	id, action string
 	source     []byte
 }
-type capabilities struct{ source, write bool }
+type capabilities struct{ source, write, nativeWrite bool }
 
 var indexPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
@@ -57,8 +59,11 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	transport := newTransport(cfg.Pool)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
+	nativeTransport := newTransport(1)
+	nativeTransport.DisableKeepAlives = true
+	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
 	lifetime, cancel := context.WithCancel(context.Background())
-	a := &Adapter{config: cfg, client: client, transport: transport, ctx: lifetime, cancel: cancel}
+	a := &Adapter{config: cfg, client: client, transport: transport, nativeTransport: nativeTransport, nativeClient: nativeClient, ctx: lifetime, cancel: cancel}
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
@@ -66,7 +71,13 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	return a, nil
 }
 func (a *Adapter) Close() error {
-	a.once.Do(func() { a.cancel(); a.transport.CloseIdleConnections() })
+	a.once.Do(func() {
+		a.cancel()
+		a.transport.CloseIdleConnections()
+		if a.nativeTransport != nil {
+			a.nativeTransport.CloseIdleConnections()
+		}
+	})
 	return nil
 }
 func (a *Adapter) qualify(ctx context.Context) error {
@@ -107,15 +118,15 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if string(auto) != `"false"` && string(auto) != "false" {
 		return fmt.Errorf("search profile requires action.auto_create_index=false; Weir never modifies settings")
 	}
-	_, failure, _ := a.inspect(ctx)
+	_, failure, _ := a.inspect(ctx, false)
 	if failure != nil {
 		return fmt.Errorf("search index qualification failed: %s", failure.Message)
 	}
 	return nil
 }
-func (a *Adapter) inspect(ctx context.Context) (capabilities, *pb.Failure, execution.Feedback) {
+func (a *Adapter) inspect(ctx context.Context, native bool) (capabilities, *pb.Failure, execution.Feedback) {
 	caps := capabilities{}
-	call := exchange{path: "/" + a.config.Index + "?flat_settings=true", limit: metadataLimit}
+	call := exchange{path: "/" + a.config.Index + "?flat_settings=true", limit: metadataLimit, native: native}
 	status, raw, err := a.request(ctx, call)
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed"), execution.Congested
@@ -152,6 +163,8 @@ func (a *Adapter) inspect(ctx context.Context) (capabilities, *pb.Failure, execu
 	source := index.Mappings.Source
 	caps.source = (source.Enabled == nil || *source.Enabled) && (source.Mode == "" || source.Mode == "stored") && len(source.Includes) == 0 && len(source.Excludes) == 0 && (index.Settings["index.mapping.source.mode"] == "" || index.Settings["index.mapping.source.mode"] == "stored")
 	final := index.Settings["index.final_pipeline"]
+	defaultPipeline := index.Settings["index.default_pipeline"]
+	caps.nativeWrite = (defaultPipeline == "" || defaultPipeline == "_none") && (final == "" || final == "_none")
 	caps.write = caps.source && (final == "" || final == "_none")
 	return caps, nil, execution.Neutral
 }
@@ -281,7 +294,7 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.B
 		}
 		return results, execution.Neutral
 	}
-	caps, failure, sample := a.inspect(ctx)
+	caps, failure, sample := a.inspect(ctx, false)
 	results := make([]*pb.BulkResult, len(works))
 	pending := make([]*execution.Plan, 0, len(works))
 	positions := make([]int, 0, len(works))

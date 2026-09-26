@@ -23,30 +23,35 @@ const deliveryKey deliveryContextKey = 0
 // delivery outlives the gRPC handler/context: net/http owns the HTTP/2 stream's
 // write deadline until END_STREAM is written or the stream is reset.
 type delivery struct {
-	mu           sync.Mutex
-	controller   *http.ResponseController
-	deadline     time.Time
-	readDeadline time.Time
-	inputDecoded bool
-	stall        time.Duration
-	unary        bool
-	singleInput  bool
-	finished     bool
-	rpcStarted   bool
-	rpcEnded     bool
-	released     bool
-	slots        chan struct{}
-	ticket       *store.Ticket
-	input        *creditedBody
+	mu            sync.Mutex
+	controller    *http.ResponseController
+	deadline      time.Time
+	readDeadline  time.Time
+	inputDecoded  bool
+	nativeWaiting bool
+	nativePump    <-chan struct{}
+	stall         time.Duration
+	unary         bool
+	singleInput   bool
+	finished      bool
+	rpcStarted    bool
+	rpcEnded      bool
+	released      bool
+	slots         chan struct{}
+	ticket        *store.Ticket
+	input         *creditedBody
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	lifetime := s.limits.UnaryLifetime
 	bulk := request.RequestURI == pb.Weir_Bulk_FullMethodName
 	scan := request.RequestURI == pb.Weir_Scan_FullMethodName
-	unary := !bulk && !scan
+	native := request.RequestURI == pb.Weir_Native_FullMethodName
+	unary := !bulk && !scan && !native
 	if bulk {
 		lifetime = s.limits.BulkLifetime
+	} else if native {
+		lifetime = s.limits.NativeLifetime
 	} else if scan {
 		lifetime = s.limits.ScanLifetime
 	}
@@ -64,7 +69,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	// A ServeHTTP transport dispatches exactly one RPC. Keep that lifecycle
 	// contract explicit, including malformed/unregistered method paths.
 	switch request.RequestURI {
-	case pb.Weir_Read_FullMethodName, pb.Weir_Mutate_FullMethodName, pb.Weir_Bulk_FullMethodName, pb.Weir_Scan_FullMethodName:
+	case pb.Weir_Read_FullMethodName, pb.Weir_Mutate_FullMethodName, pb.Weir_Bulk_FullMethodName, pb.Weir_Scan_FullMethodName, pb.Weir_Native_FullMethodName:
 	default:
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Grpc-Status", strconv.Itoa(int(codes.Unimplemented)))
@@ -76,7 +81,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("Grpc-Message", status.Convert(err).Message())
 		return
 	}
-	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, singleInput: !bulk, slots: s.slots}
+	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, singleInput: !bulk && !native, slots: s.slots}
 	input := newCreditedBody(ctx, request.Body, state)
 	state.input = input
 	defer input.Close()
@@ -113,7 +118,7 @@ func (d *delivery) armRead() error {
 		return io.ErrClosedPipe
 	}
 	d.readDeadline = d.deadline
-	if (d.unary || d.singleInput) && !d.inputDecoded {
+	if (d.unary || d.singleInput) && !d.inputDecoded || d.nativeWaiting {
 		if stall := time.Now().Add(d.stall); stall.Before(d.readDeadline) {
 			d.readDeadline = stall
 		}
@@ -195,6 +200,12 @@ func (d *delivery) retain(ticket *store.Ticket) {
 }
 
 func (d *delivery) finish() {
+	d.mu.Lock()
+	pump := d.nativePump
+	d.mu.Unlock()
+	if pump != nil {
+		<-pump
+	}
 	d.mu.Lock()
 	d.finished = true
 	ticket := d.ticket

@@ -22,6 +22,7 @@ const (
 	Weir_Read_FullMethodName   = "/weir.v1.Weir/Read"
 	Weir_Mutate_FullMethodName = "/weir.v1.Weir/Mutate"
 	Weir_Bulk_FullMethodName   = "/weir.v1.Weir/Bulk"
+	Weir_Native_FullMethodName = "/weir.v1.Weir/Native"
 	Weir_Scan_FullMethodName   = "/weir.v1.Weir/Scan"
 )
 
@@ -32,6 +33,7 @@ type WeirClient interface {
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResult, error)
 	Mutate(ctx context.Context, in *MutateRequest, opts ...grpc.CallOption) (*MutationResult, error)
 	Bulk(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[BulkRequestFrame, BulkResponseFrame], error)
+	Native(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[NativeRequestFrame, NativeResponseFrame], error)
 	Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ScanResponseFrame], error)
 }
 
@@ -77,9 +79,22 @@ func (c *weirClient) Bulk(ctx context.Context, opts ...grpc.CallOption) (grpc.Bi
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Weir_BulkClient = grpc.BidiStreamingClient[BulkRequestFrame, BulkResponseFrame]
 
+func (c *weirClient) Native(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[NativeRequestFrame, NativeResponseFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Weir_ServiceDesc.Streams[1], Weir_Native_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[NativeRequestFrame, NativeResponseFrame]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Weir_NativeClient = grpc.BidiStreamingClient[NativeRequestFrame, NativeResponseFrame]
+
 func (c *weirClient) Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ScanResponseFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Weir_ServiceDesc.Streams[1], Weir_Scan_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Weir_ServiceDesc.Streams[2], Weir_Scan_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +118,7 @@ type WeirServer interface {
 	Read(context.Context, *ReadRequest) (*ReadResult, error)
 	Mutate(context.Context, *MutateRequest) (*MutationResult, error)
 	Bulk(grpc.BidiStreamingServer[BulkRequestFrame, BulkResponseFrame]) error
+	Native(grpc.BidiStreamingServer[NativeRequestFrame, NativeResponseFrame]) error
 	Scan(*ScanRequest, grpc.ServerStreamingServer[ScanResponseFrame]) error
 	mustEmbedUnimplementedWeirServer()
 }
@@ -122,6 +138,9 @@ func (UnimplementedWeirServer) Mutate(context.Context, *MutateRequest) (*Mutatio
 }
 func (UnimplementedWeirServer) Bulk(grpc.BidiStreamingServer[BulkRequestFrame, BulkResponseFrame]) error {
 	return status.Errorf(codes.Unimplemented, "method Bulk not implemented")
+}
+func (UnimplementedWeirServer) Native(grpc.BidiStreamingServer[NativeRequestFrame, NativeResponseFrame]) error {
+	return status.Errorf(codes.Unimplemented, "method Native not implemented")
 }
 func (UnimplementedWeirServer) Scan(*ScanRequest, grpc.ServerStreamingServer[ScanResponseFrame]) error {
 	return status.Errorf(codes.Unimplemented, "method Scan not implemented")
@@ -191,6 +210,14 @@ func _Weir_Bulk_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Weir_BulkServer = grpc.BidiStreamingServer[BulkRequestFrame, BulkResponseFrame]
 
+func _Weir_Native_Handler(srv interface{}, stream grpc.ServerStream) error {
+	serverStream := &grpc.GenericServerStream[NativeRequestFrame, NativeResponseFrame]{ServerStream: stream}
+	return srv.(WeirServer).Native(serverStream)
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Weir_NativeServer = grpc.BidiStreamingServer[NativeRequestFrame, NativeResponseFrame]
+
 func _Weir_Scan_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(ScanRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -223,6 +250,12 @@ var Weir_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Bulk",
 			Handler:       _Weir_Bulk_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "Native",
+			Handler:       _Weir_Native_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

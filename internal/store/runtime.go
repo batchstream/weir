@@ -50,6 +50,7 @@ type Runtime struct {
 	closeErr                     error
 	controller                   controller
 	scan                         *Ticket
+	native                       *Ticket
 }
 type Session struct {
 	runtime     *Runtime
@@ -71,6 +72,7 @@ type Ticket struct {
 	abandoned, acked bool
 	stopWatch        func() bool
 	scan             *scanState
+	nativeEnd        *pb.NativeEnd
 }
 type batch struct {
 	ctx             context.Context
@@ -85,6 +87,7 @@ type Snapshot struct {
 	Pending, PendingBytes, Active, Retained, ResultBytes, Window int
 	Draining, Closed, Overloaded                                 bool
 	ScanSessions, ScanPageBytes, ScanPages, ScanCleanups         int
+	LiveSessions, NativeSessions, NativeBytes                    int
 }
 
 // New takes ownership of a constructed adapter, including cleanup on validation failure.
@@ -131,11 +134,11 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 	if s != nil && (s.runtime != r || s.closed) {
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "session closed"), changed
 	}
-	if p.Scan && (s != nil || r.scan != nil) {
-		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "one live Scan per store"), changed
+	if (p.Scan || p.Native) && (s != nil || r.scan != nil || r.native != nil) {
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "one live Native/Scan per store"), changed
 	}
-	if p.Scan && (p.PageBytes <= 0 || p.PageBytes > maxScanPageBytes) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Scan page budget"), changed
+	if (p.Scan || p.Native) && (p.PageBytes <= 0 || p.PageBytes > maxScanPageBytes) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid live-session working-set budget"), changed
 	}
 	if p.Bytes > r.limits.BatchBytes || p.Bytes > r.limits.PendingBytes {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit singleton bound"), changed
@@ -147,6 +150,9 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 	if p.Scan {
 		t.scan = &scanState{done: make(chan struct{})}
 		r.scan = t
+	}
+	if p.Native {
+		r.native = t
 	}
 	if s != nil {
 		s.outstanding++
@@ -216,6 +222,9 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	}
 	t.acked = true
 	delete(r.live, t)
+	if t == r.native {
+		r.native = nil
+	}
 	r.resultBytes -= t.plan.ResultBytes
 	if t.session != nil {
 		t.session.outstanding--
@@ -296,7 +305,14 @@ func (r *Runtime) cancelQueuedLocked() {
 			if r.closed {
 				f = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
 			}
-			r.completeLocked(t, protocol.ResultError(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, f))
+			if t.plan.Native {
+				t.nativeEnd = protocol.NativeFailure(false, f)
+			}
+			var result *pb.BulkResult
+			if !t.plan.Native {
+				result = protocol.ResultError(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, f)
+			}
+			r.completeLocked(t, result)
 		} else {
 			keep = append(keep, t)
 		}
@@ -331,7 +347,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			seed = t
 			token = t.plan.Token
 		}
-		if token != t.plan.Token || t.plan.Scan != seed.plan.Scan || record[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes {
+		if token != t.plan.Token || t.plan.Scan != seed.plan.Scan || t.plan.Native != seed.plan.Native || record[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes {
 			continue
 		}
 		items = append(items, t)
@@ -403,6 +419,10 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	return b
 }
 func (r *Runtime) execute(b *batch) {
+	if b.items[0].plan.Native {
+		r.executeNative(b)
+		return
+	}
 	if b.items[0].scan != nil {
 		r.fetchScan(b)
 		return
@@ -430,7 +450,13 @@ func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, Window: r.controller.window, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
+	if t := r.native; t != nil {
+		s.NativeSessions = 1
+		s.LiveSessions = 1
+		s.NativeBytes = t.plan.PageBytes
+	}
 	if t := r.scan; t != nil {
+		s.LiveSessions = 1
 		s.ScanSessions = 1
 		s.ScanPageBytes = t.plan.PageBytes
 		if t.scan.page != nil {

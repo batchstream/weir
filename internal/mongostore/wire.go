@@ -101,7 +101,7 @@ func boundedReply(message []byte) bool {
 	for key, value := range fields {
 		// ExtractErrorFromServerResponse only enumerates this outer cursor value;
 		// RunCommand.Raw does not expand its documents or batch array.
-		if key == "cursor" {
+		if key == "cursor" || key == "value" && value.Type == bson.TypeEmbeddedDocument && len(value.Value) <= NativeResponseLimit {
 			continue
 		}
 		metadataBytes += len(key) + len(value.Value) + 2
