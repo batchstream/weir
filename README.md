@@ -1,16 +1,16 @@
-# Weir — first verifiable milestone
+# Weir — local record data plane
 
-A **local-only, synchronous MongoDB data plane**, not complete V1 or a production release.
+A **local-only, synchronous MongoDB and Search data plane**, not complete V1 or a production release.
 One Go module: `github.com/batchstream/weir`.
 
-Implemented: gRPC Read / Mutate / duplex Bulk, one Store / pre-created collection,
-raw BSON, Put / Create / Replace / Delete, bounded admission/results/connections,
+Implemented: gRPC Read / Mutate / duplex Bulk, independent local MongoDB and Search Stores,
+opaque BSON / JSON, Put / Create / Replace / Delete, bounded admission/results/connections,
 micro-batching, stream-local ordering, explicit AIMD and bounded shutdown.
 
 **AtomicTransform returns UNSUPPORTED.** The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
-Native, Scan, search backends, peers, TLS/auth, dynamic configuration, SDKs, queues,
+Native, Scan, peers, TLS/auth, dynamic configuration, SDKs, queues,
 production deployment and releases are out of scope.
 
 Qualification correction: the original `37d1454` implementation did not cover unary
@@ -50,6 +50,24 @@ Default Store is `mongo`; default resource shape:
 matching the URI. Supported keys: `s:`, `oid:` (24 lowercase hex), canonical `i:`.
 No automatic creation of collections/indexes or hidden document fields.
 
+## Local Dual-Store Run
+
+Keep the MongoDB fixture running. Search containers are pinned, loopback-only and
+labeled as disposable test services; no host kernel settings are changed.
+See `docs/milestone-2.md` for exact profiles and limitations (not a production setup).
+
+```sh
+scripts/search-local.sh start elasticsearch
+# Operator setup on this isolated test node; Weir itself never creates indexes.
+curl --fail -X PUT http://127.0.0.1:19200/weir_m2_example \
+  -H 'Content-Type: application/json' \
+  -d '{"settings":{"number_of_shards":1,"number_of_replicas":0}}'
+go run ./cmd/weir -search-url http://127.0.0.1:19200 -search-index weir_m2_example
+# Another terminal, against the same listener:
+go run ./cmd/weir-example
+go run ./cmd/weir-example -store search
+```
+
 ## Validate
 
 ```sh
@@ -61,9 +79,13 @@ go vet ./...
 # Start scripts/mongo-local.sh first. No configurable production URI is accepted.
 scripts/test-integration.sh -count=1 -v
 scripts/test-integration.sh -race -count=1 -v
+# Search tests run only for an explicitly selected local profile.
+WEIR_SEARCH_INTEGRATION=elasticsearch scripts/test-integration.sh -race -count=1 -v
+scripts/search-local.sh start opensearch
+WEIR_SEARCH_INTEGRATION=opensearch scripts/test-integration.sh -race -count=1 -v
 ```
 
-Default tests never contact MongoDB. The local TCP connection-limit unit test does
+Default tests never contact MongoDB or Search backends. The local TCP connection-limit unit test does
 not contact external services. The integration runner uses `-p 1` because MongoDB
 failpoints are server-global, and each test creates/drops only its own unique
 `weir_test_<pid>_<counter>` database. Opted-in tests fail, rather than silently skip,
@@ -83,9 +105,12 @@ scripts/generate.sh
   and protocol contracts, not implementation status or qualification results.
 - `docs/milestone-1.md`: exact versions/limits, executed tests, evidence, known
   limitations and reproduction details.
+- `docs/milestone-2.md`: exact Elasticsearch/OpenSearch profiles, dual-Store examples,
+  resource isolation and real-backend fault evidence.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits, AIMD and overload guard.
 - `internal/mongostore`: concrete driver ownership, CRUD, codec and transaction state machine.
+- `internal/searchstore`: qualified Search CRUD, native OCC, bounded HTTP and bulk evidence.
 - `internal/server`: bounded loopback gRPC transport and Bulk completion framing.
 
 Missing mutation replies are **UNKNOWN**, not proof of non-application. Never blindly
