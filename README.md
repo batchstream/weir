@@ -8,7 +8,8 @@ Implemented: gRPC Read / Mutate / duplex Bulk / Native / server-streaming Scan, 
 opaque BSON / JSON, Put / Create / Replace / Delete, bounded admission/results/connections,
 micro-batching, stream-local ordering, explicit AIMD and bounded shutdown. A fixed
 RemoteWeir Service forwards the same five RPCs over mTLS without replay or failover;
-forwarding-only nodes and two-hop chains are supported.
+forwarding-only nodes and two-hop chains are supported. Optional loopback health checks
+and bounded Prometheus metrics expose lifecycle, reservations and execution evidence.
 
 **AtomicTransform returns UNSUPPORTED.** The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
@@ -106,6 +107,29 @@ development certificates, configuration limits, buffering/retry audits, and real
 three-process MongoDB/Elasticsearch/OpenSearch qualification. The existing local flags
 are unchanged; `-config` cannot be combined with them.
 
+## Optional Diagnostics
+
+Diagnostics are disabled by default. Add `-diagnostics 127.0.0.1:7449` to the local
+run, or `"diagnostics": "127.0.0.1:7449"` to the static JSON configuration.
+Only explicit loopback IPs are accepted. Each Node has its own Prometheus registry.
+
+```sh
+curl --fail http://127.0.0.1:7449/livez
+curl --fail http://127.0.0.1:7449/readyz
+curl --fail http://127.0.0.1:7449/metrics
+```
+
+Liveness checks only the responding process; readiness means validated data listeners
+have entered service and the node is neither draining nor failed. Queue saturation,
+memory overload and a disconnected remote do not change readiness. No health request
+contacts a database. Diagnostics remain available during bounded data drain, then close.
+They have independent limits: four HTTP/1 connections, two handlers, one-second read
+and write deadlines, bounded headers, no keep-alive, compression, body or query parameters.
+
+[Milestone 6](docs/milestone-6.md) lists exact metric meanings, labels, the **1932 series**
+maximum, and tests. Ledger bytes are reservations; the Go memory fallback is not RSS.
+Local APPLIED and Native/Scan completion evidence never promise client delivery.
+
 ## Validate
 
 ```sh
@@ -150,6 +174,7 @@ scripts/generate.sh
   separate MongoDB/Elasticsearch/OpenSearch qualification and remaining limits.
 - `docs/milestone-4.md`: bounded Native profiles, ownership, early response and no-replay evidence.
 - `docs/milestone-5.md`: static peers, mTLS authorization, bounded relays and multi-process evidence.
+- `docs/milestone-6.md`: optional bounded diagnostics, health semantics, exact metrics and process evidence.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits and AIMD.
 - `internal/app` / `internal/overload`: process ownership, static assembly and shared overload guard.
