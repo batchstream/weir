@@ -1,20 +1,8 @@
 # Weir：从零设计的架构与协议
 
-状态：V1 设计提案；2026-09-26 已明确授权实施第一个里程碑。后续阶段仍须分别授权。
+状态：V1 设计提案。
 
-这是新设计，不是 Sink 迁移计划。Sink 的 API、包边界、配置格式、部署角色及存储元数据均不构成兼容约束。此处保留原始设计文档；已授权里程碑的实现及验证证据见 `milestone-1.md`，不表示批准或完成全部 V1。本文件与 `architecture.md` 按章节、条款和引用标识对应维护；中文段落重新排版，不改变规范含义。
-
-## 第一个里程碑的验证配置（2026-09-26）
-
-首个实现有意收窄范围：仅回环 gRPC listener、一个 Store、通过单一 direct connection 目标访问 MongoDB 8.0.32 副本集上的一个预建普通集合（无发现/failover），原始 BSON Read/Put/Create/Replace/Delete 及双向 Bulk。通用 AtomicTransform 和后端表达式返回 UNSUPPORTED。Native、Scan、搜索后端、peer、TLS/认证、控制面和部署均未实现。输入 BSON 的第一个字段必须是与资源匹配的显式 `_id`；执行文档化的类型、深度、节点限制，不接受有损转换。所有额度均为验证初值，不是生产建议。
-
-实际验证对后文契约作出三项具体化，而不降低其要求：
-
-- GopherLua v1.1.1 无法提供每次调用的分配、编译取消和宿主 helper 隔离。它仅存在于测试中。有限计数器转换用于事务一致性验证，不是替代的通用语言；程序转换仍关闭。
-- MongoDB Go driver v2.9.1 在 deadline/CSOT 模式下会无限次重试提交。显式提交循环保留外层原始 deadline/error 与 session，将父 context 的取消桥接到无 Deadline 的原生 context。驱动 socket listener 需要 Canceled，而不能仅收到缺少 socket deadline 的 DeadlineExceeded；因此既保留 retry-once 次数上限，也保留原始期限的实际取消。真实响应丢弃测试验证每个逻辑 RMW 最多十次线上提交、相同 session/事务以及不确定后不重新执行转换。升级该驱动必须重新验证。
-- 验收修正：提交 `37d1454` 的服务端期限没有覆盖 unary 响应发送，撤回此前整体验收通过的结论。gRPC v1.79.3 的 handler/context 可以早于 DATA/trailers 实际发送结束。修复采用 Go 1.27 HTTP/2 stream 写期限及固定版本的 gRPC ServeHTTP，不把 handler 返回或 stats.End 当作送达证明。Unary 输入读取还有受原总期限约束、仅随实际输入进度更新的停滞限制；请求解码完成只结束输入停滞计账，不结束总寿命。Unary 总寿命覆盖发送，响应停滞预算也覆盖编码、DATA 和 trailers；原生 stream 超时直接 reset，不等客户端恢复读取。Bulk 原有输入/发送 watchdog 及连接写超时仍可能关闭连接，影响同连接其他 RPC；缺失写入结果仍为 UNKNOWN。复现和测试见 `unary-response-deadline.md`。ServeHTTP 的主动 body 读取额外受一个最大 gRPC 帧的字节额度限制，仅解码完消息才归还，不能绕过 Bulk 背压。ServeHTTP API 为实验性 API，升级 Go/gRPC 必须重新验证这一固定 transport profile。
-
-当前只建立 `api/weir/v1`、`internal/protocol`、`internal/store`、`internal/server`、`internal/mongostore`、`internal/value` 等确有用途的包。StoreRuntime 直接拥有唯一具体 Adapter，只比较不透明 plan 元数据；不导入 BSON 或检查字段。不为匹配第 16 节未来布局而建立单实现接口；真正批准第二种实现时再提取边界。结果额度在准入时提前按最坏情况预留，早于后文要求的派发时刻。
+这是新设计，不是 Sink 迁移计划。Sink 的 API、包边界、配置格式、部署角色及存储元数据均不构成兼容约束。本文定义目标架构与协议契约，不记录实现进度或验证结果。本文件与 `architecture.md` 按章节、条款和引用标识对应维护；中文段落重新排版，不改变规范含义。
 
 ## 决策摘要
 
@@ -728,7 +716,7 @@ internal/
  docs/                         架构及 Adapter/操作者契约
 ```
 
-这是未来布局提案，原设计任务不创建目录。完整形态由 app 导入具体后端组装，后端依赖 store 的小型执行契约及 transform 值/runtime 契约，store 不反向依赖具体后端；transport 不导入 BSON/JSON，RemoteWeir 不创建本地后端 plan。当前里程碑按文首限定使用更少包和直接 Adapter 所有权，不提前制造该接口图。
+该布局由 app 导入具体后端组装，后端依赖 store 的小型执行契约及 transform 值/runtime 契约，store 不反向依赖具体后端；transport 不导入 BSON/JSON，RemoteWeir 不创建本地后端 plan。
 
 只在两种真实 Service、多个 Adapter、codec/runtime 和标准外部依赖边界使用必要接口。不增加函数变量测试入口、通用 retry 包、lane、plugin/provider registry 或单实现薄包装。完整多实现边界可用确定性 fake Adapter/clock 测调度，而非替换生产全局函数；真实后端正确性仍要真实测试。
 
@@ -738,7 +726,7 @@ internal/
 
 原设计检查 `batchstream/sink` 的 `a08a1c53c5de2045176be3910197f73d5fe139b9` 和 `batchstream/sink-protocol` 的 `31943c4a6984468bc57aca348723ab812d26b842`，是固定快照而非当前分支状态断言。
 
-覆盖 schema、URI codec、routing/forwarding、batch/scheduler、反馈、内存 guard、storage interface、Mongo metadata/native-write、search OCC、Lua、流和组装。原设计仅选择性阅读测试，没有运行应用/后端实验；本里程碑新增证据另见 `milestone-1.md`。可行性和 backend qualification 仍是第 20 节门槛。
+覆盖 schema、URI codec、routing/forwarding、batch/scheduler、反馈、内存 guard、storage interface、Mongo metadata/native-write、search OCC、Lua、流和组装。原设计仅选择性阅读测试，没有运行应用/后端实验。可行性和 backend qualification 仍是第 20 节门槛。
 
 源码与陈旧文字冲突时以源码为据。例如 Sink architecture 说请求顺序返回，而固定协议明确允许乱序 indexed result [S1,S2]。Weir 保留有界乱序契约，不继承过时说明。
 
@@ -820,7 +808,7 @@ internal/
 
 ## 20. 架构批准后的分阶段计划
 
-原设计不授权实施。2026-09-26 的请求授权文首收窄后的基线、可行性验证和单节点 MongoDB Read/Mutate/Bulk；下表仍是更大计划，不授权余下阶段。
+实施范围须单独批准。下列阶段定义依赖关系与验证门槛，不记录实施进度或批准状态。
 
 | 阶段 | 范围 | 批准/退出证据 |
 | --- | --- | --- |
@@ -877,7 +865,7 @@ internal/
 
 ## 附录 A. 来源登记
 
-本附录路径均相对所列固定仓库，不是新 Weir 工作目录。它们支持原始设计审查和后端事实，不表示这些 V1 能力已经实现。原设计直接阅读官方文档或其官方源码；部分文档站无法访问时采用 MongoDB driver specification 和 Elasticsearch 源文档。当前里程碑的真实测试证据单独记录。
+本附录路径均相对所列固定仓库，不是新 Weir 工作目录。它们支持原始设计审查和后端事实，不表示这些 V1 能力已经实现。原设计直接阅读官方文档或其官方源码；部分文档站无法访问时采用 MongoDB driver specification 和 Elasticsearch 源文档。
 
 ### Sink 源码组
 

@@ -19,12 +19,13 @@
 Go module 或待合入代码。未发现磁盘上的额外 AGENTS.md；执行请求中给出的规则。
 没有读取 `.env`、私钥、凭据文件，也没有访问生产数据。
 
-保留英文原设计，在文首增加有限授权及本里程碑 profile，并更新第 20 节的授权状态。
-增加按章节对译的 `architecture.zh-CN.md`；两版保留 1–20 节、小节、S1–S9、D1–D16
+双语架构文档仅定义目标架构与协议契约；本里程碑的授权范围、实现状态、固定版本、
+验证结果及限制在本文件记录，不写入架构文档。
+`architecture.md` 与 `architecture.zh-CN.md` 按章节对译，保留 1–20 节、小节、S1–S9、D1–D16
 及附录覆盖索引。`docs/baseline_test.go` 校验结构、引用和关键契约的一致性；
 它不是自动语义翻译验证的替代。
 
-同步解释三项后端验证发现：驱动 CSOT 的提交重试/取消行为、gRPC unread DATA
+本文件及专项报告记录三项后端验证发现：驱动 CSOT 的提交重试/取消行为、gRPC unread DATA
 对错误 trailers 的阻塞、GopherLua 的隔离缺口。第 16 节未来布局未机械照搬：
 当前一个具体 Adapter 由 Runtime 直接拥有，Core 只使用不透明 plan 元数据；
 没有为单实现创建空接口或测试替换函数。公共 schema/生成 Go 类型共放 `api/weir/v1`。

@@ -1,62 +1,12 @@
 # Weir: Clean-Slate Architecture and Protocol
 
-Status: proposed V1 design; milestone 1 implementation explicitly authorized on 2026-09-26.
-Later stages still require separate authorization.
+Status: proposed V1 design.
 
 This is a new design, not a Sink migration plan. No Sink API, package boundary,
 configuration format, deployment role, or storage metadata is a compatibility
-constraint. The original design-only deliverable is preserved here. The authorized milestone 1
-implementation and qualification evidence are documented in `milestone-1.md`; this
-is not approval or completion of all V1 features. `architecture.zh-CN.md` is the
+constraint. This document defines the target architecture and protocol contracts,
+not implementation status or qualification results. `architecture.zh-CN.md` is the
 parallel Chinese translation, with matching section and reference identifiers.
-
-## Milestone 1 Qualification Profile (2026-09-26)
-
-The first implementation deliberately narrows the design: one loopback-only gRPC
-listener, one Store, one pre-created ordinary collection on a MongoDB 8.0.32
-replica set through a single direct connection target (no discovery/failover), raw BSON Read/Put/Create/Replace/Delete, and duplex Bulk. General
-AtomicTransform and backend expressions return UNSUPPORTED. Native, Scan, search,
-peers, TLS/authentication, control-plane features and deployment are not implemented.
-User-supplied BSON must put its explicit matching `_id` first; the codec's documented
-supported-type/depth/node profile is enforced rather than accepting lossy values.
-All configured limits are qualification starting points, not production recommendations.
-
-Three implementation findings refine, rather than weaken, the contracts below:
-
-- GopherLua v1.1.1 fails per-invocation allocation, compile-cancellation and host-helper
-  isolation. It is test-only; finite counter-transform transaction conformance is not
-  a replacement general language runtime. Program execution remains disabled.
-- MongoDB Go driver v2.9.1 makes commit retries unlimited under deadline/CSOT mode.
-  The explicit commit loop preserves the original outer deadline/error and session,
-  bridging parent cancellation into a deadline-free native context. The driver's
-  socket listener requires Canceled (not DeadlineExceeded without a socket deadline);
-  its native retry-once therefore bounds wire attempts without losing cancellation. Real-response-drop tests verify at most
-  ten wire commits per logical RMW operation, one session/transaction, and no
-  re-evaluation after ambiguity. This pinned-driver dependency requires requalification.
-- Qualification correction: commit `37d1454` did not cover unary response sending
-  with its server deadline; the earlier overall acceptance conclusion is withdrawn.
-  gRPC v1.79.3 can finish a handler/context before queued DATA/trailers are sent.
-  The repair uses Go 1.27 HTTP/2 stream write deadlines with the pinned gRPC
-  ServeHTTP transport, not handler return or stats.End as proof of delivery.
-  Unary input reads also have a progress-sensitive stall bound capped by the original
-  deadline; decoding the unary frame ends input-stall accounting, not the lifetime.
-  Unary lifetime includes sending; its response-stall budget also covers encoding,
-  DATA and trailers. Native stream expiry resets the stream without requiring a
-  client read. Bulk's existing input/send watchdog and connection write timeout
-  may still close a connection, truncating co-resident RPCs. Missing mutation
-  results remain UNKNOWN. See `unary-response-deadline.md` for reproduction and tests.
-  ServeHTTP's eager request-body reader is explicitly credit-limited to one maximum
-  gRPC frame, returning credits only for decoded messages; it cannot bypass Bulk
-  backpressure. The ServeHTTP API is experimental and this pinned profile requires
-  transport requalification when Go or gRPC changes.
-
-The smaller initial layout uses `api/weir/v1`, `internal/protocol`, `internal/store`,
-`internal/server`, `internal/mongostore`, and `internal/value`. StoreRuntime directly
-owns the sole concrete adapter and compares only its opaque plan metadata; it never
-imports BSON or inspects fields. No single-implementation interface is added just to
-match the future layout in section 16. Extract a real adapter boundary when a second
-implementation is actually authorized. Admission reserves conservative worst-case
-result credits earlier than required (at admission, before dispatch).
 
 ## Decision Summary
 
@@ -1655,8 +1605,7 @@ internal/
 docs/                          architecture and later adapter/operator contracts
 ```
 
-This is a layout proposal only; the listed code directories are not created by
-this task. `app` imports concrete backends to construct them. Backends depend on
+In this layout, `app` imports concrete backends to construct them. Backends depend on
 the small execution contract in `store` and the value/runtime contract in
 `transform`; `store` does not import concrete backends. Transport maps generated
 messages into the small semantic work/result types and imports no BSON/JSON
@@ -1802,10 +1751,8 @@ session-manager framework is required.
 
 ## 20. Staged Plan After Architecture Approval Only
 
-The original design task authorized no implementation. The 2026-09-26 milestone 1
-request now authorizes the narrowed baseline, feasibility checks and single-node
-MongoDB Read/Mutate/Bulk closure above. The table remains the larger staged plan,
-not authorization to implement its remaining stages.
+Implementation scope requires separate approval. The stages below define
+dependencies and qualification gates, not implementation progress or approval status.
 
 | Stage | Scope | Approval/exit evidence |
 | --- | --- | --- |

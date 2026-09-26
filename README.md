@@ -79,8 +79,8 @@ scripts/generate.sh
 
 ## Contracts And Evidence
 
-- `docs/architecture.md` / `docs/architecture.zh-CN.md`: parallel design and the
-  explicitly narrowed milestone profile. Future V1 sections are **not implemented**.
+- `docs/architecture.md` / `docs/architecture.zh-CN.md`: parallel target architecture
+  and protocol contracts, not implementation status or qualification results.
 - `docs/milestone-1.md`: exact versions/limits, executed tests, evidence, known
   limitations and reproduction details.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
