@@ -32,6 +32,9 @@ func (s *Server) Scan(req *pb.ScanRequest, stream grpc.ServerStreamingServer[pb.
 	}
 	if failure == nil {
 		failure = protocol.ValidateScan(req, name)
+		if failure != nil {
+			s.admission.rejections.WithLabelValues("operation").Inc()
+		}
 	}
 	if failure != nil {
 		return end(failure)

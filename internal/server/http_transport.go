@@ -23,24 +23,27 @@ const deliveryKey deliveryContextKey = 0
 // delivery outlives the gRPC handler/context: net/http owns the HTTP/2 stream's
 // write deadline until END_STREAM is written or the stream is reset.
 type delivery struct {
-	mu            sync.Mutex
-	controller    *http.ResponseController
-	deadline      time.Time
-	readDeadline  time.Time
-	inputDecoded  bool
-	nativeWaiting bool
-	nativePump    <-chan struct{}
-	stall         time.Duration
-	unary         bool
-	singleInput   bool
-	finished      bool
-	rpcStarted    bool
-	rpcEnded      bool
-	released      bool
-	slots         chan struct{}
-	remoteSlots   chan struct{}
-	ticket        *store.Ticket
-	input         *creditedBody
+	mu                        sync.Mutex
+	controller                *http.ResponseController
+	deadline                  time.Time
+	readDeadline              time.Time
+	inputDecoded              bool
+	nativeWaiting             bool
+	nativePump                <-chan struct{}
+	stall                     time.Duration
+	unary                     bool
+	singleInput               bool
+	finished                  bool
+	rpcStarted                bool
+	rpcEnded                  bool
+	released                  bool
+	slots                     chan struct{}
+	remoteSlots               chan struct{}
+	ticket                    *store.Ticket
+	input                     *creditedBody
+	metrics                   *transportMetrics
+	method                    string
+	inputFailed, outputFailed bool
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
@@ -58,6 +61,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	}
 	ingress, err := s.ingress(request)
 	if err != nil {
+		s.admission.rejections.WithLabelValues("ingress").Inc()
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Grpc-Status", strconv.Itoa(int(status.Code(err))))
 		w.Header().Set("Grpc-Message", status.Convert(err).Message())
@@ -79,6 +83,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	switch request.RequestURI {
 	case pb.Weir_Read_FullMethodName, pb.Weir_Mutate_FullMethodName, pb.Weir_Bulk_FullMethodName, pb.Weir_Scan_FullMethodName, pb.Weir_Native_FullMethodName:
 	default:
+		s.admission.rejections.WithLabelValues("method").Inc()
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Grpc-Status", strconv.Itoa(int(codes.Unimplemented)))
 		return
@@ -89,7 +94,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("Grpc-Message", status.Convert(err).Message())
 		return
 	}
-	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, singleInput: !bulk && !native, slots: s.slots}
+	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, singleInput: !bulk && !native, slots: s.slots, metrics: &s.metrics, method: methodLabel(request.RequestURI)}
 	input := newCreditedBody(ctx, request.Body, state)
 	state.input = input
 	defer input.Close()
@@ -183,6 +188,7 @@ func (d *delivery) armWrite() error {
 }
 
 func (d *delivery) finishWrite(err error) {
+	d.ioFailure("output", err)
 	if err != nil || d.unary {
 		return
 	}
@@ -249,6 +255,7 @@ type deadlineWriter struct {
 
 func (w *deadlineWriter) Write(p []byte) (int, error) {
 	if err := w.delivery.armWrite(); err != nil {
+		w.delivery.ioFailure("output", err)
 		return 0, err
 	}
 	n, err := w.ResponseWriter.Write(p)
@@ -257,6 +264,7 @@ func (w *deadlineWriter) Write(p []byte) (int, error) {
 }
 func (w *deadlineWriter) Flush() {
 	if err := w.delivery.armWrite(); err != nil {
+		w.delivery.ioFailure("output", err)
 		return
 	}
 	err := w.delivery.controller.Flush()
@@ -308,6 +316,9 @@ func (b *creditedBody) Read(p []byte) (int, error) {
 				}
 			}
 			read, err := b.source.Read(p[:n])
+			if b.delivery != nil {
+				b.delivery.ioFailure("input", err)
+			}
 			b.grant(n - read)
 			return read, err
 		}
@@ -358,6 +369,9 @@ func (deliveryStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 	case *stats.End:
 		// End alone is not delivery completion. It only ends gRPC's ownership
 		// of the slot after the HTTP transport has also finished.
+		if state.metrics != nil {
+			state.metrics.rpcs.WithLabelValues(state.method, statusLabel(payload.Error)).Inc()
+		}
 		state.endRPC()
 	}
 }

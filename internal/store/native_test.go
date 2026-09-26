@@ -9,6 +9,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testmetrics"
 )
 
 type nativeSink struct{}
@@ -34,6 +35,10 @@ func TestNativeSharesLedgerSessionAndC1(t *testing.T) {
 		t.Fatal(f)
 	}
 	<-a.fetching
+	families := testmetrics.Gather(t, r)
+	if testmetrics.Sum(families, "weir_store_live_sessions") != 1 || testmetrics.Sum(families, "weir_store_native_reserved_bytes") <= 0 || testmetrics.Sum(families, "weir_store_active_executions") != 1 {
+		t.Fatal("Native metrics missing reservation")
+	}
 	req := &pb.ScanRequest{}
 	if _, f := r.StartScan(context.Background(), req); f == nil {
 		t.Fatal("separate Scan budget")
@@ -73,7 +78,15 @@ func TestNativeSharesLedgerSessionAndC1(t *testing.T) {
 	if _, f := r.StartNative(context.Background(), open, exchange); f == nil {
 		t.Fatal("Native did not share Scan budget")
 	}
+	families = testmetrics.Gather(t, r)
+	if testmetrics.Sum(families, "weir_store_scan_page_reserved_bytes") <= 0 || testmetrics.Sum(families, "weir_store_pending_entries") != 1 {
+		t.Fatal("Scan continuation metrics")
+	}
 	scan.CloseScan()
+	families = testmetrics.Gather(t, r)
+	if testmetrics.Sum(families, "weir_store_live_sessions") != 0 || testmetrics.Sum(families, "weir_store_window_changes_total") != 0 || testmetrics.Sum(families, "weir_store_native_completions_total") != 1 {
+		t.Fatal("Native metric release/feedback")
+	}
 	if snap := r.Snapshot(); snap.LiveSessions != 0 || snap.Retained != 0 || snap.Pending != 0 || snap.ResultBytes != 0 {
 		t.Fatal(snap)
 	}

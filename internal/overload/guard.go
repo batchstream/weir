@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,28 +15,54 @@ type Target interface {
 	SetOverloaded(bool)
 }
 
-// Guard uses RSS on Linux, constrained by cgroup v2 memory.max when available.
-// Other platforms use Go Sys-HeapReleased: explicitly a degraded, not RSS, signal.
-func Guard(ctx context.Context, targets []Target, budget uint64) {
-	budget = effectiveBudget(budget)
+// Guard owns the existing memory sampler and exposes its last observation.
+// There is no second diagnostics sampling loop.
+type Guard struct {
+	mu      sync.Mutex
+	targets []Target
+	state   Snapshot
+}
+type Snapshot struct {
+	Budget, Bytes     uint64
+	Source            string
+	Observed, Latched bool
+}
+
+func New(targets []Target, budget uint64) *Guard {
+	state := Snapshot{Budget: effectiveBudget(budget), Source: "unobserved"}
+	guard := &Guard{targets: targets, state: state}
+	return guard
+}
+func (g *Guard) Snapshot() Snapshot {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.state
+}
+func (g *Guard) Run(ctx context.Context) {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
-	latched := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			n := processBytes()
-			if n >= budget*80/100 {
-				latched = true
-			} else if n <= budget*70/100 {
-				latched = false
-			}
-			for _, r := range targets {
-				r.SetOverloaded(latched)
-			}
+			n, source := processBytes()
+			g.sample(n, source)
 		}
+	}
+}
+func (g *Guard) sample(n uint64, source string) {
+	g.mu.Lock()
+	g.state.Bytes, g.state.Source, g.state.Observed = n, source, true
+	if n >= g.state.Budget*80/100 {
+		g.state.Latched = true
+	} else if n <= g.state.Budget*70/100 {
+		g.state.Latched = false
+	}
+	latched := g.state.Latched
+	g.mu.Unlock()
+	for _, target := range g.targets {
+		target.SetOverloaded(latched)
 	}
 }
 func effectiveBudget(budget uint64) uint64 {
@@ -50,7 +77,7 @@ func effectiveBudget(budget uint64) uint64 {
 	}
 	return budget
 }
-func processBytes() uint64 {
+func processBytes() (uint64, string) {
 	if runtime.GOOS == "linux" {
 		raw, err := os.ReadFile("/proc/self/statm")
 		if err == nil {
@@ -58,12 +85,12 @@ func processBytes() uint64 {
 			if len(f) > 1 {
 				n, e := strconv.ParseUint(f[1], 10, 64)
 				if e == nil {
-					return n * uint64(os.Getpagesize())
+					return n * uint64(os.Getpagesize()), "linux_rss"
 				}
 			}
 		}
 	}
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return m.Sys - m.HeapReleased
+	return m.Sys - m.HeapReleased, "go_sys_minus_released"
 }

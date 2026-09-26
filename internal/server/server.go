@@ -56,6 +56,8 @@ type Server struct {
 	draining        chan struct{}
 	once            sync.Once
 	connections     sync.Map
+	metrics         transportMetrics
+	serving         chan struct{}
 }
 
 func (l Limits) Validate() error {
@@ -107,6 +109,8 @@ func New(cfg Config) (*Server, error) {
 		cfg.Peer = policy
 	}
 	s := &Server{routes: routes, admission: cfg.Admission, peer: cfg.Peer, initialForwards: cfg.InitialForwards, limits: l, slots: cfg.Admission.slots, draining: cfg.Admission.draining}
+	s.metrics = newTransportMetrics()
+	s.serving = make(chan struct{})
 	statistics := deliveryStats{}
 	s.grpc = grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame), grpc.UnaryInterceptor(s.unary), grpc.StatsHandler(statistics), grpc.WaitForHandlers(true))
 	protocols := &http.Protocols{}
@@ -128,6 +132,7 @@ func (s *Server) enter() error {
 	case s.slots <- struct{}{}:
 		return nil
 	default:
+		s.admission.rejections.WithLabelValues("sessions").Inc()
 		return status.Error(codes.ResourceExhausted, "session limit")
 	}
 }
@@ -169,12 +174,16 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	}
 	if failure == nil {
 		failure = protocol.Validate(op, name)
+		if failure != nil {
+			s.admission.rejections.WithLabelValues("operation").Inc()
+		}
 	}
 	if failure != nil {
 		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, failure), nil
 	}
 	if service.RemoteWeir != nil {
-		return s.remoteSingle(ctx, service.RemoteWeir, op, state)
+		args := singleRelay{ctx: ctx, remote: service.RemoteWeir, operation: op, delivery: state}
+		return s.remoteSingle(args)
 	}
 	runtime := service.LocalStore
 	plan, f := runtime.Prepare(op)
@@ -197,13 +206,16 @@ func (s *Server) resolve(ctx context.Context, resource string, root bool, family
 	empty := Service{}
 	name, segments, err := protocol.ParseResource(resource)
 	if err != nil || root && len(segments) != 0 {
+		s.admission.rejections.WithLabelValues("route").Inc()
 		return empty, "", protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource"), nil
 	}
 	if err := authorize(ctx, name, family); err != nil {
+		s.admission.rejections.WithLabelValues("permission").Inc()
 		return empty, name, nil, err
 	}
 	service, ok := s.routes[name]
 	if !ok {
+		s.admission.rejections.WithLabelValues("route").Inc()
 		return empty, name, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store"), nil
 	}
 	return service, name, nil, nil
@@ -235,6 +247,7 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 	case <-openError:
 		return status.Error(codes.InvalidArgument, "Bulk requires Open")
 	case <-timer.C:
+		s.metrics.watchdogs.WithLabelValues("open").Inc()
 		s.abortPeer(ctx)
 		return status.Error(codes.DeadlineExceeded, "Bulk Open stalled")
 	case <-ctx.Done():
@@ -294,6 +307,7 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 			draining = nil
 			continue
 		case <-idle.C:
+			s.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
 			s.abortPeer(stream.Context())
 			return status.Error(codes.DeadlineExceeded, "input/result stall")
 		case <-activity:
@@ -380,7 +394,11 @@ func (s *Server) receive(args receiveArgs) {
 		}
 		count++
 		f, authErr := checkOperation(ctx, args.name, op)
+		if f != nil {
+			s.admission.rejections.WithLabelValues("operation").Inc()
+		}
 		if authErr != nil {
+			s.admission.rejections.WithLabelValues("permission").Inc()
 			finish(authErr)
 			return
 		}
@@ -439,11 +457,14 @@ func (s *Server) send(ctx context.Context, stream grpc.BidiStreamingServer[pb.Bu
 		}
 		return status.FromContextError(ctx.Err()).Err()
 	case <-timer.C:
+		s.metrics.watchdogs.WithLabelValues("output").Inc()
 		s.abortPeer(stream.Context())
 		return status.Error(codes.DeadlineExceeded, "result send stalled")
 	}
 }
+func (s *Server) Serving() <-chan struct{} { return s.serving }
 func (s *Server) Serve(listener net.Listener) error {
+	close(s.serving)
 	if s.peer == nil {
 		host, _, err := net.SplitHostPort(listener.Addr().String())
 		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
@@ -470,6 +491,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		stopped := make(chan struct{})
 		go func() {
 			if err := s.http.Shutdown(drain); err != nil {
+				s.metrics.forced.WithLabelValues("drain").Inc()
 				_ = s.http.Close()
 			}
 			// ServeHTTP has no gRPC Drain. net/http owns HTTP/2 graceful shutdown;
@@ -511,12 +533,17 @@ func (l *limitedListener) Accept() (net.Conn, error) {
 			l.server.connections.Store(conn.RemoteAddr().String(), c)
 			return c, nil
 		default:
+			l.server.admission.rejections.WithLabelValues("connections").Inc()
 			_ = conn.Close()
 		}
 	}
 }
-func (c *limitedConn) Close() error {
+func (c *limitedConn) Close() error { return c.close("") }
+func (c *limitedConn) close(reason string) error {
 	if c.closed.CompareAndSwap(false, true) {
+		if reason != "" {
+			c.server.metrics.forced.WithLabelValues(reason).Inc()
+		}
 		defer func() { <-c.slots }()
 		c.server.connections.CompareAndDelete(c.RemoteAddr().String(), c)
 		return c.Conn.Close()
@@ -533,6 +560,6 @@ func (s *Server) abortPeer(ctx context.Context) {
 		return
 	}
 	if conn, ok := s.connections.Load(p.Addr.String()); ok {
-		_ = conn.(*limitedConn).Close()
+		_ = conn.(*limitedConn).close("abort")
 	}
 }

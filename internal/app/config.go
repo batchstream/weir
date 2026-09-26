@@ -17,6 +17,7 @@ import (
 )
 
 type Config struct {
+	Diagnostics     string          `json:"diagnostics"`
 	Application     string          `json:"application"`
 	Peer            string          `json:"peer"`
 	Identity        *Identity       `json:"identity"`
@@ -191,6 +192,9 @@ func permissions(operations []string) (server.Permission, error) {
 	return result, nil
 }
 func (cfg Config) Validate() error {
+	if cfg.Diagnostics != "" && !address(cfg.Diagnostics, true) {
+		return errors.New("diagnostics requires explicit loopback IP and port")
+	}
 	if cfg.Application == "" && cfg.Peer == "" || cfg.Application != "" && !address(cfg.Application, true) || cfg.Peer != "" && (!address(cfg.Peer, false) || cfg.Peer == cfg.Application) {
 		return errors.New("invalid listener configuration")
 	}

@@ -16,11 +16,13 @@ type scanState struct {
 	done           chan struct{}
 	cleanupFailure *pb.Failure
 	cleaned        bool
+	terminal       string
 }
 
 func (r *Runtime) StartScan(ctx context.Context, req *pb.ScanRequest) (*Ticket, *pb.Failure) {
 	p, f := r.adapter.PrepareScan(req)
 	if f != nil {
+		r.metrics.rejections.WithLabelValues("prepare").Inc()
 		return nil, f
 	}
 	t, f, _ := r.Submit(ctx, p, nil)
@@ -60,6 +62,7 @@ func (t *Ticket) AdvanceScan() bool {
 	t.scan.page = nil
 	t.state = 0
 	t.eligible = time.Time{}
+	t.queuedAt = time.Now()
 	t.ready = make(chan struct{})
 	// Keep the same entry and charges; only its FIFO position changes. New
 	// overload/drain admission restrictions cannot reject this continuation.
@@ -91,7 +94,10 @@ func (t *Ticket) CloseScan() *pb.Failure {
 
 func (r *Runtime) fetchScan(b *batch) {
 	t := b.items[0]
+	r.metrics.executions.WithLabelValues("scan").Inc()
+	started := time.Now()
 	page, fb := r.adapter.FetchScan(b.ctx, t.plan)
+	r.metrics.duration.WithLabelValues("scan").Observe(time.Since(started).Seconds())
 	if b.timeoutOwned && b.ctx.Err() == context.DeadlineExceeded {
 		fb = execution.Congested
 	}
@@ -102,9 +108,14 @@ func (r *Runtime) fetchScan(b *batch) {
 	delete(r.batches, b)
 	t.state = 2
 	t.scan.page = page
+	if page.Failure != nil {
+		t.scan.terminal = "failure"
+	} else if page.Exhausted {
+		t.scan.terminal = "exhausted"
+	}
 	close(t.ready)
 	// Exactly one sample per open/fetch; emission and cleanup are not samples.
-	r.controller.observe(b, fb, r.limits.Concurrency, time.Now())
+	r.observeLocked(b, fb)
 	r.notifyLocked()
 }
 
@@ -114,6 +125,14 @@ func (r *Runtime) cleanupScan(t *Ticket) {
 	cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	label := t.scan.terminal
+	if label == "" {
+		label = "interrupted"
+	}
+	if f != nil {
+		label = "failure"
+	}
+	r.metrics.scans.WithLabelValues(label).Inc()
 	t.scan.cleanupFailure = f
 	t.scan.page = nil
 	t.scan.cleaned = true

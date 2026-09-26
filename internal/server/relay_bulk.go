@@ -52,16 +52,18 @@ type bulkRelay struct {
 	uploadDone          chan struct{}
 }
 
-func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.BulkResponseFrame], first *pb.BulkRequestFrame, remote *RemoteWeir, name string) error {
+func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.BulkResponseFrame], first *pb.BulkRequestFrame, remote *RemoteWeir, name string) (resultErr error) {
 	d := upstream.Context().Value(deliveryKey).(*delivery)
 	defer d.beginResponse()
 	next, err := forwardContext(upstream.Context())
 	if err != nil {
+		s.admission.rejections.WithLabelValues("hop").Inc()
 		return err
 	}
 	if err := remote.enter(d); err != nil {
 		return err
 	}
+	defer func() { remote.terminations.WithLabelValues("Bulk", statusLabel(resultErr)).Inc() }()
 	ctx, cancel := context.WithCancel(next)
 	defer cancel()
 	downstream, err := remote.client.Bulk(ctx)
@@ -127,7 +129,7 @@ func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFram
 		case response := <-responses:
 			if response.err != nil {
 				if !errors.Is(response.err, io.EOF) || terminal == nil {
-					return relay.failure(incomplete(response.err, "missing Bulk End"))
+					return relay.failure(remote.incomplete("Bulk", response.err, "missing Bulk End"))
 				}
 				<-relay.uploadDone
 				relay.mu.Lock()
@@ -146,6 +148,7 @@ func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFram
 				return upstream.Send(terminal)
 			}
 			if terminal != nil {
+				remote.incompletes.WithLabelValues("Bulk").Inc()
 				return status.Error(codes.Internal, "Bulk frames after End")
 			}
 			if end := response.frame.GetEnd(); end != nil {
@@ -255,7 +258,11 @@ func (s *Server) uploadBulk(r *bulkRelay) {
 			return
 		}
 		failure, err := checkOperation(r.ctx, r.name, op)
+		if failure != nil {
+			s.admission.rejections.WithLabelValues("operation").Inc()
+		}
 		if err != nil {
+			s.admission.rejections.WithLabelValues("permission").Inc()
 			r.fail(err)
 			return
 		}

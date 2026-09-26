@@ -19,6 +19,7 @@ func main() {
 	}
 }
 func run() error {
+	diagnostics := flag.String("diagnostics", "", "optional loopback diagnostic HTTP address; disabled by default")
 	listen := flag.String("listen", "127.0.0.1:7447", "loopback development gRPC address")
 	uri := flag.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
 	db := flag.String("database", "weir_m1", "pre-created database")
@@ -51,6 +52,7 @@ func run() error {
 			return err
 		}
 	} else {
+		cfg.Diagnostics = *diagnostics
 		cfg.Application = *listen
 		cfg.MemoryMiB = *memory
 		mongo := &app.Mongo{URI: *uri, Database: *db, Collection: *collection}
@@ -82,6 +84,9 @@ func run() error {
 	}
 	node.Start()
 	fmt.Printf("Weir listening on %v; static local/peer profile, not production ready\n", node.Addresses())
+	if node.DiagnosticAddress() != "" {
+		fmt.Printf("Diagnostics listening on %s\n", node.DiagnosticAddress())
+	}
 	signals, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
 	select {

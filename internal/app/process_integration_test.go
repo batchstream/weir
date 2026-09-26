@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/testmetrics"
 	"github.com/batchstream/weir/internal/testmongo"
 	"github.com/batchstream/weir/internal/testpeer"
 	"github.com/batchstream/weir/internal/testsearch"
@@ -26,11 +28,12 @@ import (
 )
 
 type process struct {
-	command *exec.Cmd
-	address string
-	stderr  *bytes.Buffer
-	done    chan error
-	once    sync.Once
+	command    *exec.Cmd
+	address    string
+	diagnostic string
+	stderr     *bytes.Buffer
+	done       chan error
+	once       sync.Once
 }
 
 func (p *process) stop(t *testing.T) {
@@ -77,7 +80,11 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 	go func() {
 		scanner := bufio.NewScanner(output)
 		if scanner.Scan() {
-			line <- scanner.Text()
+			message := scanner.Text()
+			if cfg.Diagnostics != "" && scanner.Scan() {
+				message += "\n" + scanner.Text()
+			}
+			line <- message
 		} else {
 			line <- ""
 		}
@@ -91,6 +98,13 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 			t.Fatal("no process readiness", message)
 		}
 		p.address = strings.Fields(message[start+1 : end])[0]
+		if cfg.Diagnostics != "" {
+			parts := strings.Split(message, "\n")
+			if len(parts) != 2 {
+				t.Fatal("missing diagnostic address")
+			}
+			p.diagnostic = strings.TrimPrefix(parts[1], "Diagnostics listening on ")
+		}
 	case <-time.After(10 * time.Second):
 		go func() { p.done <- command.Wait() }()
 		t.Fatal("process startup timeout")
@@ -137,6 +151,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	mongoRoute := Route{Store: "mongo", Service: "mongo"}
 	searchRoute := Route{Store: "search", Service: "search"}
 	c := DefaultConfig()
+	c.Diagnostics = "127.0.0.1:0"
 	c.Peer = "127.0.0.1:0"
 	c.Identity = identities["c"]
 	c.Services = []Service{mongoService, searchService}
@@ -147,6 +162,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	}
 	final := startProcess(t, binaries["weir"], c)
 	b := DefaultConfig()
+	b.Diagnostics = "127.0.0.1:0"
 	b.Peer = "127.0.0.1:0"
 	b.Identity = identities["b"]
 	for _, name := range []string{"mongo", "search"} {
@@ -160,6 +176,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	}
 	middle := startProcess(t, binaries["weir"], b)
 	a := DefaultConfig()
+	a.Diagnostics = "127.0.0.1:0"
 	a.Application = "127.0.0.1:0"
 	a.Identity = identities["a"]
 	for _, name := range []string{"mongo", "search"} {
@@ -182,6 +199,20 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			t.Logf("three independent Weir processes, %s/%s: %s", kind, example, strings.TrimSpace(string(output)))
 		}
 	}
+	for _, node := range []*process{first, middle, final} {
+		families := testmetrics.Scrape(t, node.diagnostic)
+		if testmetrics.Sum(families, "weir_node_ready") != 1 {
+			t.Fatal("process not ready")
+		}
+		if node == final {
+			if testmetrics.Sum(families, "weir_store_records_total") != 8 {
+				t.Fatal("process local records count", testmetrics.Sum(families, "weir_store_records_total"))
+			}
+		} else if families["weir_store_executions_total"] != nil || testmetrics.Sum(families, "weir_relay_terminations_total") != 8 {
+			t.Fatal("forward process execution duplication")
+		}
+	}
+	t.Log("real process HTTP scrapes: C logical records=8, A/B relays=8 each, A/B have no local executions")
 	t.Log(fmt.Sprintf("process IDs A=%d B=%d C=%d; profile=%s; TLS identities are test-generated", first.command.Process.Pid, middle.command.Process.Pid, final.command.Process.Pid, search.Profile))
 	c.Peer, b.Peer, a.Application = final.address, middle.address, first.address
 	conn, err := grpc.NewClient("passthrough:///"+first.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
@@ -214,4 +245,78 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 		t.Logf("%s drained and exited; replacement PID=%d; existing clients recovered for a fresh Read", node.name, replacement.command.Process.Pid)
 	}
+}
+
+func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
+	_, _ = testmongo.Open(t)
+	binary := filepath.Join(t.TempDir(), "weir")
+	buildCtx, stopBuild := context.WithTimeout(context.Background(), 30*time.Second)
+	command := exec.CommandContext(buildCtx, "go", "build", "-race", "-o", binary, "./cmd/weir")
+	command.Dir = "../.."
+	output, err := command.CombinedOutput()
+	stopBuild()
+	if err != nil {
+		t.Fatal(err, string(output))
+	}
+	cfg := remoteConfig(t)
+	cfg.Diagnostics = "127.0.0.1:0"
+	cfg.Limits.StallMS = 1000
+	p := startProcess(t, binary, cfg)
+	conn, err := grpc.NewClient("passthrough:///"+p.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
+	_, err = conn.NewStream(ctx, desc, pb.Weir_Read_FullMethodName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	until := time.Now().Add(time.Second)
+	for testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_ingress_sessions") != 1 {
+		if time.Now().After(until) {
+			t.Fatal("process input slot not occupied")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	started := time.Now()
+	if err := p.command.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	observed := false
+	for time.Since(started) < 500*time.Millisecond {
+		response, err := client.Get("http://" + p.diagnostic + "/readyz")
+		if err != nil {
+			t.Fatal("diagnostics closed before drain observation", err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode == 503 {
+			observed = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !observed {
+		t.Fatal("SIGTERM did not lower readiness")
+	}
+	families := testmetrics.Scrape(t, p.diagnostic)
+	if testmetrics.Sample(families, "weir_node_state", map[string]string{"state": "draining"}).GetGauge().GetValue() != 1 || testmetrics.Sum(families, "weir_node_drains_total") != 1 {
+		t.Fatal("drain metrics")
+	}
+	response, err := client.Get("http://" + p.diagnostic + "/livez")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatal("drain liveness")
+	}
+	p.stop(t)
+	if time.Since(started) > 3*time.Second {
+		t.Fatal("process exit exceeded bound")
+	}
+	t.Logf("PID=%d: SIGTERM readiness=503 while livez=200; bounded exit in %s", p.command.Process.Pid, time.Since(started))
 }

@@ -49,6 +49,7 @@ type Runtime struct {
 	closeOnce                    sync.Once
 	closeErr                     error
 	controller                   controller
+	metrics                      runtimeMetrics
 	scan                         *Ticket
 	native                       *Ticket
 }
@@ -68,6 +69,7 @@ type Ticket struct {
 	ready            chan struct{}
 	sequence         string
 	eligible         time.Time
+	queuedAt         time.Time
 	state            uint8
 	abandoned, acked bool
 	stopWatch        func() bool
@@ -84,6 +86,9 @@ type batch struct {
 	timeoutOwned    bool
 }
 type Snapshot struct {
+	Ready, ReadyBytes                                            int
+	Cooldown                                                     bool
+	Feedback                                                     string
 	Pending, PendingBytes, Active, Retained, ResultBytes, Window int
 	Draining, Closed, Overloaded                                 bool
 	ScanSessions, ScanPageBytes, ScanPages, ScanCleanups         int
@@ -106,6 +111,7 @@ func New(a execution.Adapter, limits Limits) (*Runtime, error) {
 func newRuntime(a execution.Adapter, l Limits) *Runtime {
 	r := &Runtime{adapter: a, limits: l, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[string]bool), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
 	r.controller.window = 1
+	r.metrics = newRuntimeMetrics()
 	return r
 }
 func (r *Runtime) NewSession() *Session {
@@ -116,37 +122,51 @@ func (r *Runtime) NewSession() *Session {
 	return s
 }
 func (r *Runtime) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
-	return r.adapter.Prepare(op)
+	plan, failure := r.adapter.Prepare(op)
+	if failure != nil {
+		r.metrics.rejections.WithLabelValues("prepare").Inc()
+	}
+	return plan, failure
 }
 func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	changed := r.changed
 	if r.draining || r.closed {
+		r.metrics.rejections.WithLabelValues("draining").Inc()
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "store draining"), changed
 	}
 	if r.overloaded {
+		r.metrics.rejections.WithLabelValues("overload").Inc()
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "process overloaded"), changed
 	}
 	if ctx.Err() != nil {
+		r.metrics.rejections.WithLabelValues("canceled").Inc()
 		return nil, protocol.ContextFailure(ctx), changed
 	}
 	if s != nil && (s.runtime != r || s.closed) {
+		r.metrics.rejections.WithLabelValues("session").Inc()
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "session closed"), changed
 	}
 	if (p.Scan || p.Native) && (s != nil || r.scan != nil || r.native != nil) {
+		r.metrics.rejections.WithLabelValues("live_session").Inc()
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "one live Native/Scan per store"), changed
 	}
 	if (p.Scan || p.Native) && (p.PageBytes <= 0 || p.PageBytes > maxScanPageBytes) {
+		r.metrics.rejections.WithLabelValues("budget").Inc()
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid live-session working-set budget"), changed
 	}
 	if p.Bytes > r.limits.BatchBytes || p.Bytes > r.limits.PendingBytes {
+		r.metrics.rejections.WithLabelValues("budget").Inc()
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit singleton bound"), changed
 	}
 	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+p.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+p.ResultBytes > r.limits.ResultBytes || s != nil && s.outstanding >= r.limits.SessionOutstanding {
+		if s == nil {
+			r.metrics.rejections.WithLabelValues("capacity").Inc()
+		}
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
-	t := &Ticket{runtime: r, session: s, ctx: ctx, plan: p, ready: make(chan struct{})}
+	t := &Ticket{runtime: r, session: s, ctx: ctx, plan: p, ready: make(chan struct{}), queuedAt: time.Now()}
 	if p.Scan {
 		t.scan = &scanState{done: make(chan struct{})}
 		r.scan = t
@@ -234,6 +254,7 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	r.notifyLocked()
 }
 func (r *Runtime) completeLocked(t *Ticket, result *pb.BulkResult) {
+	r.terminalLocked(t, result)
 	prior := t.state
 	t.state = 2
 	t.result = result
@@ -400,6 +421,14 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			} else {
 				keep = append(keep, t)
 			}
+			kind := "record"
+			if t.plan.Scan {
+				kind = "scan"
+			}
+			if t.plan.Native {
+				kind = "native"
+			}
+			r.metrics.queue.WithLabelValues(kind).Observe(now.Sub(t.queuedAt).Seconds())
 			t.state = 1
 			if t.sequence != "" {
 				r.keys[t.sequence] = true
@@ -431,7 +460,11 @@ func (r *Runtime) execute(b *batch) {
 	for i, t := range b.items {
 		plans[i] = t.plan
 	}
+	r.metrics.executions.WithLabelValues("record").Inc()
+	r.metrics.batch.Observe(float64(len(plans)))
+	started := time.Now()
 	results, fb := r.adapter.Execute(b.ctx, plans)
+	r.metrics.duration.WithLabelValues("record").Observe(time.Since(started).Seconds())
 	if b.timeoutOwned && b.ctx.Err() == context.DeadlineExceeded {
 		fb = execution.Congested
 	}
@@ -443,13 +476,30 @@ func (r *Runtime) execute(b *batch) {
 	for i, t := range b.items {
 		r.completeLocked(t, results[i])
 	}
-	r.controller.observe(b, fb, r.limits.Concurrency, time.Now())
+	r.observeLocked(b, fb)
 	r.notifyLocked()
 }
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, Window: r.controller.window, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
+	s.Cooldown = time.Now().Before(r.controller.cooldown)
+	s.Feedback = "unobserved"
+	if r.metrics.observed {
+		s.Feedback = "neutral"
+		if r.metrics.feedback == execution.Healthy {
+			s.Feedback = "healthy"
+		}
+		if r.metrics.feedback == execution.Congested {
+			s.Feedback = "congested"
+		}
+	}
+	for t := range r.live {
+		if t.state == 2 {
+			s.Ready++
+			s.ReadyBytes += t.plan.ResultBytes
+		}
+	}
 	if t := r.native; t != nil {
 		s.NativeSessions = 1
 		s.LiveSessions = 1

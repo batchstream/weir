@@ -16,8 +16,14 @@ func TestConnectionBoundAndSingleClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	s := &Server{}
-	bounded := &limitedListener{Listener: listener, slots: make(chan struct{}, 2), server: s}
+	limits := DefaultLimits()
+	limits.Connections = 2
+	admission, err := NewAdmission(limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{admission: admission}
+	bounded := &limitedListener{Listener: listener, slots: admission.connections, server: s}
 	accepted := make(chan net.Conn, 4)
 	done := make(chan struct{})
 	go func() {

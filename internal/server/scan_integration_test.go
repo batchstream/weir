@@ -33,8 +33,9 @@ import (
 
 type scanFixture struct {
 	fixture
-	backend *testsearch.Backend
-	root    string
+	metricsRemotes []*RemoteWeir
+	backend        *testsearch.Backend
+	root           string
 }
 
 func scanServer(t *testing.T, kind string, sl Limits) scanFixture {

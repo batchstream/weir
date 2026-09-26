@@ -51,6 +51,9 @@ func (s *Server) Native(stream grpc.BidiStreamingServer[pb.NativeRequestFrame, p
 	}
 	if failure == nil {
 		failure = protocol.ValidateNative(first.GetOpen(), name)
+		if failure != nil {
+			s.admission.rejections.WithLabelValues("operation").Inc()
+		}
 	}
 	if failure == nil && service.RemoteWeir != nil {
 		args := nativeRelay{first: first, stream: stream, remote: service.RemoteWeir, delivery: delivery}

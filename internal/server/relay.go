@@ -14,14 +14,28 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *Server) remoteSingle(ctx context.Context, remote *RemoteWeir, op *pb.BulkOperation, d *delivery) (*pb.BulkResult, error) {
+type singleRelay struct {
+	ctx       context.Context
+	remote    *RemoteWeir
+	operation *pb.BulkOperation
+	delivery  *delivery
+}
+
+func (s *Server) remoteSingle(args singleRelay) (_ *pb.BulkResult, resultErr error) {
+	ctx, remote, op, d := args.ctx, args.remote, args.operation, args.delivery
 	next, err := forwardContext(ctx)
 	if err != nil {
+		s.admission.rejections.WithLabelValues("hop").Inc()
 		return nil, err
 	}
 	if err := remote.enter(d); err != nil {
 		return nil, err
 	}
+	method := "Mutate"
+	if op.GetRead() != nil {
+		method = "Read"
+	}
+	defer func() { remote.terminations.WithLabelValues(method, statusLabel(resultErr)).Inc() }()
 	result := &pb.BulkResult{Index: op.Index}
 	if req := op.GetRead(); req != nil {
 		read, err := remote.client.Read(next, req)
@@ -39,14 +53,16 @@ func (s *Server) remoteSingle(ctx context.Context, remote *RemoteWeir, op *pb.Bu
 	return result, nil
 }
 
-func (s *Server) remoteScan(args scanRelay) error {
+func (s *Server) remoteScan(args scanRelay) (resultErr error) {
 	next, err := forwardContext(args.stream.Context())
 	if err != nil {
+		s.admission.rejections.WithLabelValues("hop").Inc()
 		return err
 	}
 	if err := args.remote.enter(args.delivery); err != nil {
 		return err
 	}
+	defer func() { args.remote.terminations.WithLabelValues("Scan", statusLabel(resultErr)).Inc() }()
 	ctx, cancel := context.WithCancel(next)
 	defer cancel()
 	downstream, err := args.remote.client.Scan(ctx, args.request)
@@ -59,7 +75,7 @@ func (s *Server) remoteScan(args scanRelay) error {
 		frame, err := downstream.Recv()
 		timer.Stop()
 		if err != nil {
-			return incomplete(err, "missing Scan End")
+			return args.remote.incomplete("Scan", err, "missing Scan End")
 		}
 		if doc := frame.GetDocument(); doc != nil {
 			if count == math.MaxUint64 || len(doc.Data) > protocol.MaxDocument {
@@ -79,7 +95,7 @@ func (s *Server) remoteScan(args scanRelay) error {
 		_, err = downstream.Recv()
 		timer.Stop()
 		if !errors.Is(err, io.EOF) {
-			return incomplete(err, "Scan frames after End")
+			return args.remote.incomplete("Scan", err, "Scan frames after End")
 		}
 		return args.stream.Send(frame)
 	}
@@ -92,14 +108,16 @@ type scanRelay struct {
 	delivery *delivery
 }
 
-func (s *Server) remoteNative(args nativeRelay) error {
+func (s *Server) remoteNative(args nativeRelay) (resultErr error) {
 	next, err := forwardContext(args.stream.Context())
 	if err != nil {
+		s.admission.rejections.WithLabelValues("hop").Inc()
 		return err
 	}
 	if err := args.remote.enter(args.delivery); err != nil {
 		return err
 	}
+	defer func() { args.remote.terminations.WithLabelValues("Native", statusLabel(resultErr)).Inc() }()
 	ctx, cancel := context.WithCancel(next)
 	defer cancel()
 	downstream, err := args.remote.client.Native(ctx)
@@ -156,7 +174,7 @@ func (s *Server) remoteNative(args nativeRelay) error {
 		frame, err := downstream.Recv()
 		timer.Stop()
 		if err != nil {
-			return incomplete(err, "missing Native End")
+			return args.remote.incomplete("Native", err, "missing Native End")
 		}
 		if end := frame.GetEnd(); end != nil {
 			if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE && (!head || end.Failure != nil) || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE && (end.Failure == nil || end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE) {
@@ -166,7 +184,7 @@ func (s *Server) remoteNative(args nativeRelay) error {
 			_, err = downstream.Recv()
 			timer.Stop()
 			if !errors.Is(err, io.EOF) {
-				return incomplete(err, "Native frames after End")
+				return args.remote.incomplete("Native", err, "Native frames after End")
 			}
 			return args.stream.Send(frame)
 		}

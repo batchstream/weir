@@ -23,6 +23,7 @@ import (
 	"github.com/batchstream/weir/internal/mongostore"
 	"github.com/batchstream/weir/internal/searchstore"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testmetrics"
 	"github.com/batchstream/weir/internal/testmongo"
 	"github.com/batchstream/weir/internal/testpeer"
 	"github.com/batchstream/weir/internal/testsearch"
@@ -46,6 +47,7 @@ func forwardFixture(t *testing.T, f scanFixture, hops int) scanFixture {
 	_, address := startPeerServer(t, opts)
 	for i := 0; i < hops; i++ {
 		remote := testRemote(t, address, identity)
+		f.metricsRemotes = append(f.metricsRemotes, remote)
 		route := Service{RemoteWeir: remote}
 		opts := peerServerOptions{routes: map[string]Service{name: route}, limits: f.server.limits, budget: 4}
 		if i < hops-1 {
@@ -98,6 +100,28 @@ func TestPeerRealFiveRPCs(t *testing.T) {
 					result, err := f.client.Read(ctx, read)
 					if err != nil || !bytes.Equal(result.GetDocument().Data, request.GetPut().Data) {
 						t.Fatal("raw document changed", err)
+					}
+					for _, action := range []string{"create", "replace", "delete"} {
+						request := realMutation(t, f, "crud", 2)
+						document := request.GetPut()
+						switch action {
+						case "create":
+							request.Action = &pb.MutateRequest_Create{Create: document}
+						case "replace":
+							request.Action = &pb.MutateRequest_Replace{Replace: document}
+						case "delete":
+							empty := &pb.Empty{}
+							request.Action = &pb.MutateRequest_Delete{Delete: empty}
+						}
+						mutation, err := f.client.Mutate(ctx, request)
+						if err != nil || mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+							t.Fatal("real CRUD", action, mutation, err)
+						}
+						read := &pb.ReadRequest{Resource: request.Resource}
+						observed, err := f.client.Read(ctx, read)
+						if err != nil || action == "delete" && observed.GetMissing() == nil || action != "delete" && !bytes.Equal(observed.GetDocument().GetData(), document.Data) {
+							t.Fatal("real CRUD read", action, observed, err)
+						}
 					}
 					bulk, err := f.client.Bulk(ctx)
 					if err != nil {
@@ -198,6 +222,23 @@ func TestPeerRealFiveRPCs(t *testing.T) {
 						t.Fatal(err)
 					}
 					waitScanReleased(t, f)
+					families := testmetrics.ScrapeCollector(t, f.runtime)
+					if testmetrics.Sum(families, "weir_store_records_total") != 40 {
+						t.Fatal("real logical operation count")
+					}
+					if testmetrics.Sample(families, "weir_store_executions_total", map[string]string{"kind": "record"}).GetCounter().GetValue() != 40 {
+						t.Fatal("real physical calls duplicated")
+					}
+					if testmetrics.Sample(families, "weir_store_native_completions_total", map[string]string{"completion": "response_complete"}).GetCounter().GetValue() != 1 || testmetrics.Sample(families, "weir_store_scan_terminations_total", map[string]string{"result": "exhausted"}).GetCounter().GetValue() != 1 {
+						t.Fatal("real stream metrics")
+					}
+					for _, remote := range f.metricsRemotes {
+						forwarded := testmetrics.ScrapeCollector(t, remote)
+						if testmetrics.Sum(forwarded, "weir_relay_terminations_total") != 11 || forwarded["weir_store_executions_total"] != nil {
+							t.Fatal("real relay duplicated execution")
+						}
+					}
+					t.Logf("metrics: %s hops=%d CRUD/Bulk records=40 physical record calls=40 Native complete=1 Scan exhausted=1; each relay=11", kind, hops)
 				})
 			}
 		})
@@ -328,7 +369,13 @@ func (p *lostReplyPeer) Native(stream grpc.BidiStreamingServer[pb.NativeRequestF
 func faultPeer(t *testing.T, address string, identity *tls.Config) (string, *lostReplyPeer) {
 	t.Helper()
 	_, next := peerClient(t, address, identity)
-	transport := &Server{}
+	limits := DefaultLimits()
+	limits.Connections = 8
+	admission, err := NewAdmission(limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := &Server{admission: admission, metrics: newTransportMetrics()}
 	proxy := &lostReplyPeer{next: next, transport: transport}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -336,7 +383,7 @@ func faultPeer(t *testing.T, address string, identity *tls.Config) (string, *los
 	}
 	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(identity)), grpc.MaxRecvMsgSize(300<<10), grpc.MaxSendMsgSize(300<<10))
 	pb.RegisterWeirServer(srv, proxy)
-	bounded := &limitedListener{Listener: listener, slots: make(chan struct{}, 8), server: transport}
+	bounded := &limitedListener{Listener: listener, slots: admission.connections, server: transport}
 	go func() { _ = srv.Serve(bounded) }()
 	t.Cleanup(func() { srv.Stop(); _ = listener.Close() })
 	return listener.Addr().String(), proxy
@@ -524,6 +571,24 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 					}
 					if commands != 1 {
 						t.Fatal("backend replayed", commands)
+					}
+					families := testmetrics.ScrapeCollector(t, f.runtime)
+					if !native {
+						outcome := "applied"
+						if leg == "database" {
+							outcome = "unknown"
+						}
+						if testmetrics.Sample(families, "weir_store_records_total", map[string]string{"operation": "mutate", "outcome": outcome}).GetCounter().GetValue() != 1 || testmetrics.Sum(families, "weir_store_executions_total") != 1 {
+							t.Fatal("response loss changed execution evidence")
+						}
+						forwarded := testmetrics.ScrapeCollector(t, remote)
+						status := "ok"
+						if leg == "peer" {
+							status = "non_ok"
+						}
+						if testmetrics.Sample(forwarded, "weir_relay_terminations_total", map[string]string{"method": "Mutate", "status": status}).GetCounter().GetValue() != 1 {
+							t.Fatal("relay observation boundary", status, forwarded["weir_relay_terminations_total"])
+						}
 					}
 					t.Logf("%s %s Native=%t: acknowledged backend commands=%d, effect independently verified", kind, leg, native, commands)
 				})

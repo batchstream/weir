@@ -12,6 +12,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/testmetrics"
 	"github.com/batchstream/weir/internal/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/net/http2"
@@ -125,7 +126,15 @@ func TestUnaryAppliedMutationLosesBlockedReply(t *testing.T) {
 	if len(f.server.slots) != 0 || f.runtime.Snapshot().Retained != 0 {
 		t.Fatal("lost reply retained credits", len(f.server.slots), f.runtime.Snapshot())
 	}
-	t.Log("real mutation applied; zero-window reply reset; client outcome remains UNKNOWN")
+	families := testmetrics.ScrapeCollector(t, f.runtime)
+	if testmetrics.Sample(families, "weir_store_records_total", map[string]string{"operation": "mutate", "outcome": "applied"}).GetCounter().GetValue() != 1 || testmetrics.Sum(families, "weir_store_executions_total") != 1 {
+		t.Fatal("APPLIED evidence lost after response reset")
+	}
+	transport := testmetrics.ScrapeCollector(t, f.server)
+	if testmetrics.Sample(transport, "weir_transport_failures_total", map[string]string{"method": "Mutate", "phase": "output"}).GetCounter().GetValue() != 1 {
+		t.Fatal("missing observed output failure", transport["weir_transport_failures_total"])
+	}
+	t.Log("real mutation applied; zero-window reply reset; client outcome remains UNKNOWN; APPLIED=1 physical execution=1 output failure=1")
 }
 
 func TestUnaryResultHandoffAfterTransportClosed(t *testing.T) {

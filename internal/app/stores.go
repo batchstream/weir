@@ -18,24 +18,33 @@ import (
 	"github.com/batchstream/weir/internal/searchstore"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Node struct {
-	mu        sync.Mutex
-	closed    bool
-	admission *server.Admission
-	runtimes  []*store.Runtime
-	remotes   []*server.RemoteWeir
-	servers   []*server.Server
-	listeners []net.Listener
-	targets   []overload.Target
-	budget    uint64
-	stopGuard context.CancelFunc
-	guardDone chan struct{}
-	start     sync.Once
-	once      sync.Once
-	closeErr  error
-	Errors    chan error
+	mu                      sync.Mutex
+	closed                  bool
+	started                 bool
+	state                   string
+	registry                *prometheus.Registry
+	diagnostics             *diagnostics
+	guard                   *overload.Guard
+	localNames, remoteNames []string
+	drains                  prometheus.Counter
+	drainDuration           prometheus.Histogram
+	admission               *server.Admission
+	runtimes                []*store.Runtime
+	remotes                 []*server.RemoteWeir
+	servers                 []*server.Server
+	listeners               []net.Listener
+	targets                 []overload.Target
+	budget                  uint64
+	stopGuard               context.CancelFunc
+	guardDone               chan struct{}
+	start                   sync.Once
+	once                    sync.Once
+	closeErr                error
+	Errors                  chan error
 }
 
 func Open(ctx context.Context, cfg Config) (*Node, error) {
@@ -55,8 +64,12 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	node := &Node{admission: admission, budget: cfg.MemoryMiB << 20, Errors: make(chan error, 2)}
+	node := &Node{admission: admission, budget: cfg.MemoryMiB << 20, Errors: make(chan error, 3), state: "constructed", registry: prometheus.NewRegistry()}
 	node.targets = append(node.targets, admission)
+	drainOpts := prometheus.CounterOpts{Name: "weir_node_drains_total", Help: "First Close calls, including partial startup cleanup."}
+	durationOpts := prometheus.HistogramOpts{Name: "weir_node_drain_seconds", Help: "Node data drain and owned backend/remote cleanup duration.", Buckets: []float64{.01, .1, 1, 5, 10}}
+	node.drains = prometheus.NewCounter(drainOpts)
+	node.drainDuration = prometheus.NewHistogram(durationOpts)
 	complete := false
 	defer func() {
 		if !complete {
@@ -77,6 +90,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 				return nil, err
 			}
 			node.remotes = append(node.remotes, service.RemoteWeir)
+			node.remoteNames = append(node.remoteNames, definition.Name)
 		} else {
 			var name string
 			for _, route := range cfg.Routes {
@@ -90,6 +104,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 				return nil, err
 			}
 			node.runtimes = append(node.runtimes, service.LocalStore)
+			node.localNames = append(node.localNames, name)
 			node.targets = append(node.targets, service.LocalStore)
 		}
 		services[definition.Name] = service
@@ -130,6 +145,15 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 			return nil, errors.New("listener startup failed")
 		}
 		node.listeners = append(node.listeners, listener)
+	}
+	node.guard = overload.New(node.targets, node.budget)
+	if err := node.registerMetrics(cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Diagnostics != "" {
+		if err := node.openDiagnostics(cfg.Diagnostics); err != nil {
+			return nil, err
+		}
 	}
 	complete = true
 	return node, nil
@@ -214,13 +238,19 @@ func (n *Node) Start() {
 		if n.closed {
 			return
 		}
+		n.started = true
 		ctx, cancel := context.WithCancel(context.Background())
 		n.stopGuard = cancel
 		n.guardDone = make(chan struct{})
-		go func() { defer close(n.guardDone); overload.Guard(ctx, n.targets, n.budget) }()
+		go func() { defer close(n.guardDone); n.guard.Run(ctx) }()
 		for i, srv := range n.servers {
 			listener := n.listeners[i]
-			go func() { n.Errors <- srv.Serve(listener) }()
+			go func() { n.listenerEnded(srv.Serve(listener)) }()
+			<-srv.Serving()
+		}
+		n.state = "serving"
+		if n.diagnostics != nil {
+			go func() { n.listenerEnded(n.diagnostics.serve()) }()
 		}
 	})
 }
@@ -237,12 +267,15 @@ func (n *Node) Close(ctx context.Context) error {
 		defer cancel()
 		n.mu.Lock()
 		n.closed = true
+		n.state = "draining"
+		started := time.Now()
+		n.drains.Inc()
 		n.admission.BeginDrain()
+		n.mu.Unlock()
 		if n.stopGuard != nil {
 			n.stopGuard()
 			<-n.guardDone
 		}
-		n.mu.Unlock()
 		for _, runtime := range n.runtimes {
 			runtime.BeginDrain()
 		}
@@ -262,6 +295,11 @@ func (n *Node) Close(ctx context.Context) error {
 		for _, remote := range n.remotes {
 			n.closeErr = errors.Join(n.closeErr, remote.Close())
 		}
+		n.drainDuration.Observe(time.Since(started).Seconds())
+		n.mu.Lock()
+		n.state = "closed"
+		n.mu.Unlock()
+		n.closeDiagnostics()
 	})
 	return n.closeErr
 }

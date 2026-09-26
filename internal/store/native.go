@@ -11,6 +11,7 @@ import (
 func (r *Runtime) StartNative(ctx context.Context, open *pb.NativeOpen, exchange *execution.NativeExchange) (*Ticket, *pb.Failure) {
 	plan, failure := r.adapter.PrepareNative(open)
 	if failure != nil {
+		r.metrics.rejections.WithLabelValues("prepare").Inc()
 		return nil, failure
 	}
 	plan.Exchange = exchange
@@ -28,7 +29,10 @@ func (r *Runtime) executeNative(b *batch) {
 	exchange := t.plan.Exchange
 	interrupted := make(chan struct{})
 	stop := context.AfterFunc(b.ctx, func() { _ = exchange.Source.Close(); exchange.Sink.Interrupt(); close(interrupted) })
+	r.metrics.executions.WithLabelValues("native").Inc()
+	started := time.Now()
 	end, feedback := r.adapter.ExecuteNative(b.ctx, t.plan, exchange)
+	r.metrics.exchange.Observe(time.Since(started).Seconds())
 	if !stop() {
 		<-interrupted
 	}
@@ -42,6 +46,6 @@ func (r *Runtime) executeNative(b *batch) {
 	r.completeLocked(t, nil)
 	// Upload/output stall and arbitrary native errors are not DB congestion.
 	// The adapter supplies at most one explicit sample for the whole exchange.
-	r.controller.observe(b, feedback, r.limits.Concurrency, time.Now())
+	r.observeLocked(b, feedback)
 	r.notifyLocked()
 }

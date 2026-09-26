@@ -305,7 +305,7 @@ func TestPeerBulkBackpressureAndDrainEveryHop(t *testing.T) {
 	for _, node := range []int{0, 1, 2} {
 		t.Run(fmt.Sprint(node), func(t *testing.T) {
 			limits := DefaultLimits()
-			limits.Stall = 500 * time.Millisecond
+			limits.Stall = 2 * time.Second
 			f := newChainWithLimits(t, 2, limits)
 			f.adapter.documents[testRequest().Resource] = &pb.Document{MediaType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), 200<<10)}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -336,12 +336,39 @@ func TestPeerBulkBackpressureAndDrainEveryHop(t *testing.T) {
 			if _, err := stream.Header(); err != nil {
 				t.Fatal(err)
 			}
-			time.Sleep(80 * time.Millisecond)
+			// Wait for fixed wire buffers to fill. Wall-clock send counts at
+			// 80/160 ms also depend on producer/CPU scheduling, not just flow control.
+			until := time.Now().Add(1500 * time.Millisecond)
+			stable := time.Now()
 			first := sent.Load()
-			time.Sleep(80 * time.Millisecond)
+			for time.Since(stable) < 100*time.Millisecond {
+				select {
+				case <-done:
+					t.Fatal("producer ended before backpressure was verified")
+				default:
+				}
+				if time.Now().After(until) {
+					t.Fatal("input did not reach a bounded plateau", sent.Load())
+				}
+				time.Sleep(10 * time.Millisecond)
+				count := sent.Load()
+				if count != first {
+					first = count
+					stable = time.Now()
+				}
+				if f.runtime.Snapshot().Retained > 8 {
+					t.Fatal("result retention exceeded bound")
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
 			second := sent.Load()
-			if second > first+20 || f.runtime.Snapshot().Retained > 8 {
-				t.Fatal("unbounded input/results", first, second, f.runtime.Snapshot())
+			select {
+			case <-done:
+				t.Fatal("watchdog/cancellation cannot prove backpressure")
+			default:
+			}
+			if first == 0 || second != first || f.runtime.Snapshot().Retained > 8 {
+				t.Fatal("input/results did not remain bounded", first, second, f.runtime.Snapshot())
 			}
 			drain, stop := context.WithTimeout(context.Background(), 70*time.Millisecond)
 			defer stop()
@@ -357,7 +384,7 @@ func TestPeerBulkBackpressureAndDrainEveryHop(t *testing.T) {
 			for _, srv := range f.servers {
 				waitPeerIdle(t, srv)
 			}
-			t.Logf("node=%d frames after 80/160ms=%d/%d, retained=%d", node, first, second, f.runtime.Snapshot().Retained)
+			t.Logf("node=%d frames at plateau/100ms later=%d/%d, retained=%d", node, first, second, f.runtime.Snapshot().Retained)
 		})
 	}
 }
@@ -563,7 +590,8 @@ func TestPeerForwardOnlyProcessSampler(t *testing.T) {
 	done := make(chan struct{})
 	targets := []overload.Target{entry.admission}
 	// Real process sampling with an intentionally tiny threshold, not a dummy Runtime.
-	go func() { defer close(done); overload.Guard(ctx, targets, 1) }()
+	guard := overload.New(targets, 1)
+	go func() { defer close(done); guard.Run(ctx) }()
 	deadline := time.Now().Add(time.Second)
 	for !entry.admission.overloaded.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)

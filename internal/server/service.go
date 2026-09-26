@@ -13,6 +13,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
@@ -32,6 +33,7 @@ type Admission struct {
 	draining           chan struct{}
 	once               sync.Once
 	overloaded         atomic.Bool
+	rejections         *prometheus.CounterVec
 }
 
 func NewAdmission(l Limits) (*Admission, error) {
@@ -39,6 +41,11 @@ func NewAdmission(l Limits) (*Admission, error) {
 		return nil, err
 	}
 	a := &Admission{slots: make(chan struct{}, l.Sessions), connections: make(chan struct{}, l.Connections), draining: make(chan struct{})}
+	opts := prometheus.CounterOpts{Name: "weir_admission_rejections_total", Help: "Process ingress rejection branches; no client-controlled label values."}
+	a.rejections = prometheus.NewCounterVec(opts, []string{"reason"})
+	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "route", "permission", "operation", "hop"} {
+		a.rejections.WithLabelValues(reason)
+	}
 	return a, nil
 }
 func (a *Admission) SetOverloaded(value bool) { a.overloaded.Store(value) }
@@ -46,10 +53,12 @@ func (a *Admission) BeginDrain()              { a.once.Do(func() { close(a.drain
 func (a *Admission) check() error {
 	select {
 	case <-a.draining:
+		a.rejections.WithLabelValues("draining").Inc()
 		return status.Error(codes.Unavailable, "draining")
 	default:
 	}
 	if a.overloaded.Load() {
+		a.rejections.WithLabelValues("overload").Inc()
 		return status.Error(codes.ResourceExhausted, "process overloaded")
 	}
 	return nil
@@ -64,12 +73,13 @@ type RemoteConfig struct {
 // One ClientConn per configured Service; at most two sockets allow a draining
 // HTTP/2 connection to coexist with its replacement. There is no endpoint failover.
 type RemoteWeir struct {
-	conn     *grpc.ClientConn
-	client   pb.WeirClient
-	slots    chan struct{}
-	sockets  chan struct{}
-	once     sync.Once
-	closeErr error
+	conn                                  *grpc.ClientConn
+	client                                pb.WeirClient
+	slots                                 chan struct{}
+	sockets                               chan struct{}
+	once                                  sync.Once
+	closeErr                              error
+	terminations, incompletes, rejections *prometheus.CounterVec
 }
 
 func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
@@ -95,12 +105,30 @@ func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
 		return nil, err
 	}
 	r.client = pb.NewWeirClient(r.conn)
+	termOpts := prometheus.CounterOpts{Name: "weir_relay_terminations_total", Help: "Admitted relay returns, including upstream I/O errors; never database executions."}
+	incOpts := prometheus.CounterOpts{Name: "weir_relay_incomplete_total", Help: "Missing End, extra frames or non-OK after End observed from downstream."}
+	rejOpts := prometheus.CounterOpts{Name: "weir_relay_rejections_total", Help: "RemoteWeir relay or socket capacity rejection events."}
+	r.terminations = prometheus.NewCounterVec(termOpts, []string{"method", "status"})
+	r.incompletes = prometheus.NewCounterVec(incOpts, []string{"method"})
+	r.rejections = prometheus.NewCounterVec(rejOpts, []string{"reason"})
+	for _, method := range metricMethods[:5] {
+		for _, label := range metricStatuses {
+			r.terminations.WithLabelValues(method, label)
+		}
+	}
+	for _, method := range []string{"Bulk", "Scan", "Native"} {
+		r.incompletes.WithLabelValues(method)
+	}
+	for _, reason := range []string{"relay", "socket"} {
+		r.rejections.WithLabelValues(reason)
+	}
 	return r, nil
 }
 func (r *RemoteWeir) dial(ctx context.Context, address string) (net.Conn, error) {
 	select {
 	case r.sockets <- struct{}{}:
 	default:
+		r.rejections.WithLabelValues("socket").Inc()
 		return nil, errors.New("peer connection bound")
 	}
 	d := net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}
@@ -129,6 +157,7 @@ func (r *RemoteWeir) enter(d *delivery) error {
 		d.mu.Unlock()
 		return nil
 	default:
+		r.rejections.WithLabelValues("relay").Inc()
 		return status.Error(codes.ResourceExhausted, "peer relay bound")
 	}
 }
