@@ -1,16 +1,19 @@
-# Weir — local record data plane
+# Weir — bounded record data plane
 
-A **local-only, synchronous MongoDB and Search data plane**, not complete V1 or a production release.
+A **synchronous MongoDB and Search data plane with static, authenticated peer forwarding**,
+not complete V1 or a production release.
 One Go module: `github.com/batchstream/weir`.
 
 Implemented: gRPC Read / Mutate / duplex Bulk / Native / server-streaming Scan, independent local MongoDB and Search Stores,
 opaque BSON / JSON, Put / Create / Replace / Delete, bounded admission/results/connections,
-micro-batching, stream-local ordering, explicit AIMD and bounded shutdown.
+micro-batching, stream-local ordering, explicit AIMD and bounded shutdown. A fixed
+RemoteWeir Service forwards the same five RPCs over mTLS without replay or failover;
+forwarding-only nodes and two-hop chains are supported.
 
 **AtomicTransform returns UNSUPPORTED.** The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
-Peers, TLS/auth, dynamic configuration, SDKs, queues,
+Dynamic configuration, full end-user authentication, SDKs, queues,
 production deployment and releases are out of scope.
 
 Qualification correction: the original `37d1454` implementation did not cover unary
@@ -89,12 +92,27 @@ The example sends and receives concurrently and checks Head, End and final gRPC 
 A complete native database error is still RESPONSE_COMPLETE; incomplete responses
 say nothing conclusive about whether a write applied. No automatic Native retry.
 
+## Static Peers
+
+Use `go run ./cmd/weir -config /absolute/path/node.json` for an immutable graph of
+LocalStore and RemoteWeir Services. The application listener remains loopback-only;
+the separate peer listener requires verified TLS 1.3 client certificates and explicit
+per-identity Store/operation grants. Every hop preserves deadlines and consumes the
+reserved forwarding budget. A peer certificate does not prove backend configuration
+consistency; participating nodes must use the same logical Store and supported profile.
+
+See [milestone 5](docs/milestone-5.md) for a complete two-node setup with temporary
+development certificates, configuration limits, buffering/retry audits, and real
+three-process MongoDB/Elasticsearch/OpenSearch qualification. The existing local flags
+are unchanged; `-config` cannot be combined with them.
+
 ## Validate
 
 ```sh
 go test ./...
 go test -race ./...
 go vet ./...
+go vet -tags integration ./...
 
 # Explicit isolated backend and real response-loss/failpoint qualification.
 # Start scripts/mongo-local.sh first. No configurable production URI is accepted.
@@ -131,11 +149,13 @@ scripts/generate.sh
 - `docs/milestone-3.md`: Scan selectors, page/session budgets, integrity and cleanup,
   separate MongoDB/Elasticsearch/OpenSearch qualification and remaining limits.
 - `docs/milestone-4.md`: bounded Native profiles, ownership, early response and no-replay evidence.
+- `docs/milestone-5.md`: static peers, mTLS authorization, bounded relays and multi-process evidence.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
-- `internal/store`: single ledger, scheduler, result credits, AIMD and overload guard.
+- `internal/store`: single ledger, scheduler, result credits and AIMD.
+- `internal/app` / `internal/overload`: process ownership, static assembly and shared overload guard.
 - `internal/mongostore`: concrete driver ownership, CRUD, codec and transaction state machine.
 - `internal/searchstore`: qualified Search CRUD, native OCC, bounded HTTP and bulk evidence.
-- `internal/server`: bounded loopback gRPC transport and Bulk completion framing.
+- `internal/server`: shared application/peer gRPC transport, authenticated forwarding and completion framing.
 
 Missing mutation replies are **UNKNOWN**, not proof of non-application. Never blindly
 replay them. Ordinary Delete of an absent record is APPLIED after acknowledgement.
