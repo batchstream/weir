@@ -3,14 +3,14 @@
 A **local-only, synchronous MongoDB and Search data plane**, not complete V1 or a production release.
 One Go module: `github.com/batchstream/weir`.
 
-Implemented: gRPC Read / Mutate / duplex Bulk / server-streaming Scan, independent local MongoDB and Search Stores,
+Implemented: gRPC Read / Mutate / duplex Bulk / Native / server-streaming Scan, independent local MongoDB and Search Stores,
 opaque BSON / JSON, Put / Create / Replace / Delete, bounded admission/results/connections,
 micro-batching, stream-local ordering, explicit AIMD and bounded shutdown.
 
 **AtomicTransform returns UNSUPPORTED.** The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
-Native, peers, TLS/auth, dynamic configuration, SDKs, queues,
+Peers, TLS/auth, dynamic configuration, SDKs, queues,
 production deployment and releases are out of scope.
 
 Qualification correction: the original `37d1454` implementation did not cover unary
@@ -71,6 +71,24 @@ go run ./cmd/weir-example
 go run ./cmd/weir-example -store search
 ```
 
+## Bounded Native
+
+Native is an adapter-specific escape hatch with response-completeness evidence.
+The initial matrix is MongoDB `count` / document `findAndModify`, and Search exact
+GET / bounded streaming index-create-delete `_bulk`. Unknown operations are rejected.
+Native and Scan share one live session per Store; Native holds its execution permit
+through upload, backend I/O and response delivery. See `docs/milestone-4.md` for
+exact descriptors, limits, no-replay audit and separate real-backend qualification.
+
+```sh
+go run ./cmd/weir-native-example                  # ordered BSON count
+go run ./cmd/weir-native-example -store search    # native GET of example
+```
+
+The example sends and receives concurrently and checks Head, End and final gRPC OK.
+A complete native database error is still RESPONSE_COMPLETE; incomplete responses
+say nothing conclusive about whether a write applied. No automatic Native retry.
+
 ## Validate
 
 ```sh
@@ -112,6 +130,7 @@ scripts/generate.sh
   resource isolation and real-backend fault evidence.
 - `docs/milestone-3.md`: Scan selectors, page/session budgets, integrity and cleanup,
   separate MongoDB/Elasticsearch/OpenSearch qualification and remaining limits.
+- `docs/milestone-4.md`: bounded Native profiles, ownership, early response and no-replay evidence.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits, AIMD and overload guard.
 - `internal/mongostore`: concrete driver ownership, CRUD, codec and transaction state machine.
