@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
@@ -38,6 +38,7 @@ type Server struct {
 	limits      Limits
 	slots       chan struct{}
 	grpc        *grpc.Server
+	http        *http.Server
 	draining    chan struct{}
 	once        sync.Once
 	connections sync.Map
@@ -48,8 +49,12 @@ func New(runtime *store.Runtime, name string, l Limits) (*Server, error) {
 		return nil, status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}
 	s := &Server{Runtime: runtime, Store: name, limits: l, slots: make(chan struct{}, l.Sessions), draining: make(chan struct{})}
-	keep := keepalive.ServerParameters{MaxConnectionIdle: time.Minute, MaxConnectionAge: 20 * time.Minute, MaxConnectionAgeGrace: time.Second, Time: time.Minute, Timeout: 5 * time.Second}
-	s.grpc = grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame), grpc.MaxConcurrentStreams(8), grpc.MaxHeaderListSize(16<<10), grpc.InitialWindowSize(64<<10), grpc.InitialConnWindowSize(256<<10), grpc.WriteBufferSize(32<<10), grpc.ReadBufferSize(32<<10), grpc.ConnectionTimeout(5*time.Second), grpc.KeepaliveParams(keep), grpc.UnaryInterceptor(s.unary), grpc.StreamInterceptor(s.stream))
+	statistics := deliveryStats{}
+	s.grpc = grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame), grpc.UnaryInterceptor(s.unary), grpc.StatsHandler(statistics), grpc.WaitForHandlers(true))
+	protocols := &http.Protocols{}
+	protocols.SetUnencryptedHTTP2(true)
+	h2 := &http.HTTP2Config{MaxConcurrentStreams: 8, MaxReadFrameSize: 16 << 10, MaxReceiveBufferPerStream: 64 << 10, MaxReceiveBufferPerConnection: 256 << 10, SendPingTimeout: time.Minute, PingTimeout: 5 * time.Second, WriteByteTimeout: l.Stall}
+	s.http = &http.Server{Handler: http.HandlerFunc(s.serveHTTP), Protocols: protocols, HTTP2: h2, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 << 10, IdleTimeout: time.Minute}
 	pb.RegisterWeirServer(s.grpc, s)
 	return s, nil
 }
@@ -70,20 +75,13 @@ func (s *Server) enter() error {
 	}
 }
 func (s *Server) unary(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if err := s.enter(); err != nil {
-		return nil, err
+	state, ok := ctx.Value(deliveryKey).(*delivery)
+	if !ok {
+		return nil, status.Error(codes.Internal, "missing HTTP/2 delivery lifetime")
 	}
-	defer func() { <-s.slots }()
-	ctx, cancel := context.WithTimeout(ctx, s.limits.UnaryLifetime)
-	defer cancel()
-	return handler(ctx, req)
-}
-func (s *Server) stream(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if err := s.enter(); err != nil {
-		return err
-	}
-	defer func() { <-s.slots }()
-	return handler(srv, ss)
+	result, err := handler(ctx, req)
+	state.beginResponse()
+	return result, err
 }
 func (s *Server) Read(ctx context.Context, req *pb.ReadRequest) (*pb.ReadResult, error) {
 	variant := &pb.BulkOperation_Read{Read: req}
@@ -104,6 +102,10 @@ func (s *Server) Mutate(ctx context.Context, req *pb.MutateRequest) (*pb.Mutatio
 	return result.GetMutation(), nil
 }
 func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResult, error) {
+	state, ok := ctx.Value(deliveryKey).(*delivery)
+	if !ok {
+		return nil, status.Error(codes.Internal, "missing HTTP/2 delivery lifetime")
+	}
 	plan, f := s.Runtime.Prepare(op)
 	if f != nil {
 		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, f), nil
@@ -116,7 +118,7 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	if err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
-	defer ticket.Ack()
+	state.retain(ticket)
 	return result, nil
 }
 
@@ -306,17 +308,29 @@ func (s *Server) send(ctx context.Context, stream grpc.BidiStreamingServer[pb.Bu
 }
 func (s *Server) Serve(listener net.Listener) error {
 	bounded := &limitedListener{Listener: listener, slots: make(chan struct{}, s.limits.Connections), server: s}
-	return s.grpc.Serve(bounded)
+	err := s.http.Serve(bounded)
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.once.Do(func() { close(s.draining); s.Runtime.BeginDrain() })
 	stopped := make(chan struct{})
-	go func() { s.grpc.GracefulStop(); close(stopped) }()
+	go func() {
+		if err := s.http.Shutdown(ctx); err != nil {
+			_ = s.http.Close()
+		}
+		// gRPC's ServeHTTP transport has no Drain implementation. net/http owns
+		// graceful HTTP/2 shutdown; Stop releases remaining gRPC transport state.
+		s.grpc.Stop()
+		close(stopped)
+	}()
 	err := s.Runtime.Close(ctx)
 	select {
 	case <-stopped:
 	case <-ctx.Done():
-		s.grpc.Stop()
+		_ = s.http.Close()
 		<-stopped
 	}
 	return err

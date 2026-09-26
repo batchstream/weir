@@ -13,6 +13,11 @@ internal foundation using a finite counter transform, not a public general runti
 Native, Scan, search backends, peers, TLS/auth, dynamic configuration, SDKs, queues,
 production deployment and releases are out of scope.
 
+Qualification correction: the original `37d1454` implementation did not cover unary
+response sending with its server deadline. The repair and new transport regression
+evidence are recorded in `docs/unary-response-deadline.md`; the earlier overall
+acceptance conclusion must not be used as evidence for that property.
+
 ## Local Run
 
 The qualified test platform is macOS arm64, Go **1.27.0**, MongoDB **8.0.32**,
@@ -86,5 +91,13 @@ scripts/generate.sh
 Missing mutation replies are **UNKNOWN**, not proof of non-application. Never blindly
 replay them. Ordinary Delete of an absent record is APPLIED after acknowledgement.
 Bulk preserves only same-key order in the same live stream; after UNKNOWN even a
-successor cannot assume backend completion ordering. A send/input stall closes the
-single offending connection; other RPCs on that connection can also be truncated.
+successor cannot assume backend completion ordering. Unary response deadlines now
+run at the HTTP/2 stream write layer, through DATA/trailers, not only the handler.
+Unary input stalls are bounded too; progress may refresh only the stall budget,
+never the original lifetime, and decoding ends input-stall accounting.
+Bulk input/send watchdogs and connection-level write stalls can still close a
+connection; other RPCs on that connection can also be truncated.
+
+The pinned Go 1.27 HTTP/2 + gRPC ServeHTTP profile uses at most one maximum-frame
+request-body read-ahead credit per admitted RPC. This is required because the
+ServeHTTP adapter otherwise drains request bodies ahead of application Recv.

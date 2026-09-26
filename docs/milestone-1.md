@@ -7,6 +7,12 @@
 资源隔离验证的结论是**不合格**，因此 AtomicTransform（程序及表达式）均未启用。
 这不是用 mock 或弱沙箱替代通用转换。
 
+**验收结论修正：`37d1454` 的 unary 期限仅覆盖 handler，未覆盖响应发送；用户给出的
+100ms/600ms 场景已三次复现失败。撤回此前整体验收通过的结论。**
+本次修复及新增回归证据见 `unary-response-deadline.md`，不能用旧通过记录代替此项验证。
+新一轮独立材料复核先确认已有发送修复通过，再补齐输入停滞、无/长/短客户端期限、正常大响应和资源回收竞争；没有重复更换传输方案。
+
+
 ## 1. 初始状态与文档修订
 
 开始时 HEAD 为 `4d1e6c8`，仅有未跟踪的 `docs/architecture.md`，没有现有实现、
@@ -30,7 +36,8 @@ Go module 或待合入代码。未发现磁盘上的额外 AGENTS.md；执行请
 | Go | 1.27.0，darwin/arm64；`go.mod`、`.go-version` |
 | module | `github.com/batchstream/weir`，仅一个 module |
 | MongoDB Go driver | `go.mongodb.org/mongo-driver/v2 v2.9.1` |
-| gRPC Go | v1.79.3 |
+| gRPC Go | v1.79.3；期限修复后使用 ServeHTTP（实验性、固定版本验证） |
+| HTTP/2 transport | Go 1.27 net/http；RPC schema 不变，完整响应写期限由 HTTP/2 stream 持有 |
 | Protobuf Go / protoc-gen-go | v1.36.11 |
 | protoc | 33.4，项目内独立 binary |
 | protoc-gen-go-grpc | v1.5.1 |
@@ -109,11 +116,12 @@ End/计数和 EOF 后成功退出。Ctrl-C 使服务按 drain 路径正常退出
 | 资源 | 实现上限/默认 |
 | --- | --- |
 | 记录文档 / Protobuf frame | 256 KiB / 300 KiB |
-| URI / request headers / Failure text | 4 KiB / 16 KiB / 1 KiB |
+| URI / request headers / Failure text | 4 KiB / 16 KiB HTTP header 预算（另有标准 HTTP/2 记账开销） / 1 KiB |
 | BSON 结构 | 深度 32，节点 4096；字符串必须合法且完整终止 |
 | Store pending | 256 项、8 MiB 保守计账输入 |
 | 结果全局预留 | 128 项、16 MiB |
 | Bulk outstanding | 每流 8 项；另最多一个未准入帧/一个无效结果缓冲 |
+| handler transport 输入 read-ahead | 每个已准入 RPC 最多 300 KiB + 5 bytes；仅已解码消息返还对应 wire bytes |
 | Read 结果 credit | 最大文档加 512 bytes envelope/终态开销 |
 | Mutation 结果 credit | 每项 512 bytes |
 | 执行窗口 | 从 C=1 开始，Cmax=4；pool max=4，maxConnecting=2 |
@@ -147,15 +155,29 @@ AIMD 只用显式后端拥塞/归因 timeout，按 epoch 忽略旧 flight，同�
 
 ### gRPC 停滞与关闭
 
-真实测试发现，handler 返回错误不保证未读客户端立即收到 trailers；trailers 可能排在
-先前 DATA 后。输入/发送 stall 或服务端总寿命到期会关闭该**单连接**，从而释放阻塞
-Send/Recv。其他同连接 RPC 可能失去响应，其写入按 UNKNOWN 处理；不影响其他连接的共享
-调度。每个 live handler 最多一个 Recv pump 和一个在途 Send，均随连接/调用终止退出。
+原先仅在 unary interceptor 中 WithTimeout，并在 handler 返回后 Cancel/Ack，不能覆盖
+实际响应发送。用户复现和本地三次重现推翻了这部分原验收结论。当前用 Go 1.27 HTTP/2
+stream 的 SetWriteDeadline 配合 gRPC ServeHTTP，将最早的服务端/调用者期限保持到响应
+DATA/trailers 完成或 reset。Unary 在 handler 返回时再收紧为响应停滞预算，而不延长总期限。
+输入读取也使用 min(原期限, 最近实际 read 的时间+Stall)；解码完成后解除输入停滞限制，
+防止仅因后端耗时或客户端未 half-close 而误杀正常操作。
+Unary 结果 credit 保留到 DATA flush/transport 结束；应用 session 等 HTTP transport 与 gRPC
+处理两方均结束才释放。最终 trailers 仍受
+HTTP/2 自有期限控制。结果恰好在关闭后完成的竞争也必须归还额度，不访问已释放的 writer。
 
-Shutdown 停新准入但继续调度已准入集合，flush 收集窗。不等待无限 producer half-close；
-已有 Bulk 结果送完后以非 OK 结束未 half-close 流，不伪造 End。到 drain deadline，排队项
-NOT_STARTED，active 取消且保留 UNKNOWN 语义，gRPC 强停解除剩余发送。Adapter client 仅由
-Adapter 关闭，Runtime 调用一次；重复 Close 不重复回收。
+ServeHTTP 内部会主动读取 request.Body，因此额外设置一个最大 gRPC 帧的输入 credit；
+只有 stats.InPayload 确认已解码的 wire bytes 才返还。这不是另一个 pending 操作队列。
+没有用 stats.End 判定输出已送达，也没有单纯延时关闭已完成的健康连接。
+
+HTTP/2 stream 写超时可仅 reset 该流；Bulk 原有 watchdog 或连接写超时仍可能关闭对应
+连接，截断同连接的其他 RPC。底层 reset 的 gRPC 客户端状态可能是 INTERNAL，而不是可
+交付的 DEADLINE_EXCEEDED envelope；关键是非 OK/截断，缺失写入结果仍为 UNKNOWN。
+已经在期限前发送完成的数据不能因客户端应用稍后才读取而撤回。
+
+Shutdown 由 net/http 管理 HTTP/2 graceful drain；gRPC ServeHTTP 的 transport 不实现 Drain，
+因此不能调用 grpc.GracefulStop。停止新准入、继续已准入工作，到 drain deadline 强制
+关闭 HTTP 连接并 Stop gRPC，等待当前有界 handler 退出，解除阻塞的发送/接收。Adapter 仍仅由 Runtime 关闭一次。
+本次已对 unary 阻塞发送及此前 Bulk/执行/事务关闭场景重新运行真实后端测试。
 
 ## 5. MongoDB 原子 RMW 高风险验证
 
@@ -265,9 +287,10 @@ go vet -tags integration ./...
 | 混合 deadline | `TestNativeBatchMixedDeadlines`：短调用过期，两条真实写入仍成功，长调用收到 APPLIED |
 | 逐项/全批/不确定 | duplicate-key 混合成功、网络 close、write-concern fault、真实成功 insert reply drop；无回退重放 |
 | Delete missing batch | 一条 native delete command、零 find，两项 APPLIED |
+| Unary 端到端期限 | 原始 65535-byte 双窗口独立用例，无/长/短客户端 deadline；输入停滞/进度、正常大响应、发送/取消/shutdown 竞争、资源回收及零窗口写入回执丢失；见专项报告 |
 | Bulk 完成/截断/duplex | 81 项混合流、错误 Store、空流、非连续 index、重复 Open、End/计数/EOF |
 | 排序/并发 | 同 key Put/Read 交替；独立同 key 两个 200ms read 约 210ms 完成；乱序结果按 index 关联 |
-| 慢/停止读取/持续生产 | HTTP/2 实测上游 Send 背压；单流 peak retained=8，约 6–8MiB heap 平台，stall 后连接关闭 |
+| 慢/停止读取/持续生产 | HTTP/2 实测上游 Send 背压；单流 peak retained=8，修订后的短样本 heap 约 18–20MB 平台（不是 RSS/峰值保证），stall 后回收 |
 | 连接/session | 真实 loopback TCP 超额连接立即关闭、重复 Close 不重复释放；超额应用 session 拒绝 |
 | 关闭 | 排队/active、无 half-close 的 Bulk、真正阻塞的 result Send、事务 commit deadline/实际 Adapter 关闭、graceful accepted drain |
 | 部分初始化/生命周期 | 五次不存在集合启动失败、pool 连接回到基线附近；重复 Close 后 client 已 Disconnect |
@@ -288,5 +311,6 @@ cleanup 只删除自己创建的数据库；结束前实查没有残留 `weir_te
   或大文档/多数副本延迟资格测试。更大文档、更多连接/并发必须重新核算。
 - Linux 运行与其他 MongoDB/driver/协议工具版本未资格验证；升级必须重跑原生故障 suite。
 - 连接级 stall 清理有已声明的同连接影响；客户端必须正确处理缺失结果为 UNKNOWN。
+- HTTP/2 期限修复切换了 gRPC transport 接入方式；ServeHTTP API 是实验性的，仅对固定 Go/gRPC 和本地测试 profile 验证，不扩大生产就绪声明。
 - 实现与验证结束时未提交；随后依据用户明确指令，将双语架构基线和里程碑实现整理为本地提交，
   具体记录以 `git log` 为准。未推送、创建 PR、合并或 release；工具缓存和测试数据不纳入提交。

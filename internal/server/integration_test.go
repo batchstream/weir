@@ -29,11 +29,20 @@ type fixture struct {
 	server  *Server
 	runtime *store.Runtime
 	client  pb.WeirClient
+	conn    *grpc.ClientConn
 	native  *mongo.Client
 	db      string
+	address string
 }
 
 func setup(t *testing.T, batch bool) fixture {
+	sl := DefaultLimits()
+	sl.Stall = 300 * time.Millisecond
+	sl.BulkLifetime = 5 * time.Second
+	return setupWithLimits(t, batch, sl)
+}
+
+func setupWithLimits(t *testing.T, batch bool, sl Limits) fixture {
 	t.Helper()
 	native, db := testmongo.Open(t)
 	cfg := mongostore.Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records"}
@@ -47,9 +56,6 @@ func setup(t *testing.T, batch bool) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sl := DefaultLimits()
-	sl.Stall = 300 * time.Millisecond
-	sl.BulkLifetime = 5 * time.Second
 	s, err := New(r, "mongo", sl)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +65,7 @@ func setup(t *testing.T, batch bool) fixture {
 		t.Fatal(err)
 	}
 	go func() { _ = s.Serve(listener) }()
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(256<<10))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +77,7 @@ func setup(t *testing.T, batch bool) fixture {
 			t.Error(err)
 		}
 	})
-	f := fixture{server: s, runtime: r, client: pb.NewWeirClient(conn), native: native, db: db}
+	f := fixture{server: s, runtime: r, client: pb.NewWeirClient(conn), conn: conn, native: native, db: db, address: listener.Addr().String()}
 	return f
 }
 func resource(f fixture, id string) string { return "weir://mongo/" + f.db + "/records/s:" + id }
@@ -483,5 +489,139 @@ func TestGRPCDrainWithoutClientHalfClose(t *testing.T) {
 	}
 	if err := <-closed; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUnaryDeadlineCoversResponseSend(t *testing.T) {
+	cases := []struct {
+		name            string
+		lifetime, stall time.Duration
+	}{
+		{name: "both", lifetime: 100 * time.Millisecond, stall: 100 * time.Millisecond},
+		{name: "lifetime", lifetime: 100 * time.Millisecond, stall: 2 * time.Second},
+		{name: "stall", lifetime: 2 * time.Second, stall: 100 * time.Millisecond},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := DefaultLimits()
+			limits.UnaryLifetime = tc.lifetime
+			limits.Stall = tc.stall
+			f := setupWithLimits(t, true, limits)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
+			if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+				t.Fatal(err)
+			}
+			stream := startPausedUnaryRead(t, f, ctx)
+			paused := time.Now()
+			if len(f.server.slots) != 1 || f.runtime.Snapshot().Retained != 1 {
+				t.Fatal("handler released delivery resources before sending", len(f.server.slots), f.runtime.Snapshot())
+			}
+			for time.Since(paused) < 300*time.Millisecond && (len(f.server.slots) != 0 || f.runtime.Snapshot().Retained != 0) {
+				time.Sleep(time.Millisecond)
+			}
+			if len(f.server.slots) != 0 || f.runtime.Snapshot().Retained != 0 {
+				t.Fatal("expired send retained delivery resources", len(f.server.slots), f.runtime.Snapshot())
+			}
+			released := time.Since(paused)
+			time.Sleep(max(0, 600*time.Millisecond-time.Since(paused)))
+			if ctx.Err() != nil {
+				t.Fatal("test accidentally used a client-side timeout", ctx.Err())
+			}
+			var result pb.ReadResult
+			err := stream.RecvMsg(&result)
+			if err == nil {
+				t.Fatalf("unary exceeded 100ms bound yet delivered a complete %d-byte response after 600ms", len(result.GetDocument().GetData()))
+			}
+			if status.Code(err) == codes.OK {
+				t.Fatal("expired response reported gRPC OK")
+			}
+			t.Logf("%s: released in %s; stalled unary rejected: %v", tc.name, released, err)
+		})
+	}
+}
+
+func startPausedUnaryRead(t *testing.T, f fixture, ctx context.Context) grpc.ClientStream {
+	t.Helper()
+	// Keep the unary wire method; delay RecvMsg to exhaust the fixed HTTP/2 window.
+	desc := &grpc.StreamDesc{}
+	stream, err := f.conn.NewStream(ctx, desc, pb.Weir_Read_FullMethodName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &pb.ReadRequest{Resource: resource(f, "large")}
+	if err := stream.SendMsg(req); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Header(); err != nil {
+		t.Fatal(err)
+	}
+	return stream
+}
+
+func TestUnaryCompletedResponseDoesNotExpireConnection(t *testing.T) {
+	limits := DefaultLimits()
+	limits.UnaryLifetime = 100 * time.Millisecond
+	limits.Stall = 100 * time.Millisecond
+	f := setupWithLimits(t, true, limits)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req := &pb.ReadRequest{Resource: resource(f, "missing")}
+	if result, err := f.client.Read(ctx, req); err != nil || result.GetMissing() == nil {
+		t.Fatal(err, result)
+	}
+	var connection any
+	f.server.connections.Range(func(_, v any) bool { connection = v; return false })
+	if connection == nil {
+		t.Fatal("connection not established")
+	}
+	time.Sleep(200 * time.Millisecond)
+	present := false
+	f.server.connections.Range(func(_, v any) bool { present = present || v == connection; return true })
+	if !present {
+		t.Fatal("completed response left an expiry timer that closed the connection")
+	}
+	if result, err := f.client.Read(ctx, req); err != nil || result.GetMissing() == nil {
+		t.Fatal(err, result)
+	}
+}
+
+func TestUnaryShutdownWhileResponseBlocked(t *testing.T) {
+	limits := DefaultLimits()
+	limits.UnaryLifetime = 2 * time.Second
+	limits.Stall = 2 * time.Second
+	f := setupWithLimits(t, true, limits)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
+	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+		t.Fatal(err)
+	}
+	stream := startPausedUnaryRead(t, f, ctx)
+	if len(f.server.slots) != 1 || f.runtime.Snapshot().Retained != 1 {
+		t.Fatal("send not retained")
+	}
+	drain, stop := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer stop()
+	start := time.Now()
+	if err := f.server.Shutdown(drain); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("shutdown blocked on unary transport")
+	}
+	for i := 0; i < 100 && (len(f.server.slots) != 0 || f.runtime.Snapshot().Retained != 0); i++ {
+		time.Sleep(time.Millisecond)
+	}
+	if len(f.server.slots) != 0 || f.runtime.Snapshot().Retained != 0 {
+		t.Fatal("shutdown leaked unary delivery", len(f.server.slots), f.runtime.Snapshot())
+	}
+	var result pb.ReadResult
+	if err := stream.RecvMsg(&result); err == nil {
+		t.Fatal("blocked response became successful after shutdown")
 	}
 }

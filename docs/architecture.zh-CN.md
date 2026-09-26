@@ -12,7 +12,7 @@
 
 - GopherLua v1.1.1 无法提供每次调用的分配、编译取消和宿主 helper 隔离。它仅存在于测试中。有限计数器转换用于事务一致性验证，不是替代的通用语言；程序转换仍关闭。
 - MongoDB Go driver v2.9.1 在 deadline/CSOT 模式下会无限次重试提交。显式提交循环保留外层原始 deadline/error 与 session，将父 context 的取消桥接到无 Deadline 的原生 context。驱动 socket listener 需要 Canceled，而不能仅收到缺少 socket deadline 的 DeadlineExceeded；因此既保留 retry-once 次数上限，也保留原始期限的实际取消。真实响应丢弃测试验证每个逻辑 RMW 最多十次线上提交、相同 session/事务以及不确定后不重新执行转换。升级该驱动必须重新验证。
-- gRPC v1.79.3 可能将 trailers 排在未读取的 DATA 后。输入或发送停滞超时会关闭这一条 transport 连接，而不只是结束 handler。同连接其他 RPC 可能截断；缺失的写入结果仍为 UNKNOWN。明确有界的故障范围优于无限保留阻塞缓冲区。
+- 验收修正：提交 `37d1454` 的服务端期限没有覆盖 unary 响应发送，撤回此前整体验收通过的结论。gRPC v1.79.3 的 handler/context 可以早于 DATA/trailers 实际发送结束。修复采用 Go 1.27 HTTP/2 stream 写期限及固定版本的 gRPC ServeHTTP，不把 handler 返回或 stats.End 当作送达证明。Unary 输入读取还有受原总期限约束、仅随实际输入进度更新的停滞限制；请求解码完成只结束输入停滞计账，不结束总寿命。Unary 总寿命覆盖发送，响应停滞预算也覆盖编码、DATA 和 trailers；原生 stream 超时直接 reset，不等客户端恢复读取。Bulk 原有输入/发送 watchdog 及连接写超时仍可能关闭连接，影响同连接其他 RPC；缺失写入结果仍为 UNKNOWN。复现和测试见 `unary-response-deadline.md`。ServeHTTP 的主动 body 读取额外受一个最大 gRPC 帧的字节额度限制，仅解码完消息才归还，不能绕过 Bulk 背压。ServeHTTP API 为实验性 API，升级 Go/gRPC 必须重新验证这一固定 transport profile。
 
 当前只建立 `api/weir/v1`、`internal/protocol`、`internal/store`、`internal/server`、`internal/mongostore`、`internal/value` 等确有用途的包。StoreRuntime 直接拥有唯一具体 Adapter，只比较不透明 plan 元数据；不导入 BSON 或检查字段。不为匹配第 16 节未来布局而建立单实现接口；真正批准第二种实现时再提取边界。结果额度在准入时提前按最坏情况预留，早于后文要求的派发时刻。
 
@@ -840,6 +840,8 @@ internal/
 | 场景 | 必需结果 |
 | --- | --- |
 | 执行前 pending 满或进程 latch 拒绝 | NOT_STARTED，不开始后端尝试。 |
+| Unary 完整消息解码前输入停滞 | 无数据、部分前缀和部分请求体等待同时受原总期限与输入停滞额度约束。实际进度仅能刷新停滞额度；解码完成后不能把后端工作误判为输入停滞。 |
+| Unary handler 返回但响应仍受流控阻塞 | 总寿命及响应停滞限制仍覆盖编码、DATA、trailers；不得过期后完整 OK。应用 slot 要等交付与 RPC 处理两方均结束再释放。 |
 | 取消与派发竞争 | 单状态迁移，可能发送后不误报 NOT_STARTED。 |
 | 共享批次混合 deadline | 一个过期不取消无关存活者，不重放过期写入。 |
 | 跨客户端批次有慢接收者 | 预留有界输出，不阻塞全局 Send/其他客户端。 |

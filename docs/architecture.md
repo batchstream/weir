@@ -33,10 +33,22 @@ Three implementation findings refine, rather than weaken, the contracts below:
   its native retry-once therefore bounds wire attempts without losing cancellation. Real-response-drop tests verify at most
   ten wire commits per logical RMW operation, one session/transaction, and no
   re-evaluation after ambiguity. This pinned-driver dependency requires requalification.
-- gRPC v1.79.3 may queue trailers behind unread DATA. An input/send stall closes that
-  one transport connection, not just the handler. Co-resident RPCs can be truncated;
-  their missing mutation results remain UNKNOWN. This explicitly bounded failure
-  scope is preferable to retaining blocked transport buffers indefinitely.
+- Qualification correction: commit `37d1454` did not cover unary response sending
+  with its server deadline; the earlier overall acceptance conclusion is withdrawn.
+  gRPC v1.79.3 can finish a handler/context before queued DATA/trailers are sent.
+  The repair uses Go 1.27 HTTP/2 stream write deadlines with the pinned gRPC
+  ServeHTTP transport, not handler return or stats.End as proof of delivery.
+  Unary input reads also have a progress-sensitive stall bound capped by the original
+  deadline; decoding the unary frame ends input-stall accounting, not the lifetime.
+  Unary lifetime includes sending; its response-stall budget also covers encoding,
+  DATA and trailers. Native stream expiry resets the stream without requiring a
+  client read. Bulk's existing input/send watchdog and connection write timeout
+  may still close a connection, truncating co-resident RPCs. Missing mutation
+  results remain UNKNOWN. See `unary-response-deadline.md` for reproduction and tests.
+  ServeHTTP's eager request-body reader is explicitly credit-limited to one maximum
+  gRPC frame, returning credits only for decoded messages; it cannot bypass Bulk
+  backpressure. The ServeHTTP API is experimental and this pinned profile requires
+  transport requalification when Go or gRPC changes.
 
 The smaller initial layout uses `api/weir/v1`, `internal/protocol`, `internal/store`,
 `internal/server`, `internal/mongostore`, and `internal/value`. StoreRuntime directly
@@ -1818,6 +1830,8 @@ shipping a weaker sandbox.
 | Scenario | Expected invariant |
 | --- | --- |
 | Pending limit or process latch before execution | NOT_STARTED, no backend attempt. |
+| Unary request stalls before a complete decoded frame | No-data, partial-prefix and partial-body waits are bounded by the original deadline and input-stall budget. Actual progress may refresh only the stall budget; completed decoding must not time out later backend work as an input stall. |
+| Unary handler returns while response is flow-controlled | Server lifetime and response-stall limits still cover encoding, DATA and trailers; no late complete OK. Delivery and RPC-processing ownership both finish before releasing the application slot. |
 | Cancellation races scheduler dispatch | One state transition; no false NOT_STARTED after a possible send. |
 | Mixed caller deadlines in a shared physical batch | One expiry does not cancel unrelated live callers; no replay of expired mutations. |
 | One slow result consumer in a cross-client batch | Reserved bounded output; other clients can complete; no global Send blockage. |
