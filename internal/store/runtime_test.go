@@ -7,11 +7,11 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 )
 
-func plan(index uint64, key string, read bool) *mongostore.Plan {
+func plan(index uint64, key string, read bool) *execution.Plan {
 	op := &pb.BulkOperation{Index: index}
 	token := "write"
 	bytes := protocol.ResultOverhead
@@ -26,7 +26,7 @@ func plan(index uint64, key string, read bool) *mongostore.Plan {
 		m := &pb.MutateRequest{Resource: key, Action: a}
 		op.Operation = &pb.BulkOperation_Mutate{Mutate: m}
 	}
-	p := &mongostore.Plan{Operation: op, Key: key, Token: token, Bytes: 1024, ResultBytes: bytes, Batchable: !read}
+	p := &execution.Plan{Operation: op, Key: key, Token: token, Bytes: 1024, ResultBytes: bytes, Batchable: !read}
 	return p
 }
 func finish(r *Runtime, b *batch) {
@@ -238,24 +238,24 @@ func TestAIMDEpochAndFloor(t *testing.T) {
 	c := controller{window: 4}
 	b := &batch{epoch: 0, saturated: true}
 	now := time.Now()
-	c.observe(b, mongostore.Congested, 8, now)
+	c.observe(b, execution.Congested, 8, now)
 	if c.window != 2 {
 		t.Fatal(c)
 	}
-	c.observe(b, mongostore.Congested, 8, now)
+	c.observe(b, execution.Congested, 8, now)
 	if c.window != 2 {
 		t.Fatal("old flight counted twice")
 	}
 	for i := 0; i < 4; i++ {
 		b.epoch = c.epoch
-		c.observe(b, mongostore.Congested, 8, now)
+		c.observe(b, execution.Congested, 8, now)
 	}
 	if c.window != 1 {
 		t.Fatal("Cmin")
 	}
 	b.epoch = c.epoch
 	for i := 0; i < 4; i++ {
-		c.observe(b, mongostore.Healthy, 8, now.Add(time.Second))
+		c.observe(b, execution.Healthy, 8, now.Add(time.Second))
 	}
 	if c.window != 2 {
 		t.Fatal("no healthy growth", c)

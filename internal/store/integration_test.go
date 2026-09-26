@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/mongostore"
 	"github.com/batchstream/weir/internal/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -27,7 +28,12 @@ func setup(t *testing.T) fixture {
 	l := DefaultLimits()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	r, err := Open(ctx, cfg, l)
+	cfg.Pool = uint64(l.Concurrency)
+	a, err := mongostore.Open(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(a, l)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +47,7 @@ func setup(t *testing.T) fixture {
 	f := fixture{runtime: r, native: native, db: db}
 	return f
 }
-func readPlan(t *testing.T, f fixture, key string) *mongostore.Plan {
+func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	req := &pb.ReadRequest{Resource: "weir://mongo/" + f.db + "/records/s:" + key}
 	v := &pb.BulkOperation_Read{Read: req}
@@ -52,7 +58,7 @@ func readPlan(t *testing.T, f fixture, key string) *mongostore.Plan {
 	}
 	return p
 }
-func createPlan(t *testing.T, f fixture, key string) *mongostore.Plan {
+func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	doc := bson.D{{Key: "_id", Value: key}, {Key: "n", Value: int32(1)}}
 	raw, _ := bson.Marshal(doc)

@@ -11,7 +11,7 @@ import (
 
 // Guard uses RSS on Linux, constrained by cgroup v2 memory.max when available.
 // Other platforms use Go Sys-HeapReleased: explicitly a degraded, not RSS, signal.
-func (r *Runtime) Guard(ctx context.Context, budget uint64) {
+func Guard(ctx context.Context, stores map[string]*Runtime, budget uint64) {
 	budget = effectiveBudget(budget)
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
@@ -27,7 +27,9 @@ func (r *Runtime) Guard(ctx context.Context, budget uint64) {
 			} else if n <= budget*70/100 {
 				latched = false
 			}
-			r.SetOverloaded(latched)
+			for _, r := range stores {
+				r.SetOverloaded(latched)
+			}
 		}
 	}
 }

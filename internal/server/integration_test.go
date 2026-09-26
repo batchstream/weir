@@ -52,11 +52,17 @@ func setupWithLimits(t *testing.T, batch bool, sl Limits) fixture {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	r, err := store.Open(ctx, cfg, l)
+	cfg.Pool = uint64(l.Concurrency)
+	a, err := mongostore.Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(r, "mongo", sl)
+	r, err := store.New(a, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := map[string]*store.Runtime{"mongo": r}
+	s, err := New(routes, sl)
 	if err != nil {
 		t.Fatal(err)
 	}

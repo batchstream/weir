@@ -10,7 +10,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 )
 
@@ -33,7 +33,7 @@ func (l Limits) Validate() error {
 
 type Runtime struct {
 	mu                           sync.Mutex
-	adapter                      *mongostore.Adapter
+	adapter                      execution.Adapter
 	limits                       Limits
 	queue                        []*Ticket
 	live                         map[*Ticket]struct{}
@@ -61,7 +61,7 @@ type Ticket struct {
 	runtime          *Runtime
 	session          *Session
 	ctx              context.Context
-	plan             *mongostore.Plan
+	plan             *execution.Plan
 	result           *pb.BulkResult
 	ready            chan struct{}
 	sequence         string
@@ -84,20 +84,20 @@ type Snapshot struct {
 	Draining, Closed, Overloaded                                 bool
 }
 
-func Open(ctx context.Context, cfg mongostore.Config, limits Limits) (*Runtime, error) {
-	if err := limits.Validate(); err != nil {
-		return nil, err
+// New takes ownership of a constructed adapter, including cleanup on validation failure.
+func New(a execution.Adapter, limits Limits) (*Runtime, error) {
+	if a == nil {
+		return nil, fmt.Errorf("missing adapter")
 	}
-	cfg.Pool = uint64(limits.Concurrency)
-	a, err := mongostore.Open(ctx, cfg)
-	if err != nil {
+	if err := limits.Validate(); err != nil {
+		_ = a.Close()
 		return nil, err
 	}
 	r := newRuntime(a, limits)
 	go r.loop()
 	return r, nil
 }
-func newRuntime(a *mongostore.Adapter, l Limits) *Runtime {
+func newRuntime(a execution.Adapter, l Limits) *Runtime {
 	r := &Runtime{adapter: a, limits: l, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[string]bool), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
 	r.controller.window = 1
 	return r
@@ -109,10 +109,10 @@ func (r *Runtime) NewSession() *Session {
 	s := &Session{runtime: r, id: r.nextSession, Results: make(chan *Ticket, r.limits.SessionOutstanding)}
 	return s
 }
-func (r *Runtime) Prepare(op *pb.BulkOperation) (*mongostore.Plan, *pb.Failure) {
+func (r *Runtime) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	return r.adapter.Prepare(op)
 }
-func (r *Runtime) Submit(ctx context.Context, p *mongostore.Plan, s *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
+func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	changed := r.changed
@@ -371,13 +371,13 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	return b
 }
 func (r *Runtime) execute(b *batch) {
-	plans := make([]*mongostore.Plan, len(b.items))
+	plans := make([]*execution.Plan, len(b.items))
 	for i, t := range b.items {
 		plans[i] = t.plan
 	}
 	results, fb := r.adapter.Execute(b.ctx, plans)
 	if b.timeoutOwned && b.ctx.Err() == context.DeadlineExceeded {
-		fb = mongostore.Congested
+		fb = execution.Congested
 	}
 	b.cancel()
 	r.mu.Lock()
@@ -441,18 +441,18 @@ type controller struct {
 	cooldown, lastGrowth time.Time
 }
 
-func (c *controller) observe(b *batch, fb mongostore.Feedback, max int, now time.Time) {
+func (c *controller) observe(b *batch, fb execution.Feedback, max int, now time.Time) {
 	if b.epoch != c.epoch {
 		return
 	}
-	if fb == mongostore.Congested {
+	if fb == execution.Congested {
 		c.window = maxInt(1, c.window/2)
 		c.epoch++
 		c.credit = 0
 		c.cooldown = now.Add(time.Duration(100+rand.IntN(201)) * time.Millisecond)
 		return
 	}
-	if fb != mongostore.Healthy || !b.saturated {
+	if fb != execution.Healthy || !b.saturated {
 		return
 	}
 	c.credit++

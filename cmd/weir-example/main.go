@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/protocol"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -18,6 +20,13 @@ func main() {
 	}
 }
 func run() error {
+	name := flag.String("store", "mongo", "mongo or search")
+	database := flag.String("database", "weir_m1", "pre-created MongoDB database")
+	index := flag.String("index", "weir_m2_example", "pre-created Search index")
+	flag.Parse()
+	if *name != "mongo" && *name != "search" {
+		return fmt.Errorf("store must be mongo or search")
+	}
 	conn, err := grpc.NewClient("127.0.0.1:7447", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
 	if err != nil {
 		return err
@@ -32,20 +41,28 @@ func run() error {
 		return err
 	}
 	document := &pb.Document{MediaType: "application/bson", Data: data}
+	resource := "weir://mongo/" + protocol.EncodeSegment(*database) + "/records/s:example"
+	if *name == "search" {
+		document = &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
+		resource = "weir://search/" + protocol.EncodeSegment(*index) + "/s:example"
+	}
 	put := &pb.MutateRequest_Put{Put: document}
-	mutation := &pb.MutateRequest{Resource: "weir://mongo/weir_m1/records/s:example", Action: put}
+	mutation := &pb.MutateRequest{Resource: resource, Action: put}
 	result, err := client.Mutate(ctx, mutation)
 	if err != nil {
 		return fmt.Errorf("no terminal result: mutation is UNKNOWN: %w", err)
 	}
 	fmt.Println("Mutate:", result)
+	if result.Outcome != pb.MutationOutcome_APPLIED {
+		return fmt.Errorf("mutation was not acknowledged: %s", result.Outcome)
+	}
 	stream, err := client.Bulk(ctx)
 	if err != nil {
 		return err
 	}
 	sent := make(chan error, 1)
 	go func() {
-		open := &pb.BulkOpen{Store: "weir://mongo"}
+		open := &pb.BulkOpen{Store: "weir://" + *name}
 		variant := &pb.BulkRequestFrame_Open{Open: open}
 		frame := &pb.BulkRequestFrame{Frame: variant}
 		if e := stream.Send(frame); e != nil {
@@ -67,6 +84,7 @@ func run() error {
 	}()
 	count := uint64(0)
 	ended := false
+	seen := make(map[uint64]bool)
 	for {
 		frame, e := stream.Recv()
 		if e == io.EOF {
@@ -75,7 +93,14 @@ func run() error {
 		if e != nil {
 			return fmt.Errorf("truncated Bulk: %w", e)
 		}
+		if ended {
+			return fmt.Errorf("Bulk frame after End")
+		}
 		if result := frame.GetResult(); result != nil {
+			if result.Index >= 3 || seen[result.Index] || result.GetRead().GetDocument() == nil {
+				return fmt.Errorf("invalid Bulk result")
+			}
+			seen[result.Index] = true
 			count++
 			fmt.Println("Bulk index:", result.Index, "missing:", result.GetRead().GetMissing() != nil)
 		} else if end := frame.GetEnd(); end != nil {

@@ -33,8 +33,7 @@ func DefaultLimits() Limits {
 
 type Server struct {
 	pb.UnimplementedWeirServer
-	Runtime     *store.Runtime
-	Store       string
+	stores      map[string]*store.Runtime
 	limits      Limits
 	slots       chan struct{}
 	grpc        *grpc.Server
@@ -44,11 +43,24 @@ type Server struct {
 	connections sync.Map
 }
 
-func New(runtime *store.Runtime, name string, l Limits) (*Server, error) {
+func New(stores map[string]*store.Runtime, l Limits) (*Server, error) {
 	if l.Connections < 1 || l.Connections > 64 || l.Sessions < 1 || l.Sessions > 64 || l.UnaryLifetime <= 0 || l.BulkLifetime <= 0 || l.Stall <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}
-	s := &Server{Runtime: runtime, Store: name, limits: l, slots: make(chan struct{}, l.Sessions), draining: make(chan struct{})}
+	if len(stores) == 0 || len(stores) > 16 {
+		return nil, status.Error(codes.InvalidArgument, "invalid store count")
+	}
+	routes := make(map[string]*store.Runtime, len(stores))
+	seen := make(map[*store.Runtime]bool)
+	for name, runtime := range stores {
+		parsed, segments, err := protocol.ParseResource("weir://" + name)
+		if err != nil || parsed != name || len(segments) != 0 || runtime == nil || seen[runtime] {
+			return nil, status.Error(codes.InvalidArgument, "invalid or aliased store")
+		}
+		routes[name] = runtime
+		seen[runtime] = true
+	}
+	s := &Server{stores: routes, limits: l, slots: make(chan struct{}, l.Sessions), draining: make(chan struct{})}
 	statistics := deliveryStats{}
 	s.grpc = grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame), grpc.UnaryInterceptor(s.unary), grpc.StatsHandler(statistics), grpc.WaitForHandlers(true))
 	protocols := &http.Protocols{}
@@ -64,8 +76,10 @@ func (s *Server) enter() error {
 		return status.Error(codes.Unavailable, "draining")
 	default:
 	}
-	if s.Runtime.Snapshot().Overloaded {
-		return status.Error(codes.ResourceExhausted, "process overloaded")
+	for _, runtime := range s.stores {
+		if runtime.Snapshot().Overloaded {
+			return status.Error(codes.ResourceExhausted, "process overloaded")
+		}
 	}
 	select {
 	case s.slots <- struct{}{}:
@@ -106,11 +120,15 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	if !ok {
 		return nil, status.Error(codes.Internal, "missing HTTP/2 delivery lifetime")
 	}
-	plan, f := s.Runtime.Prepare(op)
+	runtime, failure := s.resolve(protocol.Resource(op), false)
+	if failure != nil {
+		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, failure), nil
+	}
+	plan, f := runtime.Prepare(op)
 	if f != nil {
 		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, f), nil
 	}
-	ticket, f, _ := s.Runtime.Submit(ctx, plan, nil)
+	ticket, f, _ := runtime.Submit(ctx, plan, nil)
 	if f != nil {
 		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, f), nil
 	}
@@ -122,6 +140,18 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	return result, nil
 }
 
+func (s *Server) resolve(resource string, root bool) (*store.Runtime, *pb.Failure) {
+	name, segments, err := protocol.ParseResource(resource)
+	if err != nil || root && len(segments) != 0 {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource")
+	}
+	runtime := s.stores[name]
+	if runtime == nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store")
+	}
+	return runtime, nil
+}
+
 type receiveEnd struct {
 	count uint64
 	err   error
@@ -130,12 +160,46 @@ type receiveEnd struct {
 func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.BulkResponseFrame]) error {
 	ctx, cancel := context.WithTimeout(stream.Context(), s.limits.BulkLifetime)
 	defer cancel()
-	session := s.Runtime.NewSession()
+	opening := make(chan *pb.BulkRequestFrame, 1)
+	openError := make(chan error, 1)
+	go func() {
+		first, err := stream.Recv()
+		if err != nil {
+			openError <- err
+			return
+		}
+		opening <- first
+	}()
+	timer := time.NewTimer(s.limits.Stall)
+	defer timer.Stop()
+	var first *pb.BulkRequestFrame
+	select {
+	case first = <-opening:
+	case <-openError:
+		return status.Error(codes.InvalidArgument, "Bulk requires Open")
+	case <-timer.C:
+		s.abortPeer(ctx)
+		return status.Error(codes.DeadlineExceeded, "Bulk Open stalled")
+	case <-ctx.Done():
+		s.abortPeer(ctx)
+		return status.FromContextError(ctx.Err()).Err()
+	case <-s.draining:
+		s.abortPeer(ctx)
+		return status.Error(codes.Unavailable, "draining")
+	}
+	if first.GetOpen() == nil {
+		return status.Error(codes.InvalidArgument, "Bulk requires Open")
+	}
+	runtime, failure := s.resolve(first.GetOpen().Store, true)
+	if failure != nil {
+		return status.Error(codes.InvalidArgument, "invalid Bulk Open")
+	}
+	session := runtime.NewSession()
 	defer session.Close()
 	invalid := make(chan *pb.BulkResult, 1)
 	ended := make(chan receiveEnd, 1)
 	activity := make(chan struct{}, 1)
-	args := receiveArgs{ctx: ctx, stream: stream, session: session, invalid: invalid, ended: ended, activity: activity}
+	args := receiveArgs{runtime: runtime, ctx: ctx, stream: stream, session: session, invalid: invalid, ended: ended, activity: activity}
 	go s.receive(args)
 	idle := time.NewTimer(s.limits.Stall)
 	defer idle.Stop()
@@ -204,6 +268,7 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 }
 
 type receiveArgs struct {
+	runtime  *store.Runtime
 	ctx      context.Context
 	stream   grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.BulkResponseFrame]
 	session  *store.Session
@@ -216,15 +281,6 @@ func (s *Server) receive(args receiveArgs) {
 	ctx, stream, session, invalid, ended, activity := args.ctx, args.stream, args.session, args.invalid, args.ended, args.activity
 	var count uint64
 	finish := func(err error) { end := receiveEnd{count: count, err: err}; ended <- end }
-	first, err := stream.Recv()
-	if err != nil {
-		finish(status.Error(codes.InvalidArgument, "Bulk requires Open"))
-		return
-	}
-	if first.GetOpen() == nil || first.GetOpen().Store != "weir://"+s.Store {
-		finish(status.Error(codes.InvalidArgument, "invalid Bulk Open"))
-		return
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -254,12 +310,12 @@ func (s *Server) receive(args receiveArgs) {
 			return
 		}
 		count++
-		plan, f := s.Runtime.Prepare(op)
+		plan, f := args.runtime.Prepare(op)
 		if f == nil {
 			for {
 				var changed <-chan struct{}
-				_, f, changed = s.Runtime.Submit(ctx, plan, session)
-				if f == nil || f.Code != pb.FailureCode_RESOURCE_EXHAUSTED || s.Runtime.Snapshot().Overloaded {
+				_, f, changed = args.runtime.Submit(ctx, plan, session)
+				if f == nil || f.Code != pb.FailureCode_RESOURCE_EXHAUSTED || args.runtime.Snapshot().Overloaded {
 					break
 				}
 				select {
@@ -282,7 +338,7 @@ func (s *Server) receive(args receiveArgs) {
 				return
 			}
 		}
-		if s.Runtime.Snapshot().Overloaded {
+		if args.runtime.Snapshot().Overloaded {
 			finish(status.Error(codes.ResourceExhausted, "process overloaded"))
 			return
 		}
@@ -315,7 +371,12 @@ func (s *Server) Serve(listener net.Listener) error {
 	return err
 }
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.once.Do(func() { close(s.draining); s.Runtime.BeginDrain() })
+	s.once.Do(func() {
+		close(s.draining)
+		for _, runtime := range s.stores {
+			runtime.BeginDrain()
+		}
+	})
 	stopped := make(chan struct{})
 	go func() {
 		if err := s.http.Shutdown(ctx); err != nil {
@@ -326,7 +387,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.grpc.Stop()
 		close(stopped)
 	}()
-	err := s.Runtime.Close(ctx)
+	var err error
+	for _, runtime := range s.stores {
+		err = errors.Join(err, runtime.Close(ctx))
+	}
 	select {
 	case <-stopped:
 	case <-ctx.Done():

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -23,7 +24,8 @@ type RMWReport struct {
 
 // IncrementConformance exercises the native RMW foundation using a finite deterministic
 // counter transform. It is intentionally not wired to AtomicTransform or any public RPC.
-func (a *Adapter) IncrementConformance(ctx context.Context, p *Plan) RMWReport {
+func (a *Adapter) IncrementConformance(ctx context.Context, work *execution.Plan) RMWReport {
+	p := work.Backend.(*plan)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	report := RMWReport{}

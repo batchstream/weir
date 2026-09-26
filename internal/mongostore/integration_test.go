@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
@@ -41,7 +42,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 	})
 	return a
 }
-func prepareCounter(t *testing.T, a *Adapter, key string) *Plan {
+func prepareCounter(t *testing.T, a *Adapter, key string) *execution.Plan {
 	t.Helper()
 	r := &pb.ReadRequest{Resource: "weir://mongo/" + a.config.Database + "/records/s:" + key}
 	v := &pb.BulkOperation_Read{Read: r}
@@ -314,7 +315,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 	proxy.DropRemaining.Store(1)
 	o := adapterTestOptions{database: db, uri: proxy.URI()}
 	a := testAdapter(t, o)
-	var plans []*Plan
+	var plans []*execution.Plan
 	for _, id := range []string{"one", "two"} {
 		doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int64(1)}}
 		raw, _ := bson.Marshal(doc)
@@ -411,7 +412,7 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 	}}
 	o := adapterTestOptions{database: db, monitor: monitor}
 	a := testAdapter(t, o)
-	var plans []*Plan
+	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
 		empty := &pb.Empty{}
 		action := &pb.MutateRequest_Delete{Delete: empty}

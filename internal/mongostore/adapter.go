@@ -12,6 +12,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -34,22 +35,11 @@ type Adapter struct {
 	once       sync.Once
 	closeErr   error
 }
-type Plan struct {
-	Operation          *pb.BulkOperation
-	Key, Token         string
-	Bytes, ResultBytes int
-	Batchable          bool
-	id                 any
-	document           bson.Raw
-	action             string
+type plan struct {
+	id       any
+	document bson.Raw
+	action   string
 }
-type Feedback uint8
-
-const (
-	Neutral Feedback = iota
-	Healthy
-	Congested
-)
 
 var namespacePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 
@@ -123,7 +113,7 @@ func (a *Adapter) Close() error {
 	})
 	return a.closeErr
 }
-func (a *Adapter) Prepare(op *pb.BulkOperation) (*Plan, *pb.Failure) {
+func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	if f := protocol.Validate(op, a.config.Store); f != nil {
 		return nil, f
 	}
@@ -136,12 +126,13 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*Plan, *pb.Failure) {
 	if err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record identity")
 	}
-	p := &Plan{Operation: op, Key: resource, id: id, ResultBytes: protocol.ResultOverhead}
+	native := &plan{id: id}
+	p := &execution.Plan{Operation: op, Key: resource, Backend: native, ResultBytes: protocol.ResultOverhead}
 	if r := op.GetRead(); r != nil {
 		if r.AdapterOptions != nil || r.ReadMediaType != "" && r.ReadMediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
-		p.action = "read"
+		native.action = "read"
 		p.Token = "read:" + resource
 		p.ResultBytes += protocol.MaxDocument
 	} else {
@@ -152,16 +143,16 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*Plan, *pb.Failure) {
 		var d *pb.Document
 		switch v := m.Action.(type) {
 		case *pb.MutateRequest_Put:
-			p.action = "put"
+			native.action = "put"
 			d = v.Put
 		case *pb.MutateRequest_Create:
-			p.action = "create"
+			native.action = "create"
 			d = v.Create
 		case *pb.MutateRequest_Replace:
-			p.action = "replace"
+			native.action = "replace"
 			d = v.Replace
 		case *pb.MutateRequest_Delete:
-			p.action = "delete"
+			native.action = "delete"
 		}
 		if d != nil {
 			if d.MediaType != "application/bson" {
@@ -175,11 +166,11 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*Plan, *pb.Failure) {
 			if err != nil || len(doc.Fields) == 0 || doc.Fields[0].Name != "_id" || !equalID(got, id) {
 				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "explicit first _id must match resource")
 			}
-			p.document = d.Data
+			native.document = d.Data
 		}
 		p.Token = "write"
 		p.Batchable = true
-		if p.action == "replace" {
+		if native.action == "replace" {
 			p.Token = "replace:" + resource
 			p.Batchable = false
 		}
@@ -217,14 +208,15 @@ func equalID(v value.Value, id any) bool {
 	}
 	return false
 }
-func (a *Adapter) Execute(ctx context.Context, plans []*Plan) ([]*pb.BulkResult, Feedback) {
+func (a *Adapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
 	if len(plans) > 1 {
 		return a.executeBulk(ctx, plans)
 	}
 	p := plans[0]
+	native := p.Backend.(*plan)
 	result := &pb.BulkResult{Index: p.Operation.Index}
-	filter := bson.D{{Key: "_id", Value: p.id}}
-	if p.action == "read" {
+	filter := bson.D{{Key: "_id", Value: native.id}}
+	if native.action == "read" {
 		raw, err := a.collection.FindOne(ctx, filter).Raw()
 		var r *pb.ReadResult
 		switch {
@@ -243,13 +235,13 @@ func (a *Adapter) Execute(ctx context.Context, plans []*Plan) ([]*pb.BulkResult,
 	}
 	var err error
 	var matched int64 = 1
-	switch p.action {
+	switch native.action {
 	case "create":
-		_, err = a.collection.InsertOne(ctx, p.document)
+		_, err = a.collection.InsertOne(ctx, native.document)
 	case "put", "replace":
-		opts := options.Replace().SetUpsert(p.action == "put")
+		opts := options.Replace().SetUpsert(native.action == "put")
 		var r *mongo.UpdateResult
-		r, err = a.collection.ReplaceOne(ctx, filter, p.document, opts)
+		r, err = a.collection.ReplaceOne(ctx, filter, native.document, opts)
 		if r != nil {
 			matched = r.MatchedCount
 		}
@@ -261,22 +253,23 @@ func (a *Adapter) Execute(ctx context.Context, plans []*Plan) ([]*pb.BulkResult,
 	if err != nil {
 		outcome = writeOutcome(err)
 		f = backendFailure(ctx, err)
-	} else if p.action == "replace" && matched == 0 {
+	} else if native.action == "replace" && matched == 0 {
 		outcome = pb.MutationOutcome_NOT_APPLIED
 		f = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
 	}
 	result.Result = &pb.BulkResult_Mutation{Mutation: protocol.Mutation(outcome, f)}
 	return []*pb.BulkResult{result}, feedback(ctx, err)
 }
-func (a *Adapter) executeBulk(ctx context.Context, plans []*Plan) ([]*pb.BulkResult, Feedback) {
+func (a *Adapter) executeBulk(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
 	models := make([]mongo.WriteModel, 0, len(plans))
 	for _, p := range plans {
-		filter := bson.D{{Key: "_id", Value: p.id}}
-		switch p.action {
+		native := p.Backend.(*plan)
+		filter := bson.D{{Key: "_id", Value: native.id}}
+		switch native.action {
 		case "create":
-			models = append(models, mongo.NewInsertOneModel().SetDocument(p.document))
+			models = append(models, mongo.NewInsertOneModel().SetDocument(native.document))
 		case "put":
-			models = append(models, mongo.NewReplaceOneModel().SetFilter(filter).SetReplacement(p.document).SetUpsert(true))
+			models = append(models, mongo.NewReplaceOneModel().SetFilter(filter).SetReplacement(native.document).SetUpsert(true))
 		case "delete":
 			models = append(models, mongo.NewDeleteOneModel().SetFilter(filter))
 		}
@@ -328,25 +321,25 @@ func backendFailure(ctx context.Context, err error) *pb.Failure {
 	// Backend strings may contain user data; never copy them into wire errors.
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend operation failed")
 }
-func feedback(ctx context.Context, err error) Feedback {
+func feedback(ctx context.Context, err error) execution.Feedback {
 	if err == nil || errors.Is(err, mongo.ErrNoDocuments) {
-		return Healthy
+		return execution.Healthy
 	}
 	if ctx.Err() != nil {
-		return Neutral
+		return execution.Neutral
 	}
 	var ce mongo.CommandError
 	if errors.As(err, &ce) && (ce.Code == 91 || ce.Code == 189 || ce.Code == 16500) {
-		return Congested
+		return execution.Congested
 	}
 	// Only Runtime knows whether a deadline belongs to its backend cap or a caller.
 	if mongo.IsTimeout(err) {
-		return Neutral
+		return execution.Neutral
 	}
 	if mongo.IsNetworkError(err) {
-		return Congested
+		return execution.Congested
 	}
-	return Neutral
+	return execution.Neutral
 }
 func transactionOptions() *options.TransactionOptionsBuilder {
 	return options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()).SetReadPreference(readpref.Primary())
