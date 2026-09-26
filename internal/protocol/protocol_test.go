@@ -27,7 +27,9 @@ func TestValidationAndUnsupported(t *testing.T) {
 	if f := Validate(op, "mongo"); f == nil || f.Code != pb.FailureCode_INVALID_ARGUMENT {
 		t.Fatal(f)
 	}
-	transform := &pb.Transform{}
+	program := &pb.ProgramTransform{Runtime: "unqualified"}
+	programForm := &pb.Transform_Program{Program: program}
+	transform := &pb.Transform{Form: programForm}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	m := &pb.MutateRequest{Resource: "weir://mongo/db/c/s:a", Action: action}
 	mv := &pb.BulkOperation_Mutate{Mutate: m}
@@ -39,4 +41,27 @@ func TestValidationAndUnsupported(t *testing.T) {
 func FuzzResource(f *testing.F) {
 	f.Add("weir://mongo/db/c/s:a%2Fb")
 	f.Fuzz(func(t *testing.T, s string) { _, _, _ = ParseResource(s) })
+}
+
+func TestExpressionWireBoundaryIsOpaque(t *testing.T) {
+	doc := &pb.Document{MediaType: "application/unknown", Data: []byte("not BSON or JSON")}
+	form := &pb.Transform_BackendExpression{BackendExpression: doc}
+	transform := &pb.Transform{Form: form}
+	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
+	mutation := &pb.MutateRequest{Resource: "weir://mongo/db/c/s:a", Action: action}
+	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
+	op := &pb.BulkOperation{Operation: variant}
+	if f := Validate(op, "mongo"); f != nil {
+		t.Fatal("Core interpreted opaque expression", f)
+	}
+	for _, raw := range [][]byte{nil, make([]byte, MaxExpression+1)} {
+		doc.Data = raw
+		if f := Validate(op, "mongo"); f.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			t.Fatal(f)
+		}
+	}
+	transform.Form = nil
+	if f := Validate(op, "mongo"); f.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+		t.Fatal(f)
+	}
 }

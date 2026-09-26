@@ -154,6 +154,13 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 			d = v.Replace
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
+		case *pb.MutateRequest_AtomicTransform:
+			expression := v.AtomicTransform.GetBackendExpression()
+			if f := a.prepareExpression(expression); f != nil {
+				return nil, f
+			}
+			native.action = "expression"
+			native.document = expression.Data
 		}
 		if d != nil {
 			if d.MediaType != "application/bson" {
@@ -171,8 +178,8 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		}
 		p.Token = "write"
 		p.Batchable = true
-		if native.action == "replace" {
-			p.Token = "replace:" + resource
+		if native.action == "replace" || native.action == "expression" {
+			p.Token = native.action + ":" + resource
 			p.Batchable = false
 		}
 	}
@@ -215,6 +222,9 @@ func (a *Adapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.B
 	}
 	p := plans[0]
 	native := p.Backend.(*plan)
+	if native.action == "expression" {
+		return a.executeExpression(ctx, p)
+	}
 	result := &pb.BulkResult{Index: p.Operation.Index}
 	filter := bson.D{{Key: "_id", Value: native.id}}
 	if native.action == "read" {

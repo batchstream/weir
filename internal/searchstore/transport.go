@@ -20,11 +20,12 @@ var errTimeout = errors.New("backend call deadline")
 var errResponseLimit = errors.New("backend response byte limit")
 
 type exchange struct {
-	path   string
-	body   []byte
-	limit  int
-	method string
-	native bool
+	path        string
+	body        []byte
+	limit       int
+	method      string
+	contentType string
+	native      bool
 }
 
 func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, error) {
@@ -51,6 +52,9 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	request.Header.Set("Accept", "application/json")
 	if body != nil {
 		request.Header.Set("Content-Type", "application/x-ndjson")
+		if call.contentType != "" {
+			request.Header.Set("Content-Type", call.contentType)
+		}
 	}
 	client := a.client
 	if call.native {

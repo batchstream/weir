@@ -164,6 +164,13 @@ func alterScanReply(message []byte, mode string) []byte {
 	if bson.Unmarshal(commandDocument(message), &doc) != nil {
 		return message
 	}
+	if mode == "missing_n" {
+		for i := range doc {
+			if doc[i].Key == "n" {
+				doc[i].Key = "missing_n"
+			}
+		}
+	}
 	partial := bson.E{Key: "partialResultsReturned", Value: true}
 	if mode == "partial_top" {
 		doc = append(doc, partial)

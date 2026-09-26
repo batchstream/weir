@@ -441,9 +441,9 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 				w.WriteHeader(502)
 				return
 			}
-			if strings.HasSuffix(r.URL.Path, "/_bulk") {
+			if strings.HasSuffix(r.URL.Path, "/_bulk") || strings.Contains(r.URL.Path, "/_update/") {
 				calls.Add(1)
-				if response.StatusCode != 200 || !bytes.Contains(raw, []byte(`"result":"created"`)) {
+				if response.StatusCode != 200 || (!bytes.Contains(raw, []byte(`"result":"created"`)) && !bytes.Contains(raw, []byte(`"result":"updated"`))) {
 					t.Error("write not acknowledged before fault", response.StatusCode)
 				}
 				if drop {
@@ -486,10 +486,24 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 	for _, kind := range []string{"mongo", "search"} {
 		for _, leg := range []string{"database", "peer", "application"} {
-			for _, native := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/%s/native=%v", kind, leg, native), func(t *testing.T) {
+			for _, mode := range []string{"ordinary", "native", "expression"} {
+				native := mode == "native"
+				t.Run(fmt.Sprintf("%s/%s/%s", kind, leg, mode), func(t *testing.T) {
 					backend := faultBackend(t, kind, leg == "database", native)
 					f := backend.fixture
+					if mode == "expression" {
+						if f.backend == nil {
+							seed := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: 0}}
+							if _, err := f.native.Database(f.db).Collection("records").InsertOne(context.Background(), seed); err != nil {
+								t.Fatal(err)
+							}
+						} else {
+							code, _ := f.backend.Do(t, "PUT", "/"+f.backend.Index+"/_doc/counter", `{"n":0}`)
+							if code != 201 {
+								t.Fatal(code)
+							}
+						}
+					}
 
 					ca := testpeer.NewCA(t)
 					identity, _, _ := ca.Identity(t, "node.weir.test")
@@ -529,6 +543,10 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 						}
 					} else {
 						request := realMutation(t, f, id, 1)
+						if mode == "expression" {
+							id = "counter"
+							request = realExpression(t, f, 1)
+						}
 						result, err := f.client.Mutate(ctx, request)
 						if err == nil && (result == nil || result.Outcome != pb.MutationOutcome_UNKNOWN) {
 							t.Fatal("false mutation evidence", result, err)
@@ -565,7 +583,11 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 							Version int `json:"_version"`
 							Found   bool
 						}
-						if code != 200 || json.Unmarshal(raw, &observed) != nil || !observed.Found || observed.Version != 1 {
+						expectedVersion := 1
+						if mode == "expression" {
+							expectedVersion = 2
+						}
+						if code != 200 || json.Unmarshal(raw, &observed) != nil || !observed.Found || observed.Version != expectedVersion {
 							t.Fatal("real effect/version", code, string(raw))
 						}
 					}

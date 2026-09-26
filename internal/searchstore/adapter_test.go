@@ -57,7 +57,9 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 		t.Fatal("options accepted")
 	}
 	mutation.AdapterOptions = nil
-	transform := &pb.Transform{}
+	program := &pb.ProgramTransform{Runtime: "unqualified"}
+	programForm := &pb.Transform_Program{Program: program}
+	transform := &pb.Transform{Form: programForm}
 	mutation.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	if _, failure := a.Prepare(op); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("transform accepted")

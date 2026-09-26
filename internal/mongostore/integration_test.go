@@ -34,7 +34,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 		t.Fatal(err)
 	}
 	cfg := Config{URI: o.uri, Store: "mongo", Database: o.database, Collection: "records", Pool: 4}
-	a := &Adapter{client: c, config: cfg, collection: c.Database(o.database).Collection("records")}
+	a := &Adapter{client: c, config: cfg, nativeNoReplay: opts.Auth == nil, collection: c.Database(o.database).Collection("records")}
 	t.Cleanup(func() {
 		if err := a.Close(); err != nil {
 			t.Error(err)

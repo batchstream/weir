@@ -11,7 +11,15 @@ RemoteWeir Service forwards the same five RPCs over mTLS without replay or failo
 forwarding-only nodes and two-hop chains are supported. Optional loopback health checks
 and bounded Prometheus metrics expose lifecycle, reservations and execution evidence.
 
-**AtomicTransform returns UNSUPPORTED.** The GopherLua candidate failed isolation
+**AtomicTransform supports only explicitly qualified backend-expression profiles:**
+`application/vnd.weir.mongodb-update.v1+bson` (`$set`/`$unset`/`$inc`) and
+`application/vnd.weir.search-update.v1+json` (exactly one `doc` object), existing
+records only, through unary Mutate and Bulk. Expressions are bounded to 16 KiB;
+Search Update requires full stored source and no default/final pipeline.
+See [milestone 7](docs/milestone-7.md) for exact bounds, native numeric semantics,
+no-op outcomes, fixed versions and evidence.
+
+**ProgramTransform remains UNSUPPORTED.** The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
 Dynamic configuration, full end-user authentication, SDKs, queues,
@@ -175,6 +183,8 @@ scripts/generate.sh
 - `docs/milestone-4.md`: bounded Native profiles, ownership, early response and no-replay evidence.
 - `docs/milestone-5.md`: static peers, mTLS authorization, bounded relays and multi-process evidence.
 - `docs/milestone-6.md`: optional bounded diagnostics, health semantics, exact metrics and process evidence.
+- [Milestone 7](docs/milestone-7.md): native expression profiles and atomic-update evidence.
+- [Production readiness checklist](docs/production-readiness.md): platform/runtime/deployment/load gates and unverified blockers for the trusted-intranet scope.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits and AIMD.
 - `internal/app` / `internal/overload`: process ownership, static assembly and shared overload guard.

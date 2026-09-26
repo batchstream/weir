@@ -211,6 +211,15 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 			work.Token = "replace"
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
+		case *pb.MutateRequest_AtomicTransform:
+			expression := action.AtomicTransform.GetBackendExpression()
+			if f := prepareExpression(expression); f != nil {
+				return nil, f
+			}
+			native.action = "expression"
+			native.source = expression.Data
+			work.Batchable = false
+			work.Token = "expression"
 		default:
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
 		}
@@ -282,6 +291,9 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
 	if len(works) == 0 {
 		return nil, execution.Neutral
+	}
+	if len(works) == 1 && works[0].Backend.(*plan).action == "expression" {
+		return a.executeExpression(ctx, works[0])
 	}
 	totalBytes := 0
 	for _, work := range works {

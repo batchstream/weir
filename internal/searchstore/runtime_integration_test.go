@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,9 +17,18 @@ import (
 )
 
 func TestSearchSharedDeadlineCancellationAndDrain(t *testing.T) {
+	testSearchCancellationAndDrain(t, false)
+}
+func TestSearchExpressionCancellationAndDrain(t *testing.T) { testSearchCancellationAndDrain(t, true) }
+func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 	for _, mode := range []string{"one_caller_expires", "drain", "cancel_all"} {
 		t.Run(mode, func(t *testing.T) {
 			base, b := setupSearch(t)
+			if expression {
+				for _, id := range []string{"short", "long"} {
+					b.Do(t, "PUT", "/"+b.Index+"/_doc/"+id, `{"n":0}`)
+				}
+			}
 			acknowledged := make(chan struct{}, 1)
 			release := make(chan struct{})
 			var calls atomic.Int32
@@ -42,7 +52,7 @@ func TestSearchSharedDeadlineCancellationAndDrain(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				if r.URL.Path == "/_bulk" {
+				if r.URL.Path == "/_bulk" || strings.Contains(r.URL.Path, "/_update/") {
 					calls.Add(1)
 					acknowledged <- struct{}{}
 					select {
@@ -83,6 +93,17 @@ func TestSearchSharedDeadlineCancellationAndDrain(t *testing.T) {
 			defer stopLong()
 			first := searchPlan(t, adapter, "put", "short")
 			second := searchPlan(t, adapter, "put", "long")
+			if expression {
+				var failure *pb.Failure
+				first, failure = adapter.Prepare(expressionOperation("weir://search/"+b.Index+"/s:short", `{"doc":{"n":1}}`))
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				second, failure = adapter.Prepare(expressionOperation("weir://search/"+b.Index+"/s:long", `{"doc":{"n":1}}`))
+				if failure != nil {
+					t.Fatal(failure)
+				}
+			}
 			second.Operation.Index = 1
 			a, failure, _ := runtime.Submit(short, first, nil)
 			if failure != nil {
@@ -124,11 +145,24 @@ func TestSearchSharedDeadlineCancellationAndDrain(t *testing.T) {
 				other.Ack()
 				close(release)
 			}
-			if calls.Load() != 1 {
+			expectedCalls := int32(1)
+			if expression && mode == "one_caller_expires" {
+				expectedCalls = 2
+			}
+			if calls.Load() != expectedCalls {
 				t.Fatal("shared batch split/replayed", calls.Load())
 			}
 			for _, id := range []string{"short", "long"} {
-				status, _ := b.Do(t, "GET", "/"+b.Index+"/_doc/"+id, "")
+				status, raw := b.Do(t, "GET", "/"+b.Index+"/_doc/"+id, "")
+				if expression {
+					want := `"n":1`
+					if id == "long" && mode != "one_caller_expires" {
+						want = `"n":0`
+					}
+					if !strings.Contains(string(raw), want) {
+						t.Fatal("unexpected effect", id, string(raw))
+					}
+				}
 				if status != 200 {
 					t.Fatal("real effect missing", id, status)
 				}

@@ -126,7 +126,9 @@ func TestGRPCUnaryAndUnsupported(t *testing.T) {
 			if err != nil || bson.Raw(r.GetDocument().Data).Lookup("n").Int32() != 3 {
 				t.Fatal(err, r)
 			}
-			transform := &pb.Transform{}
+			program := &pb.ProgramTransform{Runtime: "unqualified"}
+			programForm := &pb.Transform_Program{Program: program}
+			transform := &pb.Transform{Form: programForm}
 			m.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			mr, err = f.client.Mutate(ctx, m)
 			if err != nil || mr.Outcome != pb.MutationOutcome_NOT_STARTED || mr.Failure.Code != pb.FailureCode_UNSUPPORTED {

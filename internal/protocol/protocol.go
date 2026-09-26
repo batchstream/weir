@@ -20,6 +20,7 @@ const (
 	MaxURI         = 4096
 	ResultOverhead = 512
 	EntryOverhead  = 512
+	MaxExpression  = 16 << 10
 	MaxSelector    = 16 << 10
 	MaxFetchItems  = 32
 )
@@ -144,7 +145,20 @@ func Validate(op *pb.BulkOperation, store string) *pb.Failure {
 				return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing delete")
 			}
 		case *pb.MutateRequest_AtomicTransform:
-			return Fail(pb.FailureCode_UNSUPPORTED, "AtomicTransform is not enabled in milestone 1")
+			if a.AtomicTransform == nil || a.AtomicTransform.Form == nil {
+				return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing transform")
+			}
+			switch transform := a.AtomicTransform.Form.(type) {
+			case *pb.Transform_Program:
+				return Fail(pb.FailureCode_UNSUPPORTED, "ProgramTransform runtime is not qualified")
+			case *pb.Transform_BackendExpression:
+				if transform.BackendExpression == nil || len(transform.BackendExpression.Data) == 0 || len(transform.BackendExpression.Data) > MaxExpression {
+					return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing or oversized backend expression")
+				}
+				docs = append(docs, transform.BackendExpression)
+			default:
+				return Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown transform")
+			}
 		default:
 			return Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown action")
 		}
