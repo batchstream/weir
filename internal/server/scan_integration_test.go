@@ -66,7 +66,7 @@ func scanServer(t *testing.T, kind string, sl Limits) scanFixture {
 		t.Fatal(err)
 	}
 	routes := map[string]*store.Runtime{kind: f.runtime}
-	f.server, err = New(routes, sl)
+	f.server, err = newLocalServer(t, routes, sl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,11 +147,18 @@ func waitScanReleased(t *testing.T, f scanFixture) {
 	t.Fatal("Scan leaked", f.runtime.Snapshot(), len(f.server.slots))
 }
 func TestScanGRPCCompletionAndPartialFailure(t *testing.T) {
+	testScanGRPCCompletionAndPartialFailure(t, 0)
+}
+func testScanGRPCCompletionAndPartialFailure(t *testing.T, hops int) {
+	t.Helper()
 	for _, kind := range []string{"mongo", "search"} {
 		t.Run(kind, func(t *testing.T) {
 			for _, bad := range []bool{false, true} {
 				sl := DefaultLimits()
 				f := scanServer(t, kind, sl)
+				if hops > 0 {
+					f = forwardFixture(t, f, hops)
+				}
 				sizes := []int{0, 1, 100}
 				if bad {
 					sizes[1] = protocol.MaxDocument + 1

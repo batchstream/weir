@@ -258,6 +258,10 @@ func TestNativeStallCancelDrainAndSharedSession(t *testing.T) {
 	}
 }
 func TestNativeSlowDownload(t *testing.T) {
+	testNativeSlowDownload(t, 0)
+}
+func testNativeSlowDownload(t *testing.T, hops int) {
+	t.Helper()
 	for _, kind := range []string{"mongo", "search"} {
 		for _, mode := range []string{"stall", "lifetime"} {
 			t.Run(kind+"/"+mode, func(t *testing.T) {
@@ -269,6 +273,9 @@ func TestNativeSlowDownload(t *testing.T) {
 					sl.NativeLifetime = 100 * time.Millisecond
 				}
 				f := scanServer(t, kind, sl)
+				if hops > 0 {
+					f = forwardFixture(t, f, hops)
+				}
 				f.seed(t, []int{200 << 10})
 				open, body := nativeRequest(t, f, false)
 				if kind == "mongo" {

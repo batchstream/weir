@@ -26,11 +26,21 @@ func (s *Server) Scan(req *pb.ScanRequest, stream grpc.ServerStreamingServer[pb.
 		frame := &pb.ScanResponseFrame{Frame: variant}
 		return stream.Send(frame)
 	}
-	runtime, failure := s.resolve(req.GetResource(), false)
+	service, name, failure, err := s.resolve(ctx, req.GetResource(), false, ScanPermission)
+	if err != nil {
+		return err
+	}
+	if failure == nil {
+		failure = protocol.ValidateScan(req, name)
+	}
 	if failure != nil {
 		return end(failure)
 	}
-	ticket, failure := runtime.StartScan(ctx, req)
+	if service.RemoteWeir != nil {
+		args := scanRelay{request: req, stream: stream, remote: service.RemoteWeir, delivery: delivery}
+		return s.remoteScan(args)
+	}
+	ticket, failure := service.LocalStore.StartScan(ctx, req)
 	if failure != nil {
 		return end(failure)
 	}

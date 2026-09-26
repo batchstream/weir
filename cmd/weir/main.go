@@ -4,17 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/batchstream/weir/internal/app"
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/searchstore"
-	"github.com/batchstream/weir/internal/server"
-	"github.com/batchstream/weir/internal/store"
 )
 
 func main() {
@@ -24,7 +19,7 @@ func main() {
 	}
 }
 func run() error {
-	listen := flag.String("listen", "127.0.0.1:7447", "loopback gRPC address; no TLS/auth in local milestones")
+	listen := flag.String("listen", "127.0.0.1:7447", "loopback development gRPC address")
 	uri := flag.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
 	db := flag.String("database", "weir_m1", "pre-created database")
 	collection := flag.String("collection", "records", "pre-created collection")
@@ -33,66 +28,69 @@ func run() error {
 	searchURL := flag.String("search-url", "", "optional qualified loopback search backend")
 	searchIndex := flag.String("search-index", "records", "pre-created concrete index")
 	searchProfile := flag.String("search-profile", "elasticsearch-8.17.0", "exact qualified search profile")
+	configFile := flag.String("config", "", "strict static JSON configuration; exclusive with other flags")
 	flag.Parse()
-	host, _, err := net.SplitHostPort(*listen)
-	if err != nil {
-		return err
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("milestone listener must use an explicit loopback IP")
-	}
-	if *memory < 64 || *memory > 65536 {
-		return fmt.Errorf("invalid memory budget")
-	}
-	cfg := mongostore.Config{URI: *uri, Store: "mongo", Database: *db, Collection: *collection}
-	limits := store.DefaultLimits()
-	if !*batch {
-		limits.BatchOperations = 1
+	cfg := app.DefaultConfig()
+	if *configFile != "" {
+		mixed := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "config" {
+				mixed = true
+			}
+		})
+		if mixed {
+			return fmt.Errorf("-config cannot be combined with local flags")
+		}
+		file, err := os.Open(*configFile)
+		if err != nil {
+			return fmt.Errorf("configuration unavailable")
+		}
+		defer file.Close()
+		cfg, err = app.Decode(file)
+		if err != nil {
+			return err
+		}
+	} else {
+		cfg.Application = *listen
+		cfg.MemoryMiB = *memory
+		mongo := &app.Mongo{URI: *uri, Database: *db, Collection: *collection}
+		local := &app.Local{Mongo: mongo}
+		if !*batch {
+			local.BatchOperations = 1
+		}
+		service := app.Service{Name: "mongo-local", Local: local}
+		route := app.Route{Store: "mongo", Service: service.Name}
+		cfg.Services = append(cfg.Services, service)
+		cfg.Routes = append(cfg.Routes, route)
+		if *searchURL != "" {
+			search := &app.Search{URL: *searchURL, Index: *searchIndex, Profile: *searchProfile}
+			local := &app.Local{Search: search}
+			if !*batch {
+				local.BatchOperations = 1
+			}
+			service := app.Service{Name: "search-local", Local: local}
+			route := app.Route{Store: "search", Service: service.Name}
+			cfg.Services = append(cfg.Services, service)
+			cfg.Routes = append(cfg.Routes, route)
+		}
 	}
 	startup, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
-	assembly := app.Config{Mongo: cfg, Limits: limits}
-	if *searchURL != "" {
-		assembly.Search = &searchstore.Config{Store: "search", URL: *searchURL, Index: *searchIndex, Profile: *searchProfile}
-	}
-	routes, err := app.OpenStores(startup, assembly)
+	node, err := app.Open(startup, cfg)
 	if err != nil {
 		return err
 	}
-	cleanup := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		for _, runtime := range routes {
-			_ = runtime.Close(ctx)
-		}
-	}
-	sl := server.DefaultLimits()
-	srv, err := server.New(routes, sl)
-	if err != nil {
-		cleanup()
-		return err
-	}
-	listener, err := net.Listen("tcp", *listen)
-	if err != nil {
-		cleanup()
-		return err
-	}
-	guard, cancelGuard := context.WithCancel(context.Background())
-	defer cancelGuard()
-	go store.Guard(guard, routes, *memory<<20)
-	exited := make(chan error, 1)
-	go func() { exited <- srv.Serve(listener) }()
-	fmt.Printf("Weir listening on %s; qualified local record Stores, not production ready\n", listener.Addr())
+	node.Start()
+	fmt.Printf("Weir listening on %v; static local/peer profile, not production ready\n", node.Addresses())
 	signals, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
 	select {
 	case <-signals.Done():
-	case err = <-exited:
+	case err = <-node.Errors:
 	}
 	drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	closeErr := srv.Shutdown(drain)
+	closeErr := node.Close(drain)
 	if err != nil {
 		return err
 	}

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/app"
 	"github.com/batchstream/weir/internal/mongostore"
 	"github.com/batchstream/weir/internal/searchstore"
 	"github.com/batchstream/weir/internal/store"
@@ -39,14 +38,29 @@ func dualServer(t *testing.T, backend *testsearch.Backend, endpoint string, limi
 	native, db := testmongo.Open(t)
 	mongo := mongostore.Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records"}
 	search := &searchstore.Config{URL: endpoint, Profile: backend.Profile, Store: "search", Index: backend.Index}
-	cfg := app.Config{Mongo: mongo, Search: search, Limits: store.DefaultLimits()}
+	limitsStore := store.DefaultLimits()
+	mongo.Pool = uint64(limitsStore.Concurrency)
+	search.Pool = limitsStore.Concurrency
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	routes, err := app.OpenStores(ctx, cfg)
+	mongoAdapter, err := mongostore.Open(ctx, mongo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := New(routes, limits)
+	mongoRuntime, err := store.New(mongoAdapter, limitsStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searchAdapter, err := searchstore.Open(ctx, *search)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searchRuntime, err := store.New(searchAdapter, limitsStore)
+	routes := map[string]*store.Runtime{"mongo": mongoRuntime, "search": searchRuntime}
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := newLocalServer(t, routes, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,6 +267,7 @@ func TestDualStoreSlowBackendAndOverloadProgress(t *testing.T) {
 	}
 	f.search.SetOverloaded(true)
 	f.runtime.SetOverloaded(true)
+	f.server.admission.SetOverloaded(true)
 	mongoRead := &pb.ReadRequest{Resource: resource(f.fixture, "independent")}
 	if _, err := f.client.Read(ctx, mongoRead); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("new admission not stopped", err)
@@ -263,6 +278,7 @@ func TestDualStoreSlowBackendAndOverloadProgress(t *testing.T) {
 	}
 	f.search.SetOverloaded(false)
 	f.runtime.SetOverloaded(false)
+	f.server.admission.SetOverloaded(false)
 	if result, err := f.client.Read(ctx, mongoRead); err != nil || result.GetDocument() == nil {
 		t.Fatal(result, err)
 	}

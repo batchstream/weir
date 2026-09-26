@@ -1,4 +1,5 @@
-package store
+// Package overload samples process memory independently of database runtimes.
+package overload
 
 import (
 	"context"
@@ -9,9 +10,13 @@ import (
 	"time"
 )
 
+type Target interface {
+	SetOverloaded(bool)
+}
+
 // Guard uses RSS on Linux, constrained by cgroup v2 memory.max when available.
 // Other platforms use Go Sys-HeapReleased: explicitly a degraded, not RSS, signal.
-func Guard(ctx context.Context, stores map[string]*Runtime, budget uint64) {
+func Guard(ctx context.Context, targets []Target, budget uint64) {
 	budget = effectiveBudget(budget)
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
@@ -27,7 +32,7 @@ func Guard(ctx context.Context, stores map[string]*Runtime, budget uint64) {
 			} else if n <= budget*70/100 {
 				latched = false
 			}
-			for _, r := range stores {
+			for _, r := range targets {
 				r.SetOverloaded(latched)
 			}
 		}

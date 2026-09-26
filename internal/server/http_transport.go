@@ -38,6 +38,7 @@ type delivery struct {
 	rpcEnded      bool
 	released      bool
 	slots         chan struct{}
+	remoteSlots   chan struct{}
 	ticket        *store.Ticket
 	input         *creditedBody
 }
@@ -55,7 +56,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	} else if scan {
 		lifetime = s.limits.ScanLifetime
 	}
-	ctx, cancel := context.WithTimeout(request.Context(), lifetime)
+	ingress, err := s.ingress(request)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Grpc-Status", strconv.Itoa(int(status.Code(err))))
+		w.Header().Set("Grpc-Message", status.Convert(err).Message())
+		return
+	}
+	ctx, cancel := context.WithTimeout(ingress, lifetime)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
 	controller := http.NewResponseController(w)
@@ -228,6 +236,9 @@ func (d *delivery) releaseSlotLocked() {
 	if d.slots != nil && d.finished && (!d.rpcStarted || d.rpcEnded) && !d.released {
 		d.released = true
 		<-d.slots
+		if d.remoteSlots != nil {
+			<-d.remoteSlots
+		}
 	}
 }
 

@@ -7,9 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/searchstore"
-	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -27,12 +24,21 @@ func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 		return reply.Connections.Current
 	}
 	before := count()
-	mongo := mongostore.Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records"}
-	// This fails only after a real MongoDB adapter/pool and runtime were opened.
-	search := &searchstore.Config{Store: "search", URL: "http://127.0.0.1:19200", Index: "records", Profile: "not-qualified"}
-	cfg := Config{Mongo: mongo, Search: search, Limits: store.DefaultLimits()}
+	mongo := &Mongo{URI: testmongo.URI, Database: db, Collection: "records"}
+	// The second valid static configuration fails only after Mongo opens.
+	search := &Search{URL: "http://127.0.0.1:1", Index: "records", Profile: "elasticsearch-8.17.0"}
+	first := &Local{Mongo: mongo}
+	second := &Local{Search: search}
+	mongoService := Service{Name: "mongo", Local: first}
+	searchService := Service{Name: "search", Local: second}
+	mongoRoute := Route{Store: "mongo", Service: "mongo"}
+	searchRoute := Route{Store: "search", Service: "search"}
+	cfg := DefaultConfig()
+	cfg.Application = "127.0.0.1:0"
+	cfg.Services = []Service{mongoService, searchService}
+	cfg.Routes = []Route{mongoRoute, searchRoute}
 	for range 5 {
-		if routes, err := OpenStores(ctx, cfg); err == nil || routes != nil {
+		if routes, err := Open(ctx, cfg); err == nil || routes != nil {
 			t.Fatal("partial startup served routes")
 		}
 	}

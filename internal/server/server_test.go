@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"io"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/batchstream/weir/internal/store"
 )
 
 func TestConnectionBoundAndSingleClose(t *testing.T) {
@@ -66,4 +69,30 @@ func TestConnectionBoundAndSingleClose(t *testing.T) {
 	if len(bounded.slots) != 1 {
 		t.Fatal("connection credit closed more than once")
 	}
+}
+
+// The fixture is the assembly owner. A listener never closes borrowed runtimes.
+func newLocalServer(t *testing.T, stores map[string]*store.Runtime, limits Limits) (*Server, error) {
+	t.Helper()
+	routes := make(map[string]Service)
+	for name, runtime := range stores {
+		service := Service{LocalStore: runtime}
+		routes[name] = service
+	}
+	admission, err := NewAdmission(limits)
+	if err != nil {
+		return nil, err
+	}
+	config := Config{Routes: routes, Limits: limits, Admission: admission, InitialForwards: 4}
+	srv, err := New(config)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		for _, runtime := range stores {
+			if err := runtime.Close(ctx); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	return srv, err
 }

@@ -62,7 +62,7 @@ func setupWithLimits(t *testing.T, batch bool, sl Limits) fixture {
 		t.Fatal(err)
 	}
 	routes := map[string]*store.Runtime{"mongo": r}
-	s, err := New(routes, sl)
+	s, err := newLocalServer(t, routes, sl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,10 +153,12 @@ func TestGRPCUnaryAndUnsupported(t *testing.T) {
 				t.Fatal("validation", err, mr)
 			}
 			f.runtime.SetOverloaded(true)
+			f.server.admission.SetOverloaded(true)
 			if _, err = f.client.Read(ctx, read); status.Code(err) != codes.ResourceExhausted {
 				t.Fatal("overload", err)
 			}
 			f.runtime.SetOverloaded(false)
+			f.server.admission.SetOverloaded(false)
 		})
 	}
 }

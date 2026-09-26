@@ -1,8 +1,9 @@
-// Package server provides bounded, loopback-only milestone gRPC transport.
+// Package server provides bounded application and authenticated peer transports.
 package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"math"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
@@ -33,55 +35,94 @@ func DefaultLimits() Limits {
 	return l
 }
 
-type Server struct {
-	pb.UnimplementedWeirServer
-	stores      map[string]*store.Runtime
-	limits      Limits
-	slots       chan struct{}
-	grpc        *grpc.Server
-	http        *http.Server
-	draining    chan struct{}
-	once        sync.Once
-	connections sync.Map
+type Config struct {
+	Routes          map[string]Service
+	Limits          Limits
+	Admission       *Admission
+	Peer            *PeerPolicy
+	InitialForwards int
 }
 
-func New(stores map[string]*store.Runtime, l Limits) (*Server, error) {
-	if l.Connections < 1 || l.Connections > 64 || l.Sessions < 1 || l.Sessions > 64 || l.UnaryLifetime <= 0 || l.BulkLifetime <= 0 || l.ScanLifetime <= 0 || l.ScanLifetime > 5*time.Minute || l.Stall <= 0 || l.NativeLifetime <= 0 || l.NativeLifetime > 5*time.Minute {
-		return nil, status.Error(codes.InvalidArgument, "invalid transport bounds")
+type Server struct {
+	pb.UnimplementedWeirServer
+	routes          map[string]Service
+	admission       *Admission
+	peer            *PeerPolicy
+	initialForwards int
+	limits          Limits
+	slots           chan struct{}
+	grpc            *grpc.Server
+	http            *http.Server
+	draining        chan struct{}
+	once            sync.Once
+	connections     sync.Map
+}
+
+func (l Limits) Validate() error {
+	if l.Connections < 1 || l.Connections > 64 || l.Sessions < 1 || l.Sessions > 64 || l.UnaryLifetime <= 0 || l.UnaryLifetime > 30*time.Second || l.BulkLifetime <= 0 || l.BulkLifetime > 15*time.Minute || l.ScanLifetime <= 0 || l.ScanLifetime > 5*time.Minute || l.Stall <= 0 || l.Stall > 30*time.Second || l.NativeLifetime <= 0 || l.NativeLifetime > 5*time.Minute {
+		return status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}
-	if len(stores) == 0 || len(stores) > 16 {
-		return nil, status.Error(codes.InvalidArgument, "invalid store count")
+	return nil
+}
+func New(cfg Config) (*Server, error) {
+	l := cfg.Limits
+	if err := l.Validate(); err != nil {
+		return nil, err
 	}
-	routes := make(map[string]*store.Runtime, len(stores))
+	if len(cfg.Routes) == 0 || len(cfg.Routes) > 16 || cfg.Admission == nil || cfg.InitialForwards < 0 || cfg.InitialForwards > 8 {
+		return nil, status.Error(codes.InvalidArgument, "invalid routes or ingress bounds")
+	}
+	if cap(cfg.Admission.slots) != l.Sessions || cap(cfg.Admission.connections) != l.Connections {
+		return nil, status.Error(codes.InvalidArgument, "inconsistent shared admission bounds")
+	}
+	routes := make(map[string]Service, len(cfg.Routes))
 	seen := make(map[*store.Runtime]bool)
-	for name, runtime := range stores {
+	for name, service := range cfg.Routes {
 		parsed, segments, err := protocol.ParseResource("weir://" + name)
-		if err != nil || parsed != name || len(segments) != 0 || runtime == nil || seen[runtime] {
-			return nil, status.Error(codes.InvalidArgument, "invalid or aliased store")
+		if err != nil || parsed != name || len(segments) != 0 || (service.LocalStore == nil) == (service.RemoteWeir == nil) || service.LocalStore != nil && seen[service.LocalStore] {
+			return nil, status.Error(codes.InvalidArgument, "invalid or aliased service")
 		}
-		routes[name] = runtime
-		seen[runtime] = true
+		routes[name] = service
+		if service.LocalStore != nil {
+			seen[service.LocalStore] = true
+		}
 	}
-	s := &Server{stores: routes, limits: l, slots: make(chan struct{}, l.Sessions), draining: make(chan struct{})}
+	if cfg.Peer != nil {
+		if cfg.Peer.TLS == nil || cfg.Peer.TLS.ClientAuth != tls.RequireAndVerifyClientCert || cfg.Peer.TLS.ClientCAs == nil || len(cfg.Peer.TLS.Certificates) != 1 || cfg.Peer.TLS.MinVersion < tls.VersionTLS13 || cfg.Peer.TLS.InsecureSkipVerify || len(cfg.Peer.Allow) == 0 || len(cfg.Peer.Allow) > 32 {
+			return nil, status.Error(codes.InvalidArgument, "invalid peer trust policy")
+		}
+		policy := &PeerPolicy{TLS: cfg.Peer.TLS.Clone(), Allow: make(map[string]map[string]Permission)}
+		for identity, grants := range cfg.Peer.Allow {
+			if identity == "" || len(identity) > 253 || len(grants) == 0 {
+				return nil, status.Error(codes.InvalidArgument, "invalid peer grants")
+			}
+			policy.Allow[identity] = make(map[string]Permission)
+			for name, permission := range grants {
+				if _, ok := routes[name]; !ok || permission == 0 || permission & ^AllPermissions != 0 {
+					return nil, status.Error(codes.InvalidArgument, "invalid peer grant")
+				}
+				policy.Allow[identity][name] = permission
+			}
+		}
+		cfg.Peer = policy
+	}
+	s := &Server{routes: routes, admission: cfg.Admission, peer: cfg.Peer, initialForwards: cfg.InitialForwards, limits: l, slots: cfg.Admission.slots, draining: cfg.Admission.draining}
 	statistics := deliveryStats{}
 	s.grpc = grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame), grpc.UnaryInterceptor(s.unary), grpc.StatsHandler(statistics), grpc.WaitForHandlers(true))
 	protocols := &http.Protocols{}
-	protocols.SetUnencryptedHTTP2(true)
-	h2 := &http.HTTP2Config{MaxConcurrentStreams: 8, MaxReadFrameSize: 16 << 10, MaxReceiveBufferPerStream: 64 << 10, MaxReceiveBufferPerConnection: 256 << 10, SendPingTimeout: time.Minute, PingTimeout: 5 * time.Second, WriteByteTimeout: l.Stall}
+	protocols.SetUnencryptedHTTP2(cfg.Peer == nil)
+	protocols.SetHTTP2(cfg.Peer != nil)
+	h2 := &http.HTTP2Config{MaxConcurrentStreams: 8, MaxReadFrameSize: 16 << 10, MaxReceiveBufferPerStream: 65535, MaxReceiveBufferPerConnection: 65535, SendPingTimeout: time.Minute, PingTimeout: 5 * time.Second, WriteByteTimeout: l.Stall}
 	s.http = &http.Server{Handler: http.HandlerFunc(s.serveHTTP), Protocols: protocols, HTTP2: h2, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 << 10, IdleTimeout: time.Minute}
+	if cfg.Peer != nil {
+		s.http.TLSConfig = cfg.Peer.TLS.Clone()
+	}
 	pb.RegisterWeirServer(s.grpc, s)
 	return s, nil
 }
 func (s *Server) enter() error {
-	select {
-	case <-s.draining:
-		return status.Error(codes.Unavailable, "draining")
-	default:
-	}
-	for _, runtime := range s.stores {
-		if runtime.Snapshot().Overloaded {
-			return status.Error(codes.ResourceExhausted, "process overloaded")
-		}
+	if err := s.admission.check(); err != nil {
+		return err
 	}
 	select {
 	case s.slots <- struct{}{}:
@@ -122,10 +163,20 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	if !ok {
 		return nil, status.Error(codes.Internal, "missing HTTP/2 delivery lifetime")
 	}
-	runtime, failure := s.resolve(protocol.Resource(op), false)
+	service, name, failure, err := s.resolve(ctx, protocol.Resource(op), false, operationPermission(op))
+	if err != nil {
+		return nil, err
+	}
+	if failure == nil {
+		failure = protocol.Validate(op, name)
+	}
 	if failure != nil {
 		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, failure), nil
 	}
+	if service.RemoteWeir != nil {
+		return s.remoteSingle(ctx, service.RemoteWeir, op, state)
+	}
+	runtime := service.LocalStore
 	plan, f := runtime.Prepare(op)
 	if f != nil {
 		return protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, f), nil
@@ -142,16 +193,20 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	return result, nil
 }
 
-func (s *Server) resolve(resource string, root bool) (*store.Runtime, *pb.Failure) {
+func (s *Server) resolve(ctx context.Context, resource string, root bool, family Permission) (Service, string, *pb.Failure, error) {
+	empty := Service{}
 	name, segments, err := protocol.ParseResource(resource)
 	if err != nil || root && len(segments) != 0 {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource")
+		return empty, "", protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource"), nil
 	}
-	runtime := s.stores[name]
-	if runtime == nil {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store")
+	if err := authorize(ctx, name, family); err != nil {
+		return empty, name, nil, err
 	}
-	return runtime, nil
+	service, ok := s.routes[name]
+	if !ok {
+		return empty, name, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store"), nil
+	}
+	return service, name, nil, nil
 }
 
 type receiveEnd struct {
@@ -192,16 +247,23 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 	if first.GetOpen() == nil {
 		return status.Error(codes.InvalidArgument, "Bulk requires Open")
 	}
-	runtime, failure := s.resolve(first.GetOpen().Store, true)
+	service, name, failure, err := s.resolve(ctx, first.GetOpen().Store, true, 0)
+	if err != nil {
+		return err
+	}
 	if failure != nil {
 		return status.Error(codes.InvalidArgument, "invalid Bulk Open")
 	}
+	if service.RemoteWeir != nil {
+		return s.remoteBulk(stream, first, service.RemoteWeir, name)
+	}
+	runtime := service.LocalStore
 	session := runtime.NewSession()
 	defer session.Close()
 	invalid := make(chan *pb.BulkResult, 1)
 	ended := make(chan receiveEnd, 1)
 	activity := make(chan struct{}, 1)
-	args := receiveArgs{runtime: runtime, ctx: ctx, stream: stream, session: session, invalid: invalid, ended: ended, activity: activity}
+	args := receiveArgs{name: name, runtime: runtime, ctx: ctx, stream: stream, session: session, invalid: invalid, ended: ended, activity: activity}
 	go s.receive(args)
 	idle := time.NewTimer(s.limits.Stall)
 	defer idle.Stop()
@@ -270,6 +332,7 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 }
 
 type receiveArgs struct {
+	name     string
 	runtime  *store.Runtime
 	ctx      context.Context
 	stream   grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.BulkResponseFrame]
@@ -293,6 +356,10 @@ func (s *Server) receive(args receiveArgs) {
 			return
 		default:
 		}
+		if err := s.admission.check(); err != nil {
+			finish(err)
+			return
+		}
 		frame, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			finish(nil)
@@ -312,7 +379,19 @@ func (s *Server) receive(args receiveArgs) {
 			return
 		}
 		count++
-		plan, f := args.runtime.Prepare(op)
+		f, authErr := checkOperation(ctx, args.name, op)
+		if authErr != nil {
+			finish(authErr)
+			return
+		}
+		if err := s.admission.check(); err != nil {
+			finish(err)
+			return
+		}
+		var plan *execution.Plan
+		if f == nil {
+			plan, f = args.runtime.Prepare(op)
+		}
 		if f == nil {
 			for {
 				var changed <-chan struct{}
@@ -365,8 +444,19 @@ func (s *Server) send(ctx context.Context, stream grpc.BidiStreamingServer[pb.Bu
 	}
 }
 func (s *Server) Serve(listener net.Listener) error {
-	bounded := &limitedListener{Listener: listener, slots: make(chan struct{}, s.limits.Connections), server: s}
-	err := s.http.Serve(bounded)
+	if s.peer == nil {
+		host, _, err := net.SplitHostPort(listener.Addr().String())
+		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
+			return errors.New("application listener requires explicit loopback IP")
+		}
+	}
+	bounded := &limitedListener{Listener: listener, slots: s.admission.connections, server: s}
+	var err error
+	if s.peer == nil {
+		err = s.http.Serve(bounded)
+	} else {
+		err = s.http.ServeTLS(bounded, "", "")
+	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -374,32 +464,27 @@ func (s *Server) Serve(listener net.Listener) error {
 }
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.once.Do(func() {
-		close(s.draining)
-		for _, runtime := range s.stores {
-			runtime.BeginDrain()
+		drain, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		s.admission.BeginDrain()
+		stopped := make(chan struct{})
+		go func() {
+			if err := s.http.Shutdown(drain); err != nil {
+				_ = s.http.Close()
+			}
+			// ServeHTTP has no gRPC Drain. net/http owns HTTP/2 graceful shutdown;
+			// Stop joins the remaining bounded handlers after transport cancellation.
+			s.grpc.Stop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+		case <-drain.Done():
+			_ = s.http.Close()
+			<-stopped
 		}
 	})
-	stopped := make(chan struct{})
-	go func() {
-		if err := s.http.Shutdown(ctx); err != nil {
-			_ = s.http.Close()
-		}
-		// gRPC's ServeHTTP transport has no Drain implementation. net/http owns
-		// graceful HTTP/2 shutdown; Stop releases remaining gRPC transport state.
-		s.grpc.Stop()
-		close(stopped)
-	}()
-	var err error
-	for _, runtime := range s.stores {
-		err = errors.Join(err, runtime.Close(ctx))
-	}
-	select {
-	case <-stopped:
-	case <-ctx.Done():
-		_ = s.http.Close()
-		<-stopped
-	}
-	return err
+	return nil
 }
 
 type limitedListener struct {

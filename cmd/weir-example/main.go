@@ -21,6 +21,7 @@ func main() {
 	}
 }
 func run() error {
+	address := flag.String("address", "127.0.0.1:7447", "loopback Weir listener")
 	name := flag.String("store", "mongo", "mongo or search")
 	database := flag.String("database", "weir_m1", "pre-created MongoDB database")
 	index := flag.String("index", "weir_m2_example", "pre-created Search index")
@@ -28,7 +29,7 @@ func run() error {
 	if *name != "mongo" && *name != "search" {
 		return fmt.Errorf("store must be mongo or search")
 	}
-	conn, err := grpc.NewClient("127.0.0.1:7447", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
+	conn, err := grpc.NewClient(*address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
 	if err != nil {
 		return err
 	}

@@ -45,11 +45,21 @@ func (s *Server) Native(stream grpc.BidiStreamingServer[pb.NativeRequestFrame, p
 	if first.GetOpen() == nil {
 		return status.Error(codes.InvalidArgument, "Native requires Open")
 	}
-	runtime, failure := s.resolve(first.GetOpen().Resource, false)
+	service, name, failure, err := s.resolve(stream.Context(), first.GetOpen().Resource, false, NativePermission)
+	if err != nil {
+		return err
+	}
+	if failure == nil {
+		failure = protocol.ValidateNative(first.GetOpen(), name)
+	}
+	if failure == nil && service.RemoteWeir != nil {
+		args := nativeRelay{first: first, stream: stream, remote: service.RemoteWeir, delivery: delivery}
+		return s.remoteNative(args)
+	}
 	var end *pb.NativeEnd
 	if failure == nil {
 		exchange := &execution.NativeExchange{Source: duplex, Sink: duplex}
-		ticket, rejected := runtime.StartNative(stream.Context(), first.GetOpen(), exchange)
+		ticket, rejected := service.LocalStore.StartNative(stream.Context(), first.GetOpen(), exchange)
 		failure = rejected
 		if failure == nil {
 			// The same bounded runner sends response frames and retains the execution
