@@ -5,7 +5,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,12 +24,10 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testmetrics"
 	"github.com/batchstream/weir/internal/testmongo"
-	"github.com/batchstream/weir/internal/testpeer"
 	"github.com/batchstream/weir/internal/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -38,26 +35,22 @@ import (
 
 func forwardFixture(t *testing.T, f scanFixture, hops int) scanFixture {
 	t.Helper()
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
 	name, _, _ := protocolResource(f.root)
 	service := Service{LocalStore: f.runtime}
-	opts := peerServerOptions{routes: map[string]Service{name: service}, tls: identity, allow: map[string]map[string]Permission{"node.weir.test": {name: AllPermissions}}, limits: f.server.limits, admission: f.server.admission}
+	opts := peerServerOptions{routes: map[string]Service{name: service}, peer: true, limits: f.server.limits, admission: f.server.admission}
 	_, address := startPeerServer(t, opts)
 	for i := 0; i < hops; i++ {
-		remote := testRemote(t, address, identity)
+		remote := testRemote(t, address)
 		f.metricsRemotes = append(f.metricsRemotes, remote)
 		route := Service{RemoteWeir: remote}
 		opts := peerServerOptions{routes: map[string]Service{name: route}, limits: f.server.limits, budget: 4}
 		if i < hops-1 {
-			opts.tls = identity
-			opts.allow = map[string]map[string]Permission{"node.weir.test": {name: AllPermissions}}
+			opts.peer = true
 		}
 		f.server, address = startPeerServer(t, opts)
 	}
 	f.address = address
-	f.conn, f.client = peerClient(t, address, nil)
+	f.conn, f.client = peerClient(t, address)
 	return f
 }
 func protocolResource(root string) (string, string, bool) {
@@ -297,7 +290,8 @@ func TestPeerRealNativeEarlyResponse(t *testing.T) {
 }
 
 // A real RPC fault endpoint: it waits for an acknowledged downstream mutation,
-// then sends a non-OK status with no result. This models result loss after dispatch.
+// then closes the actual upstream socket without delivering its result.
+// Hop metadata is preserved, never invented or reset by this test fault endpoint.
 type lostReplyPeer struct {
 	transport *Server
 	pb.UnimplementedWeirServer
@@ -309,7 +303,9 @@ type lostReplyPeer struct {
 
 func (p *lostReplyPeer) Mutate(ctx context.Context, req *pb.MutateRequest) (*pb.MutationResult, error) {
 	p.calls.Add(1)
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(HopMetadata, "4"))
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	forwarded := metadata.MD{HopMetadata: incoming.Get(HopMetadata)}
+	ctx = metadata.NewOutgoingContext(ctx, forwarded)
 	result, err := p.next.Mutate(ctx, req)
 	if err != nil {
 		return nil, err
@@ -324,7 +320,9 @@ func (p *lostReplyPeer) Native(stream grpc.BidiStreamingServer[pb.NativeRequestF
 	p.calls.Add(1)
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(HopMetadata, "4"))
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	forwarded := metadata.MD{HopMetadata: incoming.Get(HopMetadata)}
+	ctx = metadata.NewOutgoingContext(ctx, forwarded)
 	downstream, err := p.next.Native(ctx)
 	if err != nil {
 		return err
@@ -366,9 +364,9 @@ func (p *lostReplyPeer) Native(stream grpc.BidiStreamingServer[pb.NativeRequestF
 	p.transport.abortPeer(stream.Context())
 	return status.Error(codes.Unavailable, "injected loss after native completion")
 }
-func faultPeer(t *testing.T, address string, identity *tls.Config) (string, *lostReplyPeer) {
+func faultPeer(t *testing.T, address string) (string, *lostReplyPeer) {
 	t.Helper()
-	_, next := peerClient(t, address, identity)
+	_, next := peerClient(t, address)
 	limits := DefaultLimits()
 	limits.Connections = 8
 	admission, err := NewAdmission(limits)
@@ -381,7 +379,7 @@ func faultPeer(t *testing.T, address string, identity *tls.Config) (string, *los
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(identity)), grpc.MaxRecvMsgSize(300<<10), grpc.MaxSendMsgSize(300<<10))
+	srv := grpc.NewServer(grpc.MaxRecvMsgSize(300<<10), grpc.MaxSendMsgSize(300<<10))
 	pb.RegisterWeirServer(srv, proxy)
 	bounded := &limitedListener{Listener: listener, slots: admission.connections, server: transport}
 	go func() { _ = srv.Serve(bounded) }()
@@ -505,27 +503,23 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 						}
 					}
 
-					ca := testpeer.NewCA(t)
-					identity, _, _ := ca.Identity(t, "node.weir.test")
-					identity.ServerName = "node.weir.test"
 					service := Service{LocalStore: f.runtime}
 					routes := map[string]Service{kind: service}
-					allow := map[string]map[string]Permission{"node.weir.test": {kind: AllPermissions}}
-					options := peerServerOptions{routes: routes, tls: identity, allow: allow}
+					options := peerServerOptions{routes: routes, peer: true}
 					_, address := startPeerServer(t, options)
 					var loss *lostReplyPeer
 					if leg == "peer" {
-						address, loss = faultPeer(t, address, identity)
+						address, loss = faultPeer(t, address)
 					}
-					remote := testRemote(t, address, identity)
+					remote := testRemote(t, address)
 					remoteService := Service{RemoteWeir: remote}
-					options = peerServerOptions{routes: map[string]Service{kind: remoteService}, tls: identity, allow: allow}
+					options = peerServerOptions{routes: map[string]Service{kind: remoteService}, budget: 4}
 					_, address = startPeerServer(t, options)
 					if leg == "application" {
-						address, loss = faultPeer(t, address, identity)
+						address, loss = faultPeer(t, address)
 					}
-					_, f.client = peerClient(t, address, identity)
-					ctx, cancel := peerContext("4")
+					_, f.client = peerClient(t, address)
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 					defer cancel()
 					id := "loss"
 					if native {

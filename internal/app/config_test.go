@@ -11,27 +11,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir/internal/testpeer"
+	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/server"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 func remoteConfig(t *testing.T) Config {
 	t.Helper()
-	ca := testpeer.NewCA(t)
-	_, certificate, key := ca.Identity(t, "node.weir.test")
-	dir := t.TempDir()
-	certPath, keyPath, caPath := filepath.Join(dir, "identity.crt"), filepath.Join(dir, "identity.private"), filepath.Join(dir, "ca.crt")
-	for name, data := range map[string][]byte{certPath: certificate, keyPath: key, caPath: ca.PEM} {
-		if err := os.WriteFile(name, data, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	identity := &Identity{Certificate: certPath, PrivateKey: keyPath, CA: caPath}
-	remote := &Remote{Endpoint: "127.0.0.1:1", ServerName: "node.weir.test", Relays: 2}
+	remote := &Remote{Endpoint: "127.0.0.1:1", Relays: 2}
 	service := Service{Name: "remote", Remote: remote}
 	route := Route{Store: "records", Service: "remote"}
 	cfg := DefaultConfig()
 	cfg.Application = "127.0.0.1:0"
-	cfg.Identity = identity
 	cfg.Services = []Service{service}
 	cfg.Routes = []Route{route}
 	return cfg
@@ -50,7 +45,7 @@ func TestStrictConfiguration(t *testing.T) {
 			t.Fatal("accepted unknown/duplicate", fragment)
 		}
 	}
-	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "wildcard", "public", "missing-tls", "bad-grant", "duplicate-grant", "overflow", "zero-session", "extra-data"} {
+	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "overflow", "zero-session", "extra-data"} {
 		t.Run(mode, func(t *testing.T) {
 			altered, err := Decode(strings.NewReader(string(raw)))
 			if err != nil {
@@ -63,20 +58,6 @@ func TestStrictConfiguration(t *testing.T) {
 				altered.Routes[0].Service = "missing"
 			case "duplicate-service":
 				altered.Services = append(altered.Services, altered.Services[0])
-			case "wildcard":
-				altered.Services[0].Remote.ServerName = "*.weir.test"
-			case "public":
-				altered.Application = "0.0.0.0:7447"
-			case "missing-tls":
-				altered.Identity = nil
-			case "bad-grant":
-				altered.Peer = "127.0.0.1:0"
-				grant := Grant{Identity: "a.weir.test", Store: "missing", Operations: []string{"read"}}
-				altered.Allow = []Grant{grant}
-			case "duplicate-grant":
-				altered.Peer = "127.0.0.1:0"
-				grant := Grant{Identity: "a.weir.test", Store: "records", Operations: []string{"read", "read"}}
-				altered.Allow = []Grant{grant}
 			case "overflow":
 				altered.Limits.UnaryMS = int(^uint(0) >> 1)
 			case "zero-session":
@@ -136,8 +117,6 @@ func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	cfg.Application = first.Addr().String()
 	_ = first.Close()
 	cfg.Peer = occupied.Addr().String()
-	grant := Grant{Identity: "a.weir.test", Store: "records", Operations: []string{"read"}}
-	cfg.Allow = []Grant{grant}
 	for range 3 {
 		if node, err := Open(context.Background(), cfg); err == nil || node != nil {
 			t.Fatal("partial startup succeeded")
@@ -148,4 +127,117 @@ func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 		t.Fatal("partial listener leaked", err)
 	}
 	_ = recovered.Close()
+}
+
+func TestIntranetListenerConfiguration(t *testing.T) {
+	for _, listener := range []string{"127.0.0.1:0", "[::1]:7447", "10.20.30.40:7447", "0.0.0.0:7447", "[::]:7447"} {
+		cfg := remoteConfig(t)
+		cfg.Application = listener
+		if err := cfg.Validate(); err != nil {
+			t.Fatal(listener, err)
+		}
+		cfg.Application, cfg.Peer = "", listener
+		if err := cfg.Validate(); err != nil {
+			t.Fatal(listener, err)
+		}
+	}
+	for _, listener := range []string{":7447", "localhost:7447", "127.0.0.1:-1", "127.0.0.1:+1", "127.0.0.1:65536", "127.0.0.1:", "[invalid]:7447"} {
+		cfg := remoteConfig(t)
+		cfg.Application = listener
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("invalid listener accepted", listener)
+		}
+	}
+	for _, listeners := range [][3]string{
+		{"127.0.0.1:7447", "127.0.0.1:7447", ""},
+		{"[::1]:7447", "[0:0:0:0:0:0:0:1]:7447", ""},
+		{"127.0.0.1:7447", "", "127.0.0.1:07447"},
+		{"0.0.0.0:7447", "127.0.0.1:7447", ""},
+	} {
+		cfg := remoteConfig(t)
+		cfg.Application, cfg.Peer, cfg.Diagnostics = listeners[0], listeners[1], listeners[2]
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("duplicate/overlapping listeners accepted", listeners)
+		}
+	}
+	cfg := remoteConfig(t)
+	cfg.Peer, cfg.Diagnostics = cfg.Application, cfg.Application
+	if err := cfg.Validate(); err != nil {
+		t.Fatal("independent ephemeral ports rejected", err)
+	}
+}
+
+func TestRemovedAuthenticationFieldsAreUnknown(t *testing.T) {
+	cfg := remoteConfig(t)
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"identity", "allow"} {
+		input := `{"` + field + `":null,` + string(raw[1:])
+		if _, err := Decode(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), `unknown field "`+field+`"`) {
+			t.Fatal("legacy field was not explicitly rejected", field, err)
+		}
+	}
+	input := strings.Replace(string(raw), `"remote":{`, `"remote":{"server_name":"obsolete",`, 1)
+	if _, err := Decode(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), `unknown field "server_name"`) {
+		t.Fatal("legacy remote identity accepted", err)
+	}
+}
+
+func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
+	cfg := remoteConfig(t)
+	cfg.Peer = cfg.Application
+	node, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer node.Close(context.Background())
+	node.Start()
+	addresses := node.Addresses()
+	if len(addresses) != 2 || addresses[0] == addresses[1] {
+		t.Fatal("ephemeral listeners not distinct", addresses)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	request := &pb.ReadRequest{Resource: "weir://missing/records/s:key"}
+	for i, address := range addresses {
+		conn, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		client := pb.NewWeirClient(conn)
+		result, err := client.Read(ctx, request)
+		if i == 0 {
+			if err != nil || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+				t.Fatal("application requires no peer metadata", result, err)
+			}
+		} else if status.Code(err) != codes.InvalidArgument {
+			t.Fatal("peer accepted missing hop", result, err)
+		}
+		peerCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(server.HopMetadata, "0"))
+		result, err = client.Read(peerCtx, request)
+		if i == 0 {
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatal("application accepted client hop", result, err)
+			}
+		} else if err != nil || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			t.Fatal("peer accepted unknown Store or rejected canonical hop", result, err)
+		}
+	}
+}
+
+func TestCurrentPeerExamples(t *testing.T) {
+	for _, name := range []string{"peer-a.json", "peer-b.json"} {
+		file, err := os.Open(filepath.Join("..", "..", "examples", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, decodeErr := Decode(file)
+		closeErr := file.Close()
+		if decodeErr != nil || closeErr != nil {
+			t.Fatal(name, decodeErr, closeErr)
+		}
+	}
 }

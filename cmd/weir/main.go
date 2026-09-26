@@ -20,7 +20,7 @@ func main() {
 }
 func run() error {
 	diagnostics := flag.String("diagnostics", "", "optional loopback diagnostic HTTP address; disabled by default")
-	listen := flag.String("listen", "127.0.0.1:7447", "loopback development gRPC address")
+	listen := flag.String("listen", "127.0.0.1:7447", "intranet gRPC listen IP:port; loopback by default")
 	uri := flag.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
 	db := flag.String("database", "weir_m1", "pre-created database")
 	collection := flag.String("collection", "records", "pre-created collection")

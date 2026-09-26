@@ -3,12 +3,8 @@ package app
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
-	"io"
 	"net"
-	"os"
 	"sync"
 	"time"
 
@@ -51,14 +47,6 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	var identity *tls.Config
-	var err error
-	if cfg.Identity != nil {
-		identity, err = loadIdentity(*cfg.Identity)
-		if err != nil {
-			return nil, err
-		}
-	}
 	limits := cfg.Limits.serverLimits()
 	admission, err := server.NewAdmission(limits)
 	if err != nil {
@@ -82,9 +70,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	for _, definition := range cfg.Services {
 		var service server.Service
 		if definition.Remote != nil {
-			tlsConfig := identity.Clone()
-			tlsConfig.ServerName = definition.Remote.ServerName
-			remoteConfig := server.RemoteConfig{Endpoint: definition.Remote.Endpoint, TLS: tlsConfig, Relays: definition.Remote.Relays}
+			remoteConfig := server.RemoteConfig{Endpoint: definition.Remote.Endpoint, Relays: definition.Remote.Relays}
 			service.RemoteWeir, err = server.NewRemote(remoteConfig)
 			if err != nil {
 				return nil, err
@@ -113,22 +99,12 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	for _, route := range cfg.Routes {
 		routes[route.Store] = services[route.Service]
 	}
-	for _, address := range []string{cfg.Application, cfg.Peer} {
+	for i, address := range []string{cfg.Application, cfg.Peer} {
 		if address == "" {
 			continue
 		}
 		options := server.Config{Routes: routes, Limits: limits, Admission: admission, InitialForwards: cfg.InitialForwards}
-		if address == cfg.Peer {
-			policy := &server.PeerPolicy{TLS: identity, Allow: make(map[string]map[string]server.Permission)}
-			for _, grant := range cfg.Allow {
-				if policy.Allow[grant.Identity] == nil {
-					policy.Allow[grant.Identity] = make(map[string]server.Permission)
-				}
-				permission, _ := permissions(grant.Operations)
-				policy.Allow[grant.Identity][grant.Store] = permission
-			}
-			options.Peer = policy
-		}
+		options.Peer = i == 1
 		listenerServer, err := server.New(options)
 		if err != nil {
 			return nil, err
@@ -176,60 +152,6 @@ func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, er
 		return nil, errors.New("local Store startup qualification failed")
 	}
 	return store.New(adapter, limits)
-}
-func loadIdentity(paths Identity) (*tls.Config, error) {
-	certificate, err := readIdentityFile(paths.Certificate)
-	if err != nil {
-		return nil, errors.New("peer certificate unavailable")
-	}
-	key, err := readIdentityFile(paths.PrivateKey)
-	if err != nil {
-		return nil, errors.New("peer private key unavailable")
-	}
-	pair, err := tls.X509KeyPair(certificate, key)
-	if err != nil {
-		return nil, errors.New("invalid peer certificate/key pair")
-	}
-	ca, err := readIdentityFile(paths.CA)
-	if err != nil {
-		return nil, errors.New("peer CA unavailable")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(ca) {
-		return nil, errors.New("invalid peer CA")
-	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil || len(leaf.DNSNames) != 1 || !validIdentity(leaf.DNSNames[0]) {
-		return nil, errors.New("peer requires one explicit DNS SAN identity")
-	}
-	intermediates := x509.NewCertPool()
-	for _, raw := range pair.Certificate[1:] {
-		cert, err := x509.ParseCertificate(raw)
-		if err != nil {
-			return nil, errors.New("invalid peer certificate chain")
-		}
-		intermediates.AddCert(cert)
-	}
-	for _, usage := range []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth} {
-		options := x509.VerifyOptions{Roots: roots, Intermediates: intermediates, DNSName: leaf.DNSNames[0], KeyUsages: []x509.ExtKeyUsage{usage}}
-		if _, err := leaf.Verify(options); err != nil {
-			return nil, errors.New("peer identity is not valid for mutual TLS")
-		}
-	}
-	config := &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{pair}, RootCAs: roots, ClientCAs: roots, ClientAuth: tls.RequireAndVerifyClientCert, NextProtos: []string{"h2"}}
-	return config, nil
-}
-func readIdentityFile(name string) ([]byte, error) {
-	file, err := os.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, (64<<10)+1))
-	if err != nil || len(raw) > 64<<10 {
-		return nil, errors.New("identity file exceeds bound")
-	}
-	return raw, nil
 }
 func (n *Node) Start() {
 	n.start.Do(func() {

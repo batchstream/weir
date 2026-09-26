@@ -45,10 +45,7 @@ func (s *Server) Native(stream grpc.BidiStreamingServer[pb.NativeRequestFrame, p
 	if first.GetOpen() == nil {
 		return status.Error(codes.InvalidArgument, "Native requires Open")
 	}
-	service, name, failure, err := s.resolve(stream.Context(), first.GetOpen().Resource, false, NativePermission)
-	if err != nil {
-		return err
-	}
+	service, name, failure := s.resolve(first.GetOpen().Resource, false)
 	if failure == nil {
 		failure = protocol.ValidateNative(first.GetOpen(), name)
 		if failure != nil {

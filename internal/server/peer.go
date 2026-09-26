@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"net/http"
 	"regexp"
@@ -18,27 +17,12 @@ import (
 
 const HopMetadata = "weir-remaining-forwards"
 
-type Permission uint8
-
-const (
-	ReadPermission Permission = 1 << iota
-	MutatePermission
-	ScanPermission
-	NativePermission
-	AllPermissions = ReadPermission | MutatePermission | ScanPermission | NativePermission
-)
-
-type PeerPolicy struct {
-	TLS   *tls.Config
-	Allow map[string]map[string]Permission
-}
 type ingressContextKey uint8
 
 const ingressKey ingressContextKey = 0
 
 type ingress struct {
 	hops       int
-	grants     map[string]Permission
 	diagnostic metadata.MD
 }
 
@@ -47,19 +31,11 @@ var tracePattern = regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}
 func (s *Server) ingress(request *http.Request) (context.Context, error) {
 	state := &ingress{hops: s.initialForwards, diagnostic: make(metadata.MD)}
 	hops, present := request.Header[http.CanonicalHeaderKey(HopMetadata)]
-	if s.peer == nil {
+	if !s.peer {
 		if present {
 			return nil, status.Error(codes.InvalidArgument, "reserved peer metadata")
 		}
 	} else {
-		if request.TLS == nil || len(request.TLS.VerifiedChains) == 0 || len(request.TLS.PeerCertificates) == 0 {
-			return nil, status.Error(codes.Unauthenticated, "authenticated peer required")
-		}
-		names := request.TLS.PeerCertificates[0].DNSNames
-		if len(names) != 1 || s.peer.Allow[names[0]] == nil {
-			return nil, status.Error(codes.PermissionDenied, "peer identity is not allowed")
-		}
-		state.grants = s.peer.Allow[names[0]]
 		if len(hops) != 1 || len(hops[0]) != 1 || hops[0][0] < '0' || hops[0][0] > '8' {
 			return nil, status.Error(codes.InvalidArgument, "peer requires one canonical hop budget 0-8")
 		}
@@ -69,7 +45,7 @@ func (s *Server) ingress(request *http.Request) (context.Context, error) {
 	if len(ids) == 0 {
 		raw := make([]byte, 16)
 		if _, err := rand.Read(raw); err != nil {
-			return nil, status.Error(codes.Internal, "request identity unavailable")
+			return nil, status.Error(codes.Internal, "request ID unavailable")
 		}
 		state.diagnostic.Set("weir-request-id", hex.EncodeToString(raw))
 	} else {
@@ -92,19 +68,6 @@ func (s *Server) ingress(request *http.Request) (context.Context, error) {
 	}
 	return context.WithValue(request.Context(), ingressKey, state), nil
 }
-func authorize(ctx context.Context, name string, family Permission) error {
-	state, ok := ctx.Value(ingressKey).(*ingress)
-	if !ok {
-		return status.Error(codes.Internal, "missing ingress context")
-	}
-	if state.grants != nil {
-		grant := state.grants[name]
-		if grant == 0 || family != 0 && grant&family == 0 {
-			return status.Error(codes.PermissionDenied, "peer Store or operation denied")
-		}
-	}
-	return nil
-}
 func forwardContext(ctx context.Context) (context.Context, error) {
 	state, ok := ctx.Value(ingressKey).(*ingress)
 	if !ok {
@@ -115,21 +78,12 @@ func forwardContext(ctx context.Context) (context.Context, error) {
 	}
 	md := state.diagnostic.Copy()
 	md.Set(HopMetadata, strconv.Itoa(state.hops-1))
-	// Replace, never append to inherited authorization, baggage or claimed identity.
+	// Replace, never append to inherited metadata; only bounded diagnostics and the hop budget cross peers.
 	return metadata.NewOutgoingContext(ctx, md), nil
 }
-func operationPermission(op *pb.BulkOperation) Permission {
-	if op.GetRead() != nil {
-		return ReadPermission
-	}
-	return MutatePermission
-}
-func checkOperation(ctx context.Context, name string, op *pb.BulkOperation) (*pb.Failure, error) {
+func checkOperation(name string, op *pb.BulkOperation) (*pb.Failure, error) {
 	if op.GetRead() == nil && op.GetMutate() == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing operation family")
-	}
-	if err := authorize(ctx, name, operationPermission(op)); err != nil {
-		return nil, err
 	}
 	return protocol.Validate(op, name), nil
 }

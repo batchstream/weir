@@ -1,5 +1,8 @@
 # 第七阶段：公开原生表达式 AtomicTransform
 
+> 历史资格记录：本文的 Weir peer mTLS/身份/权限配置及相关测试事实保留。
+> 当前可信内网明文入口、配置和资格见 [M8](milestone-8.md)；Weir 认证体系已由 M8 移除。
+
 验证日期：2026-09-27。起点：`137c16adc94eed7543db82d7b1612c2c806e61c1`，干净 `main`。
 本轮按授权直接在 main 开发并本地提交；不创建分支/worktree/PR，不 push、发布或访问生产。
 这是有限原生表达式资格，**不是生产就绪，也不是通用 ProgramTransform**。

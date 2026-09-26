@@ -20,23 +20,11 @@ type Config struct {
 	Diagnostics     string          `json:"diagnostics"`
 	Application     string          `json:"application"`
 	Peer            string          `json:"peer"`
-	Identity        *Identity       `json:"identity"`
-	Allow           []Grant         `json:"allow"`
 	Services        []Service       `json:"services"`
 	Routes          []Route         `json:"routes"`
 	InitialForwards int             `json:"initial_forwards"`
 	MemoryMiB       uint64          `json:"memory_mib"`
 	Limits          TransportLimits `json:"limits"`
-}
-type Identity struct {
-	Certificate string `json:"certificate"`
-	PrivateKey  string `json:"private_key"`
-	CA          string `json:"ca"`
-}
-type Grant struct {
-	Identity   string   `json:"identity"`
-	Store      string   `json:"store"`
-	Operations []string `json:"operations"`
 }
 type Route struct {
 	Store   string `json:"store"`
@@ -63,9 +51,8 @@ type Search struct {
 	Profile string `json:"profile"`
 }
 type Remote struct {
-	Endpoint   string `json:"endpoint"`
-	ServerName string `json:"server_name"`
-	Relays     int    `json:"relays"`
+	Endpoint string `json:"endpoint"`
+	Relays   int    `json:"relays"`
 }
 type TransportLimits struct {
 	Connections int `json:"connections"`
@@ -103,7 +90,7 @@ func Decode(input io.Reader) (Config, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&cfg); err != nil {
-		return cfg, errors.New("invalid configuration fields or types")
+		return cfg, err
 	}
 	return cfg, cfg.Validate()
 }
@@ -150,53 +137,45 @@ func uniqueJSON(d *json.Decoder, depth int) error {
 	return err
 }
 
-var dnsName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
 var mongoName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 var searchName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
-func validIdentity(name string) bool { return len(name) <= 253 && dnsName.MatchString(name) }
 func address(value string, loopback bool) bool {
 	host, port, err := net.SplitHostPort(value)
 	ip := net.ParseIP(host)
 	number, portErr := strconv.Atoi(port)
-	return err == nil && ip != nil && (!loopback || ip.IsLoopback()) && portErr == nil && number >= 0 && number <= 65535
+	return err == nil && ip != nil && (!loopback || ip.IsLoopback()) && port != "" && strings.Trim(port, "0123456789") == "" && portErr == nil && number >= 0 && number <= 65535
 }
 func validName(name string) bool {
 	parsed, segments, err := protocol.ParseResource("weir://" + name)
 	return err == nil && parsed == name && len(segments) == 0
 }
-func permissions(operations []string) (server.Permission, error) {
-	var result server.Permission
-	if len(operations) == 0 || len(operations) > 4 {
-		return 0, errors.New("invalid operation grant")
-	}
-	for _, operation := range operations {
-		var value server.Permission
-		switch operation {
-		case "read":
-			value = server.ReadPermission
-		case "mutate":
-			value = server.MutatePermission
-		case "scan":
-			value = server.ScanPermission
-		case "native":
-			value = server.NativePermission
-		default:
-			return 0, errors.New("unknown operation grant")
-		}
-		if result&value != 0 {
-			return 0, errors.New("duplicate operation grant")
-		}
-		result |= value
-	}
-	return result, nil
-}
 func (cfg Config) Validate() error {
 	if cfg.Diagnostics != "" && !address(cfg.Diagnostics, true) {
 		return errors.New("diagnostics requires explicit loopback IP and port")
 	}
-	if cfg.Application == "" && cfg.Peer == "" || cfg.Application != "" && !address(cfg.Application, true) || cfg.Peer != "" && (!address(cfg.Peer, false) || cfg.Peer == cfg.Application) {
+	if cfg.Application == "" && cfg.Peer == "" || cfg.Application != "" && !address(cfg.Application, false) || cfg.Peer != "" && !address(cfg.Peer, false) {
 		return errors.New("invalid listener configuration")
+	}
+	listeners := []string{cfg.Application, cfg.Peer, cfg.Diagnostics}
+	for i, listener := range listeners {
+		if listener == "" {
+			continue
+		}
+		host, port, _ := net.SplitHostPort(listener)
+		number, _ := strconv.Atoi(port)
+		if number == 0 {
+			continue // Each bind requests its own ephemeral port.
+		}
+		ip := net.ParseIP(host)
+		for _, other := range listeners[:i] {
+			otherHost, otherPort, _ := net.SplitHostPort(other)
+			otherNumber, _ := strconv.Atoi(otherPort)
+			otherIP := net.ParseIP(otherHost)
+			if number == otherNumber && (ip.Equal(otherIP) || ip.IsUnspecified() || otherIP.IsUnspecified()) {
+				return errors.New("duplicate or overlapping listener addresses")
+			}
+		}
 	}
 	if cfg.InitialForwards < 0 || cfg.InitialForwards > 8 || cfg.MemoryMiB < 64 || cfg.MemoryMiB > 65536 {
 		return errors.New("invalid process bounds")
@@ -209,20 +188,19 @@ func (cfg Config) Validate() error {
 	if err := cfg.Limits.serverLimits().Validate(); err != nil {
 		return err
 	}
-	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 || len(cfg.Allow) > 128 {
+	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 {
 		return errors.New("invalid static graph bounds")
 	}
 	services := make(map[string]Service)
-	needsTLS := cfg.Peer != ""
 	for _, service := range cfg.Services {
 		if !validName(service.Name) || services[service.Name].Name != "" || (service.Local == nil) == (service.Remote == nil) {
 			return errors.New("invalid or duplicate Service")
 		}
 		services[service.Name] = service
 		if r := service.Remote; r != nil {
-			needsTLS = true
 			_, port, _ := net.SplitHostPort(r.Endpoint)
-			if !address(r.Endpoint, false) || port == "0" || !validIdentity(r.ServerName) || r.Relays < 1 || r.Relays > 16 {
+			number, _ := strconv.Atoi(port)
+			if !address(r.Endpoint, false) || number == 0 || r.Relays < 1 || r.Relays > 16 {
 				return errors.New("invalid RemoteWeir")
 			}
 		}
@@ -265,28 +243,6 @@ func (cfg Config) Validate() error {
 		if uses[name] == 0 || service.Local != nil && uses[name] != 1 {
 			return errors.New("unused or aliased LocalStore")
 		}
-	}
-	if needsTLS && (cfg.Identity == nil || cfg.Identity.Certificate == "" || cfg.Identity.PrivateKey == "" || cfg.Identity.CA == "") || !needsTLS && cfg.Identity != nil {
-		return errors.New("invalid peer identity configuration")
-	}
-	if cfg.Peer != "" && len(cfg.Allow) == 0 || cfg.Peer == "" && len(cfg.Allow) != 0 {
-		return errors.New("peer listener requires explicit grants")
-	}
-	grants := make(map[string]bool)
-	identities := make(map[string]bool)
-	for _, grant := range cfg.Allow {
-		key := grant.Identity + "/" + grant.Store
-		if !validIdentity(grant.Identity) || !stores[grant.Store] || grants[key] {
-			return errors.New("invalid or duplicate peer grant")
-		}
-		if _, err := permissions(grant.Operations); err != nil {
-			return err
-		}
-		grants[key] = true
-		identities[grant.Identity] = true
-	}
-	if len(identities) > 32 {
-		return errors.New("peer identity bound")
 	}
 	return nil
 }

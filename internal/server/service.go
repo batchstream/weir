@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"net"
 	"strconv"
@@ -17,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -43,7 +42,7 @@ func NewAdmission(l Limits) (*Admission, error) {
 	a := &Admission{slots: make(chan struct{}, l.Sessions), connections: make(chan struct{}, l.Connections), draining: make(chan struct{})}
 	opts := prometheus.CounterOpts{Name: "weir_admission_rejections_total", Help: "Process ingress rejection branches; no client-controlled label values."}
 	a.rejections = prometheus.NewCounterVec(opts, []string{"reason"})
-	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "route", "permission", "operation", "hop"} {
+	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "route", "operation", "hop"} {
 		a.rejections.WithLabelValues(reason)
 	}
 	return a, nil
@@ -66,7 +65,6 @@ func (a *Admission) check() error {
 
 type RemoteConfig struct {
 	Endpoint string
-	TLS      *tls.Config
 	Relays   int
 }
 
@@ -88,14 +86,11 @@ func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
 	if err != nil || net.ParseIP(host) == nil || portErr != nil || number < 1 || number > 65535 || cfg.Relays < 1 || cfg.Relays > 16 {
 		return nil, errors.New("invalid fixed peer endpoint or relay bound")
 	}
-	if cfg.TLS == nil || cfg.TLS.InsecureSkipVerify || cfg.TLS.ServerName == "" || cfg.TLS.RootCAs == nil || len(cfg.TLS.Certificates) != 1 || cfg.TLS.MinVersion < tls.VersionTLS13 {
-		return nil, errors.New("peer requires verified TLS 1.3 and a client identity")
-	}
 	r := &RemoteWeir{slots: make(chan struct{}, cfg.Relays), sockets: make(chan struct{}, 2)}
 	reconnect := backoff.Config{BaseDelay: 100 * time.Millisecond, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 2 * time.Second}
 	params := grpc.ConnectParams{Backoff: reconnect, MinConnectTimeout: 2 * time.Second}
 	r.conn, err = grpc.NewClient("passthrough:///"+cfg.Endpoint,
-		grpc.WithTransportCredentials(credentials.NewTLS(cfg.TLS.Clone())), grpc.WithNoProxy(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(),
 		grpc.WithContextDialer(r.dial), grpc.WithConnectParams(params),
 		grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
 		grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535),

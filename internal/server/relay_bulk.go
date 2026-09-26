@@ -257,12 +257,12 @@ func (s *Server) uploadBulk(r *bulkRelay) {
 			r.fail(status.Error(codes.InvalidArgument, "Bulk indexes must be consecutive"))
 			return
 		}
-		failure, err := checkOperation(r.ctx, r.name, op)
+		failure, err := checkOperation(r.name, op)
 		if failure != nil {
 			s.admission.rejections.WithLabelValues("operation").Inc()
 		}
 		if err != nil {
-			s.admission.rejections.WithLabelValues("permission").Inc()
+			s.admission.rejections.WithLabelValues("operation").Inc()
 			r.fail(err)
 			return
 		}

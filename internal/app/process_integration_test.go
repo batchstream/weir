@@ -21,7 +21,6 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testmetrics"
 	"github.com/batchstream/weir/internal/testmongo"
-	"github.com/batchstream/weir/internal/testpeer"
 	"github.com/batchstream/weir/internal/testsearch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -130,18 +129,6 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 		binaries[name] = binary
 	}
-	ca := testpeer.NewCA(t)
-	identities := make(map[string]*Identity)
-	for _, name := range []string{"a", "b", "c"} {
-		_, certificate, key := ca.Identity(t, name+".weir.test")
-		identity := &Identity{Certificate: filepath.Join(dir, name+".crt"), PrivateKey: filepath.Join(dir, name+".private"), CA: filepath.Join(dir, "ca.crt")}
-		for file, data := range map[string][]byte{identity.Certificate: certificate, identity.PrivateKey: key, identity.CA: ca.PEM} {
-			if err := os.WriteFile(file, data, 0600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		identities[name] = identity
-	}
 	mongo := &Mongo{URI: testmongo.URI, Database: database, Collection: "records"}
 	mongoLocal := &Local{Mongo: mongo}
 	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
@@ -153,34 +140,25 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	c := DefaultConfig()
 	c.Diagnostics = "127.0.0.1:0"
 	c.Peer = "127.0.0.1:0"
-	c.Identity = identities["c"]
 	c.Services = []Service{mongoService, searchService}
 	c.Routes = []Route{mongoRoute, searchRoute}
-	for _, name := range []string{"mongo", "search"} {
-		grant := Grant{Identity: "b.weir.test", Store: name, Operations: []string{"read", "mutate", "scan", "native"}}
-		c.Allow = append(c.Allow, grant)
-	}
 	final := startProcess(t, binaries["weir"], c)
 	b := DefaultConfig()
 	b.Diagnostics = "127.0.0.1:0"
 	b.Peer = "127.0.0.1:0"
-	b.Identity = identities["b"]
 	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoint: final.address, ServerName: "c.weir.test", Relays: 4}
+		remote := &Remote{Endpoint: final.address, Relays: 4}
 		service := Service{Name: name, Remote: remote}
 		route := Route{Store: name, Service: name}
-		grant := Grant{Identity: "a.weir.test", Store: name, Operations: []string{"read", "mutate", "scan", "native"}}
 		b.Services = append(b.Services, service)
 		b.Routes = append(b.Routes, route)
-		b.Allow = append(b.Allow, grant)
 	}
 	middle := startProcess(t, binaries["weir"], b)
 	a := DefaultConfig()
 	a.Diagnostics = "127.0.0.1:0"
 	a.Application = "127.0.0.1:0"
-	a.Identity = identities["a"]
 	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoint: middle.address, ServerName: "b.weir.test", Relays: 4}
+		remote := &Remote{Endpoint: middle.address, Relays: 4}
 		service := Service{Name: name, Remote: remote}
 		route := Route{Store: name, Service: name}
 		a.Services = append(a.Services, service)
@@ -213,7 +191,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 	}
 	t.Log("real process HTTP scrapes: C logical records=8, A/B relays=8 each, A/B have no local executions")
-	t.Log(fmt.Sprintf("process IDs A=%d B=%d C=%d; profile=%s; TLS identities are test-generated", first.command.Process.Pid, middle.command.Process.Pid, final.command.Process.Pid, search.Profile))
+	t.Log(fmt.Sprintf("process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets", first.command.Process.Pid, middle.command.Process.Pid, final.command.Process.Pid, search.Profile))
 	c.Peer, b.Peer, a.Application = final.address, middle.address, first.address
 	conn, err := grpc.NewClient("passthrough:///"+first.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
 	if err != nil {

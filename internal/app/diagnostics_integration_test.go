@@ -34,8 +34,6 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 		cfg.Services = append(cfg.Services, service)
 		route := Route{Store: name, Service: name}
 		cfg.Routes = append(cfg.Routes, route)
-		grant := Grant{Identity: "node.weir.test", Store: name, Operations: []string{"read"}}
-		cfg.Allow = append(cfg.Allow, grant)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -46,7 +44,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	defer n.Close(context.Background())
 	n.Start()
 	families := testmetrics.Scrape(t, n.DiagnosticAddress())
-	if got := testmetrics.Series(families); got != 1932 {
+	if got := testmetrics.Series(families); got != 1931 {
 		t.Fatal("maximum static series changed", got)
 	}
 	if testmetrics.Sum(families, "weir_store_executions_total") != 0 {
@@ -58,8 +56,8 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("Store overload changed readiness")
 	}
-	if testmetrics.Series(testmetrics.Scrape(t, n.DiagnosticAddress())) != 1932 {
+	if testmetrics.Series(testmetrics.Scrape(t, n.DiagnosticAddress())) != 1931 {
 		t.Fatal("state added series")
 	}
-	t.Log("maximum legal graph: 16 LocalStores, 2 data listeners, exactly 1932 standard Prometheus series; no synthetic executions")
+	t.Log("maximum legal graph: 16 LocalStores, 2 data listeners, exactly 1931 standard Prometheus series; no synthetic executions")
 }

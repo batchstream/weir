@@ -1,9 +1,8 @@
-// Package server provides bounded application and authenticated peer transports.
+// Package server provides bounded application and peer transports for a deployment-isolated intranet.
 package server
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"math"
@@ -36,10 +35,11 @@ func DefaultLimits() Limits {
 }
 
 type Config struct {
-	Routes          map[string]Service
-	Limits          Limits
-	Admission       *Admission
-	Peer            *PeerPolicy
+	Routes    map[string]Service
+	Limits    Limits
+	Admission *Admission
+	// Peer selects ingress that requires an existing forwarding budget.
+	Peer            bool
 	InitialForwards int
 }
 
@@ -47,7 +47,7 @@ type Server struct {
 	pb.UnimplementedWeirServer
 	routes          map[string]Service
 	admission       *Admission
-	peer            *PeerPolicy
+	peer            bool
 	initialForwards int
 	limits          Limits
 	slots           chan struct{}
@@ -89,38 +89,18 @@ func New(cfg Config) (*Server, error) {
 			seen[service.LocalStore] = true
 		}
 	}
-	if cfg.Peer != nil {
-		if cfg.Peer.TLS == nil || cfg.Peer.TLS.ClientAuth != tls.RequireAndVerifyClientCert || cfg.Peer.TLS.ClientCAs == nil || len(cfg.Peer.TLS.Certificates) != 1 || cfg.Peer.TLS.MinVersion < tls.VersionTLS13 || cfg.Peer.TLS.InsecureSkipVerify || len(cfg.Peer.Allow) == 0 || len(cfg.Peer.Allow) > 32 {
-			return nil, status.Error(codes.InvalidArgument, "invalid peer trust policy")
-		}
-		policy := &PeerPolicy{TLS: cfg.Peer.TLS.Clone(), Allow: make(map[string]map[string]Permission)}
-		for identity, grants := range cfg.Peer.Allow {
-			if identity == "" || len(identity) > 253 || len(grants) == 0 {
-				return nil, status.Error(codes.InvalidArgument, "invalid peer grants")
-			}
-			policy.Allow[identity] = make(map[string]Permission)
-			for name, permission := range grants {
-				if _, ok := routes[name]; !ok || permission == 0 || permission & ^AllPermissions != 0 {
-					return nil, status.Error(codes.InvalidArgument, "invalid peer grant")
-				}
-				policy.Allow[identity][name] = permission
-			}
-		}
-		cfg.Peer = policy
-	}
 	s := &Server{routes: routes, admission: cfg.Admission, peer: cfg.Peer, initialForwards: cfg.InitialForwards, limits: l, slots: cfg.Admission.slots, draining: cfg.Admission.draining}
 	s.metrics = newTransportMetrics()
 	s.serving = make(chan struct{})
 	statistics := deliveryStats{}
 	s.grpc = grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame), grpc.UnaryInterceptor(s.unary), grpc.StatsHandler(statistics), grpc.WaitForHandlers(true))
 	protocols := &http.Protocols{}
-	protocols.SetUnencryptedHTTP2(cfg.Peer == nil)
-	protocols.SetHTTP2(cfg.Peer != nil)
-	h2 := &http.HTTP2Config{MaxConcurrentStreams: 8, MaxReadFrameSize: 16 << 10, MaxReceiveBufferPerStream: 65535, MaxReceiveBufferPerConnection: 65535, SendPingTimeout: time.Minute, PingTimeout: 5 * time.Second, WriteByteTimeout: l.Stall}
-	s.http = &http.Server{Handler: http.HandlerFunc(s.serveHTTP), Protocols: protocols, HTTP2: h2, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 << 10, IdleTimeout: time.Minute}
-	if cfg.Peer != nil {
-		s.http.TLSConfig = cfg.Peer.TLS.Clone()
-	}
+	protocols.SetUnencryptedHTTP2(true)
+	// Bound incomplete HTTP/2 headers/frames before a handler exists. A stalled
+	// frame also prevents PING acknowledgements from being parsed; the native
+	// transport closes it after the finite idle plus PING budgets.
+	h2 := &http.HTTP2Config{MaxConcurrentStreams: 8, MaxReadFrameSize: 16 << 10, MaxReceiveBufferPerStream: 65535, MaxReceiveBufferPerConnection: 65535, SendPingTimeout: l.Stall, PingTimeout: min(5*time.Second, l.Stall), WriteByteTimeout: l.Stall}
+	s.http = &http.Server{Handler: http.HandlerFunc(s.serveHTTP), Protocols: protocols, HTTP2: h2, ReadHeaderTimeout: min(5*time.Second, l.Stall), MaxHeaderBytes: 16 << 10, IdleTimeout: time.Minute}
 	pb.RegisterWeirServer(s.grpc, s)
 	return s, nil
 }
@@ -168,10 +148,7 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	if !ok {
 		return nil, status.Error(codes.Internal, "missing HTTP/2 delivery lifetime")
 	}
-	service, name, failure, err := s.resolve(ctx, protocol.Resource(op), false, operationPermission(op))
-	if err != nil {
-		return nil, err
-	}
+	service, name, failure := s.resolve(protocol.Resource(op), false)
 	if failure == nil {
 		failure = protocol.Validate(op, name)
 		if failure != nil {
@@ -202,23 +179,19 @@ func (s *Server) single(ctx context.Context, op *pb.BulkOperation) (*pb.BulkResu
 	return result, nil
 }
 
-func (s *Server) resolve(ctx context.Context, resource string, root bool, family Permission) (Service, string, *pb.Failure, error) {
+func (s *Server) resolve(resource string, root bool) (Service, string, *pb.Failure) {
 	empty := Service{}
 	name, segments, err := protocol.ParseResource(resource)
 	if err != nil || root && len(segments) != 0 {
 		s.admission.rejections.WithLabelValues("route").Inc()
-		return empty, "", protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource"), nil
-	}
-	if err := authorize(ctx, name, family); err != nil {
-		s.admission.rejections.WithLabelValues("permission").Inc()
-		return empty, name, nil, err
+		return empty, "", protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource")
 	}
 	service, ok := s.routes[name]
 	if !ok {
 		s.admission.rejections.WithLabelValues("route").Inc()
-		return empty, name, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store"), nil
+		return empty, name, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store")
 	}
-	return service, name, nil, nil
+	return service, name, nil
 }
 
 type receiveEnd struct {
@@ -260,10 +233,7 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 	if first.GetOpen() == nil {
 		return status.Error(codes.InvalidArgument, "Bulk requires Open")
 	}
-	service, name, failure, err := s.resolve(ctx, first.GetOpen().Store, true, 0)
-	if err != nil {
-		return err
-	}
+	service, name, failure := s.resolve(first.GetOpen().Store, true)
 	if failure != nil {
 		return status.Error(codes.InvalidArgument, "invalid Bulk Open")
 	}
@@ -393,13 +363,13 @@ func (s *Server) receive(args receiveArgs) {
 			return
 		}
 		count++
-		f, authErr := checkOperation(ctx, args.name, op)
+		f, operationErr := checkOperation(args.name, op)
 		if f != nil {
 			s.admission.rejections.WithLabelValues("operation").Inc()
 		}
-		if authErr != nil {
-			s.admission.rejections.WithLabelValues("permission").Inc()
-			finish(authErr)
+		if operationErr != nil {
+			s.admission.rejections.WithLabelValues("operation").Inc()
+			finish(operationErr)
 			return
 		}
 		if err := s.admission.check(); err != nil {
@@ -465,19 +435,8 @@ func (s *Server) send(ctx context.Context, stream grpc.BidiStreamingServer[pb.Bu
 func (s *Server) Serving() <-chan struct{} { return s.serving }
 func (s *Server) Serve(listener net.Listener) error {
 	close(s.serving)
-	if s.peer == nil {
-		host, _, err := net.SplitHostPort(listener.Addr().String())
-		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
-			return errors.New("application listener requires explicit loopback IP")
-		}
-	}
 	bounded := &limitedListener{Listener: listener, slots: s.admission.connections, server: s}
-	var err error
-	if s.peer == nil {
-		err = s.http.Serve(bounded)
-	} else {
-		err = s.http.ServeTLS(bounded, "", "")
-	}
+	err := s.http.Serve(bounded)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

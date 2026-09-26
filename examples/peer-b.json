@@ -1,0 +1,12 @@
+{
+  "peer": "127.0.0.1:7448",
+  "services": [{
+    "name": "mongo-local",
+    "local": {"mongo": {
+      "uri": "mongodb://127.0.0.1:27028/?directConnection=true",
+      "database": "weir_m1",
+      "collection": "records"
+    }}
+  }],
+  "routes": [{"store": "mongo", "service": "mongo-local"}]
+}

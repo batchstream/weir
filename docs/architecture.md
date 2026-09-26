@@ -43,8 +43,8 @@ Decisions that intentionally differ from Sink:
   bounded framing for Read/Mutate, not another execution path.
 - V1 Scan is a live, backpressured traversal, with cursor lifetime confined to one
   RPC. Cross-RPC resume tokens and portable snapshot promises are deliberately absent.
-- Public and authenticated peer listeners use the same `weir.v1` RPCs. Forwarding
-  adds trusted hop metadata, not another message protocol.
+- Application and peer listeners use the same `weir.v1` RPCs. Forwarding
+  adds bounded hop metadata under deployment isolation, not another message protocol.
 - Same-key ordering is scoped to one Bulk stream; independent Reads are not serialized.
 - Scan cursor lifetime is bounded separately from backend fetch concurrency; Cmin is 1.
 - Native reports response completeness, not normalized database mutation effects.
@@ -98,27 +98,36 @@ share process CPU, memory, network, and the OS; this is resource isolation, not
 hard security or CPU-reservation isolation. Deploy separate processes for hard
 tenant isolation.
 
-TLS, authentication, and Store-level authorization are listener concerns. A
-Store uses configured backend credentials, never credentials supplied in a
-document or native URL. Core authorization is by Store and semantic operation
-family, including each Read/Mutate inside Bulk. Backend command restrictions
-belong to the adapter. Arbitrary field-level authorization and per-request
-backend impersonation are outside V1.
+Weir runs as a trusted intranet service. Deployment network isolation controls
+access to application and peer listeners; Weir has no identity, authorization,
+TLS/mTLS, account, token, or certificate subsystem. Both listeners and RemoteWeir
+use plaintext HTTP/2 gRPC. This profile makes no claim for an unisolated public
+network. Listen addresses default to loopback; explicit intranet IPs or wildcard
+binds require the deployment to enforce that isolation.
+
+Backend credentials and standard backend TLS validation remain adapter connection
+concerns. They come from configuration, never from document/native URL input.
+Protocol, URI, Store, operation, and backend command validation remain mandatory,
+as do bounded resources, no implicit replay, and conservative UNKNOWN outcomes.
+Removing Weir authentication does not bypass backend credential requirements or
+permit disabling standard certificate checks.
 
 ## 2. Listener, Route, Service, and Assembly
 
 ### 2.1 Listener
 
-Use gRPC, Protobuf, and HTTP/2. Application and authenticated peer listeners
-expose the same `weir.v1` service and message schemas. V1 uses separate
-listeners so their trust policies are explicit: public ingress rejects reserved
-forwarding metadata; peer ingress requires an authenticated Weir identity and
-valid hop metadata. Sharing a schema does not share authorization. There is no
-mesh-specific RPC package.
+Use gRPC, Protobuf, and plaintext HTTP/2. Application and peer listeners expose
+the same `weir.v1` service and message schemas. Separate listeners preserve the
+hop boundary: application ingress rejects reserved forwarding metadata and creates
+the initial budget; peer ingress requires a valid existing budget and never resets
+it. Deployment isolation controls who can reach each entrance. There is no
+mesh-specific RPC package or identity field.
 
-Listeners own frame/metadata limits, transport connection limits, authentication,
-deadline establishment, protocol validation, correlation, and bounded result
-delivery. They do not implement storage semantics or own a work queue.
+Listeners own frame/metadata limits, transport connection limits, deadline
+establishment, protocol validation, correlation, and bounded result delivery.
+Preface, incomplete HTTP/2 headers/frames, partial body, and blocked output must
+all have finite transport deadlines, including before a handler exists. They do
+not implement storage semantics or own a work queue.
 
 Use bounded connections and HTTP/2 concurrent streams *before* application
 interceptors. A unary interceptor runs too late to be the only protection
@@ -216,7 +225,7 @@ Example adapter grammars:
 Adapters validate case/collation rules and reject unsupported identity forms rather
 than guessing. MongoDB record comparisons use simple identity semantics, not a
 caller-selected linguistic collation. More exotic IDs, custom routing, and aliases
-remain accessible through authorized Native calls, outside local record ordering.
+remain accessible through validated Native calls, outside local record ordering.
 
 The full canonical record URI is the record identity. A Bulk sequence key
 combines that identity with a server-owned live stream identity, never the
@@ -253,8 +262,8 @@ the caller's chosen encoder, never JSON-first conversion of an arbitrary struct.
 Optional `adapter_options` is another small media-type-tagged opaque value. It is
 for operation-specific backend choices such as search refresh behavior, not a
 generic query language. Adapters reject unknown options; Core only bounds bytes.
-Omitting options uses immutable Store defaults. Authorization cannot be overridden
-through these options.
+Omitting options uses immutable Store defaults. Options cannot override the
+configured Store or backend connection scope.
 
 ## 4. Execution Outcomes and Retry Policy
 
@@ -274,8 +283,10 @@ category. Every terminal mutation result includes a nonzero outcome:
 Codes include INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND,
 PRECONDITION_FAILED, CONFLICT, UNSUPPORTED, RESOURCE_EXHAUSTED, UNAVAILABLE,
 CANCELLED, DEADLINE_EXCEEDED, and INTERNAL. Proto zero/unspecified is invalid for
-terminal states. A failure may accompany APPLIED, for example if effect is known
-but a separately requested post-write visibility check fails. Never downgrade
+terminal states. UNAUTHENTICATED/PERMISSION_DENIED retain their wire numbers;
+they do not require a Weir authentication subsystem. A failure may accompany APPLIED,
+for example if effect is known but a separately requested post-write visibility
+check fails. Never downgrade
 known application to NOT_APPLIED because response serialization or delivery failed.
 
 A transform Keep or Delete-of-observed-absence decision that issues no write
@@ -437,8 +448,8 @@ End is final completion accounting, not durable acceptance. The server does not
 send an acceptance acknowledgement per operation. A client may submit the next
 operation while receiving previous results and must read and write concurrently.
 
-A well-formed but invalid operation receives its indexed terminal error. A framing,
-authorization, or connection failure may terminate without an End. Previously
+A well-formed but invalid operation receives its indexed terminal error. A framing
+or connection failure may terminate without an End. Previously
 received results remain authoritative; missing mutation results are UNKNOWN from
 the client's perspective. A half-close does not cancel accepted work. Stream
 cancellation does. No buffering to restore input order is allowed.
@@ -450,7 +461,7 @@ an empty traversal still produces End. A non-OK transport status or missing End
 means truncation, not a successfully empty or complete response.
 
 For application-level failures whose terminal envelope can still be sent, return
-that envelope with gRPC OK. Transport/authentication/framing failures may use gRPC
+that envelope with gRPC OK. Transport/framing failures may use gRPC
 status directly. Never reinterpret a bare DEADLINE_EXCEEDED or RESOURCE_EXHAUSTED
 status as mutation non-application. This conservative rule also covers rejection
 before a request can be decoded and assigned an indexed result.
@@ -635,9 +646,8 @@ index after bounded active-work cleanup.
 Select the oldest eligible entry as the seed. Gather eligible distinct-key entries
 with exactly the same adapter compatibility token, within operation, encoded
 request-byte, and reserved-response-byte limits. Compatibility includes BatchKey,
-action compatibility, media handling, acknowledgement/refresh options, authorization
-context where applicable, and output semantics. Core compares tokens; it does not
-decode documents to calculate them.
+action compatibility, media handling, acknowledgement/refresh options, and output
+semantics. Core compares tokens; it does not decode documents to calculate them.
 
 Dispatch when a configured maximum is reached, the oldest eligible entry's short
 collection window expires, or remaining deadline slack requires immediate dispatch.
@@ -851,7 +861,7 @@ transport connections/streams * bounded transport/frame buffers
 ```
 
 This is a structural argument, not an exact resident-memory formula. Allocator/GC
-overhead, TLS, driver buffering, and kernel socket memory need measured headroom.
+overhead, backend TLS, driver buffering, and kernel socket memory need measured headroom.
 Do not introduce `max_active_heap_bytes` or claim exact enforcement from document
 length. Validate that configured concurrency times maximum payload sizes is plausible
 for the process budget, then qualify peak memory with slow consumers and maximal
@@ -1176,7 +1186,7 @@ default but not the final pipeline [D9]. Apply this to each physical bulk item
 and every AtomicTransform write attempt, not just unary Put.
 
 This is a deliberately narrow V1 record-write profile, not a ban on pipelines or
-on Native within the authorized Store. A configured default pipeline may remain
+on Native within the configured Store. A configured default pipeline may remain
 in place for native writers; Weir does not edit index settings or pipeline
 definitions. Read, Delete, and Scan are not disabled merely because a pipeline
 exists. An effective final pipeline makes this initial source-write profile
@@ -1277,7 +1287,7 @@ For HTTP backends, fix the upstream host/authentication from configuration; reje
 absolute URLs, authority overrides, traversal escapes, redirects requiring a new
 upstream request, hop-by-hop/auth/Host headers, and remote-fetch commands that could
 create an SSRF path. Return redirects as native replies without following them.
-Native can touch multiple records/datasets within its authorized Store when the
+Native can touch multiple records/datasets within its configured Store when the
 backend permits, but never another Weir Store or arbitrary remote endpoint. It does
 not gain a cross-record atomicity guarantee.
 
@@ -1306,7 +1316,7 @@ chunk is invalid. Either support those explicit partial semantics or reject the
 streaming profile; never silently buffer the entire upload.
 
 Replies preserve native body bytes, native errors, and ordered chunks. Inspect
-only what is required for bounded framing, authorized scope, cleanup, and
+only what is required for bounded framing, configured scope, cleanup, and
 positively known backend congestion; do not add a command-effect result
 interpreter. A complete HTTP reply, including a 200 response, is transport
 completion, not a promise that every native item succeeded. The caller
@@ -1332,7 +1342,7 @@ A complete native error response is not a Weir Failure and a complete native
 bulk reply is not proof that all effects succeeded. Do not provide Native
 APPLIED, NOT_APPLIED, PARTIALLY_APPLIED, or read-only effect enums; record
 MutationOutcome is a different contract. Read-only classification may remain
-internal for command authorization/capability checks, never as a client-supplied
+internal for command capability checks, never as a client-supplied
 safety assertion.
 
 Weir never automatically replays Native. After possible dispatch, partial side
@@ -1406,7 +1416,7 @@ Native continues returning its full native envelope and does not inherit this
 Scan-specific completeness contract.
 
 V1 deliberately omits cross-RPC resume tokens. A portable token would raise snapshot,
-expiry, authorization, mixed-key pagination, replica affinity, and cleanup questions
+expiry, backend access scope, mixed-key pagination, replica affinity, and cleanup questions
 without a shared backend answer. A live MongoDB cursor avoids inventing unsafe `_id`
 keyset pagination across mixed BSON types. Search can retain PIT/search-after state
 inside the same live call when its qualified profile supports it. These do not make
@@ -1421,7 +1431,7 @@ itself. A future resume feature needs a separate requirement and protocol review
 
 ## 14. Peer Forwarding and Remote Services
 
-### 14.1 Reuse the public RPCs on authenticated peer listeners
+### 14.1 Reuse the public RPCs on intranet peer listeners
 
 RemoteWeir calls the same Read, Mutate, Bulk, Native, and Scan RPCs in
 `weir.v1`. Unary stays unary and streaming preserves its original shape.
@@ -1429,26 +1439,28 @@ Public/peer listeners use the same messages and validation/execution paths;
 there is no ForwardOpen, ForwardRequestFrame, ForwardResponseFrame, or
 `weir.mesh.v1` service to maintain.
 
-The only extra forwarding state is trusted gRPC metadata [D11]:
+The only extra forwarding state is bounded gRPC metadata [D11]:
 
 | Context | Rule |
 | --- | --- |
 | `weir-remaining-forwards` | Exactly one canonical unsigned decimal value, 0-8, required on peer calls; reject duplicates/malformed/missing values. |
 | Public ingress | Reject this reserved metadata from applications and create the configured initial budget internally. |
-| Peer ingress | Authenticate a Weir identity, authorize Store and semantic operation family, and preserve/decrement the received budget; never initialize a fresh one. |
+| Peer ingress | Require one canonical budget and preserve/decrement it; never initialize a fresh one. Validate Store and operation without identity or permission checks. |
 | Request ID, tracing, deadline | Use the existing bounded metadata/deadline mechanisms; IDs remain diagnostic, not sequencing or authorization identities. |
 
-A peer trust policy is not inferred from the presence of a header. V1 uses
-separate application/peer listeners and mTLS or equivalent peer authentication.
-Forward only approved context, not original authorization headers or arbitrary
-baggage. Each peer revalidates requests and authorizes each operation inside
-Bulk. Data follows the same Service boundary and terminal result rules as a
-direct application call.
+Hop metadata has no cryptographic identity or integrity guarantee. Deployment
+isolation must restrict peer ingress to the intended Weir nodes; anyone who can
+reach it can submit a canonical budget. Preserve the separate application/peer
+hop rules even though both transports are plaintext. Replace outgoing metadata
+with only one bounded request ID, optional bounded traceparent, and the decremented
+hop budget; never append inherited authorization, arbitrary baggage, or claimed
+identity. Each peer revalidates Store/URI/operation and each Bulk item. Data follows
+the same Service boundary and terminal result rules as a direct application call.
 
 ### 14.2 Deadline, hop, and error rules
 
 Application ingress creates the hop budget (proposal: four remote forwards,
-configuration maximum eight). Ordinary clients cannot supply peer hop metadata.
+configuration maximum eight). The application entrance rejects client-supplied peer hop metadata.
 Before each remote dispatch, require a positive budget and decrement it exactly
 once. At zero, local execution is still allowed but another forward is rejected.
 Do not reset the budget at a new listener or infer safety from network topology.
@@ -1496,7 +1508,7 @@ policy only before any result has been delivered. Basic health checks can help
 select *future* calls; they are not proof about an in-flight mutation.
 
 All endpoints in a RemoteWeir Service must represent the same logical Store,
-authorization policy, adapter semantics, and supported protocol profile. Weir
+adapter semantics and supported protocol profile. Weir
 does not reconcile inconsistent replicas. Validate deployment configuration and
 compatibility during rollout; UNSUPPORTED is preferable to silently changing intent.
 Endpoint loss or membership change may destroy affinity but cannot invalidate
@@ -1546,7 +1558,7 @@ separately so one failed Store does not hide all other useful routes.
 
 Prefer recent execution outcomes and basic transport health. Bounded administrative
 connectivity checks may exist independently, but no synthetic Ping increases the
-database concurrency window. Permanent startup authentication/topology errors fail
+database concurrency window. Permanent backend authentication/topology errors fail
 that required Store's construction clearly. Partial-Store startup is not a hidden
 fallback; V1 validates all configured local Stores before serving.
 
@@ -1596,7 +1608,7 @@ resource/                      canonical URI syntax/build/parse, no backend gram
 internal/
   app/                         validated assembly and lifecycle
   config/                      strict static decoding/defaults/validation
-  transport/                   public/peer handlers, trusted metadata, bounded pumps
+  transport/                   application/peer handlers, bounded hop metadata and pumps
   service/                     exact routes, LocalStore and RemoteWeir variants
   store/                       StoreRuntime, Work/result contract, scheduler,
                                batch selection, adaptive algorithm, adapter contract
@@ -1665,7 +1677,7 @@ it is not a promise to copy Sink packages unchanged.
 | Seven public RPCs including Query and Count [S1] | Rewrite/delete | Four semantic operations plus Bulk framing; backend query/count stays Native. |
 | Gateway route grouping, mixed-Store fanout, result aggregation [S2] | Delete | No: applications compose multiple Store calls themselves. RemoteWeir pins one Service/endpoint. |
 | Gateway/Engine/Worker roles and role-specific assembly [S2, S8] | Delete | No: configuration chooses topology, never program architecture. |
-| Private Gateway-to-Engine protocol [S2] | Delete separate message protocol | Reuse public RPCs on authenticated peer listeners with trusted hop metadata. No Forward wrappers or Engine service. |
+| Private Gateway-to-Engine protocol [S2] | Delete separate message protocol | Reuse public RPCs on intranet peer listeners with bounded hop metadata. No Forward wrappers or Engine service. |
 | Rendezvous affinity [S2] | Preserve algorithm, move ownership | Yes as optional locality in RemoteWeir; never record ownership or correctness. |
 | Dynamic route snapshots, discovery refresh machinery [S2] | Delete from V1 | No requirement; static endpoint sets, ordinary DNS and rolling restart suffice. |
 | Core revision-based merge orchestration [S5] | Rewrite | No portable CAS layer: move atomicity and retries into adapters; Core only schedules AtomicTransform. |
@@ -1689,7 +1701,7 @@ introduced complexity, and whether removal preserves the required properties.
 
 | Abstraction | Problem and invariant | Why simpler is insufficient | Introduced complexity | Removable? |
 | --- | --- | --- | --- | --- |
-| Listener | Transport/auth/framing; finite externally controlled input | Direct database calls cannot enforce the shared data-plane boundary | gRPC handlers and limit configuration | No; a transport boundary is required, but a custom protocol is unnecessary. |
+| Listener | Transport/framing; finite externally controlled input | Direct database calls cannot enforce the shared data-plane boundary | gRPC handlers and limit configuration | No; a transport boundary is required, but a custom protocol is unnecessary. |
 | Route -> Service | Local/remote composition; one Store target per request | Fixed roles require separate program architectures and prevent mixed topology | Exact map and two concrete variants | No under required multi-hop/local composition. |
 | StoreRuntime | Isolate queue/window/pool/batch state per Store | A process-global executor allows one Store to consume all another Store's capacity | One runtime object/state machine per Store | No for local Store isolation. |
 | Work/adapter plan | One scheduling path with opaque backend compatibility | Separate method queues duplicate admission and cannot coordinate keys | Small internal tagged work/result and opaque plan | Cannot remove common scheduling representation; it need not be a public API or large framework. |
@@ -1703,7 +1715,7 @@ introduced complexity, and whether removal preserves the required properties.
 | AtomicTransform | Atomic single-record RMW despite independent writers | Local locks cannot serialize native clients/other nodes | Adapter-native transaction/OCC loops and evidence classification | No for required atomic transform capability; no distributed locks needed. |
 | Native descriptor/stream | Preserve native semantics without tunneling client sessions | A query DSL or native-effect interpreter duplicates backend semantics | Adapter-defined descriptors, bounded bytes and response completeness | Keep the escape hatch; remove command-effect normalization. |
 | Scan | Deliver complete native traversal with bounded cursor lifetime | Flattened hits hide partial-response metadata; holding a permit for idle clients mixes resource lifetimes | One bounded session/page and shared-scheduler fetch continuation | Keep the live traversal scope; no resume service, separate queue, or reserved short-work floor. |
-| Peer forwarding/hop bound | Preserve intent/results/deadline across process boundaries | Authentication and loop bounds are needed, but another schema is not | Existing RPCs on a peer listener plus trusted metadata | Delete mesh-specific message grammar; keep authentication and hop enforcement. |
+| Peer forwarding/hop bound | Preserve intent/results/deadline across process boundaries | Deployment isolation and loop bounds are needed, but another schema is not | Existing RPCs on a peer listener plus bounded metadata | Delete mesh-specific message grammar; keep deployment isolation and hop enforcement. |
 | Immutable assembly/lifecycle | Unwind startup and drain finite work consistently | Scattered constructors/cleanup leak resources and obscure ownership | One constructor owner and monotonic lifecycle states | Some ownership is necessary; dynamic configuration machinery is not. |
 
 Within-Bulk same-key sequencing is a specified contract and cannot be removed
@@ -1740,13 +1752,13 @@ This pass is part of the proposal, not a future TODO.
 | Artificial portable semantics | Query/Count/revision/completion visibility removed; backend options remain explicitly native. |
 | Distributed coordination | No locks, leases, leaders, replica quota division, consensus, global ordering, or global capacity promise. |
 | Speculative extension points | Static adapters/runtime profile, no hot reload, Provider, xDS, plugin loading, program registration, or SDK-wide retry framework. |
-| Unnecessary protocol fields | No public BatchKey, local execution plan, Lua registry, affinity hint, client read-only flag, Native effect enum, or mesh-specific wrappers. Hop budget uses trusted metadata. |
+| Unnecessary protocol fields | No public BatchKey, local execution plan, Lua registry, affinity hint, client read-only flag, Native effect enum, or mesh-specific wrappers. Hop budget uses bounded metadata on deployment-isolated peer ingress. |
 | Features outside App -> Database | Async delivery, Kafka health/topics/offsets/DLQ/settlement, schema/index management, and background jobs are absent. |
 | Hidden unbounded state | Finite sessions, frames, operation/result credits, pending set, keys tied to entries, active permits, cursor fetch, parser expansion, program cache, logs and shutdown waits. |
 | Duplicated execution paths | Public/peer, unary/Bulk, and batching-on/off converge on one runtime. Scan fetch continuations use its scheduler while idle cursor state stays outside the execution window. |
 
 Retain Bulk correlation, Native response completion, Scan terminal completeness,
-and trusted peer hop metadata because each protects a named requirement. Remove
+and bounded peer hop metadata because each protects a named requirement. Remove
 Native effect normalization, mesh-specific message framing, cross-client Read
 chains, Delete affected-row distinctions, latency-bucket control, portable Scan
 resume, operation folding, returned images, program lowering, and public
@@ -1766,8 +1778,8 @@ dependencies and qualification gates, not implementation progress or approval st
 | 3. Mongo opaque CRUD and general transforms | Native primitives, Delete batching without affected-row distinctions, transaction RMW, lossless codecs/runtime | Native writer conflicts, insertion races, commit ambiguity; Int32 arithmetic/overflow and width preservation; bounded attempts/fuel; standalone rejects general transforms. |
 | 4. Search adapter | Qualified ES/OpenSearch identity, ingest/source profiles, native OCC/Create/Replace | Retargeting default pipeline bypass, effective final-pipeline rejection for initial source-write profile, Native unaffected; conditional conflicts/transport loss; source/sequence rejection; independently test both products. |
 | 5. Streaming surfaces | Bulk, raw Native responses, complete-page Scan validation, bounded session state and shared-scheduler fetches | Partial-shard/timeout/early-termination failures; failed page not emitted; C=1 stalled Scan permits short work; Native stall deadline; early native errors, cursor cleanup, RSS plateau. |
-| 6. Remote composition | Reused public RPCs, peer authentication/metadata, deadlines, affinity/basic health | Identical direct/forwarded semantics; unary remains unary; bounded streaming; spoofed/missing/duplicate hops; zero-hop local versus forward; lost results; no replay. |
-| 7. Qualification and operations | Metrics, drain, packaging, secure listeners, documented adapter profiles | Explicit-feedback/stale-flight load tests with multiple controllers; no latency-only reduction; drain across Scan states; memory/CPU ceilings; adapter closes exactly once; bounded metrics. |
+| 6. Remote composition | Reused public RPCs, peer hop metadata under deployment isolation, deadlines, affinity/basic health | Identical direct/forwarded semantics; unary remains unary; bounded streaming; spoofed/missing/duplicate hops; zero-hop local versus forward; lost results; no replay. |
+| 7. Qualification and operations | Metrics, drain, packaging, isolated intranet listeners, documented adapter profiles | Explicit-feedback/stale-flight load tests with multiple controllers; no latency-only reduction; drain across Scan states; memory/CPU ceilings; adapter closes exactly once; bounded metrics. |
 
 The specified native-expression fast paths ship only after their deterministic
 whitelist/validator is proven; unsupported expressions are rejected meanwhile.
@@ -1805,7 +1817,7 @@ shipping a weaker sandbox.
 | Ordinary Delete bulk includes missing records | Fully acknowledged successful items are APPLIED; no per-item deleted counts or pre-read required; ambiguous items stay UNKNOWN. |
 | Independent same-key Reads versus same-key Bulk sequence | Independent reads can overlap; Bulk frame order remains mandatory within its stream, even with duplicate diagnostic request IDs. |
 | Adapter construction failure or shutdown | Each constructed adapter closes once; runtime never separately closes its driver pool. |
-| Peer cycle, forged/missing hop metadata, or expired deadline | Reject invalid trust context; finite forwarding with no hop/deadline reset. |
+| Peer cycle, forged/missing hop metadata, or expired deadline | Reject invalid ingress metadata; finite forwarding with no hop/deadline reset. |
 | Shutdown during queue wait/upload/transaction/commit/result Send | Finite drain; correct evidence; no detached replay or forever-waiting goroutine. |
 
 Offline tests must not open browsers, contact production, or run long external
@@ -1898,8 +1910,8 @@ boundaries. The architectural review distinguishes observed code from proposals.
   `https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-search`.
   Partial-result controls, timeouts, shard failures, and response-envelope evidence.
 - **D11 - gRPC metadata.** `https://grpc.io/docs/guides/metadata/`.
-  Custom call metadata can carry bounded forwarding state; authentication remains
-  a separate listener responsibility, not a property of an untrusted header.
+  Custom call metadata can carry bounded forwarding state; a header does not
+  authenticate its sender. Weir relies on deployment isolation for entrance trust.
 - **D12 - MongoDB Go BSON encoding.**
   `https://www.mongodb.com/docs/drivers/go/current/data-formats/bson/`.
   BSON Int32/Int64 widths must survive structured transform round-trips.

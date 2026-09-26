@@ -1,5 +1,8 @@
 # 第五里程碑：静态可信 peer 组合
 
+> 历史资格记录：本文的 Weir peer mTLS/身份/权限配置及相关测试事实保留。
+> 当前可信内网明文入口、配置和资格见 [M8](milestone-8.md)；Weir 认证体系已由 M8 移除。
+
 本轮从干净的 `1e20380` 开始，在 `randy/peer-m5` 实现。支持 direct local、
 A → B → Database、A → B → C → Database、local/remote 混合和 forwarding-only。
 沿用五个 `weir.v1` RPC 与现有 protobuf；没有 Forward RPC 或内部 execution-plan 协议。

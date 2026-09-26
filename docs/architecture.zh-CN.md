@@ -34,7 +34,7 @@ Service
 - 不抽象可移植的 query、count、revision、visibility 或 durability。
 - Read、Mutate、Native、Scan 是四种语义操作；第五个 RPC Bulk 只是 Read/Mutate 的有界封装，不是另一条执行路径。
 - V1 Scan 是实时、背压驱动的遍历，游标寿命限于一个 RPC；不提供跨 RPC 恢复令牌或可移植快照承诺。
-- 应用与认证 peer listener 使用相同 `weir.v1` RPC；转发只增加可信 hop 元数据，不增加消息协议。
+- 应用与 peer listener 使用相同 `weir.v1` RPC；转发只增加部署隔离下的有界 hop 元数据，不增加消息协议。
 - 同 key 顺序仅限一个 Bulk 流；独立 Read 不串行。
 - Scan 游标寿命与后端 fetch 并发分开限制；Cmin 为 1。
 - Native 报告响应完整性，不规范化数据库写入效果。
@@ -64,15 +64,17 @@ Weir 控制 Application -> Database 路径，包括路由、连接汇聚、有�
 
 每个本地 Store 独立拥有调度器、pending 限额、自适应窗口、批次状态、Adapter client/pool 和有界转换缓存。慢 Store 不借用其他 Store 的队列或连接；但各 Store 仍共享进程 CPU、内存、网络及 OS。这是资源隔离，不是硬安全或 CPU 预留隔离；硬租户隔离需要独立进程。
 
-TLS、认证和 Store 级授权属于 listener。后端凭据来自配置，不接受文档/原生 URL 中的凭据。Core 按 Store 和语义操作族授权，包括 Bulk 的每个 Read/Mutate。后端命令限制属于 Adapter；任意字段级授权及每请求后端身份模拟不在 V1 范围。
+Weir 按可信内网服务设计。部署网络隔离负责应用和 peer 入口的访问边界；Weir 不提供身份、授权、TLS/mTLS、账户、令牌或证书体系。两个入口和 RemoteWeir 均使用明文 HTTP/2 gRPC，不宣称无隔离公网可用。默认绑定 loopback；显式内网 IP 或通配地址由部署环境保证隔离。
+
+后端凭据及标准后端 TLS 校验仍属于 Adapter 连接配置，不接受文档/原生 URL 中的凭据。协议、URI、Store、操作及后端命令校验，以及资源边界、无隐式重放和保守 UNKNOWN 均保留。移除 Weir 认证不意味着绕过后端凭据要求或关闭标准证书验证。
 
 ## 2. Listener、Route、Service 与组装
 
 ### 2.1 Listener
 
-使用 gRPC、Protobuf、HTTP/2。应用和认证 peer listener 暴露相同服务和消息，但采用不同监听端口以区分信任策略。应用入口拒绝保留的转发元数据；peer 入口要求认证的 Weir 身份及有效 hop 元数据。共享 schema 不等于共享授权，不另建 mesh RPC 包。
+使用 gRPC、Protobuf、明文 HTTP/2。应用和 peer listener 暴露相同服务和消息，保留独立入口来维持 hop 边界。应用入口拒绝客户端保留转发元数据并创建初始预算；peer 入口要求已有有效预算，不重置。部署隔离控制两个入口的可达来源，不另建 mesh RPC 包或身份字段。
 
-Listener 管理帧/metadata 大小、传输连接额度、认证、deadline、协议校验、结果关联及有界发送；不实现存储语义或工作队列。
+Listener 管理帧/metadata 大小、传输连接额度、deadline、协议校验、结果关联及有界发送；不实现存储语义或工作队列。Preface、未完整 HTTP/2 header/frame、部分 body 和阻塞发送都须在传输层有界，包括尚未进入 handler 的阶段。
 
 必须在应用 interceptor 前限制连接及 HTTP/2 并发 stream。只在 unary interceptor 限流已经晚于请求解码分配，不能作为唯一保护。应用和 peer transport 都要有界。V1 禁用压缩；大小限制针对真实 Protobuf 消息而非压缩后大小。过量应用 RPC 立即拒绝，不排队等待 handler。
 
@@ -119,7 +121,7 @@ Read/Mutate/Native/Scan 各包含一个资源。Bulk 以规范 Store 根 URI 开
 | MongoDB | `weir://mongo`、`weir://mongo/catalog`、`weir://mongo/catalog/products`、`weir://mongo/catalog/products/s:123` | 字符串、`oid:` 加 24 位小写十六进制 ObjectId、规范有符号整数 `i:`；整数 BSON 宽度共享同一整数身份。不接受任意对象、数组、decimal 或非整数数值 ID。 |
 | Elasticsearch/OpenSearch | `weir://search/products/s:123` | 具体 index 和精确字符串 ID；仅默认后端 routing。不支持 alias、wildcard、data-stream rollover 目标、数字到字符串便捷别名或隐藏自定义 routing。 |
 
-Adapter 校验大小写和 collation，不猜测不支持的身份形式。MongoDB 使用简单身份比较，不允许请求选择语言学 collation。特殊 ID、自定义 routing、alias 可通过授权 Native 访问，不加入本地记录排序。
+Adapter 校验大小写和 collation，不猜测不支持的身份形式。MongoDB 使用简单身份比较，不允许请求选择语言学 collation。特殊 ID、自定义 routing、alias 可通过校验后的 Native 访问，不加入本地记录排序。
 
 完整规范 URI 是记录身份；Bulk sequence key 为服务器自有 live stream 身份与记录 URI 的组合，不用客户端 request ID。BatchKey 是另一种 Adapter 生成的兼容性 token；同批不等于同记录或同序列，不同 Store 不共批。记录保证不覆盖命名空间销毁/重建或 alias 改指向。
 
@@ -133,7 +135,7 @@ Core 可计算字节并限制大小，但不解析字段。MongoDB Put/Create/Re
 
 未指定 `read_media_type` 时使用 Store 默认表示，否则必须精确支持；没有通用转码器。会丢失原生类型的转换可拒绝。SDK 使用调用者选定编码器，不先把任意结构体转成 JSON。
 
-可选 `adapter_options` 是另一小型、媒体类型标记的不透明值，用于原生操作选择（如 refresh），不是通用查询语言。未知选项拒绝；Core 仅限大小。省略时使用不可变 Store 默认值，不能通过 options 绕过授权。
+可选 `adapter_options` 是另一小型、媒体类型标记的不透明值，用于原生操作选择（如 refresh），不是通用查询语言。未知选项拒绝；Core 仅限大小。省略时使用不可变 Store 默认值，不能通过 options 改变配置的 Store/后端连接范围。
 
 ## 4. 执行结果与重试策略
 
@@ -226,7 +228,7 @@ Read/Mutate 是小型 unary，不为单个标量增加服务端流。Bulk 用有
 
 MutationOutcome：unspecified=0，NOT_STARTED=1，NOT_APPLIED=2，APPLIED=3，UNKNOWN=4。NativeCompletion：unspecified=0，NOT_STARTED=1，RESPONSE_COMPLETE=2，RESPONSE_INCOMPLETE=3。后者只描述命令派发/响应交付，不描述效果，合法组合见第 13 节。计数/index 不得溢出，达到 uint64 上限前关闭流。拒绝无进度空 chunk。
 
-FailureCode：unspecified=0，INVALID_ARGUMENT=1，UNAUTHENTICATED=2，PERMISSION_DENIED=3，NOT_FOUND=4，PRECONDITION_FAILED=5，CONFLICT=6，UNSUPPORTED=7，RESOURCE_EXHAUSTED=8，UNAVAILABLE=9，CANCELLED=10，DEADLINE_EXCEEDED=11，INTERNAL=12。显式 Failure 不能为 unspecified。记录结果无 Failure 意味成功/no-op，不可能是 UNKNOWN；ScanEnd 无 Failure 表示完成；NativeEnd 无 Failure 表示响应传输完成，数据库成功与否仍在原生响应内。
+FailureCode：unspecified=0，INVALID_ARGUMENT=1，UNAUTHENTICATED=2，PERMISSION_DENIED=3，NOT_FOUND=4，PRECONDITION_FAILED=5，CONFLICT=6，UNSUPPORTED=7，RESOURCE_EXHAUSTED=8，UNAVAILABLE=9，CANCELLED=10，DEADLINE_EXCEEDED=11，INTERNAL=12。UNAUTHENTICATED/PERMISSION_DENIED 仅保留 wire 编号，不要求实现 Weir 认证体系。显式 Failure 不能为 unspecified。记录结果无 Failure 意味成功/no-op，不可能是 UNKNOWN；ScanEnd 无 Failure 表示完成；NativeEnd 无 Failure 表示响应传输完成，数据库成功与否仍在原生响应内。
 
 Put 为完整 insert-or-replace；Create 仅在缺失时插入；Replace 仅替换存在记录；普通 Delete 对缺失也成功，获确认即 APPLIED。这些是能力检查后的原生记录原语，不是 merge/update operator。不支持者须拒绝，无字段 patch DSL，也无可移植 client revision/precondition token。
 
@@ -238,11 +240,11 @@ Bulk 输入严格为 Open、零或多个 Operation、客户端 half-close。inde
 
 输出为按完成顺序的 Result，最后恰好一个 End 和 gRPC OK。成功必须每个接收操作对应一个结果且计数一致。End 是最终核算，不是持久接收确认；不逐项发 acceptance ack。客户端必须同时读写，不能发完无限流后才读结果。
 
-格式有效但操作无效则返回 indexed terminal error；framing、授权或连接故障可能无 End 终止。已收到结果仍有效，缺失写入结果在客户端为 UNKNOWN。Half-close 不取消已接收工作，stream cancellation 会。不得缓冲结果来恢复输入顺序。
+格式有效但操作无效则返回 indexed terminal error；framing 或连接故障可能无 End 终止。已收到结果仍有效，缺失写入结果在客户端为 UNKNOWN。Half-close 不取消已接收工作，stream cancellation 会。不得缓冲结果来恢复输入顺序。
 
 Native 输入为 Open、body chunk、half-close；输出为可选 Head、body chunk、End；预检拒绝可仅发 End，后端可提前响应。Scan 输出 Document 后跟 End，空遍历也必须 End。非 OK 状态或缺 End 是截断，不能当成功的空/完整结果。
 
-能够发出终态 envelope 的应用错误使用 gRPC OK；transport/auth/framing 错误可使用 gRPC status。裸 DEADLINE_EXCEEDED/RESOURCE_EXHAUSTED 不能解释为写入未生效，即使拒绝发生在解码或 indexed result 分配之前。
+能够发出终态 envelope 的应用错误使用 gRPC OK；transport/framing 错误可使用 gRPC status。裸 DEADLINE_EXCEEDED/RESOURCE_EXHAUSTED 不能解释为写入未生效，即使拒绝发生在解码或 indexed result 分配之前。
 
 ### 5.4 元数据与期限
 
@@ -311,7 +313,7 @@ Permit 覆盖顺序执行的一个记录批次、完整转换重试循环、Nati
 
 ### 7.3 微批算法
 
-以最老可执行项为 seed，收集相同兼容 token 且不同 canonical record key 的可执行项，同时限制操作数、编码请求字节和预留结果字节。Token 包括 BatchKey、action、媒体、确认/refresh 选项、适用授权上下文和输出语义。Core 只比较 token，不解码文档计算它。
+以最老可执行项为 seed，收集相同兼容 token 且不同 canonical record key 的可执行项，同时限制操作数、编码请求字节和预留结果字节。Token 包括 BatchKey、action、媒体、确认/refresh 选项、输出语义。Core 只比较 token，不解码文档计算它。
 
 达到上限、seed 首次可执行后的短收集窗到期、或 deadline 余量不足时派发。收集窗不能被后续到达重置；不能先组批再放入另一 ready queue，必须留在唯一 pending 集合等 permit 和派发条件。
 
@@ -404,7 +406,7 @@ pending 字节记录保留的编码输入加固定条目开销，不冒充精确
 + 有限后端 pools、caches、diagnostics
 ```
 
-这不是精确 RSS 公式。分配器/GC、TLS、driver 和内核 socket 需要实测余量。不要用文档长度宣称精确 `max_active_heap_bytes`。校验并发乘最大 payload 对进程预算合理，再用慢消费者和最大文档测峰值；有界不等于适合某个容器。
+这不是精确 RSS 公式。分配器/GC、后端 TLS、driver 和内核 socket 需要实测余量。不要用文档长度宣称精确 `max_active_heap_bytes`。校验并发乘最大 payload 对进程预算合理，再用慢消费者和最大文档测峰值；有界不等于适合某个容器。
 
 ### 9.3 进程过载保护
 
@@ -578,7 +580,7 @@ Schema 属于 Adapter 模块/文档，不是 Core switch。MongoDB descriptor da
 
 Adapter 校验凭据、目标/资源范围、操作类别、body 大小和 statelessness，不信任 client `read_only`；未知效果按可能写处理。HTTP verb 不足以证明，因为 POST 可读、原生命令可嵌套写。
 
-HTTP 上游 host/auth 固定配置；拒绝绝对 URL、authority override、traversal、导致新上游请求的重定向、hop-by-hop/auth/Host headers、可导致 SSRF 的远程 fetch。重定向原样返回，不跟随。Native 可按后端语义访问同一授权 Store 的多记录/dataset，但不能跨 Weir Store/任意端点，也不新增跨记录原子保证。
+HTTP 上游 host/auth 固定配置；拒绝绝对 URL、authority override、traversal、导致新上游请求的重定向、hop-by-hop/auth/Host headers、可导致 SSRF 的远程 fetch。重定向原样返回，不跟随。Native 可按后端语义访问同一配置 Store 的多记录/dataset，但不能跨 Weir Store/任意端点，也不新增跨记录原子保证。
 
 MongoDB 保留有序 BSON command/response bytes，拒绝客户端 session、跨 RPC transaction control、逃逸 cursor/getMore、watch/change stream 等状态操作。内部单转换 session 不等于暴露应用 session。支持的游标遍历用 Scan。原生写无 Weir metadata 保护负担，因为不存在这些字段。V1 不开放 schema/index/cluster administration 或无界后台作业，不成为运维隧道。
 
@@ -600,7 +602,7 @@ MongoDB 保留有序 BSON command/response bytes，拒绝客户端 session、跨
 
 缺 End 或非 OK 终止在接收方均为 incomplete，即使下游曾看到完整响应。超时/断连不能推导 NOT_STARTED。后端可在上传 half-close 前完整拒绝，此时可 RESPONSE_COMPLETE，但 pump 必须按原生协议安全停上传。
 
-完整原生错误不是 Weir Failure，完整 bulk reply 也不是全项生效证明。Native 不提供 APPLIED、NOT_APPLIED、PARTIALLY_APPLIED 或 read-only effect enum；这与记录 MutationOutcome 不同。内部只读分类可供授权/能力检查，但不是调用者安全断言。
+完整原生错误不是 Weir Failure，完整 bulk reply 也不是全项生效证明。Native 不提供 APPLIED、NOT_APPLIED、PARTIALLY_APPLIED 或 read-only effect enum；这与记录 MutationOutcome 不同。内部只读分类可供命令能力检查，但不是调用者安全断言。
 
 Native 从不自动重放。可能派发后的部分效果/提交歧义由调用者按原生语义解释，response completion 不授权重试，也不将未知变未生效。Relay 不解析 body，只转发 End。
 
@@ -620,30 +622,30 @@ PIT/cursor 创建及每次 fetch 均关闭 partial（验证过的请求可用 al
 
 最多保留一页并验证后才发 hits，避免尾部 metadata 逃过检查。失败页不发送，其前面的已发送页为部分结果，ScanEnd.failure 非空。Count 仅统计服务端文档帧 Send 返回成功的次数，不表示客户端已经接收或处理。客户端必须收到完整 End、核对自己观察到的文档数，并确认最终 gRPC OK；带 Failure 的 End 即使配合 gRPC OK 仍是遍历失败，缺 End 或计数不符也不是完整结果。计数本身不证明完整。timeout -> DEADLINE_EXCEEDED，临时 shard failure -> UNAVAILABLE，畸形/矛盾 response -> INTERNAL，不自动重启。能发明确终态 Failure 时可 gRPC OK，否则非 OK。仅验证原生耗尽后可无 Failure 的 End。Native 不继承 Scan 这个完整性解释契约，仍返回完整原生 envelope。
 
-V1 不设跨 RPC resume token，因为 snapshot、expiry、授权、混合 key 分页、replica affinity、cleanup 没有共同原生答案。live MongoDB cursor 避免不安全的混合 BSON `_id` keyset 分页；搜索可在同一调用中保留 PIT/search-after，不使 Weir 成为应用 session 服务。
+V1 不设跨 RPC resume token，因为 snapshot、expiry、后端访问范围、混合 key 分页、replica affinity、cleanup 没有共同原生答案。live MongoDB cursor 避免不安全的混合 BSON `_id` keyset 分页；搜索可在同一调用中保留 PIT/search-after，不使 Weir 成为应用 session 服务。
 
 不保证 portable snapshot；各 Adapter 说明原生可见性和并发变更行为。资源/快照过期或断连意味着部分结果加失败，不静默重启/拼接。需 resumability 或快照导出的应用使用原生能力，或自己重启并处理重复/漏项。未来恢复能力须单独审查。
 
 ## 14. Peer 转发与远程服务
 
-### 14.1 在认证 peer listener 复用公共 RPC
+### 14.1 在内网 peer listener 复用公共 RPC
 
 RemoteWeir 使用相同 `weir.v1` Read/Mutate/Bulk/Native/Scan，unary 仍 unary，streaming 不改变形态。应用/peer 复用消息和验证/执行路径；没有 ForwardOpen/ForwardRequestFrame/ForwardResponseFrame 或 weir.mesh.v1。
 
-唯一额外状态是可信 gRPC metadata [D11]：
+唯一额外状态是有界 gRPC metadata [D11]：
 
 | 上下文 | 规则 |
 | --- | --- |
 | weir-remaining-forwards | peer 必须恰有一个规范无符号十进制 0–8；重复、格式错、缺失都拒绝 |
 | 应用入口 | 拒绝客户端提供该保留 metadata，内部创建初始预算 |
-| peer 入口 | 认证 Weir 身份、授权 Store/操作族，保留/递减预算，不能重置 |
+| peer 入口 | 要求规范预算，保留/递减，不能重置；校验 Store/操作，不做身份或权限检查 |
 | request ID/trace/deadline | 使用既有有界机制，ID 不授权也不定义排序 |
 
-header 存在不证明 peer 身份。独立 listener 使用 mTLS 或等效认证。只转发获准上下文，不转发原 authorization header 或任意 baggage。每跳重新验证并授权 Bulk 每项，终态规则与直接调用一致。
+Hop metadata 没有密码学身份或完整性保证；部署隔离须限制 peer 入口仅可由预期 Weir 节点访问，能连接该入口的调用方均能提供规范预算。两个入口即使同为明文，也保留不同 hop 规则。每跳替换 outgoing metadata，只携带一个有界 request ID、可选有界 traceparent 和递减 hop，不追加原 authorization、任意 baggage 或自称身份。每跳重新校验 Store/URI/操作及每个 Bulk 项，Service 边界和终态规则与直接调用一致。
 
 ### 14.2 Deadline、hop 与错误
 
-应用入口初始远程 hop 建议 4、配置最大 8；普通客户端不能提供。每次远程派发前必须 >0 并恰好减一。0 仍允许本地执行，不许再 forward。新 listener 不重置，不靠网络拓扑猜安全；无无界 visited list、动态发现或 consensus。
+应用入口初始远程 hop 建议 4、配置最大 8；应用入口拒绝客户端提供。每次远程派发前必须 >0 并恰好减一。0 仍允许本地执行，不许再 forward。新 listener 不重置，不靠网络拓扑猜安全；无无界 visited list、动态发现或 consensus。
 
 各跳传播剩余时间，扣除本地等待，维持原 deadline。取消尽量中止下游 I/O，不证明 rollback。写入可能送达后的 peer disconnect 为 UNKNOWN，除非收到更强完整结果；外层响应失败不能把下游 APPLIED 降为 NOT_APPLIED。
 
@@ -659,7 +661,7 @@ RemoteWeir 配置有限稳定 endpoint 身份、有限 channel、基本健康/�
 
 派发前选择可用端点；连接建立失败且证明无语义请求发出时，可在原 deadline 内换端点。一旦写入或流的任何部分可能转发，不换端点重放。Read 重试也须明确策略且在结果交付前。Health 只影响未来调用，不证明当前写入状态。
 
-同一 Service 所有 endpoint 必须代表同一逻辑 Store、授权、Adapter 语义和协议 profile；Weir 不协调不一致副本，部署/滚动期间须验证。宁可 UNSUPPORTED，不能静默改变意图。成员变化可破坏亲和，不得破坏原生正确性；一般一两跳足够，不把 hop budget 当鼓励深层链路。
+同一 Service 所有 endpoint 必须代表同一逻辑 Store、Adapter 语义和协议 profile；Weir 不协调不一致副本，部署/滚动期间须验证。宁可 UNSUPPORTED，不能静默改变意图。成员变化可破坏亲和，不得破坏原生正确性；一般一两跳足够，不把 hop budget 当鼓励深层链路。
 
 ## 15. 优雅生命周期、健康与可观测性
 
@@ -680,7 +682,7 @@ Constructing -> Serving -> Draining -> Closed 单调迁移，drain 从进程统�
 
 Liveness 表示进程能运行，不是所有数据库健康。Readiness 表示组装已验证且未 drain；常规 saturation/cooldown/短 memory latch 不应引起 readiness 抖动和级联重启。Store 级健康/能力独立暴露，不因一个失败 Store 隐藏其他可用路由。
 
-优先用最近执行证据和基础 transport health；可独立有界连接检查，但 Ping 不提高 C。永久认证/拓扑失败应明确使必要 Store 构建失败；不隐藏部分 Store 启动 fallback，V1 开始服务前验证全部配置 Store。
+优先用最近执行证据和基础 transport health；可独立有界连接检查，但 Ping 不提高 C。永久后端认证/拓扑失败应明确使必要 Store 构建失败；不隐藏部分 Store 启动 fallback，V1 开始服务前验证全部配置 Store。
 
 ### 15.3 Metrics 与 trace
 
@@ -704,7 +706,7 @@ resource/                      规范 URI，无后端语法
 internal/
   app/                         经验证组装和生命周期
   config/                      严格静态解码、默认值和验证
-  transport/                   应用/peer handler、可信 metadata、有界 pump
+  transport/                   应用/peer handler、有界 hop metadata 和 pump
   service/                     精确路由、LocalStore/RemoteWeir
   store/                       Runtime、work/result、调度、组批、自适应、Adapter 契约
   backend/
@@ -769,7 +771,7 @@ internal/
 | MutationOutcome | 区分未开始、确定未生效、生效、不确定；没有 retry Boolean/持久 receipt。 |
 | Native completeness | 原生交互保留语义；只规范 transport，不跨后端解释任意效果。 |
 | live Scan/continuation | 有界完整遍历交付；一页、一个原生 cursor、共享调度；无恢复服务/专用队列/短请求 floor。 |
-| peer/hop | 跨进程保留意图/结果/deadline；现有 RPC+可信 metadata，不需另一 schema。 |
+| peer/hop | 跨进程保留意图/结果/deadline；现有 RPC+有界 metadata，入口信任由部署隔离负责，不需另一 schema。 |
 | immutable assembly/lifecycle | 启动失败回收与有限 drain；唯一 owner 和单调状态，不动态配置。 |
 
 同流排序是协议要求，不能删掉却继续宣称相同语义；跨请求串行不实现。Compile cache、rendezvous affinity 是可选性能策略，不改变正确性、不产生控制面/所有权协议。
@@ -799,12 +801,12 @@ internal/
 - 删除伪可移植 query/count/revision/completion visibility；原生 options 明确原生。
 - 无分布式锁/lease/leader/replica quota/consensus/全局排序或容量承诺。
 - 静态 Adapter/runtime，无 hot reload/Provider/xDS/plugin/program registration/通用 SDK retry。
-- 不上线 BatchKey、execution plan、Lua registry、affinity hint、client read-only、Native effect enum 或 mesh wrapper；hop 用可信 metadata。
+- 不上线 BatchKey、execution plan、Lua registry、affinity hint、client read-only、Native effect enum 或 mesh wrapper；hop 用部署隔离入口上的有界 metadata。
 - 无 Kafka/异步交付/topics/offsets/DLQ/settlement、schema/index 管理或后台 job。
 - session/frame/operation/result/pending/key/active/cursor/parser/cache/log/shutdown 均有限。
 - 应用/peer、unary/Bulk、batch on/off 汇入同一 Runtime；Scan continuation 使用同一调度，空闲 cursor 不占 execution window。
 
-保留 Bulk correlation、Native response completion、Scan terminal completeness、可信 hop，因为各自保护明确要求。删除 Native effect normalization、mesh framing、跨客户端读链、Delete affected-row 区分、延迟分桶、portable resume、operation folding、post-image、程序 lowering、公共动态 capability discovery。Adapter 生命周期明确，不另造 pool/session manager。
+保留 Bulk correlation、Native response completion、Scan terminal completeness、有界 hop，因为各自保护明确要求。删除 Native effect normalization、mesh framing、跨客户端读链、Delete affected-row 区分、延迟分桶、portable resume、operation folding、post-image、程序 lowering、公共动态 capability discovery。Adapter 生命周期明确，不另造 pool/session manager。
 
 ## 20. 架构批准后的分阶段计划
 
@@ -818,7 +820,7 @@ internal/
 | 3 MongoDB CRUD/通用转换 | 原生原语、Delete batching、事务 RMW、无损 codec/runtime | 原生 writer/插入竞争/commit ambiguity、整数精确/保宽、attempt/fuel、standalone 拒绝程序。 |
 | 4 搜索后端 | ES/OpenSearch identity、ingest/source、OCC/Create/Replace | default bypass/final pipeline 拒绝、Native 不变、条件冲突/传输丢失；两个产品分别验证。 |
 | 5 流式表面 | Bulk、raw Native、完整 page Scan、有界 session 和共享 fetch | partial shard、timeout/early termination、失败页不发、慢 Scan C=1 让出、Native stall、early response、cursor cleanup、RSS plateau。 |
-| 6 远程组合 | 复用 RPC、peer auth/hop、deadline、affinity/health | direct/forward 同语义、形态不变、stream、spoof/重复/零 hop、丢结果不重放。 |
+| 6 远程组合 | 复用 RPC、部署隔离下的 peer hop、deadline、affinity/health | direct/forward 同语义、形态不变、stream、spoof/重复/零 hop、丢结果不重放。 |
 | 7 验证与运维 | metrics、drain、打包、secure listener、profile | 多控制器/stale epoch/负载、内存 CPU 边界、各状态 drain、单次 Close、有界指标。 |
 
 表达式快路径只有 whitelist/validator 通过后才开放；否则 UNSUPPORTED。不为 benchmark 推测 Lua lowering。进程内 Lua 不能约束分配/helper/fuel 时，程序转换保持关闭，等待单独审查的 runtime 决策，不能默默降低 sandbox。
@@ -852,7 +854,7 @@ internal/
 | Delete bulk 有缺失 | 完整成功项 APPLIED，不需 deleted count/pre-read；不明确项 UNKNOWN。 |
 | 独立同 key Read 与 Bulk sequence | 前者并发，后者严格本流次序，重复 diagnostic ID 也不共享序列。 |
 | Adapter 构建/关闭 | 已建资源仅 Close 一次，Runtime 不另关 pool。 |
-| peer cycle/spoof/missing hop/deadline | 拒绝无效信任上下文，不能重置 hop/deadline。 |
+| peer cycle/spoof/missing hop/deadline | 拒绝无效入口元数据，不能重置 hop/deadline。 |
 | 各排队/upload/事务/commit/Send 状态关闭 | 有限 drain、正确证据、无 detached replay/无限 goroutine。 |
 
 默认离线测试不能开浏览器、连生产或执行长期外部工作流。真实后端/fault suite 必须显式 opt-in，使用隔离数据；编译/mock 不证明事务或真实流正确性。本任务不含生产 rollout/release。
@@ -897,7 +899,7 @@ S1 来源根：`https://github.com/batchstream/sink-protocol/tree/31943c4a698446
 - **D8 - Elasticsearch ingest 与 index 设置。** `https://www.elastic.co/docs/manage-data/ingest/transform-enrich/ingest-pipelines`；`https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules`。default/final pipeline 选择，以及禁止 final pipeline 修改 _index。
 - **D9 - Elasticsearch Index API。** `https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-index`。pipeline=_none 绕过 default，不绕过已配置 final。
 - **D10 - Elasticsearch Search API。** `https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-search`。partial-result、timeout、shard failure 与 envelope 证据。
-- **D11 - gRPC metadata。** `https://grpc.io/docs/guides/metadata/`。可携带有界转发状态；身份认证由 listener 负责，不来自不可信 header。
+- **D11 - gRPC metadata。** `https://grpc.io/docs/guides/metadata/`。可携带有界转发状态；header 不认证发送者，Weir 入口信任由部署隔离负责。
 - **D12 - MongoDB Go BSON 编码。** `https://www.mongodb.com/docs/drivers/go/current/data-formats/bson/`。结构化转换往返必须保留 BSON Int32/Int64 宽度。
 - **D13 - MongoDB Go bulk 操作。** `https://www.mongodb.com/docs/drivers/go/current/crud/bulk/`。聚合结果不同于逐项 verbose 结果；普通 Delete 不必暴露 affected-row 区别。
 - **D14 - OpenSearch Index Document API。** `https://docs.opensearch.org/latest/api-reference/document-apis/index-document/`。固定产品/版本并测试 pipeline 和条件写。

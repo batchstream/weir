@@ -14,10 +14,8 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/internal/testpeer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
 
@@ -130,23 +128,20 @@ func TestPeerRejectsMissingOrNonOKTerminal(t *testing.T) {
 				continue
 			}
 			t.Run(method+"/"+mode, func(t *testing.T) {
-				ca := testpeer.NewCA(t)
-				identity, _, _ := ca.Identity(t, "node.weir.test")
-				identity.ServerName = "node.weir.test"
 				fixture := &terminalPeer{mode: mode}
 				listener, err := net.Listen("tcp", "127.0.0.1:0")
 				if err != nil {
 					t.Fatal(err)
 				}
-				peer := grpc.NewServer(grpc.Creds(credentials.NewTLS(identity)), grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame))
+				peer := grpc.NewServer(grpc.MaxRecvMsgSize(protocol.MaxFrame), grpc.MaxSendMsgSize(protocol.MaxFrame))
 				pb.RegisterWeirServer(peer, fixture)
 				go func() { _ = peer.Serve(listener) }()
 				t.Cleanup(func() { peer.Stop(); _ = listener.Close() })
-				remote := testRemote(t, listener.Addr().String(), identity)
+				remote := testRemote(t, listener.Addr().String())
 				service := Service{RemoteWeir: remote}
 				opts := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
 				srv, address := startPeerServer(t, opts)
-				_, client := peerClient(t, address, nil)
+				_, client := peerClient(t, address)
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				var terminal bool
@@ -458,22 +453,19 @@ func TestPeerNativeSlowDownloadAndBidirectionalBlock(t *testing.T) {
 	}
 }
 func TestPeerConnectionRebuildAndStoreIsolation(t *testing.T) {
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
 	blocked, runtimeBlocked := peerLocal(t, "records")
 	release := make(chan struct{})
 	blocked.block = release
 	_, runtimeLocal := peerLocal(t, "local")
 	localService := Service{LocalStore: runtimeBlocked}
-	options := peerServerOptions{routes: map[string]Service{"records": localService}, tls: identity, allow: map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}}
+	options := peerServerOptions{routes: map[string]Service{"records": localService}, peer: true}
 	backend, address := startPeerServer(t, options)
-	remote := testRemote(t, address, identity)
+	remote := testRemote(t, address)
 	remoteService := Service{RemoteWeir: remote}
 	healthyService := Service{LocalStore: runtimeLocal}
 	options = peerServerOptions{routes: map[string]Service{"records": remoteService, "local": healthyService}, budget: 4}
 	entry, address := startPeerServer(t, options)
-	_, client := peerClient(t, address, nil)
+	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	finished := make(chan error, 1)
@@ -515,9 +507,6 @@ func TestPeerConnectionRebuildAndStoreIsolation(t *testing.T) {
 	t.Log("future Read recovered after disconnect; distinct calls", attempts)
 }
 func TestPeerRelayAdmissionAndSharedListeners(t *testing.T) {
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
 	adapter, local := peerLocal(t, "records")
 	release := make(chan struct{})
 	adapter.block = release
@@ -525,9 +514,9 @@ func TestPeerRelayAdmissionAndSharedListeners(t *testing.T) {
 	limits := DefaultLimits()
 	limits.Sessions = 2
 	limits.Connections = 2
-	options := peerServerOptions{routes: map[string]Service{"records": service}, tls: identity, allow: map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}, limits: limits}
+	options := peerServerOptions{routes: map[string]Service{"records": service}, peer: true, limits: limits}
 	_, address := startPeerServer(t, options)
-	config := RemoteConfig{Endpoint: address, TLS: identity, Relays: 1}
+	config := RemoteConfig{Endpoint: address, Relays: 1}
 	remote, err := NewRemote(config)
 	if err != nil {
 		t.Fatal(err)
@@ -540,11 +529,10 @@ func TestPeerRelayAdmissionAndSharedListeners(t *testing.T) {
 	}
 	options = peerServerOptions{routes: map[string]Service{"records": service}, budget: 4, admission: admission, limits: limits}
 	public, publicAddress := startPeerServer(t, options)
-	_, client := peerClient(t, publicAddress, nil)
-	options.tls = identity
-	options.allow = map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}
+	_, client := peerClient(t, publicAddress)
+	options.peer = true
 	peer, peerAddress := startPeerServer(t, options)
-	_, trusted := peerClient(t, peerAddress, identity)
+	_, trusted := peerClient(t, peerAddress)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	done := make(chan error, 1)

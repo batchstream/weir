@@ -55,7 +55,7 @@ func expressionReadNumber(t *testing.T, f scanFixture, d *pb.Document) int64 {
 func TestPublicExpressionUnaryBulkAndOpaquePeers(t *testing.T) {
 	for _, kind := range []string{"mongo", "search"} {
 		t.Run(kind, func(t *testing.T) {
-			for _, hops := range []int{0, 2} {
+			for _, hops := range []int{0, 1, 2} {
 				t.Run(fmt.Sprint(hops), func(t *testing.T) {
 					f := scanServer(t, kind, DefaultLimits())
 					if hops > 0 {

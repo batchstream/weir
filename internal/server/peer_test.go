@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -18,10 +17,8 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/internal/testpeer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -187,8 +184,7 @@ func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 type peerServerOptions struct {
 	observe   chan http.Header
 	routes    map[string]Service
-	tls       *tls.Config
-	allow     map[string]map[string]Permission
+	peer      bool
 	limits    Limits
 	budget    int
 	admission *Admission
@@ -209,9 +205,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 		}
 	}
 	cfg := Config{Routes: opts.routes, Limits: opts.limits, Admission: opts.admission, InitialForwards: opts.budget}
-	if opts.tls != nil {
-		cfg.Peer = &PeerPolicy{TLS: opts.tls, Allow: opts.allow}
-	}
+	cfg.Peer = opts.peer
 	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -246,22 +240,18 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 	})
 	return srv, listener.Addr().String()
 }
-func peerClient(t *testing.T, address string, identity *tls.Config) (*grpc.ClientConn, pb.WeirClient) {
+func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.WeirClient) {
 	t.Helper()
-	var creds credentials.TransportCredentials = insecure.NewCredentials()
-	if identity != nil {
-		creds = credentials.NewTLS(identity)
-	}
-	conn, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(creds), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535))
+	conn, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn, pb.NewWeirClient(conn)
 }
-func testRemote(t *testing.T, address string, identity *tls.Config) *RemoteWeir {
+func testRemote(t *testing.T, address string) *RemoteWeir {
 	t.Helper()
-	cfg := RemoteConfig{Endpoint: address, TLS: identity, Relays: 8}
+	cfg := RemoteConfig{Endpoint: address, Relays: 8}
 	remote, err := NewRemote(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -289,18 +279,14 @@ func peerContext(hops ...string) (context.Context, context.CancelFunc) {
 	md := metadata.MD{HopMetadata: hops}
 	return metadata.NewOutgoingContext(ctx, md), cancel
 }
-func TestPeerAuthenticationAuthorizationAndHop(t *testing.T) {
-	ca := testpeer.NewCA(t)
-	serverTLS, _, _ := ca.Identity(t, "b.weir.test")
-	identity, _, _ := ca.Identity(t, "a.weir.test")
-	identity.ServerName = "b.weir.test"
+func TestPeerPlaintextIngressHopAndValidation(t *testing.T) {
 	_, runtime := peerLocal(t, "records")
 	service := Service{LocalStore: runtime}
 	routes := map[string]Service{"records": service}
-	allow := map[string]map[string]Permission{"a.weir.test": {"records": ReadPermission}}
-	opts := peerServerOptions{routes: routes, tls: serverTLS, allow: allow}
+
+	opts := peerServerOptions{routes: routes, peer: true}
 	_, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address, identity)
+	_, client := peerClient(t, address)
 	for _, hops := range [][]string{nil, {""}, {"00"}, {"01"}, {"-1"}, {" 1"}, {"1 "}, {"9"}, {"1", "1"}} {
 		ctx, cancel := peerContext(hops...)
 		_, err := client.Read(ctx, testRequest())
@@ -314,41 +300,17 @@ func TestPeerAuthenticationAuthorizationAndHop(t *testing.T) {
 	if result, err := client.Read(ctx, testRequest()); err != nil || result.GetMissing() == nil {
 		t.Fatal(result, err)
 	}
-	if _, err := client.Mutate(ctx, testMutation("x")); status.Code(err) != codes.PermissionDenied {
-		t.Fatal(err)
+	if result, err := client.Mutate(ctx, testMutation("x")); err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal(result, err)
 	}
 	other := &pb.ReadRequest{Resource: "weir://other/data/s:key"}
-	if _, err := client.Read(ctx, other); status.Code(err) != codes.PermissionDenied {
-		t.Fatal(err)
+	if result, err := client.Read(ctx, other); err != nil || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+		t.Fatal(result, err)
 	}
-	for _, kind := range []string{"missing", "untrusted", "wrong-server", "unlisted"} {
-		t.Run(kind, func(t *testing.T) {
-			tlsConfig := identity.Clone()
-			switch kind {
-			case "missing":
-				tlsConfig.Certificates = nil
-			case "untrusted":
-				otherCA := testpeer.NewCA(t)
-				tlsConfig, _, _ = otherCA.Identity(t, "a.weir.test")
-				tlsConfig.RootCAs = ca.Roots
-				tlsConfig.ServerName = "b.weir.test"
-			case "wrong-server":
-				tlsConfig.ServerName = "wrong.weir.test"
-			case "unlisted":
-				tlsConfig, _, _ = ca.Identity(t, "unlisted.weir.test")
-				tlsConfig.ServerName = "b.weir.test"
-			}
-			_, client := peerClient(t, address, tlsConfig)
-			ctx, cancel := peerContext("0")
-			defer cancel()
-			if _, err := client.Read(ctx, testRequest()); err == nil {
-				t.Fatal("untrusted access succeeded")
-			}
-		})
-	}
+
 	public := peerServerOptions{routes: routes, budget: 4}
 	_, publicAddress := startPeerServer(t, public)
-	_, publicClient := peerClient(t, publicAddress, nil)
+	_, publicClient := peerClient(t, publicAddress)
 	if _, err := publicClient.Read(ctx, testRequest()); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("public spoof", err)
 	}
@@ -371,32 +333,27 @@ func newChain(t *testing.T, hops int) chain {
 }
 func newChainWithLimits(t *testing.T, hops int, limits Limits) chain {
 	t.Helper()
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
 	adapter, runtime := peerLocal(t, "records")
 	local := Service{LocalStore: runtime}
 	headers := make(chan http.Header, 64)
 	opts := peerServerOptions{routes: map[string]Service{"records": local}, budget: 4, observe: headers, limits: limits}
 	if hops > 0 {
-		opts.tls = identity
-		opts.allow = map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}
+		opts.peer = true
 	}
 	srv, address := startPeerServer(t, opts)
 	result := chain{headers: headers, adapter: adapter, runtime: runtime, servers: []*Server{srv}}
 	for i := 0; i < hops; i++ {
-		remote := testRemote(t, address, identity)
+		remote := testRemote(t, address)
 		service := Service{RemoteWeir: remote}
 		opts := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4, limits: limits}
 		if i < hops-1 {
-			opts.tls = identity
-			opts.allow = map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}
+			opts.peer = true
 		}
 		srv, address = startPeerServer(t, opts)
 		result.servers = append(result.servers, srv)
 		result.remotes = append(result.remotes, remote)
 	}
-	result.conn, result.client = peerClient(t, address, nil)
+	result.conn, result.client = peerClient(t, address)
 	return result
 }
 func TestPeerFiveRPCsAndBoundedBulkCorrelation(t *testing.T) {
@@ -612,9 +569,6 @@ func TestPeerNativeEarlyResponse(t *testing.T) {
 }
 
 func TestPeerZeroBudgetCycleAndMixedStores(t *testing.T) {
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
 	aListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -624,19 +578,18 @@ func TestPeerZeroBudgetCycleAndMixedStores(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = aListener.Close(); _ = bListener.Close() })
-	toA, toB := testRemote(t, aListener.Addr().String(), identity), testRemote(t, bListener.Addr().String(), identity)
+	toA, toB := testRemote(t, aListener.Addr().String()), testRemote(t, bListener.Addr().String())
 	_, local := peerLocal(t, "local")
 	localService := Service{LocalStore: local}
 	aService, bService := Service{RemoteWeir: toB}, Service{RemoteWeir: toA}
 	routesA := map[string]Service{"records": aService, "local": localService}
 	routesB := map[string]Service{"records": bService}
-	allowA := map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions, "local": AllPermissions}}
-	allowB := map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}
-	aOpts := peerServerOptions{routes: routesA, tls: identity, allow: allowA, listener: aListener}
-	bOpts := peerServerOptions{routes: routesB, tls: identity, allow: allowB, listener: bListener}
+
+	aOpts := peerServerOptions{routes: routesA, peer: true, listener: aListener}
+	bOpts := peerServerOptions{routes: routesB, peer: true, listener: bListener}
 	_, aAddress := startPeerServer(t, aOpts)
 	startPeerServer(t, bOpts)
-	_, client := peerClient(t, aAddress, identity)
+	_, client := peerClient(t, aAddress)
 	for _, hops := range []string{"0", "1", "4", "8"} {
 		ctx, cancel := peerContext(hops)
 		started := time.Now()
@@ -671,7 +624,7 @@ func TestPeerDeadlineCancellationAndMetadata(t *testing.T) {
 			t.Fatal("deadline extended", effective, deadline)
 		}
 		incoming := <-f.headers
-		if incoming.Get("authorization") != "" || incoming.Get("baggage") != "" || incoming.Get("weir-request-id") != "bounded-id" {
+		if incoming.Get("authorization") != "" || incoming.Get("baggage") != "" || incoming.Get("weir-request-id") != "bounded-id" || len(incoming.Values(HopMetadata)) != 1 || incoming.Get(HopMetadata) != "2" || incoming.Get("traceparent") != md.Get("traceparent")[0] {
 			t.Fatal("metadata not filtered")
 		}
 
@@ -702,20 +655,17 @@ func waitPeerIdle(t *testing.T, srv *Server) {
 		t.Fatal("relay/session credit leaked", len(srv.slots))
 	}
 }
-func TestPeerBulkPerItemAuthorization(t *testing.T) {
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
+func TestPeerBulkRejectsMissingOperationFamily(t *testing.T) {
 	adapter, runtime := peerLocal(t, "records")
 	local := Service{LocalStore: runtime}
-	grants := map[string]map[string]Permission{"node.weir.test": {"records": ReadPermission}}
-	opts := peerServerOptions{routes: map[string]Service{"records": local}, tls: identity, allow: grants}
+
+	opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
 	_, address := startPeerServer(t, opts)
-	remote := testRemote(t, address, identity)
+	remote := testRemote(t, address)
 	service := Service{RemoteWeir: remote}
 	opts = peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
 	srv, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address, nil)
+	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	stream, err := client.Bulk(ctx)
@@ -738,17 +688,16 @@ func TestPeerBulkPerItemAuthorization(t *testing.T) {
 	if result, err := stream.Recv(); err != nil || result.GetResult().GetRead().GetMissing() == nil {
 		t.Fatal(result, err)
 	}
-	mutation := &pb.BulkOperation_Mutate{Mutate: testMutation("forbidden")}
-	op = &pb.BulkOperation{Index: 1, Operation: mutation}
+	op = &pb.BulkOperation{Index: 1}
 	opVariant = &pb.BulkRequestFrame_Operation{Operation: op}
 	frame = &pb.BulkRequestFrame{Frame: opVariant}
 	_ = stream.Send(frame)
 	_ = stream.CloseSend()
-	if result, err := stream.Recv(); status.Code(err) != codes.PermissionDenied || result != nil {
+	if result, err := stream.Recv(); status.Code(err) != codes.InvalidArgument || result != nil {
 		t.Fatal(result, err)
 	}
 	if adapter.commands.Load() != 0 {
-		t.Fatal("unauthorized operation executed")
+		t.Fatal("invalid operation executed")
 	}
 	waitPeerIdle(t, srv)
 }
@@ -867,39 +816,32 @@ func TestPeerScanFailureNeverRestarts(t *testing.T) {
 	}
 }
 
-func TestPeerDeadlineIncludesTwoHandshakes(t *testing.T) {
-	ca := testpeer.NewCA(t)
-	identity, _, _ := ca.Identity(t, "node.weir.test")
-	identity.ServerName = "node.weir.test"
+func TestPeerDeadlineIncludesTwoConnectionSetups(t *testing.T) {
 	adapter, runtime := peerLocal(t, "records")
 	adapter.block = make(chan struct{})
 	local := Service{LocalStore: runtime}
 	limits := DefaultLimits()
 	limits.UnaryLifetime = 350 * time.Millisecond
 	limits.Stall = time.Second
-	grants := map[string]map[string]Permission{"node.weir.test": {"records": AllPermissions}}
-	opts := peerServerOptions{routes: map[string]Service{"records": local}, tls: identity, allow: grants, limits: limits}
+
+	opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: true, limits: limits}
+	var setups atomic.Int32
+	opts.listener = delayedPeerListener(t, &setups)
 	_, address := startPeerServer(t, opts)
-	var handshakes atomic.Int32
 	for hop := 0; hop < 2; hop++ {
-		clientTLS := identity.Clone()
-		// Real TLS verification still runs before this hook. Its delay models
-		// connection setup, which must consume the original ingress lifetime.
-		clientTLS.VerifyConnection = func(tls.ConnectionState) error {
-			time.Sleep(60 * time.Millisecond)
-			handshakes.Add(1)
-			return nil
-		}
-		remote := testRemote(t, address, clientTLS)
+		// Delay accepting the real HTTP/2 connection at each destination.
+		// No client dial override or test hook enters production code.
+		remote := testRemote(t, address)
+
 		service := Service{RemoteWeir: remote}
 		opts = peerServerOptions{routes: map[string]Service{"records": service}, limits: limits, budget: 4}
 		if hop == 0 {
-			opts.tls = identity
-			opts.allow = grants
+			opts.peer = true
+			opts.listener = delayedPeerListener(t, &setups)
 		}
 		_, address = startPeerServer(t, opts)
 	}
-	_, client := peerClient(t, address, nil)
+	_, client := peerClient(t, address)
 	started := time.Now()
 	done := make(chan error, 1)
 	go func() { _, err := client.Read(context.Background(), testRequest()); done <- err }()
@@ -907,10 +849,10 @@ func TestPeerDeadlineIncludesTwoHandshakes(t *testing.T) {
 	case received := <-adapter.seen:
 		deadline, ok := received.Deadline()
 		remaining := time.Until(deadline)
-		if !ok || handshakes.Load() != 2 || remaining > 240*time.Millisecond || deadline.After(started.Add(375*time.Millisecond)) {
-			t.Fatal("connection time was not charged", remaining, deadline, handshakes.Load())
+		if !ok || setups.Load() != 2 || remaining > 240*time.Millisecond || deadline.After(started.Add(375*time.Millisecond)) {
+			t.Fatal("connection time was not charged", remaining, deadline, setups.Load())
 		}
-		t.Logf("two verified handshakes consumed %v; backend remaining deadline %v", time.Since(started), remaining)
+		t.Logf("two HTTP/2 connection setups consumed %v; backend remaining deadline %v", time.Since(started), remaining)
 	case <-time.After(time.Second):
 		t.Fatal("backend not reached")
 	}
@@ -923,5 +865,66 @@ func TestPeerDeadlineIncludesTwoHandshakes(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("unbounded no-deadline caller")
+	}
+}
+
+type delayedListener struct {
+	net.Listener
+	setups *atomic.Int32
+}
+
+func delayedPeerListener(t *testing.T, setups *atomic.Int32) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	delayed := &delayedListener{Listener: listener, setups: setups}
+	return delayed
+}
+
+func (l *delayedListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(60 * time.Millisecond)
+	l.setups.Add(1)
+	return conn, nil
+}
+
+func TestPeerBoundedDiagnosticMetadata(t *testing.T) {
+	f := newChain(t, 2)
+	trace := "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+	cases := []metadata.MD{
+		{"weir-request-id": {""}},
+		{"weir-request-id": {string(bytes.Repeat([]byte{'a'}, 129))}},
+		{"weir-request-id": {"two words"}},
+		{"weir-request-id": {"one", "two"}},
+		{"traceparent": {"bad"}},
+		{"traceparent": {trace, trace}},
+	}
+	for _, md := range cases {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		_, err := f.client.Read(ctx, testRequest())
+		cancel()
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatal("invalid diagnostics reached forwarding", err)
+		}
+	}
+	if len(f.adapter.seen) != 0 {
+		t.Fatal("invalid diagnostic metadata executed")
+	}
+	state := &ingress{hops: 4, diagnostic: metadata.Pairs("weir-request-id", "bounded")}
+	ctx := context.WithValue(context.Background(), ingressKey, state)
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(HopMetadata, "8", HopMetadata, "8", "baggage", "discard"))
+	forwarded, err := forwardContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md, _ := metadata.FromOutgoingContext(forwarded)
+	if len(md) != 2 || len(md.Get(HopMetadata)) != 1 || md.Get(HopMetadata)[0] != "3" || md.Get("weir-request-id")[0] != "bounded" {
+		t.Fatal("metadata was appended instead of replaced", md)
 	}
 }
