@@ -155,6 +155,8 @@ git diff --exit-code -- api go.mod go.sum
 
 ## 最终检查与资源收尾
 
+统筹独立复核后，将中文架构阶段表遗留的 `secure listener` 修正为“隔离内网监听器”，与英文一致；此次仅检查文档 diff 和 `git diff --check`，未改代码或启动测试/fixture。
+
 完整普通/race 两套 profile 已通过。新增 partial-body、metadata 和 fault-fixture 精化只改变
 测试覆盖，生产行为不再变化；随后两套三轮真实专项及停止后默认 suite 均实际通过。
 

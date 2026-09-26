@@ -821,7 +821,7 @@ internal/
 | 4 搜索后端 | ES/OpenSearch identity、ingest/source、OCC/Create/Replace | default bypass/final pipeline 拒绝、Native 不变、条件冲突/传输丢失；两个产品分别验证。 |
 | 5 流式表面 | Bulk、raw Native、完整 page Scan、有界 session 和共享 fetch | partial shard、timeout/early termination、失败页不发、慢 Scan C=1 让出、Native stall、early response、cursor cleanup、RSS plateau。 |
 | 6 远程组合 | 复用 RPC、部署隔离下的 peer hop、deadline、affinity/health | direct/forward 同语义、形态不变、stream、spoof/重复/零 hop、丢结果不重放。 |
-| 7 验证与运维 | metrics、drain、打包、secure listener、profile | 多控制器/stale epoch/负载、内存 CPU 边界、各状态 drain、单次 Close、有界指标。 |
+| 7 验证与运维 | metrics、drain、打包、隔离内网监听器、profile | 多控制器/stale epoch/负载、内存 CPU 边界、各状态 drain、单次 Close、有界指标。 |
 
 表达式快路径只有 whitelist/validator 通过后才开放；否则 UNSUPPORTED。不为 benchmark 推测 Lua lowering。进程内 Lua 不能约束分配/helper/fuel 时，程序转换保持关闭，等待单独审查的 runtime 决策，不能默默降低 sandbox。
 
