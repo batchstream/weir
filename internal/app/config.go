@@ -51,8 +51,8 @@ type Search struct {
 	Profile string `json:"profile"`
 }
 type Remote struct {
-	Endpoint string `json:"endpoint"`
-	Relays   int    `json:"relays"`
+	Endpoints []string `json:"endpoints"`
+	Relays    int      `json:"relays"`
 }
 type TransportLimits struct {
 	Connections int `json:"connections"`
@@ -198,9 +198,8 @@ func (cfg Config) Validate() error {
 		}
 		services[service.Name] = service
 		if r := service.Remote; r != nil {
-			_, port, _ := net.SplitHostPort(r.Endpoint)
-			number, _ := strconv.Atoi(port)
-			if !address(r.Endpoint, false) || number == 0 || r.Relays < 1 || r.Relays > 16 {
+			_, endpointErr := server.CanonicalEndpoints(r.Endpoints)
+			if endpointErr != nil || r.Relays < 1 || r.Relays > 16 {
 				return errors.New("invalid RemoteWeir")
 			}
 		}

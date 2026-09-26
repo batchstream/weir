@@ -94,13 +94,13 @@ func (r *RemoteWeir) Collect(ch chan<- prometheus.Metric) {
 		desc := prometheus.NewDesc("weir_remote_"+name, "RemoteWeir reserved relay/socket occupancy or limit; sockets include in-progress dial.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
 	}
-	desc := prometheus.NewDesc("weir_remote_connectivity", "Current gRPC connectivity state, not database health; scrape never connects.", []string{"state"}, nil)
-	state := r.conn.GetState().String()
+	desc := prometheus.NewDesc("weir_remote_connectivity", "Number of configured endpoints in each gRPC state, not database health; scrape never connects.", []string{"state"}, nil)
+	states := make(map[string]int)
+	for _, endpoint := range r.endpoints {
+		states[endpoint.conn.GetState().String()]++
+	}
 	for _, label := range []string{"IDLE", "CONNECTING", "READY", "TRANSIENT_FAILURE", "SHUTDOWN"} {
-		value := 0.0
-		if label == state {
-			value = 1
-		}
+		value := float64(states[label])
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, label)
 	}
 	r.terminations.Collect(ch)

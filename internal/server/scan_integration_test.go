@@ -34,6 +34,7 @@ import (
 type scanFixture struct {
 	fixture
 	metricsRemotes []*RemoteWeir
+	replicas       []*store.Runtime
 	backend        *testsearch.Backend
 	root           string
 }

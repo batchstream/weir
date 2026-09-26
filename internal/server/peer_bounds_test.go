@@ -516,7 +516,8 @@ func TestPeerRelayAdmissionAndSharedListeners(t *testing.T) {
 	limits.Connections = 2
 	options := peerServerOptions{routes: map[string]Service{"records": service}, peer: true, limits: limits}
 	_, address := startPeerServer(t, options)
-	config := RemoteConfig{Endpoint: address, Relays: 1}
+	_, secondAddress := startPeerServer(t, options)
+	config := RemoteConfig{Endpoints: []string{address, secondAddress}, Relays: 1}
 	remote, err := NewRemote(config)
 	if err != nil {
 		t.Fatal(err)

@@ -1487,32 +1487,106 @@ parse opaque document/ native bytes. Only the final local StoreRuntime batches.
 
 ### 14.3 Endpoint selection and affinity
 
-RemoteWeir has a finite configured list of stable endpoint identities, bounded
-channels, basic health/connectivity state, and simple bounded reconnect backoff.
-Use ordinary DNS resolution for configured names; this is not a dynamic route
-Provider or control plane. No Envoy-style outlier scoring, hedging, or ring ownership.
+A RemoteWeir Service has 1–8 static `endpoints` addresses and one shared relay
+budget (1–16), not a budget per endpoint. Membership changes require restart.
+Every address has an explicit decimal port 1–65535 and is either an IPv4/IPv6
+literal or an ASCII DNS hostname. Identity is canonical `host:port`: compress
+IPv6, unmap IPv4-mapped IPv6, bracket IPv6, strip leading port zeroes, lowercase
+DNS labels and remove one optional final root dot. DNS labels are 1–63 ASCII
+letters/digits/hyphens, with no initial/final hyphen; the name without its root
+dot is at most 253 bytes. Reject all-numeric dotted names that are not valid IPs,
+scoped IPv6, empty/duplicate normalized members, URI schemes, userinfo, paths,
+queries, fragments and arbitrary resolver targets. The old singular `endpoint`
+field is invalid. Validate the complete list before creating channels. No separate
+ID, weight, priority, Provider, dynamic RouteTable, control plane or outlier scoring.
 
-For single-record Read/Mutate, choose the highest rendezvous score over
-canonical URI bytes and eligible endpoint identity (fixed documented hash and
-byte framing). This is a locality optimization, not serialization. Native/Scan
-can hash the resource; Bulk hashes the bounded request ID and pins one endpoint
-for the entire stream. Bulk intentionally cannot promise record affinity for
-every record in a multi-record stream without introducing fanout. No public
-affinity hint is necessary in V1.
+Use one gRPC ClientConn and standard pick-first per stable identity. DNS answers
+are connection addresses for that identity, never rendezvous members. Resolve
+absolute names through synchronous standard Go `LookupHost` (`PreferGo`, `StrictErrors`), requesting
+only A/AAAA; do not consult DNS TXT service config, SRV, proxy settings, retry or
+hedging policies. Literal IPs bypass DNS. Publish at most eight total returned
+addresses per lookup, after sorting canonical IP:port bytes and deduplicating;
+reject an answer with more than eight entries before any channel/SubConn/dial
+fanout, rather than truncating it. Each DNS connection forwards at most 4098 bytes
+(4 KiB plus TCP length prefix), reading at most one extra byte to detect overflow;
+an oversized wire response invalidates the whole lookup even if the other family
+returned addresses. External service
+configuration is disabled.
 
-Select an available endpoint before dispatch. If connection establishment fails
-with proof that no semantic request was sent, another endpoint may be selected
-within the same deadline. Once a mutation or any part of a stream may have been
-forwarded, do not switch endpoints and replay it. Read replay remains an explicit
-policy only before any result has been delivered. Basic health checks can help
-select *future* calls; they are not proof about an in-flight mutation.
+Each endpoint owns one cancellable resolver worker. At most two lookups per
+Service run together; the other finite workers wait on that same credit. A lookup
+and its DNS I/O last at most two seconds, with at most two concurrent A/AAAA
+sockets per lookup; TCP fallback is still standard Go DNS. A completed success
+refreshes after 30 seconds, or a coalesced connection-triggered ResolveNow after
+at least one second. Failure retries after 1, 2, 4, 8, 16, then 30 seconds maximum;
+hints cannot bypass that backoff. No per-request resolver goroutine or queue.
+NXDOMAIN, timeout, empty and oversized answers all withdraw the old address set
+for new connections/calls; do not keep an indefinitely stale result. With eight
+workers and two lookup credits, scheduled refresh plus lookup admission/I/O has
+an upper bound of 38 seconds under the two-second I/O bounds, plus local parsing work
+(bounded by the caps above) and OS scheduling delay; this is not a real-time guarantee.
+Recovery publishes
+the next valid answer. DNS TTL is not a stream lifetime or a forced reconnect
+instruction. Resolution does not certify database health.
 
-All endpoints in a RemoteWeir Service must represent the same logical Store,
-adapter semantics and supported protocol profile. Weir
-does not reconcile inconsistent replicas. Validate deployment configuration and
-compatibility during rollout; UNSUPPORTED is preferable to silently changing intent.
-Endpoint loss or membership change may destroy affinity but cannot invalidate
-database-native correctness. Typical deployments remain one or two Weir hops.
+Address changes/withdrawals use pick-first's graceful SubConn shutdown. Existing
+streams remain on their old socket until their original lifetime or closure;
+new calls use the updated picker. Allow at most two dialing/live/draining TCP
+sockets per identity, even across many refresh generations. If two old streams
+occupy both sockets, replacement connections fail within the same fixed budget
+until a socket is released. Track draining sockets explicitly so Close cancels
+lookups/dials and closes even transports already removed from gRPC's active map.
+Connection backoff has base 100 ms, multiplier 1.6, jitter 0.2 and nominal cap
+2 s (actual maximum 2.4 s); TCP dialing is capped at 2 s and gRPC connection setup
+at 2.4 s. These bounds do not allocate new relay credits.
+
+Read and Mutate use exactly the same canonical resource URI bytes as their key.
+Native and Scan use their resource URI. Bulk uses the bounded 1–128-byte ASCII
+request ID (generated if absent) and pins one endpoint for the whole stream.
+Documents, expressions, native bodies and DNS answer order never enter the key.
+The fixed rendezvous score is the full SHA-256 digest of:
+
+```text
+ASCII("weir-rendezvous-v1") || 0x00 || u32be(len(key)) || key
+                         || u32be(len(identity)) || identity
+```
+
+Lengths count bytes; there is no extra delimiter, method name, terminator or
+Unicode normalization. Choose the highest unsigned 256-bit digest; an exact tie
+uses the lexicographically smallest canonical endpoint identity. Configuration
+order is irrelevant. Fixed vectors (hex SHA-256):
+
+| Key | Canonical identity | Score |
+| --- | --- | --- |
+| `weir://mongo/db/records/s:one` | `peer-a.example:7448` | `4b4c225ce6d1fd8476d8aabf848f06139a9eb52986a2cefa4c46db16278ac0e3` |
+| `weir://mongo/db/records/s:one` | `peer-b.example:7448` | `653070b21895f9a64cd89b76dc36567dd7e6ccd17f6c51a2ab3aad539d08e50c` |
+| `bulk-0001` | `[::1]:7448` | `e5a2e602ee9a673893540e0e3f5fc60c9181def6493bd5c2f7495ef24a371b6a` |
+
+Take a bounded snapshot of connectivity and choose among READY endpoints. Hint
+IDLE channels to reconnect for future calls. If none are READY, choose once from
+the non-SHUTDOWN set using the same score, hold the existing Service relay credit,
+and wait at most min(original remaining deadline, 2 s) on only that channel.
+TRANSIENT_FAILURE/SHUTDOWN fail immediately. A readiness race may fail the RPC;
+it does not authorize a second selection. Static membership addition/removal only
+remaps keys whose highest eligible score changes. This is locality, not ordering,
+serialization, consistency, or a promise of equal byte/CPU distribution.
+
+Every logical call selects once. There is no application retry/failover loop,
+including on apparently unsent errors. Keep DisableRetry, DisableServiceConfig,
+zero retry buffer, WaitForReady(false), and explicit Bulk/Native attempt commitment.
+Only fixed-version audited transport attempts with proof of non-receipt are
+permitted; ordinary failure after send/acknowledgement is not that proof. DNS or
+endpoint replacement can help future calls, never replay a mutation, reopen a
+stream, restore a cursor, or rewrite APPLIED. Connection waiting consumes the
+original deadline, and one remote dispatch consumes exactly one hop regardless
+of connection addresses. End/count/final-status and NativeCompletion remain
+necessary. Request IDs remain correlation, not idempotency keys.
+
+All endpoints in a Service must represent the same logical Store, Adapter and
+protocol profile. Deployment owns this invariant; Weir does not reconcile
+inconsistent replicas or coordinate database budgets. Forwarding preserves one
+Store and opaque bytes. Standard DNS/LB does not add Weir authentication or TLS.
+Typical deployments remain one or two Weir hops.
 
 ## 15. Graceful Lifecycle, Health, and Observability
 

@@ -59,7 +59,7 @@ func TestPublicExpressionUnaryBulkAndOpaquePeers(t *testing.T) {
 				t.Run(fmt.Sprint(hops), func(t *testing.T) {
 					f := scanServer(t, kind, DefaultLimits())
 					if hops > 0 {
-						f = forwardFixture(t, f, hops)
+						f = forwardReplicaFixture(t, f, hops)
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
@@ -71,14 +71,14 @@ func TestPublicExpressionUnaryBulkAndOpaquePeers(t *testing.T) {
 					if r, e := f.client.Mutate(ctx, request); e != nil || r.GetOutcome() != pb.MutationOutcome_APPLIED {
 						t.Fatal(r, e)
 					}
-					before := testmetrics.Sum(testmetrics.Gather(t, f.runtime), "weir_store_executions_total")
+					before := sumLocalMetric(t, f, "weir_store_executions_total")
 					invalid := realExpression(t, f, 2)
 					invalid.GetAtomicTransform().GetBackendExpression().Data = []byte("opaque malformed backend bytes")
 					r, e := f.client.Mutate(ctx, invalid)
 					if e != nil || r.GetOutcome() != pb.MutationOutcome_NOT_STARTED || r.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
 						t.Fatal(r, e)
 					}
-					if testmetrics.Sum(testmetrics.Gather(t, f.runtime), "weir_store_executions_total") != before {
+					if sumLocalMetric(t, f, "weir_store_executions_total") != before {
 						t.Fatal("prevalidation executed")
 					}
 					stream, err := f.client.Bulk(ctx)
@@ -157,8 +157,7 @@ func TestPublicExpressionUnaryBulkAndOpaquePeers(t *testing.T) {
 						t.Fatal(err)
 					}
 					waitScanReleased(t, f)
-					families := testmetrics.Gather(t, f.runtime)
-					if testmetrics.Sum(families, "weir_store_executions_total") != 10 || testmetrics.Sum(families, "weir_store_records_total") != 10 {
+					if sumLocalMetric(t, f, "weir_store_executions_total") != 10 || sumLocalMetric(t, f, "weir_store_records_total") != 10 {
 						t.Fatal("execution duplicated")
 					}
 					for _, remote := range f.metricsRemotes {

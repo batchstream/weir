@@ -36,15 +36,19 @@ func (s *Server) remoteSingle(args singleRelay) (_ *pb.BulkResult, resultErr err
 		method = "Read"
 	}
 	defer func() { remote.terminations.WithLabelValues(method, statusLabel(resultErr)).Inc() }()
+	client, err := remote.selectClient(next, protocol.Resource(op))
+	if err != nil {
+		return nil, err
+	}
 	result := &pb.BulkResult{Index: op.Index}
 	if req := op.GetRead(); req != nil {
-		read, err := remote.client.Read(next, req)
+		read, err := client.Read(next, req)
 		if err != nil {
 			return nil, err
 		}
 		result.Result = &pb.BulkResult_Read{Read: read}
 	} else {
-		mutation, err := remote.client.Mutate(next, op.GetMutate())
+		mutation, err := client.Mutate(next, op.GetMutate())
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +69,11 @@ func (s *Server) remoteScan(args scanRelay) (resultErr error) {
 	defer func() { args.remote.terminations.WithLabelValues("Scan", statusLabel(resultErr)).Inc() }()
 	ctx, cancel := context.WithCancel(next)
 	defer cancel()
-	downstream, err := args.remote.client.Scan(ctx, args.request)
+	client, err := args.remote.selectClient(ctx, args.request.Resource)
+	if err != nil {
+		return err
+	}
+	downstream, err := client.Scan(ctx, args.request)
 	if err != nil {
 		return err
 	}
@@ -120,7 +128,11 @@ func (s *Server) remoteNative(args nativeRelay) (resultErr error) {
 	defer func() { args.remote.terminations.WithLabelValues("Native", statusLabel(resultErr)).Inc() }()
 	ctx, cancel := context.WithCancel(next)
 	defer cancel()
-	downstream, err := args.remote.client.Native(ctx)
+	client, err := args.remote.selectClient(ctx, args.first.GetOpen().Resource)
+	if err != nil {
+		return err
+	}
+	downstream, err := client.Native(ctx)
 	if err != nil {
 		return err
 	}

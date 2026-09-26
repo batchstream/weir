@@ -66,7 +66,12 @@ func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFram
 	defer func() { remote.terminations.WithLabelValues("Bulk", statusLabel(resultErr)).Inc() }()
 	ctx, cancel := context.WithCancel(next)
 	defer cancel()
-	downstream, err := remote.client.Bulk(ctx)
+	state := ctx.Value(ingressKey).(*ingress)
+	client, err := remote.selectClient(ctx, state.diagnostic.Get("weir-request-id")[0])
+	if err != nil {
+		return err
+	}
+	downstream, err := client.Bulk(ctx)
 	if err != nil {
 		return err
 	}

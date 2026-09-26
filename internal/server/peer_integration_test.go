@@ -81,7 +81,7 @@ func TestPeerRealFiveRPCs(t *testing.T) {
 				t.Run(fmt.Sprint(hops), func(t *testing.T) {
 					f := scanServer(t, kind, DefaultLimits())
 					if hops > 0 {
-						f = forwardFixture(t, f, hops)
+						f = forwardReplicaFixture(t, f, hops)
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
@@ -215,14 +215,16 @@ func TestPeerRealFiveRPCs(t *testing.T) {
 						t.Fatal(err)
 					}
 					waitScanReleased(t, f)
-					families := testmetrics.ScrapeCollector(t, f.runtime)
-					if testmetrics.Sum(families, "weir_store_records_total") != 40 {
+					if sumLocalMetric(t, f, "weir_store_records_total") != 40 {
 						t.Fatal("real logical operation count")
 					}
-					if testmetrics.Sample(families, "weir_store_executions_total", map[string]string{"kind": "record"}).GetCounter().GetValue() != 40 {
+					recordCalls := sampleLocalMetric(t, f, "weir_store_executions_total", map[string]string{"kind": "record"})
+					if recordCalls != 40 {
 						t.Fatal("real physical calls duplicated")
 					}
-					if testmetrics.Sample(families, "weir_store_native_completions_total", map[string]string{"completion": "response_complete"}).GetCounter().GetValue() != 1 || testmetrics.Sample(families, "weir_store_scan_terminations_total", map[string]string{"result": "exhausted"}).GetCounter().GetValue() != 1 {
+					nativeComplete := sampleLocalMetric(t, f, "weir_store_native_completions_total", map[string]string{"completion": "response_complete"})
+					scanComplete := sampleLocalMetric(t, f, "weir_store_scan_terminations_total", map[string]string{"result": "exhausted"})
+					if nativeComplete != 1 || scanComplete != 1 {
 						t.Fatal("real stream metrics")
 					}
 					for _, remote := range f.metricsRemotes {
@@ -299,6 +301,7 @@ type lostReplyPeer struct {
 	calls          atomic.Int32
 	applied        atomic.Int32
 	nativeComplete atomic.Int32
+	lossBudget     *atomic.Int32
 }
 
 func (p *lostReplyPeer) Mutate(ctx context.Context, req *pb.MutateRequest) (*pb.MutationResult, error) {
@@ -313,8 +316,11 @@ func (p *lostReplyPeer) Mutate(ctx context.Context, req *pb.MutateRequest) (*pb.
 	if result.Outcome == pb.MutationOutcome_APPLIED {
 		p.applied.Add(1)
 	}
-	p.transport.abortPeer(ctx)
-	return nil, status.Error(codes.Unavailable, "injected loss after real acknowledgement")
+	if p.lossBudget == nil || p.lossBudget.CompareAndSwap(1, 0) {
+		p.transport.abortPeer(ctx)
+		return nil, status.Error(codes.Unavailable, "injected loss after real acknowledgement")
+	}
+	return result, nil
 }
 func (p *lostReplyPeer) Native(stream grpc.BidiStreamingServer[pb.NativeRequestFrame, pb.NativeResponseFrame]) error {
 	p.calls.Add(1)
@@ -344,6 +350,7 @@ func (p *lostReplyPeer) Native(stream grpc.BidiStreamingServer[pb.NativeRequestF
 			}
 		}
 	}()
+	drop := p.lossBudget == nil || p.lossBudget.CompareAndSwap(1, 0)
 	var complete bool
 	for {
 		frame, err := downstream.Recv()
@@ -356,13 +363,21 @@ func (p *lostReplyPeer) Native(stream grpc.BidiStreamingServer[pb.NativeRequestF
 		if frame.GetEnd().GetCompletion() == pb.NativeCompletion_RESPONSE_COMPLETE {
 			complete = true
 		}
+		if !drop {
+			if err := stream.Send(frame); err != nil {
+				return err
+			}
+		}
 	}
 	<-done
 	if complete {
 		p.nativeComplete.Add(1)
 	}
-	p.transport.abortPeer(stream.Context())
-	return status.Error(codes.Unavailable, "injected loss after native completion")
+	if drop {
+		p.transport.abortPeer(stream.Context())
+		return status.Error(codes.Unavailable, "injected loss after native completion")
+	}
+	return nil
 }
 func faultPeer(t *testing.T, address string) (string, *lostReplyPeer) {
 	t.Helper()
@@ -388,9 +403,10 @@ func faultPeer(t *testing.T, address string) (string, *lostReplyPeer) {
 }
 
 type backendFault struct {
-	fixture scanFixture
-	mongo   *testmongo.Proxy
-	writes  *atomic.Int32
+	fixture  scanFixture
+	mongo    *testmongo.Proxy
+	writes   *atomic.Int32
+	endpoint string
 }
 
 func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFault {
@@ -404,6 +420,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 		f.native, f.db = testmongo.Open(t)
 		proxy := testmongo.StartProxy(t)
 		result.mongo = proxy
+		result.endpoint = proxy.URI()
 		if drop {
 			proxy.DropCommand = "update"
 			if native {
@@ -460,6 +477,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 		})
 		proxy := httptest.NewServer(handler)
 		t.Cleanup(proxy.Close)
+		result.endpoint = proxy.URL
 		cfg := searchstore.Config{Store: kind, URL: proxy.URL, Index: backend.Index, Profile: backend.Profile, Pool: 1}
 		adapter, err = searchstore.Open(context.Background(), cfg)
 		f.root = "weir://search/" + backend.Index
@@ -489,6 +507,8 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/%s/%s", kind, leg, mode), func(t *testing.T) {
 					backend := faultBackend(t, kind, leg == "database", native)
 					f := backend.fixture
+					replica := replicaRuntime(t, f, backend.endpoint)
+					f.replicas = append(f.replicas, replica)
 					if mode == "expression" {
 						if f.backend == nil {
 							seed := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: 0}}
@@ -507,11 +527,18 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 					routes := map[string]Service{kind: service}
 					options := peerServerOptions{routes: routes, peer: true}
 					_, address := startPeerServer(t, options)
-					var loss *lostReplyPeer
+					secondService := Service{LocalStore: replica}
+					secondOptions := peerServerOptions{routes: map[string]Service{kind: secondService}, peer: true}
+					_, secondAddress := startPeerServer(t, secondOptions)
+					var loss, secondLoss *lostReplyPeer
 					if leg == "peer" {
 						address, loss = faultPeer(t, address)
+						secondAddress, secondLoss = faultPeer(t, secondAddress)
+						budget := new(atomic.Int32)
+						budget.Store(1)
+						loss.lossBudget, secondLoss.lossBudget = budget, budget
 					}
-					remote := testRemote(t, address)
+					remote := multipleRemote(t, []string{address, secondAddress})
 					remoteService := Service{RemoteWeir: remote}
 					options = peerServerOptions{routes: map[string]Service{kind: remoteService}, budget: 4}
 					_, address = startPeerServer(t, options)
@@ -547,8 +574,14 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 						}
 					}
 					if loss != nil {
-						if loss.calls.Load() != 1 || !native && loss.applied.Load() != 1 || native && loss.nativeComplete.Load() != 1 {
-							t.Fatal("fault did not follow positive acknowledgement", loss.calls.Load(), loss.applied.Load(), loss.nativeComplete.Load())
+						calls, applied, complete := loss.calls.Load(), loss.applied.Load(), loss.nativeComplete.Load()
+						if secondLoss != nil {
+							calls += secondLoss.calls.Load()
+							applied += secondLoss.applied.Load()
+							complete += secondLoss.nativeComplete.Load()
+						}
+						if calls != 1 || !native && applied != 1 || native && complete != 1 {
+							t.Fatal("fault did not follow one positive acknowledgement across both receivers", calls, applied, complete)
 						}
 					}
 					var commands int
@@ -588,13 +621,13 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 					if commands != 1 {
 						t.Fatal("backend replayed", commands)
 					}
-					families := testmetrics.ScrapeCollector(t, f.runtime)
 					if !native {
 						outcome := "applied"
 						if leg == "database" {
 							outcome = "unknown"
 						}
-						if testmetrics.Sample(families, "weir_store_records_total", map[string]string{"operation": "mutate", "outcome": outcome}).GetCounter().GetValue() != 1 || testmetrics.Sum(families, "weir_store_executions_total") != 1 {
+						records := sampleLocalMetric(t, f, "weir_store_records_total", map[string]string{"operation": "mutate", "outcome": outcome})
+						if records != 1 || sumLocalMetric(t, f, "weir_store_executions_total") != 1 {
 							t.Fatal("response loss changed execution evidence")
 						}
 						forwarded := testmetrics.ScrapeCollector(t, remote)

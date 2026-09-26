@@ -6,8 +6,8 @@ One Go module: `github.com/batchstream/weir`.
 
 Implemented: gRPC Read / Mutate / duplex Bulk / Native / server-streaming Scan, independent local MongoDB and Search Stores,
 opaque BSON / JSON, Put / Create / Replace / Delete, bounded admission/results/connections,
-micro-batching, stream-local ordering, explicit AIMD and bounded shutdown. A fixed
-RemoteWeir Service forwards the same five RPCs over plaintext HTTP/2 without replay or failover;
+micro-batching, stream-local ordering, explicit AIMD and bounded shutdown. A static
+RemoteWeir Service selects from 1–8 stable IP/DNS endpoints and forwards the same five RPCs over plaintext HTTP/2 without replay or failover;
 forwarding-only nodes and two-hop chains are supported. Optional loopback health checks
 and bounded Prometheus metrics expose lifecycle, reservations and execution evidence.
 
@@ -133,8 +133,23 @@ go run ./cmd/weir-native-example -address 127.0.0.1:7447
 
 Stop each Weir with Ctrl-C, then stop the owned MongoDB fixture. To add a second
 hop, configure B with a RemoteWeir to C's peer address and move the LocalStore to C.
-Each RemoteWeir has one fixed IP:port and 1–16 relay slots; no DNS/multiple-endpoint
-selection or failover. All nodes must agree on Store and backend profile. Forwarding
+Each RemoteWeir configures `"endpoints": ["peer-a.example:7448", "peer-b.example:7448"]`
+and **1–16 total relay slots shared by the Service**. IP literals and ordinary DNS
+names require explicit ports. The old `endpoint` field is strictly rejected.
+Canonical host:port is the stable identity; DNS returns at most eight A/AAAA
+addresses per identity. Read/Mutate use the same URI rendezvous affinity;
+Native/Scan use resource, Bulk uses request ID and stays pinned for the entire stream.
+Select one READY endpoint before dispatch, or wait at most 2 s on one cold endpoint
+within the original deadline. No application retry or endpoint failover loop.
+
+DNS refreshes every 30 s (connection hints are rate-limited); each lookup is capped
+at 2 s, with two concurrent lookups per Service. NXDOMAIN, timeout, empty or oversized
+answers withdraw old addresses for new calls. Backoff is capped at 30 s. Existing
+streams stay on their old connection until completion/deadline; there is no stream
+migration. Each endpoint owns one ClientConn and at most two TCP sockets including
+draining connections. See [the exact DNS and hash contract](docs/architecture.md#143-endpoint-selection-and-affinity)
+and [M9 qualification](docs/milestone-9.md).
+All nodes must agree on Store and backend profile. Forwarding
 preserves opaque bytes and bounded request ID/traceparent, replacing outgoing metadata
 instead of accumulating baggage.
 
@@ -146,8 +161,9 @@ are rejected. Diagnostics remain optional and loopback-only. The static graph al
 and `remote.server_name` fields fail configuration decoding; there is no disabled
 mode or compatibility shim. `-config` remains exclusive with local flags.
 
-See [milestone 8](docs/milestone-8.md) for the current plaintext qualification and
-bounds. [Milestone 5](docs/milestone-5.md) preserves historical mTLS qualification;
+See [milestone 8](docs/milestone-8.md) for plaintext transport qualification and
+[milestone 9](docs/milestone-9.md) for static endpoint/DNS qualification and bounds.
+[Milestone 5](docs/milestone-5.md) preserves historical mTLS qualification;
 its certificate-based setup is superseded. Backend TLS and credentials remain
 backend concerns; their validation and no-replay protections are unchanged.
 
@@ -222,6 +238,7 @@ scripts/generate.sh
 - `docs/milestone-6.md`: optional bounded diagnostics, health semantics, exact metrics and process evidence.
 - [Milestone 7](docs/milestone-7.md): native expression profiles and atomic-update evidence.
 - [Milestone 8](docs/milestone-8.md): intranet plaintext peers, removed Weir identity/TLS and retained transport bounds.
+- [Milestone 9](docs/milestone-9.md): bounded static endpoint sets, ordinary DNS, affinity, pinned streams and no replay.
 - [Production readiness checklist](docs/production-readiness.md): platform/runtime/deployment/load gates and unverified blockers for the trusted-intranet scope.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits and AIMD.

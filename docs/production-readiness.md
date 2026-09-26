@@ -63,13 +63,13 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | 普通 Read/写入/Bulk | 已实现且有限真实资格验证；[M1](milestone-1.md)、[M2](milestone-2.md)、[unary 专项](unary-response-deadline.md) | 新平台/适用连接配置/网络故障需重验；0 假 APPLIED、0 已执行却 NOT_STARTED、0 静默重放、0 关联/流内顺序错误 |
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |
 | 多实例共享后端/直接 native writer | 原生 writer 有限竞争验证；本机多进程 peer 有限验证；M1/M2/M5/M7 | 多个独立 Runtime/AIMD 同目标的容量竞争、max replicas × pool/C 总预算未资格；每实例控制不代表全局上限 |
-| 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络、DNS 变化仍未验证；不新增猜测性重放 |
+| 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络仍未验证；M9 的 DNS 变化证据仅限自有 loopback fixture；不新增猜测性重放 |
 | Linux RSS/cgroup | `internal/overload/guard.go` 有实现；既有交叉编译证据 | **未真实验证** RSS/cgroup-v2 与容器压力/回收；macOS 当前 Go Sys-HeapReleased 降级信号不是 RSS |
 | 可复现打包/供应链 | 固定 `go.mod/go.sum`、协议生成和本地 bootstrap；默认离线测试 | 六组合制品、双架构 OCI、校验和/SBOM/依赖安全扫描、固定版本安全复核与可复现构建未验收；固定版本不是永久安全承诺 |
-| DNS/端点与 gRPC LB | 当前静态固定 IP 端点与有界明文 peer；显式内网/通配 IP 绑定，默认 loopback；本机恢复见 M8 | 生产 DNS/有界解析/标准 resolver/balancer、长连接新调用分布、扩缩容与重连仍阻塞；不能假设旧 stream 自动再平衡 |
+| DNS/端点与 gRPC LB | 有界静态 1–8 endpoint/Service、普通 Go DNS、标准 gRPC pick-first、URI/request-ID rendezvous 已实现；本机真实 DNS、三执行进程共享真实后端、连接替换/无重放证据见 [M9](milestone-9.md) | 静态成员通过重启；旧 stream 不再平衡。未代表生产 DNS、跨节点 K8s Service/LB、真实扩缩容/网络分区资格；多实例数据库总预算仍未合格 |
 | Kubernetes 部署/探针/滚动 | **未实现/未验证**；M7 未执行此未来阶段 | 规范 Deployment/Service、requests/limits、non-root/read-only、Secret 引用；1/3 replicas、两 worker；probe 实际可达，loopback diagnostics 不可直接当 Pod-IP HTTP probe |
 | 持续负载/SLO/过载恢复/soak | 有短时 bounded regression；无生产容量声明 | 统筹校准并冻结上述参考负载门槛；每平台至少 24h 独立验收。尚未测量的 RPS/p99/恢复时限均未验证 |
-| 运维/升级/回滚 | README 与 M1–M8 有本机操作、限制、故障语义；`internal/app` 有进程生命周期测试 | 容量规划、UNKNOWN 处理、版本兼容、配置/后端连接替换、滚动升级/回滚演练及崩溃后恢复说明未完成 |
+| 运维/升级/回滚 | README 与 M1–M9 有本机操作、限制、故障语义；`internal/app` 有进程生命周期测试 | 容量规划、UNKNOWN 处理、版本兼容、配置/后端连接替换、滚动升级/回滚演练及崩溃后恢复说明未完成 |
 
 ## 平台证据矩阵
 
@@ -82,11 +82,11 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Linux amd64 | 既有交叉编译仅作证据；发布构建未验收 | 未验证 | RSS/cgroup/信号未验证 | 未验证 | 否；native runner/冻结环境待接入核实 |
 | Linux arm64 | 发布构建未验收 | 未验证 | 未验证 | 未验证 | 否；native runner/OCI/K8s 环境待接入核实 |
 | macOS amd64 | 未验证 | 未验证 | 未验证 | 未验证 | 否；原生 runner 待接入核实 |
-| macOS arm64 | 本机 go test/build 已验证 | M1–M8 有限本机测试 | 有限取消/drain/ledger；OS 内存资格不足 | 未验证 | 否；生产范围与长测仍未资格 |
+| macOS arm64 | 本机 go test/build 已验证 | M1–M9 有限本机测试 | 有限取消/drain/ledger；OS 内存资格不足 | 未验证 | 否；生产范围与长测仍未资格 |
 | Windows amd64 | 未验证 | 未验证 | 关闭、句柄、commit memory 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 | Windows arm64 | 未验证 | 未验证 | 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 
-后续串行阶段由统筹安排：有界 DNS/端点与部署入口资格（M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN）→ 后端必要连接/无重放及多实例保护 → 通用 runtime
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；后续仍需后端必要连接/无重放及多实例保护 → 通用 runtime
 安全可行性 → 跨平台运行/打包 → OCI/Kubernetes → 参考负载校准/长测/独立核验。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，

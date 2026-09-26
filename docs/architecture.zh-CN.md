@@ -655,13 +655,34 @@ Hop metadata 没有密码学身份或完整性保证；部署隔离须限制 pee
 
 ### 14.3 端点选择与亲和
 
-RemoteWeir 配置有限稳定 endpoint 身份、有限 channel、基本健康/连接状态、简单有界重连 backoff。配置名可用普通 DNS，不是动态 provider/control plane；无复杂 outlier scoring、hedging 或 ring ownership。
+每个 RemoteWeir Service 配置 1–8 个静态 `endpoints` 地址，所有端点共用原有 1–16 relay 额度，不按端点复制额度；成员变化通过重启生效。地址必须为 IPv4/IPv6 literal 或 ASCII DNS hostname，并显式指定十进制 1–65535 端口。稳定身份就是 canonical `host:port`：IPv6 压缩并加括号、IPv4-mapped IPv6 转 IPv4、端口去前导零、DNS 转小写并去掉一个可选尾部根点。DNS 每 label 为 1–63 个 ASCII 字母/数字/连字符，首尾不能是连字符；去根点后总长不超过 253 字节。拒绝无效的全数字点分 IP、IPv6 zone、空集合、规范化重复、scheme/userinfo/path/query/fragment 和任意 resolver target。旧单数 `endpoint` 字段非法。完整列表先验证再创建 channel，不增加独立 ID、权重、优先级、Provider、动态 RouteTable、控制平面或 outlier scoring。
 
-单记录 Read/Mutate 以 canonical URI bytes 和可用 endpoint identity 计算固定文档化 hash/framing 的 rendezvous score，取最高分，仅优化局部性，不保证串行。Native/Scan 可 hash resource；Bulk hash bounded request ID 并整流固定端点，不能承诺其中每个记录的亲和，否则需要 fanout。无公共 affinity hint。
+每个稳定身份恰有一个 gRPC ClientConn，使用标准 pick-first。DNS IP 是该身份的连接地址，不是 rendezvous 成员。通过同步标准 Go `LookupHost`（`PreferGo`、`StrictErrors`）查询绝对名称，只请求 A/AAAA；不读取 DNS TXT service config、SRV、代理、retry 或 hedging 策略；固定 IP 完全绕过 DNS。一次解析返回总数必须在 1–8 内；先拒绝超量结果，再按 canonical IP:port 字节排序、去重、发布，不能在已创建 channel/SubConn/dial 后截断。每 DNS 连接累计交给解析器最多 4098 字节（4 KiB 加 TCP 长度前缀），最多额外读取 1 字节以检测超量；wire 超量使整个 lookup 失败，即使另一地址族返回了有效地址。禁止外部 service config。
 
-派发前选择可用端点；连接建立失败且证明无语义请求发出时，可在原 deadline 内换端点。一旦写入或流的任何部分可能转发，不换端点重放。Read 重试也须明确策略且在结果交付前。Health 只影响未来调用，不证明当前写入状态。
+每个端点一个可取消解析 worker，每 Service 最多两个同时 lookup，其余有限 worker 等待同一额度。一次 lookup 及其 DNS I/O 最多 2 s，每 lookup 的 A/AAAA 最多两个并行 DNS socket；TCP fallback 仍交给标准 Go DNS。成功完成后 30 s 周期刷新；连接触发的 ResolveNow 合并为一个提示，成功后至少间隔 1 s。失败按 1、2、4、8、16、最多 30 s backoff，提示不能绕过失败 backoff。没有逐请求解析 goroutine/队列。NXDOMAIN、超时、空结果和超量结果均撤回旧地址，未来连接/调用不能无限使用 stale；八 worker/两额度的调度刷新、准入与 I/O 在每次 2 s 约束下最多 38 s，另加有限本地解析工作和系统调度等待，不是实时 OS 保证。下一次有效结果恢复连接。TTL 不是 stream 寿命，也不强制断开在途连接；DNS 不证明数据库健康。
 
-同一 Service 所有 endpoint 必须代表同一逻辑 Store、Adapter 语义和协议 profile；Weir 不协调不一致副本，部署/滚动期间须验证。宁可 UNSUPPORTED，不能静默改变意图。成员变化可破坏亲和，不得破坏原生正确性；一般一两跳足够，不把 hop budget 当鼓励深层链路。
+地址变化/撤回使用 pick-first 的优雅 SubConn shutdown，已有 stream 留在原 socket 到原期限/关闭，新调用使用新 picker。每身份最多两个拨号中/存活/排空 TCP socket，多轮刷新也不能超额；若两个旧 stream 占满额度，替换连接在固定预算内失败，直到旧 socket 释放。显式拥有排空 socket，Close 取消解析/拨号，并回收已从 gRPC 活跃 map 移出的 transport。连接 backoff 为 base 100 ms、multiplier 1.6、jitter 0.2、名义上限 2 s（实际最多 2.4 s）；TCP dial 上限 2 s，gRPC 连接 setup 上限 2.4 s。这些操作不能增加 relay 额度。
+
+Read/Mutate 使用完全相同的 canonical resource URI bytes 作为 key；Native/Scan 使用 resource；Bulk 使用 1–128 字节的有界 ASCII request ID（缺失时生成），整流固定端点。文档、表达式、Native body、DNS 回答顺序都不进入 key。固定 rendezvous score 是下列字节串的完整 SHA-256：
+
+```text
+ASCII("weir-rendezvous-v1") || 0x00 || u32be(len(key)) || key
+                         || u32be(len(identity)) || identity
+```
+
+长度以字节计，不额外追加分隔符、method、终止符或 Unicode normalization。取最高 unsigned 256-bit digest，完全同分时取字节字典序最小的 canonical identity，配置顺序无关。固定测试向量（十六进制 SHA-256）：
+
+| Key | Canonical identity | Score |
+| --- | --- | --- |
+| `weir://mongo/db/records/s:one` | `peer-a.example:7448` | `4b4c225ce6d1fd8476d8aabf848f06139a9eb52986a2cefa4c46db16278ac0e3` |
+| `weir://mongo/db/records/s:one` | `peer-b.example:7448` | `653070b21895f9a64cd89b76dc36567dd7e6ccd17f6c51a2ab3aad539d08e50c` |
+| `bulk-0001` | `[::1]:7448` | `e5a2e602ee9a673893540e0e3f5fc60c9181def6493bd5c2f7495ef24a371b6a` |
+
+派发前读取有限连接状态快照，在 READY 集合中选择；提示 IDLE channel 为未来调用重连。若全部不 READY，则用相同 score 在非 SHUTDOWN 集合中只选一次，持有已有 Service relay credit，最多等待 min(原剩余期限, 2 s)，仅等此 channel。TRANSIENT_FAILURE/SHUTDOWN 立即失败；readiness 竞争可以导致本次失败，不能再次选端点。增加/删除成员只改变最高可用 score 变化的 key 映射。亲和只是 locality，不保证排序、串行、一致性或字节/CPU 负载平均。
+
+每逻辑调用只选一次，不增加应用 retry/failover，即使错误看似未发送。保持 DisableRetry、DisableServiceConfig、零 retry buffer、WaitForReady(false)、Bulk/Native 明确 commit attempt。只允许固定版本审计证明未被接收的底层连接尝试；已发送/已确认后的普通错误不构成证明。DNS/端点恢复只帮助未来请求，不重放 mutation、不重开流/恢复 cursor、不改写 APPLIED。连接等待扣原 deadline，每次 remote dispatch 恰减一个 hop，与连接地址选择无关；End/count/final status 和 NativeCompletion 规则不变。request ID 仍仅关联，不是幂等键。
+
+同一 Service 所有 endpoint 必须代表同一逻辑 Store、Adapter 和 protocol profile；由部署保证，Weir 不协调不一致副本或数据库总预算。保持单 Store 与 opaque bytes。标准 DNS/LB 不增加 Weir 认证或 TLS。典型拓扑仍为一两跳。
 
 ## 15. 优雅生命周期、健康与可观测性
 

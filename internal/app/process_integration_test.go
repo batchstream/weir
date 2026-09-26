@@ -65,6 +65,11 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
 	command := exec.CommandContext(ctx, binary, "-config", name)
+	return watchProcess(t, command, cfg.Diagnostics != "")
+}
+
+func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
+	t.Helper()
 	output, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +85,7 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 		scanner := bufio.NewScanner(output)
 		if scanner.Scan() {
 			message := scanner.Text()
-			if cfg.Diagnostics != "" && scanner.Scan() {
+			if diagnostics && scanner.Scan() {
 				message += "\n" + scanner.Text()
 			}
 			line <- message
@@ -97,7 +102,7 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 			t.Fatal("no process readiness", message)
 		}
 		p.address = strings.Fields(message[start+1 : end])[0]
-		if cfg.Diagnostics != "" {
+		if diagnostics {
 			parts := strings.Split(message, "\n")
 			if len(parts) != 2 {
 				t.Fatal("missing diagnostic address")
@@ -147,7 +152,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	b.Diagnostics = "127.0.0.1:0"
 	b.Peer = "127.0.0.1:0"
 	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoint: final.address, Relays: 4}
+		remote := &Remote{Endpoints: []string{final.address}, Relays: 4}
 		service := Service{Name: name, Remote: remote}
 		route := Route{Store: name, Service: name}
 		b.Services = append(b.Services, service)
@@ -158,7 +163,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	a.Diagnostics = "127.0.0.1:0"
 	a.Application = "127.0.0.1:0"
 	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoint: middle.address, Relays: 4}
+		remote := &Remote{Endpoints: []string{middle.address}, Relays: 4}
 		service := Service{Name: name, Remote: remote}
 		route := Route{Store: name, Service: name}
 		a.Services = append(a.Services, service)

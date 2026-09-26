@@ -251,7 +251,7 @@ func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.WeirClient) 
 }
 func testRemote(t *testing.T, address string) *RemoteWeir {
 	t.Helper()
-	cfg := RemoteConfig{Endpoint: address, Relays: 8}
+	cfg := RemoteConfig{Endpoints: []string{address}, Relays: 8}
 	remote, err := NewRemote(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -816,7 +816,7 @@ func TestPeerScanFailureNeverRestarts(t *testing.T) {
 	}
 }
 
-func TestPeerDeadlineIncludesTwoConnectionSetups(t *testing.T) {
+func TestPeerDeadlineIncludesConcurrentConnectionSetups(t *testing.T) {
 	adapter, runtime := peerLocal(t, "records")
 	adapter.block = make(chan struct{})
 	local := Service{LocalStore: runtime}
@@ -849,7 +849,7 @@ func TestPeerDeadlineIncludesTwoConnectionSetups(t *testing.T) {
 	case received := <-adapter.seen:
 		deadline, ok := received.Deadline()
 		remaining := time.Until(deadline)
-		if !ok || setups.Load() != 2 || remaining > 240*time.Millisecond || deadline.After(started.Add(375*time.Millisecond)) {
+		if !ok || setups.Load() != 2 || remaining > 350*time.Millisecond-time.Since(started)+20*time.Millisecond || deadline.After(started.Add(375*time.Millisecond)) {
 			t.Fatal("connection time was not charged", remaining, deadline, setups.Load())
 		}
 		t.Logf("two HTTP/2 connection setups consumed %v; backend remaining deadline %v", time.Since(started), remaining)

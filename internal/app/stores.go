@@ -70,7 +70,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	for _, definition := range cfg.Services {
 		var service server.Service
 		if definition.Remote != nil {
-			remoteConfig := server.RemoteConfig{Endpoint: definition.Remote.Endpoint, Relays: definition.Remote.Relays}
+			remoteConfig := server.RemoteConfig{Endpoints: definition.Remote.Endpoints, Relays: definition.Remote.Relays}
 			service.RemoteWeir, err = server.NewRemote(remoteConfig)
 			if err != nil {
 				return nil, err

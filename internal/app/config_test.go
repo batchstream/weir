@@ -22,7 +22,7 @@ import (
 
 func remoteConfig(t *testing.T) Config {
 	t.Helper()
-	remote := &Remote{Endpoint: "127.0.0.1:1", Relays: 2}
+	remote := &Remote{Endpoints: []string{"127.0.0.1:1"}, Relays: 2}
 	service := Service{Name: "remote", Remote: remote}
 	route := Route{Store: "records", Service: "remote"}
 	cfg := DefaultConfig()
@@ -239,5 +239,27 @@ func TestCurrentPeerExamples(t *testing.T) {
 		if decodeErr != nil || closeErr != nil {
 			t.Fatal(name, decodeErr, closeErr)
 		}
+	}
+}
+
+func TestRemoteEndpointListConfiguration(t *testing.T) {
+	cfg := remoteConfig(t)
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Replace(string(raw), `"endpoints":["127.0.0.1:1"]`, `"endpoint":"127.0.0.1:1"`, 1)
+	if _, err := Decode(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), `unknown field "endpoint"`) {
+		t.Fatal("legacy endpoint accepted", err)
+	}
+	for _, endpoints := range [][]string{nil, {}, {"peer:1", "PEER.:01"}, {"dns:///peer:1"}, {"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"}} {
+		cfg.Services[0].Remote.Endpoints = endpoints
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("invalid endpoint list accepted", endpoints)
+		}
+	}
+	cfg.Services[0].Remote.Endpoints = []string{"peer.example:1", "[::1]:1", "127.0.0.1:1"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
