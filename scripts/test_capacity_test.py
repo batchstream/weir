@@ -87,4 +87,49 @@ class Safety(unittest.TestCase):
         self.assertTrue(inventory_diff(before,after)["nondefault_changed"])
 
 
+
+class ArtifactSafety(unittest.TestCase):
+    def test_archive_preserves_config_and_rejects_corrupt_layer(self):
+        import gzip
+        import hashlib
+        import io
+        import tarfile
+        from capacity_artifact import docker_archive
+        def digest(data):
+            return "sha256:"+hashlib.sha256(data).hexdigest()
+        layer=b"synthetic uncompressed layer"
+        compressed=gzip.compress(layer)
+        config=json.dumps({"rootfs":{"diff_ids":[digest(layer)]}}).encode()
+        identity={"config":digest(config),"layers":[digest(compressed)]}
+        with tempfile.TemporaryDirectory() as base:
+            source=Path(base)/"oci.tar";dest=Path(base)/"docker.tar"
+            with tarfile.open(source,"w") as a:
+                for data in (config,compressed):
+                    item=tarfile.TarInfo("blobs/sha256/"+digest(data)[7:]);item.size=len(data)
+                    a.addfile(item,io.BytesIO(data))
+            docker_archive(source,dest,identity)
+            with tarfile.open(dest) as a:
+                manifest=json.load(a.extractfile("manifest.json"))[0]
+                self.assertEqual(manifest["RepoTags"],[])
+                self.assertEqual(a.extractfile(manifest["Config"]).read(),config)
+                self.assertEqual(a.extractfile(manifest["Layers"][0]).read(),layer)
+            wrong=json.dumps({"rootfs":{"diff_ids":[digest(b"wrong")]}}).encode()
+            with tarfile.open(source,"w") as a:
+                for data in (wrong,compressed):
+                    item=tarfile.TarInfo("blobs/sha256/"+digest(data)[7:]);item.size=len(data)
+                    a.addfile(item,io.BytesIO(data))
+            identity["config"]=digest(wrong)
+            with self.assertRaises(ValueError):docker_archive(source,dest,identity)
+
+
+class CountSafety(unittest.TestCase):
+    def test_quantiles_are_recomputed_and_drop_is_not_success(self):
+        histogram={"buckets":[{"upper_us":1000,"count":9}],"p50_us":1000,"p95_us":1000,"p99_us":1000}
+        metrics={"planned":10,"started":9,"completed":9,"success":9,"client_drop":1,"client_late":1,"unknown":0,"failures":{},"arrival":histogram,"dispatch":histogram,"lag":histogram}
+        window={name:metrics for name in ("all","read","put")}
+        self.assertTrue(window_gate(window))
+        histogram["p99_us"]=100
+        with self.assertRaises(RuntimeError):window_gate(window)
+
+
 if __name__=="__main__":unittest.main()

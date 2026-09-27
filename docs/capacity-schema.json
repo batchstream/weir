@@ -2,18 +2,74 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Weir M22 capacity execution baseline v1",
   "type": "object",
-  "required": ["schema_version", "status", "profile", "unknown", "cleanup_confirmed", "exit_code"],
+  "required": [
+    "schema_version",
+    "status",
+    "profile",
+    "unknown",
+    "cleanup_confirmed",
+    "exit_code"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "status": {"type": "string"},
-    "plan_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "candidate_rps": {"type": ["integer", "null"], "minimum": 1, "maximum": 3200},
-    "profile": {"type": "object", "required": ["schema_version", "artifact_source", "binary_sha256", "image_id", "resources", "client", "thresholds", "budgets"]},
-    "unknown": {"type": "array", "items": {"type": "string"}},
-    "cleanup_confirmed": {"type": "boolean"},
-    "exit_code": {"enum": [0, 1]},
-    "stable_rps_70_percent": {"type": "integer"},
-    "overload_rps_2x": {"type": "integer", "maximum": 6400}
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "type": "string"
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_rps": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 3200
+    },
+    "profile": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "artifact_source",
+        "binary_sha256",
+        "image_id",
+        "resources",
+        "client",
+        "thresholds",
+        "budgets"
+      ]
+    },
+    "unknown": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cleanup_confirmed": {
+      "type": "boolean"
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "stable_rps_70_percent": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "overload_rps_2x": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "maximum": 6400
+    }
   },
   "description": "A null/missing candidate is a retained failed/blocked calibration, never zero capacity. Raw results v1 retain per-operation-class planned/started/completed/success/drop/unknown, sparse upper-bound/count histograms and max_ns. Expanded plans v1 contain profile, effective config, source, tool_inputs and client_sha256. The linked immutable plan fixes all thresholds; independent review cannot modify them."
 }
