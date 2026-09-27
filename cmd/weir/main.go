@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,28 +14,42 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
-func run() error {
-	diagnostics := flag.String("diagnostics", "", "optional loopback diagnostic HTTP address; disabled by default")
-	listen := flag.String("listen", "127.0.0.1:7447", "intranet gRPC listen IP:port; loopback by default")
-	uri := flag.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
-	db := flag.String("database", "weir_m1", "pre-created database")
-	collection := flag.String("collection", "records", "pre-created collection")
-	batch := flag.Bool("batch", true, "micro-batch compatible mutations")
-	memory := flag.Uint64("memory-mib", 512, "overload budget; qualification starting point")
-	searchURL := flag.String("search-url", "", "optional qualified loopback search backend")
-	searchIndex := flag.String("search-index", "records", "pre-created concrete index")
-	searchProfile := flag.String("search-profile", "elasticsearch-8.17.0", "exact qualified search profile")
-	configFile := flag.String("config", "", "strict static JSON configuration; exclusive with other flags")
-	flag.Parse()
+func run(args []string, output io.Writer) error {
+	flags := flag.NewFlagSet("weir", flag.ContinueOnError)
+	flags.SetOutput(output)
+	version := flags.Bool("version", false, "print build identity without loading configuration or connecting")
+	diagnostics := flags.String("diagnostics", "", "optional loopback diagnostic HTTP address; disabled by default")
+	listen := flags.String("listen", "127.0.0.1:7447", "intranet gRPC listen IP:port; loopback by default")
+	uri := flags.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
+	db := flags.String("database", "weir_m1", "pre-created database")
+	collection := flags.String("collection", "records", "pre-created collection")
+	batch := flags.Bool("batch", true, "micro-batch compatible mutations")
+	memory := flags.Uint64("memory-mib", 512, "overload budget; qualification starting point")
+	searchURL := flags.String("search-url", "", "optional qualified loopback search backend")
+	searchIndex := flags.String("search-index", "records", "pre-created concrete index")
+	searchProfile := flags.String("search-profile", "elasticsearch-8.17.0", "exact qualified search profile")
+	configFile := flags.String("config", "", "strict static JSON configuration; exclusive with other flags")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments")
+	}
+	if *version {
+		if flags.NFlag() != 1 {
+			return fmt.Errorf("-version cannot be combined with other flags")
+		}
+		return printVersion(output)
+	}
 	cfg := app.DefaultConfig()
 	if *configFile != "" {
 		mixed := false
-		flag.Visit(func(f *flag.Flag) {
+		flags.Visit(func(f *flag.Flag) {
 			if f.Name != "config" {
 				mixed = true
 			}

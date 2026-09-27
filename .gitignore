@@ -3,3 +3,6 @@
 /bin/
 *.test
 coverage.out
+
+/dist/
+/scripts/__pycache__/
