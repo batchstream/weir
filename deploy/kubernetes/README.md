@@ -75,3 +75,71 @@ immutable image/config pair; schema/backend compatibility must be checked first.
 See `docs/milestone-20.md` for exact fixture evidence and untested gates. Kubernetes
 1.36.4 is the initial selected test version; other versions, three replicas/two
 workers, node failure, capacity and 24-hour soak are separate gates.
+
+## Three replicas and static configuration revisions
+
+For an approved two-worker environment, apply the same canonical manifest, then:
+
+```sh
+kubectl --kubeconfig "$OWNED_KUBECONFIG" --context "$OWNED_CONTEXT" -n "$NAMESPACE" \
+  patch deployment weir --type=strategic --patch-file deploy/kubernetes/three-replicas.patch.json
+```
+
+The patch keeps the reference resources, probes and 15-second grace. It selects
+workers by excluding the control-plane label and uses hostname spread with two
+required domains and skew one. Label/taint your control-plane accurately. This
+requires two eligible workers; it deliberately leaves excess Pods Pending when
+that constraint cannot be met. It does not claim protection against physical
+host failure when both workers share one machine.
+
+RollingUpdate uses maxSurge=0/maxUnavailable=1. Terminating Pods can remain alive
+while replacement Pods become Ready. Budget every starting, serving and terminating
+process and every Local, including different concurrency values in old/new configs.
+For one isolated C2 -> C1 revision of three replicas, the conservative three old
+plus three new bound is nine tracked executions, fifteen local DB ownership slots,
+and thirty DB-plus-DNS sockets. Steady C2 is six/nine/eighteen; steady C1 is
+three/six/twelve. Native shares the execution window and has its separate one-slot
+Search connection within C+1. DB accepted sockets, canceled remote work and fixture
+admin clients are separately observed quantities; these formulas do not bound
+arbitrary remote retirement tails. Do not overlap another revision until all prior
+old PIDs have exited. Do not force-delete an unreachable Pod to make the accounting
+look complete.
+
+Provision two individually validated, immutable configuration Secrets, such as
+`weir-c2` and `weir-c1`, through the approved secret provisioning process. Change
+only the Deployment template's `volumes[name=config].secret.secretName` to roll
+between them. Confirm readiness/EndpointSlice withdrawal, actual old process exit,
+new Pod UID/image/config identity and successful new calls. Roll back by restoring
+the previously verified immutable image/config pair; wait for old processes again.
+Do not mutate a mounted Secret and describe it as hot reload. A same-image config
+roll is not evidence of compatibility between two different product versions.
+
+A ClusterIP selects a backend for each TCP connection. Expanding replicas does not
+redistribute an existing HTTP/2 connection or move its streams. New connections
+may reach other Pods, without an equal-distribution guarantee. Connections can
+break during rollout or node loss; a sent mutation lacking its terminal result is
+UNKNOWN. Never replay it automatically. A direct DB readback can help an isolated
+experiment, but concurrent application writes prevent it from being a general
+operation-resolution protocol. Default node monitoring/eviction delays also mean
+that endpoint withdrawal is not instantaneous. PDBs do not prevent involuntary
+node failure.
+
+## Explicit local correctness smoke
+
+`WEIR_KUBE_INTEGRATION=1 python3 scripts/test-kubernetes.py --owner weir-m21-UNIQUE
+--evidence .testdata/UNIQUE --artifact dist/m20/first` is the separate opt-in entry.
+Use a lowercase unique owner. It verifies the fixed native tools and unchanged
+product inputs, builds a separate test client, creates a fresh owned kind cluster,
+loads the exact OCI archive, and cleans every owned node/volume/network and its
+generated kubeconfig in finally. It never selects the current Kubernetes context
+or reads existing Secrets. Default tests do not invoke it. Failed cleanup remains
+an error with one result per resource; there is no global prune.
+
+The frozen `scripts/kubernetes-smoke.json` is **smaller than the reference profile**:
+three Weir Pods, each 0.5 CPU/384 MiB with a 256 MiB process budget, one ES at
+1.5 GiB/384 MiB heap, and one 256 MiB client; 7 GiB total node hard limits.
+It verifies bounded lifecycle correctness on one native Linux arm64 Docker VM.
+It does not qualify reference throughput, three 2CPU/1GiB or 4CPU/2GiB replicas,
+physical-host failover, backend replication, version upgrade compatibility or 24h.
+The source receipt, immutable images, per-Pod identities, failures and measured
+limitations are recorded in `docs/milestone-21.md`.

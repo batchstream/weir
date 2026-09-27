@@ -17,19 +17,7 @@ import (
 func load(ctx context.Context, client pb.WeirClient, prefix string) error {
 	for i := 0; i < 60; i++ {
 		id := fmt.Sprintf("%s-%03d", prefix, i)
-		call, cancel := context.WithTimeout(ctx, 4*time.Second)
-		request := put(id)
-		reply, err := client.Mutate(call, request)
-		cancel()
-		outcome := "UNKNOWN"
-		if err == nil {
-			outcome = reply.GetOutcome().String()
-		}
-		fmt.Printf("operation id=%s outcome=%s failure=%s rpc=%v\n", id, outcome, reply.GetFailure().GetCode(), err)
-		if err == nil && reply.GetOutcome() == pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED {
-			return errors.New("missing outcome")
-		}
-		if err := verifyEffect(ctx, id, outcome); err != nil {
+		if err := mutation(ctx, client, id); err != nil {
 			return err
 		}
 		select {
@@ -39,6 +27,21 @@ func load(ctx context.Context, client pb.WeirClient, prefix string) error {
 		}
 	}
 	return nil
+}
+func mutation(ctx context.Context, client pb.WeirClient, id string) error {
+	call, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	request := put(id)
+	reply, err := client.Mutate(call, request)
+	outcome := "UNKNOWN"
+	if err == nil {
+		outcome = reply.GetOutcome().String()
+	}
+	fmt.Printf("operation id=%s outcome=%s failure=%s rpc=%v\n", id, outcome, reply.GetFailure().GetCode(), err)
+	if err == nil && reply.GetOutcome() == pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED {
+		return errors.New("missing outcome")
+	}
+	return verifyEffect(ctx, id, outcome)
 }
 func verifyEffect(ctx context.Context, id, outcome string) error {
 	code, raw, err := admin(ctx, "GET", "/records/_doc/"+id, "")

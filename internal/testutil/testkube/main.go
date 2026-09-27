@@ -69,6 +69,11 @@ func run() error {
 	case "audit":
 		return audit(ctx)
 	case "db":
+		_, tail, tailErr := admin(ctx, "GET", "/records/_stats/refresh?filter_path=_all.total.refresh", "")
+		if tailErr != nil {
+			return tailErr
+		}
+		fmt.Printf("DB refresh %s\n", tail)
 		code, raw, err := admin(ctx, "GET", "/_nodes/stats/http,thread_pool?filter_path=nodes.*.http,nodes.*.thread_pool.write", "")
 		fmt.Printf("DB status=%d %s\n", code, raw)
 		return err
@@ -91,6 +96,8 @@ func run() error {
 		return hold(ctx, client, *id)
 	case "load":
 		return load(ctx, client, *id)
+	case "probe":
+		return mutation(ctx, client, *id)
 	case "active":
 		activeCtx, stop := context.WithTimeout(ctx, 20*time.Second)
 		defer stop()

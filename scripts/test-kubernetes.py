@@ -81,7 +81,13 @@ class Exercise:
         f=self.f
         pods=self.pods()
         slices=json.loads(f.run(f.kube("get","endpointslice","-l","kubernetes.io/service-name=weir","-o","json")).stdout)
-        sample={"time":time.time(),"label":label,"pods":pods,"endpoints":slices,"processes":[]}
+        sample={"time":time.time(),"label":label,"pods":pods,"endpoints":slices,"processes":[],"running_cri":{}}
+        for node in (f.owner+"-worker",f.owner+"-worker2"):
+            if node!=self.paused:
+                result=f.run(["docker","exec",node,"crictl","ps","--state","Running","-o","json"])
+                sample["running_cri"][node]=[c for c in json.loads(result.stdout)["containers"] if c["metadata"]["name"]=="weir" and c.get("labels",{}).get("io.kubernetes.pod.namespace")=="m21"]
+        assert sum(len(cs) for cs in sample["running_cri"].values())<=6
+        assert all(len(cs)<=4 for cs in sample["running_cri"].values())
         counts={}
         for pod in pods:
             uid=pod["metadata"]["uid"];name=pod["metadata"]["name"]
@@ -195,6 +201,8 @@ class Exercise:
         started=time.monotonic();self.paused=fault
         try:
             f.run(["docker","pause",obj["Id"]],10)
+            self.client("probe","paused-worker-request",target["status"]["podIP"]+":7447")
+            self.client("probe","stale-service-request")
             found=False
             while time.monotonic()-started<90:
                 node=json.loads(f.run(["kubectl","get","node",fault,"-o","json"]).stdout)
@@ -264,6 +272,7 @@ def workloads(f,images,artifact,profile):
     spec.update(patch["template"]["spec"])
     spec["containers"][0]["image"]=weir
     spec["containers"][0]["imagePullPolicy"]="Never"
+    spec["containers"][0]["env"]=[{"name":"GODEBUG","value":profile["diagnostics"]["GODEBUG"]}]
     spec["containers"][0]["resources"]={"requests":{"cpu":"100m","memory":"384Mi"},"limits":{"cpu":"500m","memory":"384Mi"}}
     spec["volumes"][0]["secret"]["secretName"]="weir-c2"
     f.save("weir.json",manifest)
@@ -314,7 +323,7 @@ def main():
         exercise.node_fault()
         exercise.client("db","recovered")
         exercise.client("audit","final")
-        time.sleep(3)
+        time.sleep(12)
         exercise.sample("quiescent")
         f.run(f.kube("scale","deployment/weir","--replicas=0"))
         until=time.monotonic()+30
@@ -336,6 +345,13 @@ def main():
     except BaseException as exc:
         failure=exc
         f.save("failure.txt",repr(exc))
+        f.deadline=time.monotonic()+30
+        if (f.root/"kubeconfig").exists():
+            for label,command in (("pods",f.kube("get","pods","-o","json")),("events",f.kube("get","events")),("backend",f.kube("logs","elasticsearch","--tail=100"))):
+                try:
+                    result=f.run(command,8,check=False)
+                    f.save("failure-"+label+".log",result.stdout+result.stderr)
+                except Exception as observation_error: f.save("failure-"+label+".log",str(observation_error))
         raise
     finally:
         clean=f.cleanup()

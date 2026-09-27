@@ -110,7 +110,10 @@ class Fixture:
             self.wait(child, 1)
             assert len(self.nodes) == 3
             self.save("bootstrap-seconds.json", time.monotonic()-started)
-            self.save("nodes.json", json.loads(self.run(["kubectl", "get", "nodes", "-o", "json"]).stdout))
+            nodes=json.loads(self.run(["kubectl", "get", "nodes", "-o", "json"]).stdout)
+            assert len(nodes["items"])==3
+            assert all(n["status"]["nodeInfo"]["architecture"]=="arm64" and n["status"]["nodeInfo"]["kubeletVersion"]=="v1.36.4" for n in nodes["items"])
+            self.save("nodes.json", nodes)
             for name in self.nodes:
                 obj = self.owner_node(name)
                 self.save(name+"-limits.json", {"id": obj["Id"], "image": obj["Image"], "limits": {k:obj["HostConfig"][k] for k in ("Memory","MemorySwap","NanoCpus","PidsLimit")}})
