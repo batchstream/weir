@@ -13,7 +13,7 @@ and compilation caches are independent. Keep both receipts, SHA256SUMS, archive
 hashes, each binary's build info, and both OCI platform manifests/configs/layers.
 SHA256 proves identity relative to a trusted receipt, not publisher authenticity.
 
-M16 uses [govulncheck v1.8.0](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck),
+M16 and M17 use [govulncheck v1.8.0](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck),
 [Syft v1.52.0](https://github.com/anchore/syft/releases/tag/v1.52.0), and
 [Grype v0.119.0](https://github.com/anchore/grype/releases/tag/v0.119.0).
 Install only into a new ignored project directory, from official releases with
@@ -90,7 +90,7 @@ that graph; it does not establish package or function reachability. Also run
 `govulncheck -test ./experiments/...` separately. Experimental Lua is not product
 runtime and ProgramTransform remains UNSUPPORTED.
 
-Validate all nine CycloneDX 1.6 outputs using official
+Validate every CycloneDX 1.6 output using official
 [CycloneDX 1.6 schemas](https://github.com/CycloneDX/specification/tree/1.6/schema),
 including their spdx/jsf references, with a local-only schema registry.
 M16 uses jsonschema 4.25.1 Draft7Validator and FormatChecker; installer receipt
@@ -101,6 +101,16 @@ Exact local orchestration and command receipts are retained in
 `.testdata/m16-evidence/{catalog.py,scan-go.py,scan-grype.py,validate-sbom.py}` and
 `dist/m16-scans/{before,after}/`. These only call standard scanners/validators;
 there is no custom vulnerability matching engine or handwritten SBOM.
+
+[M17](milestone-17.md) reuses the verified tool binaries and still-fresh databases,
+with its own empty HOME and explicit inputs. Its `dist/m17-scans/after/` contains
+8 newly generated product catalogs and 12 target-specific Go scans. The unchanged
+module graph/base are checked against M16; unchanged experimental dependencies
+need not be reinvestigated. `.testdata/m17-evidence/` retains exact command receipts.
+Official backend images are separately saved and scanned under `dist/m17-backends/`;
+those packages are not contents of the Weir image. Preserve raw schema failures
+as well as findings: M17's external ES catalog has two SPDX-enumeration errors,
+while its 8 Weir catalogs validate. Never repair raw reports by hiding fields.
 
 ## Triage and release policy
 
