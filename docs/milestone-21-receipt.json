@@ -149,6 +149,7 @@
   },
   "pause_seconds": 50.7348175420193,
   "peak_live_cri_sample": 5,
+  "peak_live_per_worker_sample": 4,
   "max_sampled_metric_sum": {
     "backend_connections_owned": 7.0,
     "store_active_executions": 3.0,

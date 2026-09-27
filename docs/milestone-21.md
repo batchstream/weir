@@ -144,7 +144,7 @@ It is not the product `/weir` binary.
 | Recovery | Ready and successful Service/direct calls with original post-rollback Pod UIDs; recovery sample61.473s after pause (about10.74s after unpause); no eviction, forced Pod deletion or parameter changes |
 | Client outcomes |193 unique mutations:184 APPLIED,9 UNKNOWN; no NOT_STARTED/NOT_APPLIED received in this particular run. Seven persisted Native writes lost complete responses; two timed-out unary calls remained absent in final isolated readback |
 | Persistence / replay |191 records, every `_version=1`; includes all184 acknowledged mutations and7 UNKNOWN Native effects. Unknown operations never resent |
-| Live executors | sampled Running CRI high-water5, despite maxSurge0; conservative bound6 retained. At most three observed on either worker; each old/new Local accounted by its own immutable concurrency revision |
+| Live executors | sampled Running CRI high-water5, despite maxSurge0; conservative bound6 retained. At most four observed on either worker; each old/new Local accounted by its own immutable concurrency revision |
 | Local ledgers | sampled aggregate active executions3, owned connections7, ingress connections4/sessions7; these are sampled sums, not atomic global peaks. All per-owner event peaks≤C+1 |
 | Final recovery | last three Pods:18 live goroutines each in standard scheduler census (observed run peak34), pending/retained/session/active/ingress ledgers0, ordinary backend idle connection1 each; after scale0, all Weir Pods/processes/Local owners0 |
 | OOM / restarts | node cgroup oom/oom_kill/oom_group_kill all0, every Weir restartCount0; client and ES restartCount0 |
