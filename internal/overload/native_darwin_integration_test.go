@@ -15,6 +15,8 @@ import (
 
 func TestDarwinMemoryNative(t *testing.T) {
 	pressure := testmemory.Open(t)
+	beforeGoroutines := runtime.NumGoroutine()
+	beforeFDs := darwinFDCount(t)
 	t.Logf("native Go=%s %s/%s PID=%d", runtime.Version(), runtime.GOOS, runtime.GOARCH, os.Getpid())
 	libproc.once.Do(bindLibproc)
 	if libproc.err != nil {
@@ -108,5 +110,19 @@ func TestDarwinMemoryNative(t *testing.T) {
 	if libproc.handle != handle {
 		t.Fatal("library lifetime changed")
 	}
+	afterGoroutines, afterFDs := runtime.NumGoroutine(), darwinFDCount(t)
+	t.Logf("joined native sampler: goroutines=%d->%d file descriptors=%d->%d; all owned mmap released", beforeGoroutines, afterGoroutines, beforeFDs, afterFDs)
+	if afterGoroutines > beforeGoroutines || afterFDs > beforeFDs {
+		t.Fatal("native sampler resources remained after join")
+	}
 	t.Log("real invalid flavor=-1, native recovery, concurrent samples/GC, 32 repeated initialization/canceled Run; one process-lifetime library reference")
+}
+
+func darwinFDCount(t *testing.T) int {
+	t.Helper()
+	files, err := os.ReadDir("/dev/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(files)
 }
