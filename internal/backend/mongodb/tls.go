@@ -27,7 +27,7 @@ var errTLSBound = errors.New("MongoDB TLS profile exceeds certificate or OCSP bo
 // ApplyURI normally loads the CA without a size limit. Remove only that option,
 // then supply the same exclusive root pool using a bounded regular-file read.
 // ValidateURI must precede this function (including all file and DNS access).
-func connectionOptions(raw string) (*options.ClientOptions, error) {
+func connectionOptions(raw string, dialer *boundedDialer) (*options.ClientOptions, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return nil, errors.New("invalid MongoDB connection profile")
@@ -52,7 +52,6 @@ func connectionOptions(raw string) (*options.ClientOptions, error) {
 		}
 		opts.TLSConfig.RootCAs = pool
 	}
-	dialer := newBoundedDialer()
 	dialer.tlsConfig = opts.TLSConfig
 	// The dialer performs the pinned driver's TLS + OCSP sequence before exposing
 	// decrypted Mongo frames. Disable the second TLS wrapping, never verification.
@@ -124,8 +123,9 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 			return nil, errTLSBound
 		}
 	}
-	dialer := newBoundedDialer()
-	transport := &http.Transport{DialContext: dialer.dialTCP, DisableKeepAlives: true, MaxConnsPerHost: 1, MaxResponseHeaderBytes: 16 << 10, ResponseHeaderTimeout: mongoConnectTimeout}
+	dialer := newBoundedDialer(1, 1)
+	defer dialer.close()
+	transport := &http.Transport{DialContext: dialer.dialConnection, DisableKeepAlives: true, MaxConnsPerHost: 1, MaxResponseHeaderBytes: 16 << 10, ResponseHeaderTimeout: mongoConnectTimeout}
 	defer transport.CloseIdleConnections()
 	bounded := &ocspTransport{transport: transport}
 	httpClient := &http.Client{Transport: bounded, Timeout: mongoConnectTimeout, CheckRedirect: rejectOCSPRedirect}

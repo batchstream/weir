@@ -28,6 +28,7 @@ type Config struct {
 	Pool                             uint64
 }
 type Adapter struct {
+	dialer     *boundedDialer
 	client     *mongo.Client
 	collection *mongo.Collection
 	config     Config
@@ -53,11 +54,18 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil || name != cfg.Store || len(segments) != 0 {
 		return nil, fmt.Errorf("invalid store")
 	}
-	opts, err := connectionOptions(cfg.URI)
+	dialer := newBoundedDialer(int(cfg.Pool)+1, mongoMaxConnecting+1)
+	complete := false
+	defer func() {
+		if !complete {
+			dialer.close()
+		}
+	}()
+	opts, err := connectionOptions(cfg.URI, dialer)
 	if err != nil {
 		return nil, err
 	}
-	opts.SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(2).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
+	opts.SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(mongoMaxConnecting).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
 	if opts.Timeout != nil {
 		return nil, fmt.Errorf("client timeoutMS is unsupported; runtime owns execution deadlines")
 	}
@@ -68,11 +76,12 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
-	a := &Adapter{client: client, config: cfg, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
+	a := &Adapter{dialer: dialer, client: client, config: cfg, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
 	}
+	complete = true
 	return a, nil
 }
 func (a *Adapter) qualify(ctx context.Context) error {
@@ -125,7 +134,14 @@ func (a *Adapter) Close() error {
 	a.once.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
+		if a.dialer != nil {
+			a.dialer.stop()
+		}
 		a.closeErr = a.client.Disconnect(ctx)
+		if a.dialer != nil {
+			a.dialer.close()
+			a.logConnections()
+		}
 	})
 	return a.closeErr
 }

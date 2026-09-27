@@ -95,6 +95,9 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	for _, label := range []string{"unobserved", "healthy", "congested", "neutral"} {
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, boolValue(s.Feedback == label), label)
 	}
+	if collector, ok := r.adapter.(prometheus.Collector); ok {
+		collector.Collect(ch)
+	}
 	m := &r.metrics
 	collectors := []prometheus.Collector{m.records, m.executions, m.rejections, m.changes, m.native, m.scans, m.queue, m.duration, m.batch, m.exchange}
 	for _, collector := range collectors {

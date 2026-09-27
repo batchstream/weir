@@ -185,7 +185,7 @@ func TestMongoTLSVerificationAndOCSP(t *testing.T) {
 			if mode == "bad_root" {
 				config.RootCAs = x509.NewCertPool()
 			}
-			d := newBoundedDialer()
+			d := newBoundedDialer(5, 3)
 			d.tlsConfig = config
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 			defer cancel()
@@ -194,11 +194,11 @@ func TestMongoTLSVerificationAndOCSP(t *testing.T) {
 				conn.Close()
 			}
 			good := mode == "no_extension" || mode == "SNI" || mode == "staple_good" || mode == "responder_good" || mode == "responder_invalid_soft"
-			if mode == "SNI" && <-sni != "localhost" {
+			if mode == "SNI" && err == nil && <-sni != "localhost" {
 				t.Fatal("missing DNS SNI")
 			}
 			if (err == nil) != good {
-				t.Fatalf("accepted=%t expected=%t error=%T", err == nil, good, err)
+				t.Fatalf("accepted=%t expected=%t error=%v", err == nil, good, err)
 			}
 		})
 	}
@@ -231,7 +231,7 @@ func TestMongoTLSWireGuardBeforeDriverHeader(t *testing.T) {
 				message = message[:len(message)-1]
 			}
 			address := tlsWireServer(t, cert.config, message)
-			d := newBoundedDialer()
+			d := newBoundedDialer(5, 3)
 			d.tlsConfig = &tls.Config{RootCAs: cert.roots}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -272,7 +272,7 @@ func TestMongoTLSHandshakeStallCancellation(t *testing.T) {
 			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 			_, _ = io.Copy(io.Discard, conn)
 		}()
-		d := newBoundedDialer()
+		d := newBoundedDialer(5, 3)
 		d.tlsConfig = &tls.Config{}
 		duration := 20 * time.Millisecond
 		if i == 12 {
@@ -311,11 +311,11 @@ func TestMongoDNSCancellation(t *testing.T) {
 	fixture.Set("mongo.weir.test", answer)
 	baseline := runtime.NumGoroutine()
 	for i := 0; i < 8; i++ {
-		d := newBoundedDialer()
-		d.dialer.Resolver = fixture.Resolver()
+		d := newBoundedDialer(5, 3)
+		d.resolver = fixture.Resolver()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		start := time.Now()
-		conn, err := d.DialContext(ctx, "tcp", "mongo.weir.test.:27017")
+		conn, err := d.DialContext(ctx, "tcp", "mongo.weir.test:27017")
 		cancel()
 		if conn != nil {
 			conn.Close()

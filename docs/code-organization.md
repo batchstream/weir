@@ -20,7 +20,7 @@
 | `internal/protocol` | 规范资源 URI、公共 framing/媒体格式/操作校验、Failure/outcome 构造；不解释后端文档 |
 | `internal/value` | 有界 ordered typed value；由 Mongo codec/表达式和测试使用，没有通用程序执行器 |
 | `internal/overload` | 进程内存采样与滞回；向 admission/runtime 发布 overload 状态 |
-| `internal/netlimit` | peer 与 Search 实际复用的标准 Go DNS 有界 I/O；调用方保留并发、地址选择和生命周期 |
+| `internal/netlimit` | peer、Mongo 与 Search 实际复用的标准 Go DNS 有界 I/O；调用方保留并发、地址选择和生命周期 |
 | `internal/testutil` | 仓库资源定位；子包 testmongo/testsearch/testdns/testmetrics 为自有测试设施 |
 | `experiments/luaprobe` | 只有测试的 Lua 可行性探针；不进入 Weir 依赖图，ProgramTransform 仍 UNSUPPORTED |
 
@@ -32,7 +32,7 @@ cmd/weir -> app -> server -> store -> execution
                 -> backend/search  -> execution, protocol
                 -> overload
 server, store -> protocol
-server, backend/search -> netlimit
+server, backend/mongodb, backend/search -> netlimit
 protocol, execution -> api/weir/v1
 ```
 
@@ -52,7 +52,7 @@ protocol, execution -> api/weir/v1
 | 五个 RPC | `server/unary.go`: Read/Mutate/single；`bulk.go`: Bulk 接收/结果循环；`native.go`、`scan.go`: 各自 framing |
 | Remote | `server/remote.go`: RemoteWeir、endpoint 生命周期/affinity/选择；`remote_dns.go`: DNS worker/socket 所有权；`remote_relay.go`、`remote_bulk.go`: 有界 pump |
 | 本地执行 | `store/runtime.go`: Submit、Ticket、Session、调度 loop、controller、Close；`scan.go`、`native.go`: 共用调度器的 live session；`metrics.go`: 账本观测 |
-| Mongo | `backend/mongodb/adapter.go`: Open/Prepare/Execute；`uri.go`、`tls.go`、`wire.go`: 连接边界；`codec.go`、`expression.go`、`native.go`、`scan.go`: 数据语义 |
+| Mongo | `backend/mongodb/adapter.go`: Open/Prepare/Execute；`uri.go`、`dial.go`、`tls.go`、`wire.go`: 连接所有权与边界；`codec.go`、`expression.go`、`native.go`、`scan.go`: 数据语义 |
 | Search | `backend/search/adapter.go`: Open/Prepare/Execute；`connection.go`、`dial.go`、`transport.go`: 配置、DNS/TLS 所有权和有界 HTTP；`bulk.go`、`json.go`、`expression.go`、`native.go`、`scan.go`: 后端语义 |
 
 没有单独 `config` 包：配置的唯一消费者是 app/CLI，并复用真实 transport、Store 和
@@ -157,4 +157,4 @@ Mongo 的 `rmw_conformance_test.go` 保留原事务计数器、新事务重算�
 `internal/searchstore` → `internal/backend/search`，`internal/test*` → `internal/testutil/test*`，
 `internal/luaprobe` → `experiments/luaprobe`；完整文件映射见结构报告。
 
-Search 原生 HTTPS/Basic fixture、显式连接和独立观察入口、权限及清理见 [M11](milestone-11.md)。`netlimit` 只提取 peer/Search 两处真正共用的 DNS I/O，未移动各自的并发 gate、选择策略或关闭所有者。
+Search 原生 HTTPS/Basic fixture、显式连接和独立观察入口、权限及清理见 [M11](milestone-11.md)。`netlimit` 复用 peer/Mongo/Search 的有界 DNS I/O；各 backend 保留并发 gate、地址选择与关闭所有者。

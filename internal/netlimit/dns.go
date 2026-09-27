@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +26,12 @@ func LookupHost(ctx context.Context, base *net.Resolver, host string) ([]string,
 	stop := context.AfterFunc(ctx, transport.close)
 	defer func() { stop(); cancel(); transport.close() }()
 	native := &net.Resolver{PreferGo: true, StrictErrors: true, Dial: transport.dial}
-	ips, err := native.LookupHost(ctx, host+".")
+	// Match Go's host-file canonicalization: a bare name such as localhost
+	// is not stored with a trailing dot. Qualified names stay absolute.
+	if strings.Contains(host, ".") && !strings.HasSuffix(host, ".") {
+		host += "."
+	}
+	ips, err := native.LookupHost(ctx, host)
 	if err != nil || ctx.Err() != nil || transport.oversized.Load() || len(ips) == 0 || len(ips) > MaxDNSAddresses {
 		return nil, errors.New("DNS failed or answer count outside 1-8")
 	}

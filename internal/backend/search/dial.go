@@ -16,14 +16,16 @@ import (
 // A slot is held from lookup until raw socket Close. DNS is at most two sockets
 // per slot, before its one TCP socket; no resolver workers survive a dial.
 type connectionDialer struct {
-	ctx       context.Context
-	resolver  *net.Resolver
-	tlsConfig *tls.Config
-	slots     chan struct{}
-	mu        sync.Mutex
-	closed    bool
-	conns     map[*searchConn]struct{}
-	workers   sync.WaitGroup
+	ctx                context.Context
+	resolver           *net.Resolver
+	tlsConfig          *tls.Config
+	slots              chan struct{}
+	mu                 sync.Mutex
+	closed             bool
+	peak               int
+	acquired, released uint64
+	conns              map[*searchConn]struct{}
+	workers            sync.WaitGroup
 }
 
 func (d *connectionDialer) dial(ctx context.Context, network, address string) (net.Conn, error) {
@@ -46,15 +48,23 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 		stopRequest := context.AfterFunc(original, cancel)
 		defer stopRequest()
 	}
+	d.mu.Lock()
 	select {
 	case d.slots <- struct{}{}:
+		d.peak = max(d.peak, len(d.slots))
+		d.acquired++
 	default:
+		d.mu.Unlock()
 		return nil, errTransport
 	}
+	d.mu.Unlock()
 	owned := false
 	defer func() {
 		if !owned {
+			d.mu.Lock()
 			<-d.slots
+			d.released++
+			d.mu.Unlock()
 		}
 	}()
 	host, port, err := net.SplitHostPort(address)
@@ -151,8 +161,9 @@ func (c *searchConn) Close() error {
 		c.err = c.raw.Close()
 		c.owner.mu.Lock()
 		delete(c.owner.conns, c)
-		c.owner.mu.Unlock()
 		<-c.owner.slots
+		c.owner.released++
+		c.owner.mu.Unlock()
 	})
 	return c.err
 }

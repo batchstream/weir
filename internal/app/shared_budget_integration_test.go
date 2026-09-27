@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -94,6 +95,7 @@ type mongoBudgetExecutor struct {
 	concurrency int
 	root        string
 	drop        chan struct{}
+	locals      int
 }
 
 type mongoBudgetStart struct {
@@ -125,7 +127,7 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 		cfg.Routes = append(cfg.Routes, secondRoute)
 	}
 	p := startProcess(t, binary, cfg)
-	e := &mongoBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, concurrency: concurrency, root: "weir://records/" + fixture.DB + "/records", drop: drop}
+	e := &mongoBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, concurrency: concurrency, root: "weir://records/" + fixture.DB + "/records", drop: drop, locals: len(cfg.Services)}
 	t.Logf("start time=%s PID=%d C=%d application=%s diagnostics=%s", time.Now().UTC().Format(time.RFC3339Nano), p.command.Process.Pid, concurrency, p.address, p.diagnostic)
 	return e
 }
@@ -229,15 +231,16 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	total := 0
 	for _, e := range peers {
 		current, peak := e.proxy.Sockets()
-		total += current
-		if current != e.concurrency+1 || peak > e.concurrency+1 {
-			t.Fatal("Mongo pool plus polling monitor budget", current, peak, e.concurrency)
+		owned := budgetOwner(t, e.process, e.locals, e.concurrency+1)
+		total += owned
+		if owned != e.concurrency+1 {
+			t.Fatal("Mongo local owner did not cover pool and polling monitor", owned)
 		}
 		families := testmetrics.Scrape(t, e.process.diagnostic)
 		if testmetrics.Sum(families, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(families, "weir_store_window_limit") != float64(e.concurrency) {
 			t.Fatal("runtime assembly cap")
 		}
-		t.Logf("barrier PID=%d active=window=C=%d upstream TCP current/peak=%d/%d (pool C + polling monitor 1)", e.process.command.Process.Pid, e.concurrency, current, peak)
+		t.Logf("barrier PID=%d active=window=C=%d upstream TCP current/peak=%d/%d (observer, independently of local owner)", e.process.command.Process.Pid, e.concurrency, current, peak)
 	}
 	if total != 10 {
 		t.Fatal("three process socket budget", total)
@@ -245,7 +248,7 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	close(gate)
 	observation.hold(nil, 0)
 	held.Wait()
-	t.Logf("stable load: 24 producers, 1.2s, proxy delay=10ms, completed reads=%d; simultaneous in-flight=7, upstream TCP=10", reads.Load())
+	t.Logf("stable load: 24 producers, 1.2s, proxy delay=10ms, completed reads=%d; simultaneous in-flight=7, local owned=10", reads.Load())
 	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "errorCode", Value: 16500}}
 	testmongo.FailCommand(t, fixture.Admin, data, 1)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
@@ -262,11 +265,12 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	budgetForwarding(t, forward)
 	start.concurrency = 1
 	start.extra = true
-	mongoBudgetReplacement(t, peers, start)
+	replacement := mongoBudgetReplacement(t, peers, start)
+	peers = append(peers, replacement)
 	for _, e := range peers {
 		e.process.stop(t)
 	}
-	budgetWait(t, "all old upstream sockets closed", func() bool {
+	budgetWait(t, "all four observers upstream sockets closed", func() bool {
 		for _, e := range peers {
 			n, _ := e.proxy.Sockets()
 			if n != 0 {
@@ -278,9 +282,7 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	for _, e := range peers {
 		current, peak := e.proxy.Sockets()
 		t.Logf("final PID=%d C=%d upstream current=%d event high-water=%d", e.process.command.Process.Pid, e.concurrency, current, peak)
-		if peak > e.concurrency+1 {
-			t.Error("Mongo socket high-water exceeded pool+monitor planning budget", peak)
-		}
+		budgetClosedOwner(t, e.process, e.locals, e.concurrency+1)
 	}
 	_, peak, started, completed := observation.snapshot()
 	if started != completed {
@@ -539,12 +541,11 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 	}
 }
 
-func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mongoBudgetStart) {
+func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mongoBudgetStart) *mongoBudgetExecutor {
 	t.Helper()
 	old := peers[0]
 	fixture := opts.fixture
 	replacement := startMongoBudgetExecutor(t, opts)
-	defer replacement.process.stop(t)
 	t.Logf("executor sequence 3 -> 4 time=%s; old PID=%d new PID=%d both live", time.Now().UTC().Format(time.RFC3339Nano), old.process.command.Process.Pid, replacement.process.command.Process.Pid)
 	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_window_limit") != 2 {
 		t.Fatal("two Local budgets merged")
@@ -556,7 +557,19 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 			oldUpdates++
 		}
 	}
-	t.Log("overlap: 4 executor processes / 5 Local adapters, sum C=9, pooled+monitor TCP=14; replacement has two pools, observed TCP=4")
+	targets := make([]budgetReadTarget, 0, 5)
+	for _, e := range append(peers, replacement) {
+		target := budgetReadTarget{process: e.process, client: e.client, root: e.root, locals: e.locals, limit: e.concurrency + 1}
+		targets = append(targets, target)
+	}
+	extra := budgetReadTarget{process: replacement.process, client: replacement.client, root: strings.Replace(replacement.root, "weir://records/", "weir://extra/", 1), locals: 2, limit: 2}
+	targets = append(targets, extra)
+	budgetOverlap(t, targets, opts.observation)
+	budgetReplacementReads(t, targets[3:])
+	mongoBudgetNative(t, replacement)
+	extraExecutor := *replacement
+	extraExecutor.root = extra.root
+	mongoBudgetNative(t, &extraExecutor)
 	drop := old.drop
 	old.proxy.DropRemaining.Store(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -602,13 +615,18 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 		t.Fatal("confirmed write with lost response must be UNKNOWN", result)
 	}
 	old.process.stop(t)
-	budgetWait(t, "old raw connections closed", func() bool { n, _ := old.proxy.Sockets(); return n == 0 })
+	budgetWait(t, "old observer upstream tail closed", func() bool { n, _ := old.proxy.Sockets(); return n == 0 })
 	request := budgetPut(replacement.root, "new-independent")
 	result, err := replacement.client.Mutate(ctx, request)
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replacement new mutation", result, err)
 	}
-	for _, id := range []string{"lost-reply", "queued-cancel", "new-independent"} {
+	request = budgetPut(extra.root, "new-independent-extra")
+	result, err = replacement.client.Mutate(ctx, request)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("extra Local new mutation", result, err)
+	}
+	for _, id := range []string{"lost-reply", "queued-cancel", "new-independent", "new-independent-extra"} {
 		filter := bson.D{{Key: "_id", Value: id}}
 		n, err := fixture.Client.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
 		want := int64(1)
@@ -634,10 +652,11 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 			newUpdates++
 		}
 	}
-	if dropped != 1 || updates != oldUpdates+1 || newUpdates != 1 {
+	if dropped != 1 || updates != oldUpdates+1 || newUpdates != 2 {
 		t.Fatal("unexpected dropped execution count", dropped)
 	}
-	t.Logf("executor sequence 4 -> 3 time=%s; old PID=%d Wait exited, upstream=0; acknowledged/drop=1, client UNKNOWN; queued cancel had no effect; new PID=%d handles new independent mutation only", time.Now().UTC().Format(time.RFC3339Nano), old.process.command.Process.Pid, replacement.process.command.Process.Pid)
+	t.Logf("executor sequence 4 -> 3 time=%s; old PID=%d Wait exited, upstream=0; acknowledged/drop=1, client UNKNOWN; queued cancel had no effect; new PID=%d handles two new independent mutations across both Local stores", time.Now().UTC().Format(time.RFC3339Nano), old.process.command.Process.Pid, replacement.process.command.Process.Pid)
+	return replacement
 }
 
 type budgetForwardOptions struct {
@@ -702,7 +721,7 @@ func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
 		t.Fatal(err)
 	}
 	metrics := testmetrics.Scrape(t, front.diagnostic)
-	if metrics["weir_store_window_limit"] != nil || metrics["weir_store_executions_total"] != nil || testmetrics.Sum(metrics, "weir_relay_terminations_total") != 1 {
+	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_window_limit"] != nil || metrics["weir_store_executions_total"] != nil || testmetrics.Sum(metrics, "weir_relay_terminations_total") != 1 {
 		t.Fatal("forward-only node constructed local execution")
 	}
 	targets := 0

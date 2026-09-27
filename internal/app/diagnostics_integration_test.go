@@ -45,7 +45,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	defer n.Close(context.Background())
 	n.Start()
 	families := testmetrics.Scrape(t, n.DiagnosticAddress())
-	if got := testmetrics.Series(families); got != 1931 {
+	if got := testmetrics.Series(families); got != 2043 {
 		t.Fatal("maximum static series changed", got)
 	}
 	if testmetrics.Sum(families, "weir_store_executions_total") != 0 {
@@ -57,8 +57,8 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("Store overload changed readiness")
 	}
-	if testmetrics.Series(testmetrics.Scrape(t, n.DiagnosticAddress())) != 1931 {
+	if testmetrics.Series(testmetrics.Scrape(t, n.DiagnosticAddress())) != 2043 {
 		t.Fatal("state added series")
 	}
-	t.Log("maximum legal graph: 16 LocalStores, 2 data listeners, exactly 1931 standard Prometheus series; no synthetic executions")
+	t.Log("maximum legal graph: 16 LocalStores, 2 data listeners, exactly 2043 standard Prometheus series; no synthetic executions")
 }

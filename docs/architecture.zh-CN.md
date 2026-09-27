@@ -110,7 +110,18 @@ Read/Mutate/Native/Scan 各包含一个资源。Bulk 以规范 Store 根 URI 开
 Read、写入、Bulk、Native、Scan fetch 共用窗口。同进程两个指向同 DB 的 Local 仍计两个
 adapter/pool；仅转发节点没有 DB pool。启动、draining、terminating 与替换重叠的存活实例
 全计数，副本配置不是存活进程硬上界。[资格清单](production-readiness.md) 分开 monitor、Native、cleanup、
-DNS、关闭中的 socket 与取消后后端工作；没有全局配额。
+DNS 与取消后远端工作；没有全局配额。
+
+Mongo direct/poll 的每 adapter 最多 C+1 个本地 slot，从 DNS 到 raw Close 完成始终持有；
+pool 移除不释放所有权。最多3个 driver 建连 worker（两个 pool creator 加一个 poll） 在原两秒期限内等待，
+不建立另一条业务队列。有界 A/AAAA 解析 join 后串行尝试最多八个 TCP 地址，同时仅一条
+socket；TLS 保留原 hostname/SNI 与 OCSP 验证，然后才交给解密后的 wire guard。
+每个并行握手的单 OCSP responder 有独立有界 HTTP/DNS 所有权。Search 保留普通+Native
+共用的 C+1 owner。所有存活 Local 的本地 DB slots≤Σ(C+1)，关闭和替换重叠也计入；
+每个解析 slot 最多两条 DNS socket，与该 slot 的 DB TCP 不重叠。
+代理 upstream、DB accepted connections、已发送工作分别有远端回收/执行尾部，取决于实际
+网络与后端恢复条件，不能宣称由 C 无条件强制瞬时上限。每 owner 事件高水位和最终归零
+与代理计数、抽样 pool gauge 分开验证。
 
 ## 3. 规范资源与不透明数据
 

@@ -136,11 +136,20 @@ separate 2-second cleanup reservation and reuses backend pools.
 Sum **every Local adapter on every still-live executor**, including starting,
 draining and terminating/replacement overlap. Two Local Stores targeting one DB
 own two pools; forwarding-only nodes own no DB pool. Total accounting also includes
-Mongo monitoring, Search Native, DNS, retiring connections and backend work continuing
-after lost replies.
-Use the audited formulas, finite three-process evidence and explicit assumptions
-in [M12](docs/milestone-12.md); this is deployment planning, not a cluster quota,
-Kubernetes qualification or throughput guarantee. Never replay an UNKNOWN write.
+Mongo monitoring, Search Native, DNS and remote work after lost replies.
+Mongo direct/poll owns at most **C+1 local dial/raw/closing slots**, from lookup
+until raw Close completes (business pool C plus one monitor). Driver pool removal
+does not release a slot. DNS finishes before serial TCP candidates; each resolving
+slot has at most two DNS sockets. OCSP owns separate bounded responder I/O.
+Search ordinary and Native connections share its existing C+1 owner.
+For both backends, proxy/DB accepted sockets and work continuing after cancellation
+have a separate remote tail: closing local TCP cannot force an immediate rollback
+or remote close. Budget these under measured network/backend recovery assumptions.
+The owner metrics and one-time close summary cover startup through termination.
+See [M12R](docs/milestone-12-remediation.md) for layered formulas, actual process
+measurements and the retained [M12 failure history](docs/milestone-12.md). This is
+local ownership qualification, not a cluster quota, Kubernetes qualification or
+throughput guarantee. Never replay an UNKNOWN write.
 
 ## Local Dual-Store Run
 
@@ -321,8 +330,12 @@ They have independent limits: four HTTP/1 connections, two handlers, one-second 
 and write deadlines, bounded headers, no keep-alive, compression, body or query parameters.
 
 [Milestone 6](docs/milestone-6.md) lists exact metric meanings, labels, the **historical 1932 series**
-maximum, and tests. Removing the permission bucket makes the current maximum
-**1931 series** (`41 + 41*listeners + 113*local + 34*remote`). Ledger bytes are reservations; the Go memory fallback is not RSS.
+maximum, and tests. With permissions removed and backend ownership included, the current maximum is
+**2043 series** (`41 + 41*listeners + 120*mongo_local + 118*search_local + 34*remote`).
+Backend `connections_owned/peak/limit/acquired/released` measure local slot ownership;
+Mongo additionally reports `dialing/closing`. The final `backend_connections_closed`
+summary covers shutdown after diagnostics disappear. These are not remote DB
+connection/work counts. Ledger bytes are reservations; the Go memory fallback is not RSS.
 Local APPLIED and Native/Scan completion evidence never promise client delivery.
 
 ## Validate

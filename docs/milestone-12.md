@@ -252,3 +252,13 @@ go vet -tags integration ./...
 ProgramTransform、真正复制/primary 切换、六平台 native-run、Linux RSS/cgroup、OCI/
 Kubernetes、参考负载校准和各平台 ≥24h soak 仍 required/unqualified。显式 CA 的成功
 不代表系统 roots 正向真实数据库资格。短测吞吐/时延是负载参数和观察，不冻结生产 RPS/p99。
+
+## M12R 追加补救（保留本报告原失败）
+
+本报告描述的是 af541816 的历史状态，上述失败记录与原观测数字不改写。
+后续 [M12R](milestone-12-remediation.md) 在 Mongo adapter 内增加从 DNS 到 raw Close
+完成的 C+1 owner，真实 probe 区分 driver pool 移除、本地 raw 关闭、代理 upstream
+保留与 DB 取消后写入尾部；原先的 upstream 超限仍记录，但本地硬断言改在实际 owner。
+新 replacement 的两个 Local 已纳入真实并行工作、高水位、最终 Wait 和归零验收。
+Search 仅补相同观测语义及原 owner 的固定指标，未重写连接策略。
+M12R 的有限测试范围与实际结果见该报告；原 M12 不追认 PASS，远端尾部仍有条件。

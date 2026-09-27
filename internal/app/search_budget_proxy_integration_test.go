@@ -21,8 +21,9 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
-// One-to-one TLS socket relay preserves actual per-adapter connection counts.
-// No proxy-side HTTP pool merges the independent executors' connections.
+// One-to-one TLS relay observes its own upstream connections, including tails
+// retained while a downstream client has already closed. No HTTP pool merges
+// connections; these counts are not the local adapter owner or DB work count.
 type searchBudgetProxy struct {
 	listener      net.Listener
 	mu            sync.Mutex

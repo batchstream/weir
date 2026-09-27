@@ -207,7 +207,22 @@ Count each Local adapter, even two in one process targeting the same database.
 Forwarding-only nodes have no database pool. Include every live executor during
 startup, drain and termination overlap; configured replicas are not a hard live
 process ceiling. The [qualification checklist](production-readiness.md) separates
-monitoring, Native, cleanup, DNS, retiring sockets and backend work after cancellation. No global quota is added.
+monitoring, Native, cleanup, DNS and remote work after cancellation. No global quota is added.
+
+For the direct/poll Mongo profile, each adapter owns at most C+1 local slots from
+DNS to raw Close completion. Pool retirement does not release ownership. At most
+three driver dial workers (two pool creators plus one poll) can wait within the original two-second connection
+budget; no separate request backlog is created. Bounded A/AAAA resolution joins
+before serial TCP candidates (at most eight addresses, one socket at a time).
+TLS verifies the original hostname/SNI and OCSP before the decrypted wire guard;
+one OCSP responder owns separate bounded HTTP/DNS I/O per concurrent handshake.
+Search retains its ordinary+Native C+1 owner. Thus local DB slots across all live
+Locals are bounded by Σ(C+1), including closing and replacement overlap. DNS can
+use two sockets per resolving slot; it does not overlap that slot's DB TCP.
+Observer upstream, database accepted connections and already-sent work have remote
+retirement/execution tails. These depend on actual network/backend recovery and
+cannot be given an unconditional instantaneous C-derived ceiling. Per-owner event
+high water and final zero are distinct from proxy counts or sampled pool gauges.
 
 ## 3. Canonical Resources and Opaque Data
 

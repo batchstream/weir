@@ -1,5 +1,3 @@
-//go:build integration
-
 package testmongo
 
 import (
@@ -49,23 +47,28 @@ type Proxy struct {
 	AlterRemaining atomic.Int64
 }
 
-func StartProxy(t *testing.T, fixture *Fixture) *Proxy {
+type proxyOptions struct {
+	uri                  string
+	serverTLS, clientTLS *tls.Config
+}
+
+func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	upstream, err := url.Parse(fixture.URI)
+	upstream, err := url.Parse(opts.uri)
 	if err != nil {
 		t.Fatal("invalid owned fixture URI")
 	}
 	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{})}
-	if fixture.serverTLS != nil {
+	if opts.serverTLS != nil {
 		// Test-only TLS termination observes decrypted commands for fault injection.
 		// Production direct-to-mongod TLS is qualified separately.
-		listener = tls.NewListener(listener, fixture.serverTLS)
+		listener = tls.NewListener(listener, opts.serverTLS)
 		p.listener = listener
-		p.clientTLS = fixture.clientTLS
+		p.clientTLS = opts.clientTLS
 	}
 	upstream.Host = listener.Addr().String()
 	p.uri = upstream.String()
@@ -105,8 +108,9 @@ func (p *Proxy) Events() []WireEvent {
 	return append([]WireEvent(nil), p.events...)
 }
 
-// Sockets counts actual upstream TCP connections, including TLS setup and the
-// polling monitor. It is not a driver pool event or a sampled process metric.
+// Sockets counts observer-owned upstream connections. A serial relay can retain
+// one after downstream Close while waiting for a callback or backend reply.
+// Counters bracket Dial/Close and are not atomic OS or database measurements.
 func (p *Proxy) Sockets() (current, peak int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

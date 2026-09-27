@@ -83,6 +83,7 @@ func (a *Adapter) Close() error {
 		a.cancel()
 		if a.dialer != nil {
 			a.dialer.close()
+			a.logConnections()
 		}
 		a.transport.CloseIdleConnections()
 		if a.nativeTransport != nil {
