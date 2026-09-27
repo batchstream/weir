@@ -28,7 +28,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	cfg.Routes = nil
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
-		mongo := &Mongo{URI: testmongo.URI, Database: database, Collection: "records"}
+		mongo := &Mongo{URI: testmongo.URIFor(database), Database: database, Collection: "records"}
 		local := &Local{Mongo: mongo}
 		service := Service{Name: name, Local: local}
 		cfg.Services = append(cfg.Services, service)

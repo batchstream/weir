@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 	for _, mode := range []string{"query", "write", "native_error", "multiframe", "oversized", "drop", "reauth", "overload", "response_limit"} {
 		t.Run(mode, func(t *testing.T) {
 			native, db := testmongo.Open(t)
-			proxy := testmongo.StartProxy(t)
+			proxy := testmongo.StartProxy(t, db)
 			cfg := Config{URI: proxy.URI(), Store: "mongo", Database: db, Collection: "records", Pool: 1}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -76,7 +77,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
 			end, _ := a.ExecuteNative(ctx, plan, exchange)
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
-			if mode == "drop" || mode == "response_limit" {
+			if mode == "drop" || mode == "response_limit" || mode == "reauth" && os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE
 			}
 			if mode == "oversized" {
@@ -84,6 +85,9 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			}
 			if end.Completion != expected || (end.Failure == nil) != (expected == pb.NativeCompletion_RESPONSE_COMPLETE) {
 				t.Fatal(end)
+			}
+			if mode == "drop" {
+				verifyReconnectRead(t, a, proxy, "x")
 			}
 			count := 0
 			for _, event := range proxy.Events() {

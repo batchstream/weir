@@ -418,7 +418,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 	result := backendFault{writes: calls}
 	if kind == "mongo" {
 		f.native, f.db = testmongo.Open(t)
-		proxy := testmongo.StartProxy(t)
+		proxy := testmongo.StartProxy(t, f.db)
 		result.mongo = proxy
 		result.endpoint = proxy.URI()
 		if drop {

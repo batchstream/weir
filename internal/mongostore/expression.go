@@ -18,9 +18,6 @@ import (
 const ExpressionMedia = "application/vnd.weir.mongodb-update.v1+bson"
 
 func (a *Adapter) prepareExpression(d *pb.Document) *pb.Failure {
-	if !a.nativeNoReplay {
-		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "expression profile excludes driver reauthentication/replay")
-	}
 	if d == nil || d.MediaType != ExpressionMedia {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported MongoDB expression profile")
 	}
@@ -131,8 +128,8 @@ func (a *Adapter) executeExpression(ctx context.Context, p *execution.Plan) ([]*
 	update := bson.D{{Key: "q", Value: filter}, {Key: "u", Value: n.document}, {Key: "multi", Value: false}, {Key: "upsert", Value: false}}
 	concern := bson.D{{Key: "w", Value: "majority"}}
 	command := bson.D{{Key: "update", Value: a.config.Collection}, {Key: "updates", Value: bson.A{update}}, {Key: "ordered", Value: true}, {Key: "writeConcern", Value: concern}}
-	// RunCommand has no ordinary retry policy. Authentication is excluded at
-	// Prepare because the driver's reauthentication branch can replay commands.
+	// RunCommand has no ordinary retry policy. The only authenticated profile
+	// selects explicit SCRAM-SHA-256, whose pinned Reauth always fails.
 	raw, err := a.client.Database(a.config.Database).RunCommand(ctx, command).Raw()
 	if len(raw) == 0 {
 		var commandError mongo.CommandError

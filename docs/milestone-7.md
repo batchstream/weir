@@ -1,5 +1,7 @@
 # 第七阶段：公开原生表达式 AtomicTransform
 
+> 后端连接历史说明：本文最初的 Mongo 无 Auth 限制由 [M10R](milestone-10-remediation.md) 的显式 SCRAM-SHA-256/TLS 有限 profile 补充；其他认证机制仍拒绝，旧测试事实不改写。
+
 > 历史资格记录：本文的 Weir peer mTLS/身份/权限配置及相关测试事实保留。
 > 当前可信内网明文入口、配置和资格见 [M8](milestone-8.md)；Weir 认证体系已由 M8 移除。
 

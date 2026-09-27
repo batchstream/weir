@@ -38,7 +38,7 @@ func executeMongoExpression(t *testing.T, a *Adapter, p *execution.Plan) *pb.Mut
 
 func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 	client, db := testmongo.Open(t)
-	cfg := Config{Store: "mongo", Database: db, Collection: "records", URI: testmongo.URI, Pool: 4}
+	cfg := Config{Store: "mongo", Database: db, Collection: "records", URI: testmongo.URIFor(db), Pool: 4}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 			if _, err := c.InsertOne(context.Background(), doc); err != nil {
 				t.Fatal(err)
 			}
-			proxy := testmongo.StartProxy(t)
+			proxy := testmongo.StartProxy(t, db)
 			if mode == "drop" {
 				proxy.DropCommand = "update"
 				proxy.DropRemaining.Store(1)
@@ -209,6 +209,9 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 			}
 			if r.Outcome != want {
 				t.Fatal(mode, r)
+			}
+			if mode == "drop" {
+				verifyReconnectRead(t, a, proxy, "counter")
 			}
 			writes := 0
 			for _, e := range proxy.Events() {
@@ -241,7 +244,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			if _, err := c.InsertOne(context.Background(), seed); err != nil {
 				t.Fatal(err)
 			}
-			proxy := testmongo.StartProxy(t)
+			proxy := testmongo.StartProxy(t, db)
 			proxy.DropCommand = "update"
 			proxy.DropRemaining.Store(1)
 			gate := make(chan struct{})
@@ -322,6 +325,9 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 				t.Fatal(result, err)
 			}
 			first.Ack()
+			if mode == "drop" {
+				verifyReconnectRead(t, a, proxy, "counter")
+			}
 			writes := 0
 			for _, e := range proxy.Events() {
 				if e.Command == "update" {

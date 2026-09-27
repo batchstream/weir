@@ -134,7 +134,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 		binaries[name] = binary
 	}
-	mongo := &Mongo{URI: testmongo.URI, Database: database, Collection: "records"}
+	mongo := &Mongo{URI: testmongo.URIFor(database), Database: database, Collection: "records"}
 	mongoLocal := &Local{Mongo: mongo}
 	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
 	searchLocal := &Local{Search: backend}

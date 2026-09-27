@@ -19,9 +19,6 @@ const NativeCommandLimit = 4 << 20
 const NativeResponseLimit = 4 << 20
 
 func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	if !a.nativeNoReplay {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native profile excludes driver reauthentication/replay")
-	}
 	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
 		return nil, f
 	}

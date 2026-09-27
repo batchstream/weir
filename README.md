@@ -40,17 +40,42 @@ This profile is not suitable for an unisolated public network.
 The bootstrap downloads pinned public tools into ignored `.tools/`; it does not
 change Homebrew or read environment/credential files.
 
-The current MongoDB connection profile is one credential-free
-`mongodb://host:port` endpoint; for the local fixture:
+MongoDB accepts one explicit `mongodb://host:port` endpoint, directly connected
+to a non-sharded replica-set member. Both the credential-free intranet profile
+and explicit SCRAM-SHA-256 with verified TLS use the same production adapter.
+For the local unauthenticated fixture:
 
 ```text
 mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll
 ```
 
-SCRAM/TLS URI syntax is checked and then refused with `not qualified`, before
-driver setup, DNS, or CA-file access. The bounded reply reader currently wraps
-the driver dialer below the driver's TLS layer. Do not remove that bound, weaken
-certificate checks, or add credentials as a workaround. See [M10](docs/milestone-10.md).
+The authenticated profile requires a username, non-empty password,
+`authMechanism=SCRAM-SHA-256`, `authSource`, and `tls=true`; optional `tlsCAFile`
+supplies an exclusive CA root bundle (regular file, at most 256 KiB). Otherwise
+Go uses system roots. Percent-encode URI credentials and CA paths; keep actual
+configuration private. Configuration/CA changes take effect on restart.
+The same `local.mongo.uri` JSON field accepts this shape (placeholder credentials):
+
+```text
+mongodb://APP_USER:APP_PASSWORD@mongo.internal:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fetc%2Fweir%2Fmongo-ca.pem
+```
+
+URI validation precedes DNS and CA access: 4096 bytes, one host with explicit
+port, no database path, duplicate/unknown options, SRV, client certificates,
+implicit mechanisms, insecure certificate options, or retry overrides.
+`directConnection=true` and `serverMonitoringMode=poll` are the only optional
+transport settings. TCP, verified TLS/OCSP, then bounded decrypted Mongo wire
+inspection occur in that order, within a 2-second connect budget. Explicit
+SCRAM never reauthenticates/replays a command in pinned driver v2.9.1.
+
+OCSP retains the fixed driver's signed-response verification. This finite profile
+adds limits: at most eight presented certificates, 64 KiB each and per staple;
+at most one HTTP responder URL (2048 bytes), no redirects/proxies, 16 KiB HTTP
+headers and 64 KiB body. Responder I/O errors are hard connection failures;
+a complete, bounded inconclusive response retains the driver's soft-failure
+semantics. A fresh one-leaf cache exists only during each handshake. See
+[M10 remediation](docs/milestone-10-remediation.md) for exact evidence and limits;
+this is not multi-node failover or overall production qualification.
 
 ```sh
 scripts/bootstrap-tools.sh
@@ -251,7 +276,8 @@ scripts/generate.sh
 - [Milestone 7](docs/milestone-7.md): native expression profiles and atomic-update evidence.
 - [Milestone 8](docs/milestone-8.md): intranet plaintext peers, removed Weir identity/TLS and retained transport bounds.
 - [Milestone 9](docs/milestone-9.md): bounded static endpoint sets, ordinary DNS, affinity, pinned streams and no replay.
-- [Milestone 10](docs/milestone-10.md): MongoDB URI admission, owned TLS/SCRAM fixture evidence, and the bounded-reader/TLS blocker.
+- [Milestone 10](docs/milestone-10.md): historical failed connection qualification.
+- [Milestone 10 remediation](docs/milestone-10-remediation.md): verified Mongo TLS before decrypted wire bounds, explicit SCRAM no replay, and finite lifecycle evidence.
 - [Production readiness checklist](docs/production-readiness.md): platform/runtime/deployment/load gates and unverified blockers for the trusted-intranet scope.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits and AIMD.

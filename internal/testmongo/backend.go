@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,16 +17,31 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-const URI = "mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll"
+const plainURI = "mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll"
 
 var sequence atomic.Uint64
+var secureFixtures sync.Map
+
+// URIFor keeps the existing conformance suites on their owned database's profile.
+func URIFor(database string) string {
+	if fixture, ok := secureFixtures.Load(database); ok {
+		return fixture.(*SecureFixture).URI
+	}
+	return plainURI
+}
 
 func Open(t *testing.T) (*mongo.Client, string) {
 	t.Helper()
+	if os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
+		fixture := OpenSecure(t)
+		secureFixtures.Store(fixture.DB, fixture)
+		t.Cleanup(func() { secureFixtures.Delete(fixture.DB) })
+		return fixture.Admin, fixture.DB
+	}
 	if os.Getenv("WEIR_INTEGRATION") != "1" {
 		t.Fatal("integration requires WEIR_INTEGRATION=1 and scripts/mongo-local.sh start; not silently skipped")
 	}
-	opts := options.Client().ApplyURI(URI).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetMaxPoolSize(8).SetServerSelectionTimeout(time.Second)
+	opts := options.Client().ApplyURI(plainURI).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetMaxPoolSize(8).SetServerSelectionTimeout(time.Second)
 	client, err := mongo.Connect(opts)
 	if err != nil {
 		t.Fatal(err)

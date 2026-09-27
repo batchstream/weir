@@ -36,7 +36,7 @@ type dualFixture struct {
 func dualServer(t *testing.T, backend *testsearch.Backend, endpoint string, limits Limits) dualFixture {
 	t.Helper()
 	native, db := testmongo.Open(t)
-	mongo := mongostore.Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records"}
+	mongo := mongostore.Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records"}
 	search := &searchstore.Config{URL: endpoint, Profile: backend.Profile, Store: "search", Index: backend.Index}
 	limitsStore := store.DefaultLimits()
 	mongo.Pool = uint64(limitsStore.Concurrency)

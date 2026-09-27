@@ -32,7 +32,7 @@ func TestMongoScanTraversal(t *testing.T) {
 	for _, size := range []int{0, 1, 8, 35} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			native, db := testmongo.Open(t)
-			cfg := Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg := Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records", Pool: 1}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			a, err := Open(ctx, cfg)
@@ -98,7 +98,7 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				proxy := testmongo.StartProxy(t)
+				proxy := testmongo.StartProxy(t, db)
 				if mode == "drop" {
 					proxy.DropCommand = command
 					proxy.DropRemaining.Store(1)
@@ -146,7 +146,7 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 	for _, mode := range []string{"killed", "cancel_find", "cancel_getMore"} {
 		t.Run(mode, func(t *testing.T) {
 			native, db := testmongo.Open(t)
-			cfg := Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg := Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records", Pool: 1}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			a, err := Open(ctx, cfg)

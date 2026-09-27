@@ -112,13 +112,14 @@ as do bounded resources, no implicit replay, and conservative UNKNOWN outcomes.
 Removing Weir authentication does not bypass backend credential requirements or
 permit disabling standard certificate checks.
 
-The intended authenticated MongoDB profile is deliberately narrow: one `mongodb://`
+The authenticated MongoDB connection contract is deliberately narrow: one `mongodb://`
 host with an explicit port, direct connection to a replica-set member, explicit
 `SCRAM-SHA-256` and `authSource`, and standard TLS hostname/chain validation using
 system roots or a configured CA. Credentials and CA changes take effect on a
 controlled restart. This is backend authentication, not Weir identity or
-authorization. The current adapter does not yet enable this profile because its
-qualified wire-reply bound runs below the driver's TLS layer; see M10 for status.
+authorization. TLS chain, hostname, expiry and applicable revocation checks precede
+bounded inspection of decrypted Mongo frames. Connection setup, certificate and
+OCSP resources have finite limits; an unsupported profile fails before execution.
 
 ## 2. Listener, Route, Service, and Assembly
 

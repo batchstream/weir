@@ -25,7 +25,7 @@ func replicaRuntime(t *testing.T, f scanFixture, endpoint string) *store.Runtime
 	var err error
 	if f.backend == nil {
 		if endpoint == "" {
-			endpoint = testmongo.URI
+			endpoint = testmongo.URIFor(f.db)
 		}
 		cfg := mongostore.Config{URI: endpoint, Store: "mongo", Database: f.db, Collection: "records", Pool: 1}
 		adapter, err = mongostore.Open(ctx, cfg)

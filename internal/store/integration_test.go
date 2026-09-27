@@ -24,7 +24,7 @@ type fixture struct {
 
 func setup(t *testing.T) fixture {
 	native, db := testmongo.Open(t)
-	cfg := mongostore.Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records"}
+	cfg := mongostore.Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records"}
 	l := DefaultLimits()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

@@ -45,7 +45,7 @@ func setup(t *testing.T, batch bool) fixture {
 func setupWithLimits(t *testing.T, batch bool, sl Limits) fixture {
 	t.Helper()
 	native, db := testmongo.Open(t)
-	cfg := mongostore.Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "records"}
+	cfg := mongostore.Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records"}
 	l := store.DefaultLimits()
 	if !batch {
 		l.BatchOperations = 1

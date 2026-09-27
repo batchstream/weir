@@ -29,12 +29,11 @@ type Config struct {
 	Pool                             uint64
 }
 type Adapter struct {
-	client         *mongo.Client
-	collection     *mongo.Collection
-	config         Config
-	once           sync.Once
-	closeErr       error
-	nativeNoReplay bool
+	client     *mongo.Client
+	collection *mongo.Collection
+	config     Config
+	once       sync.Once
+	closeErr   error
 }
 type plan struct {
 	id       any
@@ -55,7 +54,11 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil || name != cfg.Store || len(segments) != 0 {
 		return nil, fmt.Errorf("invalid store")
 	}
-	opts := options.Client().ApplyURI(cfg.URI).SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(2).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetDialer(newBoundedDialer()).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
+	opts, err := connectionOptions(cfg.URI)
+	if err != nil {
+		return nil, err
+	}
+	opts.SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(2).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
 	if opts.Timeout != nil {
 		return nil, fmt.Errorf("client timeoutMS is unsupported; runtime owns execution deadlines")
 	}
@@ -66,7 +69,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
-	a := &Adapter{client: client, config: cfg, nativeNoReplay: opts.Auth == nil, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
+	a := &Adapter{client: client, config: cfg, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err

@@ -3,17 +3,21 @@
 package testmongo
 
 import (
+	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/event"
 )
 
 type WireEvent struct {
@@ -25,6 +29,10 @@ type WireEvent struct {
 	ReplyDigest  [32]byte
 }
 type Proxy struct {
+	backendAddress string
+	uri            string
+	clientTLS      *tls.Config
+	Monitor        *event.CommandMonitor
 	listener       net.Listener
 	mu             sync.Mutex
 	events         []WireEvent
@@ -39,13 +47,27 @@ type Proxy struct {
 	AlterRemaining atomic.Int64
 }
 
-func StartProxy(t *testing.T) *Proxy {
+func StartProxy(t *testing.T, database string) *Proxy {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &Proxy{listener: listener, conns: make(map[net.Conn]struct{})}
+	upstream, err := url.Parse(URIFor(database))
+	if err != nil {
+		t.Fatal("invalid owned fixture URI")
+	}
+	p := &Proxy{listener: listener, backendAddress: upstream.Host, conns: make(map[net.Conn]struct{})}
+	if value, ok := secureFixtures.Load(database); ok {
+		fixture := value.(*SecureFixture)
+		// Test-only TLS termination observes decrypted commands for fault injection.
+		// Production direct-to-mongod TLS is qualified separately.
+		listener = tls.NewListener(listener, fixture.serverTLS)
+		p.listener = listener
+		p.clientTLS = fixture.clientTLS
+	}
+	upstream.Host = listener.Addr().String()
+	p.uri = upstream.String()
 	p.group.Add(1)
 	go func() {
 		defer p.group.Done()
@@ -74,7 +96,7 @@ func StartProxy(t *testing.T) *Proxy {
 	return p
 }
 func (p *Proxy) URI() string {
-	return "mongodb://" + p.listener.Addr().String() + "/?directConnection=true&serverMonitoringMode=poll"
+	return p.uri
 }
 func (p *Proxy) Events() []WireEvent {
 	p.mu.Lock()
@@ -85,11 +107,21 @@ func (p *Proxy) relay(client net.Conn) {
 	defer p.group.Done()
 	defer client.Close()
 	defer func() { p.mu.Lock(); delete(p.conns, client); p.mu.Unlock() }()
-	backend, err := net.DialTimeout("tcp", "127.0.0.1:27028", time.Second)
+	backend, err := net.DialTimeout("tcp", p.backendAddress, time.Second)
 	if err != nil {
 		return
 	}
 	defer backend.Close()
+	if p.clientTLS != nil {
+		secure := tls.Client(backend, p.clientTLS)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := secure.HandshakeContext(ctx)
+		cancel()
+		if err != nil {
+			return
+		}
+		backend = secure
+	}
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -111,6 +143,12 @@ func (p *Proxy) relay(client net.Conn) {
 		if len(elements) > 0 {
 			name = elements[0].Key()
 		}
+		if p.Monitor != nil && p.Monitor.Started != nil {
+			e := &event.CommandStartedEvent{CommandName: name, Command: doc}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			p.Monitor.Started(ctx, e)
+			cancel()
+		}
 		if _, err = backend.Write(request); err != nil {
 			return
 		}
@@ -126,6 +164,13 @@ func (p *Proxy) relay(client net.Conn) {
 			e.Session = fmt.Sprintf("%x", []byte(lsid))
 		}
 		reply := commandDocument(response)
+		if p.Monitor != nil && p.Monitor.Succeeded != nil {
+			finished := event.CommandFinishedEvent{CommandName: name}
+			observed := &event.CommandSucceededEvent{CommandFinishedEvent: finished, Reply: reply}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			p.Monitor.Succeeded(ctx, observed)
+			cancel()
+		}
 		e.ReplyDigest = sha256.Sum256(reply)
 		e.Acknowledged = reply.Lookup("ok").AsInt64() == 1
 		if name == p.DropCommand && p.DropRemaining.Load() > 0 {
@@ -163,6 +208,10 @@ func alterScanReply(message []byte, mode string) []byte {
 	var doc bson.D
 	if bson.Unmarshal(commandDocument(message), &doc) != nil {
 		return message
+	}
+	if mode == "write_error_391" {
+		writeError := bson.D{{Key: "index", Value: 0}, {Key: "code", Value: 391}, {Key: "errmsg", Value: "injected reauth error"}}
+		doc = bson.D{{Key: "ok", Value: 1.0}, {Key: "n", Value: 0}, {Key: "writeErrors", Value: bson.A{writeError}}}
 	}
 	if mode == "missing_n" {
 		for i := range doc {

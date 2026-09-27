@@ -2,6 +2,7 @@ package mongostore
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -18,24 +19,82 @@ var errWireBound = errors.New("MongoDB reply exceeds qualified wire/envelope bou
 // before exposing any header to the driver. It does not decode result documents,
 // interpret selectors, issue commands or retry. One buffer, at most 48 MiB, per
 // socket; the driver may concurrently allocate its own equally bounded copy.
-type boundedDialer struct{ dialer net.Dialer }
+type boundedDialer struct {
+	dialer    net.Dialer
+	tlsConfig *tls.Config
+}
 
 func newBoundedDialer() *boundedDialer {
 	d := &boundedDialer{dialer: net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}}
 	return d
 }
 func (d *boundedDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	conn, err := d.dialer.DialContext(ctx, network, address)
+	ctx, cancel := context.WithTimeout(ctx, mongoConnectTimeout)
+	defer cancel()
+	conn, err := d.dialTCP(ctx, network, address)
 	if err != nil {
 		return nil, err
 	}
-	bounded := &boundedConn{Conn: conn}
+	raw := conn
+	if d.tlsConfig != nil {
+		secured, err := mongoTLS(ctx, conn, d.tlsConfig, address)
+		if err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		conn = secured
+	}
+	bounded := &boundedConn{Conn: conn, raw: raw}
 	return bounded, nil
+}
+
+// Shared by Mongo TCP and the bounded OCSP HTTP transport; DNS is pure Go and
+// cancellation closes its sockets, including a resolver read already in flight.
+func (d *boundedDialer) dialTCP(ctx context.Context, network, address string) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, mongoConnectTimeout)
+	defer cancel()
+	dialer := d.dialer
+	source := dialer.Resolver
+	resolver := &net.Resolver{PreferGo: true, StrictErrors: true}
+	resolver.Dial = func(_ context.Context, network, address string) (net.Conn, error) {
+		// Go's DNS read may outlive lookup cancellation until its socket deadline.
+		// Bind each DNS socket to this same total connect budget and cancellation.
+		var conn net.Conn
+		var err error
+		if source != nil && source.Dial != nil {
+			conn, err = source.Dial(ctx, network, address)
+		} else {
+			dnsDialer := net.Dialer{Timeout: mongoConnectTimeout}
+			conn, err = dnsDialer.DialContext(ctx, network, address)
+		}
+		if err != nil {
+			return nil, err
+		}
+		deadline, _ := ctx.Deadline()
+		if err := conn.SetDeadline(deadline); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		context.AfterFunc(ctx, func() { conn.Close() })
+		return conn, nil
+	}
+	dialer.Resolver = resolver
+	return dialer.DialContext(ctx, network, address)
 }
 
 type boundedConn struct {
 	net.Conn
+	raw   net.Conn
 	reply []byte
+}
+
+// Driver cancellation/Close must release TCP immediately. tls.Conn.Close can
+// wait five seconds for close_notify; Mongo already has explicit frame lengths.
+func (c *boundedConn) Close() error {
+	if c.raw != nil {
+		return c.raw.Close()
+	}
+	return c.Conn.Close()
 }
 
 func (c *boundedConn) Read(dst []byte) (int, error) {
@@ -45,22 +104,22 @@ func (c *boundedConn) Read(dst []byte) (int, error) {
 	if len(c.reply) == 0 {
 		var header [16]byte
 		if _, err := io.ReadFull(c.Conn, header[:]); err != nil {
-			_ = c.Conn.Close()
+			_ = c.Close()
 			return 0, err
 		}
 		size := int64(binary.LittleEndian.Uint32(header[:4]))
 		if size < 21 || size > scanNativeLimit {
-			_ = c.Conn.Close()
+			_ = c.Close()
 			return 0, errWireBound
 		}
 		message := make([]byte, int(size))
 		copy(message, header[:])
 		if _, err := io.ReadFull(c.Conn, message[16:]); err != nil {
-			_ = c.Conn.Close()
+			_ = c.Close()
 			return 0, err
 		}
 		if !boundedReply(message) {
-			_ = c.Conn.Close()
+			_ = c.Close()
 			return 0, errWireBound
 		}
 		c.reply = message

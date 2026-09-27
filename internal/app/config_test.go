@@ -75,7 +75,7 @@ func TestStrictConfiguration(t *testing.T) {
 	}
 }
 
-func TestMongoTLSProfileRejectedDuringConfigValidation(t *testing.T) {
+func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Application = "127.0.0.1:0"
 	uri := "mongodb://user:password-sentinel@unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
@@ -86,8 +86,16 @@ func TestMongoTLSProfileRejectedDuringConfigValidation(t *testing.T) {
 	cfg.Services = []Service{service}
 	cfg.Routes = []Route{route}
 	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "not qualified") || strings.Contains(err.Error(), "password-sentinel") || strings.Contains(err.Error(), "missing/ca.pem") {
-		t.Fatalf("unqualified URI was not safely rejected: %v", err)
+	if err != nil {
+		t.Fatal("valid URI must be accepted without accessing missing CA or DNS", err)
+	}
+	mongo.URI += "&tlsInsecure=true"
+	node, err := Open(context.Background(), cfg)
+	if node != nil {
+		node.Close(context.Background())
+	}
+	if err == nil || strings.Contains(err.Error(), "password-sentinel") || strings.Contains(err.Error(), "missing/ca.pem") {
+		t.Fatal("unsafe URI accepted or leaked configuration")
 	}
 }
 

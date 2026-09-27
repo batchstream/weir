@@ -3,6 +3,10 @@
 Date: 2026-09-27. Status: **blocked; SCRAM/TLS is not enabled or qualified**.
 This is a bounded handoff, not a milestone pass.
 
+Historical record: the subsequent [M10 remediation](milestone-10-remediation.md)
+repairs the adapter layering. This document preserves the original failed stage;
+the original fixture-only evidence did not qualify production TLS/SCRAM.
+
 ## Starting point and scope
 
 - Started on clean local `main` at `8ebbe134a60834023ede79f1ed68ca0cb3645b9b`.

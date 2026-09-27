@@ -8,6 +8,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -34,9 +35,14 @@ import (
 
 type SecureFixture struct {
 	Client *mongo.Client
+	Admin  *mongo.Client
 	DB     string
 	URI    string
 
+	startup        context.Context
+	owned          bool
+	serverTLS      *tls.Config
+	clientTLS      *tls.Config
 	root           string
 	process        *exec.Cmd
 	processEnd     chan error
@@ -58,9 +64,11 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	if os.Getenv("WEIR_M10_INTEGRATION") != "1" {
 		t.Fatal("secure integration requires WEIR_M10_INTEGRATION=1")
 	}
-	fixture := &SecureFixture{}
-	fixture.prepareRoot(t)
+	startup, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	fixture := &SecureFixture{startup: startup}
 	t.Cleanup(func() { fixture.cleanup(t) })
+	fixture.prepareRoot(t)
 	fixture.startMongo(t)
 	fixture.configureUsers(t)
 	fixture.Client = fixture.connect(t, fixture.URI)
@@ -73,10 +81,14 @@ func (fixture *SecureFixture) prepareRoot(t *testing.T) {
 		t.Fatal("cannot locate project directory")
 	}
 	projectDirectory := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	if err := os.MkdirAll(filepath.Join(projectDirectory, ".testdata"), 0700); err != nil {
+		t.Fatal("cannot create fixture parent")
+	}
 	fixture.root = filepath.Join(projectDirectory, ".testdata", fmt.Sprintf("mongo-m10-%d-%d", os.Getpid(), secureFixtureSequence.Add(1)))
 	if err := os.Mkdir(fixture.root, 0700); err != nil {
 		t.Fatal("cannot create unique MongoDB fixture directory")
 	}
+	fixture.owned = true
 	marker := filepath.Join(fixture.root, ".weir-owner")
 	if err := os.WriteFile(marker, []byte("weir-milestone-10 mongodb-8.0.32 loopback TLS-SCRAM\n"), 0600); err != nil {
 		t.Fatal("cannot mark MongoDB fixture ownership")
@@ -132,12 +144,20 @@ func (fixture *SecureFixture) writeCertificates() error {
 	if err != nil {
 		return err
 	}
-	serverPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER})
-	serverPEM = append(serverPEM, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(serverKey)})...)
+	serverBlock := &pem.Block{Type: "CERTIFICATE", Bytes: serverDER}
+	keyBlock := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(serverKey)}
+	serverPEM := pem.EncodeToMemory(serverBlock)
+	serverPEM = append(serverPEM, pem.EncodeToMemory(keyBlock)...)
+	pair := tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}
+	fixture.serverTLS = &tls.Config{Certificates: []tls.Certificate{pair}}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	fixture.clientTLS = &tls.Config{RootCAs: roots, ServerName: "127.0.0.1"}
 	if err := os.WriteFile(filepath.Join(fixture.root, "server.pem"), serverPEM, 0600); err != nil {
 		return err
 	}
-	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	caBlock := &pem.Block{Type: "CERTIFICATE", Bytes: caDER}
+	caPEM := pem.EncodeToMemory(caBlock)
 	if err := os.WriteFile(fixture.caFile, caPEM, 0600); err != nil {
 		return err
 	}
@@ -184,7 +204,8 @@ func (fixture *SecureFixture) writeOtherCA(t *testing.T) string {
 		t.Fatal("cannot create negative-test CA")
 	}
 	path := filepath.Join(fixture.root, "untrusted-ca.pem")
-	data := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	block := &pem.Block{Type: "CERTIFICATE", Bytes: der}
+	data := pem.EncodeToMemory(block)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal("cannot write negative-test CA")
 	}
@@ -230,7 +251,7 @@ func (fixture *SecureFixture) startMongo(t *testing.T) {
 	}
 	projectDirectory := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
 	binary := filepath.Join(projectDirectory, ".tools", "mongodb-macos-aarch64--8.0.32", "bin", "mongod")
-	version := exec.Command(binary, "--version")
+	version := exec.CommandContext(fixture.startup, binary, "--version")
 	versionOutput, err := version.Output()
 	if err != nil || !strings.Contains(string(versionOutput), "v8.0.32") {
 		t.Fatal("the pinned MongoDB 8.0.32 fixture binary is unavailable")
@@ -285,10 +306,11 @@ func (fixture *SecureFixture) connect(t *testing.T, uri string) *mongo.Client {
 	if err != nil {
 		t.Fatal("cannot configure secure fixture client")
 	}
+	t.Cleanup(func() { fixture.disconnect(t, client) })
 	deadline := time.Now().Add(15 * time.Second)
 	var connectionError error
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	for time.Now().Before(deadline) && fixture.startup.Err() == nil {
+		ctx, cancel := context.WithTimeout(fixture.startup, time.Second)
 		connectionError = client.Ping(ctx, nil)
 		cancel()
 		if connectionError == nil {
@@ -296,12 +318,12 @@ func (fixture *SecureFixture) connect(t *testing.T, uri string) *mongo.Client {
 		}
 		var commandError mongo.CommandError
 		if errors.As(connectionError, &commandError) {
-			_ = client.Disconnect(context.Background())
+			fixture.disconnect(t, client)
 			t.Fatalf("secure fixture MongoDB command failed (code=%d name=%s)", commandError.Code, commandError.Name)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	_ = client.Disconnect(context.Background())
+	fixture.disconnect(t, client)
 	t.Fatalf("secure fixture MongoDB connection failed (%T)", connectionError)
 	return nil
 }
@@ -313,12 +335,12 @@ func (fixture *SecureFixture) initializeReplicaSet(t *testing.T, client *mongo.C
 		{Key: "members", Value: bson.A{bson.D{{Key: "_id", Value: 0}, {Key: "host", Value: net.JoinHostPort("127.0.0.1", strconv.Itoa(fixture.port))}}}},
 	}
 	command := bson.D{{Key: "replSetInitiate", Value: configuration}}
-	if err := client.Database("admin").RunCommand(context.Background(), command).Err(); err != nil {
+	if err := fixture.command(client, "admin", command); err != nil {
 		t.Fatal("cannot initialize isolated MongoDB replica set")
 	}
 	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	for time.Now().Before(deadline) && fixture.startup.Err() == nil {
+		ctx, cancel := context.WithTimeout(fixture.startup, time.Second)
 		var hello struct {
 			Writable bool `bson:"isWritablePrimary"`
 		}
@@ -336,7 +358,7 @@ func (fixture *SecureFixture) initializeReplicaSet(t *testing.T, client *mongo.C
 func (fixture *SecureFixture) createCollection(t *testing.T, client *mongo.Client) {
 	t.Helper()
 	command := bson.D{{Key: "create", Value: "records"}}
-	if err := client.Database(fixture.DB).RunCommand(context.Background(), command).Err(); err != nil {
+	if err := fixture.command(client, fixture.DB, command); err != nil {
 		t.Fatal("cannot create isolated MongoDB collection")
 	}
 }
@@ -346,7 +368,7 @@ func (fixture *SecureFixture) createFirstAdmin(t *testing.T, client *mongo.Clien
 	password := fixture.randomSecret(t)
 	roles := bson.A{bson.D{{Key: "role", Value: "root"}, {Key: "db", Value: "admin"}}}
 	command := bson.D{{Key: "createUser", Value: "weir_admin"}, {Key: "pwd", Value: password}, {Key: "roles", Value: roles}}
-	if err := client.Database("admin").RunCommand(context.Background(), command).Err(); err != nil {
+	if err := fixture.command(client, "admin", command); err != nil {
 		t.Fatal("cannot create temporary MongoDB fixture administrator")
 	}
 	fixture.adminURI = fixture.uri("weir_admin", password, "127.0.0.1", fixture.caFile)
@@ -368,7 +390,7 @@ func (fixture *SecureFixture) configureUsers(t *testing.T) {
 	for _, field := range role[1:] {
 		createRole = append(createRole, field)
 	}
-	if err := admin.Database(fixture.DB).RunCommand(context.Background(), createRole).Err(); err != nil {
+	if err := fixture.command(admin, fixture.DB, createRole); err != nil {
 		var commandError mongo.CommandError
 		if errors.As(err, &commandError) {
 			t.Fatalf("cannot create minimal MongoDB fixture role (code=%d name=%s)", commandError.Code, commandError.Name)
@@ -377,7 +399,7 @@ func (fixture *SecureFixture) configureUsers(t *testing.T) {
 	}
 	password := fixture.randomSecret(t)
 	user := bson.D{{Key: "createUser", Value: "weir_app"}, {Key: "pwd", Value: password}, {Key: "roles", Value: bson.A{bson.D{{Key: "role", Value: "weirApplication"}, {Key: "db", Value: fixture.DB}}}}}
-	if err := admin.Database("admin").RunCommand(context.Background(), user).Err(); err != nil {
+	if err := fixture.command(admin, "admin", user); err != nil {
 		t.Fatal("cannot create temporary MongoDB fixture application user")
 	}
 	fixture.URI = fixture.uri("weir_app", password, "127.0.0.1", fixture.caFile)
@@ -387,18 +409,18 @@ func (fixture *SecureFixture) configureUsers(t *testing.T) {
 	fixture.MissingPassURI = fixture.uri("weir_app", "", "127.0.0.1", fixture.caFile)
 	deniedPassword := fixture.randomSecret(t)
 	deniedUser := bson.D{{Key: "createUser", Value: "weir_denied"}, {Key: "pwd", Value: deniedPassword}, {Key: "roles", Value: bson.A{}}}
-	if err := admin.Database("admin").RunCommand(context.Background(), deniedUser).Err(); err != nil {
+	if err := fixture.command(admin, "admin", deniedUser); err != nil {
 		t.Fatal("cannot create temporary MongoDB fixture negative user")
 	}
 	fixture.DeniedURI = fixture.uri("weir_denied", deniedPassword, "127.0.0.1", fixture.caFile)
-	fixture.disconnect(t, admin)
+	fixture.Admin = admin
 }
 
 func (fixture *SecureFixture) disconnect(t *testing.T, client *mongo.Client) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := client.Disconnect(ctx); err != nil {
+	if err := client.Disconnect(ctx); err != nil && !errors.Is(err, mongo.ErrClientDisconnected) {
 		t.Fatal("cannot close temporary MongoDB client")
 	}
 }
@@ -415,13 +437,18 @@ func (fixture *SecureFixture) cleanup(t *testing.T) {
 		case <-fixture.processEnd:
 		case <-time.After(5 * time.Second):
 			_ = fixture.process.Process.Kill()
-			<-fixture.processEnd
+			select {
+			case <-fixture.processEnd:
+			case <-time.After(2 * time.Second):
+				t.Error("owned mongod did not exit after kill")
+				return
+			}
 		}
 	}
 	if fixture.logFile != nil {
 		_ = fixture.logFile.Close()
 	}
-	if fixture.root == "" {
+	if fixture.root == "" || !fixture.owned {
 		return
 	}
 	marker := filepath.Join(fixture.root, ".weir-owner")
@@ -430,15 +457,19 @@ func (fixture *SecureFixture) cleanup(t *testing.T) {
 		t.Error("MongoDB fixture ownership marker changed; preserving the directory")
 		return
 	}
-	if t.Failed() {
-		_ = os.RemoveAll(filepath.Join(fixture.root, "data"))
-		for _, name := range []string{"server.pem", "ca.pem", "untrusted-ca.pem", "keyfile"} {
-			_ = os.Remove(filepath.Join(fixture.root, name))
+	if err := os.RemoveAll(filepath.Join(fixture.root, "data")); err != nil {
+		t.Error("cannot remove owned fixture data")
+	}
+	for _, name := range []string{"server.pem", "ca.pem", "untrusted-ca.pem", "keyfile"} {
+		if err := os.Remove(filepath.Join(fixture.root, name)); err != nil && !os.IsNotExist(err) {
+			t.Error("cannot remove owned temporary TLS material")
 		}
-		t.Logf("MongoDB fixture failure log preserved at %s", filepath.Join(fixture.root, "mongod.log"))
-		return
 	}
-	if err := os.RemoveAll(fixture.root); err != nil {
-		t.Errorf("cannot clean owned MongoDB fixture directory: %v", err)
-	}
+	t.Logf("MongoDB fixture log preserved at %s (port %d stopped)", filepath.Join(fixture.root, "mongod.log"), fixture.port)
+}
+
+func (fixture *SecureFixture) command(client *mongo.Client, database string, command bson.D) error {
+	ctx, cancel := context.WithTimeout(fixture.startup, 2*time.Second)
+	defer cancel()
+	return client.Database(database).RunCommand(ctx, command).Err()
 }

@@ -15,14 +15,10 @@ func TestValidateMongoURIProfiles(t *testing.T) {
 		}
 	}
 	secureURI := "mongodb://user%40name:p%40ss@mongo.example.test:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fetc%2Fweir%2Fmongo-ca.pem"
-	authenticated, err := validateURI(secureURI)
-	if err != nil || !authenticated {
-		t.Fatalf("secure profile syntax was not recognized: %v", err)
+	if err := ValidateURI(secureURI); err != nil {
+		t.Fatalf("secure profile was rejected: %v", err)
 	}
-	err = ValidateURI(secureURI)
-	if err == nil || !strings.Contains(err.Error(), "not qualified") || strings.Contains(err.Error(), "p%40ss") {
-		t.Fatalf("secure profile was not safely refused: %v", err)
-	}
+
 }
 
 func TestValidateMongoURIRejectsOutsideProfile(t *testing.T) {

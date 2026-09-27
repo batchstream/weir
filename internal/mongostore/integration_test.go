@@ -15,7 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
 type adapterTestOptions struct {
@@ -26,15 +25,21 @@ type adapterTestOptions struct {
 func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 	t.Helper()
 	if o.uri == "" {
-		o.uri = testmongo.URI
+		o.uri = testmongo.URIFor(o.database)
 	}
-	opts := options.Client().ApplyURI(o.uri).SetAppName("weir:" + o.database).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetMaxPoolSize(4).SetWriteConcern(writeconcern.Majority()).SetMonitor(o.monitor).SetCompressors(nil).SetDialer(newBoundedDialer()).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(time.Second)
-	c, err := mongo.Connect(opts)
+	if o.monitor != nil {
+		proxy := testmongo.StartProxy(t, o.database)
+		proxy.Monitor = o.monitor
+		o.uri = proxy.URI()
+	}
+	cfg := Config{URI: o.uri, Store: "mongo", Database: o.database, Collection: "records", Pool: 4}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	a, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{URI: o.uri, Store: "mongo", Database: o.database, Collection: "records", Pool: 4}
-	a := &Adapter{client: c, config: cfg, nativeNoReplay: opts.Auth == nil, collection: c.Database(o.database).Collection("records")}
+
 	t.Cleanup(func() {
 		if err := a.Close(); err != nil {
 			t.Error(err)
@@ -128,7 +133,7 @@ func TestCommitReplyLostAfterRealCommit(t *testing.T) {
 	for _, mode := range []string{"once", "all"} {
 		t.Run(mode, func(t *testing.T) {
 			native, db := testmongo.Open(t)
-			proxy := testmongo.StartProxy(t)
+			proxy := testmongo.StartProxy(t, db)
 			proxy.DropCommand = "commitTransaction"
 			proxy.DropRemaining.Store(1)
 			if mode == "all" {
@@ -223,7 +228,7 @@ func TestPartialInitializationAndClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	before := connectionCount(t, native)
-	cfg := Config{URI: testmongo.URI, Store: "mongo", Database: db, Collection: "not_created", Pool: 1}
+	cfg := Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "not_created", Pool: 1}
 	for i := 0; i < 5; i++ {
 		if a, err := Open(ctx, cfg); err == nil || a != nil {
 			t.Fatal("must unwind failed qualification")
@@ -310,7 +315,7 @@ func TestUnrelatedUniqueConflictDoesNotRetry(t *testing.T) {
 
 func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 	native, db := testmongo.Open(t)
-	proxy := testmongo.StartProxy(t)
+	proxy := testmongo.StartProxy(t, db)
 	proxy.DropCommand = "insert"
 	proxy.DropRemaining.Store(1)
 	o := adapterTestOptions{database: db, uri: proxy.URI()}
@@ -338,6 +343,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 			t.Fatal(r)
 		}
 	}
+	verifyReconnectRead(t, a, proxy, "one")
 	inserts := 0
 	for _, e := range proxy.Events() {
 		if e.Command == "insert" {
@@ -358,7 +364,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 }
 func TestAmbiguitySurvivesLaterDefiniteError(t *testing.T) {
 	native, db := testmongo.Open(t)
-	proxy := testmongo.StartProxy(t)
+	proxy := testmongo.StartProxy(t, db)
 	proxy.DropCommand = "commitTransaction"
 	proxy.DropRemaining.Store(1)
 	gate := make(chan struct{})

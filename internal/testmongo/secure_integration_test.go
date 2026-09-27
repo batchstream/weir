@@ -56,12 +56,12 @@ func TestSecureMongoFixture(t *testing.T) {
 	for _, uri := range []string{fixture.BadPassURI, fixture.WrongHostURI, fixture.BadCAURI, fixture.MissingPassURI} {
 		assertSecureConnectionRejected(t, uri)
 	}
-	deniedOptions := options.Client().ApplyURI(fixture.DeniedURI)
+	deniedOptions := options.Client().ApplyURI(fixture.DeniedURI).SetMaxPoolSize(4).SetMaxConnecting(2).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
 	deniedClient, err := mongo.Connect(deniedOptions)
 	if err != nil {
 		t.Fatal("cannot configure insufficient-privilege fixture client")
 	}
-	defer deniedClient.Disconnect(context.Background())
+	defer fixture.disconnect(t, deniedClient)
 	deniedContext, stop := context.WithTimeout(context.Background(), 2*time.Second)
 	defer stop()
 	_, err = deniedClient.Database(fixture.DB).ListCollectionSpecifications(deniedContext, filter)
@@ -73,18 +73,21 @@ func TestSecureMongoFixture(t *testing.T) {
 
 func assertSecureConnectionRejected(t *testing.T, uri string) {
 	t.Helper()
-	clientOptions := options.Client().ApplyURI(uri)
+	clientOptions := options.Client().ApplyURI(uri).SetMaxPoolSize(4).SetMaxConnecting(2).SetConnectTimeout(2 * time.Second).SetServerSelectionTimeout(2 * time.Second)
 	client, err := mongo.Connect(clientOptions)
 	if err != nil {
 		return
 	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := client.Disconnect(cleanup); err != nil {
+			t.Error("cannot close negative TLS/SCRAM client")
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx, nil); err == nil {
-		_ = client.Disconnect(context.Background())
 		t.Fatal("invalid TLS/SCRAM connection was accepted")
-	}
-	if err := client.Disconnect(ctx); err != nil {
-		t.Fatal("cannot close negative TLS/SCRAM fixture client")
 	}
 }

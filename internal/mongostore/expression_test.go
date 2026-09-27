@@ -34,7 +34,7 @@ func expressionBSON(t testing.TB, doc bson.D) []byte {
 
 func TestMongoExpressionValidation(t *testing.T) {
 	cfg := Config{Store: "mongo", Database: "db", Collection: "records"}
-	a := &Adapter{config: cfg, nativeNoReplay: true}
+	a := &Adapter{config: cfg}
 	decimal, _ := bson.ParseDecimal128("1.25")
 	nonfinite, _ := bson.ParseDecimal128("Infinity")
 	cases := []struct {
@@ -117,10 +117,6 @@ func TestMongoExpressionValidation(t *testing.T) {
 	if a.prepareExpression(d) == nil {
 		t.Fatal("node/byte limit")
 	}
-	a.nativeNoReplay = false
-	if _, f := a.Prepare(op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
-		t.Fatal("authentication replay boundary", f)
-	}
 }
 
 func TestMongoExpressionEvidence(t *testing.T) {
@@ -155,7 +151,7 @@ func FuzzMongoExpression(f *testing.F) {
 		if len(raw) > protocol.MaxExpression {
 			return
 		}
-		a := &Adapter{nativeNoReplay: true}
+		a := &Adapter{}
 		d := &pb.Document{MediaType: ExpressionMedia, Data: raw}
 		_ = a.prepareExpression(d)
 		_, _ = expressionReply(raw)
