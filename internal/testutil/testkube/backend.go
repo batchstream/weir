@@ -56,7 +56,8 @@ func persisted(ctx context.Context, id string) error {
 }
 
 func audit(ctx context.Context) error {
-	if _, _, err := admin(ctx, "POST", "/records/_refresh", ""); err != nil {
+	_, _, err := admin(ctx, "POST", "/records/_refresh", "")
+	if err != nil {
 		return err
 	}
 	code, raw, err := admin(ctx, "GET", "/records/_search?size=400&version=true", "")

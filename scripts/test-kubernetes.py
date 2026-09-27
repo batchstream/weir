@@ -219,6 +219,7 @@ class Exercise:
                     break
                 time.sleep(2)
             assert found,"node NotReady not observed within frozen budget"
+            self.client("db","paused-tail")
             # Wait for normal endpoint propagation without changing controller timers.
             for i in range(5):
                 self.sample("node-endpoints-"+str(i))

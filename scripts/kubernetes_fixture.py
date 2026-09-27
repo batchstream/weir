@@ -21,6 +21,7 @@ class Fixture:
                         DOCKER_HOST="unix:///var/run/docker.sock", KUBECONFIG=str(self.root / "kubeconfig"),
                         KIND_EXPERIMENTAL_PROVIDER="docker")
         self.nodes, self.network, self.children = {}, None, []
+        self.cluster_started = False
         self.deadline = float("inf")
         self.command_number = 0
 
@@ -78,6 +79,10 @@ class Fixture:
 
     def bootstrap(self, profile):
         assert not self.run(["docker", "ps", "-q"]).stdout.strip(), "another running fixture exists"
+        existing = self.run(["docker", "ps", "-aq", "--filter", "label=io.x-k8s.kind.cluster="+self.owner])
+        assert not existing.stdout.strip(), "owner already belongs to an existing cluster"
+        names = "name=^/"+self.owner+"-(control-plane|worker|worker2)$"
+        assert not self.run(["docker","ps","-aq","--filter",names]).stdout.strip(), "node name already exists"
         assert not self.run(["docker", "network", "ls", "-q", "--filter", "name=^kind$"]).stdout.strip()
         config = {"kind": "Cluster", "apiVersion": "kind.x-k8s.io/v1alpha4",
                   "networking": {"apiServerAddress": "127.0.0.1", "apiServerPort": 0},
@@ -85,6 +90,7 @@ class Fixture:
         self.save("kind.json", config)
         self.deadline = time.monotonic() + 1200
         started = time.monotonic()
+        self.cluster_started = True
         child = self.start("bootstrap", ["kind", "create", "cluster", "--name", self.owner,
                            "--config", str(self.root/"kind.json"), "--kubeconfig", str(self.root/"kubeconfig"),
                            "--wait", "5m", "--retain"])
@@ -146,6 +152,28 @@ class Fixture:
                 output.close()
         for child, output in self.children:
             attempt(f"child {child.pid}", lambda c=child, o=output: child_stop(c,o))
+        # --retain can leave a node created just before bootstrap fails, before
+        # the observation loop recorded it. Preflight proved this owner absent.
+        def discover_node(name):
+            if name in self.nodes:
+                return
+            found = self.run(["docker","inspect","--format","{{.Id}}",name], check=False)
+            if found.returncode:
+                return
+            obj = self.owner_node(name)
+            self.nodes[name] = {"id":obj["Id"], "volumes":[m["Name"] for m in obj["Mounts"] if m["Type"]=="volume"]}
+            self.save("owned-nodes.json",self.nodes)
+        def discover_network():
+            if self.network is None:
+                found = self.run(["docker","network","inspect","kind"],check=False)
+                if found.returncode==0:
+                    self.network=json.loads(found.stdout)[0]["Id"]
+                    self.save("owned-network.json", {"id":self.network})
+        if self.cluster_started:
+            for role in ("control-plane", "worker", "worker2"):
+                name = self.owner+"-"+role
+                attempt("discover "+name,lambda n=name: discover_node(n))
+            attempt("discover owned network",discover_network)
         # Recover a fault independently of deletion, using the exact recorded ID.
         for name, saved in self.nodes.items():
             def recover(n=name, s=saved):

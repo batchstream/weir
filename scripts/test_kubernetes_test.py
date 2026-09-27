@@ -55,5 +55,41 @@ class CleanupTests(unittest.TestCase):
                 self.assertFalse(f.cleanup())
             self.assertFalse(any(args[1] in ("unpause","rm") for args in calls))
 
+    def test_preexisting_owner_is_rejected_before_bootstrap(self):
+        with tempfile.TemporaryDirectory() as temp:
+            f=Fixture(Path(temp),"weir-m21-unit")
+            calls=[]
+            def docker(args,**kwargs):
+                calls.append(args)
+                output="existing-id" if "-aq" in args else ""
+                return subprocess.CompletedProcess(args,0,output,"")
+            with patch("subprocess.run",side_effect=docker):
+                with self.assertRaises(AssertionError):
+                    f.bootstrap({})
+            self.assertFalse(f.cluster_started)
+            self.assertEqual(len(calls),2)
+
+    def test_fast_bootstrap_failure_discovers_unrecorded_owned_node(self):
+        with tempfile.TemporaryDirectory() as temp:
+            f=Fixture(Path(temp),"weir-m21-unit")
+            f.cluster_started=True
+            calls=[]
+            def docker(args,**kwargs):
+                calls.append(args)
+                if args[1:3]==["inspect","--format"]:
+                    if args[-1]!=f.owner+"-worker2":
+                        return subprocess.CompletedProcess(args,1,"","absent")
+                    if args[-2]=="{{.Id}}":
+                        return subprocess.CompletedProcess(args,0,"retained-id","")
+                    obj={"Id":"retained-id","Config":{"Labels":{"io.x-k8s.kind.cluster":f.owner}},"State":{"Paused":False},"Mounts":[{"Type":"volume","Name":"retained-volume"}]}
+                    return subprocess.CompletedProcess(args,0,json.dumps(obj),"")
+                if args[1:3]==["network","inspect"]:
+                    return subprocess.CompletedProcess(args,1,"","absent")
+                return subprocess.CompletedProcess(args,0,"","")
+            with patch("subprocess.run",side_effect=docker):
+                self.assertTrue(f.cleanup())
+            self.assertIn(["docker","rm","-f","retained-id"],calls)
+            self.assertIn(["docker","volume","rm","retained-volume"],calls)
+
 
 if __name__=="__main__":unittest.main()
