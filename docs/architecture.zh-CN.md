@@ -2,7 +2,7 @@
 
 状态：V1 设计提案。
 
-这是新设计，不是 Sink 迁移计划。Sink 的 API、包边界、配置格式、部署角色及存储元数据均不构成兼容约束。本文定义目标架构与协议契约，不记录实现进度或验证结果。本文件与 `architecture.md` 按章节、条款和引用标识对应维护；中文段落重新排版，不改变规范含义。
+这是新设计，不是 Sink 迁移计划。Sink 的 API、包边界、配置格式、部署角色及存储元数据均不构成兼容约束。本文定义目标架构与协议契约；简短状态说明链接到独立的资格证据。本文件与 `architecture.md` 按章节、条款和引用标识对应维护；中文段落重新排版，不改变规范含义。
 
 ## 决策摘要
 
@@ -514,6 +514,8 @@ BSON 往返和稳定遍历需要有序 Object。Codec 可保留重复字段，�
 未知 Extended 可复制、移动、删除，不可伪造、隐式 JSON 化或参与数值/字符串运算。目标 codec 不支持的新值须写前拒绝；跨编码转码不在此保证内。
 
 ### 10.3 TransformCodec 与 runtime 分离
+
+当前实现边界，不是目标豁免：ProgramTransform 仍 UNSUPPORTED。固定进程内 runtime 实验尚未满足下述编译、分配、含 helper 的 fuel 与取消要求。Typed Value 和仅用于 integration 的 Mongo RMW harness 不是通用 runtime；Search 通用无损 codec 也未合格。实际证据（包括已获独立验收的本地连接 owner 和进程替换有限范围）记录在[生产资格清单](production-readiness.md)，这些目标仍为 required。
 
 ```text
 原生不透明 current/input -> 有界 codec decode -> Weir Value

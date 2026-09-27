@@ -23,6 +23,7 @@
 | `internal/netlimit` | peer、Mongo 与 Search 实际复用的标准 Go DNS 有界 I/O；调用方保留并发、地址选择和生命周期 |
 | `internal/testutil` | 仓库资源定位；子包 testmongo/testsearch/testdns/testmetrics 为自有测试设施 |
 | `experiments/luaprobe` | 只有测试的 Lua 可行性探针；不进入 Weir 依赖图，ProgramTransform 仍 UNSUPPORTED |
+| `experiments/goluaprobe` | 固定 golua v0.3.0 的 test-only 源码/资源反例与最小 typed Value 传递；编译、VM 分配、helper fuel/取消初筛失败，不是产品 runtime；证据见 [M13](milestone-13.md) |
 
 实际生产依赖方向（省略标准库、第三方库和公共 pb）：
 
@@ -152,6 +153,15 @@ Mongo 的 `rmw_conformance_test.go` 保留原事务计数器、新事务重算�
 资格状态机及原有断言。它从未连接公共 AtomicTransform，现在仅编入 integration 测试。
 生产 Scan 需要的 `nativeAttemptContext` 在 `attempt.go`，固定驱动的期限/取消语义未改。
 不得把该 conformance harness、typed value 或 Lua 探针解释成通用 ProgramTransform。
+
+golua 实验只依赖 `internal/value` 和固定候选；无 BSON/JSON/后端导入，无 production bridge。
+新 invocation 不复用 Runtime，危险探针的自有 test child 总是 Wait；子进程仅用于保护实验，
+不构成产品进程隔离方案。默认生产 `go list -deps ./cmd/weir` 不含任一实验 VM。
+资源初筛 NO-GO 后停止完整 action/bridge 建设，保留 `internal/protocol` 的 UNSUPPORTED 路径。
+
+M12R 基线 `383b4aa` 的本地 raw/dial/closing owner、分层 remote-tail 与 replacement 两 Local
+完整生命周期已获统筹有限独立验收；原 M12 失败保留。本地 owner 上限不等于无条件的
+DB accepted/远端工作总上限，runtime、平台、容量及部署资格仍分别 required。
 
 历史报告保留当时路径。本次现址映射：`internal/mongostore` → `internal/backend/mongodb`，
 `internal/searchstore` → `internal/backend/search`，`internal/test*` → `internal/testutil/test*`，

@@ -4,8 +4,8 @@ Status: proposed V1 design.
 
 This is a new design, not a Sink migration plan. No Sink API, package boundary,
 configuration format, deployment role, or storage metadata is a compatibility
-constraint. This document defines the target architecture and protocol contracts,
-not implementation status or qualification results. `architecture.zh-CN.md` is the
+constraint. This document defines the target architecture and protocol contracts;
+brief status notes link to the separate qualification evidence. `architecture.zh-CN.md` is the
 parallel Chinese translation, with matching section and reference identifiers.
 
 ## Decision Summary
@@ -1082,6 +1082,14 @@ type loss; byte-for-byte textual whitespace identity is not promised for transfo
 JSON. Opaque operations never require this structured round-trip.
 
 ### 10.3 TransformCodec and runtime separation
+
+Current implementation boundary, not an exemption: ProgramTransform remains
+UNSUPPORTED. Fixed in-process runtime experiments have not met the compilation,
+allocation, helper fuel, and cancellation requirements below. Typed Value and the
+integration-only Mongo RMW harness are not a general runtime; a generic lossless
+Search codec is not qualified. Actual evidence, including the independently accepted
+limited local connection-owner and process-replacement scope, is recorded in the
+[production readiness checklist](production-readiness.md). These targets remain required.
 
 ```text
 adapter-native opaque current/input

@@ -32,7 +32,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 - 冻结后每个平台/配置至少 24 小时：70% 可持续容量、受控 2 倍容量过载、慢消费者、故障恢复。
   不允许 OOM/死锁/泄漏/账本超额；warm-up 后 OS 内存、goroutine、句柄、连接须有稳定上界。
   Go heap、OS RSS/commit memory 和 cgroup 分别测量。当前短时本机测试不能代替这些门槛。
-- ProgramTransform 未豁免。后续必须做有限安全可行性阶段；不合格继续 UNSUPPORTED。
+- ProgramTransform 未豁免。[M13](milestone-13.md) 已完成固定 golua v0.3.0 的有限安全可行性调查，结论 NO-GO；编译/VM 分配及含 helper 的 fuel/取消缺口仍阻断，继续 UNSUPPORTED。
   若要排除首版范围，必须明确说明并取得用户范围确认，不能将表达式/内部计数器当作替代。
 - 只准备和验证本地产物；当前授权不含 push、发布、生产部署、已有秘密访问或收费资源。
   缺 runner 是外部证据阻塞，先推进独立工作，确需机器/费用时提出最小需求。
@@ -59,13 +59,13 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | 必需项 | 当前状态与证据 | 后续资格门槛/阻塞 |
 | --- | --- | --- |
 | 原生 BackendExpression | 已实现；固定后端有限真实验证见 [M7](milestone-7.md)、`internal/backend/{mongodb,search}/expression.go`、对应 tests、`internal/server/expression_integration_test.go` | 仅明确 profile；不含泛化语言、跨记录、pipeline/upsert、其他版本/拓扑 |
-| 通用 ProgramTransform | **阻塞；用户确认后才可延期**。`internal/protocol/protocol.go` 拒绝；`experiments/luaprobe/runtime_test.go`、[M1](milestone-1.md) 证明 GopherLua 隔离不合格 | 确定性、fuel/CPU、编译/分配/宿主 helper/取消隔离、类型保真；Mongo transaction 与 Search OCC 完整闭环 |
+| 通用 ProgramTransform | **阻塞；用户确认后才可延期**。`internal/protocol/protocol.go` 仍拒绝；[M1](milestone-1.md) 的 GopherLua 失败保留；[M13](milestone-13.md)、`experiments/goluaprobe` 实证 golua v0.3.0 编译低估、VM 分配先做后查/漏账、字符串/helper fuel 和取消缺口，NO-GO | 必须闭环确定性、编译/VM/helper/bridge 分配前计账与取消；极值/opaque userdata 透传不等于通用 typed transform。四种 action、安全输出、完整 codec、Mongo transaction/Search OCC 仍 required；不直接进入产品接线 |
 | Weir TLS/认证/授权 | **用户明确排除，不算阻断；既有体系已移除**；[M8](milestone-8.md)、`internal/server/forwarding.go` | application/peer 均为明文 HTTP/2，入口可达来源由部署隔离负责；hop 没有密码学身份保证。旧 identity/allow/server_name 配置严格拒绝，无开关、证书 fixture 或空壳权限接口 |
 | Mongo 后端连接及隐式重放 | credential-free 与显式 SCRAM-SHA-256/verified TLS 已实现且有限真实验证；生产 Open/应用装配、解密后 wire guard、391/回复丢失与生命周期实测见 [M10R](milestone-10-remediation.md)；M10 原失败保留 | 固定 Go1.27/driver2.9.1/Mongo8.0.32 单直接非分片副本集 endpoint；仅有界单 HTTP OCSP responder。其他认证、HTTPS OCSP/多个 responder、SRV/多节点、跨平台/长测仍未通过 |
 | Search 后端连接及隐式重放 | 单静态 DNS/IP endpoint 的 HTTP 或 verified HTTPS/可选 Basic 已实现且两个原生安全 profile 分别有限真实验证；生产 Open、app direct/peer、故障请求计数、DNS/TLS/Close 边界见 [M11](milestone-11.md) | 固定 ES8.17.0/OS2.19.0、单具体 index/primary，本机证据使用显式 CA。系统 roots 正向真实资格、其他版本/拓扑、总 DB 预算、跨平台与长测未因此通过 |
 | 普通 Read/写入/Bulk | 已实现且有限真实资格验证；[M1](milestone-1.md)、[M2](milestone-2.md)、[unary 专项](unary-response-deadline.md) | 新平台/适用连接配置/网络故障需重验；0 假 APPLIED、0 已执行却 NOT_STARTED、0 静默重放、0 关联/流内顺序错误 |
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |
-| 多实例共享后端/直接 native writer | `local.concurrency` 已实现；[M12](milestone-12.md) 本机三真实进程、Search Native/idle、受控替换和独立 native writer 有限证据 | 原 M12 未通过的历史保留；[M12R](milestone-12-remediation.md) 补 Mongo 本地 dial/raw/closing C+1 owner、分层尾部探针与 replacement 两 Local 全生命周期检查。本地源码硬界与真实回收条件分开；不得声称 replicas×pool 是 DB accepted/远端工作的无条件硬上限 |
+| 多实例共享后端/直接 native writer | `local.concurrency` 已实现；原 [M12](milestone-12.md) 失败保留。[M12R](milestone-12-remediation.md) 在 `383b4aa` 已获统筹有限独立验收：Mongo 本地 dial/raw/closing C+1 owner、分层 remote-tail、replacement 两 Local 全生命周期；本机 Mongo/ES/OS 真实预算回归通过 | 本地源码硬界与真实回收条件分开；replicas×pool 不是 DB accepted/远端工作的无条件硬上限。真实多节点、Kubernetes、复制切换、容量/soak 尚未因此通过 |
 | 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络仍未验证；M9 的 DNS 变化证据仅限自有 loopback fixture；不新增猜测性重放 |
 | Linux RSS/cgroup | `internal/overload/guard.go` 有实现；既有交叉编译证据 | **未真实验证** RSS/cgroup-v2 与容器压力/回收；macOS 当前 Go Sys-HeapReleased 降级信号不是 RSS |
 | 可复现打包/供应链 | 固定 `go.mod/go.sum`、协议生成和本地 bootstrap；默认离线测试 | 六组合制品、双架构 OCI、校验和/SBOM/依赖安全扫描、固定版本安全复核与可复现构建未验收；固定版本不是永久安全承诺 |
@@ -89,8 +89,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Windows amd64 | 未验证 | 未验证 | 关闭、句柄、commit memory 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 | Windows arm64 | 未验证 | 未验证 | 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 
-后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 静态并发已实现，原预算失败保留；M12R 补本地 raw 所有权和跨层观测（证据与限制见补救报告）；独立验收后仍需闭环多实例保护 → 通用 runtime
-安全可行性 → 跨平台运行/打包 → OCI/Kubernetes → 参考负载校准/长测/独立核验。
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查完成但安全结论 NO-GO，通用 runtime 仍阻塞，不能自动进入接线或静默豁免；修补/替代范围由统筹评估，涉及架构变化须用户决定。跨平台运行/打包、OCI/Kubernetes、参考负载校准/长测/独立核验仍 required。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，
 才能宣布**对应范围**合格；部分平台通过不能结束整个目标，缩小范围须用户确认。
