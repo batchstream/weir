@@ -137,6 +137,19 @@ generated kubeconfig in finally. It never selects the current Kubernetes context
 or reads existing Secrets. Default tests do not invoke it. Failed cleanup remains
 an error with one result per resource; there is no global prune.
 
+The evidence directory must not exist, even as a file or symlink; its parent must
+already exist. The entry exclusively creates this directory and private empty
+HOME/Docker directories. Existing output/config paths are refused without reading
+them or invoking external tools. There is no resume, force or directory-clearing
+mode. Read-only checks reject running containers, existing owner/node names, the
+kind network or the exact client image tag before client preparation/import.
+Use ordinary Python: `-O` and `PYTHONOPTIMIZE` are refused before fixture imports
+or side effects because evidence assertions must run. Cleanup independently checks
+node owner/ID and volumes, retains volumes after unconfirmed node deletion, and
+removes only the recorded empty network and access file in this invocation's root.
+See `docs/milestone-21-remediation.md` for the M21R safety correction and evidence;
+the original M21 remains pending remediation acceptance.
+
 The frozen `scripts/kubernetes-smoke.json` is **smaller than the reference profile**:
 three Weir Pods, each 0.5 CPU/384 MiB with a 256 MiB process budget, one ES at
 1.5 GiB/384 MiB heap, and one 256 MiB client; 7 GiB total node hard limits.

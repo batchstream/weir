@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Explicit, bounded M21 fixture. Creates three owned kind nodes; always cleans them."""
+if not __debug__:
+    raise RuntimeError("optimized Python is unsupported; evidence assertions are required")
+
 import argparse
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import tarfile
 import time
@@ -18,6 +20,8 @@ BINARY = "9def37fc9f4d552d35af552f87f86ba0b45bd2bdcf948114237fb5d312c97a32"
 
 
 def prepare(f, artifact, profile):
+    if not f.preflight_complete:
+        raise RuntimeError("fixture preflight required")
     receipt = json.loads((artifact/"receipt.json").read_text())
     assert receipt["source"] == profile["artifact_source"]
     for name, digest in receipt["inputs"].items():
@@ -46,7 +50,7 @@ def prepare(f, artifact, profile):
     with tarfile.open(tarpath,"w") as archive:
         entry=tarfile.TarInfo("client");entry.size=len(raw);entry.mode=0o555
         archive.addfile(entry,io.BytesIO(raw))
-    client_image=f.owner+"-client:local"
+    client_image=f.client_image
     f.run(["docker","import","--platform","linux/arm64","--change",'ENTRYPOINT ["/client"]',"--change","USER 65532:65532","--change","LABEL weir.fixture="+f.owner,str(tarpath),client_image])
     backend="weir-m20-es:8.19.22"
     for name,image in (("client",client_image),("es",backend)):
@@ -294,10 +298,10 @@ def main():
     parser.add_argument("--owner",required=True)
     parser.add_argument("--artifact",type=Path,default=REPO/"dist/m20/first")
     args=parser.parse_args()
-    assert os.environ.get("WEIR_KUBE_INTEGRATION")=="1","explicit opt-in required"
-    assert re.fullmatch(r"weir-m21-[a-z0-9-]{1,32}",args.owner)
+    if os.environ.get("WEIR_KUBE_INTEGRATION") != "1":
+        raise RuntimeError("explicit opt-in required")
     f=Fixture(args.evidence,args.owner)
-    assert not (f.root/"owned-nodes.json").exists(),"use fresh evidence/owner"
+    f.preflight()
     profile=json.loads((REPO/"scripts/kubernetes-smoke.json").read_text());profile["owner"]=args.owner
     f.save("freeze.json",profile)
     failure=None
@@ -348,7 +352,7 @@ def main():
         f.save("final-pods.json",json.loads(f.run(f.kube("get","pods","-o","json")).stdout))
         f.save("events.log",f.run(f.kube("get","events","--sort-by=.lastTimestamp")).stdout)
         for node in f.nodes:
-            f.save(node+"-final.log",f.run(["docker","exec",node,"sh","-c","cat /sys/fs/cgroup/memory.current; cat /sys/fs/cgroup/memory.events; cat /sys/fs/cgroup/pids.current"]).stdout)
+            f.save(node+"-final.log",f.run(["docker","exec",node,"sh","-c","cat /sys/fs/cgroup/memory.current; cat /sys/fs/cgroup/memory.events; cat /sys/fs/cgroup/pids.current; cat /sys/fs/cgroup/memory.stat"]).stdout)
         f.save("functional-seconds.json",time.monotonic()-started)
         print("functional PASS",flush=True)
     except BaseException as exc:

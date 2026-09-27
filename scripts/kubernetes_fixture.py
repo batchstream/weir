@@ -1,8 +1,8 @@
 """Owned kind lifecycle for test-kubernetes.py; no current context or user config."""
-import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
 
@@ -12,16 +12,31 @@ NODE = "kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c
 
 class Fixture:
     def __init__(self, root, owner):
-        self.root, self.owner = Path(root).resolve(), owner
-        self.root.mkdir(parents=True, exist_ok=True)
-        for folder in ("home", "docker"):
-            (self.root / folder).mkdir(exist_ok=True)
+        if not re.fullmatch(r"weir-m21-[a-z0-9-]{1,32}", owner):
+            raise ValueError("invalid fixture owner")
+        # Do not resolve the final component: mkdir must reject even a dangling
+        # symlink. The parent must exist; this invocation owns only this new root.
+        self.root, self.owner = Path(root).absolute(), owner
+        self.root.mkdir(mode=0o700)
+        created = []
+        try:
+            for folder in ("home", "docker"):
+                directory = self.root / folder
+                directory.mkdir(mode=0o700)
+                created.append(directory)
+        except OSError:
+            for directory in reversed(created):
+                directory.rmdir()
+            self.root.rmdir()
+            raise
         self.env = {k: os.environ[k] for k in ("PATH", "TMPDIR") if k in os.environ}
         self.env.update(HOME=str(self.root / "home"), DOCKER_CONFIG=str(self.root / "docker"),
                         DOCKER_HOST="unix:///var/run/docker.sock", KUBECONFIG=str(self.root / "kubeconfig"),
                         KIND_EXPERIMENTAL_PROVIDER="docker")
         self.nodes, self.network, self.children = {}, None, []
         self.cluster_started = False
+        self.preflight_complete = False
+        self.client_image = self.owner + "-client:local"
         self.deadline = float("inf")
         self.command_number = 0
 
@@ -69,21 +84,35 @@ class Fixture:
             raise RuntimeError(f"fixture child {child.pid} exit {child.returncode}")
 
     def owner_node(self, name):
+        if name not in {self.owner + "-" + role for role in ("control-plane", "worker", "worker2")}:
+            raise RuntimeError("node name does not belong to this fixture")
         result = self.run(["docker", "inspect", "--format", "{{json .}}", name])
         obj = json.loads(result.stdout)
-        assert obj["Config"]["Labels"].get("io.x-k8s.kind.cluster") == self.owner
-        assert name in {self.owner + "-" + role for role in ("control-plane", "worker", "worker2")}
+        if obj["Config"]["Labels"].get("io.x-k8s.kind.cluster") != self.owner:
+            raise RuntimeError("node owner mismatch")
         old = self.nodes.get(name)
-        assert old is None or old["id"] == obj["Id"]
+        if old is not None and old["id"] != obj["Id"]:
+            raise RuntimeError("node ID mismatch")
         return obj
 
-    def bootstrap(self, profile):
-        assert not self.run(["docker", "ps", "-q"]).stdout.strip(), "another running fixture exists"
-        existing = self.run(["docker", "ps", "-aq", "--filter", "label=io.x-k8s.kind.cluster="+self.owner])
-        assert not existing.stdout.strip(), "owner already belongs to an existing cluster"
+    def preflight(self):
+        # Read-only Docker metadata, before building/importing the client image.
         names = "name=^/"+self.owner+"-(control-plane|worker|worker2)$"
-        assert not self.run(["docker","ps","-aq","--filter",names]).stdout.strip(), "node name already exists"
-        assert not self.run(["docker", "network", "ls", "-q", "--filter", "name=^kind$"]).stdout.strip()
+        checks = [
+            (["docker", "ps", "-q"], "another running fixture exists"),
+            (["docker", "ps", "-aq", "--filter", "label=io.x-k8s.kind.cluster="+self.owner], "owner already exists"),
+            (["docker", "ps", "-aq", "--filter", names], "node name already exists"),
+            (["docker", "network", "ls", "-q", "--filter", "name=^kind$"], "kind network already exists"),
+            (["docker", "image", "ls", "-q", "--filter", "reference="+self.client_image], "client image tag already exists"),
+        ]
+        for command, message in checks:
+            if self.run(command).stdout.strip():
+                raise RuntimeError(message)
+        self.preflight_complete = True
+
+    def bootstrap(self, profile):
+        if not self.preflight_complete:
+            raise RuntimeError("fixture preflight required")
         config = {"kind": "Cluster", "apiVersion": "kind.x-k8s.io/v1alpha4",
                   "networking": {"apiServerAddress": "127.0.0.1", "apiServerPort": 0},
                   "nodes": [{"role": role, "image": NODE} for role in ("control-plane", "worker", "worker")]}
@@ -137,8 +166,10 @@ class Fixture:
             try:
                 action()
                 results.append({"resource": name, "clean": True})
+                return True
             except Exception as exc:
                 results.append({"resource": name, "clean": False, "error": str(exc)[:1500]})
+                return False
         def child_stop(child, output):
             try:
                 if child.poll() is None:
@@ -183,10 +214,16 @@ class Fixture:
             attempt(name+" restore", recover)
         for name, saved in self.nodes.items():
             def remove(n=name, s=saved):
-                self.owner_node(n)
+                obj = self.owner_node(n)
+                volumes = [m["Name"] for m in obj["Mounts"] if m["Type"] == "volume"]
+                if volumes != s["volumes"]:
+                    raise RuntimeError("node volume ownership mismatch")
                 self.run(["docker", "rm", "-f", s["id"]], 30)
-            attempt(name, remove)
+            removed = attempt(name, remove)
             for volume in saved["volumes"]:
+                if not removed:
+                    results.append({"resource": volume, "clean": False, "error": "node removal unconfirmed; volume retained"})
+                    continue
                 # Volume ownership was recorded from this exact newly created node.
                 def remove_volume(v=volume):
                     found=self.run(["docker","volume","inspect",v],check=False)
@@ -196,11 +233,12 @@ class Fixture:
         if self.network:
             def remove_network():
                 obj=json.loads(self.run(["docker","network","inspect",self.network]).stdout)[0]
-                assert obj["Id"]==self.network and not obj["Containers"]
+                if obj["Id"] != self.network or obj["Containers"]:
+                    raise RuntimeError("network ID mismatch or network is not empty")
                 self.run(["docker","network","rm",self.network])
             attempt("owned empty network", remove_network)
         attempt("generated kubeconfig", lambda: (self.root/"kubeconfig").unlink(missing_ok=True))
+        attempt("container inventory", lambda: self.save("after-containers.log", self.run(["docker","ps","-a","--format","{{.ID}} {{.Names}} {{.Status}}"]).stdout))
+        attempt("network inventory", lambda: self.save("after-networks.log", self.run(["docker","network","ls","--format","{{.ID}} {{.Name}}"]).stdout))
         self.save("cleanup.json", results)
-        self.save("after-containers.log", self.run(["docker","ps","-a","--format","{{.ID}} {{.Names}} {{.Status}}"],check=False).stdout)
-        self.save("after-networks.log", self.run(["docker","network","ls","--format","{{.ID}} {{.Name}}"],check=False).stdout)
         return all(item["clean"] for item in results)
