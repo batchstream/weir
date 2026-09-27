@@ -6,6 +6,7 @@ package main
 // resource ownership and fault recovery belong to scripts/test-kubernetes.py.
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -70,13 +71,16 @@ func run() error {
 		return audit(ctx)
 	case "db":
 		_, tail, tailErr := admin(ctx, "GET", "/records/_stats/refresh?filter_path=_all.total.refresh", "")
-		if tailErr != nil {
-			return tailErr
+		if tailErr != nil || !json.Valid(tail) {
+			return fmt.Errorf("refresh stats: %s %v", tail, tailErr)
 		}
 		fmt.Printf("DB refresh %s\n", tail)
-		code, raw, err := admin(ctx, "GET", "/_nodes/stats/http,thread_pool?filter_path=nodes.*.http,nodes.*.thread_pool.write", "")
+		code, raw, err := admin(ctx, "GET", "/_nodes/stats/http,thread_pool?filter_path=nodes.*.http.current_open,nodes.*.http.total_opened,nodes.*.thread_pool.write", "")
+		if err != nil || code != 200 || !json.Valid(raw) {
+			return fmt.Errorf("invalid DB statistics: status=%d err=%v", code, err)
+		}
 		fmt.Printf("DB status=%d %s\n", code, raw)
-		return err
+		return nil
 	case "refresh":
 		_, _, err := admin(ctx, "POST", "/records/_refresh", "")
 		return err

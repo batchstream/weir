@@ -28,7 +28,10 @@ func admin(ctx context.Context, method, path, body string) (int, []byte, error) 
 		return 0, nil, err
 	}
 	defer reply.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(reply.Body, 64<<10))
+	raw, err := io.ReadAll(io.LimitReader(reply.Body, (64<<10)+1))
+	if len(raw) > 64<<10 {
+		return reply.StatusCode, nil, fmt.Errorf("fixture HTTP response exceeds 64 KiB")
+	}
 	return reply.StatusCode, raw, err
 }
 func put(id string) *pb.MutateRequest {
