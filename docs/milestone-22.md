@@ -27,7 +27,8 @@ WEIR_CAPACITY_INTEGRATION=1 python3 scripts/test-capacity.py \
 The parent directory must exist. Use lowercase letters/digits/hyphens for UNIQUE.
 The entry currently targets this native Darwin arm64 host's existing Go1.27.1
 runtime/caches and native aarch64 Docker VM8CPU/8,319,770,624B/Linux7.0.12-linuxkit.
-It requires the exact already-loaded product and ES image configs in the plan;
+It requires the exact ES image config in the plan; the exact untagged product OCI
+may be loaded after read-only collision checks (retained as an artifact cache);
 it never pulls images, changes the daemon, or reads developer credentials.
 No current Kubernetes context, existing access files, or paid resources are used.
 All commands have time/output limits and start/end/exit records. A failure retains

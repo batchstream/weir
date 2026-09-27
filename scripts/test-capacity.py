@@ -31,7 +31,20 @@ def prepare(f, plan, artifact):
         raise RuntimeError("artifact mismatch")
     f.save("artifact-identity.json",{"source":receipt["source"],"inputs":receipt["inputs"],"oci":oci})
     for key in ("image_id","es_image_id"):
-        obj=json.loads(f.run(["docker","image","inspect",plan[key]]).stdout)[0]
+        inspection=f.run(["docker","image","inspect",plan[key]],check=False)
+        if inspection.returncode and key=="image_id":
+            # Exact OCI has no tag/ref-name annotations: load cannot overwrite a tag.
+            with tarfile.open(artifact/"weir-linux.oci.tar") as archive:
+                for member in archive:
+                    if member.isfile() and member.size<65536:
+                        data=archive.extractfile(member).read()
+                        if b"org.opencontainers.image.ref.name" in data or b"io.containerd.image.name" in data:
+                            raise RuntimeError("tagged OCI load refused")
+            f.product_archive=artifact/"weir-linux.oci.tar"
+            continue
+        if inspection.returncode:
+            raise RuntimeError("existing exact ES image required")
+        obj=json.loads(inspection.stdout)[0]
         if obj["Id"]!=plan[key] or obj["Os"]!="linux" or obj["Architecture"]!="arm64":
             raise RuntimeError("native existing image required")
         f.save(key+".json",{k:obj[k] for k in ("Id","Os","Architecture","RepoDigests")})
@@ -60,6 +73,12 @@ def prepare(f, plan, artifact):
 
 def start(f,plan):
     f.first_mutation()
+    if hasattr(f,"product_archive"):
+        f.run(["docker","image","load","--platform","linux/arm64","--input",str(f.product_archive)],120)
+        obj=json.loads(f.run(["docker","image","inspect",plan["image_id"]]).stdout)[0]
+        if obj["Id"]!=plan["image_id"] or obj["Os"]!="linux" or obj["Architecture"]!="arm64":
+            raise RuntimeError("loaded product mismatch")
+        f.save("loaded-product.json",{"id":obj["Id"],"repo_tags":obj.get("RepoTags"),"retained":"exact untagged product artifact cache"})
     f.run(["docker","import","--platform","linux/arm64","--change",'ENTRYPOINT ["/client"]',"--change","USER 65532:65532","--change","LABEL "+LABEL+"="+f.owner,str(f.root/"client.tar"),f.tag])
     f.image=json.loads(f.run(["docker","image","inspect",f.tag]).stdout)[0]["Id"]
     f.create_network()
