@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"regexp"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,7 +88,8 @@ func run() error {
 					continue
 				}
 				comm, e := boundedFile("/proc/" + name + "/comm")
-				if e == nil && comm == "java\n" {
+				cmdline, _ := boundedFile("/proc/" + name + "/cmdline")
+				if e == nil && comm == "java\n" && strings.Contains(cmdline, "org.elasticsearch.bootstrap.Elasticsearch") {
 					if found != "" {
 						return errors.New("multiple JVM processes")
 					}
@@ -126,7 +128,7 @@ func run() error {
 			if *diagnostics {
 				call, cancel := context.WithTimeout(ctx, time.Second)
 				observeHTTP(call, c, &s)
-				code, raw, e := db.request(call, "GET", "/_nodes/stats/process,jvm,os,fs,thread_pool,http?filter_path=nodes.*.process,nodes.*.jvm.mem,nodes.*.os.cpu,nodes.*.fs.io_stats,nodes.*.thread_pool.write,nodes.*.thread_pool.get,nodes.*.http", nil)
+				code, raw, e := db.request(call, "GET", "/_nodes/stats/process,jvm,os,fs,thread_pool,http?filter_path=nodes.*.process,nodes.*.jvm.mem,nodes.*.os.cpu,nodes.*.fs.io_stats,nodes.*.thread_pool.write,nodes.*.thread_pool.get,nodes.*.http.current_open,nodes.*.http.total_opened", nil)
 				cancel()
 				if e != nil || code != 200 {
 					s.Errors = append(s.Errors, fmt.Sprintf("DB statistics %d %v", code, e))

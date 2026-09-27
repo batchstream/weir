@@ -68,7 +68,7 @@ class Safety(unittest.TestCase):
             with patch.object(f,"run",side_effect=run),patch.object(f,"owned",side_effect=[RuntimeError("foreign owner"),obj,obj]):
                 self.assertFalse(f.cleanup())
             result=json.loads((f.root/"cleanup.json").read_text())
-            self.assertEqual([x["clean"] for x in result],[False,True])
+            self.assertEqual([x["clean"] for x in result],[False,True,True])
 
     def test_optimized_entry_has_no_side_effects(self):
         with tempfile.TemporaryDirectory() as base:

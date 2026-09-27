@@ -211,6 +211,17 @@ class Fixture:
                     raise RuntimeError("image owner mismatch")
                 self.run(["docker","image","rm",self.tag])
             attempt("client image tag",remove_image)
+        def reclaim_intermediates():
+            reclaimed=[]
+            for name in ("client","client-host","client.tar","product-docker.tar"):
+                path=self.root/name
+                if path.exists():
+                    if path.is_symlink() or not path.is_file():
+                        raise RuntimeError("intermediate type changed")
+                    reclaimed.append({"name":name,"bytes":path.stat().st_size,"sha256":sha(path)})
+                    path.unlink()
+            self.save("intermediate-reclamation.json",reclaimed)
+        attempt("generated build/import intermediates",reclaim_intermediates)
         self.save("cleanup.json",result)
         return all(r["clean"] for r in result)
 
