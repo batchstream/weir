@@ -132,7 +132,7 @@
   "sampling": {
     "seconds": 2,
     "client_self": true,
-    "observer_namespaces": "only own target PID/network; /proc/1/root/sys/fs/cgroup plus process status/fd/net; SYS_PTRACE only for own namespace proc access",
+    "observer_namespaces": "only own target PID/network; /proc/1/root/sys/fs/cgroup plus process status/fd/net; SYS_PTRACE and DAC_READ_SEARCH only for own namespace proc access; ES JVM selected by unique java comm, not tini PID1",
     "go_goroutines": "client sampled; exact Weir artifact has no low-cost census, Weir unverified",
     "quiescence_seconds": 12,
     "not_atomic_peak": true

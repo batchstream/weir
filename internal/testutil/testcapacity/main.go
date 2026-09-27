@@ -75,6 +75,31 @@ func run() error {
 		}
 	}
 	if *mode == "observe" {
+		if *pid == "java" {
+			entries, err := os.ReadDir("/proc")
+			if err != nil {
+				return err
+			}
+			found := ""
+			for _, entry := range entries {
+				name := entry.Name()
+				if !regexp.MustCompile(`^[0-9]+$`).MatchString(name) {
+					continue
+				}
+				comm, e := boundedFile("/proc/" + name + "/comm")
+				if e == nil && comm == "java\n" {
+					if found != "" {
+						return errors.New("multiple JVM processes")
+					}
+					found = name
+				}
+			}
+			if found == "" {
+				return errors.New("JVM process not found")
+			}
+			*pid = found
+		}
+
 		hash, err := executableHash(*pid)
 		if err != nil {
 			return err

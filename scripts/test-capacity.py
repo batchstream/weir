@@ -108,8 +108,8 @@ def start(f,plan):
     f.create("weir",weir_spec)
     for role,observed in (("observer-weir","weir"),("observer-es","es")):
         cid=f.containers[f.owner+"-"+observed]
-        extra=["--network","container:"+cid,"--pid","container:"+cid,"--user","0:0","--cap-add","SYS_PTRACE"]+common
-        command=["-mode","observe","-pid","1"]
+        extra=["--network","container:"+cid,"--pid","container:"+cid,"--user","0:0","--cap-add","SYS_PTRACE","--cap-add","DAC_READ_SEARCH"]+common
+        command=["-mode","observe","-pid","1" if observed=="weir" else "java"]
         if observed=="weir":command+=["-diagnostics"]
         observer_spec={"image":f.image,"limits":plan["resources"][role.replace("-","_")],"extra":extra,"command":command}
         f.create(role,observer_spec)
