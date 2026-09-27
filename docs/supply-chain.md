@@ -2,7 +2,8 @@
 
 This procedure produces evidence for a specific local artifact set. It does not
 publish, sign, upload source, or qualify a production deployment. Current results
-and remaining risks are recorded in `milestone-16.md`; M15 is a historical baseline.
+and remaining risks are recorded in [M18](milestone-18.md), with the artifact
+baseline in [M17](milestone-17.md). M15/M16 remain historical evidence.
 
 ## Fixed inputs and tools
 
@@ -110,7 +111,31 @@ need not be reinvestigated. `.testdata/m17-evidence/` retains exact command rece
 Official backend images are separately saved and scanned under `dist/m17-backends/`;
 those packages are not contents of the Weir image. Preserve raw schema failures
 as well as findings: M17's external ES catalog has two SPDX-enumeration errors,
-while its 8 Weir catalogs validate. Never repair raw reports by hiding fields.
+while its 8 Weir catalogs validate. The coordinator independently reproduced
+those two ES errors and accepted M17's limited functional/artifact qualification,
+without accepting OpenSearch server security. Never repair raw reports by hiding fields.
+
+[M18](milestone-18.md) retains all 78 OpenSearch High/Critical location matches
+as 46 package/version groups and 28 advisories in the committed
+[location and alias index](milestone-18-findings.json). It combines fixed upstream
+source, actual JAR contents, fixture configuration and an opt-in classloader
+snapshot. A loaded class is not an invoked vulnerable method; an absent class in
+one observation is not proof that future inputs cannot load it. The current REST
+pipeline excludes specific SNI/SPDY conditions, and the fixture's certificate/CRL
+configuration excludes the two BC conditions there. JDK CVE-2026-47063's precise
+API path and several optional plugin paths remain unproven; OpenSearch stays blocked.
+
+The single official 3.8.0 arm64 candidate in `dist/m18-candidate/` improves JDK,
+BC and Jackson versions but retains Netty/HttpCore candidates. It was inspected
+offline, not adopted or run as a supported backend. Its scan counts are not an
+exploit count or a reason to upgrade across a major version. Neither blank VEX
+nor blanket suppression was added. CLI-only, per-plugin and separate RCA process
+copies are distinguished; arm64 does not dispose of Intel-only entropy conditions
+on an unqualified amd64 deployment. Any extra deployment restriction is proposed,
+not silently part of the existing profile. Remaining upstream dependencies and
+the finite requalification scope are in M18; no polling or custom backend fork
+is created. Product artifact source remains M17's `1bb93fd`; this investigation
+does not require rebuilding the unchanged six-target artifact set.
 
 ## Triage and release policy
 
