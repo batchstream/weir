@@ -160,3 +160,69 @@ server 仍有跨文件的私有 delivery、relay 和 metrics 状态，这是一�
 Search TLS/认证、Mongo 多节点 failover、共享 DB 总预算、Linux/Windows 原生运行、
 Kubernetes、性能/SLO 或 24h soak 资格。未 push、PR、发布、部署、访问已有秘密或
 恢复定时任务。完成后向统筹交接并停止，由其独立核验。
+
+## 根目录换行兼容补救（2026-09-27）
+
+本补救基线为干净的 local main `ca9bed57801cda887b6a1b2d5e896db46352b22c`。
+统筹独立验收发现 `testutil.Root` 把模块声明前缀固定为 LF，导致合法 CRLF go.mod
+被拒绝。这是测试资源定位回归；上文真实 Mongo、ES、OS 的历史通过证据继续保留，
+不能据其掩盖此问题。补救交付 SHA 与最终状态记录于
+`.testdata/root-crlf-remediation/final-state.log`。
+
+修改仅将首行按 LF 分开，去除末尾单个 CR，再准确比较完整模块声明；同时支持末尾
+无换行。继续逐级向上查找并在文件系统根有限失败，不依赖 Git、网络或开发者路径。
+没有通用 go.mod 解析器、文件系统接口、生产环境开关或隐藏 fallback；显式 Fixture
+数据流与全部生产执行语义保持不变。
+
+新 `internal/testutil/root_test.go` 直接调用 Root，覆盖 LF/CRLF/无末尾换行与
+0/1/6 层目录，嵌套的其他模块不得抢先匹配。缺失模块、无关名称以及近似前缀、后缀、
+子模块和嵌入名称通过测试子进程验证真实 Fatal 诊断、exit 1 和 10 秒上界。子进程
+标记仅存在于 `_test.go`，不修改定位行为；无测试 skip，无既有断言或期限变更。
+
+证据目录为 `.testdata/root-crlf-remediation/`。先逐字复制统筹的原 Root 和原探针，
+记录源码 SHA256 与相等性：`before-probe.log` 为 LF PASS / CRLF FAIL、exit 1。
+修后逐字复制实际 Root，使用完全相同探针，`after-probe.log` 为 LF/CRLF PASS、
+exit 0。两次均在各自 `before-probe/`、`after-probe/` 目录运行
+`GO111MODULE=off GOPROXY=off GOSUMDB=off go test -count=1 -v`，没有改工作树换行。
+仓库新增回归在旧实现下的 `regression-before.log` 另保留 6 个预期失败
+（CRLF/无末尾换行各三个深度），修后同一测试的三轮 race 全通过。
+
+以下命令均使用 `GOPROXY=off GOSUMDB=off`，本次环境为 Darwin arm64 / Go 1.27.0：
+
+| 命令 | 结果 / 日志 |
+| --- | --- |
+| `go test -race -count=3 ./internal/testutil -run '^TestRoot' -v` | PASS，15 个子场景各三轮；root-race3.log |
+| `go test -count=1 ./...` | PASS；default-test.log，59.384s wall time |
+| `go test -race -count=1 ./...` | PASS；default-race.log，61.230s wall time |
+| `go vet ./...` | PASS；default-vet.log |
+| `go vet -tags integration ./...` | PASS；integration-vet.log |
+| 下列指定 TLS smoke | 两个顶层测试 PASS，0 skip；tls-smoke.log |
+| 下列补充 TLS 应用 smoke | direct/peer 都 PASS，0 skip；tls-application-smoke.log |
+
+```sh
+GOPROXY=off GOSUMDB=off WEIR_M10_INTEGRATION=1 WEIR_MONGO_PROFILE=tls \
+  go test -race -tags integration -p 1 -count=1 -timeout=5m \
+  ./internal/testutil/testmongo ./internal/app \
+  -run 'TestSecureMongoFixture|TestDiagnosticProcessSIGTERMReadinessBeforeExit' -v
+
+GOPROXY=off GOSUMDB=off WEIR_M10_INTEGRATION=1 WEIR_MONGO_PROFILE=tls \
+  go test -race -tags integration -p 1 -count=1 -timeout=5m ./internal/app \
+  -run '^TestMongoTLSApplicationAssemblyAllOperations$' -v
+```
+
+实际检查了测试路径：指定 smoke 覆盖 Root 定位 mongod、TLS/SCRAM fixture 生命周期，
+以及 Root 定位仓库构建 CLI 后 SIGTERM readiness=503、livez=200、有界退出
+（本次 2.082s）。该 CLI 场景的服务使用 Remote 配置，因此补充已有应用测试验证
+JSON Decode/Open 使用同一 TLS fixture，经 direct/peer 执行五类 RPC 后关闭。
+没有启动旧 Mongo 或 Search，也没有重跑整个后端资格集合。
+
+`tls-fixture-cleanup.log` 核对仅本轮三个新 fixture：owner 正确，生成的 data、
+PEM、keyfile 均无残留，owner/mongod.log 保留，三个端口无 listener，CLI 子进程及
+全部测试/mongod 进程退出。只检查材料路径存在性，未打开任何 PEM、私钥、keyfile
+或历史秘密。`scope-check.log` / `production-deps.log` 确认生产 CLI 无 testutil
+依赖，公共 api、go.mod/go.sum 未改，gofmt 与 diff 检查通过。
+
+此证据修复了已知 P2，并验证本机资源定位与生命周期；结构阶段最终验收仍交由统筹。
+Darwin 上的 LF/CRLF 测试不等于 Windows native-run，也不扩展 Linux、其他架构或
+整个生产资格。ProgramTransform 仍 UNSUPPORTED，Search 连接、共享 DB 预算和
+其他既定限制保持不变。本补救只提交 local main，未 push、PR、发布、部署或恢复定时任务。

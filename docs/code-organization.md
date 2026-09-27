@@ -139,7 +139,8 @@ proxy 只用于测试观察和故障注入，直连 mongod TLS 成功另外验�
 校验 owner、移除本次生成的数据与证书/keyfile，保留 owner 和日志。
 
 `testutil.Root(t)` 从当前包向上寻找确切的 Weir go.mod，用于 fixture 二进制和资源路径，
-也用于 CLI 子进程构建与示例配置；不再假设目录深度，不读取开发者凭据。
+也用于 CLI 子进程构建与示例配置；首行模块声明支持 LF、CRLF 和末尾无换行，
+不再假设目录深度，不读取开发者凭据。
 Mongo/Search 通用 Adapter 测试 builder 位于各包 `fixture_integration_test.go`。
 server 的 `fixture_integration_test.go`、`scan_fixture_integration_test.go`、
 `replica_fixture_integration_test.go` 提供本地、stream 和多 runtime 场景数据；

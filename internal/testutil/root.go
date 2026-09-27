@@ -19,7 +19,8 @@ func Root(t testing.TB) string {
 	}
 	for {
 		module, err := os.ReadFile(filepath.Join(directory, "go.mod"))
-		if err == nil && strings.HasPrefix(string(module), "module github.com/batchstream/weir\n") {
+		moduleLine, _, _ := strings.Cut(string(module), "\n")
+		if err == nil && strings.TrimSuffix(moduleLine, "\r") == "module github.com/batchstream/weir" {
 			return directory
 		}
 		parent := filepath.Dir(directory)
