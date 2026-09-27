@@ -47,8 +47,9 @@ class PackageTests(unittest.TestCase):
                 p.write_text('fixture')
             git('add', '.')
             git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
-            self.assertEqual(len(package.clean_head(root)), 40)
-            self.assertEqual(len(package.source_files(root)), 3)
+            revision = package.clean_head(root)
+            self.assertEqual(len(revision), 40)
+            self.assertEqual(len(package.source_files(root, revision)), 3)
             (root / 'extra').write_text('dirty')
             with self.assertRaises(ValueError):
                 package.clean_head(root)
@@ -57,16 +58,41 @@ class PackageTests(unittest.TestCase):
             git('add', 'private.pem')
             git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'path only')
             with self.assertRaisesRegex(ValueError, 'private.pem'):
-                package.source_files(root)
+                package.source_files(root, git('rev-parse', 'HEAD').decode().strip())
+
+    def test_captured_revision_survives_head_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            def git(*args):
+                return package.run(['git', *args], cwd=root)
+            git('init', '-q')
+            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go'):
+                dest = root / name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text('original')
+            git('add', '.')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'original')
+            revision = package.clean_head(root)
+            (root / 'cmd/weir/main.go').write_text('changed')
+            (root / 'cmd/weir/added.go').write_text('new input')
+            git('add', '.')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'moved HEAD')
+            self.assertNotEqual(package.clean_head(root), revision)
+            files = package.source_files(root, revision)
+            self.assertEqual({name for name, _ in files}, {'go.mod', 'go.sum', 'cmd/weir/main.go'})
+            for _, oid in files:
+                self.assertEqual(git('cat-file', 'blob', oid), b'original')
+            with self.assertRaisesRegex(ValueError, 'immutable full source SHA'):
+                package.source_files(root, 'HEAD')
 
     def test_toolchain_drift_rejected(self):
-        result = subprocess.CompletedProcess([], 0, b'go1.27.1\n', b'')
+        result = subprocess.CompletedProcess([], 0, b'go1.27.0\n', b'')
         with patch.object(subprocess, 'run', return_value=result):
-            with self.assertRaisesRegex(ValueError, 'requires go1.27.0'):
+            with self.assertRaisesRegex(ValueError, 'requires go1.27.1'):
                 package.go_environment()
 
     def test_binary_target_and_linked_dependency_validation(self):
-        lines = 'binary: go1.27.0\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n'
+        lines = 'binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n'
         for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/arnodel/golua\tv0.3.0\th1:fixture\n', ('linux', 'arm64'), False)):
             result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
             with patch.object(subprocess, 'run', return_value=result):

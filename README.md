@@ -32,7 +32,7 @@ acceptance conclusion must not be used as evidence for that property.
 
 ## Local reproducible artifacts
 
-With the pinned Go **1.27.0** and its verified module cache available, run from a
+With the pinned Go **1.27.1** and its verified module cache available, run from a
 clean commit:
 
 ```sh
@@ -57,11 +57,12 @@ SBOM or a vulnerability audit; the production gates remain open.
 
 ## Local Run
 
-The qualified test platform is macOS arm64, Go **1.27.0**, MongoDB **8.0.32**,
+The qualified test platform is macOS arm64, Go **1.27.1**, MongoDB **8.0.32**,
 mongosh **2.6.0**. The application listener defaults to `127.0.0.1:7447`.
 Explicit intranet IPs and wildcard IPs are accepted; access isolation belongs to
 the deployment. Weir provides no authentication, authorization, or TLS/mTLS.
 This profile is not suitable for an unisolated public network.
+Use `PATH="$PWD/.tools/go1.27.1/bin:$PATH" GOENV=off GOTOOLCHAIN=local` after bootstrap.
 The bootstrap downloads pinned public tools into ignored `.tools/`; it does not
 change Homebrew or read environment/credential files.
 

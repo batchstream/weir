@@ -29,5 +29,10 @@ short Darwin arm64 and Linux arm64 native artifact evidence; see docs/milestone-
 in the source repository for exact OS, backend, resource and lifecycle limits.
 Other architectures are build-only. No signing/notarization, full vulnerability
 scan, standard SBOM, Kubernetes, capacity or soak qualification is implied.
+Keep gRPC receive-buffer compaction enabled (the default); setting
+`GRPC_GO_EXPERIMENTAL_ENABLE_RECEIVE_BUFFER_COMPACTION=false` disables an upstream
+security fix. Dependency and base updates require fresh SBOM/scans and behavioral
+regression; a clean scan alone does not establish deployment safety.
+
 Dependencies beside the archives distinguish the module graph from binary-linked
 modules; they are inventory, not a security audit or a standard SBOM.

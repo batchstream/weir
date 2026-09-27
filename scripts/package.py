@@ -17,7 +17,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = tuple((system, arch) for system in ('linux', 'darwin', 'windows') for arch in ('amd64', 'arm64'))
-GO = 'go1.27.0'
+GO = 'go1.27.1'
 
 
 def run(args, *, cwd=ROOT, env=None, timeout=300):
@@ -46,9 +46,11 @@ def allowed(name):
         name.startswith(('api/', 'internal/', 'cmd/weir/')) and not name.startswith('internal/testutil/'))
 
 
-def source_files(root):
+def source_files(root, revision):
     # Inspect every tracked path before opening any source blob, even excluded files.
-    records = run(['git', 'ls-tree', '-rz', 'HEAD'], cwd=root).split(b'\0')
+    if not re.fullmatch('[0-9a-f]{40}', revision):
+        raise ValueError('expected immutable full source SHA')
+    records = run(['git', 'ls-tree', '-rz', revision], cwd=root).split(b'\0')
     files = []
     for record in filter(None, records):
         metadata, encoded = record.split(b'\t', 1)
@@ -286,7 +288,7 @@ def main():
     parser.add_argument('--builder', default='default')
     args = parser.parse_args()
     revision = clean_head(ROOT)
-    files, env = source_files(ROOT), go_environment()
+    files, env = source_files(ROOT, revision), go_environment()
     epoch = int(run(['git', 'show', '-s', '--format=%ct', revision]).strip())
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
