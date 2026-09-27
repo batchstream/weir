@@ -3,6 +3,7 @@ package overload
 import (
 	"context"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,27 +12,77 @@ import (
 type guardTarget struct{ latched atomic.Bool }
 
 func (t *guardTarget) SetOverloaded(value bool) { t.latched.Store(value) }
-func TestGuardObservationUsesExistingHysteresis(t *testing.T) {
+
+func TestGuardHysteresisAndUnknown(t *testing.T) {
 	target := &guardTarget{}
-	guard := New([]Target{target}, 1000)
-	if s := guard.Snapshot(); s.Observed || s.Source != "unobserved" || s.Bytes != 0 {
-		t.Fatal(s)
-	}
-	for _, n := range []uint64{800, 750, 700} {
-		guard.sample(n, "go_sys_minus_released")
+	state := Snapshot{Budget: 1000}
+	guard := &Guard{targets: []Target{target}, state: state}
+	cg := CgroupSnapshot{State: "v2", Valid: true}
+	for _, step := range []struct {
+		n                      uint64
+		high, low, valid, want bool
+	}{
+		{100, false, true, true, false},
+		{800, false, true, true, true},
+		{750, false, true, true, true},
+		{700, false, true, true, false},
+		{100, true, false, true, true},  // another process in the cgroup
+		{100, false, false, true, true}, // intermediate cgroup pressure
+		{100, false, true, false, true}, // missing RSS cannot clear the latch
+		{100, false, true, true, false},
+	} {
+		o := observation{bytes: step.n, source: "linux_rss", processValid: step.valid, cgroup: cg, high: step.high, low: step.low}
+		guard.sample(o)
 		s := guard.Snapshot()
-		if s.Latched != (n != 700) || target.latched.Load() != s.Latched || s.Bytes != n || !s.Observed {
+		if s.Latched != step.want || target.latched.Load() != step.want || s.Bytes != step.n || !s.Observed {
+			t.Fatal(s, step)
+		}
+	}
+	for _, status := range []string{"unknown", "profile_changed"} {
+		cg.State = status
+		o := observation{bytes: 0, source: "linux_rss", processValid: true, cgroup: cg, low: true}
+		guard.sample(o)
+		if s := guard.Snapshot(); !s.Latched || !s.Unknown {
 			t.Fatal(s)
 		}
+	}
+	if watermark(^uint64(0), 80, true) != 14757395258967641292 || watermark(^uint64(0), 70, false) != 12912720851596686130 {
+		t.Fatal("overflow")
+	}
+}
+
+func TestGuardStartupRunCancelAndSnapshots(t *testing.T) {
+	target := &guardTarget{}
+	targets := []Target{target}
+	guard := New(targets, 1)
+	if s := guard.Snapshot(); !s.Observed || !s.Latched || !target.latched.Load() {
+		t.Fatal("startup must sample synchronously", s)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); guard.Run(ctx) }()
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Go(func() {
+			for range 1000 {
+				guard.Snapshot()
+			}
+		})
+	}
 	time.Sleep(150 * time.Millisecond)
 	cancel()
-	<-done
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sampler did not join")
+	}
+	readers.Wait()
 	s := guard.Snapshot()
-	if !s.Observed || s.Bytes == 0 || runtime.GOOS != "linux" && s.Source != "go_sys_minus_released" {
+	time.Sleep(150 * time.Millisecond)
+	if guard.Snapshot() != s {
+		t.Fatal("sampling after join")
+	}
+	if !s.Observed || s.Bytes == 0 || runtime.GOOS != "linux" && (s.Source != "go_sys_minus_released" || s.Cgroup.State != "not_applicable") {
 		t.Fatal(s)
 	}
 }

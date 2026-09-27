@@ -944,10 +944,28 @@ payloads. Bounded does not automatically mean small enough for a particular cont
 
 ### 9.3 Process overload guard
 
-Measure process RSS (or cgroup memory for a dedicated container) against an explicit
-effective budget, preferring the lower of configured and applicable container limits.
-Document the source and unsupported-platform fallback. A Go-runtime-only metric is
-a degraded fallback, not proof of total memory usage.
+Compare process RSS with the configured process budget, and independently compare
+each applicable visible cgroup-v2 memory.current with that same group's memory.max.
+Never add RSS to cgroup usage or divide leaf usage by an ancestor limit: sibling
+processes, descendants and page cache are not Weir heap. Any high observation closes
+admission; all required observations must be valid and at or below their low watermarks
+to reopen it. An unlimited cgroup leaves the RSS/configured-budget check active.
+
+The current Linux profile resolves /proc/self/cgroup against mountinfo and checks
+at most 32 visible levels within that mount. Hidden ancestors remain unobserved.
+Topology and limits are static: a detected membership, mount or limit change latches
+an explicit profile_changed state until restart. Missing, malformed or oversized
+observations fail closed and can recover after trusted low samples. Zero memory.max
+is finite and closes admission. The first observation precedes listener admission.
+RSS from statm is an asynchronous estimate, not precise heap accounting; cgroup
+sampling cannot guarantee survival of every allocation or prevent kernel OOM.
+
+One Guard owns sampling and target publication; diagnostics only read its Snapshot.
+Metrics distinguish the configured budget, process source/validity and the most
+pressured visible cgroup's own current/limit pair, including scope and validity.
+Go Sys-HeapReleased on macOS/Windows is an explicit degraded fallback, not OS memory
+qualification. Linux RSS failure exposes that fallback but retains unknown/closed
+admission; a low Go value cannot erase an unknown Linux observation.
 
 Sample approximately every 100 ms and latch overload at 80%, clearing at 70%.
 High watermark stops *new admission*, including new operations on existing streams;
@@ -1083,13 +1101,15 @@ JSON. Opaque operations never require this structured round-trip.
 
 ### 10.3 TransformCodec and runtime separation
 
-Current implementation boundary, not an exemption: ProgramTransform remains
-UNSUPPORTED. Fixed in-process runtime experiments have not met the compilation,
+The user explicitly deferred general ProgramTransform from V1. It remains
+UNSUPPORTED and a future architecture requirement, not a V1 qualification blocker. Fixed in-process runtime experiments have not met the compilation,
 allocation, helper fuel, and cancellation requirements below. Typed Value and the
 integration-only Mongo RMW harness are not a general runtime; a generic lossless
 Search codec is not qualified. Actual evidence, including the independently accepted
 limited local connection-owner and process-replacement scope, is recorded in the
-[production readiness checklist](production-readiness.md). These targets remain required.
+[production readiness checklist](production-readiness.md). The general transform
+requirements below apply when that deferred feature is resumed; all other platform,
+backend, deployment, resource and load qualification gates remain required.
 
 ```text
 adapter-native opaque current/input
@@ -1106,7 +1126,7 @@ on the value model, not Lua. Runtimes only depend on the value model, not BSON/J
 N codecs and M runtimes therefore need N+M integrations, not N*M special bridges.
 The opaque adapter interface remains usable without either a codec or a runtime.
 
-V1 can ship one pinned Lua language/runtime profile. This is not a Lua extension
+A future general transform release may qualify one pinned language/runtime profile. This is not a Lua extension
 of StoreRuntime and not an arbitrary stored-procedure service. Hide filesystem,
 network, OS, clock, randomness, module loading, native pointers, locale, and
 unrestricted debug facilities. Use a fresh invocation state, deterministic
@@ -1931,6 +1951,8 @@ session-manager framework is required.
 
 Implementation scope requires separate approval. The stages below define
 dependencies and qualification gates, not implementation progress or approval status.
+General ProgramTransform and its transaction/OCC runtime integration are explicitly
+deferred from V1; those entries remain future full-architecture requirements.
 
 | Stage | Scope | Approval/exit evidence |
 | --- | --- | --- |
@@ -1991,17 +2013,17 @@ or streaming correctness. No production rollout/release is part of this task.
 
 Recommended V1 choices are specified: four semantic operations plus Bulk; live
 Scan with bounded per-fetch scheduling and complete-page validation; shared
-public/peer RPCs; stream-scoped sequencing; Int32/Int64 transforms; direct
+public/peer RPCs; stream-scoped sequencing; qualified BackendExpression; direct
 search source-write profile; raw Native semantics with response completeness;
 explicit-feedback AIMD; static configuration; no post-images, resume tokens, or
 automatic mutation replay. Approval may reduce capabilities further but must not
 weaken outcome, atomicity, or bounded-memory invariants.
 
 Qualification must select supported MongoDB/ES/OpenSearch versions and topology
-profiles including ingest and partial-search behavior, a Lua implementation
-satisfying typed arithmetic/resource limits, validation of native-expression
-subsets, and measured defaults. These are release gates, not permission to fall
-back to non-atomic writes or unbounded buffering.
+profiles including ingest and partial-search behavior, validation of native-expression
+subsets, and measured defaults. General program runtime and typed arithmetic/resource
+qualification apply to a future release after the user-approved V1 deferral.
+No scope decision permits non-atomic writes or unbounded buffering.
 
 ## Appendix A. Source Register
 

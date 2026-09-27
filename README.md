@@ -19,7 +19,7 @@ Search Update requires full stored source and no default/final pipeline.
 See [milestone 7](docs/milestone-7.md) for exact bounds, native numeric semantics,
 no-op outcomes, fixed versions and evidence.
 
-**ProgramTransform remains UNSUPPORTED.** The GopherLua candidate failed isolation
+**ProgramTransform remains UNSUPPORTED; the user approved deferring it from V1.** General programs remain a future architecture requirement; other production gates are unchanged. The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
 Dynamic configuration, SDKs, queues,

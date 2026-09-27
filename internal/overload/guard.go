@@ -3,10 +3,7 @@ package overload
 
 import (
 	"context"
-	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -21,16 +18,41 @@ type Guard struct {
 	mu      sync.Mutex
 	targets []Target
 	state   Snapshot
+	profile memoryProfile
 }
 type Snapshot struct {
 	Budget, Bytes     uint64
 	Source            string
 	Observed, Latched bool
+	ProcessValid      bool
+	Unknown           bool
+	Cgroup            CgroupSnapshot
+}
+
+// Cgroup is the most pressured finite visible level, with its own current/max
+// pair (never leaf usage divided by an ancestor limit). With no finite level it
+// reports the leaf current and Finite=false. Paths never leave the sampler.
+type CgroupSnapshot struct {
+	Current, Limit uint64
+	Levels         int
+	Finite, Valid  bool
+	State          string // not_applicable, v2, unknown, profile_changed
+	Scope          string // none, leaf, ancestor
+}
+
+type observation struct {
+	bytes        uint64
+	source       string
+	processValid bool
+	cgroup       CgroupSnapshot
+	high, low    bool
 }
 
 func New(targets []Target, budget uint64) *Guard {
-	state := Snapshot{Budget: effectiveBudget(budget), Source: "unobserved"}
-	guard := &Guard{targets: targets, state: state}
+	state := Snapshot{Budget: budget}
+	guard := &Guard{targets: targets, state: state, profile: newMemoryProfile()}
+	// Publish the first observation before listeners can admit any work.
+	guard.sample(guard.profile.observe())
 	return guard
 }
 func (g *Guard) Snapshot() Snapshot {
@@ -46,51 +68,37 @@ func (g *Guard) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			n, source := processBytes()
-			g.sample(n, source)
+			g.sample(g.profile.observe())
 		}
 	}
 }
-func (g *Guard) sample(n uint64, source string) {
+func (g *Guard) sample(o observation) {
 	g.mu.Lock()
-	g.state.Bytes, g.state.Source, g.state.Observed = n, source, true
-	if n >= g.state.Budget*80/100 {
+	defer g.mu.Unlock()
+	g.state.Bytes, g.state.Source, g.state.Observed = o.bytes, o.source, true
+	g.state.ProcessValid, g.state.Cgroup = o.processValid, o.cgroup
+	g.state.Unknown = !o.processValid || o.cgroup.State == "unknown" || o.cgroup.State == "profile_changed"
+	if g.state.Unknown || g.state.Budget == 0 || o.high || o.bytes >= watermark(g.state.Budget, 80, true) {
 		g.state.Latched = true
-	} else if n <= g.state.Budget*70/100 {
+	} else if o.low && o.bytes <= watermark(g.state.Budget, 70, false) {
 		g.state.Latched = false
 	}
-	latched := g.state.Latched
-	g.mu.Unlock()
 	for _, target := range g.targets {
-		target.SetOverloaded(latched)
+		target.SetOverloaded(g.state.Latched)
 	}
 }
-func effectiveBudget(budget uint64) uint64 {
-	if runtime.GOOS == "linux" {
-		raw, err := os.ReadFile("/sys/fs/cgroup/memory.max")
-		if err == nil {
-			n, e := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
-			if e == nil && n > 0 && n < budget {
-				budget = n
-			}
-		}
+
+// Split before multiplying, including for uint64-sized budgets.
+func watermark(n, percent uint64, ceil bool) uint64 {
+	remainder := n % 100 * percent
+	if ceil {
+		remainder += 99
 	}
-	return budget
+	return n/100*percent + remainder/100
 }
-func processBytes() (uint64, string) {
-	if runtime.GOOS == "linux" {
-		raw, err := os.ReadFile("/proc/self/statm")
-		if err == nil {
-			f := strings.Fields(string(raw))
-			if len(f) > 1 {
-				n, e := strconv.ParseUint(f[1], 10, 64)
-				if e == nil {
-					return n * uint64(os.Getpagesize()), "linux_rss"
-				}
-			}
-		}
-	}
+
+func goBytes() uint64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return m.Sys - m.HeapReleased, "go_sys_minus_released"
+	return m.Sys - m.HeapReleased
 }

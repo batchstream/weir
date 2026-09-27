@@ -19,7 +19,7 @@
 | `internal/backend/search` | ES/OpenSearch 的明确 profile、HTTP/TLS 连接、JSON/响应边界、CRUD/OCC、表达式、Native、PIT Scan |
 | `internal/protocol` | 规范资源 URI、公共 framing/媒体格式/操作校验、Failure/outcome 构造；不解释后端文档 |
 | `internal/value` | 有界 ordered typed value；由 Mongo codec/表达式和测试使用，没有通用程序执行器 |
-| `internal/overload` | 进程内存采样与滞回；向 admission/runtime 发布 overload 状态 |
+| `internal/overload` | 一个 Guard；Linux RSS/config 与可见 cgroup-v2 每层 current/max 独立滞回、静态 profile 校验、固定 Snapshot；其他 OS 明确 Go 降级 |
 | `internal/netlimit` | peer、Mongo 与 Search 实际复用的标准 Go DNS 有界 I/O；调用方保留并发、地址选择和生命周期 |
 | `internal/testutil` | 仓库资源定位；子包 testmongo/testsearch/testdns/testmetrics 为自有测试设施 |
 | `experiments/luaprobe` | 只有测试的 Lua 可行性探针；不进入 Weir 依赖图，ProgramTransform 仍 UNSUPPORTED |
@@ -92,8 +92,8 @@ Remote endpoint 所有者，再构造 transports、绑定 listeners、注册每�
 可选 diagnostics。部分初始化失败也经 `Node.Close` 回收已构造资源。
 `store.New` 接收已构造 Adapter 的所有权，包括其校验失败时的 Close。
 
-`Node.Start` 启动 overload guard 和 listeners，进入 serving。
-`Node.Close` 首先降低 readiness/停止新准入，开始所有 runtime drain，并行等待
+`overload.New` 同步首次观测并发布准入状态，`Node.Start` 启动同一 Guard 的 100ms 采样循环和 listeners，进入 serving。
+`Node.Close` 首先降低 readiness/停止新准入，停止并 join Guard，开始所有 runtime drain，并行等待
 有界 listener shutdown 与 runtime Close，然后关闭 listener、Remote sockets/DNS，
 最后关闭 diagnostics。Runtime 继续派发有限已准入工作，在原 drain 期限后取消并关闭
 唯一 Adapter。没有额外关闭 driver 的管理器，也没有引入第二条关闭链。
@@ -168,3 +168,9 @@ DB accepted/远端工作总上限，runtime、平台、容量及部署资格仍�
 `internal/luaprobe` → `experiments/luaprobe`；完整文件映射见结构报告。
 
 Search 原生 HTTPS/Basic fixture、显式连接和独立观察入口、权限及清理见 [M11](milestone-11.md)。`netlimit` 复用 peer/Mongo/Search 的有界 DNS I/O；各 backend 保留并发 gate、地址选择与关闭所有者。
+
+Linux 内存 profile、可见层级与读取边界、明确降级/未知、原生测试和环境限制见 [M14](milestone-14.md)。
+`proc.go` 只负责有界文件读取/解析与静态 profile，不是资源框架；可移植解析测试使用自有 temp 文件。
+`memory_linux.go` 才选择实际 /proc，其他 OS 不读取 Linux 文件。app metrics 仅读 Snapshot，不启动第二采样器。
+本地 Bulk 过载关闭输入后继续交付已准入 Ticket，最后返回 ResourceExhausted；不清除结果账本或重放写入。
+通用 ProgramTransform 已获用户明确首版延期，继续 UNSUPPORTED；上文实验与未来安全契约保留。

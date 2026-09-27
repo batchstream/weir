@@ -74,6 +74,34 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		}
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, source)
 	}
+	for name, value := range map[string]bool{"process_valid": memory.ProcessValid, "unknown": memory.Unknown, "cgroup_finite": memory.Cgroup.Finite, "cgroup_valid": memory.Cgroup.Valid} {
+		desc := prometheus.NewDesc("weir_memory_"+name, "Guard observation validity; unknown observations close new admission.", nil, nil)
+		n := 0.0
+		if value {
+			n = 1
+		}
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, n)
+	}
+	for name, value := range map[string]float64{"current_bytes": float64(memory.Cgroup.Current), "limit_bytes": float64(memory.Cgroup.Limit), "levels": float64(memory.Cgroup.Levels)} {
+		desc := prometheus.NewDesc("weir_memory_cgroup_"+name, "Most pressured visible finite cgroup current/max pair; unlimited reports leaf current with finite=0. Values require cgroup_valid=1. Never added to process RSS.", nil, nil)
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
+	}
+	desc = prometheus.NewDesc("weir_memory_cgroup_state", "Static visible cgroup profile. Changed profiles require restart; hidden ancestors are not observed.", []string{"state"}, nil)
+	for _, state := range []string{"not_applicable", "v2", "unknown", "profile_changed"} {
+		value := 0.0
+		if memory.Cgroup.State == state {
+			value = 1
+		}
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, state)
+	}
+	desc = prometheus.NewDesc("weir_memory_cgroup_scope", "Scope of the reported cgroup pair; no paths or dynamic labels.", []string{"scope"}, nil)
+	for _, scope := range []string{"none", "leaf", "ancestor"} {
+		value := 0.0
+		if memory.Cgroup.Scope == scope {
+			value = 1
+		}
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, scope)
+	}
 	n.drains.Collect(ch)
 	n.drainDuration.Collect(ch)
 }

@@ -76,9 +76,10 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 	finished := false
 	draining := s.draining
 	drainMode := false
+	terminalErr := status.Error(codes.Unavailable, "draining; unreported operations are indeterminate")
 	for {
 		if drainMode && session.Outstanding() == 0 {
-			return status.Error(codes.Unavailable, "draining; unreported operations are indeterminate")
+			return terminalErr
 		}
 		if finished && delivered == count {
 			end := &pb.BulkEnd{ReceivedCount: count, ResultCount: delivered}
@@ -107,6 +108,13 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 			continue
 		case end := <-ended:
 			if end.err != nil {
+				// Overload closes input, not the already admitted result ledger.
+				// Keep sending those results before returning the rejection.
+				if status.Code(end.err) == codes.ResourceExhausted {
+					drainMode = true
+					terminalErr = end.err
+					continue
+				}
 				select {
 				case <-s.draining:
 					drainMode = true

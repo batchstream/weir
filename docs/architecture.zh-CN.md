@@ -461,7 +461,11 @@ pending 字节记录保留的编码输入加固定条目开销，不冒充精确
 
 ### 9.3 进程过载保护
 
-以 RSS（专用容器可用 cgroup 内存）对比显式预算，优先取配置和容器限额较小值；记录来源及不支持平台回退。仅 Go runtime 指标是降级信号，不是全进程内存证明。
+进程 RSS 与配置进程预算比较；每个适用且可见的 cgroup-v2 用自己的 memory.current 与 memory.max 独立比较。不能把 RSS 与 cgroup usage 相加，也不能拿 leaf usage 除以祖先 limit；同组其他进程、后代和 page cache 不是 Weir heap。任一高观测停止准入；所有必需观测有效且各自低于或等于低水位才恢复。无限 cgroup 仍保留 RSS/config 预算检查。
+
+当前 Linux profile 依据 /proc/self/cgroup 与 mountinfo 定位，只检查该 mount 内最多 32 层；不可见祖先不作已观测声明。拓扑和 limit 是静态的：发现 membership、mount 或 limit 改变后置明确的 profile_changed，直到重启。缺失、损坏或超长观测保守闭锁，可信低观测恢复后可以解除。memory.max=0 是有限边界并闭锁。首次观测在 listener 准入之前。statm RSS 是异步估值，不是精确 heap；采样不能保证所有分配安全或永不触发内核 OOM。
+
+只有一个 Guard 拥有采样和状态发布；diagnostics 仅读 Snapshot。指标区分配置预算、进程来源/有效性，以及压力最高的可见 cgroup 自身 current/limit 配对、scope 和有效性。macOS/Windows 的 Go Sys-HeapReleased 是明确降级，不是 OS 内存资格。Linux RSS 失败时可展示该 fallback，但保持 unknown/闭锁，低 Go 值不能清除未知 Linux 观测。
 
 约每 100ms 采样，80% 置 overload latch、70% 清除。高水位停止新准入，含已有流的新操作；低水位恢复。没有进程级等待队列或第二个 DB 控制器。已准入执行、结果和 cleanup 继续以释放内存，不能再受新准入条件阻塞。
 
@@ -515,7 +519,7 @@ BSON 往返和稳定遍历需要有序 Object。Codec 可保留重复字段，�
 
 ### 10.3 TransformCodec 与 runtime 分离
 
-当前实现边界，不是目标豁免：ProgramTransform 仍 UNSUPPORTED。固定进程内 runtime 实验尚未满足下述编译、分配、含 helper 的 fuel 与取消要求。Typed Value 和仅用于 integration 的 Mongo RMW harness 不是通用 runtime；Search 通用无损 codec 也未合格。实际证据（包括已获独立验收的本地连接 owner 和进程替换有限范围）记录在[生产资格清单](production-readiness.md)，这些目标仍为 required。
+用户已明确同意首版延期通用 ProgramTransform：继续 UNSUPPORTED、保留未来架构需求，不再是 V1 必需资格门槛。固定进程内 runtime 实验尚未满足下述编译、分配、含 helper 的 fuel 与取消要求。Typed Value 和仅用于 integration 的 Mongo RMW harness 不是通用 runtime；Search 通用无损 codec 也未合格。实际证据（包括已获独立验收的本地连接 owner 和进程替换有限范围）记录在[生产资格清单](production-readiness.md)，下述通用转换要求在恢复该延期功能时仍必需；其他平台、后端、部署、资源和容量门槛不变。
 
 ```text
 原生不透明 current/input -> 有界 codec decode -> Weir Value
@@ -525,7 +529,7 @@ BSON 往返和稳定遍历需要有序 Object。Codec 可保留重复字段，�
 
 Codec 位于后端/转换边界，只依赖 Value 而非 Lua；runtime 只依赖 Value，不依赖 BSON/JSON。N codec、M runtime 为 N+M 集成而非 N*M 特例。不透明 Adapter 在二者都没有时仍可用。
 
-V1 可交付一个固定 Lua profile，但不能把 Lua 扩展进调度器或做存储过程服务。隐藏文件、网络、OS、时钟、随机、module loading、native pointer、locale 和 unrestricted debug。每次新状态，确定性对象遍历，精确整数构造/运算，显式 array/null/missing；不为方便而转 float。混宽规则见 10.2。
+未来通用转换版本可资格验证一个固定语言/runtime profile，但不能把 Lua 扩展进调度器或做存储过程服务。隐藏文件、网络、OS、时钟、随机、module loading、native pointer、locale 和 unrestricted debug。每次新状态，确定性对象遍历，精确整数构造/运算，显式 array/null/missing；不为方便而转 float。混宽规则见 10.2。
 
 执行必须限制含 helper 工作的 fuel、分配字节、节点、深度、stack/call、source/compile、encoded output 和实际时间 watchdog。标准库能越限分配/阻塞的 runtime 不得批准进程内使用。编译在 Store execution admission 后，不在无界预准入 CPU 路径。
 
@@ -889,6 +893,8 @@ internal/
 
 实施范围须单独批准。下列阶段定义依赖关系与验证门槛，不记录实施进度或批准状态。
 
+通用 ProgramTransform 及其事务/OCC runtime 接线已明确移出 V1；下表相关条目保留为未来完整架构要求。
+
 | 阶段 | 范围 | 批准/退出证据 |
 | --- | --- | --- |
 | 0 契约确认 | 决策、后端/runtime profile、精确版本和额度 | 明确书面授权，不能只因文档存在而实施。 |
@@ -938,9 +944,9 @@ internal/
 
 ### 20.2 需要确认的决策，而非遗留正确性漏洞
 
-推荐的 V1 决策已有明确描述：四类操作加 Bulk、逐 fetch 调度且完整验证的 live Scan、应用/peer 共用 RPC、流内同 key 排序、精确整数转换、直接搜索 source-write profile、原生 response completeness、显式 AIMD、静态配置、无 post-image/resume/自动写入重放。授权可减少能力，不能降低 outcome/atomicity/资源不变量。
+推荐的 V1 决策已有明确描述：四类操作加 Bulk、逐 fetch 调度且完整验证的 live Scan、应用/peer 共用 RPC、流内同 key 排序、已资格验证的 BackendExpression、直接搜索 source-write profile、原生 response completeness、显式 AIMD、静态配置、无 post-image/resume/自动写入重放。授权可减少能力，不能降低 outcome/atomicity/资源不变量。
 
-验证必须固定支持的 MongoDB/ES/OpenSearch 版本和 topology/ingest/partial profile，选择满足类型及资源要求的 Lua，验证表达式白名单并测量初值。这些是 release gate，不是采用非原子或无界实现的许可。
+验证必须固定支持的 MongoDB/ES/OpenSearch 版本和 topology/ingest/partial profile，验证表达式白名单并测量初值。通用 runtime、精确类型和资源资格在用户批准首版延期后适用于未来版本；任何范围决定都不允许非原子写入或无界缓冲。
 
 ## 附录 A. 来源登记
 
