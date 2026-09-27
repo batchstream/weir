@@ -35,6 +35,9 @@ func run(args []string, output io.Writer) error {
 	searchProfile := flags.String("search-profile", "elasticsearch-8.17.0", "exact qualified search profile")
 	configFile := flags.String("config", "", "strict static JSON configuration; exclusive with other flags")
 	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 	if flags.NArg() != 0 {
