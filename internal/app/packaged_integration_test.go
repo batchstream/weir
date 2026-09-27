@@ -285,7 +285,8 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 		} else if err := os.WriteFile(opts.directory+".log", logs, 0600); err != nil {
 			t.Error(err)
 		}
-		if _, err := exec.CommandContext(ctx, "docker", "stop", "--timeout=5", opts.name).CombinedOutput(); err != nil {
+		_, err = exec.CommandContext(ctx, "docker", "stop", "--timeout=5", opts.name).CombinedOutput()
+		if err != nil {
 			t.Error("cleanup stop", err)
 		}
 		raw, err = exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Running}}", opts.name).Output()
@@ -293,7 +294,8 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 			t.Error("not confirmed stopped; preserving materials")
 			return
 		}
-		if _, err := exec.CommandContext(ctx, "docker", "rm", "-v", opts.name).CombinedOutput(); err != nil {
+		_, err = exec.CommandContext(ctx, "docker", "rm", "-v", opts.name).CombinedOutput()
+		if err != nil {
 			t.Error("cleanup rm", err)
 			return
 		}
