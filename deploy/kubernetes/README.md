@@ -73,8 +73,8 @@ or image rollback uses the same controlled Recreate lifecycle, with a known prio
 immutable image/config pair; schema/backend compatibility must be checked first.
 
 See `docs/milestone-20.md` for exact fixture evidence and untested gates. Kubernetes
-1.36.4 is the initial selected test version; other versions, three replicas/two
-workers, node failure, capacity and 24-hour soak are separate gates.
+1.36.4 is the initial selected test version; other versions, the bounded three-replica/two-worker extension is described below and in M21;
+physical-host failure, reference capacity and 24-hour soak remain separate gates.
 
 ## Three replicas and static configuration revisions
 
@@ -85,7 +85,9 @@ kubectl --kubeconfig "$OWNED_KUBECONFIG" --context "$OWNED_CONTEXT" -n "$NAMESPA
   patch deployment weir --type=strategic --patch-file deploy/kubernetes/three-replicas.patch.json
 ```
 
-The patch keeps the reference resources, probes and 15-second grace. It selects
+The patch keeps the reference resources, probes and 15-second grace.
+See the standard [Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
+and [topology spread](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/) semantics. It selects
 workers by excluding the control-plane label and uses hostname spread with two
 required domains and skew one. Label/taint your control-plane accurately. This
 requires two eligible workers; it deliberately leaves excess Pods Pending when
