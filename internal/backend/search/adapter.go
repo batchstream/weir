@@ -19,6 +19,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Only these exact versions are accepted; other patches require requalification.
+const ElasticsearchVersion = "8.19.22"
+const OpenSearchVersion = "2.19.6"
+const ElasticsearchProfile = "elasticsearch-" + ElasticsearchVersion
+const OpenSearchProfile = "opensearch-" + OpenSearchVersion
+
 type Config struct {
 	Store, URL, Index, Profile string
 	Pool                       int
@@ -105,13 +111,13 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		return fmt.Errorf("search version qualification failed")
 	}
 	switch a.config.Profile {
-	case "elasticsearch-8.17.0":
-		if info.Version.Number != "8.17.0" || info.Version.BuildFlavor != "default" || info.Version.Distribution != "" {
-			return fmt.Errorf("expected Elasticsearch 8.17.0 default distribution")
+	case ElasticsearchProfile:
+		if info.Version.Number != ElasticsearchVersion || info.Version.BuildFlavor != "default" || info.Version.Distribution != "" {
+			return fmt.Errorf("expected Elasticsearch %s default distribution", ElasticsearchVersion)
 		}
-	case "opensearch-2.19.0":
-		if info.Version.Number != "2.19.0" || info.Version.Distribution != "opensearch" {
-			return fmt.Errorf("expected OpenSearch 2.19.0 distribution")
+	case OpenSearchProfile:
+		if info.Version.Number != OpenSearchVersion || info.Version.Distribution != "opensearch" {
+			return fmt.Errorf("expected OpenSearch %s distribution", OpenSearchVersion)
 		}
 	}
 	call.path = "/_cluster/settings?include_defaults=true&flat_settings=true"

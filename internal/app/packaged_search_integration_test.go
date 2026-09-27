@@ -1,0 +1,307 @@
+//go:build integration
+
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	spb "github.com/batchstream/weir/api/weir/search/v1"
+	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend/search"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+)
+
+// Reuses packaged fixture ownership and explicit archive/image identities.
+// The independently mounted probe is never part of the product image.
+func TestPackagedSearchArtifacts(t *testing.T) {
+	if os.Getenv("WEIR_M17_INTEGRATION") != "1" {
+		t.Skip("requires explicit owned M17 Search artifact fixture")
+	}
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Fatal("requires native Darwin arm64 and Linux arm64")
+	}
+	binary, image := os.Getenv("WEIR_M15_BINARY"), os.Getenv("WEIR_M15_IMAGE")
+	source, helper := os.Getenv("WEIR_M15_SOURCE"), os.Getenv("WEIR_M15_HELPER")
+	if !filepath.IsAbs(binary) || !filepath.IsAbs(helper) || !strings.HasPrefix(image, "sha256:") || len(source) != 40 {
+		t.Fatal("explicit artifact identities required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	raw, err := exec.CommandContext(ctx, binary, "-version").Output()
+	cancel()
+	var version map[string]string
+	if err != nil || json.Unmarshal(raw, &version) != nil || version["revision"] != source || version["state"] != "clean-commit" || version["target"] != "darwin/arm64" {
+		t.Fatal("archive identity mismatch")
+	}
+	identity := packagedDocker(t, "image", "inspect", "--format", `{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Os}}/{{.Architecture}} {{.Config.User}} {{json .Config.Entrypoint}}`, image)
+	if strings.TrimSpace(identity) != source+` linux/arm64 65532:65532 ["/weir"]` {
+		t.Fatal("image identity mismatch", identity)
+	}
+	engine := packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}}")
+	if strings.TrimSpace(engine) != "linux/aarch64/2" {
+		t.Fatal("requires native Linux arm64 cgroup-v2")
+	}
+	t.Log("exact source", source, "image", image, "archive", strings.TrimSpace(string(raw)))
+	root, err := os.MkdirTemp(filepath.Join(testutil.Root(t), ".testdata"), "weir-m17-artifact-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := filepath.Base(root)
+	if err := os.WriteFile(filepath.Join(root, "owner"), []byte(owner), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("artifact owner", root)
+	fixture := testsearch.OpenSecure(t)
+	for _, platform := range []string{"darwin", "linux"} {
+		t.Run(platform, func(t *testing.T) {
+			observation := &budgetObservation{}
+			proxy := startSearchBudgetProxy(t, fixture, observation)
+			cfg := packagedSearchConfig(fixture.Backend)
+			cfg.Services[0].Local.Search.URL = "https://" + proxy.listener.Addr().String()
+			var process *process
+			var address, container string
+			if platform == "darwin" {
+				process = startProcess(t, binary, cfg)
+				address = process.address
+			} else {
+				directory := filepath.Join(root, platform)
+				packagedSearchFiles(t, directory, cfg)
+				container = owner + "-" + platform
+				opts := packagedContainerOptions{owner: owner, name: container, image: image, directory: directory, helper: helper}
+				address = packagedContainer(t, opts)
+				probe := packagedDocker(t, "exec", "--env", "WEIR_M15_PROBE=1", container, "/app.test", "-test.run=^TestPackagedImageProbe$", "-test.v", "-test.timeout=8s")
+				if !strings.Contains(probe, "--- PASS: TestPackagedImageProbe") {
+					t.Fatal(probe)
+				}
+				t.Log(probe)
+			}
+			client := endpointProcessClient(t, address)
+			searchClientOperations(t, client, fixture, platform)
+			packagedSearchFaults(t, client, fixture, proxy)
+			started := time.Now()
+			if process != nil {
+				process.stop(t)
+			} else {
+				packagedDocker(t, "kill", "--signal=TERM", container)
+				if strings.TrimSpace(packagedDocker(t, "wait", container)) != "0" {
+					t.Fatal("image exit")
+				}
+				state := packagedDocker(t, "inspect", "--format", "{{.State.OOMKilled}} {{.State.Running}} {{.State.ExitCode}}", container)
+				if strings.TrimSpace(state) != "false false 0" {
+					t.Fatal("image state", state)
+				}
+			}
+			elapsed := time.Since(started)
+			if elapsed > 3*time.Second {
+				t.Fatal("original SIGTERM/Wait budget exceeded", elapsed)
+			}
+			budgetWait(t, "packaged Search sockets closed", func() bool { n, _ := proxy.sockets(); return n == 0 })
+			t.Logf("%s exact artifact CRUD/Bulk/Native/Scan/expression/cancel/UNKNOWN; SIGTERM/Wait=%s; proxy=0", platform, elapsed)
+		})
+	}
+	t.Run("linux-startup-rejections", func(t *testing.T) {
+		handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+		unrelated := httptest.NewTLSServer(handler)
+		defer unrelated.Close()
+		for _, negative := range []string{"ca", "hostname", "credentials", "old-profile", "wrong-product"} {
+			t.Run(negative, func(t *testing.T) {
+				cfg := packagedSearchConfig(fixture.Backend)
+				directory := filepath.Join(root, "negative-"+negative)
+				packagedSearchFiles(t, directory, cfg)
+				filename := filepath.Join(directory, "node.json")
+				raw, err := os.ReadFile(filename)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch negative {
+				case "ca":
+					block := &pem.Block{Type: "CERTIFICATE", Bytes: unrelated.Certificate().Raw}
+					if err := os.WriteFile(filepath.Join(directory, "ca.crt"), pem.EncodeToMemory(block), 0644); err != nil {
+						t.Fatal(err)
+					}
+				case "hostname":
+					raw = []byte(strings.ReplaceAll(string(raw), "host.docker.internal", "m15-wrong"))
+				case "credentials":
+					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Password, "wrong-owned-pair"))
+				case "old-profile":
+					old := "elasticsearch-8.17.0"
+					if fixture.Backend.Profile == search.OpenSearchProfile {
+						old = "opensearch-2.19.0"
+					}
+					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Profile, old))
+				case "wrong-product":
+					other := search.OpenSearchProfile
+					if fixture.Backend.Profile == other {
+						other = search.ElasticsearchProfile
+					}
+					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Profile, other))
+				}
+				if err := os.WriteFile(filename, raw, 0644); err != nil {
+					t.Fatal(err)
+				}
+				opts := packagedContainerOptions{owner: owner, name: owner + "-" + negative, image: image, directory: directory, helper: helper, negative: true}
+				packagedContainer(t, opts)
+				if strings.TrimSpace(packagedDocker(t, "wait", opts.name)) != "1" {
+					t.Fatal("invalid connection/profile reached serving")
+				}
+				logs := packagedDocker(t, "logs", opts.name)
+				if strings.Contains(logs, "Weir listening") || strings.Contains(logs, fixture.Backend.Password) {
+					t.Fatal("invalid startup served or disclosed credentials")
+				}
+				t.Log("exact image rejected", negative, "before serving")
+			})
+		}
+	})
+}
+
+func packagedSearchConfig(b *testsearch.Backend) Config {
+	connection := &search.Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
+	backend := &Search{URL: b.URL, Index: b.Index, Profile: b.Profile, Connection: connection}
+	local := &Local{Search: backend, Concurrency: 2, BatchOperations: 1}
+	service := Service{Name: "database", Local: local}
+	route := Route{Store: "search", Service: "database"}
+	cfg := DefaultConfig()
+	cfg.Application, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Services, cfg.Routes = []Service{service}, []Route{route}
+	return cfg
+}
+
+func packagedSearchFiles(t *testing.T, directory string, cfg Config) {
+	t.Helper()
+	if err := os.Mkdir(directory, 0755); err != nil {
+		t.Fatal(err)
+	}
+	backend := *cfg.Services[0].Local.Search
+	connection := *backend.Connection
+	// Only the CA generated by this running owner is consumed here.
+	ca, err := os.ReadFile(connection.CAFile)
+	if err != nil {
+		t.Fatal("owned Search CA unavailable")
+	}
+	if err := os.WriteFile(filepath.Join(directory, "ca.crt"), ca, 0644); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint.Host = net.JoinHostPort("host.docker.internal", endpoint.Port())
+	backend.URL, connection.CAFile = endpoint.String(), "/fixture/ca.crt"
+	backend.Connection = &connection
+	local := *cfg.Services[0].Local
+	local.Search = &backend
+	service := Service{Name: cfg.Services[0].Name, Local: &local}
+	cfg.Services = []Service{service}
+	cfg.Application, cfg.Diagnostics = "0.0.0.0:7447", "127.0.0.1:7449"
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "node.json"), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.SecureFixture, proxy *searchBudgetProxy) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	root := "weir://search/" + f.Backend.Index
+	for _, mode := range []string{"ordinary", "native"} {
+		id := fmt.Sprintf("lost-%s-%d", mode, time.Now().UnixNano())
+		before, applied, dropped := proxy.mutations.Load(), proxy.applied.Load(), proxy.dropped.Load()
+		proxy.dropNext.Store(true)
+		if mode == "ordinary" {
+			request := searchBudgetPut(root, id)
+			result, err := client.Mutate(ctx, request)
+			if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
+				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)
+			}
+		} else {
+			stream, err := client.Native(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
+			encoded, err := proto.Marshal(descriptor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
+			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
+			variant := &pb.NativeRequestFrame_Open{Open: open}
+			frame := &pb.NativeRequestFrame{Frame: variant}
+			if err := stream.Send(frame); err != nil {
+				t.Fatal(err)
+			}
+			chunk := &pb.NativeRequestFrame_Chunk{Chunk: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
+			frame = &pb.NativeRequestFrame{Frame: chunk}
+			if err := stream.Send(frame); err != nil {
+				t.Fatal(err)
+			}
+			if err := stream.CloseSend(); err != nil {
+				t.Fatal(err)
+			}
+			for {
+				reply, err := stream.Recv()
+				if err != nil {
+					t.Fatal("missing Native terminal", err)
+				}
+				if end := reply.GetEnd(); end != nil {
+					if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.Failure == nil {
+						t.Fatal("lost native reply reported complete", end)
+					}
+					break
+				}
+			}
+			if _, err := stream.Recv(); err != io.EOF {
+				t.Fatal("Native EOF", err)
+			}
+		}
+		code, raw := f.Admin.Do(t, "GET", "/"+f.Backend.Index+"/_doc/"+id, "")
+		var found struct {
+			Version int `json:"_version"`
+		}
+		if code != 200 || json.Unmarshal(raw, &found) != nil || found.Version != 1 {
+			t.Fatal("independent backend effect must be exactly one", code)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if proxy.mutations.Load()-before != 1 || proxy.applied.Load()-applied != 1 || proxy.dropped.Load()-dropped != 1 {
+			t.Fatal("dispatch/reply-loss accounting mismatch")
+		}
+		t.Log(mode, "dispatch=1 acknowledged=1 dropped=1 backend version=1; no replay")
+	}
+	cancelled, stop := context.WithCancel(ctx)
+	stream, err := client.Bulk(cancelled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := &pb.BulkOpen{Store: "weir://search"}
+	variant := &pb.BulkRequestFrame_Open{Open: open}
+	frame := &pb.BulkRequestFrame{Frame: variant}
+	if err := stream.Send(frame); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	if _, err := stream.Recv(); status.Code(err) != codes.Canceled && err != io.EOF {
+		t.Fatal("packaged Bulk cancellation", err)
+	}
+}

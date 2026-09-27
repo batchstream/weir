@@ -28,8 +28,8 @@ import (
 )
 
 const secureOwner = "weir-milestone-11"
-const elasticImage = "docker.elastic.co/elasticsearch/elasticsearch@sha256:2f602552550869fb29b6fd5848c5118d3ef3a2e1d5d45802e3ab9088cb2de8e2"
-const openSearchImage = "opensearchproject/opensearch@sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb"
+const elasticImage = "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237"
+const openSearchImage = "opensearchproject/opensearch@sha256:89a402aa9132286200b8d12aa37fd5b14daa65851193d009355900c0d1d9d59c"
 
 // SecureFixture owns one native TLS database. Admin is used only for bootstrap
 // and independent observation. Backend contains the restricted application pair.
@@ -100,9 +100,9 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	transport := &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig, Protocols: protocols, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true, TLSHandshakeTimeout: 2 * time.Second, ResponseHeaderTimeout: 5 * time.Second}
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	t.Cleanup(transport.CloseIdleConnections)
-	profile := "elasticsearch-8.17.0"
+	profile := "elasticsearch-8.19.22"
 	if product == "opensearch" {
-		profile = "opensearch-2.19.0"
+		profile = "opensearch-2.19.6"
 	}
 	index := "weir_m11_" + strings.ReplaceAll(suffix, "-", "_")
 	f.Admin = &Backend{URL: "https://" + port, Profile: profile, Index: index, Client: client, Username: "weir_admin", Password: adminPass, CAFile: filepath.Join(f.materials, "ca.pem")}
@@ -113,9 +113,22 @@ func OpenSecure(t *testing.T) *SecureFixture {
 		f.docker(t, 45*time.Second, "exec", f.name, "/usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh", "-h", "localhost", "-p", "9200", "-cn", f.name, "-cacert", base+"/weir/ca.pem", "-cert", base+"/weir/admin.pem", "-key", base+"/weir/admin.key", "-cd", base+"/weir/security/")
 	}
 	f.waitReady(t, false, 20*time.Second)
-	status, _ := f.Admin.Do(t, "GET", "/", "")
+	status, raw := f.Admin.Do(t, "GET", "/", "")
 	if status != 200 {
 		t.Fatal("fixture Basic administrator bootstrap failed", status)
+	}
+	verifyVersion(t, raw, profile, f.name)
+	if err := os.WriteFile(filepath.Join(f.Root, "version.json"), raw, 0600); err != nil {
+		t.Fatal("cannot retain backend build fingerprint")
+	}
+	identity := f.docker(t, 5*time.Second, "inspect", "-f", "{{.Image}}", f.name)
+	t.Log("actual backend image config", strings.TrimSpace(identity))
+	status, raw = f.Admin.Do(t, "GET", "/_nodes/jvm,plugins?filter_path=nodes.*.jvm.version,nodes.*.jvm.vm_name,nodes.*.plugins.name,nodes.*.plugins.version", "")
+	if status != 200 {
+		t.Fatal("runtime JVM/plugin fingerprint unavailable", status)
+	}
+	if err := os.WriteFile(filepath.Join(f.Root, "runtime.json"), raw, 0600); err != nil {
+		t.Fatal("cannot retain runtime JVM/plugin fingerprint")
 	}
 	f.Admin.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	t.Logf("native %s HTTPS/Basic fixture=%s image=%s CPU=2 memory=1536MiB", profile, f.name, f.image)
@@ -187,7 +200,7 @@ func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 			commonName = "weir-admin"
 		}
 		subject := pkix.Name{CommonName: commonName}
-		leaf := &x509.Certificate{SerialNumber: big.NewInt(int64(i + 2)), Subject: subject, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(12 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}, DNSNames: []string{"localhost", "weir-node", "search.test"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}}
+		leaf := &x509.Certificate{SerialNumber: big.NewInt(int64(i + 2)), Subject: subject, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(12 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}, DNSNames: []string{"localhost", "weir-node", "search.test", "host.docker.internal"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}}
 		der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &leafKey.PublicKey, key)
 		if err != nil {
 			t.Fatal("fixture certificate generation")

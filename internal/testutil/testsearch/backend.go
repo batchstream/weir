@@ -29,9 +29,9 @@ func Open(t *testing.T) *Backend {
 	var endpoint, profile string
 	switch os.Getenv("WEIR_SEARCH_INTEGRATION") {
 	case "elasticsearch":
-		endpoint, profile = "http://127.0.0.1:19200", "elasticsearch-8.17.0"
+		endpoint, profile = "http://127.0.0.1:19200", "elasticsearch-8.19.22"
 	case "opensearch":
-		endpoint, profile = "http://127.0.0.1:19201", "opensearch-2.19.0"
+		endpoint, profile = "http://127.0.0.1:19201", "opensearch-2.19.6"
 	case "":
 		t.Skip("Search real-backend suite requires explicit WEIR_SEARCH_INTEGRATION=elasticsearch|opensearch")
 	default:
@@ -42,17 +42,37 @@ func Open(t *testing.T) *Backend {
 	index := fmt.Sprintf("weir_m2_%d_%d", os.Getpid(), sequence.Add(1))
 	b := &Backend{URL: endpoint, Profile: profile, Index: index, Client: client}
 	status, raw := b.Do(t, "GET", "/", "")
-	var root struct {
-		ClusterName string `json:"cluster_name"`
-		Version     struct{ Number, Distribution string }
-	}
-	if status != 200 || json.Unmarshal(raw, &root) != nil || root.ClusterName != "weir-m2-"+os.Getenv("WEIR_SEARCH_INTEGRATION") || strings.TrimPrefix(profile, "elasticsearch-") != root.Version.Number && strings.TrimPrefix(profile, "opensearch-") != root.Version.Number {
+	if status != 200 {
 		t.Fatal("wrong isolated backend", status)
 	}
+	verifyVersion(t, raw, profile, "weir-m17-"+os.Getenv("WEIR_SEARCH_INTEGRATION"))
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b
 }
+
+func verifyVersion(t *testing.T, raw []byte, profile, cluster string) {
+	t.Helper()
+	var root struct {
+		ClusterName string `json:"cluster_name"`
+		Version     struct {
+			Number, Distribution string
+			BuildFlavor          string `json:"build_flavor"`
+			BuildHash            string `json:"build_hash"`
+		}
+	}
+	if json.Unmarshal(raw, &root) != nil || root.ClusterName != cluster || root.Version.BuildHash == "" {
+		t.Fatal("wrong isolated backend identity")
+	}
+	v := root.Version
+	valid := profile == "elasticsearch-8.19.22" && v.Number == "8.19.22" && v.Distribution == "" && v.BuildFlavor == "default"
+	valid = valid || profile == "opensearch-2.19.6" && v.Number == "2.19.6" && v.Distribution == "opensearch"
+	if !valid {
+		t.Fatal("wrong isolated backend version/distribution")
+	}
+	t.Logf("actual backend profile=%s build=%s", profile, v.BuildHash)
+}
+
 func (b *Backend) Create(t *testing.T, index, body string) {
 	t.Helper()
 	if !strings.HasPrefix(index, b.Index) {

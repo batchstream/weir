@@ -31,7 +31,7 @@ func ValidateConfig(cfg Config) error {
 	if err != nil || name != cfg.Store || len(segments) != 0 || !indexPattern.MatchString(cfg.Index) || cfg.Pool < 1 || cfg.Pool > 32 {
 		return errors.New("invalid Search configuration")
 	}
-	if cfg.Profile != "elasticsearch-8.17.0" && cfg.Profile != "opensearch-2.19.0" {
+	if cfg.Profile != ElasticsearchProfile && cfg.Profile != OpenSearchProfile {
 		return errors.New("unsupported Search profile")
 	}
 	endpoint, err := canonicalURL(cfg.URL)

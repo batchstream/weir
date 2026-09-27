@@ -55,9 +55,11 @@ commands, artifact source, digests, native scope and cleanup are in
 [configuration template](packaging/node.example.json). [M16](docs/milestone-16.md) adds
 Go 1.27.1 / gRPC 1.83.2 artifacts, standard CycloneDX SBOMs, frozen-database scans
 and explicit triage. See the [local supply-chain procedure](docs/supply-chain.md).
-Remaining module matches concern packages absent from the CLI; the existing
-Elasticsearch/OpenSearch backend versions have separate security blockers. These
-are unsigned local artifacts, and the production gates remain open.
+Remaining module matches concern packages absent from the CLI. M16 received limited
+independent acceptance. [M17](docs/milestone-17.md) updates the exact Search profiles
+and records new backend/image checks separately; OpenSearch bundled-component
+security candidates still block its production qualification. These are unsigned
+local artifacts, and the production gates remain open.
 
 ## Local Run
 
@@ -201,7 +203,7 @@ go run ./cmd/weir-example -store search
 
 ## Search backend connections
 
-Elasticsearch **8.17.0** and OpenSearch **2.19.0** accept one static HTTP or HTTPS
+Elasticsearch **8.19.22** and OpenSearch **2.19.6** accept one static HTTP or HTTPS
 base URL with an explicit DNS hostname/IP and port. HTTP is credential-free.
 HTTPS uses standard Go chain, SAN and expiry verification, with system roots or
 an explicit CA bundle. Basic credentials are optional and allowed only on HTTPS.
@@ -212,7 +214,7 @@ object below contains placeholders, not working credentials:
 {
   "url": "https://search.internal:9200",
   "index": "records",
-  "profile": "elasticsearch-8.17.0",
+  "profile": "elasticsearch-8.19.22",
   "connection": {
     "username": "APP_USER",
     "password": "APP_PASSWORD",
@@ -241,8 +243,12 @@ All are canceled and joined on Close.
 The existing single concrete index/primary, source and ingest restrictions remain.
 Weir does not create accounts, certificates or indexes. The operator grants backend
 qualification reads and permitted data actions; exact tested permissions, outcomes,
-version limits and commands are in [M11](docs/milestone-11.md). Fixed old versions
-are regression baselines, not a continuing security or overall production claim.
+historical connection evidence is in [M11](docs/milestone-11.md); current versions,
+commands and remaining security gates are in [M17](docs/milestone-17.md). Only
+`elasticsearch-8.19.22` and `opensearch-2.19.6` are accepted. Old profiles and
+unverified patches fail startup; there are no aliases or fallback. The disposable
+Search fixtures use pinned linux/arm64 images and fresh data. Semantic regression
+success does not establish overall backend or deployment safety.
 
 Native HTTPS fixtures are isolated from the old HTTP containers and create their
 own temporary CA, credentials and restricted application account:

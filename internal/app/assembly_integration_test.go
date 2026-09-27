@@ -27,7 +27,7 @@ func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 	before := count()
 	mongo := &Mongo{URI: backend.URI, Database: db, Collection: "records"}
 	// The second valid static configuration fails only after Mongo opens.
-	search := &Search{URL: "http://127.0.0.1:1", Index: "records", Profile: "elasticsearch-8.17.0"}
+	search := &Search{URL: "http://127.0.0.1:1", Index: "records", Profile: "elasticsearch-8.19.22"}
 	first := &Local{Mongo: mongo}
 	second := &Local{Search: search}
 	mongoService := Service{Name: "mongo", Local: first}

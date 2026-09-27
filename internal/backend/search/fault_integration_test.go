@@ -319,9 +319,9 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		t.Fatal("alias accepted")
 	}
 	cfg = a.config
-	cfg.Profile = "opensearch-2.19.0"
+	cfg.Profile = OpenSearchProfile
 	if a.config.Profile == cfg.Profile {
-		cfg.Profile = "elasticsearch-8.17.0"
+		cfg.Profile = ElasticsearchProfile
 	}
 	invalid, err = Open(context.Background(), cfg)
 	if err == nil {

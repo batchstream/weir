@@ -77,7 +77,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			return page, execution.Neutral
 		}
 		call := exchange{path: "/" + a.config.Index + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false", body: []byte("{}"), limit: metadataLimit}
-		if a.config.Profile == "opensearch-2.19.0" {
+		if a.config.Profile == OpenSearchProfile {
 			call.path = "/" + a.config.Index + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
 		}
 		n.opened = true
@@ -100,7 +100,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		return page, execution.Neutral
 	}
 	sort := "_shard_doc"
-	if a.config.Profile == "opensearch-2.19.0" {
+	if a.config.Profile == OpenSearchProfile {
 		sort = "_doc"
 	} // Unique in the qualified single-shard PIT reader.
 	pit := map[string]any{"id": n.pit, "keep_alive": pitKeepAlive}
@@ -151,7 +151,7 @@ func (a *Adapter) openPITReply(raw []byte, n *scanPlan) *pb.Failure {
 		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid PIT response")
 	}
 	key := "id"
-	if a.config.Profile == "opensearch-2.19.0" {
+	if a.config.Profile == OpenSearchProfile {
 		key = "pit_id"
 	}
 	var id string
@@ -160,11 +160,11 @@ func (a *Adapter) openPITReply(raw []byte, n *scanPlan) *pb.Failure {
 	}
 	n.pit = id // Keep latest known state for cleanup even on a failed envelope.
 	for name := range fields {
-		if name != key && name != "_shards" && (name != "creation_time" || a.config.Profile != "opensearch-2.19.0") {
+		if name != key && name != "_shards" && (name != "creation_time" || a.config.Profile != OpenSearchProfile) {
 			return protocol.Fail(pb.FailureCode_INTERNAL, "unexpected PIT envelope field")
 		}
 	}
-	if a.config.Profile == "opensearch-2.19.0" {
+	if a.config.Profile == OpenSearchProfile {
 		var created int64
 		if json.Unmarshal(fields["creation_time"], &created) != nil || created <= 0 {
 			return protocol.Fail(pb.FailureCode_INTERNAL, "missing PIT creation evidence")
@@ -207,7 +207,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			return page
 		}
 		n.pit = id
-	} else if a.config.Profile == "elasticsearch-8.17.0" {
+	} else if a.config.Profile == ElasticsearchProfile {
 		return page
 	}
 	for _, key := range []string{"error", "aggregations", "suggest", "_clusters"} {
@@ -310,7 +310,7 @@ func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	}
 	body := map[string]any{"id": n.pit}
 	endpoint := "/_pit"
-	if a.config.Profile == "opensearch-2.19.0" {
+	if a.config.Profile == OpenSearchProfile {
 		body = map[string]any{"pit_id": []string{n.pit}}
 		endpoint = "/_search/point_in_time"
 	}
@@ -320,7 +320,7 @@ func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	if err != nil || status != 200 {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote PIT cleanup unconfirmed")
 	}
-	if a.config.Profile == "opensearch-2.19.0" {
+	if a.config.Profile == OpenSearchProfile {
 		var reply struct {
 			PITs []struct {
 				ID         string `json:"pit_id"`

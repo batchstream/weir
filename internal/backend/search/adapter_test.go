@@ -124,7 +124,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 }
 
 func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
-	cfg := Config{Index: "records", Profile: "elasticsearch-8.17.0"}
+	cfg := Config{Index: "records", Profile: ElasticsearchProfile}
 	a := &Adapter{config: cfg}
 	for _, code := range []int{200, 400, 404, 429, 500} {
 		failure, _ := a.reject("version_conflict_engine_exception", code)
@@ -147,12 +147,12 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 }
 
 func TestFiniteCongestionProfiles(t *testing.T) {
-	for _, profile := range []string{"elasticsearch-8.17.0", "opensearch-2.19.0"} {
+	for _, profile := range []string{ElasticsearchProfile, OpenSearchProfile} {
 		cfg := Config{Profile: profile}
 		a := &Adapter{config: cfg}
 		for _, name := range []string{"es_rejected_execution_exception", "rejected_execution_exception"} {
 			failure, feedback := a.reject(name, 429)
-			matches := profile == "elasticsearch-8.17.0" && name == "es_rejected_execution_exception" || profile == "opensearch-2.19.0" && name == "rejected_execution_exception"
+			matches := profile == ElasticsearchProfile && name == "es_rejected_execution_exception" || profile == OpenSearchProfile && name == "rejected_execution_exception"
 			if (failure != nil) != matches || (feedback == execution.Congested) != matches {
 				t.Fatal(profile, name, failure, feedback)
 			}

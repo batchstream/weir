@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/app"
+	"github.com/batchstream/weir/internal/backend/search"
 )
 
 func main() {
@@ -32,7 +33,7 @@ func run(args []string, output io.Writer) error {
 	memory := flags.Uint64("memory-mib", 512, "overload budget; qualification starting point")
 	searchURL := flags.String("search-url", "", "optional qualified loopback search backend")
 	searchIndex := flags.String("search-index", "records", "pre-created concrete index")
-	searchProfile := flags.String("search-profile", "elasticsearch-8.17.0", "exact qualified search profile")
+	searchProfile := flags.String("search-profile", search.ElasticsearchProfile, "exact qualified search profile")
 	configFile := flags.String("config", "", "strict static JSON configuration; exclusive with other flags")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {

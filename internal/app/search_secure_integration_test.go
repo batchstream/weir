@@ -79,164 +79,170 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 			}
 			defer conn.Close()
 			client := pb.NewWeirClient(conn)
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			root := "weir://search/" + b.Index
-			doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9007199254740993,"keep":"opaque"}`)}
-			put := &pb.MutateRequest_Put{Put: doc}
-			mutation := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-			result, err := client.Mutate(ctx, mutation)
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("Put", result, err)
-			}
-			read := &pb.ReadRequest{Resource: mutation.Resource}
-			found, err := client.Read(ctx, read)
-			if err != nil || !bytes.Equal(found.GetDocument().GetData(), doc.Data) {
-				t.Fatal("opaque JSON changed", err)
-			}
-			create := &pb.MutateRequest_Create{Create: doc}
-			mutation.Action = create
-			result, err = client.Mutate(ctx, mutation)
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
-				t.Fatal("duplicate create", result, err)
-			}
-			empty := &pb.Empty{}
-			remove := &pb.MutateRequest_Delete{Delete: empty}
-			mutation.Action = remove
-			result, err = client.Mutate(ctx, mutation)
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("delete", result, err)
-			}
-			found, err = client.Read(ctx, read)
-			if err != nil || found.GetMissing() == nil {
-				t.Fatal("missing", found, err)
-			}
-			mutation.Action = create
-			result, err = client.Mutate(ctx, mutation)
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("create", result, err)
-			}
-			replace := &pb.MutateRequest_Replace{Replace: doc}
-			mutation.Action = replace
-			result, err = client.Mutate(ctx, mutation)
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("replace", result, err)
-			}
-			expression := &pb.Document{MediaType: search.ExpressionMedia, Data: []byte(`{"doc":{"n":9007199254740995}}`)}
-			form := &pb.Transform_BackendExpression{BackendExpression: expression}
-			transform := &pb.Transform{Form: form}
-			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-			mutation.Action = action
-			result, err = client.Mutate(ctx, mutation)
-			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("expression", result, err)
-			}
-			bulk, err := client.Bulk(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			open := &pb.BulkOpen{Store: "weir://search"}
-			opening := &pb.BulkRequestFrame_Open{Open: open}
-			frame := &pb.BulkRequestFrame{Frame: opening}
-			if err := bulk.Send(frame); err != nil {
-				t.Fatal(err)
-			}
-			variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-			operation := &pb.BulkOperation{Operation: variant}
-			item := &pb.BulkRequestFrame_Operation{Operation: operation}
-			frame = &pb.BulkRequestFrame{Frame: item}
-			if err := bulk.Send(frame); err != nil {
-				t.Fatal(err)
-			}
-			if err := bulk.CloseSend(); err != nil {
-				t.Fatal(err)
-			}
-			reply, err := bulk.Recv()
-			if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("Bulk result", reply, err)
-			}
-			reply, err = bulk.Recv()
-			if err != nil || reply.GetEnd().GetReceivedCount() != 1 || reply.GetEnd().GetResultCount() != 1 {
-				t.Fatal("Bulk End", reply, err)
-			}
-			if _, err := bulk.Recv(); err != io.EOF {
-				t.Fatal("Bulk EOF", err)
-			}
-			found, err = client.Read(ctx, read)
-			if err != nil || !strings.Contains(string(found.GetDocument().GetData()), "9007199254740995") {
-				t.Fatal("expression int64", err)
-			}
-			fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-			scanRequest := &pb.ScanRequest{Resource: root, FetchItemsHint: 1}
-			scan, err := client.Scan(ctx, scanRequest)
-			if err != nil {
-				t.Fatal(err)
-			}
-			count := uint64(0)
-			for {
-				frame, err := scan.Recv()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if end := frame.GetEnd(); end != nil {
-					if end.Failure != nil || end.DocumentCount != count || count < 1 {
-						t.Fatal("Scan End", end)
-					}
-					break
-				}
-				count++
-			}
-			if _, err := scan.Recv(); err != io.EOF {
-				t.Fatal("Scan EOF", err)
-			}
-			native, err := client.Native(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
-			encoded, err := proto.Marshal(descriptor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			document := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
-			nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: document, BodyMediaType: "application/x-ndjson"}
-			nativeVariant := &pb.NativeRequestFrame_Open{Open: nativeOpen}
-			nativeFrame := &pb.NativeRequestFrame{Frame: nativeVariant}
-			if err := native.Send(nativeFrame); err != nil {
-				t.Fatal(err)
-			}
-			body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
-			chunk := &pb.NativeRequestFrame_Chunk{Chunk: body}
-			nativeFrame = &pb.NativeRequestFrame{Frame: chunk}
-			if err := native.Send(nativeFrame); err != nil {
-				t.Fatal(err)
-			}
-			if err := native.CloseSend(); err != nil {
-				t.Fatal(err)
-			}
-			var response []byte
-			for {
-				frame, err := native.Recv()
-				if err != nil {
-					t.Fatal(err)
-				}
-				response = append(response, frame.GetChunk()...)
-				if end := frame.GetEnd(); end != nil {
-					if end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
-						t.Fatal(end)
-					}
-					break
-				}
-			}
-			if _, err := native.Recv(); err != io.EOF {
-				t.Fatal("Native EOF", err)
-			}
-			if !strings.Contains(string(response), `"errors":false`) {
-				t.Fatal("Native operation failed")
-			}
-			t.Log("JSON Decode/Open direct/peer: Read CRUD conflict/missing Bulk End/EOF Scan End/EOF Native bulk End/EOF BackendExpression; exact int64 preserved")
+			searchClientOperations(t, client, fixture, name)
 		})
 	}
+}
+
+func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsearch.SecureFixture, name string) {
+	t.Helper()
+	b := fixture.Backend
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	root := "weir://search/" + b.Index
+	doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9007199254740993,"keep":"opaque"}`)}
+	put := &pb.MutateRequest_Put{Put: doc}
+	mutation := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
+	result, err := client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("Put", result, err)
+	}
+	read := &pb.ReadRequest{Resource: mutation.Resource}
+	found, err := client.Read(ctx, read)
+	if err != nil || !bytes.Equal(found.GetDocument().GetData(), doc.Data) {
+		t.Fatal("opaque JSON changed", err)
+	}
+	create := &pb.MutateRequest_Create{Create: doc}
+	mutation.Action = create
+	result, err = client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+		t.Fatal("duplicate create", result, err)
+	}
+	empty := &pb.Empty{}
+	remove := &pb.MutateRequest_Delete{Delete: empty}
+	mutation.Action = remove
+	result, err = client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("delete", result, err)
+	}
+	found, err = client.Read(ctx, read)
+	if err != nil || found.GetMissing() == nil {
+		t.Fatal("missing", found, err)
+	}
+	mutation.Action = create
+	result, err = client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("create", result, err)
+	}
+	replace := &pb.MutateRequest_Replace{Replace: doc}
+	mutation.Action = replace
+	result, err = client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("replace", result, err)
+	}
+	expression := &pb.Document{MediaType: search.ExpressionMedia, Data: []byte(`{"doc":{"n":9007199254740995}}`)}
+	form := &pb.Transform_BackendExpression{BackendExpression: expression}
+	transform := &pb.Transform{Form: form}
+	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
+	mutation.Action = action
+	result, err = client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("expression", result, err)
+	}
+	bulk, err := client.Bulk(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := &pb.BulkOpen{Store: "weir://search"}
+	opening := &pb.BulkRequestFrame_Open{Open: open}
+	frame := &pb.BulkRequestFrame{Frame: opening}
+	if err := bulk.Send(frame); err != nil {
+		t.Fatal(err)
+	}
+	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
+	operation := &pb.BulkOperation{Operation: variant}
+	item := &pb.BulkRequestFrame_Operation{Operation: operation}
+	frame = &pb.BulkRequestFrame{Frame: item}
+	if err := bulk.Send(frame); err != nil {
+		t.Fatal(err)
+	}
+	if err := bulk.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := bulk.Recv()
+	if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("Bulk result", reply, err)
+	}
+	reply, err = bulk.Recv()
+	if err != nil || reply.GetEnd().GetReceivedCount() != 1 || reply.GetEnd().GetResultCount() != 1 {
+		t.Fatal("Bulk End", reply, err)
+	}
+	if _, err := bulk.Recv(); err != io.EOF {
+		t.Fatal("Bulk EOF", err)
+	}
+	found, err = client.Read(ctx, read)
+	if err != nil || !strings.Contains(string(found.GetDocument().GetData()), "9007199254740995") {
+		t.Fatal("expression int64", err)
+	}
+	fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
+	scanRequest := &pb.ScanRequest{Resource: root, FetchItemsHint: 1}
+	scan, err := client.Scan(ctx, scanRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := uint64(0)
+	for {
+		frame, err := scan.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if end := frame.GetEnd(); end != nil {
+			if end.Failure != nil || end.DocumentCount != count || count < 1 {
+				t.Fatal("Scan End", end)
+			}
+			break
+		}
+		count++
+	}
+	if _, err := scan.Recv(); err != io.EOF {
+		t.Fatal("Scan EOF", err)
+	}
+	native, err := client.Native(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
+	encoded, err := proto.Marshal(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
+	nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: document, BodyMediaType: "application/x-ndjson"}
+	nativeVariant := &pb.NativeRequestFrame_Open{Open: nativeOpen}
+	nativeFrame := &pb.NativeRequestFrame{Frame: nativeVariant}
+	if err := native.Send(nativeFrame); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
+	chunk := &pb.NativeRequestFrame_Chunk{Chunk: body}
+	nativeFrame = &pb.NativeRequestFrame{Frame: chunk}
+	if err := native.Send(nativeFrame); err != nil {
+		t.Fatal(err)
+	}
+	if err := native.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	var response []byte
+	for {
+		frame, err := native.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		response = append(response, frame.GetChunk()...)
+		if end := frame.GetEnd(); end != nil {
+			if end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+				t.Fatal(end)
+			}
+			break
+		}
+	}
+	if _, err := native.Recv(); err != io.EOF {
+		t.Fatal("Native EOF", err)
+	}
+	if !strings.Contains(string(response), `"errors":false`) {
+		t.Fatal("Native operation failed")
+	}
+	t.Log("Read CRUD conflict/missing Bulk End/EOF Scan End/EOF Native bulk End/EOF BackendExpression; exact int64 preserved")
 }
 
 func secureHTTPOpenCount(t *testing.T, b *testsearch.Backend) int {

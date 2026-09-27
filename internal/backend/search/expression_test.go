@@ -47,7 +47,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 }
 
 func TestSearchExpressionEvidence(t *testing.T) {
-	cfg := Config{Index: "records", Profile: "elasticsearch-8.17.0"}
+	cfg := Config{Index: "records", Profile: ElasticsearchProfile}
 	a := &Adapter{config: cfg}
 	n := &plan{id: "a"}
 	success := `{"_index":"records","_id":"a","_version":1,"_seq_no":0,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`

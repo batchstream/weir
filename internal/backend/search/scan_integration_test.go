@@ -239,7 +239,7 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	n := p.Backend.(*scanPlan)
 	endpoint := "/_pit"
 	body := map[string]any{"id": n.pit}
-	if b.Profile == "opensearch-2.19.0" {
+	if b.Profile == OpenSearchProfile {
 		endpoint = "/_search/point_in_time"
 		body = map[string]any{"pit_id": []string{n.pit}}
 	}

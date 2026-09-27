@@ -21,7 +21,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
 	c := &search.Connection{Username: "app", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
-	backend := &Search{URL: "https://unresolved.invalid:443", Index: "records", Profile: "elasticsearch-8.17.0", Connection: c}
+	backend := &Search{URL: "https://unresolved.invalid:443", Index: "records", Profile: "elasticsearch-8.19.22", Connection: c}
 	local := &Local{Search: backend}
 	definition := Service{Name: "search", Local: local}
 	route := Route{Store: "records", Service: "search"}

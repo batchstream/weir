@@ -1280,6 +1280,11 @@ pinning, and bounded server selection must be qualified against supported versio
 
 ## 12. Elasticsearch and OpenSearch Atomic RMW
 
+Active exact profiles are `elasticsearch-8.19.22` and `opensearch-2.19.6`. Startup
+rejects other versions or distributions; accepting a profile is a semantic contract,
+not a declaration that every bundled server component is secure. Security and
+deployment qualification remain separately recorded in the production checklist.
+
 For a supported concrete index with native optimistic concurrency enabled and a
 usable stored `_source`, the adapter uses `_seq_no` and `_primary_term` internally.
 Elasticsearch documents these as the conditional-write pair [D2]; OpenSearch exposes

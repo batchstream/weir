@@ -22,7 +22,7 @@ func scanTestReply() map[string]json.RawMessage {
 func TestScanEnvelopeAndLatestPIT(t *testing.T) {
 	for _, mode := range []string{"valid", "skipped", "timeout", "early", "shard_failure", "missing_shards", "missing_timed_out", "missing_took", "missing_hits", "null_hits", "missing_pit", "error_tail", "failed_tail", "duplicate_sort", "bad_score", "bad_max_score", "wrong_index", "big_hit", "too_many"} {
 		t.Run(mode, func(t *testing.T) {
-			a := &Adapter{config: Config{Store: "search", Index: "records", Profile: "elasticsearch-8.17.0"}}
+			a := &Adapter{config: Config{Store: "search", Index: "records", Profile: ElasticsearchProfile}}
 			n := &scanPlan{items: 1, pit: "previous"}
 			fields := scanTestReply()
 			switch mode {
@@ -135,7 +135,7 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 
 func TestScanHitByteBoundary(t *testing.T) {
 	for _, extra := range []int{0, 1} {
-		a := &Adapter{config: Config{Index: "records", Profile: "elasticsearch-8.17.0"}}
+		a := &Adapter{config: Config{Index: "records", Profile: ElasticsearchProfile}}
 		n := &scanPlan{items: 1, pit: "previous"}
 		hit := `{"_index":"records","_id":"a","_score":null,"_source":{"pad":""},"sort":[0]}`
 		hit = strings.Replace(hit, `"pad":""`, `"pad":"`+strings.Repeat("x", protocol.MaxDocument-len(hit)+extra)+`"`, 1)

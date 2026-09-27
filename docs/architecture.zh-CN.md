@@ -595,6 +595,10 @@ Standalone/不支持事务的配置仍可支持原生 CRUD、Native 和已验证
 
 ## 12. Elasticsearch 与 OpenSearch 原子 RMW
 
+当前精确 profile 为 `elasticsearch-8.19.22` 与 `opensearch-2.19.6`。启动拒绝其他
+版本或发行版；接受 profile 表示语义契约，不表示服务器全部内置组件安全。安全与部署
+资格仍在生产清单中单独记录。
+
 支持的具体 index 必须具有可用 `_source` 和原生 OCC。Adapter 内部使用 `_seq_no` / `_primary_term` 条件对 [D2,D6]，分别验证后端与版本，不因 Elasticsearch 兼容就假设可用。
 
 普通 index 请求也可能继承改变 source/目标的默认 ingest pipeline，这与客户端显式 Native 无关 [D8]。初始 profile 直接写 source：拒绝调用者 pipeline/routing override；使用验证过的 no-pipeline 选项绕过 default；source-writing 操作要求不存在有效 final pipeline。Elasticsearch `pipeline=_none` 只绕过 default，不绕过 final [D9]。每个 bulk item、每轮 transform 写都必须一致，而非只保护 unary Put。

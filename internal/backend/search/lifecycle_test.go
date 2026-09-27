@@ -159,7 +159,7 @@ func TestSearchDNSRepeatedCancelledOpenJoins(t *testing.T) {
 	dns := testdns.Start(t)
 	answer := testdns.Answer{Drop: true}
 	dns.Set("search.test", answer)
-	cfg := Config{Store: "search", URL: "http://search.test:9200", Index: "records", Profile: "elasticsearch-8.17.0", Pool: 2, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "http://search.test:9200", Index: "records", Profile: ElasticsearchProfile, Pool: 2, Resolver: dns.Resolver()}
 	before := runtime.NumGoroutine()
 	for i := 0; i < 24; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -211,7 +211,7 @@ func TestSearchDNSRequestCancellationEndsDetachedDial(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { qualification(w, r) })
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", URL: "https://search.test:" + port, Index: "records", Profile: "elasticsearch-8.17.0", Pool: 2, Connection: c, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "https://search.test:" + port, Index: "records", Profile: ElasticsearchProfile, Pool: 2, Connection: c, Resolver: dns.Resolver()}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	})
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", URL: "https://search.test:" + port, Index: "records", Profile: "elasticsearch-8.17.0", Pool: 2, Connection: c, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "https://search.test:" + port, Index: "records", Profile: ElasticsearchProfile, Pool: 2, Connection: c, Resolver: dns.Resolver()}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

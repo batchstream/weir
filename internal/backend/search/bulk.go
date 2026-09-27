@@ -28,7 +28,7 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 		return protocol.Fail(pb.FailureCode_CONFLICT, "native conditional conflict"), execution.Neutral
 	case status == 404 && errorType == "index_not_found_exception":
 		return protocol.Fail(pb.FailureCode_NOT_FOUND, "configured index missing"), execution.Neutral
-	case status == 429 && (a.config.Profile == "elasticsearch-8.17.0" && errorType == "es_rejected_execution_exception" || a.config.Profile == "opensearch-2.19.0" && errorType == "rejected_execution_exception"), status == 503 && errorType == "unavailable_shards_exception":
+	case status == 429 && (a.config.Profile == ElasticsearchProfile && errorType == "es_rejected_execution_exception" || a.config.Profile == OpenSearchProfile && errorType == "rejected_execution_exception"), status == 503 && errorType == "unavailable_shards_exception":
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
 	}
 	if status != 400 {
