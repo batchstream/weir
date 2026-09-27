@@ -6,106 +6,21 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/internal/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
-type fixture struct {
-	server  *Server
-	runtime *store.Runtime
-	client  pb.WeirClient
-	conn    *grpc.ClientConn
-	native  *mongo.Client
-	db      string
-	address string
-}
-
-func setup(t *testing.T, batch bool) fixture {
-	sl := DefaultLimits()
-	sl.Stall = 300 * time.Millisecond
-	sl.BulkLifetime = 5 * time.Second
-	return setupWithLimits(t, batch, sl)
-}
-
-func setupWithLimits(t *testing.T, batch bool, sl Limits) fixture {
-	t.Helper()
-	native, db := testmongo.Open(t)
-	cfg := mongostore.Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records"}
-	l := store.DefaultLimits()
-	if !batch {
-		l.BatchOperations = 1
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	cfg.Pool = uint64(l.Concurrency)
-	a, err := mongostore.Open(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r, err := store.New(a, l)
-	if err != nil {
-		t.Fatal(err)
-	}
-	routes := map[string]*store.Runtime{"mongo": r}
-	s, err := newLocalServer(t, routes, sl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = s.Serve(listener) }()
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(256<<10))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = conn.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		if err := s.Shutdown(ctx); err != nil {
-			t.Error(err)
-		}
-	})
-	f := fixture{server: s, runtime: r, client: pb.NewWeirClient(conn), conn: conn, native: native, db: db, address: listener.Addr().String()}
-	return f
-}
-func resource(f fixture, id string) string { return "weir://mongo/" + f.db + "/records/s:" + id }
-func mutation(f fixture, id string, n int32) *pb.MutateRequest {
-	doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: n}}
-	raw, _ := bson.Marshal(doc)
-	d := &pb.Document{MediaType: "application/bson", Data: raw}
-	v := &pb.MutateRequest_Put{Put: d}
-	m := &pb.MutateRequest{Resource: resource(f, id), Action: v}
-	return m
-}
-func openFrame() *pb.BulkRequestFrame {
-	o := &pb.BulkOpen{Store: "weir://mongo"}
-	v := &pb.BulkRequestFrame_Open{Open: o}
-	f := &pb.BulkRequestFrame{Frame: v}
-	return f
-}
-func opFrame(op *pb.BulkOperation) *pb.BulkRequestFrame {
-	v := &pb.BulkRequestFrame_Operation{Operation: op}
-	f := &pb.BulkRequestFrame{Frame: v}
-	return f
-}
 func TestGRPCUnaryAndUnsupported(t *testing.T) {
 	for _, batch := range []bool{false, true} {
 		t.Run(fmt.Sprint(batch), func(t *testing.T) {
@@ -308,8 +223,8 @@ func TestGRPCOutOfOrderCompletion(t *testing.T) {
 	if f.runtime.Snapshot().Window < 2 {
 		t.Fatal("warmup")
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
-	testmongo.FailCommand(t, f.native, data, 1)
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
+	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	stream, err := f.client.Bulk(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +259,7 @@ func TestGRPCStoppedConsumerMemoryAndShutdown(t *testing.T) {
 	doc := bson.D{{Key: "_id", Value: "large"}, {Key: "payload", Value: payload}}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 		t.Fatal(err)
 	}
 	stream, err := f.client.Bulk(ctx)
@@ -407,7 +322,7 @@ func TestGRPCShutdownDuringResultSend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 		t.Fatal(err)
 	}
 	stream, err := f.client.Bulk(ctx)
@@ -467,8 +382,8 @@ func TestGRPCDrainWithoutClientHalfClose(t *testing.T) {
 	f := setup(t, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	data := bson.D{{Key: "failCommands", Value: bson.A{"update"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 100}}
-	testmongo.FailCommand(t, f.native, data, 1)
+	data := bson.D{{Key: "failCommands", Value: bson.A{"update"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 100}}
+	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	stream, err := f.client.Bulk(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -520,7 +435,7 @@ func TestUnaryDeadlineCoversResponseSend(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
-			if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+			if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 				t.Fatal(err)
 			}
 			stream := startPausedUnaryRead(t, f, ctx)
@@ -608,7 +523,7 @@ func TestUnaryShutdownWhileResponseBlocked(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 		t.Fatal(err)
 	}
 	stream := startPausedUnaryRead(t, f, ctx)

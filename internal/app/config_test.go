@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/server"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -255,7 +256,7 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 
 func TestCurrentPeerExamples(t *testing.T) {
 	for _, name := range []string{"peer-a.json", "peer-b.json"} {
-		file, err := os.Open(filepath.Join("..", "..", "examples", name))
+		file, err := os.Open(filepath.Join(testutil.Root(t), "examples", name))
 		if err != nil {
 			t.Fatal(err)
 		}

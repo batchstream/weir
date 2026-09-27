@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/batchstream/weir/internal/mongostore"
+	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -208,10 +208,7 @@ func (cfg Config) Validate() error {
 			if (l.Mongo == nil) == (l.Search == nil) {
 				return errors.New("LocalStore requires exactly one adapter")
 			}
-			limits := store.DefaultLimits()
-			if l.BatchOperations != 0 {
-				limits.BatchOperations = l.BatchOperations
-			}
+			limits := l.runtimeLimits()
 			if err := limits.Validate(); err != nil {
 				return err
 			}
@@ -219,7 +216,7 @@ func (cfg Config) Validate() error {
 				if !mongoName.MatchString(m.Database) || !mongoName.MatchString(m.Collection) || m.URI == "" {
 					return errors.New("invalid MongoDB configuration")
 				}
-				if err := mongostore.ValidateURI(m.URI); err != nil {
+				if err := mongodb.ValidateURI(m.URI); err != nil {
 					return err
 				}
 			}
@@ -248,4 +245,12 @@ func (cfg Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (l *Local) runtimeLimits() store.Limits {
+	limits := store.DefaultLimits()
+	if l.BatchOperations != 0 {
+		limits.BatchOperations = l.BatchOperations
+	}
+	return limits
 }

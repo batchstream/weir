@@ -9,9 +9,9 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -23,13 +23,14 @@ type fixture struct {
 }
 
 func setup(t *testing.T) fixture {
-	native, db := testmongo.Open(t)
-	cfg := mongostore.Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records"}
+	backend := testmongo.Open(t)
+	native, db := backend.Admin, backend.DB
+	cfg := mongodb.Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records"}
 	l := DefaultLimits()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	cfg.Pool = uint64(l.Concurrency)
-	a, err := mongostore.Open(ctx, cfg)
+	a, err := mongodb.Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

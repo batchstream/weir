@@ -16,11 +16,11 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/searchstore"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/internal/testmongo"
-	"github.com/batchstream/weir/internal/testsearch"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,15 +35,16 @@ type dualFixture struct {
 
 func dualServer(t *testing.T, backend *testsearch.Backend, endpoint string, limits Limits) dualFixture {
 	t.Helper()
-	native, db := testmongo.Open(t)
-	mongo := mongostore.Config{URI: testmongo.URIFor(db), Store: "mongo", Database: db, Collection: "records"}
-	search := &searchstore.Config{URL: endpoint, Profile: backend.Profile, Store: "search", Index: backend.Index}
+	mongoFixture := testmongo.Open(t)
+	db := mongoFixture.DB
+	mongo := mongodb.Config{URI: mongoFixture.URI, Store: "mongo", Database: db, Collection: "records"}
+	searchConfig := &search.Config{URL: endpoint, Profile: backend.Profile, Store: "search", Index: backend.Index}
 	limitsStore := store.DefaultLimits()
 	mongo.Pool = uint64(limitsStore.Concurrency)
-	search.Pool = limitsStore.Concurrency
+	searchConfig.Pool = limitsStore.Concurrency
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	mongoAdapter, err := mongostore.Open(ctx, mongo)
+	mongoAdapter, err := mongodb.Open(ctx, mongo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func dualServer(t *testing.T, backend *testsearch.Backend, endpoint string, limi
 	if err != nil {
 		t.Fatal(err)
 	}
-	searchAdapter, err := searchstore.Open(ctx, *search)
+	searchAdapter, err := search.Open(ctx, *searchConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +82,7 @@ func dualServer(t *testing.T, backend *testsearch.Backend, endpoint string, limi
 			t.Error(err)
 		}
 	})
-	base := fixture{server: server, runtime: routes["mongo"], client: pb.NewWeirClient(conn), conn: conn, native: native, db: db, address: listener.Addr().String()}
+	base := fixture{mongo: mongoFixture, server: server, runtime: routes["mongo"], client: pb.NewWeirClient(conn), conn: conn, address: listener.Addr().String()}
 	f := dualFixture{fixture: base, search: routes["search"], backend: backend}
 	return f
 }

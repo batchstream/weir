@@ -18,13 +18,13 @@ import (
 
 	spb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/searchstore"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/internal/testmetrics"
-	"github.com/batchstream/weir/internal/testmongo"
-	"github.com/batchstream/weir/internal/testsearch"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -417,8 +417,8 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 	calls := new(atomic.Int32)
 	result := backendFault{writes: calls}
 	if kind == "mongo" {
-		f.native, f.db = testmongo.Open(t)
-		proxy := testmongo.StartProxy(t, f.db)
+		f.mongo = testmongo.Open(t)
+		proxy := testmongo.StartProxy(t, f.mongo)
 		result.mongo = proxy
 		result.endpoint = proxy.URI()
 		if drop {
@@ -428,9 +428,9 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 			}
 			proxy.DropRemaining.Store(1)
 		}
-		cfg := mongostore.Config{Store: kind, URI: proxy.URI(), Database: f.db, Collection: "records", Pool: 1}
-		adapter, err = mongostore.Open(context.Background(), cfg)
-		f.root = "weir://mongo/" + f.db + "/records"
+		cfg := mongodb.Config{Store: kind, URI: proxy.URI(), Database: f.mongo.DB, Collection: "records", Pool: 1}
+		adapter, err = mongodb.Open(context.Background(), cfg)
+		f.root = "weir://mongo/" + f.mongo.DB + "/records"
 	} else {
 		f.backend = testsearch.Open(t)
 		backend := f.backend
@@ -478,8 +478,8 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 		proxy := httptest.NewServer(handler)
 		t.Cleanup(proxy.Close)
 		result.endpoint = proxy.URL
-		cfg := searchstore.Config{Store: kind, URL: proxy.URL, Index: backend.Index, Profile: backend.Profile, Pool: 1}
-		adapter, err = searchstore.Open(context.Background(), cfg)
+		cfg := search.Config{Store: kind, URL: proxy.URL, Index: backend.Index, Profile: backend.Profile, Pool: 1}
+		adapter, err = search.Open(context.Background(), cfg)
 		f.root = "weir://search/" + backend.Index
 	}
 	if err != nil {
@@ -512,7 +512,7 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 					if mode == "expression" {
 						if f.backend == nil {
 							seed := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: 0}}
-							if _, err := f.native.Database(f.db).Collection("records").InsertOne(context.Background(), seed); err != nil {
+							if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(context.Background(), seed); err != nil {
 								t.Fatal(err)
 							}
 						} else {
@@ -600,7 +600,7 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 						}
 						filter := bson.D{{Key: "_id", Value: id}}
 						var observed struct{ N int }
-						if err := f.native.Database(f.db).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 1 {
+						if err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 1 {
 							t.Fatal("real effect", observed.N, err)
 						}
 					} else {

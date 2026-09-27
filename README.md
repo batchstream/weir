@@ -262,6 +262,11 @@ scripts/generate.sh
 
 ## Contracts And Evidence
 
+- [Current code guide](docs/code-organization.md): actual package ownership, imports,
+  request/remote/shutdown paths and explicit fixture usage.
+- [Code organization review](docs/code-organization-review.md): migration mapping,
+  behavior-preservation checks and real regression evidence. Historical reports
+  retain their original source paths; the guide maps them to current locations.
 - `docs/architecture.md` / `docs/architecture.zh-CN.md`: parallel target architecture
   and protocol contracts, not implementation status or qualification results.
 - `docs/milestone-1.md`: exact versions/limits, executed tests, evidence, known
@@ -282,9 +287,12 @@ scripts/generate.sh
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits and AIMD.
 - `internal/app` / `internal/overload`: process ownership, static assembly and shared overload guard.
-- `internal/mongostore`: concrete driver ownership, CRUD, codec and transaction state machine.
-- `internal/searchstore`: qualified Search CRUD, native OCC, bounded HTTP and bulk evidence.
+- `internal/backend/mongodb`: concrete driver ownership, TLS/wire bounds, CRUD and codec;
+  the counter transaction conformance harness is integration-test-only.
+- `internal/backend/search`: qualified Search CRUD, native OCC, bounded HTTP and bulk evidence.
 - `internal/server`: shared application/peer gRPC transport, bounded forwarding and completion framing.
+- `internal/testutil`: owned Mongo/Search/DNS fixtures, metric assertions and repository asset lookup.
+- `experiments/luaprobe`: test-only runtime feasibility evidence; ProgramTransform remains unsupported.
 
 Missing mutation replies are **UNKNOWN**, not proof of non-application. Never blindly
 replay them. Ordinary Delete of an absent record is APPLIED after acknowledgement.

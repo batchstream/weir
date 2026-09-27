@@ -16,9 +16,9 @@ import (
 
 	spb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/internal/searchstore"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -31,7 +31,7 @@ func nativeRequest(t *testing.T, f scanFixture, write bool) (*pb.NativeOpen, []b
 	open := &pb.NativeOpen{Resource: f.root}
 	var body []byte
 	if f.backend == nil {
-		open.Descriptor_ = &pb.Document{MediaType: mongostore.NativeDescriptor}
+		open.Descriptor_ = &pb.Document{MediaType: mongodb.NativeDescriptor}
 		open.BodyMediaType = "application/bson"
 		command := bson.D{{Key: "count", Value: "records"}}
 		if write {
@@ -50,7 +50,7 @@ func nativeRequest(t *testing.T, f scanFixture, write bool) (*pb.NativeOpen, []b
 			body = []byte("{\"create\":{\"_id\":\"native\"}}\n{\"n\":1}\n")
 		}
 		raw, _ := proto.Marshal(descriptor)
-		open.Descriptor_ = &pb.Document{MediaType: searchstore.NativeDescriptor, Data: raw}
+		open.Descriptor_ = &pb.Document{MediaType: search.NativeDescriptor, Data: raw}
 	}
 	return open, body
 }

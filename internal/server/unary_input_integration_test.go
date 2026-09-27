@@ -12,7 +12,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/internal/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -205,8 +205,8 @@ func TestUnaryDecodedInputDoesNotTimeoutBackend(t *testing.T) {
 	limits.UnaryLifetime = time.Second
 	limits.Stall = 100 * time.Millisecond
 	f := setupWithLimits(t, true, limits)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
-	testmongo.FailCommand(t, f.native, data, 1)
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
+	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	wire := openUnaryWire(t, f)
 	request := unaryRequestBytes(t, f)
 	start := time.Now()

@@ -19,9 +19,10 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/testmetrics"
-	"github.com/batchstream/weir/internal/testmongo"
-	"github.com/batchstream/weir/internal/testsearch"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -118,7 +119,8 @@ func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
 }
 func TestIndependentWeirProcesses(t *testing.T) {
 	// testmongo.Open gates the entire smoke before starting child processes.
-	_, database := testmongo.Open(t)
+	mongoFixture := testmongo.Open(t)
+	database := mongoFixture.DB
 	search := testsearch.Open(t)
 	dir := t.TempDir()
 	binaries := make(map[string]string)
@@ -126,7 +128,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		binary := filepath.Join(dir, name)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		cmd := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/"+name)
-		cmd.Dir = "../.."
+		cmd.Dir = testutil.Root(t)
 		output, err := cmd.CombinedOutput()
 		cancel()
 		if err != nil {
@@ -134,7 +136,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 		binaries[name] = binary
 	}
-	mongo := &Mongo{URI: testmongo.URIFor(database), Database: database, Collection: "records"}
+	mongo := &Mongo{URI: mongoFixture.URI, Database: database, Collection: "records"}
 	mongoLocal := &Local{Mongo: mongo}
 	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
 	searchLocal := &Local{Search: backend}
@@ -231,11 +233,11 @@ func TestIndependentWeirProcesses(t *testing.T) {
 }
 
 func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
-	_, _ = testmongo.Open(t)
+	testmongo.Open(t)
 	binary := filepath.Join(t.TempDir(), "weir")
 	buildCtx, stopBuild := context.WithTimeout(context.Background(), 30*time.Second)
 	command := exec.CommandContext(buildCtx, "go", "build", "-race", "-o", binary, "./cmd/weir")
-	command.Dir = "../.."
+	command.Dir = testutil.Root(t)
 	output, err := command.CombinedOutput()
 	stopBuild()
 	if err != nil {

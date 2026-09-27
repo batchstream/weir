@@ -11,18 +11,18 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/searchstore"
-	"github.com/batchstream/weir/internal/testmetrics"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/backend/search"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func realExpression(t *testing.T, f scanFixture, n int) *pb.MutateRequest {
 	t.Helper()
-	media := searchstore.ExpressionMedia
+	media := search.ExpressionMedia
 	raw := []byte(fmt.Sprintf(`{"doc":{"n":%d}}`, n))
 	if f.backend == nil {
-		media = mongostore.ExpressionMedia
+		media = mongodb.ExpressionMedia
 		doc := bson.D{{Key: "$set", Value: bson.D{{Key: "n", Value: n}}}}
 		var err error
 		raw, err = bson.Marshal(doc)

@@ -719,6 +719,9 @@ Trace 分开 queue、backend、transform、emit、forward；request ID/index 可
 
 ## 16. 建议仓库与模块布局
 
+以下布局用于说明职责边界，不强制目录名。[当前代码导览](code-organization.md)
+描述实际组织：紧密相连的所有权留在同一包，未实现的能力不创建空模块。
+
 起步只有一个仓库、一个 Go module：`github.com/batchstream/weir`。公共 schema 与生成类型保持清晰分离，SDK 无需导入 server。未来拆仓库是打包决定，不是 V1 依赖；不因 Sink 有协议仓库就另建。
 
 ```text

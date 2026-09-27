@@ -1678,6 +1678,11 @@ not a durable client-accessible operation receipt.
 
 ## 16. Proposed Repository and Module Layout
 
+The layout below illustrates responsibility boundaries, not mandatory directory
+names. The [current code guide](code-organization.md) describes the implemented
+organization; it keeps tightly coupled ownership in one package and does not
+create empty modules for capabilities that have not been implemented.
+
 Start with one repository and one Go module, `github.com/batchstream/weir`. Do not
 create another protocol repository merely because Sink has one. Public schema and
 generated types remain cleanly separated so SDKs can consume them without importing

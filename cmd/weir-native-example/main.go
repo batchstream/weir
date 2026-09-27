@@ -11,9 +11,9 @@ import (
 
 	spb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/internal/searchstore"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,7 +36,7 @@ func run() error {
 	switch *store {
 	case "mongo":
 		open.Resource = "weir://mongo/" + protocol.EncodeSegment(*database) + "/records"
-		open.Descriptor_ = &pb.Document{MediaType: mongostore.NativeDescriptor}
+		open.Descriptor_ = &pb.Document{MediaType: mongodb.NativeDescriptor}
 		open.BodyMediaType = "application/bson"
 		command := bson.D{{Key: "count", Value: "records"}}
 		var err error
@@ -51,7 +51,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		open.Descriptor_ = &pb.Document{MediaType: searchstore.NativeDescriptor, Data: raw}
+		open.Descriptor_ = &pb.Document{MediaType: search.NativeDescriptor, Data: raw}
 	default:
 		return fmt.Errorf("unsupported store")
 	}
@@ -91,7 +91,7 @@ func run() error {
 			}
 			headSeen = true
 			if *store == "search" {
-				if value.Head.Metadata == nil || value.Head.Metadata.MediaType != searchstore.NativeDescriptor {
+				if value.Head.Metadata == nil || value.Head.Metadata.MediaType != search.NativeDescriptor {
 					return fmt.Errorf("missing HTTP metadata")
 				}
 				metadata := &spb.Response{}

@@ -5,6 +5,8 @@
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
 
+当前源码位置和历史路径映射见[代码导览](code-organization.md)；结构整理不改变下列资格状态。
+
 ## 目标来源与范围
 
 用户经统筹聊天 `01a0da6a-11af-75c0-91e0-c07178d7c3cc` 于 2026-09-27 补充授权：
@@ -56,9 +58,9 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 
 | 必需项 | 当前状态与证据 | 后续资格门槛/阻塞 |
 | --- | --- | --- |
-| 原生 BackendExpression | 已实现；固定后端有限真实验证见 [M7](milestone-7.md)、`internal/{mongo,search}store/expression.go`、对应 tests、`internal/server/expression_integration_test.go` | 仅明确 profile；不含泛化语言、跨记录、pipeline/upsert、其他版本/拓扑 |
-| 通用 ProgramTransform | **阻塞；用户确认后才可延期**。`internal/protocol/protocol.go` 拒绝；`internal/luaprobe/runtime_test.go`、[M1](milestone-1.md) 证明 GopherLua 隔离不合格 | 确定性、fuel/CPU、编译/分配/宿主 helper/取消隔离、类型保真；Mongo transaction 与 Search OCC 完整闭环 |
-| Weir TLS/认证/授权 | **用户明确排除，不算阻断；既有体系已移除**；[M8](milestone-8.md)、`internal/server/peer.go` | application/peer 均为明文 HTTP/2，入口可达来源由部署隔离负责；hop 没有密码学身份保证。旧 identity/allow/server_name 配置严格拒绝，无开关、证书 fixture 或空壳权限接口 |
+| 原生 BackendExpression | 已实现；固定后端有限真实验证见 [M7](milestone-7.md)、`internal/backend/{mongodb,search}/expression.go`、对应 tests、`internal/server/expression_integration_test.go` | 仅明确 profile；不含泛化语言、跨记录、pipeline/upsert、其他版本/拓扑 |
+| 通用 ProgramTransform | **阻塞；用户确认后才可延期**。`internal/protocol/protocol.go` 拒绝；`experiments/luaprobe/runtime_test.go`、[M1](milestone-1.md) 证明 GopherLua 隔离不合格 | 确定性、fuel/CPU、编译/分配/宿主 helper/取消隔离、类型保真；Mongo transaction 与 Search OCC 完整闭环 |
+| Weir TLS/认证/授权 | **用户明确排除，不算阻断；既有体系已移除**；[M8](milestone-8.md)、`internal/server/forwarding.go` | application/peer 均为明文 HTTP/2，入口可达来源由部署隔离负责；hop 没有密码学身份保证。旧 identity/allow/server_name 配置严格拒绝，无开关、证书 fixture 或空壳权限接口 |
 | 后端必要连接配置及隐式重放 | Mongo 的 credential-free 与显式 SCRAM-SHA-256/verified TLS 已实现，生产 Open/应用装配、解密后 wire guard、391/回复丢失与生命周期实测见 [M10R](milestone-10-remediation.md)；M10 原阶段失败记录保留 | 仅固定 Go1.27/driver2.9.1/Mongo8.0.32 单直接非分片副本集 endpoint；OCSP 使用有界单 HTTP responder 与短期缓存，额外拒绝见报告。Search 仍 credential-free HTTP；其他认证、HTTPS/多个 OCSP responder、SRV/多节点切换、跨平台/长测与总 DB 预算不因此通过 |
 | 普通 Read/写入/Bulk | 已实现且有限真实资格验证；[M1](milestone-1.md)、[M2](milestone-2.md)、[unary 专项](unary-response-deadline.md) | 新平台/适用连接配置/网络故障需重验；0 假 APPLIED、0 已执行却 NOT_STARTED、0 静默重放、0 关联/流内顺序错误 |
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |

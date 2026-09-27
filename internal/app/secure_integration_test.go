@@ -12,8 +12,8 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/mongostore"
-	"github.com/batchstream/weir/internal/testmongo"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -124,7 +124,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			}
 			increment := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
 			expression, _ := bson.Marshal(increment)
-			expressionDoc := &pb.Document{MediaType: mongostore.ExpressionMedia, Data: expression}
+			expressionDoc := &pb.Document{MediaType: mongodb.ExpressionMedia, Data: expression}
 			form := &pb.Transform_BackendExpression{BackendExpression: expressionDoc}
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
@@ -194,7 +194,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			descriptor := &pb.Document{MediaType: mongostore.NativeDescriptor}
+			descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
 			nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
 			nativeVariant := &pb.NativeRequestFrame_Open{Open: nativeOpen}
 			nativeFrame := &pb.NativeRequestFrame{Frame: nativeVariant}

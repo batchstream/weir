@@ -27,7 +27,7 @@ func TestAcceptanceUnaryTransportLifetime(t *testing.T) {
 			document := bson.D{{Key: "_id", Value: "large"}, {Key: "payload", Value: make([]byte, 200<<10)}}
 			setupCtx, stopSetup := context.WithTimeout(context.Background(), 2*time.Second)
 			defer stopSetup()
-			if _, err := f.native.Database(f.db).Collection("records").InsertOne(setupCtx, document); err != nil {
+			if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(setupCtx, document); err != nil {
 				t.Fatal(err)
 			}
 			connection := acceptanceConnection(t, f.address)
@@ -131,7 +131,7 @@ func TestAcceptanceNormalUnaryResponses(t *testing.T) {
 	for _, size := range []int{32, 200 << 10} {
 		id := fmt.Sprint(size)
 		document := bson.D{{Key: "_id", Value: id}, {Key: "payload", Value: make([]byte, size)}}
-		if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, document); err != nil {
+		if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, document); err != nil {
 			t.Fatal(err)
 		}
 		request := &pb.ReadRequest{Resource: resource(f, id)}

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
 func TestMetricsTwoHopsCountOnlyFinalExecution(t *testing.T) {

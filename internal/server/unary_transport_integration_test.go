@@ -12,8 +12,8 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/testmetrics"
-	"github.com/batchstream/weir/internal/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -116,7 +116,7 @@ func TestUnaryAppliedMutationLosesBlockedReply(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	filter := bson.D{{Key: "_id", Value: "applied-without-reply"}}
-	raw, err := f.native.Database(f.db).Collection("records").FindOne(ctx, filter).Raw()
+	raw, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").FindOne(ctx, filter).Raw()
 	if err != nil || raw.Lookup("n").AsInt64() != 1 {
 		t.Fatal("test must confirm the real mutation applied despite its missing reply", err, raw)
 	}
@@ -171,7 +171,7 @@ func TestUnaryStalledStreamDoesNotBlockOtherStreams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 		t.Fatal(err)
 	}
 	stream := startPausedUnaryRead(t, f, ctx)
@@ -228,11 +228,11 @@ func TestUnaryLifetimeIncludesHandlerTime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	doc := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, doc); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 		t.Fatal(err)
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 140}}
-	testmongo.FailCommand(t, f.native, data, 1)
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 140}}
+	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	start := time.Now()
 	stream := startPausedUnaryRead(t, f, ctx)
 	if time.Since(start) < 130*time.Millisecond {

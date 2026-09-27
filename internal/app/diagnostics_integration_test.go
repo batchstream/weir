@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir/internal/testmetrics"
-	"github.com/batchstream/weir/internal/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
 )
 
 func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
-	_, database := testmongo.Open(t)
+	backend := testmongo.Open(t)
+	database := backend.DB
 	cfg := remoteConfig(t)
 	first, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -28,7 +29,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	cfg.Routes = nil
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
-		mongo := &Mongo{URI: testmongo.URIFor(database), Database: database, Collection: "records"}
+		mongo := &Mongo{URI: backend.URI, Database: database, Collection: "records"}
 		local := &Local{Mongo: mongo}
 		service := Service{Name: name, Local: local}
 		cfg.Services = append(cfg.Services, service)

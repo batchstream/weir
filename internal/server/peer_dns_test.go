@@ -12,8 +12,8 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/testdns"
-	"github.com/batchstream/weir/internal/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testdns"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"golang.org/x/net/dns/dnsmessage"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/resolver"

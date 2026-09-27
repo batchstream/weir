@@ -48,7 +48,7 @@ func TestUnaryCancelSendDeadlineRacesReleaseResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(setupCtx, document); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(setupCtx, document); err != nil {
 		t.Fatal(err)
 	}
 	conn := acceptanceConnection(t, f.address)
@@ -143,7 +143,7 @@ func TestUnaryShutdownRacesWithCancelAndSend(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		document := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
 		setupCtx, stop := context.WithTimeout(context.Background(), time.Second)
-		_, err := f.native.Database(f.db).Collection("records").InsertOne(setupCtx, document)
+		_, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(setupCtx, document)
 		stop()
 		if err != nil {
 			cancel()
@@ -217,7 +217,7 @@ func TestUnaryConnectionAbortDoesNotAffectOtherConnections(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	document := bson.D{{Key: "_id", Value: "large"}, {Key: "data", Value: make([]byte, 200<<10)}}
-	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, document); err != nil {
+	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, document); err != nil {
 		t.Fatal(err)
 	}
 	warm := &pb.ReadRequest{Resource: resource(f, "warm")}

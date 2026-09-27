@@ -18,10 +18,11 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/server"
-	"github.com/batchstream/weir/internal/testdns"
-	"github.com/batchstream/weir/internal/testmetrics"
-	"github.com/batchstream/weir/internal/testmongo"
-	"github.com/batchstream/weir/internal/testsearch"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/internal/testutil/testdns"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -32,7 +33,7 @@ func buildEndpointProcess(t *testing.T) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/weir")
-	cmd.Dir = "../.."
+	cmd.Dir = testutil.Root(t)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatal(err, string(output))
 	}
@@ -41,9 +42,10 @@ func buildEndpointProcess(t *testing.T) string {
 
 func endpointProcessConfig(t *testing.T) Config {
 	t.Helper()
-	_, database := testmongo.Open(t)
+	mongoFixture := testmongo.Open(t)
+	database := mongoFixture.DB
 	search := testsearch.Open(t)
-	mongo := &Mongo{URI: testmongo.URIFor(database), Database: database, Collection: "records"}
+	mongo := &Mongo{URI: mongoFixture.URI, Database: database, Collection: "records"}
 	mongoLocal := &Local{Mongo: mongo}
 	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
 	searchLocal := &Local{Search: backend}
