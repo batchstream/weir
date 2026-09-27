@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -27,11 +28,17 @@ type memoryLevel struct {
 // files on every development platform. Only memory_linux.go selects /proc.
 // After discovery, topology and limits are static. Changes latch until restart.
 type memoryProfile struct {
-	proc               string
-	membership, mounts string
-	mount              string
-	levels             []memoryLevel
-	changed            bool
+	proc     string
+	identity cgroupIdentity
+	levels   []memoryLevel
+	changed  bool
+}
+
+// Mount ID and device distinguish replacement mounts at the same path. The
+// mapping and membership determine the visible relative hierarchy.
+type cgroupIdentity struct {
+	leaf, root, mount string
+	id, major, minor  uint64
 }
 
 func (p *memoryProfile) observe() observation {
@@ -70,51 +77,30 @@ func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 	if err != nil {
 		return snapshot, false, false
 	}
-	if p.levels != nil && (membership != p.membership || mounts != p.mounts) {
-		p.changed = true
-		snapshot.State = "profile_changed"
+	identity, names, err := locateCgroup(membership, mounts)
+	if err != nil {
 		return snapshot, false, false
 	}
-	if p.levels == nil {
-		mount, names, err := locateCgroup(membership, mounts)
-		if err != nil {
-			return snapshot, false, false
-		}
-		p.mount = mount
-		root, err := os.OpenRoot(mount)
-		if err != nil {
-			return snapshot, false, false
-		}
-		defer root.Close()
-		levels := make([]memoryLevel, 0, len(names))
-		for i, name := range names {
-			level, _, err := readLevel(root, name)
-			// The actual hierarchy root may have no memory controller interface.
-			// Only omit a visible top ancestor, never a leaf or a partially missing pair.
-			if err != nil || level.absent && (i == 0 || name != ".") {
-				return snapshot, false, false
-			}
-			levels = append(levels, level)
-		}
-		p.levels, p.membership, p.mounts = levels, membership, mounts
-	}
-	root, err := os.OpenRoot(p.mount)
+	root, err := os.OpenRoot(identity.mount)
 	if err != nil {
 		return snapshot, false, false
 	}
 	defer root.Close()
-	snapshot.Levels = len(p.levels)
+	levels := make([]memoryLevel, 0, len(names))
+	snapshot.Levels = len(names)
 	high, low := false, true
-	for i, expected := range p.levels {
-		level, current, err := readLevel(root, expected.name)
-		if err != nil {
+	for i, name := range names {
+		level, current, err := readLevel(root, name)
+		// Only the visible top ancestor may lack both memory interfaces.
+		if err != nil || level.absent && (i == 0 || name != ".") {
 			return snapshot, false, false
 		}
-		if level != expected {
-			p.changed = true
-			snapshot.State = "profile_changed"
+		// A previously readable top pair disappearing is missing evidence, not a
+		// confirmed unlimited/controller change. Preserve the trusted profile.
+		if level.absent && p.levels != nil && identity == p.identity && !p.levels[i].absent {
 			return snapshot, false, false
 		}
+		levels = append(levels, level)
 		if i == 0 {
 			snapshot.Current, snapshot.Scope = current, "leaf"
 		}
@@ -131,6 +117,14 @@ func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 			}
 		}
 	}
+	// Commit only a fully validated observation. Transient failures cannot turn
+	// a tentative mapping/limit difference into a permanent profile change.
+	if p.levels != nil && (identity != p.identity || !slices.Equal(levels, p.levels)) {
+		p.changed = true
+		snapshot.State = "profile_changed"
+		return snapshot, false, false
+	}
+	p.identity, p.levels = identity, levels
 	snapshot.State, snapshot.Valid = "v2", true
 	return snapshot, high, low
 }
@@ -232,39 +226,45 @@ func parseRSS(raw string, pageSize uint64) (uint64, error) {
 	return resident * pageSize, nil
 }
 
-func locateCgroup(membership, mounts string) (string, []string, error) {
+func locateCgroup(membership, mounts string) (cgroupIdentity, []string, error) {
+	var selected cgroupIdentity
 	if len(membership) > maxCgroupBytes || len(mounts) > maxMountBytes {
-		return "", nil, errProfile
+		return selected, nil, errProfile
 	}
 	lines := strings.Split(strings.TrimSpace(membership), "\n")
 	if len(lines) > 64 {
-		return "", nil, errProfile
+		return selected, nil, errProfile
 	}
 	leaf := ""
 	for _, line := range lines {
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) != 3 {
-			return "", nil, errProfile
+			return selected, nil, errProfile
 		}
-		if parts[0] == "0" && parts[1] == "" {
-			if leaf != "" || !validPath(parts[2]) {
-				return "", nil, errProfile
+		hierarchy, err := parseNumber(parts[0])
+		if err != nil || !validPath(parts[2]) || (hierarchy == 0) != (parts[1] == "") {
+			return selected, nil, errProfile
+		}
+		if hierarchy == 0 {
+			if leaf != "" {
+				return selected, nil, errProfile
 			}
 			leaf = parts[2]
 		}
 	}
 	if leaf == "" {
-		return "", nil, errProfile
+		return selected, nil, errProfile
 	}
 	lines = strings.Split(strings.TrimSpace(mounts), "\n")
 	if len(lines) > 1024 {
-		return "", nil, errProfile
+		return selected, nil, errProfile
 	}
-	mount, mountRoot := "", ""
+	ids := make(map[uint64]bool)
+	points := make(map[string]bool)
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) < 10 || len(fields) > 64 {
-			return "", nil, errProfile
+			return selected, nil, errProfile
 		}
 		separator := -1
 		for i := 6; i < len(fields); i++ {
@@ -274,38 +274,64 @@ func locateCgroup(membership, mounts string) (string, []string, error) {
 			}
 		}
 		if separator < 0 || separator+4 != len(fields) {
-			return "", nil, errProfile
+			return selected, nil, errProfile
+		}
+		id, err := parseNumber(fields[0])
+		if err != nil || id == 0 || ids[id] {
+			return selected, nil, errProfile
+		}
+		ids[id] = true
+		if _, err := parseNumber(fields[1]); err != nil {
+			return selected, nil, errProfile
+		}
+		device := strings.Split(fields[2], ":")
+		if len(device) != 2 {
+			return selected, nil, errProfile
+		}
+		major, err := parseNumber(device[0])
+		if err != nil {
+			return selected, nil, err
+		}
+		minor, err := parseNumber(device[1])
+		if err != nil {
+			return selected, nil, err
 		}
 		if fields[separator+1] != "cgroup2" {
 			continue
 		}
 		root, err := mountPath(fields[3])
 		if err != nil {
-			return "", nil, err
+			return selected, nil, err
 		}
 		point, err := mountPath(fields[4])
 		if err != nil {
-			return "", nil, err
+			return selected, nil, err
 		}
 		if leaf != root && !strings.HasPrefix(leaf, strings.TrimSuffix(root, "/")+"/") {
 			continue
 		}
-		// Prefer the mount exposing the most ancestors. Never escape its root.
-		if mount == "" || len(root) < len(mountRoot) {
-			mount, mountRoot = point, root
+		// Stacked applicable mounts at one path are outside this static profile.
+		if points[point] {
+			return selected, nil, errProfile
+		}
+		points[point] = true
+		// Prefer greatest ancestor visibility, then lexical mount point. Text order,
+		// optional propagation fields and unrelated records do not define identity.
+		if selected.mount == "" || len(root) < len(selected.root) || len(root) == len(selected.root) && point < selected.mount {
+			selected = cgroupIdentity{leaf: leaf, root: root, mount: point, id: id, major: major, minor: minor}
 		}
 	}
-	if mount == "" {
-		return "", nil, errProfile
+	if selected.mount == "" {
+		return selected, nil, errProfile
 	}
-	relative := strings.TrimPrefix(strings.TrimPrefix(leaf, mountRoot), "/")
+	relative := strings.TrimPrefix(strings.TrimPrefix(leaf, selected.root), "/")
 	if relative == "" {
 		relative = "."
 	}
 	var names []string
 	for {
 		if len(names) == maxLevels {
-			return "", nil, errProfile
+			return selected, nil, errProfile
 		}
 		names = append(names, relative)
 		if relative == "." {
@@ -313,7 +339,7 @@ func locateCgroup(membership, mounts string) (string, []string, error) {
 		}
 		relative = path.Dir(relative)
 	}
-	return mount, names, nil
+	return selected, names, nil
 }
 
 func validPath(value string) bool {

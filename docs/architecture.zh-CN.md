@@ -463,7 +463,7 @@ pending 字节记录保留的编码输入加固定条目开销，不冒充精确
 
 进程 RSS 与配置进程预算比较；每个适用且可见的 cgroup-v2 用自己的 memory.current 与 memory.max 独立比较。不能把 RSS 与 cgroup usage 相加，也不能拿 leaf usage 除以祖先 limit；同组其他进程、后代和 page cache 不是 Weir heap。任一高观测停止准入；所有必需观测有效且各自低于或等于低水位才恢复。无限 cgroup 仍保留 RSS/config 预算检查。
 
-当前 Linux profile 依据 /proc/self/cgroup 与 mountinfo 定位，只检查该 mount 内最多 32 层；不可见祖先不作已观测声明。拓扑和 limit 是静态的：发现 membership、mount 或 limit 改变后置明确的 profile_changed，直到重启。缺失、损坏或超长观测保守闭锁，可信低观测恢复后可以解除。memory.max=0 是有限边界并闭锁。首次观测在 listener 准入之前。statm RSS 是异步估值，不是精确 heap；采样不能保证所有分配安全或永不触发内核 OOM。
+当前 Linux profile 依据 /proc/self/cgroup 与 mountinfo 定位，只检查该 mount 内最多 32 层；不可见祖先不作已观测声明。静态身份只包含已验证的 cgroup-v2 membership、所选 mount ID/设备号、root/point 映射、可见相对层级和有效 limit。选择可见祖先最多的 mount，同等覆盖按 mount point 字典序选择；无关 mount/membership 和行顺序不改变身份。同一路径堆叠多个适用 cgroup2 mount 属于不支持/unknown。只有完整有效的 cgroup 观测确认相关变化，才置 profile_changed 并保持至重启，即使之后改回原身份也不解除。缺失、损坏、超长或溢出只使当次观测 unknown/闭锁；原 profile 恢复且 RSS、每层所需 cgroup 观测全部可信且达到各自 70% 低水位后才恢复，中间/高位不能解除。startup unknown 也遵守此规则。memory.max=0 是有限边界并闭锁。首次观测在 listener 准入之前。statm RSS 是异步估值，不是精确 heap；采样不能保证所有分配安全或永不触发内核 OOM。
 
 只有一个 Guard 拥有采样和状态发布；diagnostics 仅读 Snapshot。指标区分配置预算、进程来源/有效性，以及压力最高的可见 cgroup 自身 current/limit 配对、scope 和有效性。macOS/Windows 的 Go Sys-HeapReleased 是明确降级，不是 OS 内存资格。Linux RSS 失败时可展示该 fallback，但保持 unknown/闭锁，低 Go 值不能清除未知 Linux 观测。
 

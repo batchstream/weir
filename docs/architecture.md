@@ -953,9 +953,17 @@ to reopen it. An unlimited cgroup leaves the RSS/configured-budget check active.
 
 The current Linux profile resolves /proc/self/cgroup against mountinfo and checks
 at most 32 visible levels within that mount. Hidden ancestors remain unobserved.
-Topology and limits are static: a detected membership, mount or limit change latches
-an explicit profile_changed state until restart. Missing, malformed or oversized
-observations fail closed and can recover after trusted low samples. Zero memory.max
+The static identity uses the validated cgroup-v2 membership, selected mount ID and
+device, root/point mapping, visible relative levels and effective limits. Select the
+mount exposing the most ancestors, breaking equal coverage ties by lexical mount
+point; record order and unrelated mounts/memberships do not change the identity.
+Stacked applicable cgroup2 mounts at one point are an unsupported/unknown profile.
+Only a complete valid cgroup observation can confirm a relevant change and latch
+profile_changed until restart, even if that identity later returns. Missing,
+malformed, oversized or overflowing observations fail closed for that sample;
+restoring the original profile reopens admission only when RSS and every required
+cgroup observation are trusted and at or below 70%. Middle/high samples cannot
+clear the latch. Startup unknown follows the same rule. Zero memory.max
 is finite and closes admission. The first observation precedes listener admission.
 RSS from statm is an asynchronous estimate, not precise heap accounting; cgroup
 sampling cannot guarantee survival of every allocation or prevent kernel OOM.

@@ -33,9 +33,9 @@ func TestProcParsers(t *testing.T) {
 			t.Fatal(names, err)
 		}
 	}
-	escaped := "1 0 0:1 /a /owned\\040mount rw shared:1 - cgroup2 cgroup rw\n"
+	escaped := "2 0 0:1 /a /owned\\040mount rw shared:1 - cgroup2 cgroup rw\n"
 	point, names, err := locateCgroup("0::/a/child", escaped)
-	if err != nil || point != "/owned mount" || strings.Join(names, ",") != "child,." {
+	if err != nil || point.mount != "/owned mount" || strings.Join(names, ",") != "child,." {
 		t.Fatal(point, names, err)
 	}
 	for _, member := range []string{"0::/../outside", "0::/a/../b", "0::relative", "0::/a//b", "0::/a (deleted)", "0::/\n0::/", "1:memory:/", "0::/ab", "0::/a/" + strings.Repeat("x/", 32) + "x"} {
@@ -50,7 +50,7 @@ func TestProcParsers(t *testing.T) {
 	}
 	// Multiple visible mounts: use the one with the broadest applicable root.
 	point, names, err = locateCgroup("0::/a/b", escaped+mount)
-	if err != nil || point != "/sys/fs/cgroup" || len(names) != 3 {
+	if err != nil || point.mount != "/sys/fs/cgroup" || len(names) != 3 {
 		t.Fatal(point, names, err)
 	}
 }
@@ -206,7 +206,7 @@ func TestProfileFailureAndStaticChanges(t *testing.T) {
 			case "migration":
 				f.write(t, filepath.Join(f.proc, "cgroup"), "0::/a\n")
 			case "mount":
-				f.write(t, filepath.Join(f.proc, "mountinfo"), "unreadable topology")
+				f.write(t, filepath.Join(f.proc, "mountinfo"), fmt.Sprintf("2 0 0:1 / %s rw - cgroup2 cgroup rw\n", f.mount))
 			case "limit":
 				f.level(t, "a", "2000", "0")
 			case "unlimited":
