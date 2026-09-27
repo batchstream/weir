@@ -28,9 +28,14 @@ type exchange struct {
 	native      bool
 }
 
+type requestContextKey struct{}
+
 func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, callLimit)
 	defer cancel()
+	if a.ctx.Err() != nil {
+		return 0, nil, errResponse
+	}
 	stop := context.AfterFunc(a.ctx, cancel)
 	defer stop()
 	method := http.MethodGet
@@ -48,7 +53,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	}
 	// No replay even on a reused connection: nonempty command bodies, no GetBody
 	// or idempotency headers. Record Delete is deliberately a bulk POST too.
-	request.GetBody = nil
+	a.configureRequest(request)
 	request.Header.Set("Accept", "application/json")
 	if body != nil {
 		request.Header.Set("Content-Type", "application/x-ndjson")
@@ -94,6 +99,20 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 		return response.StatusCode, nil, errResponse
 	}
 	return response.StatusCode, raw, nil
+}
+
+// Both execution paths use exactly the immutable backend credentials. Native
+// descriptors cannot supply Authorization or replayable request headers.
+func (a *Adapter) configureRequest(request *http.Request) {
+	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
+	// values. Keep the original request lifetime for our owned DNS/TLS I/O too.
+	ctx := request.Context()
+	key := requestContextKey{}
+	*request = *request.WithContext(context.WithValue(ctx, key, ctx))
+	request.GetBody = nil
+	if connection := a.config.Connection; connection != nil && connection.Username != "" {
+		request.SetBasicAuth(connection.Username, connection.Password)
+	}
 }
 func newTransport(pool int) *http.Transport {
 	dialer := &net.Dialer{Timeout: callLimit, KeepAlive: 30 * time.Second}

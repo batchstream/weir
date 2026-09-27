@@ -582,6 +582,41 @@ feedback says whether the backend is congested. A write concern timeout may both
 mean UNKNOWN and reduce concurrency. A deterministic transform error means
 NOT_APPLIED and supplies no congestion signal.
 
+#### Search backend connection profile
+
+The implemented Elasticsearch 8.17.0 / OpenSearch 2.19.0 profile uses one static
+base URL with explicit DNS/IP and port: credential-free HTTP, or standard verified
+HTTPS with optional explicit Basic credentials. The optional connection block has
+only username, password and CA file. App whole-graph validation and adapter Open
+use the same pure format/combination/length rules before any CA, DNS or network I/O.
+No userinfo, URL path/query/fragment, environment proxy, redirects, discovery,
+insecure verification, credential forwarding or Weir identity system is introduced.
+
+A bounded Go resolver performs A/AAAA lookups per new connection, accepts 1–8
+answers and selects the first address once. No address cache or failover loop is
+added. The original DNS name remains the TLS verification name/SNI. Existing
+connections and Native streams stay on their original socket. DNS I/O and TLS
+handshake share the original request cancellation and a maximum two-second connect
+budget; Close joins owned dial work and closes raw sockets without waiting for TLS
+close-notify. Standard TLS checks chain/SAN/expiry; roots are system roots or an
+explicit immutable regular CA file capped at 256 KiB.
+
+For pool size P (1–32), ordinary HTTP/1 has at most P sockets and Native has at most
+one separate, non-reused HTTP/1 socket. One owner caps their combined connections
+and concurrent connection attempts at P+1. A resolving slot has up to two DNS
+sockets before its one TCP socket, so combined owned sockets are at most 2(P+1).
+The app uses P=4: five backend TCP/handshake slots, at most ten sockets including
+DNS. Header/body, Native pump and Store ledger bounds still apply independently.
+
+Record Put/Create/Replace/Delete and Bulk use nonempty non-rewindable bulk POSTs;
+BackendExpression uses a nonempty non-rewindable Update POST. Native always uses a
+fresh connection, and caller headers cannot add authorization/host/idempotency
+keys. Go's limited stale-connection retries for replayable reads do not authorize
+mutation replay. Missing write acknowledgements remain UNKNOWN; complete Native
+HTTP errors remain native responses. A new independent call may recover after a
+connection/DNS change. Existing single concrete index/primary, stored source,
+ingest-pipeline restrictions and opaque Core responsibilities are unchanged.
+
 ## 7. The One Store Scheduler
 
 ### 7.1 State and admission

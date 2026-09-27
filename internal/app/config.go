@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/backend/mongodb"
+	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -47,9 +48,10 @@ type Mongo struct {
 	Collection string `json:"collection"`
 }
 type Search struct {
-	URL     string `json:"url"`
-	Index   string `json:"index"`
-	Profile string `json:"profile"`
+	Connection *search.Connection `json:"connection"`
+	URL        string             `json:"url"`
+	Index      string             `json:"index"`
+	Profile    string             `json:"profile"`
 }
 type Remote struct {
 	Endpoints []string `json:"endpoints"`
@@ -139,7 +141,6 @@ func uniqueJSON(d *json.Decoder, depth int) error {
 }
 
 var mongoName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
-var searchName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
 func address(value string, loopback bool) bool {
 	host, port, err := net.SplitHostPort(value)
@@ -220,12 +221,10 @@ func (cfg Config) Validate() error {
 					return err
 				}
 			}
-			if search := l.Search; search != nil {
-				if !searchName.MatchString(search.Index) || search.Profile != "elasticsearch-8.17.0" && search.Profile != "opensearch-2.19.0" {
-					return errors.New("invalid Search configuration")
-				}
-				if len(search.URL) < 7 || search.URL[:7] != "http://" || !address(search.URL[7:], true) {
-					return errors.New("invalid Search endpoint")
+			if l.Search != nil {
+				config := l.searchConfig(service.Name)
+				if err := search.ValidateConfig(config); err != nil {
+					return err
 				}
 			}
 		}
@@ -253,4 +252,9 @@ func (l *Local) runtimeLimits() store.Limits {
 		limits.BatchOperations = l.BatchOperations
 	}
 	return limits
+}
+
+func (l *Local) searchConfig(name string) search.Config {
+	cfg := search.Config{Store: name, URL: l.Search.URL, Index: l.Search.Index, Profile: l.Search.Profile, Pool: l.runtimeLimits().Concurrency, Connection: l.Search.Connection}
+	return cfg
 }

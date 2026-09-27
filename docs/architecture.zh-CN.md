@@ -291,6 +291,33 @@ Plan 提供已知规范 key、有界兼容 token、batch/stream 能力、输入�
 
 Permit 覆盖顺序执行的一个记录批次、完整转换重试循环、Native exchange 或一次 Scan fetch。Adapter 不在 permit 内隐藏无界并发；若必须并发，也须计入固定、有据可查的执行边界。客户端等待不会静默变为新的未计账队列。
 
+#### Search 后端连接 profile
+
+当前 Elasticsearch 8.17.0 / OpenSearch 2.19.0 profile 使用一个静态 base URL，
+显式 DNS/IP 与端口：无凭据 HTTP，或标准验证的 HTTPS，可选显式 Basic 凭据。
+可选 connection 仅有 username、password、ca_file。app 全图校验与 Adapter Open
+复用同一纯格式/组合/长度规则，在 CA、DNS 或网络 I/O 前完成。禁止 URL userinfo、
+路径/query/fragment、环境代理、重定向、节点发现、跳过证书验证和调用方凭据透传；
+不引入 Weir 身份体系。
+
+每个新连接用有界 Go resolver 查询 A/AAAA，接受 1–8 个答案，只选择第一个地址拨号
+一次；无地址缓存或 failover 循环。TLS 验证名称/SNI 保留原 DNS hostname。已有连接
+及 Native 流固定原 socket。DNS I/O 与 TLS 握手受原请求取消和最多 2 秒连接总预算
+约束；Close 等待自有拨号结束并关闭 raw socket，不等待 TLS close-notify。
+标准 TLS 校验链、SAN、有效期；使用系统 roots 或最多 256 KiB 的显式不可变普通 CA 文件。
+
+普通 HTTP/1 池 P 为 1–32；Native 另有最多一条不复用的 HTTP/1 连接。共同所有者限制
+两者总连接及并行连接尝试为 P+1。解析 slot 在其 TCP socket 前最多持有两个 DNS socket，
+所以包括 DNS 的总上界为 2(P+1)。app 的 P=4，即最多五个后端 TCP/握手 slot，
+包括 DNS 时最多十个 socket。header/body、Native pump、Store 账本边界仍分别生效。
+
+Put/Create/Replace/Delete 与 Bulk 保留非空、不可回卷的 bulk POST；BackendExpression
+保留非空、不可回卷的 Update POST。Native 始终用新连接，调用方 header 不能增加
+authorization/host/idempotency key。Go 对可重放 Read 的有限陈旧连接重试不构成写入重放
+授权。写入确认丢失仍为 UNKNOWN；完整 Native HTTP 错误仍作为原生响应返回。
+连接/DNS 改变后的恢复仅属于新的独立调用。单具体 index/primary、stored source、
+ingest pipeline 限制及 Core opaque 职责不变。
+
 ## 7. 唯一 Store 调度器
 
 ### 7.1 状态与准入

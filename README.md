@@ -123,6 +123,65 @@ go run ./cmd/weir-example
 go run ./cmd/weir-example -store search
 ```
 
+## Search backend connections
+
+Elasticsearch **8.17.0** and OpenSearch **2.19.0** accept one static HTTP or HTTPS
+base URL with an explicit DNS hostname/IP and port. HTTP is credential-free.
+HTTPS uses standard Go chain, SAN and expiry verification, with system roots or
+an explicit CA bundle. Basic credentials are optional and allowed only on HTTPS.
+Use the strict JSON configuration for this profile; for example, the `local.search`
+object below contains placeholders, not working credentials:
+
+```json
+{
+  "url": "https://search.internal:9200",
+  "index": "records",
+  "profile": "elasticsearch-8.17.0",
+  "connection": {
+    "username": "APP_USER",
+    "password": "APP_PASSWORD",
+    "ca_file": "/etc/weir/search-ca.pem"
+  }
+}
+```
+
+Omit `connection` for HTTP or HTTPS with system roots and no credentials. A CA-only
+block is supported. Credentials must be paired (128/256-byte username/password
+limits); CA files must be immutable regular files at most 256 KiB. Configuration
+changes require restart. URL userinfo, paths, query, fragments, multiple endpoints,
+proxy, redirects, insecure TLS overrides and caller-supplied authorization are
+rejected or disabled. No credentials are loaded from environment or local files.
+The entire app graph uses the adapter's pure validation before CA/DNS/network I/O.
+
+DNS uses bounded standard Go A/AAAA I/O and picks the first returned address for
+one connection attempt. A new connection resolves again; existing connections and
+streams remain fixed. There is no discovery, sniffing, failover or business retry.
+The app's ordinary pool is 4; Native has a separate single fresh HTTP/1 connection.
+The shared owner caps backend TCP sockets and concurrent dial/handshake slots at 5;
+DNS adds at most two temporary sockets per resolving slot, with a combined ceiling
+of 10 sockets while resolving. All are canceled and joined on Close.
+
+The existing single concrete index/primary, source and ingest restrictions remain.
+Weir does not create accounts, certificates or indexes. The operator grants backend
+qualification reads and permitted data actions; exact tested permissions, outcomes,
+version limits and commands are in [M11](docs/milestone-11.md). Fixed old versions
+are regression baselines, not a continuing security or overall production claim.
+
+Native HTTPS fixtures are isolated from the old HTTP containers and create their
+own temporary CA, credentials and restricted application account:
+
+```sh
+GOPROXY=off GOSUMDB=off WEIR_SEARCH_SECURE_INTEGRATION=elasticsearch \
+  go test -race -tags integration -p 1 -count=1 -timeout=5m \
+  ./internal/backend/search ./internal/app \
+  -run 'TestSecureSearchQualification|TestSearchTLSApplicationAssemblyAllOperations' -v
+# Repeat separately with WEIR_SEARCH_SECURE_INTEGRATION=opensearch.
+```
+
+Default tests never start databases. These fixtures require the pinned Docker
+images already present, remove only their owned containers/materials/data, and
+retain redacted logs under `.testdata/weir-m11-*`.
+
 ## Bounded Native
 
 Native is an adapter-specific escape hatch with response-completeness evidence.
@@ -289,7 +348,7 @@ scripts/generate.sh
 - `internal/app` / `internal/overload`: process ownership, static assembly and shared overload guard.
 - `internal/backend/mongodb`: concrete driver ownership, TLS/wire bounds, CRUD and codec;
   the counter transaction conformance harness is integration-test-only.
-- `internal/backend/search`: qualified Search CRUD, native OCC, bounded HTTP and bulk evidence.
+- `internal/backend/search`: qualified Search CRUD, native OCC, bounded HTTP/TLS/DNS and bulk evidence.
 - `internal/server`: shared application/peer gRPC transport, bounded forwarding and completion framing.
 - `internal/testutil`: owned Mongo/Search/DNS fixtures, metric assertions and repository asset lookup.
 - `experiments/luaprobe`: test-only runtime feasibility evidence; ProgramTransform remains unsupported.

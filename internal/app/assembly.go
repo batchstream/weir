@@ -114,7 +114,7 @@ func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, er
 		config := mongodb.Config{URI: cfg.Mongo.URI, Store: name, Database: cfg.Mongo.Database, Collection: cfg.Mongo.Collection, Pool: uint64(limits.Concurrency)}
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
-		config := search.Config{Store: name, URL: cfg.Search.URL, Index: cfg.Search.Index, Profile: cfg.Search.Profile, Pool: limits.Concurrency}
+		config := cfg.searchConfig(name)
 		adapter, err = search.Open(ctx, config)
 	}
 	if err != nil {

@@ -22,8 +22,12 @@ import (
 type Config struct {
 	Store, URL, Index, Profile string
 	Pool                       int
+	Connection                 *Connection
+	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
+	Resolver *net.Resolver
 }
 type Adapter struct {
+	dialer          *connectionDialer
 	config          Config
 	client          *http.Client
 	transport       *http.Transport
@@ -42,28 +46,32 @@ type capabilities struct{ source, write, nativeWrite bool }
 var indexPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
-	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
-	if err != nil || name != cfg.Store || len(segments) != 0 || !indexPattern.MatchString(cfg.Index) || cfg.Pool < 1 || cfg.Pool > 32 {
-		return nil, fmt.Errorf("invalid search configuration")
+	if err := ValidateConfig(cfg); err != nil {
+		return nil, err
 	}
-	if cfg.Profile != "elasticsearch-8.17.0" && cfg.Profile != "opensearch-2.19.0" {
-		return nil, fmt.Errorf("unsupported search profile")
+	cfg.URL, _ = canonicalURL(cfg.URL)
+	if cfg.Connection != nil {
+		connection := *cfg.Connection
+		cfg.Connection = &connection
 	}
-	endpoint, err := url.Parse(cfg.URL)
-	if err != nil || endpoint.Scheme != "http" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.Fragment != "" || endpoint.Port() == "" {
-		return nil, fmt.Errorf("search requires a credential-free explicit loopback HTTP endpoint")
+	tlsConfig, err := connectionTLS(cfg)
+	if err != nil {
+		return nil, err
 	}
-	ip := net.ParseIP(endpoint.Hostname())
-	if ip == nil || !ip.IsLoopback() {
-		return nil, fmt.Errorf("search milestone is loopback only")
-	}
+	lifetime, cancel := context.WithCancel(context.Background())
+	dialer := &connectionDialer{ctx: lifetime, resolver: cfg.Resolver, tlsConfig: tlsConfig, slots: make(chan struct{}, cfg.Pool+1), conns: make(map[*searchConn]struct{})}
 	transport := newTransport(cfg.Pool)
+	transport.DialContext = dialer.dial
+	transport.DialTLSContext = dialer.dial
+	transport.TLSClientConfig = tlsConfig
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	nativeTransport := newTransport(1)
+	nativeTransport.DialContext = dialer.dial
+	nativeTransport.DialTLSContext = dialer.dial
+	nativeTransport.TLSClientConfig = tlsConfig
 	nativeTransport.DisableKeepAlives = true
 	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
-	lifetime, cancel := context.WithCancel(context.Background())
-	a := &Adapter{config: cfg, client: client, transport: transport, nativeTransport: nativeTransport, nativeClient: nativeClient, ctx: lifetime, cancel: cancel}
+	a := &Adapter{dialer: dialer, config: cfg, client: client, transport: transport, nativeTransport: nativeTransport, nativeClient: nativeClient, ctx: lifetime, cancel: cancel}
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
@@ -73,6 +81,9 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 func (a *Adapter) Close() error {
 	a.once.Do(func() {
 		a.cancel()
+		if a.dialer != nil {
+			a.dialer.close()
+		}
 		a.transport.CloseIdleConnections()
 		if a.nativeTransport != nil {
 			a.nativeTransport.CloseIdleConnections()

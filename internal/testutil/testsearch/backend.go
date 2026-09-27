@@ -19,8 +19,9 @@ import (
 var sequence atomic.Uint64
 
 type Backend struct {
-	URL, Profile, Index string
-	Client              *http.Client
+	URL, Profile, Index        string
+	Username, Password, CAFile string
+	Client                     *http.Client
 }
 
 func Open(t *testing.T) *Backend {
@@ -75,10 +76,13 @@ func (b *Backend) Do(t *testing.T, method, path, body string) (int, []byte) {
 		t.Fatal(err)
 	}
 	request.GetBody = nil
+	if b.Username != "" {
+		request.SetBasicAuth(b.Username, b.Password)
+	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := b.Client.Do(request)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("independent backend request failed")
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))

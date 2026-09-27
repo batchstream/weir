@@ -61,7 +61,8 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | 原生 BackendExpression | 已实现；固定后端有限真实验证见 [M7](milestone-7.md)、`internal/backend/{mongodb,search}/expression.go`、对应 tests、`internal/server/expression_integration_test.go` | 仅明确 profile；不含泛化语言、跨记录、pipeline/upsert、其他版本/拓扑 |
 | 通用 ProgramTransform | **阻塞；用户确认后才可延期**。`internal/protocol/protocol.go` 拒绝；`experiments/luaprobe/runtime_test.go`、[M1](milestone-1.md) 证明 GopherLua 隔离不合格 | 确定性、fuel/CPU、编译/分配/宿主 helper/取消隔离、类型保真；Mongo transaction 与 Search OCC 完整闭环 |
 | Weir TLS/认证/授权 | **用户明确排除，不算阻断；既有体系已移除**；[M8](milestone-8.md)、`internal/server/forwarding.go` | application/peer 均为明文 HTTP/2，入口可达来源由部署隔离负责；hop 没有密码学身份保证。旧 identity/allow/server_name 配置严格拒绝，无开关、证书 fixture 或空壳权限接口 |
-| 后端必要连接配置及隐式重放 | Mongo 的 credential-free 与显式 SCRAM-SHA-256/verified TLS 已实现，生产 Open/应用装配、解密后 wire guard、391/回复丢失与生命周期实测见 [M10R](milestone-10-remediation.md)；M10 原阶段失败记录保留 | 仅固定 Go1.27/driver2.9.1/Mongo8.0.32 单直接非分片副本集 endpoint；OCSP 使用有界单 HTTP responder 与短期缓存，额外拒绝见报告。Search 仍 credential-free HTTP；其他认证、HTTPS/多个 OCSP responder、SRV/多节点切换、跨平台/长测与总 DB 预算不因此通过 |
+| Mongo 后端连接及隐式重放 | credential-free 与显式 SCRAM-SHA-256/verified TLS 已实现且有限真实验证；生产 Open/应用装配、解密后 wire guard、391/回复丢失与生命周期实测见 [M10R](milestone-10-remediation.md)；M10 原失败保留 | 固定 Go1.27/driver2.9.1/Mongo8.0.32 单直接非分片副本集 endpoint；仅有界单 HTTP OCSP responder。其他认证、HTTPS OCSP/多个 responder、SRV/多节点、跨平台/长测仍未通过 |
+| Search 后端连接及隐式重放 | 单静态 DNS/IP endpoint 的 HTTP 或 verified HTTPS/可选 Basic 已实现且两个原生安全 profile 分别有限真实验证；生产 Open、app direct/peer、故障请求计数、DNS/TLS/Close 边界见 [M11](milestone-11.md) | 固定 ES8.17.0/OS2.19.0、单具体 index/primary，本机证据使用显式 CA。系统 roots 正向真实资格、其他版本/拓扑、总 DB 预算、跨平台与长测未因此通过 |
 | 普通 Read/写入/Bulk | 已实现且有限真实资格验证；[M1](milestone-1.md)、[M2](milestone-2.md)、[unary 专项](unary-response-deadline.md) | 新平台/适用连接配置/网络故障需重验；0 假 APPLIED、0 已执行却 NOT_STARTED、0 静默重放、0 关联/流内顺序错误 |
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |
 | 多实例共享后端/直接 native writer | 原生 writer 有限竞争验证；本机多进程 peer 有限验证；M1/M2/M5/M7 | 多个独立 Runtime/AIMD 同目标的容量竞争、max replicas × pool/C 总预算未资格；每实例控制不代表全局上限 |
@@ -88,7 +89,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Windows amd64 | 未验证 | 未验证 | 关闭、句柄、commit memory 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 | Windows arm64 | 未验证 | 未验证 | 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 
-后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；独立验收后仍需多实例保护 → 通用 runtime
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；独立验收后仍需多实例保护 → 通用 runtime
 安全可行性 → 跨平台运行/打包 → OCI/Kubernetes → 参考负载校准/长测/独立核验。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	spb "github.com/batchstream/weir/api/weir/search/v1"
@@ -213,12 +214,22 @@ func (r *nativeBulkReader) Read(dst []byte) (int, error) {
 }
 
 func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if a.ctx != nil {
+		if a.ctx.Err() != nil {
+			cancel()
+		}
 		stop := context.AfterFunc(a.ctx, cancel)
 		defer stop()
 	}
+	interrupted := make(chan struct{})
+	stopIO := context.AfterFunc(ctx, func() { _ = exchange.Source.Close(); exchange.Sink.Interrupt(); close(interrupted) })
+	defer func() {
+		if !stopIO() {
+			<-interrupted
+		}
+	}()
 	d := p.Backend.(*spb.Request)
 	var body io.Reader
 	if d.Method == "GET" {
@@ -254,7 +265,7 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP request")), execution.Neutral
 	}
-	request.GetBody = nil
+	a.configureRequest(request)
 
 	for _, header := range d.Headers {
 		for _, value := range header.Values {
