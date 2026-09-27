@@ -971,12 +971,26 @@ sampling cannot guarantee survival of every allocation or prevent kernel OOM.
 One Guard owns sampling and target publication; diagnostics only read its Snapshot.
 Metrics distinguish the configured budget, process source/validity and the most
 pressured visible cgroup's own current/limit pair, including scope and validity.
-Go Sys-HeapReleased on macOS/Windows is an explicit degraded fallback, not OS memory
-qualification. Linux RSS failure exposes that fallback but retains unknown/closed
+Darwin uses current physical footprint in bytes (`darwin_phys_footprint`) from
+system libproc's public proc_pid_rusage V0, through fixed purego v0.10.2. This is
+not RSS or peak memory and is never added to RSS or Go memory. A single
+process-lifetime binding serves all Guards; only the current PID and fixed system
+library/symbol/flavor are used. Binding, call or data failures make process_valid
+false and unknown true, closing admission; a subsequent valid low sample recovers.
+Darwin cgroup state is not_applicable. Windows Go Sys-HeapReleased remains an
+explicit degraded fallback, not OS memory qualification. Linux RSS failure exposes that fallback but retains unknown/closed
 admission; a low Go value cannot erase an unknown Linux observation.
 The fallback's validity flag describes its Go observation, not successful OS memory
 sampling. A configured memory budget is an admission threshold, not an OS hard limit;
 host total memory must not silently replace that explicit process budget.
+
+The Darwin bridge's upstream-maintained fakecgo/runtime internals are an accepted
+dependency boundary, not permission for Weir to copy private ABI or maintain a fork.
+CGO_ENABLED=0 remains the packaging setting, not a claim of no native calls. Go or
+bridge upgrades require fresh CGO0 native evidence; CGO1 race covers a different
+initialization path. The synchronous system API does not accept cancellation; no
+per-sample goroutine/thread is abandoned to fake a timeout. Measured cancellation
+bounds do not promise interruption of a hung kernel call.
 
 Sample approximately every 100 ms and latch overload at 80%, clearing at 70%.
 High watermark stops *new admission*, including new operations on existing streams;

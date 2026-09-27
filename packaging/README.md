@@ -36,3 +36,16 @@ regression; a clean scan alone does not establish deployment safety.
 
 Dependencies beside the archives distinguish the module graph from binary-linked
 modules; they are inventory, not a security audit or a standard SBOM.
+
+Darwin uses current physical footprint in bytes from the system libproc API,
+through fixed purego v0.10.2. Its Apache-2.0 and Go-derived BSD-3-Clause notices
+are included in Darwin archives under licenses/. The existing CGO_ENABLED=0
+single-binary build still makes native system calls; no separate dylib installation
+or runtime compiler is required. Go or bridge upgrades require renewed native
+validation. Linux and Windows binaries do not link purego.
+
+One Guard samples every 100ms and closes admission at 80% of the explicit soft
+memory budget, reopening at 70%. Darwin OS sampling failures close admission;
+Go heap estimates cannot reopen it. A synchronous kernel API cannot be forcibly
+canceled if the kernel stalls; the measured short shutdown bounds are not a
+promise to interrupt a hung kernel call. Windows still uses a Go-only fallback.

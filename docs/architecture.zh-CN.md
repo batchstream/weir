@@ -465,8 +465,10 @@ pending 字节记录保留的编码输入加固定条目开销，不冒充精确
 
 当前 Linux profile 依据 /proc/self/cgroup 与 mountinfo 定位，只检查该 mount 内最多 32 层；不可见祖先不作已观测声明。静态身份只包含已验证的 cgroup-v2 membership、所选 mount ID/设备号、root/point 映射、可见相对层级和有效 limit。选择可见祖先最多的 mount，同等覆盖按 mount point 字典序选择；无关 mount/membership 和行顺序不改变身份。同一路径堆叠多个适用 cgroup2 mount 属于不支持/unknown。只有完整有效的 cgroup 观测确认相关变化，才置 profile_changed 并保持至重启，即使之后改回原身份也不解除。缺失、损坏、超长或溢出只使当次观测 unknown/闭锁；原 profile 恢复且 RSS、每层所需 cgroup 观测全部可信且达到各自 70% 低水位后才恢复，中间/高位不能解除。startup unknown 也遵守此规则。memory.max=0 是有限边界并闭锁。首次观测在 listener 准入之前。statm RSS 是异步估值，不是精确 heap；采样不能保证所有分配安全或永不触发内核 OOM。
 
-只有一个 Guard 拥有采样和状态发布；diagnostics 仅读 Snapshot。指标区分配置预算、进程来源/有效性，以及压力最高的可见 cgroup 自身 current/limit 配对、scope 和有效性。macOS/Windows 的 Go Sys-HeapReleased 是明确降级，不是 OS 内存资格。Linux RSS 失败时可展示该 fallback，但保持 unknown/闭锁，低 Go 值不能清除未知 Linux 观测。
+只有一个 Guard 拥有采样和状态发布；diagnostics 仅读 Snapshot。指标区分配置预算、进程来源/有效性，以及压力最高的可见 cgroup 自身 current/limit 配对、scope 和有效性。Darwin 通过固定 purego v0.10.2 的公开 API 调用系统 libproc 的 proc_pid_rusage V0，取当前 physical footprint 字节值（`darwin_phys_footprint`）。它不是 RSS 或峰值，不与 RSS/Go 内存相加。所有 Guard 共用一个进程生命周期绑定，只允许固定系统库/符号/flavor 和自身 PID。绑定、调用或数据错误置 process_valid=false、unknown=true 并拒绝准入；后续有效低位可以恢复。Darwin cgroup 为 not_applicable。Windows 的 Go Sys-HeapReleased 仍是明确降级，不是 OS 内存资格。Linux RSS 失败时可展示该 fallback，但保持 unknown/闭锁，低 Go 值不能清除未知 Linux 观测。
 fallback 的有效性标记只描述 Go 观测，不表示 OS 内存采样成功。配置的 memory budget 是准入阈值，不是 OS 硬限制；不得用宿主机总内存默默替代显式进程预算。
+
+Darwin bridge 由上游维护的 fakecgo/runtime 内部实现是获准的依赖维护边界，不代表 Weir 可以复制私有 ABI 或维护 fork。CGO_ENABLED=0 仍为打包设置，不代表没有 native 调用。Go 或 bridge 升级需要新的 CGO0 原生证据；CGO1 race 覆盖不同初始化路径。同步系统 API 不支持取消；不丢弃每次调用的 goroutine/线程来伪造超时。实测取消界限不承诺能中断挂死的内核调用。
 
 约每 100ms 采样，80% 置 overload latch、70% 清除。高水位停止新准入，含已有流的新操作；低水位恢复。没有进程级等待队列或第二个 DB 控制器。已准入执行、结果和 cleanup 继续以释放内存，不能再受新准入条件阻塞。
 

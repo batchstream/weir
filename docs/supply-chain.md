@@ -173,3 +173,22 @@ signing, registry publication, automatic update or CI deployment is authorized.
 Refresh scans at a release candidate, after any source/dependency/compiler/base
 change, and on relevant new advisories. Human security review and native/platform,
 resource, topology, Kubernetes, capacity and soak gates remain separate.
+
+## Darwin system bridge
+
+[Darwin remediation](milestone-19-remediation.md) pins purego v0.10.2, commit
+`7f6f1382ade268f99d75e03a6b6447c2be53279c`, with public module checksums in go.sum.
+Only Darwin links it. The module graph can contain it for all targets, so inspect
+actual linked inventories/symbols before describing binary contents. The public
+API binds only `/usr/lib/libproc.dylib` / `proc_pid_rusage`, current PID, V0.
+Weir contains no copied runtime ABI, raw trap, fork, callback or generic FFI service.
+
+The coordinator explicitly accepted upstream maintenance of this fixed dependency's
+fakecgo/runtime linkname mechanisms. This is a maintenance-boundary exception,
+not a finding that private ABI is generally safe. CGO0 and CGO1 race have different
+initialization paths and need separate native evidence after Go/bridge upgrades.
+Darwin archives include purego's Apache-2.0 text, the Go-derived BSD-3-Clause text,
+and attribution under `licenses/`; these source inputs are recorded in receipts.
+M19's source archive audit remains historical read-only input. New bridge-linked
+Darwin artifacts require their own finite scan, with explicit DB timestamps and
+exact binary/source hashes; none of this clears the OpenSearch upstream blocker.

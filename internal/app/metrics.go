@@ -66,8 +66,8 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		desc := prometheus.NewDesc("weir_memory_"+name, "Existing overload Guard state, without additional sampling or backend calls.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
 	}
-	desc = prometheus.NewDesc("weir_memory_sample_bytes", "Last Guard sample by source; Go fallback is not RSS. Inactive sources are zero.", []string{"source"}, nil)
-	for _, source := range []string{"unobserved", "linux_rss", "go_sys_minus_released"} {
+	desc = prometheus.NewDesc("weir_memory_sample_bytes", "Last Guard sample by source; physical footprint and Go fallback are not RSS. Inactive sources are zero.", []string{"source"}, nil)
+	for _, source := range []string{"unobserved", "linux_rss", "darwin_phys_footprint", "go_sys_minus_released"} {
 		value := 0.0
 		if memory.Source == source {
 			value = float64(memory.Bytes)

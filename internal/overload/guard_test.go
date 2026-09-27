@@ -82,7 +82,11 @@ func TestGuardStartupRunCancelAndSnapshots(t *testing.T) {
 	if guard.Snapshot() != s {
 		t.Fatal("sampling after join")
 	}
-	if !s.Observed || s.Bytes == 0 || runtime.GOOS != "linux" && (s.Source != "go_sys_minus_released" || s.Cgroup.State != "not_applicable") {
+	source := "go_sys_minus_released"
+	if runtime.GOOS == "darwin" {
+		source = "darwin_phys_footprint"
+	}
+	if !s.Observed || s.Bytes == 0 || runtime.GOOS != "linux" && (s.Source != source || s.Cgroup.State != "not_applicable") {
 		t.Fatal(s)
 	}
 }

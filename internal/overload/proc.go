@@ -42,13 +42,11 @@ type cgroupIdentity struct {
 }
 
 func (p *memoryProfile) observe() observation {
-	cg := CgroupSnapshot{State: "not_applicable", Scope: "none"}
-	o := observation{source: "go_sys_minus_released", processValid: true, cgroup: cg, low: true}
 	if p.proc == "" {
-		o.bytes = goBytes()
-		return o
+		return processObservation()
 	}
-	o.processValid = false
+	cg := CgroupSnapshot{State: "not_applicable", Scope: "none"}
+	o := observation{source: "go_sys_minus_released", cgroup: cg}
 	raw, err := readFile(filepath.Join(p.proc, "statm"), 256)
 	if err == nil {
 		n, err := parseRSS(raw, uint64(os.Getpagesize()))

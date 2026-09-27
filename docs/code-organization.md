@@ -20,9 +20,9 @@
 | `internal/backend/search` | ES/OpenSearch 的明确 profile、HTTP/TLS 连接、JSON/响应边界、CRUD/OCC、表达式、Native、PIT Scan |
 | `internal/protocol` | 规范资源 URI、公共 framing/媒体格式/操作校验、Failure/outcome 构造；不解释后端文档 |
 | `internal/value` | 有界 ordered typed value；由 Mongo codec/表达式和测试使用，没有通用程序执行器 |
-| `internal/overload` | 一个 Guard；Linux RSS/config 与可见 cgroup-v2 每层 current/max 独立滞回、静态 profile 校验、固定 Snapshot；其他 OS 明确 Go 降级 |
+| `internal/overload` | 一个 Guard；Linux RSS/config 与可见 cgroup-v2 每层 current/max 独立滞回、静态 profile 校验、固定 Snapshot；Darwin 当前 physical footprint；Windows 明确 Go 降级 |
 | `internal/netlimit` | peer、Mongo 与 Search 实际复用的标准 Go DNS 有界 I/O；调用方保留并发、地址选择和生命周期 |
-| `internal/testutil` | 仓库资源定位；子包 testmongo/testsearch/testdns/testmetrics 为自有测试设施 |
+| `internal/testutil` | 仓库资源定位；子包 testmongo/testsearch/testdns/testmetrics 为自有测试设施；testmemory 仅 integration Darwin mmap/SDK oracle |
 | `experiments/luaprobe` | 只有测试的 Lua 可行性探针；不进入 Weir 依赖图，ProgramTransform 仍 UNSUPPORTED |
 | `experiments/goluaprobe` | 固定 golua v0.3.0 的 test-only 源码/资源反例与最小 typed Value 传递；编译、VM 分配、helper fuel/取消初筛失败，不是产品 runtime；证据见 [M13](milestone-13.md) |
 
@@ -48,6 +48,7 @@ protocol, execution -> api/weir/v1
 | 路径 | 入口文件/符号 |
 | --- | --- |
 | 配置到实例 | `app/config.go`: Decode、Config.Validate、Local.runtimeLimits；`app/assembly.go`: Open、openLocal |
+| 进程内存 | `overload/guard.go`: 单采样和状态；`proc.go`: 可移植 Linux 文件解析；`memory_darwin.go`: 固定 libproc 绑定和 footprint 校验；`process_other.go`: 非 Darwin fallback |
 | 启动/关闭 | `app/node.go`: Node、Start、Close、listenerEnded；`app/diagnostics.go`: 有界 HTTP/1 探针；`app/metrics.go`: 节点采集和注册 |
 | listener 到 handler | `server/server.go`: Config/New；`listener.go`: Serve/Shutdown、连接额度；`admission.go`: 共享应用/peer 准入 |
 | 协议与路由 | `server/http_transport.go`: delivery、输入 credit、HTTP/2 deadline；`forwarding.go`: hop/诊断 metadata；`service.go`: Service/resolve |

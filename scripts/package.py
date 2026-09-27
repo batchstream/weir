@@ -240,6 +240,9 @@ def build_once(opts):
         members = {binary.name: (binary.read_bytes(), 0o755),
                    'README.md': ((source / 'packaging/README.md').read_bytes(), 0o644),
                    'node.example.json': ((source / 'packaging/node.example.json').read_bytes(), 0o644)}
+        if system == 'darwin':
+            for license_file in sorted((source / 'packaging/licenses').glob('purego-*.txt')):
+                members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)
         dest = output / ('weir-' + target + ('.zip' if system == 'windows' else '.tar.gz'))
         archive(dest, members, opts['epoch'])
         artifact_hashes[dest.name] = sha(dest.read_bytes())
