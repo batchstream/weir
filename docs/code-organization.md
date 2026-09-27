@@ -171,6 +171,9 @@ Search 原生 HTTPS/Basic fixture、显式连接和独立观察入口、权限�
 
 Linux 内存 profile、可见层级与读取边界、明确降级/未知、原生测试和环境限制见 [M14](milestone-14.md)。
 `proc.go` 只负责有界文件读取/解析与静态 profile，不是资源框架；可移植解析测试使用自有 temp 文件。
+[M14R](milestone-14-remediation.md) 将身份收窄到已验证的相关 cgroup/mount/层级/limit，完整观测后再确认变化。
+`scripts/test-memory-linux.py` 独立有界回收预先登记的候选资源和宿主 Popen，记录原失败及每项清理结果；
+离线故障注入入口是 `python3 -m unittest discover -s scripts -p test_memory_linux_test.py`。
 `memory_linux.go` 才选择实际 /proc，其他 OS 不读取 Linux 文件。app metrics 仅读 Snapshot，不启动第二采样器。
 本地 Bulk 过载关闭输入后继续交付已准入 Ticket，最后返回 ResourceExhausted；不清除结果账本或重放写入。
 通用 ProgramTransform 已获用户明确首版延期，继续 UNSUPPORTED；上文实验与未来安全契约保留。

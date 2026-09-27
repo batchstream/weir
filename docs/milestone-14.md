@@ -173,3 +173,15 @@ Go 降级，其他架构、生产 OCI/Kubernetes、多节点、容量及 24h soa
 default、integration、Linux integration vet 均 exit 0；六组合有限 CLI build 全部通过。
 新解析/状态三轮 race 与准入/Native/Scan/diagnostics 三轮 race 通过；真实指标/进程关闭
 两项通过、真实 Mongo stream 六项通过（未启用 Search 子项不计 PASS）。
+
+## 独立复核失败与 M14R 补救
+
+原交付 `8d5aab1b9be2aaf54224380f709428b07d77efe9` **未通过独立验收**。
+统筹在原源码各三轮复现：无关 tmpfs mountinfo 行永久关闭准入；一次损坏拓扑恢复原
+可信低 profile 后仍永久闭锁。原 fixture finalizer 的惰性 inspect 错误注入还证明，
+一次 Docker 异常会跳过独立宿主 Mongo 的 SIGTERM/Wait。上文原测试成功记录不覆盖
+这些失败，整份文本静态比较的原限制不能作为通过依据。
+
+[M14R 补救报告](milestone-14-remediation.md) 记录相关语义身份、瞬时 unknown 恢复、
+独立有界清理及最终源码重验；当前身份语义以该报告及双语架构 §9.3 为准。
+原 M14 失败、Linux Mongo 启动阻塞及本报告历史日志全部保留。

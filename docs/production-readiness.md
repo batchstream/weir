@@ -66,7 +66,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |
 | 多实例共享后端/直接 native writer | `local.concurrency` 已实现；原 [M12](milestone-12.md) 失败保留。[M12R](milestone-12-remediation.md) 在 `383b4aa` 已获统筹有限独立验收：Mongo 本地 dial/raw/closing C+1 owner、分层 remote-tail、replacement 两 Local 全生命周期；本机 Mongo/ES/OS 真实预算回归通过 | 本地源码硬界与真实回收条件分开；replicas×pool 不是 DB accepted/远端工作的无条件硬上限。真实多节点、Kubernetes、复制切换、容量/soak 尚未因此通过 |
 | 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络仍未验证；M9 的 DNS 变化证据仅限自有 loopback fixture；不新增猜测性重放 |
-| Linux RSS/cgroup | [M14](milestone-14.md)：单 Guard、静态可见 cgroup-v2 每层配对、RSS/config、未知闭锁与固定观测；Linux arm64 有限容器/真实 CLI 三轮过载恢复关闭已实测 | 单可见有限 cgroup；无有限界/祖先拓扑仅有文件决策测试。Linux Mongo 被 kernel 7.0.12 阻塞，真实 CLI 使用自有 macOS Mongo；其他平台 Go fallback 不算 OS 内存资格 |
+| Linux RSS/cgroup | [M14](milestone-14.md) 原交付因身份误判/失败清理未验收；[M14R](milestone-14-remediation.md) 修复相关语义身份与瞬时 unknown 恢复，保留单 Guard/每层配对/RSS/config/固定观测，并在最终源码重验 Linux arm64 Guard/CLI 三轮 | 单可见有限 cgroup；无有限界/祖先拓扑仅有文件决策测试。Linux Mongo 被 kernel 7.0.12 阻塞，真实 CLI 使用自有 macOS Mongo；其他平台 Go fallback 不算 OS 内存资格 |
 | 可复现打包/供应链 | 固定 `go.mod/go.sum`、协议生成和本地 bootstrap；默认离线测试 | 六组合制品、双架构 OCI、校验和/SBOM/依赖安全扫描、固定版本安全复核与可复现构建未验收；固定版本不是永久安全承诺 |
 | DNS/端点与 gRPC LB | 有界静态 1–8 endpoint/Service、普通 Go DNS、标准 gRPC pick-first、URI/request-ID rendezvous 已实现；本机真实 DNS、三执行进程共享真实后端、连接替换/无重放证据见 [M9](milestone-9.md) | 静态成员通过重启；旧 stream 不再平衡。未代表生产 DNS、跨节点 K8s Service/LB、真实扩缩容/网络分区资格；多实例数据库总预算仍未合格 |
 | Kubernetes 部署/探针/滚动 | **未实现/未验证**；M7 未执行此未来阶段 | 规范 Deployment/Service、requests/limits、non-root/read-only、Secret 引用；1/3 replicas、两 worker；probe 实际可达，loopback diagnostics 不可直接当 Pod-IP HTTP probe |
@@ -89,7 +89,7 @@ M14 新增 Linux 7.0.12-linuxkit/aarch64、Go 1.27.0 的有限 Guard/实际 CLI 
 | Windows amd64 | 未验证 | 未验证 | 关闭、句柄、commit memory 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 | Windows arm64 | 未验证 | 未验证 | 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 
-后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。M14 仅补 Linux 内存 profile 与有限原生运行证据，见 [报告](milestone-14.md)。跨平台运行/打包、OCI/Kubernetes、参考负载校准/长测/独立核验仍 required。
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。M14 仅补 Linux 内存 profile 与有限原生运行证据，原失败和 [M14R 补救](milestone-14-remediation.md) 分别保留；无关挂载不再改变静态身份，只有完整可信的相关变化才永久闭锁。跨平台运行/打包、OCI/Kubernetes、参考负载校准/长测/独立核验仍 required。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，
 才能宣布**对应范围**合格；部分平台通过不能结束整个目标，缩小范围须用户确认。
