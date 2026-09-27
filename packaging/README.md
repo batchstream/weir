@@ -18,7 +18,11 @@ OCI runs as UID/GID 65532 with exec ENTRYPOINT /weir. Mount configuration and an
 explicit backend CA read-only. A read-only root filesystem, dropped capabilities,
 no-new-privileges and finite memory/CPU/PID limits are expected. Weir requires no
 writable runtime directory in this profile; /tmp from the base may remain read-only.
-Diagnostics remain loopback-only, not a Pod-IP probe or a public management service.
+Diagnostics remain loopback-only. Use `/weir -probe live` or `-probe ready`
+(optionally `-probe-address 127.0.0.1:7449`) for bounded exec probes without
+loading configuration or connecting to databases. Exit 0 is healthy; all failures
+exit 1. Probe/version/server flags are exclusive. See deploy/kubernetes in the
+source repository for the canonical Deployment/ClusterIP and termination budget.
 The distroless base supplies standard CA roots and timezone data; pinned base
 updates require deliberate rebuild and revalidation.
 

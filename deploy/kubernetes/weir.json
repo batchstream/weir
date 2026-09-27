@@ -1,0 +1,159 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "weir"
+      },
+      "spec": {
+        "replicas": 1,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "revisionHistoryLimit": 2,
+        "progressDeadlineSeconds": 120,
+        "selector": {
+          "matchLabels": {
+            "app": "weir"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "weir"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 15,
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 65532,
+              "runAsGroup": 65532,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "weir",
+                "image": "weir:REPLACE_WITH_IMMUTABLE_IMAGE",
+                "imagePullPolicy": "IfNotPresent",
+                "args": [
+                  "-config",
+                  "/etc/weir/node.json"
+                ],
+                "ports": [
+                  {
+                    "name": "grpc",
+                    "containerPort": 7447
+                  }
+                ],
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "2",
+                    "memory": "1Gi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "1Gi"
+                  }
+                },
+                "startupProbe": {
+                  "exec": {
+                    "command": [
+                      "/weir",
+                      "-probe",
+                      "ready",
+                      "-probe-address",
+                      "127.0.0.1:7449"
+                    ]
+                  },
+                  "timeoutSeconds": 2,
+                  "periodSeconds": 2,
+                  "failureThreshold": 15
+                },
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "/weir",
+                      "-probe",
+                      "ready",
+                      "-probe-address",
+                      "127.0.0.1:7449"
+                    ]
+                  },
+                  "timeoutSeconds": 2,
+                  "periodSeconds": 2,
+                  "failureThreshold": 1
+                },
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "/weir",
+                      "-probe",
+                      "live",
+                      "-probe-address",
+                      "127.0.0.1:7449"
+                    ]
+                  },
+                  "timeoutSeconds": 2,
+                  "periodSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "volumeMounts": [
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/weir",
+                    "readOnly": true
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "config",
+                "secret": {
+                  "secretName": "weir-config",
+                  "defaultMode": 292
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "weir"
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": {
+          "app": "weir"
+        },
+        "ports": [
+          {
+            "name": "grpc",
+            "port": 7447,
+            "targetPort": "grpc"
+          }
+        ]
+      }
+    }
+  ]
+}

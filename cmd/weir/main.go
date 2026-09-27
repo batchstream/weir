@@ -24,6 +24,8 @@ func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("weir", flag.ContinueOnError)
 	flags.SetOutput(output)
 	version := flags.Bool("version", false, "print build identity without loading configuration or connecting")
+	probe := flags.String("probe", "", "check live or ready using only loopback diagnostics; exit 0 healthy, 1 otherwise")
+	probeAddress := flags.String("probe-address", "127.0.0.1:7449", "probe-only loopback IP:port")
 	diagnostics := flags.String("diagnostics", "", "optional loopback diagnostic HTTP address; disabled by default")
 	listen := flags.String("listen", "127.0.0.1:7447", "intranet gRPC listen IP:port; loopback by default")
 	uri := flags.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
@@ -49,6 +51,22 @@ func run(args []string, output io.Writer) error {
 			return fmt.Errorf("-version cannot be combined with other flags")
 		}
 		return printVersion(output)
+	}
+	probeMode := false
+	flags.Visit(func(f *flag.Flag) {
+		probeMode = probeMode || f.Name == "probe" || f.Name == "probe-address"
+	})
+	if probeMode {
+		mixed := false
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name != "probe" && f.Name != "probe-address" {
+				mixed = true
+			}
+		})
+		if mixed {
+			return fmt.Errorf("-probe cannot be combined with server or version flags")
+		}
+		return runProbe(context.Background(), *probe, *probeAddress)
 	}
 	cfg := app.DefaultConfig()
 	if *configFile != "" {

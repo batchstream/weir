@@ -769,6 +769,13 @@ Liveness 表示进程能运行，不是所有数据库健康。Readiness 表示�
 
 优先用最近执行证据和基础 transport health；可独立有界连接检查，但 Ping 不提高 C。永久后端认证/拓扑失败应明确使必要 Store 构建失败；不隐藏部分 Store 启动 fallback，V1 开始服务前验证全部配置 Store。
 
+最小 Kubernetes 配置见 `deploy/kubernetes`。exec 探针复用同一 binary 的
+`-probe live|ready`，只请求固定 loopback diagnostics，不读取配置或初始化 DB；
+与 server/version flags 互斥，HTTP 总期限750ms、响应头/体有界、无proxy/redirect，
+只有确切成功回复才exit0。diagnostics仍仅loopback。startup成功前屏蔽其他探针；
+DB失败/过载期间ready仍只表示生命周期。单副本Recreate不保证连续可用，Pod终止预算
+覆盖drain，客户端仍须处理EndpointSlice传播竞态及未收到写入结果的UNKNOWN。
+
 ### 15.3 Metrics 与 trace
 
 使用 Prometheus/OpenTelemetry，不自建平台。标签只能是有限 listener/method、配置 Service/Store/Adapter、操作族、错误/outcome、有限减窗原因。

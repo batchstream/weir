@@ -9,7 +9,7 @@
 
 | 位置 | 真实职责与所有权 |
 | --- | --- |
-| `cmd/weir` | CLI flags/JSON 输入、无配置访问的构建身份查询、进程信号、调用 Node 的启动和关闭 |
+| `cmd/weir` | CLI flags/JSON 输入、无配置访问的构建身份/loopback exec探针、进程信号、调用 Node 的启动和关闭 |
 | `scripts/package.py`、`packaging/` | 干净提交导出、六目标双次构建/归档/依赖清单和本地 OCI；不进入运行时依赖图 |
 | `api/weir/v1`、`api/weir/search/v1` | 公共 proto 和生成代码；独立于服务端内部包 |
 | `internal/app` | 严格静态配置、完整图校验、具体后端/Service/listener 组装、进程生命周期和 diagnostics |
@@ -177,7 +177,7 @@ Linux 内存 profile、可见层级与读取边界、明确降级/未知、原�
 `scripts/test-memory-linux.py` 独立有界回收预先登记的候选资源和宿主 Popen，记录原失败及每项清理结果；
 离线故障注入入口是 `python3 -m unittest discover -s scripts -p test_memory_linux_test.py`。
 `memory_linux.go` 才选择实际 /proc，其他 OS 不读取 Linux 文件。app metrics 仅读 Snapshot，不启动第二采样器。
-Darwin 当前仍使用 Go fallback；[M19](milestone-19.md) 的 SDK/bridge 探针仅保存在自有证据目录，产品未引入新 provider、FFI 或依赖，当前 OS 内存接线仍阻塞。
+Darwin 当前 physical footprint 已由 [M19R](milestone-19-remediation.md) 接线并获统筹有限独立验收；固定 purego v0.10.2，CGO0/CGO1 原生短测分别记录。原 [M19](milestone-19.md) 未实现历史保留。
 本地 Bulk 过载关闭输入后继续交付已准入 Ticket，最后返回 ResourceExhausted；不清除结果账本或重放写入。
 通用 ProgramTransform 已获用户明确首版延期，继续 UNSUPPORTED；上文实验与未来安全契约保留。
 

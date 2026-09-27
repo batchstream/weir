@@ -61,6 +61,15 @@ and records new backend/image checks separately; OpenSearch bundled-component
 security candidates still block its production qualification. These are unsigned
 local artifacts, and the production gates remain open.
 
+## Kubernetes
+
+The [minimal deployment](deploy/kubernetes/README.md) uses the same binary with
+loopback exec startup/readiness/liveness probes, a ClusterIP Service, read-only
+configuration and explicit resource/termination budgets. Readiness describes the
+serving lifecycle, not backend health. [M20](docs/milestone-20.md) records the
+limited single-replica qualification; three replicas, two workers and soak remain
+separate gates.
+
 ## Local Run
 
 The qualified test platform is macOS arm64, Go **1.27.1**, MongoDB **8.0.32**,

@@ -1769,6 +1769,15 @@ database concurrency window. Permanent backend authentication/topology errors fa
 that required Store's construction clearly. Partial-Store startup is not a hidden
 fallback; V1 validates all configured local Stores before serving.
 
+The minimal Kubernetes deployment is in `deploy/kubernetes`. Its exec probe uses
+the same binary: `-probe live|ready` only requests fixed loopback diagnostics,
+without config/DB initialization. It is exclusive with server/version flags, has
+a 750 ms total HTTP budget, bounded headers/body, no proxy or redirect, and exits
+0 only for the exact success response. Diagnostics remain loopback-only. Startup
+suppresses the other probes until ready; readiness remains a lifecycle signal
+during backend failure/overload. The single-replica Recreate profile has no
+availability guarantee; Pod grace includes drain and endpoint propagation races.
+
 ### 15.3 Metrics and traces
 
 Use Prometheus and OpenTelemetry integration, not a custom telemetry platform.
