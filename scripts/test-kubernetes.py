@@ -61,6 +61,7 @@ class Exercise:
     def __init__(self,f):
         self.f=f
         self.known={}
+        self.log_followers={}
         self.observations=[]
         self.paused=None
 
@@ -109,6 +110,10 @@ class Exercise:
                 identity=f.run(["docker","exec",node,"sha256sum",f"/proc/{pid}/exe"]).stdout
                 assert identity.split()[0]==BINARY
                 f.save(uid+"-identity.json",{"process":item,"binary":identity,"runtimeSpec":cri["info"]["runtimeSpec"],"startedAt":cri["status"]["startedAt"]})
+                # Open the official log stream before termination. A file poll can
+                # lose the final owner summary when kubelet removes a fast Pod.
+                assert len(self.log_followers)<9
+                self.log_followers[uid]=f.start(uid+"-follow",f.kube("logs","--follow","--timestamps=true",name,"--request-timeout=0"))
             self.known[uid]=item
             if pid>0:
                 counts[node]=counts.get(node,0)+1
@@ -333,8 +338,11 @@ def main():
             time.sleep(.2)
         exercise.sample("zero")
         exercise.client("db","zero")
+        for child in exercise.log_followers.values():
+            try: child.wait(timeout=5)
+            except subprocess.TimeoutExpired: child.terminate(); child.wait(timeout=3)
         for uid,item in exercise.known.items():
-            log=(f.root/(uid+"-process.log")).read_text()
+            log=(f.root/(uid+"-follow.log")).read_text()
             assert "backend_connections_closed" in log and "owned=0" in log
         f.save("final-pods.json",json.loads(f.run(f.kube("get","pods","-o","json")).stdout))
         f.save("events.log",f.run(f.kube("get","events","--sort-by=.lastTimestamp")).stdout)

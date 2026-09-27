@@ -99,6 +99,7 @@
   "diagnostics": {
     "GODEBUG": "schedtrace=10000,scheddetail=1",
     "scope": "bounded runtime scheduler census every10s; test-only environment, no product instrumentation",
-    "quiescent_seconds": 12
+    "quiescent_seconds": 12,
+    "pod_log_followers_max": 9
   }
 }
