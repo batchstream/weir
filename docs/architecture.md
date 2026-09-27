@@ -974,6 +974,9 @@ pressured visible cgroup's own current/limit pair, including scope and validity.
 Go Sys-HeapReleased on macOS/Windows is an explicit degraded fallback, not OS memory
 qualification. Linux RSS failure exposes that fallback but retains unknown/closed
 admission; a low Go value cannot erase an unknown Linux observation.
+The fallback's validity flag describes its Go observation, not successful OS memory
+sampling. A configured memory budget is an admission threshold, not an OS hard limit;
+host total memory must not silently replace that explicit process budget.
 
 Sample approximately every 100 ms and latch overload at 80%, clearing at 70%.
 High watermark stops *new admission*, including new operations on existing streams;

@@ -176,6 +176,7 @@ Linux 内存 profile、可见层级与读取边界、明确降级/未知、原�
 `scripts/test-memory-linux.py` 独立有界回收预先登记的候选资源和宿主 Popen，记录原失败及每项清理结果；
 离线故障注入入口是 `python3 -m unittest discover -s scripts -p test_memory_linux_test.py`。
 `memory_linux.go` 才选择实际 /proc，其他 OS 不读取 Linux 文件。app metrics 仅读 Snapshot，不启动第二采样器。
+Darwin 当前仍使用 Go fallback；[M19](milestone-19.md) 的 SDK/bridge 探针仅保存在自有证据目录，产品未引入新 provider、FFI 或依赖，当前 OS 内存接线仍阻塞。
 本地 Bulk 过载关闭输入后继续交付已准入 Ticket，最后返回 ResourceExhausted；不清除结果账本或重放写入。
 通用 ProgramTransform 已获用户明确首版延期，继续 UNSUPPORTED；上文实验与未来安全契约保留。
 
