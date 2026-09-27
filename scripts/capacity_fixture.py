@@ -148,7 +148,7 @@ class Fixture:
         image,limits,extra,command=(spec[k] for k in ("image","limits","extra","command"))
         name = self.owner+"-"+role
         self.attempted.append(name)
-        args = ["docker","create","--name",name,"--label",LABEL+"="+self.owner,"--cpus",str(limits["cpu"]),"--cpuset-cpus",limits["cpuset"],"--memory",str(limits["memory_mib"])+"m","--memory-swap",str(limits["memory_mib"])+"m","--pids-limit",str(limits["pids"]),"--ulimit","nofile=4096:4096","--log-driver","local","--log-opt","max-size=4m","--log-opt","max-file=1","--restart","no","--security-opt","no-new-privileges","--cap-drop","ALL"]
+        args = ["docker","create","--name",name,"--label",LABEL+"="+self.owner,"--cpus",str(limits["cpu"]),"--cpuset-cpus",limits["cpuset"],"--memory",str(limits["memory_mib"])+"m","--memory-swap",str(limits["memory_mib"])+"m","--pids-limit",str(limits["pids"]),"--ulimit","nofile=4096:4096","--log-driver","local","--log-opt","max-size=4m","--log-opt","max-file=1","--log-opt","compress=false","--restart","no","--security-opt","no-new-privileges","--cap-drop","ALL"]
         args += extra+[image]+command
         cid = self.run(args).stdout.strip()
         self.containers[name] = cid
