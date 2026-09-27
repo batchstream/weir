@@ -70,7 +70,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | macOS 当前 OS 内存 | [M19R](milestone-19-remediation.md) 实现固定 purego v0.10.2 / 系统libproc当前physical footprint；单Guard、无效闭锁/低位恢复；CGO0与CGO1 race分别三轮Guard/app原生短测；统筹已有限独立验收 main6573fd0/source484e4bd | 统筹明确接受上游维护内部fakecgo的依赖边界；Weir无私有ABI fork。只有限Darwin arm64证据，amd64未native；同步内核调用不可硬取消、预算非OS硬限额。原[M19](milestone-19.md)未实现历史保留 |
 | 可复现打包/供应链 | [M15](milestone-15.md)、[M16](milestone-16.md)、[M17](milestone-17.md)已获有限独立验收；Go1.27.1/grpc1.83.2、六目标/双OCI、标准CycloneDX及冻结库扫描、准确制品回归证据保留 | [M18](milestone-18.md)逐项登记28个OS High/Critical公告的已知条件与缺口，未消除blocked或更改活跃profile；原始匹配未抑制。ES外部CDX两处SPDX enum失败由统筹复现，Weir8份CDX通过；供应链表示失败与运行风险分开。unsigned政策不等于发布签名，独立安全复核仍required |
 | DNS/端点与 gRPC LB | 有界静态 1–8 endpoint/Service、普通 Go DNS、标准 gRPC pick-first、URI/request-ID rendezvous 已实现；本机真实 DNS、三执行进程共享真实后端、连接替换/无重放证据见 [M9](milestone-9.md) | 静态成员通过重启；旧 stream 不再平衡。未代表生产 DNS、跨节点 K8s Service/LB、真实扩缩容/网络分区资格；多实例数据库总预算仍未合格 |
-| Kubernetes 部署/探针/滚动 | [M20](milestone-20.md)已实现最小 Deployment/ClusterIP、exec loopback 探针、只读Secret/non-root/资源与终止预算；真实单副本执行记录见报告 | 三副本、至少两worker、节点故障/滚动/回滚、容量与长测未验证；单Pod不外推集群生产资格 |
+| Kubernetes 部署/探针/滚动 | [M20](milestone-20.md)已实现最小 Deployment/ClusterIP、exec loopback 探针、只读Secret/non-root/资源与终止预算；Linux arm64/K8s1.36.4期望单副本真实探针、Service DNS读写/Bulk、DB短时停顿恢复、活动Pod删除与替换通过（执行者证据，待独立验收） | 三副本、至少两worker、节点故障/滚动/回滚、容量与长测未验证；单Pod不外推集群生产资格 |
 | 持续负载/SLO/过载恢复/soak | 有短时 bounded regression；无生产容量声明 | 统筹校准并冻结上述参考负载门槛；每平台至少 24h 独立验收。尚未测量的 RPS/p99/恢复时限均未验证 |
 | 运维/升级/回滚 | README 与 M1–M9 有本机操作、限制、故障语义；`internal/app` 有进程生命周期测试 | 容量规划、UNKNOWN 处理、版本兼容、配置/后端连接替换、滚动升级/回滚演练及崩溃后恢复说明未完成 |
 
@@ -89,7 +89,7 @@ M16准确image连接自有Darwin Mongo8.0.32的历史证据不冒充新M17 image
 | 平台/架构 | build / reproducible | native-run/conformance | resource/lifecycle | ≥24h soak | 整体 qualified / 阻塞 |
 | --- | --- | --- | --- | --- | --- |
 | Linux amd64 | M17 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner/冻结环境待接入 |
-| Linux arm64 | M17 binary/archive/OCI 双次一致 | M17 final image + 两新Search三轮；CRUD/Bulk/Native/Scan/expression、TLS拒绝与丢ACK无重放 | non-root/read-only/512MiB/2CPU/96PID、RSS/cgroup有效、SIGTERM三轮；M14R原生回归 | 未验证 | 否；OS组件安全及Linux Mongo内核阻塞，拓扑/K8s/容量未资格 |
+| Linux arm64 | M20六目标binary/archive/双OCI双次一致 | M20准确image/K8s1.36.4/ES8.19.22单副本Service DNS读写/Bulk及Native不完整回复；M17两Search三轮历史保留 | M20 non-root/read-only/2CPU/1GiB、768MiB预算与cgroup有效、DB停顿恢复、在途Pod删除/退出0/替换；M14R/M19R原生回归历史保留 | 未验证 | 否；M20待统筹独立验收，三副本两worker/节点故障/容量未验证；OS安全与Linux Mongo内核阻塞 |
 | macOS amd64 | M19R CGO0双次归档一致、仅Darwin链接purego | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
 | macOS arm64 | M19R CGO0双次归档一致 | M19R准确归档TLS Mongo读写/UNKNOWN/取消/关闭；M17两Search历史资格保留 | M19R CGO0/race分列三轮footprint/迟滞/恢复，应用取消/Close；准确归档正常及在途SIGTERM通过；强压仅app test构建 | 未验证 | 否；只有本机短时资源证据，完整生产范围和长测未资格 |
 | Windows amd64 | M17 六目标双次 hash 一致 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
