@@ -140,7 +140,7 @@ func smoke(ctx context.Context, client pb.WeirClient, id string) error {
 		return err
 	}
 	mutation := &pb.BulkOperation_Mutate{Mutate: put(id + "-bulk")}
-	op := &pb.BulkOperation{Index: 7, Operation: mutation}
+	op := &pb.BulkOperation{Index: 0, Operation: mutation}
 	variant := &pb.BulkRequestFrame_Operation{Operation: op}
 	frame = &pb.BulkRequestFrame{Frame: variant}
 	if err := stream.Send(frame); err != nil {
@@ -159,7 +159,7 @@ func smoke(ctx context.Context, client pb.WeirClient, id string) error {
 			return err
 		}
 		if item := r.GetResult(); item != nil {
-			if got || item.Index != 7 || item.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+			if got || item.Index != 0 || item.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 				return errors.New("bulk correlation/outcome")
 			}
 			got = true
@@ -177,7 +177,7 @@ func smoke(ctx context.Context, client pb.WeirClient, id string) error {
 	if err := persisted(ctx, id+"-bulk"); err != nil {
 		return err
 	}
-	fmt.Println("Service DNS Mutate=APPLIED Read=found Bulk index=7 APPLIED End+EOF")
+	fmt.Println("Service DNS Mutate=APPLIED Read=found Bulk index=0 APPLIED End+EOF")
 	return nil
 }
 func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClient, id string) error {
