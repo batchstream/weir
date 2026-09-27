@@ -1,0 +1,29 @@
+{
+  "spec": {
+    "replicas": 3,
+    "strategy": {
+      "type": "RollingUpdate",
+      "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1}
+    },
+    "template": {
+      "spec": {
+        "affinity": {
+          "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [{"matchExpressions": [{
+                "key": "node-role.kubernetes.io/control-plane", "operator": "DoesNotExist"
+              }]}]
+            }
+          }
+        },
+        "topologySpreadConstraints": [{
+          "maxSkew": 1,
+          "minDomains": 2,
+          "topologyKey": "kubernetes.io/hostname",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "labelSelector": {"matchLabels": {"app": "weir"}}
+        }]
+      }
+    }
+  }
+}
