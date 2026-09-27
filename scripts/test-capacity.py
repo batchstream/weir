@@ -15,6 +15,7 @@ import time
 
 import package as packaging
 from capacity_fixture import Fixture, REPO, LABEL, inventory_diff, sha
+from capacity_artifact import docker_archive
 from capacity_report import evaluate, resource_gate, window_gate, timestamp, prom, metric
 
 
@@ -40,7 +41,8 @@ def prepare(f, plan, artifact):
                         data=archive.extractfile(member).read()
                         if b"org.opencontainers.image.ref.name" in data or b"io.containerd.image.name" in data:
                             raise RuntimeError("tagged OCI load refused")
-            f.product_archive=artifact/"weir-linux.oci.tar"
+            f.product_archive=f.root/"product-docker.tar"
+            docker_archive(artifact/"weir-linux.oci.tar",f.product_archive,oci["images"]["arm64"])
             continue
         if inspection.returncode:
             raise RuntimeError("existing exact ES image required")
@@ -63,7 +65,7 @@ def prepare(f, plan, artifact):
         entry=tarfile.TarInfo("client");entry.size=len(raw);entry.mode=0o555
         archive.addfile(entry,io.BytesIO(raw))
     inputs={str(p.relative_to(REPO)):sha(p) for p in sorted((REPO/"internal/testutil/testcapacity").glob("*.go"))}
-    inputs.update({str(p.relative_to(REPO)):sha(p) for p in [REPO/"scripts/test-capacity.py",REPO/"scripts/capacity_fixture.py",REPO/"scripts/capacity_report.py",REPO/"scripts/capacity-plan.json"]})
+    inputs.update({str(p.relative_to(REPO)):sha(p) for p in [REPO/"scripts/test-capacity.py",REPO/"scripts/capacity_fixture.py",REPO/"scripts/capacity_report.py",REPO/"scripts/capacity_artifact.py",REPO/"scripts/capacity-plan.json"]})
     host={"uname":f.run(["uname","-a"]).stdout.strip(),"cpu":f.run(["sysctl","-n","machdep.cpu.brand_string"]).stdout.strip(),"logical_cpu":f.run(["sysctl","-n","hw.logicalcpu"]).stdout.strip(),"shared_physical_host":True}
     frozen={"schema_version":1,"profile":plan,"tool_inputs":inputs,"client_sha256":hashlib.sha256(raw).hexdigest(),"source":f.run(["git","rev-parse","HEAD"]).stdout.strip(),"effective":effective,"host":host,"vm":json.loads((f.root/"vm.json").read_text())}
     f.save("calibration-plan.json",frozen)

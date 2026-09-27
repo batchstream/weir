@@ -28,7 +28,10 @@ The parent directory must exist. Use lowercase letters/digits/hyphens for UNIQUE
 The entry currently targets this native Darwin arm64 host's existing Go1.27.1
 runtime/caches and native aarch64 Docker VM8CPU/8,319,770,624B/Linux7.0.12-linuxkit.
 It requires the exact ES image config in the plan; the exact untagged product OCI
-may be loaded after read-only collision checks (retained as an artifact cache);
+may be loaded after read-only collision checks (retained as an artifact cache).
+Docker's legacy image store requires a manifest.json archive: the fixture preserves
+exact config bytes and verifies every uncompressed layer diff_id during format
+translation; it does not rebuild or retag the product.
 it never pulls images, changes the daemon, or reads developer credentials.
 No current Kubernetes context, existing access files, or paid resources are used.
 All commands have time/output limits and start/end/exit records. A failure retains
