@@ -66,7 +66,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |
 | 多实例共享后端/直接 native writer | `local.concurrency` 已实现；原 [M12](milestone-12.md) 失败保留。[M12R](milestone-12-remediation.md) 在 `383b4aa` 已获统筹有限独立验收：Mongo 本地 dial/raw/closing C+1 owner、分层 remote-tail、replacement 两 Local 全生命周期；本机 Mongo/ES/OS 真实预算回归通过 | 本地源码硬界与真实回收条件分开；replicas×pool 不是 DB accepted/远端工作的无条件硬上限。真实多节点、Kubernetes、复制切换、容量/soak 尚未因此通过 |
 | 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络仍未验证；M9 的 DNS 变化证据仅限自有 loopback fixture；不新增猜测性重放 |
-| Linux RSS/cgroup | [M14](milestone-14.md) 原交付因身份误判/失败清理未验收；[M14R](milestone-14-remediation.md) 已获统筹有限独立验收：修复相关语义身份与瞬时 unknown 恢复，保留单 Guard/每层配对/RSS/config/固定观测，Linux arm64 Guard/CLI 三轮通过 | 单可见有限 cgroup；无有限界/祖先拓扑仅有文件决策测试。Linux Mongo 被 kernel 7.0.12 阻塞，真实 CLI 使用自有 macOS Mongo；Windows Go fallback 不算 OS 内存资格；Darwin 补救见下一行 |
+| Linux RSS/cgroup | [M14](milestone-14.md) 原交付因身份误判/失败清理未验收；[M14R](milestone-14-remediation.md) 已获统筹有限独立验收：修复相关语义身份与瞬时 unknown 恢复，保留单 Guard/每层配对/RSS/config/固定观测，Linux arm64 Guard/CLI 三轮通过；M19R再做Guard三轮及准确归档应用观测 | 单可见有限 cgroup；无有限界/祖先拓扑仅有文件决策测试。Linux Mongo 被 kernel 7.0.12 阻塞，真实 CLI 使用自有 macOS Mongo；Windows Go fallback 不算 OS 内存资格；Darwin 补救见下一行 |
 | macOS 当前 OS 内存 | [M19R](milestone-19-remediation.md) 实现固定 purego v0.10.2 / 系统libproc当前physical footprint；单Guard、无效闭锁/低位恢复；CGO0与CGO1 race分别三轮Guard/app原生短测 | 统筹明确接受上游维护内部fakecgo的依赖边界；Weir无私有ABI fork。只有限Darwin arm64证据，amd64未native；同步内核调用不可硬取消、预算非OS硬限额。原[M19](milestone-19.md)未实现历史保留 |
 | 可复现打包/供应链 | [M15](milestone-15.md)、[M16](milestone-16.md)、[M17](milestone-17.md)已获有限独立验收；Go1.27.1/grpc1.83.2、六目标/双OCI、标准CycloneDX及冻结库扫描、准确制品回归证据保留 | [M18](milestone-18.md)逐项登记28个OS High/Critical公告的已知条件与缺口，未消除blocked或更改活跃profile；原始匹配未抑制。ES外部CDX两处SPDX enum失败由统筹复现，Weir8份CDX通过；供应链表示失败与运行风险分开。unsigned政策不等于发布签名，独立安全复核仍required |
 | DNS/端点与 gRPC LB | 有界静态 1–8 endpoint/Service、普通 Go DNS、标准 gRPC pick-first、URI/request-ID rendezvous 已实现；本机真实 DNS、三执行进程共享真实后端、连接替换/无重放证据见 [M9](milestone-9.md) | 静态成员通过重启；旧 stream 不再平衡。未代表生产 DNS、跨节点 K8s Service/LB、真实扩缩容/网络分区资格；多实例数据库总预算仍未合格 |
@@ -90,8 +90,8 @@ M16准确image连接自有Darwin Mongo8.0.32的历史证据不冒充新M17 image
 | --- | --- | --- | --- | --- | --- |
 | Linux amd64 | M17 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner/冻结环境待接入 |
 | Linux arm64 | M17 binary/archive/OCI 双次一致 | M17 final image + 两新Search三轮；CRUD/Bulk/Native/Scan/expression、TLS拒绝与丢ACK无重放 | non-root/read-only/512MiB/2CPU/96PID、RSS/cgroup有效、SIGTERM三轮；M14R原生回归 | 未验证 | 否；OS组件安全及Linux Mongo内核阻塞，拓扑/K8s/容量未资格 |
-| macOS amd64 | M17 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
-| macOS arm64 | M17 六目标双次 hash 一致 | M17准确归档 + 两新Search三轮有限完整业务；M16另有TLS Mongo证据 | M19R CGO0/race分列三轮footprint/迟滞/恢复，应用取消/Close；准确制品证据见报告 | 未验证 | 否；只有本机短时资源证据，完整生产范围和长测未资格 |
+| macOS amd64 | M19R CGO0双次归档一致、仅Darwin链接purego | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
+| macOS arm64 | M19R CGO0双次归档一致 | M19R准确归档TLS Mongo读写/UNKNOWN/取消/关闭；M17两Search历史资格保留 | M19R CGO0/race分列三轮footprint/迟滞/恢复，应用取消/Close；准确归档正常及在途SIGTERM通过；强压仅app test构建 | 未验证 | 否；只有本机短时资源证据，完整生产范围和长测未资格 |
 | Windows amd64 | M17 六目标双次 hash 一致 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
 | Windows arm64 | M17 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
 

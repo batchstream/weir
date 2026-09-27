@@ -61,12 +61,15 @@ owner PID 与 footprint；测试核验 PID。它是独立 clang 可执行文件�
 
 | 路径 | 三轮实测 |
 | --- | --- |
-| CGO0 Guard test executable | 高位101.118/106.528/108.448ms；释放恢复87.981/59.049/59.745ms；SDK差值最大131072B |
+| CGO0 Guard test executable | 最终高位104.366/108.853/105.758ms；释放恢复83.422/59.920/59.728ms；同信号差值保持8MiB内 |
 | CGO0 app test executable | 高位52.504/76.618/76.187ms；恢复81.837/55.868/81.147ms；重复Close4.654/1.410/1.657ms |
-| CGO1 Guard `-race` | 单独三轮通过；真实native错误/恢复、GC/并发、32次重复初始化及取消Run |
+| CGO1 Guard `-race` | 最终三轮通过；真实native错误/恢复、GC/并发、32次重复初始化及取消Run |
 | CGO1 app `-race` | 修正测试基线预热后单独三轮通过；高位55.428/80.721/79.533ms，恢复55.765/30.177/55.482ms |
 
 CGO0 Guard 与 app build info 独立保留，不能用 CGO1 race 为 fakecgo 背书。
+最终Guard两条路径各三轮均在join后确认goroutines=2→2、file descriptors=5→5；
+全部自有mmap释放，32次重复初始化不改变唯一libproc handle。编译escape日志也确认
+V0 usage buffer moved to heap，没有临时栈地址越过同步FFI寿命。
 Guard 单元测试的无效/溢出/首次unknown/恢复是纯决策反例；真实非法 flavor 在 opt-in
 native test 直接调用系统 API，不能说成真实 OS 瞬时故障注入或加载失败已实测。
 
@@ -85,11 +88,92 @@ bridge ABI/GC 失败。根因是首次诊断/持续流量未纳入基线，race 
 最初一次临时验证命令有 Python unmatched-parenthesis 语法错误，未执行任何测试；
 修正命令后继续，没有改产品或测试门槛。
 
-## 交付验证与资格边界
+第二个测试错误在 `artifact-darwin-cgo0.log`：准确制品已完成读写、UNKNOWN及在途
+SIGTERM，但新增的“1MiB预算启动闭锁”子步骤违反产品已有最小64MiB配置下限，
+启动正确拒绝 `invalid process bounds`。修正仅删除这个无效测试前提，以正常预算
+再启准确制品验证正常关闭；没有修改配置下限或降低压力档。原测试源码和日志保留。
+**准确归档没有执行mmap高/中/低；该强压证据属于CGO0真实app装配test executable。**
+不把归档层级的压力覆盖写成已通过，也不在发布binary留下debug分配入口。
 
-实现提交之后才做准确归档，结果与 SHA 在本节后续补齐；当前已完成上述CGO0/CGO1
-分层原生测试。准确归档不得用 test executable 替代，也不能把无 debug 入口的
-发布 binary 说成做过 mmap 高/中/低压力。Linux 混合 backend 限制与原M14R保持。
+## 准确制品、回归与供应链
+
+实现/制品source SHA为 `484e4bddeeef9f76c0de407b70c4e76e95e098d6`。
+后续测试修正/补充为 `eba3d1d221842956e8614033c4f65db681b9dd54` 和
+`87e83d96139e13cc09caebf8931d67b8d3defd5f`；末尾文档交付不重新定义制品来源。
+`product-inputs-final.json` 核验69项产品打包输入与source逐字节相同。
+
+`scripts/package.py --output dist/m19-remediation` 从干净实现提交导出，使用两个
+独立source/cache，CGO0六目标binary与六归档全部两次hash一致，耗时123.849s。
+未启用OCI，不把历史image重新标为本次制品。`first/receipt.json` SHA256为
+`ea7816a1fe9861ca574c41cb5abc048e0576b38dc47dab61ff3f76976942fc07`。
+
+| 制品 | SHA256 |
+| --- | --- |
+| Darwin arm64 binary | `5711d45615965407327b587cd998d014811f57f89c4dbf4c1c0aadea315c995c` |
+| Darwin arm64 archive | `621ee2cef178718f7ab27bcb7f026e472ab4d05157b5743b54469131329d41b4` |
+| Darwin amd64 binary | `eaa2bcd9302dc646a61ae6a82e44cbc8424afca5a47312891814f5831b07a0bd` |
+| Darwin amd64 archive | `2edd53a8a59479586362a945f9bc035b53211a533d1a3cba9ebeaef67b78155c` |
+| Linux arm64 binary | `f8091e885879f9d955077f9771921ebc1b7a5673c660d387ea764be13bd59d44` |
+
+Darwin arm64从准确归档提取、hash确认后启动（PID11068），验证footprint/source、
+其他source=0、Read/Mutate/Bulk、取消stream、真实ACK丢失UNKNOWN/无重放。
+被proxy暂存的在途mutation在SIGTERM drain中仍完成，Wait=7.531ms；第二实例正常
+SIGTERM/Wait=1.221ms。CGO0测试driver也有独立build info；它不充当被测产品。
+最大合法diagnostics图通过，实际2058静态series。
+
+Linux7.0.12-linuxkit/aarch64/cgroup-v2、8CPU/8319770624B VM复用原Guard native
+三轮（mmap≤112MiB，原128MiB预算、80/70、2s/8MiB/16MiB不变）。高位分别
+89.077/48.948/83.201ms、恢复78.782/99.883/71.945ms。准确Linux arm64归档binary
+在512MiB/2CPU/96PID/read-only容器验证Read/Mutate/Bulk、RSS=24494080B、
+独立smaps=24584192B、cgroup有效且Darwin source=0，SIGTERM/Wait=5.860ms。
+后端是自有Darwin Mongo8.0.32混合环境；原Linux Mongo内核阻塞仍在。
+证据 `.testdata/weir-m19r-119c55464efd/`。派生harness差异保留于
+`linux-harness.diff`：复制并校验准确binary、固定source，Guard三轮/app观测一轮；
+复用原独立清理逻辑。没有运行原416MiB同组压力helper，未改变它的冻结门槛，
+该强压历史仍只引用M14R；本轮无进程额外分配超过256MiB。
+
+| 默认/静态回归 | 结果 |
+| --- | --- |
+| `CGO_ENABLED=0 go test -count=1 -timeout=180s ./...` | PASS，61.592s |
+| `CGO_ENABLED=1 go test -race -count=1 -timeout=180s ./...` | PASS，64.562s |
+| default / integration vet，Linux arm64 integration vet | 全部PASS；测试文件补充后重做相关vet |
+| Guard portable三轮race | PASS，含M14R瞬时unknown、相关身份及无关mount反例 |
+| app/server diagnostics/overload/admission三轮race | PASS，12.777s |
+| fixture清理离线测试 / package离线测试 / docs | PASS |
+| gofmt / 新改代码style / diff whitespace | PASS |
+
+全部Go回归使用repo Go1.27.1、GOTOOLCHAIN=local、GOENV=off、GOWORK=off、
+GOPROXY=off、GOSUMDB=off；只在最初固定新module获取时使用官方proxy/checksum。
+每条命令与env见commands.jsonl；CGO0/CGO1明确分列，旧失败日志未覆盖。
+
+固定archive和官方module有153个重叠文件逐字节对齐；原M19审计输入只读复用。
+两Darwin链接清单和Go nm都含purego，四个非Darwin目标都没有其linked module或
+symbol。`otool -L`仅列系统库/framework；libproc通过固定系统路径Dlopen，不是
+用户需要另装的dylib。实际运行证明该系统路径可用，不以otool输出冒充动态加载证据。
+
+有限新扫描在 `dist/m19-scans/`：重新取得官方Go完整index及当前graph对应278份OSV，
+2026-09-27T20:02:31Z完成快照，DB modified=2026-09-24T20:07:49Z；没有更改旧DB。
+复用已核SHA的govulncheck1.8.0、Syft1.52.0、Grype0.119.0；Grype冻结DB built=
+2026-09-27T06:30:30Z，本次status valid=true，保留hash/120h age校验、禁止自动更新，
+未伪装过期库。空HOME/显式配置、无远端许可扩展、无Docker auth、无ignore/VEX。
+
+两架构source+binary的四份govuln原件均仅有原x/crypto v0.55.0三个module级
+GO-2026-5932/6354/6355，和M17一致，没有package/function reachability finding。
+实际两target依赖图不含受影响SSH/OpenPGP包。两份Grype各3个匹配（2 High、1
+Unknown），不抑制；purego无新增匹配。这不是“0漏洞”或全场景安全证明。
+两份Syft各23组件并包含正确purego版本；两份CycloneDX1.6严格schema均0错误。
+扫描只涉及新Darwin制品及固定依赖，没有重新调查外部Java数据库。
+
+## 清理与剩余资格
+
+15个自有TLS fixture均只余owner、mongod及轮转日志，生成材料/data已由原helper
+清理；两个Linux容器和唯一network逐项确认absent，宿主Mongo PID11552已Wait/退出。
+原生Guard/app/制品进程均结束，proxy sockets=0，全部测试session已完成。
+`cleanup-audit.json`记录复核；审计脚本曾过严地拒绝合法轮转日志和Docker network
+专用not-found文本，修正仅涉及证据分类，不修改资源或把daemon错误当absent；
+原问题记录于cleanup-audit-errors.json。静态源码、owner、原始日志、探针及准确
+制品保留用于独立复核，没有删除旧阶段证据。最后只更新报告并做docs/diff检查，
+本地main干净后回调统筹并停止所有写入/测试；不push/PR/发布/部署或开启timer。
 
 认证排除、通用ProgramTransform首版延期/UNSUPPORTED保持。M18有界调查已获统筹
 接受，OpenSearch安全为external/upstream-evidence blocked；不重复Java调查、
