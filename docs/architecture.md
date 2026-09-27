@@ -199,6 +199,16 @@ gRPC connections to Weir instead of multiplying database pools per application
 process. This is connection fan-in, not an exact cluster-wide connection ceiling.
 Account for driver monitoring connections and replica topology separately.
 
+The implemented `local.concurrency` is the one static per-Local ceiling (omitted
+or zero: 4; range 1–32). Pure whole-graph validation and assembly share
+`Local.runtimeLimits`; Mongo's business pool and Search's ordinary pool use this
+same value. Read, mutations, Bulk, Native and Scan fetch share that Store's window.
+Count each Local adapter, even two in one process targeting the same database.
+Forwarding-only nodes have no database pool. Include every live executor during
+startup, drain and termination overlap; configured replicas are not a hard live
+process ceiling. The [qualification checklist](production-readiness.md) separates
+monitoring, Native, cleanup, DNS, retiring sockets and backend work after cancellation. No global quota is added.
+
 ## 3. Canonical Resources and Opaque Data
 
 ### 3.1 URI rules
@@ -605,8 +615,9 @@ For pool size P (1–32), ordinary HTTP/1 has at most P sockets and Native has a
 one separate, non-reused HTTP/1 socket. One owner caps their combined connections
 and concurrent connection attempts at P+1. A resolving slot has up to two DNS
 sockets before its one TCP socket, so combined owned sockets are at most 2(P+1).
-The app uses P=4: five backend TCP/handshake slots, at most ten sockets including
-DNS. Header/body, Native pump and Store ledger bounds still apply independently.
+The app uses P=`local.concurrency` (omitted/zero defaults to 4; valid 1–32):
+by default five backend TCP/handshake slots and at most ten sockets including DNS.
+Header/body, Native pump and Store ledger bounds still apply independently.
 
 Record Put/Create/Replace/Delete and Bulk use nonempty non-rewindable bulk POSTs;
 BackendExpression uses a nonempty non-rewindable Update POST. Native always uses a
@@ -742,6 +753,11 @@ This does not extend a caller's RPC deadline or allow a new attempt after it. It
 acknowledges that already-dispatched effects can occur after a caller stops waiting.
 A caller whose result is lost reports UNKNOWN; a surviving participant can still
 receive its actual result. Keep backend and caller-wait timeout metrics separate.
+
+The current default physical `BackendTimeout` is 2 seconds. `selectLocked` also
+applies it to Native; `executeNative` uses that context throughout the exchange.
+The 5-minute default RPC lifetime / 15-minute maximum and adapter fallback never
+extend this stricter budget. Scan cleanup has a separate 2-second reservation.
 
 ### 7.5 Stream lifetime is not database concurrency
 

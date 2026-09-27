@@ -30,6 +30,7 @@ import (
 type process struct {
 	command    *exec.Cmd
 	address    string
+	addresses  []string
 	diagnostic string
 	stderr     *bytes.Buffer
 	done       chan error
@@ -102,7 +103,8 @@ func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
 			go func() { p.done <- command.Wait() }()
 			t.Fatal("no process readiness", message)
 		}
-		p.address = strings.Fields(message[start+1 : end])[0]
+		p.addresses = strings.Fields(message[start+1 : end])
+		p.address = p.addresses[0]
 		if diagnostics {
 			parts := strings.Split(message, "\n")
 			if len(parts) != 2 {

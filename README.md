@@ -105,6 +105,43 @@ Default Store is `mongo`; default resource shape:
 matching the URI. Supported keys: `s:`, `oid:` (24 lowercase hex), canonical `i:`.
 No automatic creation of collections/indexes or hidden document fields.
 
+## Local concurrency and shared databases
+
+In each JSON Service's `local` object, set `"concurrency": 2` alongside `mongo`
+or `search`. Omitted/zero means 4; integers 1–32 are accepted; negative and >32
+values fail whole-graph validation before CA, DNS, database or listener I/O.
+This is a static per-Local ceiling, changed by controlled restart. Mongo's business
+pool and Search's ordinary pool both use that same value. For example:
+
+```json
+{
+  "name": "database",
+  "local": {
+    "concurrency": 2,
+    "mongo": {
+      "uri": "mongodb://127.0.0.1:27028/?directConnection=true",
+      "database": "weir_m1",
+      "collection": "records"
+    }
+  }
+}
+```
+
+Read, Mutate, Bulk batches, Native and Scan fetch share one Store scheduler.
+The AIMD window starts at 1 and cannot grow past this ceiling. Native retains a
+permit for its entire exchange, which also has the default **2-second physical
+execution budget**; the 5-minute RPC lifetime does not extend it. Scan has one
+separate 2-second cleanup reservation and reuses backend pools.
+
+Sum **every Local adapter on every still-live executor**, including starting,
+draining and terminating/replacement overlap. Two Local Stores targeting one DB
+own two pools; forwarding-only nodes own no DB pool. Total accounting also includes
+Mongo monitoring, Search Native, DNS, retiring connections and backend work continuing
+after lost replies.
+Use the audited formulas, finite three-process evidence and explicit assumptions
+in [M12](docs/milestone-12.md); this is deployment planning, not a cluster quota,
+Kubernetes qualification or throughput guarantee. Never replay an UNKNOWN write.
+
 ## Local Dual-Store Run
 
 Keep the MongoDB fixture running. Search containers are pinned, loopback-only and
@@ -156,10 +193,11 @@ The entire app graph uses the adapter's pure validation before CA/DNS/network I/
 DNS uses bounded standard Go A/AAAA I/O and picks the first returned address for
 one connection attempt. A new connection resolves again; existing connections and
 streams remain fixed. There is no discovery, sniffing, failover or business retry.
-The app's ordinary pool is 4; Native has a separate single fresh HTTP/1 connection.
-The shared owner caps backend TCP sockets and concurrent dial/handshake slots at 5;
-DNS adds at most two temporary sockets per resolving slot, with a combined ceiling
-of 10 sockets while resolving. All are canceled and joined on Close.
+The ordinary pool follows `local.concurrency` (default 4); Native has a separate single fresh HTTP/1 connection.
+For ordinary pool size P, the shared owner caps backend TCP sockets and concurrent
+dial/handshake slots at P+1 (default 5). DNS adds at most two temporary sockets per
+resolving slot, with a combined ceiling of 2(P+1) (default 10) while resolving.
+All are canceled and joined on Close.
 
 The existing single concrete index/primary, source and ingest restrictions remain.
 Weir does not create accounts, certificates or indexes. The operator grants backend

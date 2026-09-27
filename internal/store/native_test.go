@@ -131,3 +131,41 @@ func TestNativeQueuedCancelAndRejectionDoNotRead(t *testing.T) {
 		t.Fatal(snap)
 	}
 }
+
+// The five-minute RPC lifetime does not replace the physical execution budget.
+func TestNativeDefaultPhysicalExecutionBudget(t *testing.T) {
+	a := &scanTestAdapter{fetching: make(chan struct{}, 1)}
+	limits := DefaultLimits()
+	if limits.BackendTimeout != 2*time.Second {
+		t.Fatal("default physical budget changed")
+	}
+	r, err := New(a, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	sink := &nativeSink{}
+	exchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: sink}
+	open := &pb.NativeOpen{}
+	started := time.Now()
+	ticket, failure := r.StartNative(ctx, open, exchange)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	select {
+	case <-ticket.ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Native escaped Store physical deadline")
+	}
+	elapsed := time.Since(started)
+	end := ticket.WaitNative()
+	ticket.Ack()
+	if elapsed < 1900*time.Millisecond || end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || ctx.Err() != nil {
+		t.Fatal("Native did not use stricter Store budget", elapsed, end, ctx.Err())
+	}
+	if snap := r.Snapshot(); snap.Active != 0 || snap.Retained != 0 {
+		t.Fatal(snap)
+	}
+}

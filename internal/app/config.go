@@ -40,6 +40,7 @@ type Service struct {
 type Local struct {
 	Mongo           *Mongo  `json:"mongo"`
 	Search          *Search `json:"search"`
+	Concurrency     int     `json:"concurrency"`
 	BatchOperations int     `json:"batch_operations"`
 }
 type Mongo struct {
@@ -248,6 +249,9 @@ func (cfg Config) Validate() error {
 
 func (l *Local) runtimeLimits() store.Limits {
 	limits := store.DefaultLimits()
+	if l.Concurrency != 0 {
+		limits.Concurrency = l.Concurrency
+	}
 	if l.BatchOperations != 0 {
 		limits.BatchOperations = l.BatchOperations
 	}

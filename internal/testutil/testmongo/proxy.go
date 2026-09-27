@@ -39,6 +39,8 @@ type Proxy struct {
 	conns          map[net.Conn]struct{}
 	group          sync.WaitGroup
 	closed         bool
+	upstream       int
+	peakUpstream   int
 	DropCommand    string
 	DropGate       <-chan struct{}
 	DropRemaining  atomic.Int64
@@ -102,6 +104,14 @@ func (p *Proxy) Events() []WireEvent {
 	defer p.mu.Unlock()
 	return append([]WireEvent(nil), p.events...)
 }
+
+// Sockets counts actual upstream TCP connections, including TLS setup and the
+// polling monitor. It is not a driver pool event or a sampled process metric.
+func (p *Proxy) Sockets() (current, peak int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.upstream, p.peakUpstream
+}
 func (p *Proxy) relay(client net.Conn) {
 	defer p.group.Done()
 	defer client.Close()
@@ -110,7 +120,19 @@ func (p *Proxy) relay(client net.Conn) {
 	if err != nil {
 		return
 	}
-	defer backend.Close()
+	p.mu.Lock()
+	p.upstream++
+	p.peakUpstream = max(p.peakUpstream, p.upstream)
+	p.mu.Unlock()
+	rawBackend := backend
+	defer func() {
+		// Keep the original proxy's raw Close semantics after backend is wrapped
+		// in TLS; waiting for close_notify would manufacture a retirement tail.
+		_ = rawBackend.Close()
+		p.mu.Lock()
+		p.upstream--
+		p.mu.Unlock()
+	}()
 	if p.clientTLS != nil {
 		secure := tls.Client(backend, p.clientTLS)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

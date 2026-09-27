@@ -65,7 +65,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Search 后端连接及隐式重放 | 单静态 DNS/IP endpoint 的 HTTP 或 verified HTTPS/可选 Basic 已实现且两个原生安全 profile 分别有限真实验证；生产 Open、app direct/peer、故障请求计数、DNS/TLS/Close 边界见 [M11](milestone-11.md) | 固定 ES8.17.0/OS2.19.0、单具体 index/primary，本机证据使用显式 CA。系统 roots 正向真实资格、其他版本/拓扑、总 DB 预算、跨平台与长测未因此通过 |
 | 普通 Read/写入/Bulk | 已实现且有限真实资格验证；[M1](milestone-1.md)、[M2](milestone-2.md)、[unary 专项](unary-response-deadline.md) | 新平台/适用连接配置/网络故障需重验；0 假 APPLIED、0 已执行却 NOT_STARTED、0 静默重放、0 关联/流内顺序错误 |
 | Native/Scan 与 peer 生命周期 | 已实现并本机 direct/两跳、真实后端验证；[M3](milestone-3.md)、[M4](milestone-4.md)、[M5](milestone-5.md)、[M6](milestone-6.md) | M8 已补明文 preface/header/partial-frame 和连接 setup 期限；后续环境重验 END/EOF、部分结果、背压、取消、drain、句柄/连接/游标泄漏；流不可迁移 |
-| 多实例共享后端/直接 native writer | 原生 writer 有限竞争验证；本机多进程 peer 有限验证；M1/M2/M5/M7 | 多个独立 Runtime/AIMD 同目标的容量竞争、max replicas × pool/C 总预算未资格；每实例控制不代表全局上限 |
+| 多实例共享后端/直接 native writer | `local.concurrency` 已实现；[M12](milestone-12.md) 本机三真实进程、Search Native/idle、受控替换和独立 native writer 有限证据 | **M12 未通过完整预算资格**：Mongo 多轮取消/恢复后 upstream socket 峰值超过 pool+poll 名义值，driver retirement/代理/DB 尾部归因未闭环；不得声称 replicas×pool 是总 socket 硬上限 |
 | 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络仍未验证；M9 的 DNS 变化证据仅限自有 loopback fixture；不新增猜测性重放 |
 | Linux RSS/cgroup | `internal/overload/guard.go` 有实现；既有交叉编译证据 | **未真实验证** RSS/cgroup-v2 与容器压力/回收；macOS 当前 Go Sys-HeapReleased 降级信号不是 RSS |
 | 可复现打包/供应链 | 固定 `go.mod/go.sum`、协议生成和本地 bootstrap；默认离线测试 | 六组合制品、双架构 OCI、校验和/SBOM/依赖安全扫描、固定版本安全复核与可复现构建未验收；固定版本不是永久安全承诺 |
@@ -89,7 +89,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | Windows amd64 | 未验证 | 未验证 | 关闭、句柄、commit memory 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 | Windows arm64 | 未验证 | 未验证 | 未验证 | 未验证 | 否；原生 runner 待接入核实 |
 
-后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；独立验收后仍需多实例保护 → 通用 runtime
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 静态并发已实现，但 Mongo 完整 socket 预算仍未通过（见阶段报告）；独立验收后仍需闭环多实例保护 → 通用 runtime
 安全可行性 → 跨平台运行/打包 → OCI/Kubernetes → 参考负载校准/长测/独立核验。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，

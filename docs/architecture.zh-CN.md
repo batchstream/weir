@@ -105,6 +105,13 @@ Read/Mutate/Native/Scan 各包含一个资源。Bulk 以规范 Store 根 URI 开
 
 所有拓扑运行同一个二进制，不增加 Gateway/Engine/Worker 模式。每个节点保持自己的本地额度。多节点不会自动获得全局顺序、集群级并发控制或分布式锁。
 
+实际 `local.concurrency` 是每个 Local 唯一的静态并发上限（省略或零为 4，合法 1–32）。
+整图纯校验和装配复用 `Local.runtimeLimits`；Mongo 业务池和 Search 普通池使用同一值。
+Read、写入、Bulk、Native、Scan fetch 共用窗口。同进程两个指向同 DB 的 Local 仍计两个
+adapter/pool；仅转发节点没有 DB pool。启动、draining、terminating 与替换重叠的存活实例
+全计数，副本配置不是存活进程硬上界。[资格清单](production-readiness.md) 分开 monitor、Native、cleanup、
+DNS、关闭中的 socket 与取消后后端工作；没有全局配额。
+
 ## 3. 规范资源与不透明数据
 
 ### 3.1 URI 规则
@@ -308,8 +315,8 @@ Permit 覆盖顺序执行的一个记录批次、完整转换重试循环、Nati
 
 普通 HTTP/1 池 P 为 1–32；Native 另有最多一条不复用的 HTTP/1 连接。共同所有者限制
 两者总连接及并行连接尝试为 P+1。解析 slot 在其 TCP socket 前最多持有两个 DNS socket，
-所以包括 DNS 的总上界为 2(P+1)。app 的 P=4，即最多五个后端 TCP/握手 slot，
-包括 DNS 时最多十个 socket。header/body、Native pump、Store 账本边界仍分别生效。
+所以包括 DNS 的总上界为 2(P+1)。app 的 P 来自 `local.concurrency`（省略/零为 4，合法 1–32），
+默认最多五个后端 TCP/握手 slot，包括 DNS 时最多十个 socket。header/body、Native pump、Store 账本边界仍分别生效。
 
 Put/Create/Replace/Delete 与 Bulk 保留非空、不可回卷的 bulk POST；BackendExpression
 保留非空、不可回卷的 Update POST。Native 始终用新连接，调用方 header 不能增加
@@ -357,6 +364,10 @@ ingest pipeline 限制及 Core opaque 职责不变。
 派发前再检查每项，已过期者 NOT_STARTED。物理 batch 一般不能只取消一个成员；执行 context 由后端调用上限、shutdown deadline 与仍相关成员中最晚的 deadline 限制，不能让最早期限取消无关调用。已取消者不再是有兴趣的接收者；所有成员退出或执行上限到期才取消共享 I/O。后端完成/有界清理前保留输入和结果额度。
 
 这不延长原 RPC 期限，也不允许过期后新尝试；只是承认已派发写入可能在调用者停止等待后生效。结果丢失的调用者视 UNKNOWN，存活成员仍可收到真实结果。后端耗时和调用者等待耗时分开统计。
+
+当前物理执行默认 `BackendTimeout=2s`。`selectLocked` 对 Native 也创建这个受限 ctx，
+`executeNative` 全程使用它；RPC 默认 5 分钟/最大 15 分钟和 adapter fallback 都不能延长
+更严格的预算。Scan cleanup 另有独立 2 秒预留。
 
 ### 7.5 流寿命不是数据库并发
 

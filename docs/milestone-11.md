@@ -87,7 +87,7 @@ RESPONSE_INCOMPLETE。完整但损坏的 JSON 在 Native 中仍是 RESPONSE_COMP
 
 | 所有者/资源 | 硬边界 |
 | --- | --- |
-| 每 adapter 普通池 | P=1–32，app P=4；HTTP/1，最多 P active/idle TCP；idle 30 秒 |
+| 每 adapter 普通池 | P=1–32，M11 app P=4（M12 后随 local.concurrency）；HTTP/1，最多 P active/idle TCP；idle 30 秒 |
 | Native 专用池 | 另加 1 条 fresh HTTP/1 TCP，无 keepalive；不是隐藏在普通池预算内 |
 | 共同 dial owner | slot 从 DNS 开始持有到 raw socket Close；最多 P+1；无额外等待队列。普通+Native 后端 TCP ≤P+1，握手 ≤P+1 |
 | DNS sockets | 每 resolving slot 同时最多 2（A/AAAA）；完成查询后才能拨一个 TCP。包括 DNS 的所有自有 sockets ≤2(P+1)，app 为 10；纯 IP 时 ≤5 |
@@ -95,7 +95,7 @@ RESPONSE_INCOMPLETE。完整但损坏的 JSON 在 Native 中仍是 RESPONSE_COMP
 | 连接与调用 | DNS+TCP+TLS 最多 2 秒，原请求取消可提前结束；普通请求 header/body 在同一 2 秒 call context 内，header timeout 2 秒 |
 | TLS retained | 标准验证后最多 8 个 peer cert，每 DER 64 KiB；更早分配受 Go certificate-message 256 KiB 限制。系统 roots 是 Go/OS 的配置资源；未声称可用 Go context 中断所有 OS 证书计算 |
 | HTTP response | header 32 KiB；metadata 256 KiB、bulk/scan envelope 1 MiB、Read MaxDocument+32 KiB。禁自动 compression、proxy、redirect |
-| Native | 原 RPC deadline，另有不延长原 deadline 的 15 分钟上限；app 默认 5 分钟、最大 15 分钟；输入/输出 stall 由现有 server delivery 管理。总 body/response 各 8 MiB，item 256 KiB，metadata line 4 KiB，4096 items，chunk 64 KiB |
+| Native | 物理执行由 Store `selectLocked` 创建的 ctx 限制，默认 `BackendTimeout=2s`，`executeNative` 使用同一 ctx。RPC 默认 5 分钟/最大 15 分钟，adapter fallback 15 分钟；全部取最严格的剩余期限，RPC 寿命不承诺连续执行 5 分钟；输入/输出 stall 由现有 server delivery 管理。总 body/response 各 8 MiB，item 256 KiB，metadata line 4 KiB，4096 items，chunk 64 KiB |
 | Runtime/Native | 仍一个 live Native/Scan slot、Native 4 MiB PageBytes，保留原 pending/result/permit 账本；取消中断 Source/Sink，join 后释放；无第二业务账本 |
 | Close | 取消 adapter lifetime，关闭全部 raw socket，等待正在进行的 dial/DNS/TLS，再释放两个 transport 的 idle 状态；重复 Close 幂等。Node 原 drain 预算和部分初始化回收不变 |
 
