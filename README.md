@@ -30,6 +30,31 @@ response sending with its server deadline. The repair and new transport regressi
 evidence are recorded in `docs/unary-response-deadline.md`; the earlier overall
 acceptance conclusion must not be used as evidence for that property.
 
+## Local reproducible artifacts
+
+With the pinned Go **1.27.0** and its verified module cache available, run from a
+clean commit:
+
+```sh
+python3 scripts/package.py --output dist/local-build
+```
+
+This single entry point builds Linux/macOS/Windows × amd64/arm64 twice, using
+separate clean exports and compilation caches. It compares each binary and archive,
+records the actual source SHA and build settings, and emits SHA256SUMS plus separate
+module-graph and linked-binary inventories. It neither downloads Go modules nor
+contacts databases. `weir -version` prints identity before configuration or network
+initialization; ordinary developer builds remain visibly `dev`.
+
+Add `--oci --builder NAME` to use a locally prepared BuildKit builder and the pinned
+public distroless base. OCI export stays local; no push, registry, signing or QEMU is
+used. The packaging entry uses its own empty Docker client configuration; a container
+builder's owned metadata can be selected with `BUILDX_CONFIG`. Exact tested builder,
+commands, artifact source, digests, native scope and cleanup are in
+[M15](docs/milestone-15.md). See [artifact instructions](packaging/README.md) and the
+[configuration template](packaging/node.example.json). Inventories are not a standard
+SBOM or a vulnerability audit; the production gates remain open.
+
 ## Local Run
 
 The qualified test platform is macOS arm64, Go **1.27.0**, MongoDB **8.0.32**,
@@ -345,6 +370,7 @@ go test ./...
 go test -race ./...
 go vet ./...
 go vet -tags integration ./...
+python3 -m unittest discover -s scripts -p package_test.py -v
 
 # Explicit isolated backend and real response-loss/failpoint qualification.
 # Start scripts/mongo-local.sh first. No configurable production URI is accepted.

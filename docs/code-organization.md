@@ -9,7 +9,8 @@
 
 | 位置 | 真实职责与所有权 |
 | --- | --- |
-| `cmd/weir` | CLI flags/JSON 输入、进程信号、调用 Node 的启动和关闭 |
+| `cmd/weir` | CLI flags/JSON 输入、无配置访问的构建身份查询、进程信号、调用 Node 的启动和关闭 |
+| `scripts/package.py`、`packaging/` | 干净提交导出、六目标双次构建/归档/依赖清单和本地 OCI；不进入运行时依赖图 |
 | `api/weir/v1`、`api/weir/search/v1` | 公共 proto 和生成代码；独立于服务端内部包 |
 | `internal/app` | 严格静态配置、完整图校验、具体后端/Service/listener 组装、进程生命周期和 diagnostics |
 | `internal/server` | 应用/peer HTTP/2 和 RPC、精确路由、固定 Local/Remote 选择、转发和响应寿命 |
@@ -177,3 +178,7 @@ Linux 内存 profile、可见层级与读取边界、明确降级/未知、原�
 `memory_linux.go` 才选择实际 /proc，其他 OS 不读取 Linux 文件。app metrics 仅读 Snapshot，不启动第二采样器。
 本地 Bulk 过载关闭输入后继续交付已准入 Ticket，最后返回 ResourceExhausted；不清除结果账本或重放写入。
 通用 ProgramTransform 已获用户明确首版延期，继续 UNSUPPORTED；上文实验与未来安全契约保留。
+
+M15 的 `packaged_integration_test.go` 显式使用归档提取的 binary 和已加载的准确 OCI config ID；
+自有 Darwin Mongo TLS fixture、三轮 Linux arm64 PID1/non-root/read-only/有限资源、标准 TLS 拒绝与 UNKNOWN 无重放按 [M15](milestone-15.md) 分开记录。
+helper 仅通过独立只读 fixture 挂载，产品 image 不包含测试代码。默认测试不执行 Docker/真实 DB。
