@@ -52,8 +52,12 @@ used. The packaging entry uses its own empty Docker client configuration; a cont
 builder's owned metadata can be selected with `BUILDX_CONFIG`. Exact tested builder,
 commands, artifact source, digests, native scope and cleanup are in
 [M15](docs/milestone-15.md). See [artifact instructions](packaging/README.md) and the
-[configuration template](packaging/node.example.json). Inventories are not a standard
-SBOM or a vulnerability audit; the production gates remain open.
+[configuration template](packaging/node.example.json). [M16](docs/milestone-16.md) adds
+Go 1.27.1 / gRPC 1.83.2 artifacts, standard CycloneDX SBOMs, frozen-database scans
+and explicit triage. See the [local supply-chain procedure](docs/supply-chain.md).
+Remaining module matches concern packages absent from the CLI; the existing
+Elasticsearch/OpenSearch backend versions have separate security blockers. These
+are unsigned local artifacts, and the production gates remain open.
 
 ## Local Run
 

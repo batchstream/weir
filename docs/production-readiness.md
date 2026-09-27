@@ -67,7 +67,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | 多实例共享后端/直接 native writer | `local.concurrency` 已实现；原 [M12](milestone-12.md) 失败保留。[M12R](milestone-12-remediation.md) 在 `383b4aa` 已获统筹有限独立验收：Mongo 本地 dial/raw/closing C+1 owner、分层 remote-tail、replacement 两 Local 全生命周期；本机 Mongo/ES/OS 真实预算回归通过 | 本地源码硬界与真实回收条件分开；replicas×pool 不是 DB accepted/远端工作的无条件硬上限。真实多节点、Kubernetes、复制切换、容量/soak 尚未因此通过 |
 | 复制/故障切换/网络 UNKNOWN | 实际确认后丢回复及协议故障已验证；M1/M2/M5/M7 | 单成员 Mongo、单 primary 零 replica Search 不代表复制切换资格。后端 primary 切换/节点失联/跨机网络仍未验证；M9 的 DNS 变化证据仅限自有 loopback fixture；不新增猜测性重放 |
 | Linux RSS/cgroup | [M14](milestone-14.md) 原交付因身份误判/失败清理未验收；[M14R](milestone-14-remediation.md) 已获统筹有限独立验收：修复相关语义身份与瞬时 unknown 恢复，保留单 Guard/每层配对/RSS/config/固定观测，Linux arm64 Guard/CLI 三轮通过 | 单可见有限 cgroup；无有限界/祖先拓扑仅有文件决策测试。Linux Mongo 被 kernel 7.0.12 阻塞，真实 CLI 使用自有 macOS Mongo；其他平台 Go fallback 不算 OS 内存资格 |
-| 可复现打包/供应链 | [M15](milestone-15.md)：六目标 binary/归档双干净目录独立构建 hash 一致；固定公开 base 的 Linux 双架构 OCI index/config/layer digest 一致；准确 source/Go/flags、SHA256、模块图与实际链接依赖清单；仅本地交付 | 尚待统筹独立验收；完整漏洞扫描、标准 SBOM、签名政策/安全复核未完成；固定版本不是永久安全承诺；Go1.27.1 已发布，本阶段按授权固定1.27.0 |
+| 可复现打包/供应链 | [M15](milestone-15.md)已获有限独立验收；[M16](milestone-16.md)升级Go1.27.1/grpc1.83.2，六目标/双OCI再次复现、标准CycloneDX及冻结库扫描/逐项triage、准确制品回归通过 | M16待统筹独立验收；原始模块匹配未抑制；外部ES8.17.0/OS2.19.0存在已公布漏洞，生产阻塞；unsigned政策已说明，真实签名/发布验证及独立安全复核仍required |
 | DNS/端点与 gRPC LB | 有界静态 1–8 endpoint/Service、普通 Go DNS、标准 gRPC pick-first、URI/request-ID rendezvous 已实现；本机真实 DNS、三执行进程共享真实后端、连接替换/无重放证据见 [M9](milestone-9.md) | 静态成员通过重启；旧 stream 不再平衡。未代表生产 DNS、跨节点 K8s Service/LB、真实扩缩容/网络分区资格；多实例数据库总预算仍未合格 |
 | Kubernetes 部署/探针/滚动 | **未实现/未验证**；M7 未执行此未来阶段 | 规范 Deployment/Service、requests/limits、non-root/read-only、Secret 引用；1/3 replicas、两 worker；probe 实际可达，loopback diagnostics 不可直接当 Pod-IP HTTP probe |
 | 持续负载/SLO/过载恢复/soak | 有短时 bounded regression；无生产容量声明 | 统筹校准并冻结上述参考负载门槛；每平台至少 24h 独立验收。尚未测量的 RPS/p99/恢复时限均未验证 |
@@ -76,22 +76,22 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 ## 平台证据矩阵
 
 每格都需要记录 OS/内核/架构/CPU、Go、依赖、backend 精确版本及日志。
-M14R 已获有限独立验收；M15 新增六目标可复现本地产物及 Linux arm64 最终 OCI、
+M14R、M15 已获有限独立验收；M16 对新Go/依赖重建并复验六目标本地产物及 Linux arm64 最终 OCI、
 Darwin arm64 准确归档 binary 的有限真实运行。Linux 使用 7.0.12-linuxkit/aarch64/cgroup-v2，
 后端为明确自有 macOS arm64 Mongo8.0.32；不构成 Linux Mongo 资格。
 编译器下限（macOS13+、Linux3.2+、Windows10/Server2016+）与实际测试版本分开，
-见 [M15](milestone-15.md)。以下未验证不是放弃平台；所有平台都未达到整体 qualified。
+历史见 [M15](milestone-15.md)，新制品/扫描和剩余安全阻塞见 [M16](milestone-16.md)。以下未验证不是放弃平台；所有平台都未达到整体 qualified。
 
 | 平台/架构 | build / reproducible | native-run/conformance | resource/lifecycle | ≥24h soak | 整体 qualified / 阻塞 |
 | --- | --- | --- | --- | --- | --- |
-| Linux amd64 | M15 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner/冻结环境待接入 |
-| Linux arm64 | M15 binary/archive/OCI 双次一致 | final image + Darwin TLS Mongo 有限验证；错误 CA/hostname 拒绝和 UNKNOWN 无重放 | non-root/read-only/512MiB/2CPU/96PID、RSS/cgroup有效、SIGTERM三轮；M14R原生回归 | 未验证 | 否；Linux Mongo内核阻塞，完整后端/拓扑/K8s/容量未资格 |
-| macOS amd64 | M15 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
-| macOS arm64 | M15 六目标双次 hash 一致 | 准确归档 binary + 真实 TLS Mongo有限Read/Mutate/Bulk | 有限取消/SIGTERM；OS内存仍Go降级 | 未验证 | 否；完整资源/生产范围和长测未资格 |
-| Windows amd64 | M15 六目标双次 hash 一致 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
-| Windows arm64 | M15 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
+| Linux amd64 | M16 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner/冻结环境待接入 |
+| Linux arm64 | M16 binary/archive/OCI 双次一致 | final image + Darwin TLS Mongo 有限验证；错误 CA/hostname 拒绝和 UNKNOWN 无重放 | non-root/read-only/512MiB/2CPU/96PID、RSS/cgroup有效、SIGTERM三轮；M14R原生回归 | 未验证 | 否；Linux Mongo内核阻塞，完整后端/拓扑/K8s/容量未资格 |
+| macOS amd64 | M16 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
+| macOS arm64 | M16 六目标双次 hash 一致 | 准确归档 binary + 真实 TLS Mongo有限Read/Mutate/Bulk | 有限取消/SIGTERM；OS内存仍Go降级 | 未验证 | 否；完整资源/生产范围和长测未资格 |
+| Windows amd64 | M16 六目标双次 hash 一致 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
+| Windows arm64 | M16 六目标双次 hash 一致 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
 
-后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。M14 仅补 Linux 内存 profile 与有限原生运行证据，原失败和 [M14R 补救](milestone-14-remediation.md) 分别保留；无关挂载不再改变静态身份，只有完整可信的相关变化才永久闭锁。M15 补本地可复现打包和有限准确产物运行；其独立验收、其他平台原生运行、完整OCI/Kubernetes、供应链安全、参考负载校准/长测仍 required。
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。M14 仅补 Linux 内存 profile 与有限原生运行证据，原失败和 [M14R 补救](milestone-14-remediation.md) 分别保留；无关挂载不再改变静态身份，只有完整可信的相关变化才永久闭锁。M15 本地可复现打包和有限准确产物运行已获独立验收。M16完成标准SBOM、冻结库扫描及必要补丁，尚待统筹验收；外部Search版本安全阻塞、其他平台原生运行、完整OCI/Kubernetes、真实发布签名、独立安全审查、参考负载校准/长测仍 required。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，
 才能宣布**对应范围**合格；部分平台通过不能结束整个目标，缩小范围须用户确认。
