@@ -1,5 +1,9 @@
 # M21: bounded three-replica / two-worker lifecycle smoke
 
+Coordinator review did not accept this stage: fixture ownership counterexamples
+require the separate [M21R remediation](milestone-21-remediation.md). The original
+execution history below remains unchanged; M21R evidence awaits independent acceptance.
+
 2026-09-28. Baseline `e4b8a432e2596b2fe681cd2d8c6629b8a631c734` on local main.
 This report records executor evidence for coordinator acceptance. **It is not
 reference capacity, a physical-host failure test, a version-compatibility upgrade,
