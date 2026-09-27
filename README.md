@@ -40,6 +40,18 @@ This profile is not suitable for an unisolated public network.
 The bootstrap downloads pinned public tools into ignored `.tools/`; it does not
 change Homebrew or read environment/credential files.
 
+The current MongoDB connection profile is one credential-free
+`mongodb://host:port` endpoint; for the local fixture:
+
+```text
+mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll
+```
+
+SCRAM/TLS URI syntax is checked and then refused with `not qualified`, before
+driver setup, DNS, or CA-file access. The bounded reply reader currently wraps
+the driver dialer below the driver's TLS layer. Do not remove that bound, weaken
+certificate checks, or add credentials as a workaround. See [M10](docs/milestone-10.md).
+
 ```sh
 scripts/bootstrap-tools.sh
 scripts/mongo-local.sh start
@@ -239,6 +251,7 @@ scripts/generate.sh
 - [Milestone 7](docs/milestone-7.md): native expression profiles and atomic-update evidence.
 - [Milestone 8](docs/milestone-8.md): intranet plaintext peers, removed Weir identity/TLS and retained transport bounds.
 - [Milestone 9](docs/milestone-9.md): bounded static endpoint sets, ordinary DNS, affinity, pinned streams and no replay.
+- [Milestone 10](docs/milestone-10.md): MongoDB URI admission, owned TLS/SCRAM fixture evidence, and the bounded-reader/TLS blocker.
 - [Production readiness checklist](docs/production-readiness.md): platform/runtime/deployment/load gates and unverified blockers for the trusted-intranet scope.
 - `api/weir/v1/weir.proto`: wire contract and Go client bindings.
 - `internal/store`: single ledger, scheduler, result credits and AIMD.

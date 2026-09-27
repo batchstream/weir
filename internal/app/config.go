@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/batchstream/weir/internal/mongostore"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -217,6 +218,9 @@ func (cfg Config) Validate() error {
 			if m := l.Mongo; m != nil {
 				if !mongoName.MatchString(m.Database) || !mongoName.MatchString(m.Collection) || m.URI == "" {
 					return errors.New("invalid MongoDB configuration")
+				}
+				if err := mongostore.ValidateURI(m.URI); err != nil {
+					return err
 				}
 			}
 			if search := l.Search; search != nil {

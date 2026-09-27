@@ -74,6 +74,23 @@ func TestStrictConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestMongoTLSProfileRejectedDuringConfigValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Application = "127.0.0.1:0"
+	uri := "mongodb://user:password-sentinel@unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
+	mongo := &Mongo{URI: uri, Database: "catalog", Collection: "records"}
+	local := &Local{Mongo: mongo}
+	service := Service{Name: "catalog", Local: local}
+	route := Route{Store: "records", Service: service.Name}
+	cfg.Services = []Service{service}
+	cfg.Routes = []Route{route}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "not qualified") || strings.Contains(err.Error(), "password-sentinel") || strings.Contains(err.Error(), "missing/ca.pem") {
+		t.Fatalf("unqualified URI was not safely rejected: %v", err)
+	}
+}
+
 func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	cfg := remoteConfig(t)
 	node, err := Open(context.Background(), cfg)

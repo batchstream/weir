@@ -68,6 +68,8 @@ Weir 按可信内网服务设计。部署网络隔离负责应用和 peer 入口
 
 后端凭据及标准后端 TLS 校验仍属于 Adapter 连接配置，不接受文档/原生 URL 中的凭据。协议、URI、Store、操作及后端命令校验，以及资源边界、无隐式重放和保守 UNKNOWN 均保留。移除 Weir 认证不意味着绕过后端凭据要求或关闭标准证书验证。
 
+目标中的 MongoDB 认证连接限定为单个带显式端口的 `mongodb://` host、直连副本集成员、显式 `SCRAM-SHA-256` 与 `authSource`，并通过系统根或配置 CA 做标准证书链及 hostname 校验。凭据/CA 变更通过受控重启生效。这是后端认证，不是 Weir 身份或授权。当前 Adapter 尚未启用该 profile：已资格验证的 wire 回复上限位于驱动 TLS 层下方；当前状态见 M10。
+
 ## 2. Listener、Route、Service 与组装
 
 ### 2.1 Listener

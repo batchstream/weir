@@ -48,6 +48,9 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if cfg.Pool < 1 || cfg.Pool > 32 || !namespacePattern.MatchString(cfg.Database) || !namespacePattern.MatchString(cfg.Collection) {
 		return nil, fmt.Errorf("invalid MongoDB configuration")
 	}
+	if err := ValidateURI(cfg.URI); err != nil {
+		return nil, err
+	}
 	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
 	if err != nil || name != cfg.Store || len(segments) != 0 {
 		return nil, fmt.Errorf("invalid store")
@@ -56,9 +59,12 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if opts.Timeout != nil {
 		return nil, fmt.Errorf("client timeoutMS is unsupported; runtime owns execution deadlines")
 	}
+	if err := opts.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid MongoDB connection profile")
+	}
 	client, err := mongo.Connect(opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
 	a := &Adapter{client: client, config: cfg, nativeNoReplay: opts.Auth == nil, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
 	if err = a.qualify(ctx); err != nil {
@@ -75,7 +81,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		MaxMessage int    `bson:"maxMessageSizeBytes"`
 	}
 	if err := a.client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil {
-		return err
+		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
 	}
 	if hello.SetName == "" || hello.Msg == "isdbgrid" || hello.MaxMessage > 48<<20 {
 		return fmt.Errorf("profile requires a replica set, no mongos, and bounded native messages")
@@ -85,7 +91,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		Version string `bson:"version"`
 	}
 	if err := a.client.Database("admin").RunCommand(ctx, buildInfo).Decode(&build); err != nil {
-		return err
+		return mongoQualificationFailure("MongoDB version qualification failed", err)
 	}
 	if build.Version != "8.0.32" {
 		return fmt.Errorf("only MongoDB 8.0.32 is qualified for this milestone")
@@ -93,7 +99,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	filter := bson.D{{Key: "name", Value: a.config.Collection}}
 	specs, err := a.client.Database(a.config.Database).ListCollectionSpecifications(ctx, filter)
 	if err != nil {
-		return err
+		return mongoQualificationFailure("MongoDB collection qualification failed", err)
 	}
 	if len(specs) != 1 || specs[0].Type != "collection" {
 		return fmt.Errorf("create the fixed collection before starting Weir")
@@ -105,6 +111,13 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		return fmt.Errorf("capped collections unsupported")
 	}
 	return nil
+}
+func mongoQualificationFailure(message string, err error) error {
+	var commandError mongo.CommandError
+	if errors.As(err, &commandError) {
+		return fmt.Errorf("%s (MongoDB code %d)", message, commandError.Code)
+	}
+	return fmt.Errorf("%s (%T)", message, err)
 }
 func (a *Adapter) Close() error {
 	a.once.Do(func() {
