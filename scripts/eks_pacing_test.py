@@ -199,17 +199,7 @@ class PureBoundaries(unittest.TestCase):
             with self.assertRaises(ValueError):
                 node_gate(broken, used)
 
-    def test_conservative_init_overhead_pod_and_resize_requests(self):
-        cells = ["node", "Running", '{"requests":{"cpu":"100m","memory":"1Gi"}}',
-                 '{"requests":{"cpu":"200m"}} {"requests":{"cpu":"300m"}}',
-                 '{"requests":{"cpu":"400m"}}', '{"cpu":"500m"}', '{"cpu":"600m"}',
-                 '{"requests":{"cpu":"700m"}}', '{"requests":{"cpu":"800m"}}', '{"cpu":"900m"}', '{"requests":{"cpu":"1"}}']
-        result = entry.allocated("\t".join(cells))["node"]
-        self.assertEqual(str(result["cpu"]), "5.500")
-        self.assertEqual(result["memory"], 1024**3)
-        self.assertEqual(result["pods"], 1)
-        cells[1] = "Succeeded"
-        self.assertEqual(entry.allocated("\t".join(cells)), {})
+    def test_flat_resource_projection_is_rejected(self):
         with self.assertRaises(ValueError):
             entry.allocated("node\tRunning")
 
@@ -512,7 +502,9 @@ if verb == "create":
 elif verb == "get" and kind == "nodes":
     print(json.dumps([cfg["node"]]))
 elif verb == "get" and kind == "pods":
-    if "--all-namespaces" not in args and cfg.get("actual_pod"):
+    if "--all-namespaces" in args:
+        print("[]")
+    elif cfg.get("actual_pod"):
         print(cfg["actual_pod"]["metadata"]["name"])
 elif verb == "get" and kind == "Pod":
     if not (root/"pod-deleted").exists():

@@ -11,8 +11,8 @@ import selectors
 import signal
 import subprocess
 import time
-from decimal import Decimal
 
+from eks_resources import allocated, projection, serializable
 from capacity_fixture import stop_group
 from eks_pacing_report import IMAGES, RATES, SOURCE, node_gate, pacing, quantity, require, resources
 
@@ -20,14 +20,15 @@ REPO = Path(__file__).resolve().parent.parent
 LABEL = "qualification.weir.io/owner"
 LIMIT = 8 << 20
 TOTAL = 128 << 20
-FILES = ("scripts/eks_pacing.py", "scripts/eks_pacing_report.py", "scripts/capacity_fixture.py",
+FILES = ("scripts/eks_pacing.py", "scripts/eks_pacing_report.py", "scripts/eks_resources.py", "scripts/capacity_fixture.py",
          "scripts/capacity_report.py", "scripts/capacity_contract.py", "scripts/capacity-plan-m22r.json", "scripts/eks_pacing_test.py")
 KINDS = {"Namespace": ("v1", "namespaces"), "Job": ("batch/v1", "jobs"),
          "Pod": ("v1", "pods"), "ResourceQuota": ("v1", "resourcequotas"),
-         "NetworkPolicy": ("networking.k8s.io/v1", "networkpolicies")}
+         "NetworkPolicy": ("networking.k8s.io/v1", "networkpolicies"),
+         "ConfigMap": ("v1", "configmaps")}
 # Emit the admitted spec as JSON, but never return unexpected literal env values.
-JSON_TEMPLATE = '''{{define "json"}}{{$t := printf "%T" .}}{{if eq $t "map[string]interface {}"}}{ {{$first := true}}{{range $k,$v := .}}{{if not $first}},{{end}}{{$first = false}}{{printf "%q" $k}}:{{if eq $k "env"}}[{{range $i,$e := $v}}{{if $i}},{{end}}{"name":{{printf "%q" $e.name}},"value":{{if or (eq $e.name "GOMAXPROCS") (eq $e.name "WEIR_CAPACITY_INTEGRATION")}}{{template "json" $e.value}}{{else}}"REDACTED"{{end}}{{if $e.valueFrom}},"valueFrom":{{template "json" $e.valueFrom}}{{end}}}{{end}}]{{else}}{{template "json" $v}}{{end}}{{end}} }{{else if eq $t "[]interface {}"}}[{{range $i,$v := .}}{{if $i}},{{end}}{{template "json" $v}}{{end}}]{{else if eq $t "string"}}{{printf "%q" .}}{{else if eq $t "<nil>"}}null{{else}}{{.}}{{end}}{{end}}'''
-OBJECT_TEMPLATE = JSON_TEMPLATE + '''{"apiVersion":{{printf "%q" .apiVersion}},"kind":{{printf "%q" .kind}},"metadata":{"name":{{printf "%q" .metadata.name}},"namespace":{{template "json" .metadata.namespace}},"uid":{{template "json" .metadata.uid}},"labels":{{template "json" .metadata.labels}},"ownerReferences":{{template "json" .metadata.ownerReferences}}},"spec":{{template "json" .spec}},"status":{{template "json" .status}}}'''
+JSON_TEMPLATE = '''{{define "json"}}{{$t := printf "%T" .}}{{if eq $t "map[string]interface {}"}}{ {{$first := true}}{{range $k,$v := .}}{{if not $first}},{{end}}{{$first = false}}{{printf "%q" $k}}:{{if eq $k "env"}}[{{range $i,$e := $v}}{{if $i}},{{end}}{"name":{{printf "%q" $e.name}}{{if $e.valueFrom}},"valueFrom":{{template "json" $e.valueFrom}}{{else}},"value":{{if or (eq $e.name "GOMAXPROCS") (eq $e.name "WEIR_CAPACITY_INTEGRATION") (eq $e.name "ES_JAVA_OPTS")}}{{template "json" $e.value}}{{else}}"REDACTED"{{end}}{{end}}}{{end}}]{{else}}{{template "json" $v}}{{end}}{{end}} }{{else if eq $t "[]interface {}"}}[{{range $i,$v := .}}{{if $i}},{{end}}{{template "json" $v}}{{end}}]{{else if eq $t "string"}}{{printf "%q" .}}{{else if eq $t "<nil>"}}null{{else}}{{.}}{{end}}{{end}}'''
+OBJECT_TEMPLATE = JSON_TEMPLATE + '''{"apiVersion":{{printf "%q" .apiVersion}},"kind":{{printf "%q" .kind}},"metadata":{"name":{{printf "%q" .metadata.name}},"namespace":{{template "json" .metadata.namespace}},"uid":{{template "json" .metadata.uid}},"labels":{{template "json" .metadata.labels}},"ownerReferences":{{template "json" .metadata.ownerReferences}},"deletionTimestamp":{{template "json" .metadata.deletionTimestamp}}},"spec":{{template "json" .spec}},"status":{{template "json" .status}},"data":{{template "json" .data}}}'''
 META_TEMPLATE = r'''{{range .items}}{{.apiVersion}}|{{.kind}}|{{.metadata.name}}|{{.metadata.uid}}|{{if .metadata.labels}}{{index .metadata.labels "qualification.weir.io/owner"}}{{end}}|{{range .metadata.ownerReferences}}{{.uid}},{{end}}|{{if .involvedObject}}{{.involvedObject.uid}}{{else if .regarding}}{{.regarding.uid}}{{end}}{{"\n"}}{{end}}'''
 EVENT_TEMPLATE = JSON_TEMPLATE + '''[{{range $i,$e := .items}}{{if $i}},{{end}}{"uid":{{template "json" .metadata.uid}},"namespace":{{template "json" .metadata.namespace}},"involvedObject":{{template "json" .involvedObject}},"reason":{{template "json" .reason}},"message":{{template "json" .message}},"count":{{template "json" .count}},"firstTimestamp":{{template "json" .firstTimestamp}},"lastTimestamp":{{template "json" .lastTimestamp}},"eventTime":{{template "json" .eventTime}},"series":{{template "json" .series}}}{{end}}]'''
 
@@ -90,15 +91,15 @@ def admitted_spec(actual, expected, *, pod=False):
             "priority fields must be omitted from the frozen template")
     extra = dict(actual)
     for key, value in expected.items():
-        if key == "containers":
-            require(len(actual[key]) == 1, "injected container")
-            container = dict(actual[key][0])
-            wanted = value[0]
-            for field, expected_value in wanted.items():
-                require(container.pop(field, None) == expected_value, "container admission drift: "+field)
-            for field, expected_value in dict(terminationMessagePath="/dev/termination-log", terminationMessagePolicy="File").items():
-                require(container.pop(field, expected_value) == expected_value, "container default drift")
-            require(not container, "extra container fields: "+str(sorted(container)))
+        if key in ("containers", "initContainers"):
+            require(isinstance(actual.get(key), list) and len(actual[key]) == len(value), "injected/missing container")
+            for observed, wanted in zip(actual[key], value):
+                container = dict(observed)
+                for field, expected_value in wanted.items():
+                    require(container.pop(field, None) == expected_value, "container admission drift: "+field)
+                for field, expected_value in dict(terminationMessagePath="/dev/termination-log", terminationMessagePolicy="File").items():
+                    require(container.pop(field, expected_value) == expected_value, "container default drift")
+                require(not container, "extra container fields: "+str(sorted(container)))
             extra.pop(key)
         else:
             require(extra.pop(key, None) == value, "Pod admission drift: "+key)
@@ -123,13 +124,24 @@ def admitted_spec(actual, expected, *, pod=False):
 
 
 def job_check(actual, expected):
+    spec = dict(actual["spec"])
     for key in ("completions", "parallelism", "backoffLimit", "activeDeadlineSeconds"):
-        require(actual["spec"][key] == expected["spec"][key], "Job admission drift: "+key)
-    require(not actual["spec"].get("suspend") and actual["spec"].get("completionMode", "NonIndexed") == "NonIndexed", "Job execution mode")
-    admitted_spec(actual["spec"]["template"]["spec"], expected["spec"]["template"]["spec"])
+        require(spec.pop(key, None) == expected["spec"][key], "Job admission drift: "+key)
+    defaults = dict(suspend=False, manualSelector=False, completionMode="NonIndexed", podReplacementPolicy="TerminatingOrFailed")
+    for key, value in defaults.items():
+        require(spec.pop(key, value) == value, "Job execution mode: "+key)
+    selector = spec.pop("selector", None)
+    if selector is not None:
+        wanted = {"matchLabels": {"batch.kubernetes.io/controller-uid": actual["metadata"]["uid"]}}
+        require(selector == wanted, "Job selector drift")
+    template = spec.pop("template")
+    labels = template.get("metadata", {}).get("labels") or {}
+    require(all(labels.get(k) == v for k, v in expected["spec"]["template"]["metadata"]["labels"].items()), "Job template labels")
+    admitted_spec(template["spec"], expected["spec"]["template"]["spec"])
+    require(not spec, "extra Job fields: "+str(sorted(spec)))
 
 
-def pod_check(pod, options):
+def pod_identity(pod, options):
     job, template, uid = (options[k] for k in ("job", "template", "pod_uid"))
     meta = pod["metadata"]
     require(not uid or meta["uid"] == uid, "Pod UID drift")
@@ -137,6 +149,11 @@ def pod_check(pod, options):
     refs = meta["ownerReferences"]
     require(len(refs) == 1 and refs[0]["uid"] == job["uid"] and refs[0]["name"] == job["name"] and
             refs[0]["kind"] == "Job" and refs[0]["apiVersion"] == "batch/v1" and refs[0]["controller"] is True, "Job to Pod owner chain")
+
+
+def pod_check(pod, options):
+    pod_identity(pod, options)
+    job, template = options["job"], options["template"]
     admitted_spec(pod["spec"], template["spec"]["template"]["spec"], pod=True)
     status = pod.get("status") or {}
     require(not status.get("initContainerStatuses") and not status.get("ephemeralContainerStatuses"), "extra container statuses")
@@ -154,39 +171,12 @@ def pod_check(pod, options):
             require(container["state"]["terminated"]["exitCode"] == 0 and container["state"]["terminated"]["reason"] == "Completed", "container exit/OOM")
 
 
-def decode_fragments(raw):
-    decoder = json.JSONDecoder()
-    values = []
-    while raw.strip():
-        raw = raw.lstrip()
-        value, end = decoder.raw_decode(raw)
-        values.append(value)
-        raw = raw[end:]
-    return values
-
-
-def allocated(raw):
-    used = {}
-    for row in raw.splitlines():
-        cells = row.split("\t")
-        require(len(cells) == 11, "resource projection columns")
-        node, phase = cells[:2]
-        if not node or phase in ("Succeeded", "Failed"):
-            continue
-        current = used.setdefault(node, dict(cpu=Decimal(0), memory=Decimal(0), pods=Decimal(0)))
-        current["pods"] += 1
-        # Sum regular + all init + pod-level + overhead + allocated/runtime
-        # resources. This deliberately overcounts resize/sidecar overlap.
-        for cell in cells[2:]:
-            for resource in decode_fragments(cell):
-                requests = resource.get("requests", resource)
-                limits = resource.get("limits", {})
-                for key in ("cpu", "memory"):
-                    current[key] += quantity(requests.get(key, limits.get(key, "0")))
-    return used
-
-
 class Run:
+    node_minimum = None
+
+    def job_template(self, step):
+        return job_template(self.plan, step)
+
     def __init__(self, root, target):
         self.root, self.target = root, target
         self.number = 0
@@ -215,7 +205,7 @@ class Run:
             if not self.cleaning:
                 raise
 
-    def run(self, argv, timeout=25):
+    def run(self, argv, timeout=25, *, monitor=False):
         require(time.monotonic() < self.deadline, "invocation/cleanup deadline")
         self.number += 1
         number = self.number
@@ -226,12 +216,16 @@ class Run:
         try:
             child = subprocess.Popen(argv, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
             until = min(self.deadline, time.monotonic()+timeout)
+            next_observation = time.monotonic()+2
             with selectors.DefaultSelector() as selector:
                 for index, pipe in enumerate((child.stdout, child.stderr)):
                     os.set_blocking(pipe.fileno(), False)
                     selector.register(pipe, selectors.EVENT_READ, index)
                 while selector.get_map():
                     require(time.monotonic() < until, "command timeout")
+                    if monitor and time.monotonic() >= next_observation:
+                        self.monitor()
+                        next_observation = time.monotonic()+2
                     for key, _ in selector.select(.05):
                         chunk = os.read(key.fd, 65536)
                         if not chunk:
@@ -274,15 +268,16 @@ class Run:
                       deleting=".metadata.deletionTimestamp")
         template = JSON_TEMPLATE+'[{{range $i,$n := .items}}{{if $i}},{{end}}{'+','.join('"'+k+'":{{template "json" '+v+'}}' for k, v in fields.items())+'}{{end}}]'
         nodes = json.loads(self.kube(["get", "nodes", "-o", "go-template="+template]))
-        projection = r'{range .items[*]}{.spec.nodeName}{"\t"}{.status.phase}{"\t"}{.spec.containers[*].resources}{"\t"}{.spec.initContainers[*].resources}{"\t"}{.spec.resources}{"\t"}{.spec.overhead}{"\t"}{.status.containerStatuses[*].allocatedResources}{"\t"}{.status.containerStatuses[*].resources}{"\t"}{.status.initContainerStatuses[*].resources}{"\t"}{.status.initContainerStatuses[*].allocatedResources}{"\t"}{.status.resources}{"\n"}{end}'
-        raw = self.kube(["get", "pods", "--all-namespaces", "--field-selector=status.phase!=Succeeded,status.phase!=Failed", "-o", "jsonpath="+projection])
-        return nodes, allocated(raw)
+        raw = self.kube(["get", "pods", "--all-namespaces", "-o", "go-template="+projection(JSON_TEMPLATE)])
+        used, details = allocated(raw)
+        self.save(f"resource-accounting-{self.number}.json", serializable(dict(nodes=used, pods=details)))
+        return nodes, used
 
     def check_node(self):
         nodes, used = self.nodes()
         matches = [n for n in nodes if n["name"] == self.plan["node"]["name"]]
         require(len(matches) == 1, "frozen node disappeared")
-        spare = node_gate(matches[0], used.get(matches[0]["name"], dict(cpu=0, memory=0, pods=0)), self.plan["node"]["uid"])
+        spare = node_gate(matches[0], used.get(matches[0]["name"], dict(cpu=0, memory=0, pods=0, **{"ephemeral-storage": 0})), self.plan["node"]["uid"], self.node_minimum)
         result = dict(node=matches[0], spare=spare, sampled_at=time.time(), atomic_snapshot=False)
         self.save(f"node-check-{self.number}.json", result)
         return result
@@ -291,7 +286,7 @@ class Run:
         kind, name = obj["kind"], obj["metadata"]["name"]
         require(kind in KINDS and kind != "Pod", "unsupported creation")
         if kind == "Job":
-            require(obj == job_template(self.plan, name), "frozen Job template drift")
+            require(obj == self.job_template(name), "frozen Job template drift")
         namespace = None if kind == "Namespace" else self.plan["namespace"]
         filename = f"create-{kind}-{name}.json"
         self.save(filename, obj)
@@ -312,6 +307,8 @@ class Run:
         owner_check(result, entry)
         if kind == "Job":
             job_check(result, obj)
+        elif kind == "ConfigMap":
+            require(result.get("data") == obj["data"], "ConfigMap admission drift")
         elif kind == "Namespace":
             require(all(result["metadata"]["labels"].get(k) == v for k, v in obj["metadata"]["labels"].items()), "namespace security label drift")
         elif kind == "NetworkPolicy":
@@ -414,7 +411,7 @@ class Run:
 
     def run_job(self, step):
         self.check_node()
-        template = job_template(self.plan, step)
+        template = self.job_template(step)
         job = self.create(template)
         pod_entry = None
         until = min(self.deadline, time.monotonic()+125)
@@ -522,7 +519,7 @@ def prepare(run, owner):
     selected = None
     for node in sorted(nodes, key=lambda n: n["name"]):
         try:
-            spare = node_gate(node, used.get(node["name"], dict(cpu=0, memory=0, pods=0)))
+            spare = node_gate(node, used.get(node["name"], dict(cpu=0, memory=0, pods=0, **{"ephemeral-storage": 0})))
             selected = node
             break
         except ValueError:

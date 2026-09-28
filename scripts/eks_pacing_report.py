@@ -33,22 +33,27 @@ def quantity(value):
     match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([EPTGMK]i|[EPTGMkmun]|[eE][+-]?[0-9]+)?", str(value))
     require(match is not None, "unknown resource quantity")
     suffix = match[2] or ""
+    require(len(str(value)) <= 64 and (not re.fullmatch(r"[eE][+-]?[0-9]+", suffix) or abs(int(suffix[1:])) <= 18), "resource quantity bound")
     powers = {"": 1, "n": Decimal("1e-9"), "u": Decimal("1e-6"), "m": Decimal(".001"), "k": 1000}
     powers.update({s: 1024**i for i, s in enumerate(("Ki", "Mi", "Gi", "Ti", "Pi", "Ei"), 1)})
     powers.update({s: 1000**i for i, s in enumerate(("M", "G", "T", "P", "E"), 2)})
     factor = Decimal(10)**int(suffix[1:]) if re.fullmatch(r"[eE][+-]?[0-9]+", suffix) else powers[suffix]
-    return Decimal(match[1])*factor
+    value = Decimal(match[1])*factor
+    require(value.is_finite() and 0 <= value <= 2**63-1, "resource quantity overflow")
+    return value
 
 
-def node_gate(node, used, expected_uid=None):
+def node_gate(node, used, expected_uid=None, minimum=None):
+    require(not used.get("errors"), "unaccountable Pod resources: "+str(used.get("errors")))
+    minimum = minimum or dict(cpu=2, memory=1536*1024**2, pods=3)
     require(expected_uid is None or node["uid"] == expected_uid, "node UID drift")
     require(node["arch"] == "arm64" and node["os"] == "linux", "node architecture")
     conditions = {c["type"]: c["status"] for c in node["conditions"]}
     require(conditions.get("Ready") == "True", "node not Ready")
     require(all(conditions.get(k) == "False" for k in ("MemoryPressure", "DiskPressure", "PIDPressure")), "node pressure/unknown")
     require(not node["unschedulable"] and not node["taints"] and not node["deleting"], "node unavailable/tainted")
-    remaining = {k: quantity(node["allocatable"][k])-used[k] for k in ("cpu", "memory", "pods")}
-    require(remaining["cpu"] >= 2 and remaining["memory"] >= 1536*1024**2 and remaining["pods"] >= 3,
+    remaining = {k: quantity(node["allocatable"][k])-used[k] for k in minimum}
+    require(all(remaining[k] >= v for k, v in minimum.items()),
             "insufficient conservative spare capacity")
     result = {k: str(v) for k, v in remaining.items()}
     return result
@@ -65,7 +70,8 @@ def cpu_set(raw):
     return values
 
 
-def resources(samples):
+def resources(samples, *, network="none"):
+    require(network in ("none", "loopback"), "unknown network profile")
     require(bool(samples), "missing samples")
     peak = dict(rss_bytes=0, current_bytes=0, fd=0, goroutines=0, pids_current=0)
     previous = None
@@ -112,7 +118,15 @@ def resources(samples):
         # An audited network-free path must also have no TCP listener/connection.
         for key in ("net/tcp", "net/tcp6"):
             rows = files[key].splitlines()
-            require(rows and "local_address" in rows[0] and not any(row.strip() for row in rows[1:]), "unexpected TCP socket")
+            require(rows and "local_address" in rows[0], "missing TCP table")
+            if network == "none":
+                require(not any(row.strip() for row in rows[1:]), "unexpected TCP socket")
+            else:
+                for row in rows[1:]:
+                    fields = row.split()
+                    require(len(fields) >= 10, "invalid TCP row")
+                    loop = {"0100007F", "0000000000000000FFFF00000100007F"}
+                    require(fields[1].split(":")[0] in loop and fields[2].split(":")[0] in loop | {"00000000", "0"*32}, "nonloopback TCP socket")
         identity = (quota, period, pid_limit, tuple(sorted(affinity)), limits.groups())
         require(fixed is None or identity == fixed, "resource identity drift")
         fixed = identity
