@@ -1,7 +1,16 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
-[M29](milestone-29.md)当前准确镜像交付完成、待统筹独立复核：implementation/image source及实际CI测试均为
+[M30](milestone-30.md)新镜像 EKS 无负载预检 **NO-GO**：准确M29 arm64 helper应用层已匿名完整取得并验证，
+但唯一native invocation在Job dry-run的bootstrap卷`readOnly:false`默认省略处严格拒绝。
+零持久Job/Pod、上传/exec/采样、索引PUT/seed/trial/文档mutation；本轮四个登记对象（含namespace）已删除，
+119.928秒清理成功，并于原清理窗口第161.129秒独立确认namespace不存在。
+实际原生源码`fe782424…`；清理后`567a984a…`仅离线省略默认false并回放真实响应，普通11/优化11通过，未再次EKS尝试。
+原生前Python普通167通过、优化142通过/25既有skip。204个Go/module与产品70/helper81正式构建输入未变。
+当前节点内核/余量及CNI agent disabled已重新观察；实际FD/PID/cgroup/三角色身份仍unknown，不能复用历史值。
+resource_evidence=partial/not-qualified、timing=not-run、candidate=null。先另行完成无负载补证，再由统筹冻结EKS负载合同。
+本轮未push/Actions/发布/构建新镜像；所有其他required门槛与用户Auth/ProgramTransform范围保持。
+[M29](milestone-29.md)当前准确镜像交付已获统筹独立验收：implementation/image source及实际CI测试均为
 `4abc8761f9f0e08af978d5ae5c14176f8188cfa3`；最终文档delivery另见本轮封存receipt/完成回调，构建输入未变。
 唯一 [Actions run 36418991126](https://github.com/batchstream/weir/actions/runs/36418991126) 四job成功，
 两原生Linux默认CGO0/race/vet/helper离线边界、Python各157普通通过与132优化通过/25skip，
