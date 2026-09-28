@@ -7,7 +7,7 @@ import time
 import unittest
 
 from capacity_fixture import Observer
-from resource_local import commands
+from resource_local import commands, inventory_check
 
 
 class LocalResourceFixture(unittest.TestCase):
@@ -21,6 +21,12 @@ class LocalResourceFixture(unittest.TestCase):
             self.assertEqual(command[command.index('--network')+1],'none' if role=='es' else 'container:{es}')
         self.assertIn('AWS_EC2_METADATA_DISABLED=true',result['es'])
         self.assertIn('weir-m28-test-es:127.0.0.1',result['es'])
+
+    def test_inventory_keeps_nondefault_identity(self):
+        before='{"Name":"bridge","ID":"old"}\n{"Name":"owned-by-other","ID":"stable"}\n'
+        after=before.replace('"old"','"new"')
+        self.assertEqual(len(inventory_check(before,after,'networks')),1)
+        with self.assertRaises(ValueError):inventory_check(before,after.replace('"stable"','"changed"'),'networks')
 
     def test_real_pipe_cancel_and_wait(self):
         with tempfile.TemporaryDirectory() as root:

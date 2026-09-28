@@ -10,12 +10,45 @@ import time
 
 import eks_pacing as common
 import eks_loopback as loop
-from local_es_prerequisite import INSPECT, local_check, inventories
+from local_es_prerequisite import INSPECT, local_check
 from capacity_fixture import Observer
 from resource_report import report, require, LIMITS, stream_report
 
 ENVIRONMENT = 'sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9'
 LABEL = 'qualification.weir.io/owner'
+
+
+ES_START = """set -euo pipefail
+umask 077
+mkdir -p /tmp/weir-es-config/jvm.options.d
+for name in elasticsearch.yml jvm.options log4j2.properties; do
+  source=/usr/share/elasticsearch/config/$name
+  [[ $(stat -c %s "$source") -le 262144 ]]
+  cp "$source" /tmp/weir-es-config/$name
+  sha256sum "$source" /tmp/weir-es-config/$name
+done
+export ES_PATH_CONF=/tmp/weir-es-config
+exec /usr/local/bin/docker-entrypoint.sh "$@"
+"""
+
+
+def inventories():
+    result=dict(containers=['docker','ps','-aq','--no-trunc'],
+                networks=['docker','network','ls','--no-trunc','--format','{{json .}}'])
+    return result
+
+
+def inventory_check(before, after, name):
+    if name=='containers':
+        require(set(before.splitlines())==set(after.splitlines()), 'container inventory changed')
+        return []
+    old={row['Name']:row['ID'] for row in map(json.loads,before.splitlines())}
+    new={row['Name']:row['ID'] for row in map(json.loads,after.splitlines())}
+    # Docker may recreate its built-in bridge on container start. This is
+    # recorded separately; every nondefault network must retain its exact ID.
+    previous_bridge=old.pop('bridge',None);current_bridge=new.pop('bridge',None)
+    require(old==new, 'nondefault network inventory changed')
+    return [] if previous_bridge==current_bridge else ['default bridge ID changed: '+str(previous_bridge)+' -> '+str(current_bridge)]
 
 
 def commands(options):
@@ -41,7 +74,8 @@ def commands(options):
                    '--tmpfs','/usr/share/elasticsearch/data:rw,nosuid,nodev,size=1073741824,uid=1000,gid=0,mode=0770',
                    '--tmpfs','/usr/share/elasticsearch/logs:rw,nosuid,nodev,size=67108864,uid=1000,gid=0,mode=0770',
                    '--mount',f'type=bind,src={root}/local-check.sh,dst=/local-check.sh,readonly',
-                   loop.ES['reference']]+es['args']
+                   '--mount',f'type=bind,src={root}/es-start.sh,dst=/es-start.sh,readonly',
+                   '--entrypoint','/bin/tini',loop.ES['reference'],'--','/bin/bash','--noprofile','--norc','/es-start.sh']+es['args']
         elif role=='weir':
             argv+=['--mount',f'type=bind,src={root}/node.json,dst=/node.json,readonly',
                    '--entrypoint','/qualification/weir',ENVIRONMENT,'-config','/node.json']
@@ -170,7 +204,8 @@ def execute(run, plan):
             run.save('owner-after.txt',remaining)
             for name,command in inventories().items():
                 after=run.run(command);run.save(name+'-after.txt',after)
-                require(set(after.splitlines())==set((run.root/(name+'-before.txt')).read_text().splitlines()),'inventory changed: '+name)
+                changes=inventory_check((run.root/(name+'-before.txt')).read_text(),after,name)
+                result.setdefault('environment_changes',[]).extend(changes)
         except BaseException as exc:cleanup_errors.append(str(exc))
         result.update(cleanup_seconds=time.monotonic()-cleanup_start,cleanup_errors=cleanup_errors,cleanup=not cleanup_errors)
         run.save('result.json',result)
@@ -183,17 +218,19 @@ def main():
     require(os.environ.get('WEIR_CAPACITY_INTEGRATION')=='1','explicit integration opt-in')
     require(root.parent==common.REPO/'.testdata/m28' and not root.exists() and re.fullmatch('weir-m28-[a-z0-9-]{1,32}',args.owner),'new owned evidence path')
     prior=list(root.parent.glob('fixture-*'));require(len(prior)<3,'wiring corrections exhausted')
-    for attempt in prior:require(json.loads((attempt/'result.json').read_text())['cleanup'],'previous cleanup incomplete')
+    for attempt in prior:
+        previous=json.loads((attempt/'result.json').read_text())
+        require(previous['cleanup'] or (attempt/'owned-cleanup-proof.json').is_file(), 'previous owned cleanup unconfirmed')
     if prior:require((root.parent/('correction-'+str(len(prior))+'.json')).is_file(),'explicit documented wiring correction required')
     window=root.parent/'native-window.json'
     if not window.exists():window.write_text(json.dumps(dict(start_utc=time.time(),deadline_monotonic=time.monotonic()+900)))
     deadline=json.loads(window.read_text())['deadline_monotonic'];require(time.monotonic()<deadline,'total native window exhausted')
     root.mkdir(mode=0o700);(root/'docker-config').mkdir(mode=0o700);(root/'docker-config/config.json').write_text('{}\n')
     os.environ['DOCKER_CONFIG']=str(root/'docker-config');os.environ['DOCKER_HOST']='unix:///var/run/docker.sock'
-    run=common.Run(root,None);run.save('node.json',loop.configuration());run.save('local-check.sh',local_check())
+    run=common.Run(root,None);run.save('node.json',loop.configuration());run.save('local-check.sh',local_check());run.save('es-start.sh',ES_START)
     artifacts=common.REPO/'.testdata/m28/artifacts'
     options=dict(root=root,artifacts=artifacts,owner=args.owner)
-    files=[p for p in artifacts.iterdir() if p.is_file()]+[root/'node.json',root/'local-check.sh',Path(__file__),common.REPO/'scripts/resource_report.py',common.REPO/'scripts/capacity_fixture.py',root.parent/'source-inputs.json']
+    files=[p for p in artifacts.iterdir() if p.is_file()]+[root/'node.json',root/'local-check.sh',root/'es-start.sh',Path(__file__),common.REPO/'scripts/resource_report.py',common.REPO/'scripts/capacity_fixture.py',root.parent/'source-inputs.json']
     plan=dict(fixture_deadline_monotonic=deadline,owner=args.owner,source=os.environ['WEIR_M28_SOURCE'],commands=commands(options),inputs={str(p):common.digest(p) for p in files},
               budget=json.loads((root.parent/'scope.json').read_text()),runtime='same-architecture native Linux arm64 Docker VM; binaries built on Darwin Go1.27.1 CGO0',
               observer_seconds=140,observer_samples=71,observer_expected_CLK_TCK=100,planned=6000,document_mutations=2400,seconds=900,cleanup_seconds=120)
