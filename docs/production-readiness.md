@@ -55,6 +55,16 @@ bootstrap init→准确Weir/client启动布局，Pod峰值仍6CPU/4608MiB/2560Mi
 资源证据均not-run（原result的generic partial初始化值不代表实际采样）。candidate=null，
 校准/过载/恢复/24h仍not-run，网络隔离仍unqualified。原M26证据94项hash不变、exit -15及
 signal注册窗口未解决；本轮提交后停止，待统筹独立验收。
+[M26R2](milestone-26-remediation-2.md)实现 `b13cc34c99fc460a279e0429324a7ca194dab6f5`：
+共享准入按字段比较精确quantity与固定probe默认值，保留资源键/limits/类型/未知字段/UID等边界。
+真实0050响应经外部CLI完整回放，132组spec负例零持久Job；合成两trial和失败UID清理通过。
+普通Python106通过，-O为81通过/25既有skip；固定Go1.27.1离线非缓存default/race/vet通过。
+唯一新冻结尝试的真实Job/Pod dry-run及实际创建都通过，ES8.19.22已启动；bootstrap在TCP
+local-address guard exit23停止，触发行未记录，具体地址/来源无法确定，不宣称边界通过。
+随后ES exit143，无restart/OOMKilled记录；Weir/client未启动，空索引管理写/文档写/两trial均0。
+六个自有对象按UID清理，namespace另行确认不存在，cleanup=true；只取得ES/init的partial运行材料。
+RPC/DB审计/客户端资源/Weirmetrics等not-run，candidate=null，容量/跨节点/过载/恢复/24h仍not-run；
+网络隔离unqualified。原M26与M26R证据未变，signal窗口/exit-15未解决；未冻结后修补或重试。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
