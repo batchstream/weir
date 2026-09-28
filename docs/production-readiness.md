@@ -1,6 +1,14 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M33](milestone-33.md)完成已接受M32R2新镜像接线，唯一prepare因固定节点CPU余量6.900低于冻结7CPU门槛停止；不是超时，未恢复/重试/换节点。
+接线/prepare source `1c73f03b781a81d8522924485f19f93e48b95825`，image source仍为 `278264db2f9617ad583c6b56d19b8aaf5943e771`；206Go/module与70产品/82helper正式输入不变，准确公开archive五文件完整链重验通过。
+合同普通84/优化84通过，完成与生命周期普通23/优化20通过+3既有skip，真实Go→消费者短pipe通过，每组外层≤180秒；无本地容器/DB/全仓Go或完整Python重跑。
+唯一prepare64.072秒，32CLI全部exit0；静态59.374秒后唯一120秒资源窗两GET4.654秒，原CPU门槛明确拒绝。0plan/native invocation/namespace/六类对象UID/采样/索引PUT/文档写，无远端清理对象或残留，记录的152个本地PID已退出，4244份历史封存不变。
+本轮没有EKS真实完整采样证据，resource partial/not-qualified、timing not-run、candidate null、CNI disabled/网络隔离unqualified及其他required保持；无push/Actions/新镜像/额外尝试或timer。
+
+以下保留各阶段当轮历史结果；旧报告中的当前/下一阶段描述不表示新授权或覆盖最新状态。
+
 [M32R2](milestone-32-remediation-2.md)修正资格脚本的原始起点/绝对截止关系，足额边界准入、真实不足及冻结漂移严格拒绝；正式时长、Go/module、70产品/82helper输入及workflow/pins均未改。
 本地完整普通264通过、优化236通过/28既有skip，各一次外层356.580/339.173秒，均≤360；207组小数/JSON/nextafter控制时钟回执保留，原60/120/900误拒与300逆运算反例未改写。
 实现/CI/image source `278264db2f9617ad583c6b56d19b8aaf5943e771` 的唯一 [run36493558434](https://github.com/batchstream/weir/actions/runs/36493558434) 四job成功：两native Linux各35条非缓存Go package PASS、264普通/236优化通过+28skip，实际Go→三消费者普通6/71/1350与优化两消费者执行。
