@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M30: one frozen EKS invocation, exact M29 helper, no document workload."""
+"""One frozen M30/M30R EKS invocation, exact M29 helper, no document workload."""
 import argparse
 import hashlib
 import ipaddress
@@ -259,10 +259,12 @@ def observation_report(root, native):
 
 
 def prepare(run, owner):
+    milestone=run.root.parent.name
+    require(milestone in ('m30','m30r'), 'explicit evidence scope')
     helper=verified_helper(run.root.parent)
     require(run.run(['kubectl','config','current-context']).strip()==loop.TARGET['context'],'current context drift')
-    context=loop.prepare_context(run,owner,image_source=SOURCE,owner_pattern=r'weir-qual-m30-[a-z0-9-]{1,25}')
-    plan=dict(schema_version=1,profile='m30-eks-no-load-resource-preflight',target=loop.TARGET,owner=owner,namespace=owner,
+    context=loop.prepare_context(run,owner,image_source=SOURCE,owner_pattern='weir-qual-'+milestone+r'-[a-z0-9-]{1,25}')
+    plan=dict(schema_version=1,profile=milestone+'-eks-no-load-resource-preflight',evidence_root=str(run.root.resolve()),target=loop.TARGET,owner=owner,namespace=owner,
               node=context['node'],initial_spare=context['initial_spare'],cluster=context['cluster'],source=context['source'],image_source=SOURCE,
               images=IMAGES,helper=helper,budgets=BUDGET,minimum=loop.MINIMUM,sampled_at=time.time(),atomic_snapshot=False,
               tool_inputs={p:common.digest(common.REPO/p) for p in FILES},
@@ -275,6 +277,7 @@ def prepare(run, owner):
 def execute(run, plan_sha256):
     require(common.digest(run.root/'plan.json')==plan_sha256,'plan hash')
     plan=json.loads((run.root/'plan.json').read_text());run.plan=plan
+    require(plan['evidence_root']==str(run.root.resolve()),'frozen evidence path')
     require(plan['target']==loop.TARGET and plan['images']==IMAGES and plan['image_source']==SOURCE and plan['budgets']==BUDGET and plan['minimum']==loop.MINIMUM,'frozen boundary')
     require(plan['helper']==verified_helper(run.root.parent) and plan['objects']==objects(plan),'artifact/template drift')
     require(plan['tool_inputs']=={p:common.digest(common.REPO/p) for p in FILES},'script drift')
@@ -343,7 +346,22 @@ def execute(run, plan_sha256):
         result['observations']=observation_report(run.root,native.splitlines())
         run.monitor();run.save('final-pod.json',run.current_pod())
         result['passed']=True
-    except BaseException as exc:result['errors'].append(str(exc))
+    except BaseException as exc:
+        result['errors'].append(str(exc))
+        # Retain owned startup failures within the original overall window.
+        run.deadline=run.remote_started+900
+        if run.pod_entry:
+            for container in ('bootstrap','elasticsearch','weir','qualification'):
+                try:
+                    pod=run.selected_object('Pod',run.pod_entry['name'])
+                    identity=dict(job=run.job,template=run.template,pod_uid=run.pod_entry['uid'])
+                    common.pod_identity(pod,identity)
+                    command=['kubectl','--context',run.target['context'],'--request-timeout=5s','--namespace',plan['namespace'],
+                             'logs',run.pod_entry['name'],'--container='+container,'--limit-bytes=65536','--tail=-1']
+                    run.save('failure-'+container+'.log',run.run(command,6))
+                except BaseException as diagnostic:
+                    error=dict(error=str(diagnostic))
+                    run.save('failure-'+container+'-error.json',error)
     finally:
         signal.signal(signal.SIGINT,signal.SIG_IGN);signal.signal(signal.SIGTERM,signal.SIG_IGN)
         result['fixture_seconds']=time.monotonic()-run.remote_started
@@ -382,7 +400,8 @@ def main():
     require(os.environ.get('WEIR_EKS_M30')=='1','explicit WEIR_EKS_M30=1 required')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode',choices=('prepare','run'));parser.add_argument('--owner');parser.add_argument('--plan-sha256')
-    args=parser.parse_args();root=common.REPO/'.testdata/m30/native'
+    parser.add_argument('--evidence',choices=('m30','m30r'),default='m30')
+    args=parser.parse_args();root=common.REPO/'.testdata'/args.evidence/'native'
     if args.mode=='prepare':root.mkdir(mode=0o700)
     else:require(root.is_dir() and root.stat().st_mode & 0o777==0o700,'private evidence')
     run=Run(root,loop.TARGET);run.number=max([int(p.stem.split('-')[1]) for p in root.glob('command-*.json')]+[0])

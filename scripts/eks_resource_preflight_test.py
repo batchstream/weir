@@ -111,6 +111,45 @@ class Admission(unittest.TestCase):
             unsafe['spec']['template']['spec'][group][index]['volumeMounts'][-1].pop('readOnly')
             with self.assertRaisesRegex(ValueError,'volumeMounts'):pre.common.job_check(unsafe,expected)
 
+    def test_recorded_pod_defaults_and_bootstrap_running_then_completed(self):
+        # Exact M30 Job spec plus recorded Pod admission defaults from M25.
+        # Metadata and runtime states are synthetic; this is not native M30R evidence.
+        recorded=json.loads((Path(__file__).with_name('fixtures')/'eks-resource-admitted-job-m30.json').read_text())
+        p=plan();p.update(owner=recorded['metadata']['labels'][pre.common.LABEL],namespace=recorded['metadata']['namespace'])
+        p['node']['name']=recorded['spec']['template']['spec']['nodeName']
+        p['objects']=pre.objects(p)
+        pod=live_pod();pod['spec']=copy.deepcopy(recorded['spec']['template']['spec'])
+        admitted=responses()['pod_response']
+        for key in ('priority','preemptionPolicy','serviceAccount','serviceAccountName','tolerations'):
+            pod['spec'][key]=copy.deepcopy(admitted['spec'][key])
+        pod['metadata'].update(namespace=p['namespace'],labels=p['objects']['job']['metadata']['labels'])
+        for group in ('containerStatuses','initContainerStatuses'):
+            for state in pod['status'][group]:
+                image=pre.loop.ES if state['name'] in ('elasticsearch','bootstrap') else pre.IMAGES['version' if state['name']=='weir' else 'tool']
+                state['imageID']=image['reference']
+        admission=copy.deepcopy(pod)
+        admission['metadata'].update(name='loopback-admission')
+        admission['metadata'].pop('ownerReferences')
+        with tempfile.TemporaryDirectory() as directory:
+            run=pre.Run(Path(directory),pre.loop.TARGET);run.plan=p;run.template=p['objects']['job']
+            with patch.object(run,'kube',return_value=json.dumps(admission)):
+                run.pod_dry_run(run.template)
+            run.namespace=dict(kind='Namespace',name=p['namespace'],uid='synthetic-ns',owner=p['owner'])
+            run.job=dict(kind='Job',name='loopback',uid=recorded['metadata']['uid'],owner=p['owner'])
+            run.pod_entry=None;run.pod_ready=False
+            namespace=dict(metadata=dict(name=p['namespace'],uid='synthetic-ns',labels=run.template['metadata']['labels']))
+            job=copy.deepcopy(recorded)
+            pod['metadata']['ownerReferences'][0]['uid']=run.job['uid']
+            lookup=dict(Namespace=namespace,Job=job,Pod=pod)
+            bootstrap=pod['status']['initContainerStatuses'][1]
+            completed=bootstrap['state'];bootstrap['state']=dict(running=dict(startedAt='synthetic-time'))
+            with patch.object(run,'selected_object',side_effect=lambda kind,name:lookup[kind]),patch.object(run,'kube',return_value=pod['metadata']['name']),patch.object(run,'job_events'):
+                identity=run.bootstrap();self.assertFalse(run.pod_ready)
+                self.assertEqual(identity['pod_uid'],pod['metadata']['uid'])
+                bootstrap['state']=completed
+                self.assertEqual(run.current_pod(),pod);self.assertTrue(run.pod_ready)
+                with self.assertRaisesRegex(ValueError,'not stable Running'):run.bootstrap()
+
 
 class Transfer(unittest.TestCase):
     def test_real_bounded_pipe_and_receipt(self):
@@ -188,6 +227,7 @@ class Lifecycle(unittest.TestCase):
         for sig in (signal.SIGINT,signal.SIGTERM):self.addCleanup(signal.signal,sig,signal.getsignal(sig))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)/'native';root.mkdir();p=plan()
+            p['evidence_root']=str(root.resolve())
             (root/'plan.json').write_text(json.dumps(p));sha=pre.common.digest(root/'plan.json')
             run=pre.Run(root,pre.loop.TARGET);calls=[]
             pod=live_pod();pod['metadata']['namespace']=p['namespace'];pod['metadata']['labels']=p['objects']['job']['metadata']['labels']
