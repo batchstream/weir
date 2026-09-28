@@ -36,3 +36,25 @@ def docker_archive(source, destination, identity):
                 add(name,raw);layers.append(name)
             manifest=[{"Config":config_name,"RepoTags":[],"Layers":layers}]
             add("manifest.json",json.dumps(manifest).encode())
+
+
+def application_binary(compressed, identity):
+    """Read only the unique regular application member; never extract paths."""
+    def require(value, message):
+        if not value:
+            raise ValueError(message)
+    def digest(raw):
+        return 'sha256:'+hashlib.sha256(raw).hexdigest()
+    require(len(compressed) == identity['size'] and digest(compressed) == identity['digest'], 'application compressed size/hash')
+    with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
+        raw = stream.read((64 << 20)+1)
+    require(len(raw) <= 64 << 20 and digest(raw) == identity['diff_id'], 'application diffID/bound')
+    with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
+        entries = archive.getmembers()
+        require(len(entries) == 1, 'unique application member required')
+        member = entries[0]
+        require(member.name == 'qualification' and member.isreg() and member.mode == 0o555 and
+                not member.linkname and not member.pax_headers and 0 < member.size <= 64 << 20, 'application member identity/type/mode')
+        value = archive.extractfile(member).read(member.size+1)
+        require(len(value) == member.size and digest(value)[7:] == identity['binary'], 'application binary hash/size')
+    return value

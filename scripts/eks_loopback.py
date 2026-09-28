@@ -40,6 +40,7 @@ def configuration():
 
 
 def objects(plan):
+    images = plan.get("images", IMAGES)
     labels = {common.LABEL:plan["owner"]}
     security = dict(runAsNonRoot=True, runAsUser=65532, runAsGroup=65532, allowPrivilegeEscalation=False,
                     readOnlyRootFilesystem=True, capabilities=dict(drop=["ALL"]), seccompProfile=dict(type="RuntimeDefault"))
@@ -48,11 +49,11 @@ def objects(plan):
     weir_res = dict(cpu="2", memory="1024Mi", **{"ephemeral-storage":"256Mi"})
     client_res = dict(cpu="1", memory="512Mi", **{"ephemeral-storage":"256Mi"})
     es_res = dict(cpu="3", memory="3072Mi", **{"ephemeral-storage":"2Gi"})
-    weir = dict(name="weir", image=IMAGES["version"]["reference"], imagePullPolicy="Always", command=["/weir"],
+    weir = dict(name="weir", image=images["version"]["reference"], imagePullPolicy="Always", command=["/weir"],
                 args=["-config","/qualification/node.json"], securityContext=security,
                 resources=dict(requests=weir_res, limits=weir_res), volumeMounts=[mount])
     weir["readinessProbe"] = dict(exec=dict(command=["/weir","-probe","ready"]), initialDelaySeconds=0, periodSeconds=2, timeoutSeconds=2, successThreshold=1, failureThreshold=60)
-    client = dict(name="qualification", image=IMAGES["tool"]["reference"], imagePullPolicy="Always", command=["/qualification"],
+    client = dict(name="qualification", image=images["tool"]["reference"], imagePullPolicy="Always", command=["/qualification"],
                   args=["-mode","idle"], securityContext=security, resources=dict(requests=client_res,limits=client_res),
                   env=[dict(name="GOMAXPROCS",value="1"),dict(name="WEIR_CAPACITY_INTEGRATION",value="1")],
                   volumeMounts=[dict(mount, mountPath="/config")])
@@ -101,7 +102,7 @@ def pod_check(pod, options):
         complete &= len(states)==len(names)
         for state in states:
             name = state["name"]
-            image = ES if name in ("elasticsearch","bootstrap") else IMAGES["version" if name=="weir" else "tool"]
+            image = ES if name in ("elasticsearch","bootstrap") else options.get("images", IMAGES)["version" if name=="weir" else "tool"]
             if state.get("imageID"):
                 require(state["imageID"] in {image["reference"],image["reference"].split("@")[0]+"@"+image["manifest"]},"imageID drift")
             live = bool(state.get("state",{}).get("running"))
@@ -193,7 +194,8 @@ class Run(common.Run):
         self.save(f"container-outcomes-{self.number}.json", container_outcomes(status))
         if any(s.get("containerID") for key in ("containerStatuses", "initContainerStatuses") for s in status.get(key, [])):
             self.runtime_evidence = True
-        options = dict(job=self.job,template=self.template,pod_uid=self.pod_entry["uid"] if self.pod_entry else None)
+        options = dict(job=self.job,template=self.template,pod_uid=self.pod_entry["uid"] if self.pod_entry else None,
+                       images=self.plan.get("images", IMAGES))
         self.pod_ready = pod_check(pod,options)
         if self.pod_ready:
             identity = {s["name"]: dict(imageID=s["imageID"],containerID=s["containerID"]) for key in ("containerStatuses","initContainerStatuses") for s in pod["status"][key]}
@@ -315,8 +317,8 @@ def trial_report(records, prefix):
     return result
 
 
-def prepare_context(run, owner):
-    require(re.fullmatch(r"weir-qual-m26r-[a-z0-9-]{1,25}",owner) is not None,"owner syntax")
+def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qual-m26r-[a-z0-9-]{1,25}"):
+    require(re.fullmatch(owner_pattern,owner) is not None,"owner syntax")
     cluster=json.loads(run.run(["aws","eks","describe-cluster","--name",TARGET["cluster"],"--region",TARGET["region"],
                                "--query","cluster.{arn:arn,name:name,version:version,status:status}","--output","json",
                                "--cli-connect-timeout","5","--cli-read-timeout","10","--no-cli-pager"]))
@@ -342,7 +344,7 @@ def prepare_context(run, owner):
     cni_template=r'''{{range .spec.template.spec.containers}}{{.name}} {{.image}}{{range .args}}{{if or (eq . "--enable-network-policy=true") (eq . "--enable-network-policy=false")}} {{.}}{{end}}{{end}}{{"\n"}}{{end}}'''
     run.save("cni-selected.txt",run.kube(["get","daemonset","aws-node","-o","go-template="+cni_template],"kube-system"))
     require(not run.run(["git","status","--porcelain"]).strip(),"committed clean implementation required")
-    run.run(["git","diff","--exit-code",SOURCE,"--","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"])
+    run.run(["git","diff","--exit-code",image_source,"--","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"])
     source=run.run(["git","rev-parse","HEAD"]).strip()
     context = dict(node=selected, initial_spare=spare, cluster=cluster, source=source)
     return context

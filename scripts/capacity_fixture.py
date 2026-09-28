@@ -444,6 +444,28 @@ class Observer:
             raise RuntimeError(self.role+' observer exited: '+bytes(self.streams[1]).decode(errors='replace'))
         return self.entries
 
+    def write_input(self, data, deadline):
+        """A single bounded stdin transfer, drained concurrently with output."""
+        if not isinstance(data, bytes) or not 0 < len(data) <= 64 << 20:
+            raise ValueError('observer stdin bound')
+        os.set_blocking(self.child.stdin.fileno(), False)
+        offset = 0
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.child.stdin, selectors.EVENT_WRITE)
+            while offset < len(data):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('observer stdin deadline')
+                self.poll()
+                if self.child.poll() is not None:
+                    raise RuntimeError('observer exited during stdin transfer')
+                for key, _ in selector.select(.05):
+                    try:
+                        offset += os.write(key.fd, data[offset:offset+65536])
+                    except BlockingIOError:
+                        pass
+        self.child.stdin.close()
+        return offset
+
     def stop(self):
         self.child.stdin.close()
         until = time.monotonic()+4
