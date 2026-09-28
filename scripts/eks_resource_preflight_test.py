@@ -224,6 +224,25 @@ class Transfer(unittest.TestCase):
                 child=json.loads((root/'upload-exec.json').read_text());self.assertIsNotNone(child['exit'])
                 self.assertEqual(sum('/qualification/helper-upload.sh' in c for c in calls if isinstance(c,list)),1)
 
+    def test_cancel_preserves_original_when_upload_exits_nonzero_after_eof(self):
+        self.addCleanup(signal.signal, signal.SIGINT, signal.getsignal(signal.SIGINT))
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);helper=root/'qualification';helper.write_bytes(b'hello')
+            run=pre.Run(root,pre.loop.TARGET);run.plan=plan();run.plan['helper']['path']=str(helper)
+            run.pod_entry=dict(name='bound-pod')
+            code=('import sys,os,signal; os.kill(os.getppid(),signal.SIGINT); '
+                  'sys.stdin.buffer.read(); sys.exit(9)')
+            command=[sys.executable,'-c',code]
+            identity=dict(pod_uid='owned',containerID='same')
+            with patch.object(run,'configuration'),patch.object(run,'bootstrap',return_value=identity),patch.object(run,'exec_command',return_value=command),patch.object(run,'run') as release:
+                with self.assertRaises(KeyboardInterrupt):run.transfer(time.monotonic()+30)
+            release.assert_not_called()
+            saved=json.loads((root/'upload-exec.json').read_text())
+            self.assertEqual(saved['exit'],9)
+            self.assertIn('exited',saved['failure'])
+            self.assertIsNotNone(saved['stopped_monotonic'])
+
     def test_shell_gate_rejects_truncated_and_corrupt_input(self):
         # Use actual bash/head/hash/FIFO/rename. Only GNU stat formatting and
         # mv -T are adapted to macOS syscall semantics in this local fixture.

@@ -266,7 +266,13 @@ class Run(loop.Run):
             entries = observer.poll()
             expected = dict(artifact='uploaded', size=helper['size'], sha256=helper['sha256'])
             require(entries == [expected] and observer.child.returncode == 0, 'complete upload receipt')
-        finally:
+        except BaseException as exc:
+            try:
+                observer.stop()
+            except BaseException as closing:
+                exc.add_note('upload stop: '+str(closing))
+            raise
+        else:
             observer.stop()
         after = self.bootstrap()
         self.save('upload-after.json', after)
