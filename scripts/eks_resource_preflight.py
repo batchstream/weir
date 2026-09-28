@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One frozen EKS resource invocation, exact M29 helper, no document workload."""
+"""One frozen EKS resource invocation, exact M32R2 helper, no document workload."""
 import argparse
 import hashlib
 import ipaddress
@@ -18,15 +18,15 @@ from capacity_report import counter, integer, prom, timestamp, weir_metrics
 from resource_report import process, observer_identity, read_stream, require
 from observer_completion import observation_samples, finish_observation, abort_observation
 
-SOURCE = '4abc8761f9f0e08af978d5ae5c14176f8188cfa3'
+SOURCE = '278264db2f9617ad583c6b56d19b8aaf5943e771'
 IMAGES = dict(
-    version=dict(reference='ghcr.io/batchstream/weir@sha256:2a3ca21b950f42449b01543e96655e0484e432f8ecbf29b46c49f7fd426c229a',
-                 manifest='sha256:100102a8c319a24f571f2aaa3041d6fafc79338840829e792f404e48d117dd5e',
-                 binary='f2d107995762040c55b03cb37e94dd9e6beaa14a99d563b278b4bd9c2bd4db7e'),
-    tool=dict(reference='ghcr.io/batchstream/weir-qualification@sha256:fbef16495a37b89d44cfce51c38096e01e982ab875e3352b67c59480fdbe61a7',
-              manifest='sha256:9eb2ff4243d7c021abe047da28867a9b3df65695660675ebcb761387b4f50351',
-              config='sha256:063aa9659604ca3b7ab3814e31341727fe2ccce6f6758456d3f97c4b911209ee',
-              binary='d41f70ca4bbe129bff11b76f3d973cdb288d839c4df72a348cac04a233b76482'), es=loop.ES)
+    version=dict(reference='ghcr.io/batchstream/weir@sha256:aee0c24fd5a0edbe81d335522e2741b34ca267f8246c893e15d6ef0097c18bb4',
+                 manifest='sha256:31a7d7a8d6db388448db51d19621a20ba93af18aff6073455f8c59121929b98c',
+                 binary='48a81d3e3ea12dc51b0ba44d8ed879a2b62c46b947afee2e8fb27db6af81bac8'),
+    tool=dict(reference='ghcr.io/batchstream/weir-qualification@sha256:364474990ae529650ac69a83f29e15cdbc82474c6eb5dca4ccb0d3cdf3874999',
+              manifest='sha256:87070a283529918acc3cd62a241135de82c90a3431ab48b2485c4e2e7f779c84',
+              config='sha256:409a8092911ed4ba7d2b1d7901b0df121fe3ebe54705f7d7ff42d44ea7a9db69',
+              binary='2629ed0d83623c4cb0c0895386e1abe1b87f78661a42c73562ab0154e4210e99'), es=loop.ES)
 FILES = tuple(dict.fromkeys(loop.FILES + ('scripts/eks_resource_preflight.py', 'scripts/eks_resource_preflight_test.py',
     'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py', 'scripts/observer_completion.py',
     'scripts/fixtures/eks-resource-admitted-job-m30.json', 'scripts/fixtures/eks-resource-release-m30r2.json')))
@@ -50,7 +50,7 @@ def verified_helper(root):
     config = json.loads(raw)
     require(config['os'] == 'linux' and config['architecture'] == 'arm64' and config['config']['Labels']['org.opencontainers.image.revision'] == SOURCE, 'helper source/platform')
     layer = manifest['layers'][-1]
-    require(layer['digest'] == 'sha256:e7020f259dcaf846bb2772aca7dd4f2bc353ef7292b95549e4f541509eea03c7' and layer['size'] == 10810877, 'helper layer')
+    require(layer['digest'] == 'sha256:76da2b347b19b2c209008c671a7ff0f98ccb1aafd0aefe578bff1e1936f218e6' and layer['size'] == 10818785, 'helper layer')
     require(len(config['rootfs']['diff_ids']) == len(manifest['layers']), 'rootfs count')
     identity = dict(layer, diff_id=config['rootfs']['diff_ids'][-1], binary=IMAGES['tool']['binary'])
     binary = application_binary((artifact/'application.tar.gz').read_bytes(), identity)

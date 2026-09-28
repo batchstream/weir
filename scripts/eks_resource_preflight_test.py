@@ -114,12 +114,19 @@ class Admission(unittest.TestCase):
         with self.assertRaises(ValueError):pre.loop.pod_check(changed,opts)
 
 
-    def test_original_m30_api_omits_default_false_mount(self):
+    def test_projected_m30_api_omits_default_false_mount(self):
         path=Path(__file__).with_name('fixtures')/'eks-resource-admitted-job-m30.json'
         actual=json.loads(path.read_text());p=plan()
         p.update(owner=actual['metadata']['labels'][pre.common.LABEL],namespace=actual['metadata']['namespace'])
         p['node']['name']=actual['spec']['template']['spec']['nodeName']
         expected=pre.objects(p)['job']
+        with self.assertRaisesRegex(ValueError,'image'):
+            pre.common.job_check(actual,expected)
+        # Project only image references in memory; the historical raw stays intact.
+        for group in ('containers','initContainers'):
+            for container in actual['spec']['template']['spec'][group]:
+                image=pre.loop.ES if container['name'] in ('elasticsearch','bootstrap') else pre.IMAGES['version' if container['name']=='weir' else 'tool']
+                container['image']=image['reference']
         pre.common.job_check(actual,expected)
         bootstrap=actual['spec']['template']['spec']['initContainers'][1]
         self.assertNotIn('readOnly',bootstrap['volumeMounts'][-1])
@@ -132,9 +139,13 @@ class Admission(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'volumeMounts'):pre.common.job_check(unsafe,expected)
 
     def test_recorded_pod_defaults_and_bootstrap_running_then_completed(self):
-        # Exact M30 Job spec plus recorded Pod admission defaults from M25.
-        # Metadata and runtime states are synthetic; this is not native M30R evidence.
+        # M30 Job spec with current image references and M25 Pod defaults.
+        # This in-memory projection is synthetic, never new native evidence.
         recorded=json.loads((Path(__file__).with_name('fixtures')/'eks-resource-admitted-job-m30.json').read_text())
+        for group in ('containers','initContainers'):
+            for container in recorded['spec']['template']['spec'][group]:
+                image=pre.loop.ES if container['name'] in ('elasticsearch','bootstrap') else pre.IMAGES['version' if container['name']=='weir' else 'tool']
+                container['image']=image['reference']
         p=plan();p.update(owner=recorded['metadata']['labels'][pre.common.LABEL],namespace=recorded['metadata']['namespace'])
         p['node']['name']=recorded['spec']['template']['spec']['nodeName']
         p['objects']=pre.objects(p)
