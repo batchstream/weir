@@ -1,6 +1,16 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R3](milestone-30r3.md)实现一次释放后的远端完成确认和分阶段180秒清理，普通186通过、优化161通过/25既有skip。
+实现/实际执行源码`fea02e9c40385049851bd3eaaaffc19aea3fc4bf`，image source仍`4abc8761…`；204 Go/module和Weir70/helper81正式输入未变。
+唯一prepare成功，首次固定node/UID全namespace资源查询满足原门槛；native第二次Pod读取触及共享120秒窗口本地截止，exit-15，**NO-GO**。
+37条CLI均Wait；零namespace/Job/Pod创建、UID、上传/release/PUT/样本/文档工作量，无自有远端对象或进程残留。
+没有补跑/现场改代码/延期；原result cleanup=false保留，零资源事实不冒称新清理机制已获EKS验证。
+新完成确认和Quota前唯一完整盘点/45秒namespace预留仅离线通过；三角色FD/PID/cgroup等仍unknown。
+M30R2旧namespace已在本轮前由统筹新的exit0空GET确认不存在；原窗口确认缺口和PUT UNKNOWN不倒写。
+resource_evidence=partial/not-qualified、timing=not-run、candidate=null；CNI agent仍disabled，全部其他required门槛保持。
+未push/Actions/发布/新镜像/负载。以下各阶段保留当轮历史结果。
+
 [M30R2](milestone-30r2.md)固定节点资源预检已修复并真实通过，但唯一无负载采样仍 **NO-GO**。
 实现/实际运行 `238fabd…`，公开 image source `4abc8761…`；204 Go/module 和产品70/helper81正式输入未变。
 三次均按同一 node/UID 获取全部 namespace 的限定节点 Pod：6 Pods，CPU余量7.030，原资源门槛满足；只读恢复0次。
