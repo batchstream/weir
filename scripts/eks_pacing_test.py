@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -182,6 +183,45 @@ class LocalBoundaries(unittest.TestCase):
         target = dict(context="unused", region="unused", cluster="unused")
         self.run = entry.Run(self.root, target)
         self.run.plan = plan()
+
+    def test_actual_go_templates_handle_unlabelled_defaults_and_redact_env(self):
+        # Use the real standard-library template engine used by kubectl, with
+        # synthetic JSON only. No CLI identity, API, cluster or module download.
+        fixed = entry.REPO/".tools/go1.27.1"
+        go = str(fixed/"bin/go") if (fixed/"bin/go").is_file() else shutil.which("go")
+        self.assertIsNotNone(go, "Go compiler required for offline template regression")
+        env = {k: os.environ[k] for k in ("PATH", "HOME", "TMPDIR") if k in os.environ}
+        env.update(GOENV="off", GOTOOLCHAIN="local", GOWORK="off", GOPROXY="off", GOSUMDB="off", CGO_ENABLED="0")
+        if (fixed/"bin/go").is_file():
+            env["GOROOT"] = str(fixed)
+        source = '''package main
+import("encoding/json";"os";"text/template")
+func main(){
+ var payload struct{Template string; Object any}
+ file,err:=os.Open(os.Args[1]); if err!=nil{panic(err)}; defer file.Close()
+ if err=json.NewDecoder(file).Decode(&payload);err!=nil{panic(err)}
+ tmpl,err:=template.New("offline").Parse(payload.Template);if err!=nil{panic(err)}
+ if err=tmpl.Execute(os.Stdout,payload.Object);err!=nil{panic(err)}
+}
+'''
+        driver = self.root/"template.go"
+        driver.write_text(source)
+        metadata = dict(items=[dict(apiVersion="v1", kind="ConfigMap", metadata=dict(name="kube-root-ca.crt", uid="root-uid"), data=dict(marker="not-for-output")),
+                               dict(apiVersion="v1", kind="ServiceAccount", metadata=dict(name="default", uid="sa-uid"))])
+        value = dict(pod(), apiVersion="v1", kind="Pod")
+        value["spec"]["containers"][0]["env"].append(dict(name="INJECTED", value="not-for-output"))
+        for template, obj in ((entry.META_TEMPLATE, metadata), (entry.OBJECT_TEMPLATE, value)):
+            filename = self.root/"input.json"
+            filename.write_text(json.dumps(dict(Template=template, Object=obj)))
+            process = subprocess.run([go, "run", str(driver), str(filename)], env=env, cwd=self.root,
+                                     capture_output=True, text=True, timeout=60)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertNotIn("not-for-output", process.stdout)
+            if template == entry.META_TEMPLATE:
+                self.assertEqual(process.stdout, "v1|ConfigMap|kube-root-ca.crt|root-uid|||\nv1|ServiceAccount|default|sa-uid|||\n")
+            else:
+                rendered = json.loads(process.stdout)
+                self.assertEqual(rendered["spec"]["containers"][0]["env"][-1]["value"], "REDACTED")
 
     def test_bounded_children_timeout_output_and_signal(self):
         cases = [("import time; time.sleep(10)", .05), ("import os; os.write(1,b'x'*(9<<20))", 5),
