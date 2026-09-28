@@ -1,5 +1,7 @@
 """Offline negative delivery tests. Tiny synthetic OCI data is never published."""
+import copy
 import importlib.util
+import fnmatch
 import io
 import json
 from pathlib import Path
@@ -58,6 +60,45 @@ def fixture(path, change):
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_workflow_discovers_all_offline_python_tests_in_both_modes(self):
+        workflow = (package.ROOT / '.github/workflows/images.yml').read_text()
+        for mode in ('', '-O '):
+            self.assertIn("python3 " + mode + "-m unittest discover -v -s scripts -p '*_test.py'", workflow)
+        tests = {p.name for p in Path(__file__).parent.glob('*_test.py')}
+        self.assertTrue({'test_capacity_test.py', 'resource_report_test.py', 'resource_local_test.py',
+                         'eks_loopback_test.py', 'eks_resources_test.py', 'local_es_prerequisite_test.py'} <= tests)
+        self.assertTrue(all(fnmatch.fnmatch(name, '*_test.py') for name in tests))
+
+    def test_snapshot_requires_self_identity_raw_fields_and_no_errors(self):
+        namespaces = {name: name + ':[123]' for name in ('pid', 'mnt', 'cgroup', 'net', 'user')}
+        identity = dict(pid='1', uid=65532, start_ticks=123, exe_sha256='a' * 64, cgroup='0::/\n', namespaces=namespaces)
+        process = dict(identity=identity, rss_bytes=4096, fd=3, threads=2, user_ticks=0, system_ticks=0,
+                       status='synthetic status', stat='synthetic stat')
+        files = {name: 'synthetic raw' for name in ('memory.current', 'memory.events', 'cpu.stat',
+                 'pids.current', 'cpuset.cpus.effective', 'limits', 'net/tcp', 'net/tcp6', 'status', 'stat', 'cgroup')}
+        limits = {'memory.max': '268435456\n', 'memory.swap.max': '0\n', 'pids.max': '128\n',
+                  'cpu.max': '100000 100000\n', 'io.stat': ''}
+        files.update(limits)
+        sample = dict(role='client', sequence=0, process=process, observer=copy.deepcopy(process), files=files,
+                      duration_ns=2, monotonic_ns=1, end_monotonic_ns=3, gomaxprocs=1, goroutines=2, go_heap_alloc_bytes=4096)
+        ci.verify_snapshot(sample, 'a' * 64)
+        mutations = [lambda s: s.update(errors=['missing sampling prerequisite']),
+                     lambda s: s['observer']['identity'].update(pid='2'),
+                     lambda s: s['process']['identity'].update(exe_sha256='b' * 64),
+                     lambda s: s['process']['identity'].update(uid=0),
+                     lambda s: s['process']['identity']['namespaces'].pop('net'),
+                     lambda s: s['files'].pop('io.stat'),
+                     lambda s: s['files'].__setitem__('cpu.max', 'max 100000'),
+                     lambda s: s['files'].__setitem__('memory.max', '0'),
+                     lambda s: s['files'].__setitem__('stat', ''),
+                     lambda s: s.update(duration_ns=0),
+                     lambda s: s['observer'].update(rss_bytes=0)]
+        for mutate in mutations:
+            value = copy.deepcopy(sample)
+            mutate(value)
+            with self.assertRaises(ValueError):
+                ci.verify_snapshot(value, 'a' * 64)
+
     def test_oci_rejects_unapproved_content_and_identity(self):
         hashes = {'linux-' + arch: package.sha(b'binary') for arch in ('amd64', 'arm64')}
         options = dict(binary_name='qualification', revision='a' * 40, base_layers=dict(amd64=[], arm64=[]))

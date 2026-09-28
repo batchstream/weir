@@ -3,6 +3,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -131,8 +132,14 @@ class ResourceModel(unittest.TestCase):
             driver.write_text('package main\nimport("os";"encoding/json";"text/template")\nfunc main(){var p struct{Template string; Object any}; f,e:=os.Open(os.Args[1]);if e!=nil{panic(e)};defer f.Close();if e=json.NewDecoder(f).Decode(&p);e!=nil{panic(e)};t,e:=template.New("x").Parse(p.Template);if e!=nil{panic(e)};if e=t.Execute(os.Stdout,p.Object);e!=nil{panic(e)}}')
             payload = dict(Template=resource.projection(entry.JSON_TEMPLATE),Object=obj)
             (root/"input.json").write_text(json.dumps(payload))
-            env = dict(os.environ, GOROOT=str(entry.REPO/".tools/go1.27.1"), GOENV="off", GOWORK="off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off")
-            result = subprocess.run([str(entry.REPO/".tools/go1.27.1/bin/go"),"run",str(driver),str(root/"input.json")],env=env,capture_output=True,text=True,timeout=45)
+            fixed = entry.REPO/".tools/go1.27.1"
+            go = str(fixed/"bin/go") if (fixed/"bin/go").is_file() else shutil.which("go")
+            self.assertIsNotNone(go, "Go compiler required for offline template regression")
+            env = {k: os.environ[k] for k in ("PATH", "HOME", "TMPDIR") if k in os.environ}
+            env.update(GOENV="off", GOWORK="off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off", CGO_ENABLED="0")
+            if (fixed/"bin/go").is_file():
+                env["GOROOT"] = str(fixed)
+            result = subprocess.run([go,"run",str(driver),str(root/"input.json")],env=env,capture_output=True,text=True,timeout=45)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertNotIn("BUSINESS",result.stdout)
             (root/"pods.json").write_text(result.stdout)

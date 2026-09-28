@@ -49,10 +49,8 @@ jobs:
           CGO_ENABLED=0 go vet ./...
           CGO_ENABLED=0 go vet -tags=integration ./...
           CGO_ENABLED=1 go test -race -tags=integration -count=1 -timeout=180s ./internal/testutil/testcapacity
-          python3 -m unittest discover -s scripts -p package_test.py
-          python3 -m unittest discover -s scripts -p ci_images_test.py
-          python3 -m unittest discover -s scripts -p 'capacity_*_test.py'
-          python3 -m unittest discover -s scripts -p test_capacity_test.py
+          python3 -m unittest discover -v -s scripts -p '*_test.py'
+          python3 -O -m unittest discover -v -s scripts -p '*_test.py'
           git diff --exit-code
 
   publish:

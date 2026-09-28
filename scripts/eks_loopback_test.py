@@ -4,6 +4,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -142,8 +143,14 @@ class Layout(unittest.TestCase):
             obj=live_pod()
             payload=dict(Template=common.OBJECT_TEMPLATE,Object=obj)
             (root/"input.json").write_text(json.dumps(payload))
-            env=dict(os.environ,GOROOT=str(common.REPO/".tools/go1.27.1"),GOENV="off",GOWORK="off",GOTOOLCHAIN="local",GOPROXY="off",GOSUMDB="off")
-            result=subprocess.run([str(common.REPO/".tools/go1.27.1/bin/go"),"run",str(driver),str(root/"input.json")],env=env,capture_output=True,text=True,timeout=45)
+            fixed = common.REPO/".tools/go1.27.1"
+            go = str(fixed/"bin/go") if (fixed/"bin/go").is_file() else shutil.which("go")
+            self.assertIsNotNone(go, "Go compiler required for offline template regression")
+            env = {k: os.environ[k] for k in ("PATH", "HOME", "TMPDIR") if k in os.environ}
+            env.update(GOENV="off", GOWORK="off", GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off", CGO_ENABLED="0")
+            if (fixed/"bin/go").is_file():
+                env["GOROOT"] = str(fixed)
+            result=subprocess.run([go,"run",str(driver),str(root/"input.json")],env=env,capture_output=True,text=True,timeout=45)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertTrue(loop.pod_check(json.loads(result.stdout),options()))
             # Evaluate actual Go projection, then strict runtime admission.
@@ -160,7 +167,7 @@ class Layout(unittest.TestCase):
                 change(obj["spec"]["initContainers"][0]["env"])
                 payload = dict(Template=common.OBJECT_TEMPLATE, Object=obj)
                 (root/"input.json").write_text(json.dumps(payload))
-                command = [str(common.REPO/".tools/go1.27.1/bin/go"), "run", str(driver), str(root/"input.json")]
+                command = [go, "run", str(driver), str(root/"input.json")]
                 result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=45)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("synthetic-not-for-output", result.stdout)
