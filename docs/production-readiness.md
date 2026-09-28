@@ -1,6 +1,14 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M32R](milestone-32-remediation.md)完成两项测试前提补救：离线计划与实际kubectl身份检查分离，合成consumer固定12秒总窗（4+4+4），正式Go/消费者/EOF/资源/SLO均未变。
+本地普通259通过、优化231通过/28项既有入口限制skip，实际Go→三消费者6/71/1350和优化两消费者通过；原5秒大流反例保留。
+实现/候选source `6e7b296d6460ccd4ed13843e2b1df35eb63caed5` 已普通推送，唯一 [run 36488063884](https://github.com/batchstream/weir/actions/runs/36488063884) 最终failure：amd64普通259通过、优化230通过/1failure/28skip；arm64普通257通过/2failure，优化未运行。
+新错误为既有300秒浮点相等断言（两平台）及arm64完整arm预算守卫的提前拒绝；两个目标修复/大流正例通过仍不足以放行整个run。publish/smoke均skipped，0新镜像；不追加run。
+本轮无EKS/aws/DB/负载，旧EKS接线及统筹approvedImages未改，resource partial/not-qualified、timing not-run、candidate null与其他required门槛保持。
+
+以下保留各阶段当轮历史结果；旧报告中的当前/下一阶段描述不表示新授权或覆盖最新状态。
+
 [M32](milestone-32.md)双原生 CI 外部 Go→Python 管道接线已提交并普通推送，受测 source `b420c8ea4957db177a801c1efe3b0321b14b893d`，但**新镜像交付未完成**。
 唯一 [run 36482306611](https://github.com/batchstream/weir/actions/runs/36482306611) 两架构默认CGO0/race/vet/helper回归通过；各255项普通Python中252通过、3error、0skip，优化因普通失败未运行。
 新外部EKS/local真实管道各6/71样本通过；calibration大流正例收尾失败，另有既有kubectl文件hash环境依赖错误。原失败保留，未放宽/删测或第二次run。
