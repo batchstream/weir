@@ -595,6 +595,7 @@ class Run:
         if not self.namespace:
             result = dict(confirmed=not self.remote_started, resources=results, diagnostic_errors=self.diagnostic_errors)
             return result
+        deleting = None
         try:
             current = self.selected_object("Namespace", self.namespace["name"])
             owner_check(current, self.namespace)
@@ -612,13 +613,19 @@ class Run:
                     self.save("cleanup-final-inventory.json", rows)
                     self.foreign_check(rows)
                     owner_check(self.selected_object("Namespace", self.namespace["name"]), self.namespace)
+                deleting = entry
                 self.delete(entry)
                 receipt = dict(resource=entry, clean=True)
                 results.append(receipt)
+                deleting = None
+            deleting = self.namespace
             self.delete(self.namespace)
             receipt = dict(resource=self.namespace, clean=True)
             results.append(receipt)
         except BaseException as exc:
+            if deleting is not None:
+                receipt = dict(resource=deleting, clean=False, error=str(exc))
+                results.append(receipt)
             result = dict(confirmed=False, resources=results, error=str(exc), diagnostic_errors=self.diagnostic_errors)
             return result
         result = dict(confirmed=bool(results) and not self.diagnostic_errors,
