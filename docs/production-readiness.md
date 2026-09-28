@@ -26,7 +26,16 @@ PreemptLowerPriority不一致被拒绝；Job在120秒期限后失败，没有运
 Job/Pod/probe/planned均0，version/snapshot/resource-evidence=not-run、timing_pass/generator-ready=false；
 这是入口兼容缺口，无EKS性能结论。3个自有对象按UID回收、namespace独立确认消失，cleanup=true。
 冻结后未改实现或重试；真实FailedCreate早停仅有离线证据。原失败保留，DB candidate=null、
-full-calibration/24h=not-run，CNI隔离仍unqualified；本轮待统筹独立验收。
+full-calibration/24h=not-run，CNI隔离仍unqualified；统筹已独立复现此入口缺口。
+[M25R3](milestone-25-remediation-3.md)实现 `24976ddadd498cf39e86eed59010312d0bdcafc1` 将metadata
+检查收敛到请求身份和自有标签键值，允许额外标签且不借此授予归属；实际UID/controller与spec严格检查保留。
+基于真实响应结构的外部CLI回归通过后，新冻结namespace唯一尝试完成version、snapshot、
+50ops/s三轮及200/800各一轮，均20秒，合计23,000次全部完成、零drop/error/UNKNOWN。
+最差dispatch p99为4.7ms≤5ms，最大采样CPU区间占比0.203746、无新throttle，timing_pass=true。
+可见cgroup资源边界通过，但CPU仍共享、完整资源资格partial；CNI agent仍disabled，网络隔离unqualified。
+generator-ready-for-next-investigation=true仅指统筹可评估下一步；DB candidate=null、容量/24h仍not-run。
+全部17个自有对象按UID回收、namespace另行确认不存在，cleanup=true；三次旧失败未改写。
+本轮短时计时证据待统筹独立验收，不增加整体生产资格，也不授权自行部署DB/服务或继续下一阶段。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
