@@ -65,6 +65,14 @@ local-address guard exit23停止，触发行未记录，具体地址/来源无�
 六个自有对象按UID清理，namespace另行确认不存在，cleanup=true；只取得ES/init的partial运行材料。
 RPC/DB审计/客户端资源/Weirmetrics等not-run，candidate=null，容量/跨节点/过载/恢复/24h仍not-run；
 网络隔离unqualified。原M26与M26R证据未变，signal窗口/exit-15未解决；未冻结后修补或重试。
+[M26R3](milestone-26-remediation-3.md)完成拒绝前有界原始表与完整终止诊断，guard语义不变。
+本地唯一冻结尝试因网络inspect JSON格式错误停在ES创建前，自有network已回收，未重跑。
+唯一EKS只读取证保存三条本PodIP到169.254.169.254:80的FIN_WAIT2记录，bootstrap exit23，
+ES143在后，无OOM/restart；同快照新旧guard均23。属于实际非回环边界NO-GO，不能放行，
+具体进程/HTTP请求/响应仍未知，M26R2旧缺失行不倒写。诊断完成、修复待统筹独立决策。
+测试管理/文档写0，两个main未启动；六对象UID清理并确认namespace消失。
+Python普通124通过，优化99通过/25既有skip；固定Go/协议/镜像/CI输入未变，本轮未重复Go测试。
+本轮未修改配置再试；candidate=null，功能闭环/容量/过载/恢复/24h未跑，signal窗口仍未解决。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
