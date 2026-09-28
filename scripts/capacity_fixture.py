@@ -397,6 +397,9 @@ class Observer:
         self.first_exit_observed = None
         self.stop_requested = None
         self.stopped = None
+        self.stop_error = None
+        self.joined = False
+        self.pipes_ready = False
         self.started = time.monotonic()
         self.child = subprocess.Popen(self.command, env=options.get('env'), stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
@@ -404,12 +407,13 @@ class Observer:
         try:
             for pipe in self.pipes:
                 os.set_blocking(pipe.fileno(), False)
+            self.pipes_ready = True
             self.record()
-        except BaseException:
-            self.child.stdin.close()
-            stop_group(self.child)
-            self.child.stdout.close()
-            self.child.stderr.close()
+        except BaseException as exc:
+            try:
+                self.stop()
+            except BaseException as closing:
+                exc.add_note('observer initialization stop: '+str(closing))
             raise
 
     def record(self):
@@ -419,13 +423,18 @@ class Observer:
         value = dict(command=self.command, pid=self.child.pid, role=self.role, elapsed=time.monotonic()-self.started,
                      exit=code, bytes=[len(raw) for raw in self.streams], eof=self.eof, failure=self.failure,
                      started_monotonic=self.started, first_exit_observed_monotonic=self.first_exit_observed,
-                     stop_requested_monotonic=self.stop_requested, stopped_monotonic=self.stopped)
+                     stop_requested_monotonic=self.stop_requested, stopped_monotonic=self.stopped, joined=self.joined,
+                     stop_error=str(self.stop_error) if self.stop_error is not None else None)
         (self.root/(self.role+'-exec.json')).write_text(json.dumps(value, indent=2)+'\n')
 
     def poll(self):
+        if self.stop_error is not None:
+            raise self.stop_error
+        if self.stopped is not None:
+            return self.entries
         changed = False
         for index, pipe in enumerate(self.pipes):
-            if self.eof[index]:
+            if self.eof[index] or pipe.closed:
                 continue
             target = self.root/(self.role+('.jsonl' if index == 0 else '.err'))
             target.touch(exist_ok=True)
@@ -459,14 +468,22 @@ class Observer:
             self.failure = self.failure or self.role+' observer exited: '+bytes(self.streams[1]).decode(errors='replace')
         if all(self.eof) and raw and not raw.endswith(b'\n'):
             self.failure = self.failure or 'truncated observer output'
-        if changed or self.child.poll() is not None:
-            self.record()
         if self.failure:
-            raise RuntimeError(self.failure)
+            error = RuntimeError(self.failure)
+            if self.stop_requested is None:
+                try:
+                    self.record()
+                except BaseException as recording:
+                    error.add_note('observer record: '+str(recording))
+            raise error
+        if self.stop_requested is None and (changed or self.child.poll() is not None):
+            self.record()
         return self.entries
 
     def write_input(self, data, deadline):
         """A single bounded stdin transfer, drained concurrently with output."""
+        if self.stop_requested is not None:
+            raise RuntimeError('observer already stopped')
         if not isinstance(data, bytes) or not 0 < len(data) <= 64 << 20:
             raise ValueError('observer stdin bound')
         os.set_blocking(self.child.stdin.fileno(), False)
@@ -488,33 +505,87 @@ class Observer:
         return offset
 
     def stop(self, deadline=None):
-        if self.stopped is not None:
-            if self.failure:
-                raise RuntimeError(self.failure)
+        if self.stop_requested is not None:
+            if self.stop_error is not None:
+                raise self.stop_error
             return
         self.stop_requested = time.monotonic()
-        self.child.stdin.close()
+        errors = [RuntimeError(self.failure)] if self.failure else []
         until = min(self.stop_requested+4, deadline-4) if deadline is not None else self.stop_requested+4
         try:
-            while time.monotonic() < until:
-                try:
-                    self.poll()
-                except (RuntimeError, ValueError):
-                    pass
-                if self.child.poll() is not None and all(self.eof):
-                    break
-                time.sleep(.02)
-            if self.child.poll() is None or not all(self.eof):
-                self.failure = self.failure or 'observer exec did not stop/drain after stdin EOF'
-        finally:
-            stop_group(self.child)
+            self.child.stdin.close()
+        except BaseException as exc:
+            errors.append(exc)
+            # A failed buffered close must still deliver EOF without replaying
+            # buffered input. These are the pipes owned by this Popen only.
             try:
-                self.poll()
-            except (RuntimeError, ValueError):
-                pass
-            self.child.stdout.close()
-            self.child.stderr.close()
-            self.stopped = time.monotonic()
+                self.child.stdin.raw.close()
+            except BaseException as closing:
+                errors.append(closing)
+        try:
+            if self.pipes_ready:
+                while time.monotonic() < until:
+                    try:
+                        self.poll()
+                    except RuntimeError as exc:
+                        if str(exc) != self.failure:
+                            raise
+                        if not errors:
+                            errors.append(exc)
+                    if self.child.poll() is not None and all(self.eof):
+                        break
+                    time.sleep(.02)
+                if self.child.poll() is None or not all(self.eof):
+                    self.failure = self.failure or 'observer exec did not stop/drain after stdin EOF'
+                    errors.append(RuntimeError(self.failure))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            try:
+                stop_group(self.child)
+                self.joined = True
+            except BaseException as exc:
+                errors.append(exc)
+                # A group-signal or Wait failure cannot skip the leader's Wait.
+                try:
+                    if self.child.returncode is None:
+                        self.child.kill()
+                except BaseException as signaling:
+                    errors.append(signaling)
+                try:
+                    remaining = 2 if deadline is None else min(2, max(.001, deadline-time.monotonic()))
+                    self.child.wait(timeout=remaining)
+                    self.joined = True
+                except BaseException as waiting:
+                    errors.append(waiting)
+            try:
+                if self.pipes_ready:
+                    self.poll()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                for pipe in (self.child.stdin, *self.pipes):
+                    try:
+                        pipe.close()
+                    except BaseException as exc:
+                        errors.append(exc)
+                        try:
+                            pipe.raw.close()
+                        except BaseException as closing:
+                            errors.append(closing)
+                if self.joined and all(pipe.closed for pipe in (self.child.stdin, *self.pipes)):
+                    self.stopped = time.monotonic()
+        if errors:
+            self.stop_error = errors[0]
+            for exc in errors[1:]:
+                self.stop_error.add_note('observer stop: '+str(exc))
+        # Evidence storage is fallible and owns none of the process resources.
+        try:
             self.record()
-        if self.failure:
-            raise RuntimeError(self.failure)
+        except BaseException as exc:
+            if self.stop_error is None:
+                self.stop_error = exc
+            else:
+                self.stop_error.add_note('observer record: '+str(exc))
+        if self.stop_error is not None:
+            raise self.stop_error

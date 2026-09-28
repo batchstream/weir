@@ -1,10 +1,14 @@
 """Real local pipes only; no Docker, Kubernetes or external network."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+
+import capacity_fixture as fixture
 
 from capacity_fixture import Observer
 
@@ -94,6 +98,176 @@ class ObserverLifecycle(unittest.TestCase):
                     observer.stop()
             self.assertLessEqual(sum(map(len, observer.streams)), 64 << 20)
             self.assertIsNotNone(observer.child.returncode)
+
+
+class ObserverFinalization(unittest.TestCase):
+    def setUp(self):
+        self.observers = []
+
+    def launch(self, root, code='import sys; print("{}",flush=True); sys.stdin.read()'):
+        observer = Observer.__new__(Observer)
+        self.observers.append(observer)
+        options = dict(root=root, role='weir', command=[sys.executable, '-c', code])
+        observer.__init__(options)
+        return observer
+
+    def tearDown(self):
+        # Inspect the real owner independently of the intentionally broken
+        # evidence file. Fallback cleanup also makes a failing test safe.
+        for observer in self.observers:
+            child = observer.child
+            reaped = False
+            try:
+                os.waitpid(child.pid, os.WNOHANG)
+            except ChildProcessError:
+                reaped = True
+            record = dict(test=self.id(), pid=child.pid, exit=child.returncode,
+                          joined=observer.joined, stopped=observer.stopped,
+                          pipes_closed=[p.closed for p in (child.stdin, child.stdout, child.stderr)],
+                          reaped_before_test_cleanup=reaped)
+            fixture.stop_group(child)
+            for pipe in (child.stdin, child.stdout, child.stderr):
+                pipe.close()
+            record['fallback_waited'] = child.returncode is not None
+            print('OWNER '+json.dumps(record), flush=True)
+
+    def assert_closed(self, observer):
+        self.assertTrue(observer.joined)
+        self.assertIsNotNone(observer.stopped)
+        self.assertTrue(all(p.closed for p in (observer.child.stdin, *observer.pipes)))
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(observer.child.pid, os.WNOHANG)
+
+    def test_record_and_data_files_fail_independently_without_leaks(self):
+        for name in ('weir-exec.json', 'weir.jsonl'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                observer = self.launch(root)
+                target = Path(root, name)
+                if target.exists():
+                    target.unlink()
+                target.mkdir()
+                time.sleep(.03)
+                with self.assertRaises(IsADirectoryError) as caught:
+                    observer.stop()
+                self.assert_closed(observer)
+                with patch.object(observer, 'record') as record, patch.object(observer, 'poll') as poll:
+                    with self.assertRaises(IsADirectoryError) as repeated:
+                        observer.stop()
+                self.assertIs(repeated.exception, caught.exception)
+                record.assert_not_called()
+                poll.assert_not_called()
+
+    def test_stdin_and_output_close_errors_still_release_every_pipe(self):
+        for name in ('stdin', 'stdout', 'stderr'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                observer = self.launch(root)
+                pipe = getattr(observer.child, name)
+                with patch.object(pipe, 'close', side_effect=OSError(name+' close failed')):
+                    with self.assertRaisesRegex(OSError, name+' close failed'):
+                        observer.stop()
+                self.assert_closed(observer)
+                self.assertEqual(observer.child.returncode, 0)
+
+    def test_final_drain_failure_cannot_skip_close_or_final_record(self):
+        with tempfile.TemporaryDirectory() as root:
+            observer = self.launch(root)
+            original = observer.poll
+            def poll():
+                if observer.joined:
+                    raise OSError('final drain failed')
+                return original()
+            with patch.object(observer, 'poll', side_effect=poll):
+                with self.assertRaisesRegex(OSError, 'final drain failed'):
+                    observer.stop()
+            self.assert_closed(observer)
+            self.assertTrue(json.loads(Path(root, 'weir-exec.json').read_text())['joined'])
+
+    def test_initialization_record_and_pipe_setup_failure_cleanup(self):
+        for mode in ('record', 'nonblocking'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
+                if mode == 'record':
+                    Path(root, 'weir-exec.json').mkdir()
+                    with self.assertRaises(IsADirectoryError):
+                        self.launch(root)
+                else:
+                    with patch.object(fixture.os, 'set_blocking', side_effect=OSError('pipe setup failed')):
+                        with self.assertRaisesRegex(OSError, 'pipe setup failed'):
+                            self.launch(root)
+                self.assert_closed(self.observers[-1])
+
+    def test_primary_nonzero_and_sample_errors_survive_record_and_close_errors(self):
+        for code, expected in [('import sys;print("{}");sys.exit(7)', 'exited'),
+                               ('print(\'{"errors":["sample failed"]}\')', 'sample error')]:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as root:
+                observer = self.launch(root, code)
+                observer.child.wait(timeout=3)
+                target = Path(root, 'weir-exec.json');target.unlink();target.mkdir()
+                with self.assertRaisesRegex(RuntimeError, expected) as polled:
+                    observer.poll()
+                self.assertTrue(polled.exception.__notes__)
+                with patch.object(observer.child.stdout, 'close', side_effect=OSError('close failed')):
+                    with self.assertRaisesRegex(RuntimeError, expected) as stopped:
+                        observer.stop()
+                self.assertIn('close failed', str(stopped.exception.__notes__))
+                self.assert_closed(observer)
+
+    def test_cancel_and_system_exit_during_stop_keep_first_error(self):
+        for error in (KeyboardInterrupt('cancelled'), SystemExit('exit requested')):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as root:
+                observer = self.launch(root)
+                with patch.object(observer.child.stdin, 'close', side_effect=error), patch.object(observer.child.stderr, 'close', side_effect=OSError('close failed')):
+                    with self.assertRaises(type(error)) as caught:
+                        observer.stop()
+                self.assertIs(caught.exception, error)
+                self.assertIn('close failed', str(error.__notes__))
+                self.assert_closed(observer)
+
+    def test_group_stop_failure_still_waits_and_releases_pipes(self):
+        with tempfile.TemporaryDirectory() as root:
+            observer = self.launch(root)
+            with patch.object(fixture, 'stop_group', side_effect=OSError('group signal failed')):
+                with self.assertRaisesRegex(OSError, 'group signal failed'):
+                    observer.stop()
+            self.assert_closed(observer)
+
+    def test_failed_kill_cannot_skip_leader_wait(self):
+        with tempfile.TemporaryDirectory() as root:
+            observer = self.launch(root, 'import sys,time;sys.stdin.read();time.sleep(.05)')
+            with patch.object(fixture, 'stop_group', side_effect=OSError('group failed')), patch.object(observer.child, 'kill', side_effect=OSError('kill failed')):
+                with self.assertRaises(RuntimeError) as caught:
+                    observer.stop(deadline=time.monotonic()+4)
+            self.assertIn('kill failed', str(caught.exception.__notes__))
+            self.assert_closed(observer)
+
+    def test_failed_wait_is_never_marked_joined_or_replayed(self):
+        with tempfile.TemporaryDirectory() as root:
+            observer = self.launch(root)
+            with patch.object(observer.child, 'wait', side_effect=OSError('wait failed')):
+                with self.assertRaisesRegex(OSError, 'wait failed'):
+                    observer.stop()
+            self.assertFalse(observer.joined)
+            self.assertIsNone(observer.stopped)
+            self.assertTrue(all(p.closed for p in (observer.child.stdin, *observer.pipes)))
+            with patch.object(observer, 'poll') as poll, patch.object(observer, 'record') as record:
+                with self.assertRaisesRegex(OSError, 'wait failed'):
+                    observer.stop()
+            poll.assert_not_called();record.assert_not_called()
+            # Explicit external recovery, not a false successful Observer Wait.
+            observer.child.wait(timeout=3)
+
+    def test_successful_stop_and_poll_are_read_only_when_repeated(self):
+        with tempfile.TemporaryDirectory() as root:
+            observer = self.launch(root)
+            observer.stop()
+            before = Path(root, 'weir-exec.json').read_bytes()
+            with patch.object(observer, 'record') as record:
+                observer.stop()
+                self.assertEqual(observer.poll(), [{}])
+                with self.assertRaisesRegex(RuntimeError, 'already stopped'):
+                    observer.write_input(b'no replay', time.monotonic()+1)
+            record.assert_not_called()
+            self.assertEqual(Path(root, 'weir-exec.json').read_bytes(), before)
+            self.assert_closed(observer)
 
 
 if __name__ == '__main__':

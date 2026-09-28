@@ -29,7 +29,8 @@ IMAGES = dict(
 FILES = tuple(dict.fromkeys(loop.FILES + ('scripts/eks_resource_preflight.py', 'scripts/eks_resource_preflight_test.py',
     'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py',
     'scripts/fixtures/eks-resource-admitted-job-m30.json', 'scripts/fixtures/eks-resource-release-m30r2.json')))
-BUDGET = dict(remote_seconds=900, cleanup_seconds=180, artifact_ready_seconds=420, upload_seconds=300,
+BUDGET = dict(remote_seconds=900, cleanup_seconds=300, artifact_ready_seconds=420, upload_seconds=300,
+              role_seconds=60, observer_eof_seconds=4, command_stop_seconds=4, namespace_reserve_seconds=45,
               observer_seconds=10, interval_seconds=2, samples=6, planned=0, document_mutations=0, empty_index_put=1,
               helper_volume_mib=64, helper_charged_to='bootstrap 256Mi ephemeral; aggregate remains 2560Mi')
 
@@ -198,33 +199,38 @@ class Run(loop.Run):
         require(role in ('weir', 'es'), 'observer role')
         total_deadline = self.deadline
         started = time.monotonic()
-        until = min(total_deadline, started+30)
-        require(until-started >= 18, 'observer/Stop/Wait budget')
+        until = min(total_deadline, started+BUDGET['role_seconds'])
+        closing = BUDGET['observer_eof_seconds']+BUDGET['command_stop_seconds']
+        require(until-started >= BUDGET['observer_seconds']+closing, 'observer/Stop/Wait budget')
         operation = dict(started_monotonic=started, deadline_monotonic=until)
         # Claim before the identity reads; a failed role is never replayed.
         with (self.root/(role+'-operation.json')).open('x') as output:
             json.dump(operation, output, indent=2)
-        self.deadline = until-8  # EOF drain (4s) and existing Stop/Wait (4s).
+        # Identity CLI owns its own Stop/Wait; no observer exists yet.
+        self.deadline = until-BUDGET['command_stop_seconds']
         observer = None
+        failure = None
         try:
             self.monitor()
-            require(time.monotonic()+18 <= until, 'observer/Stop/Wait budget after identity')
+            require(time.monotonic()+BUDGET['observer_seconds']+closing <= until, 'observer/Stop/Wait budget after identity')
+            self.deadline = until-closing
             container = 'weir' if role == 'weir' else 'elasticsearch'
             command = self.exec_command(container, ['/helper/qualification', '-mode', 'observe', '-role', role,
-                                       '-pid', '1' if role == 'weir' else 'java', '-seconds', '10'])
+                                       '-pid', '1' if role == 'weir' else 'java', '-seconds', str(BUDGET['observer_seconds'])])
             options = dict(root=self.root, role=role, command=command)
             observer = Observer(options)
             try:
                 while True:
                     require(time.monotonic() < self.deadline, 'observer deadline')
                     entries = observer.poll()
+                    require(time.monotonic() < self.deadline, 'observer deadline')
                     if observer.child.poll() is not None and all(observer.eof):
                         break
                     time.sleep(.02)
-                require(len(entries) == 8 and entries[-1].get('type') == 'observer_end' and
-                        entries[-1].get('role') == role and entries[-1].get('samples') == 6,
+                require(len(entries) == BUDGET['samples']+2 and entries[-1].get('type') == 'observer_end' and
+                        entries[-1].get('role') == role and entries[-1].get('samples') == BUDGET['samples'],
                         'six samples/normal observer_end')
-                require([s.get('sequence') for s in entries[1:-1]] == list(range(6)), 'sample sequence')
+                require([s.get('sequence') for s in entries[1:-1]] == list(range(BUDGET['samples'])), 'sample sequence')
             except BaseException as exc:
                 try:
                     observer.stop(deadline=until)
@@ -234,14 +240,23 @@ class Run(loop.Run):
             else:
                 observer.stop(deadline=until)
             # No child is alive while a control-plane call can block.
+            self.deadline = until-BUDGET['command_stop_seconds']
+            require(time.monotonic() < self.deadline, 'post-observation identity budget')
             self.monitor()
+            require(time.monotonic() <= until, 'observer role deadline')
         except BaseException as exc:
+            failure = exc
             operation['error'] = str(exc)
             raise
         finally:
             self.deadline = total_deadline
             operation.update(finished_monotonic=time.monotonic(), pid=observer.child.pid if observer else None)
-            self.save(role+'-operation.json', operation)
+            try:
+                self.save(role+'-operation.json', operation)
+            except BaseException as recording:
+                if failure is None:
+                    raise
+                failure.add_note('observer operation record: '+str(recording))
 
     def transfer(self, until):
         require(not (self.root/'release.json').exists(), 'release already attempted')
@@ -447,7 +462,7 @@ def execute(run, plan_sha256):
     run.pod_entry=None;run.pod_ready=False;run.runtime_evidence=False;run.job_create_attempted=False
     result=dict(profile=plan['profile'] if 'profile' in plan else 'm30-eks-no-load-resource-preflight',passed=False,network_isolation='unqualified',resource_evidence='partial/not-qualified',timing='not-run',candidate=None,
                              trials=0,seeds=0,planned=0,document_mutations=0,empty_index_put_completed=None,errors=[])
-    run.remote_started=time.monotonic();run.deadline=run.remote_started+900
+    run.remote_started=time.monotonic();run.deadline=run.remote_started+BUDGET['remote_seconds']
     try:
         run.check_node()
         require(not run.kube(['get','namespace',plan['namespace'],'--ignore-not-found','-o','name']).strip(),'namespace collision')
@@ -456,7 +471,7 @@ def execute(run, plan_sha256):
         management=dict(reserved=1,started_lower_bound=0,started_upper_bound=1,completed=None,document_mutations=0)
         run.save('bootstrap-management.json',management)
         total_deadline=run.deadline
-        until=min(total_deadline,time.monotonic()+420)
+        until=min(total_deadline,time.monotonic()+BUDGET['artifact_ready_seconds'])
         run.deadline=until-5  # Reserve local Stop/Wait inside startup allowance.
         run.job=run.create(run.template)
         while time.monotonic()<until:
@@ -491,7 +506,7 @@ def execute(run, plan_sha256):
     except BaseException as exc:
         result['errors'].append(str(exc))
         # Retain owned startup failures within the original overall window.
-        run.deadline=run.remote_started+900
+        run.deadline=run.remote_started+BUDGET['remote_seconds']
         if run.pod_entry and not isinstance(exc, (KeyboardInterrupt, SystemExit)):
             for container in ('bootstrap','elasticsearch','weir','qualification'):
                 try:
@@ -509,14 +524,16 @@ def execute(run, plan_sha256):
     finally:
         signal.signal(signal.SIGINT,signal.SIG_IGN);signal.signal(signal.SIGTERM,signal.SIG_IGN)
         result['fixture_seconds']=time.monotonic()-run.remote_started
-        cleanup_started=time.monotonic();run.deadline=cleanup_started+180;run.cleaning=True
+        cleanup_started=time.monotonic()
+        cleanup_deadline=cleanup_started+BUDGET['cleanup_seconds']
+        run.deadline=cleanup_deadline-BUDGET['namespace_reserve_seconds'];run.cleaning=True
         if run.pod_entry:
             try:
                 pod=run.selected_object('Pod',run.pod_entry['name'])
                 identity=dict(job=run.job,template=run.template,pod_uid=run.pod_entry['uid'])
                 common.pod_identity(pod,identity);run.save('cleanup-before-pod.json',pod)
             except BaseException as exc:result['errors'].append('final Pod: '+str(exc))
-        result['cleanup']=run.cleanup(deadline=run.deadline)
+        result['cleanup']=run.cleanup(deadline=cleanup_deadline)
         result['cleanup_seconds']=time.monotonic()-cleanup_started
         result['remote_helpers_closed_by']='namespace absence' if result['cleanup']['confirmed'] else 'unknown; inspect exact owned UIDs'
         result['passed'] &= result['cleanup']['confirmed']

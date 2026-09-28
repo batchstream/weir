@@ -13,7 +13,7 @@ import tarfile
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import eks_resource_preflight as pre
 from capacity_artifact import application_binary
@@ -523,7 +523,10 @@ class Lifecycle(unittest.TestCase):
             def command(args,timeout=25):return 'synthetic' if args[:2]==['git','rev-parse'] else ''
             def transfer(until):calls.append('transfer failed');raise ValueError('injected upload failure')
             def cleanup(**kwargs):
-                calls.append('cleanup');self.assertLessEqual(run.deadline-time.monotonic(),180)
+                calls.append('cleanup')
+                self.assertEqual(kwargs['deadline']-run.deadline, 45)
+                self.assertLessEqual(kwargs['deadline']-time.monotonic(), 300)
+                self.assertGreater(kwargs['deadline']-time.monotonic(), 295)
                 result=dict(confirmed=True,resources=[])
                 return result
             with patch.object(pre,'scope_check'),patch.object(pre,'verified_helper',return_value=p['helper']),patch.object(run,'run',side_effect=command),patch.object(run,'kube',side_effect=kube),patch.object(run,'check_node'),patch.object(pre.loop,'namespace_start',side_effect=start),patch.object(run,'create',return_value=job),patch.object(run,'current_pod',side_effect=current),patch.object(run,'transfer',side_effect=transfer),patch.object(run,'selected_object',return_value=pod),patch.object(run,'cleanup',side_effect=cleanup):
@@ -679,6 +682,210 @@ class Observation(unittest.TestCase):
             saved=json.loads((run.root/'weir-exec.json').read_text())
             self.assertEqual(saved['exit'],0)
             self.assertIsNotNone(saved['stopped_monotonic'])
+
+
+
+class ObservationBudget(unittest.TestCase):
+    def replay(self, root, **scenario):
+        # Durations of the saved successful identity GETs 106-108 / 109-111.
+        # All other phase times are controlled simulation, not native evidence.
+        clock = [1000.0]
+        events = []
+        run = pre.Run(root, pre.loop.TARGET)
+        total = 1000+scenario.get('remaining', 900)
+        run.deadline = total
+        monitors = [scenario.get('before', 11.863840415957384), scenario.get('after', 8.571337417000905)]
+        owner = Mock()
+        owner.child.pid = 12345
+        owner.child.poll.return_value = 0
+        owner.eof = [True, True]
+        owner.joined = False
+        entries = [dict(type='identity', role='weir')]
+        entries += [dict(type='sample', sequence=i) for i in range(6)]
+        entries.append(dict(type='observer_end', role='weir', samples=6))
+        def monitor():
+            if len(monitors) == 1:
+                self.assertTrue(owner.joined)
+            duration = monitors.pop(0)
+            events.append(dict(phase='identity', start=clock[0], deadline=run.deadline, seconds=duration))
+            pre.require(clock[0] < run.deadline, 'simulated identity deadline')
+            clock[0] = min(clock[0]+duration, run.deadline)
+            pre.require(clock[0] < run.deadline, 'simulated identity deadline')
+        def create(options):
+            events.append(dict(phase='exec', start=clock[0], seconds=2))
+            clock[0] += 2
+            return owner
+        def poll():
+            seconds = scenario.get('sample', 10)
+            completed = clock[0]+seconds < run.deadline
+            events.append(dict(phase='sample', start=clock[0], seconds=seconds, completed=completed))
+            clock[0] = min(clock[0]+seconds, run.deadline)
+            if scenario.get('cancel'):
+                raise KeyboardInterrupt('simulated cancellation')
+            if not completed:
+                owner.child.poll.return_value = None
+                owner.eof = [False, False]
+                return []
+            return entries
+        def stop(*, deadline):
+            events.append(dict(phase='close', start=clock[0], deadline=deadline, seconds=1))
+            clock[0] += 1
+            owner.joined = True
+            owner.child.poll.return_value = 0
+            owner.eof = [True, True]
+        owner.poll.side_effect = poll
+        owner.stop.side_effect = stop
+        outcome = None
+        budgets = dict(pre.BUDGET, role_seconds=scenario.get('role', 60))
+        with patch.object(pre, 'BUDGET', budgets), patch.object(pre.time, 'monotonic', side_effect=lambda:clock[0]), patch.object(run, 'monitor', side_effect=monitor), patch.object(run, 'exec_command', return_value=['unused']), patch.object(pre, 'Observer', side_effect=create) as created:
+            try:
+                run.observe('weir')
+            except BaseException as exc:
+                outcome = type(exc).__name__+': '+str(exc)
+        self.assertEqual(run.deadline, total)
+        if created.called:
+            owner.stop.assert_called_once()
+            self.assertTrue(owner.joined)
+        result = dict(scenario=scenario, outcome=outcome, elapsed=clock[0]-1000,
+                      owner_created=created.called, joined=owner.joined, events=events,
+                      simulation=True, native_qualification=False)
+        print('BUDGET '+json.dumps(result), flush=True)
+        return result
+
+    def test_recorded_get_times_old_budget_rejects_new_budget_completes(self):
+        for seconds in (30, 60):
+            with self.subTest(seconds=seconds), tempfile.TemporaryDirectory() as root:
+                result = self.replay(Path(root), role=seconds)
+                if seconds == 30:
+                    self.assertIsNotNone(result['outcome'])
+                else:
+                    self.assertIsNone(result['outcome'])
+                    self.assertAlmostEqual(result['elapsed'], 33.43517783295829)
+                    self.assertEqual([e['phase'] for e in result['events']], ['identity','exec','sample','close','identity'])
+                    self.assertEqual(result['events'][-1]['deadline'], 1056)
+
+    def test_overrun_short_main_slow_identity_and_cancel_remain_rejected(self):
+        cases = [dict(sample=61), dict(remaining=17), dict(remaining=35),
+                 dict(before=43), dict(before=57), dict(after=40), dict(cancel=True)]
+        for scenario in cases:
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as root:
+                result = self.replay(Path(root), **scenario)
+                self.assertIsNotNone(result['outcome'])
+                self.assertLessEqual(result['elapsed'], min(scenario.get('remaining', 900), 60))
+                if scenario in (dict(remaining=17), dict(before=43), dict(before=57)):
+                    self.assertFalse(result['owner_created'])
+
+    def test_joined_observer_does_not_keep_eof_reserve_during_post_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            result = self.replay(Path(root), after=30)
+            self.assertIsNone(result['outcome'])
+            self.assertGreater(result['elapsed'], 52)
+            self.assertLess(result['elapsed'], 60)
+
+    def test_full_fixture_cleanup_uses_same_300_second_start_and_45_second_reserve(self):
+        from eks_pacing_test import CleanupReplay
+        real_clock = time.monotonic
+        for spent in (0, 255, 300):
+            with self.subTest(spent=spent):
+                replay = CleanupReplay()
+                replay.setUp()
+                try:
+                    started = real_clock()
+                    deadline = started+pre.BUDGET['cleanup_seconds']
+                    # Prior local cleanup-phase identity work consumes the same
+                    # window. This is the full retained six-object fixture.
+                    with patch.object(pre.time, 'monotonic', side_effect=lambda:real_clock()+spent):
+                        result = replay.run.cleanup(deadline=deadline)
+                    budget = json.loads((replay.root/'cleanup-budget.json').read_text())
+                    self.assertEqual(budget['deadline'], deadline)
+                    self.assertEqual(budget['objects_deadline'], started+255)
+                    self.assertEqual(budget['namespace_reserve_seconds'], 45)
+                    if spent:
+                        self.assertFalse(result['confirmed'])
+                        self.assertFalse(any('delete' in c for c in replay.calls()))
+                    else:
+                        self.assertTrue(result['confirmed'], result)
+                        kinds = [r['resource']['kind'] for r in result['resources']]
+                        self.assertEqual(kinds, ['Job','Pod','ConfigMap','NetworkPolicy','ResourceQuota','Namespace'])
+                    print('CLEANUP_BUDGET '+json.dumps(dict(started=started,spent=spent,budget=budget,confirmed=result['confirmed'],simulation=True)),flush=True)
+                finally:
+                    replay.doCleanups()
+
+    def test_frozen_budget_and_input_drift_reject_before_invocation(self):
+        for mode in ('hash', 'budget', 'input'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root:
+                root = Path(root)/'m30'/'native';root.mkdir(parents=True)
+                p = plan()
+                p.update(profile='m30-eks-no-load-resource-preflight', evidence_root=str(root.resolve()),
+                         resource_preflight=dict(node=p['node'],started=1000,deadline=1120,recovery=None))
+                if mode == 'budget':
+                    p['budgets'] = dict(pre.BUDGET, role_seconds=61)
+                if mode == 'input':
+                    p['tool_inputs'] = dict(p['tool_inputs'], **{'scripts/eks_resource_preflight.py':'drift'})
+                (root/'plan.json').write_text(json.dumps(p))
+                sha = '0'*64 if mode == 'hash' else pre.common.digest(root/'plan.json')
+                run = pre.Run(root, pre.loop.TARGET)
+                with patch.object(pre, 'scope_check'), patch.object(pre, 'verified_helper', return_value=p['helper']), patch.object(run, 'run') as command:
+                    with self.assertRaises(ValueError):
+                        pre.execute(run, sha)
+                command.assert_not_called()
+                self.assertFalse((root.parent/'invocation.json').exists())
+
+    def test_observation_disk_failure_ends_owner_before_diagnostics(self):
+        for name in ('weir.jsonl', 'weir-exec.json'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                run = pre.Run(Path(root), pre.loop.TARGET)
+                owners = []
+                original = Observer.poll
+                def poll(observer):
+                    if not owners:
+                        owners.append(observer)
+                        target = Path(root, name)
+                        if target.exists():
+                            target.unlink()
+                        target.mkdir()
+                    return original(observer)
+                command = [sys.executable, '-c', 'import sys;print("{}",flush=True);sys.stdin.read()']
+                with patch.object(run, 'monitor') as monitor, patch.object(run, 'exec_command', return_value=command), patch.object(Observer, 'poll', poll):
+                    with self.assertRaises(IsADirectoryError):
+                        run.observe('weir')
+                self.assertEqual(monitor.call_count, 1)
+                observer = owners[0]
+                self.assertTrue(observer.joined)
+                self.assertTrue(all(p.closed for p in (observer.child.stdin, *observer.pipes)))
+                with self.assertRaises(ChildProcessError):
+                    os.waitpid(observer.child.pid, os.WNOHANG)
+                print('OWNER '+json.dumps(dict(test=self.id(),fault=name,pid=observer.child.pid,exit=observer.child.returncode,joined=observer.joined,pipes_closed=[p.closed for p in (observer.child.stdin,*observer.pipes)])),flush=True)
+
+    def test_cancel_survives_both_close_and_operation_record_errors(self):
+        for error in (KeyboardInterrupt('cancelled'), SystemExit('exit requested')):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as root:
+                run = pre.Run(Path(root), pre.loop.TARGET)
+                owners = []
+                original_poll = Observer.poll
+                original_stop = Observer.stop
+                def poll(observer):
+                    if observer.stop_requested is None:
+                        owners.append(observer)
+                        raise error
+                    return original_poll(observer)
+                def stop(observer, deadline=None):
+                    with patch.object(observer.child.stdout, 'close', side_effect=OSError('close failed')):
+                        return original_stop(observer, deadline)
+                command = [sys.executable, '-c', 'import sys;sys.stdin.read()']
+                with patch.object(run, 'monitor'), patch.object(run, 'exec_command', return_value=command), patch.object(Observer, 'poll', poll), patch.object(Observer, 'stop', stop), patch.object(run, 'save', side_effect=OSError('operation record failed')):
+                    with self.assertRaises(type(error)) as caught:
+                        run.observe('weir')
+                self.assertIs(caught.exception, error)
+                self.assertIn('close failed', str(error.__notes__))
+                self.assertIn('operation record failed', str(error.__notes__))
+                self.assertEqual(len(owners), 1)
+                observer = owners[0]
+                self.assertTrue(observer.joined)
+                self.assertTrue(all(p.closed for p in (observer.child.stdin, *observer.pipes)))
+                with self.assertRaises(ChildProcessError):
+                    os.waitpid(observer.child.pid, os.WNOHANG)
+                print('OWNER '+json.dumps(dict(test=self.id(),pid=observer.child.pid,exit=observer.child.returncode,joined=observer.joined,pipes_closed=[p.closed for p in (observer.child.stdin,*observer.pipes)])),flush=True)
 
 
 if __name__=='__main__':unittest.main()
