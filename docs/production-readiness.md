@@ -35,7 +35,15 @@ full-calibration/24h=not-run，CNI隔离仍unqualified；统筹已独立复现�
 可见cgroup资源边界通过，但CPU仍共享、完整资源资格partial；CNI agent仍disabled，网络隔离unqualified。
 generator-ready-for-next-investigation=true仅指统筹可评估下一步；DB candidate=null、容量/24h仍not-run。
 全部17个自有对象按UID回收、namespace另行确认不存在，cleanup=true；三次旧失败未改写。
-本轮短时计时证据待统筹独立验收，不增加整体生产资格，也不授权自行部署DB/服务或继续下一阶段。
+本轮短时计时证据已获统筹有限独立验收，不增加整体生产资格。
+[M26](milestone-26.md)的单Pod回环短闭环在写入前停止：34节点快照按沿用的M25保守重复计账，
+最大CPU余量5.195低于要求7；spec-only诊断为7.005，不能把保守入口阻塞说成实际CPU耗尽。
+另确认准确产品启动前要求ES就绪且索引已存在，三普通容器的有界启动接线尚未实现/资格化。
+本轮仅报告，无产品/helper/入口改动；plan未冻结、native invocation/namespace/Job/Pod/DBmutation均0。
+准确ES manifest/config经匿名只读校验，但实际imageID/readiness/回环监听/RPC/DB审计/资源均not-run；
+candidate=null，完整校准/过载/恢复/24h仍not-run，CNI agent仍disabled、网络隔离unqualified。
+本机缺索引启动反例与正向控制的SIGTERM退出断言失败均保留；默认test/race/vet及脚本回归通过。
+无自有集群资源，所有本地子进程已Wait；M26待统筹独立复核，不自动续开测试。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
