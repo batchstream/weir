@@ -92,8 +92,16 @@ CNI/跨节点/容量/过载/恢复/24h、startup signal窗口与其他资格缺�
 但共享清理将本Pod的只读PodMetrics视图判为外来对象，**原入口passed=false/cleanup=false**；
 独立恢复清理在原180秒窗口耗尽，首次Job UID删除响应不确定；后续只读确认Job仍存在。
 Job/Pod随后按原900秒deadline停止，Pod已不存在；仍剩NS/Quota/Policy/ConfigMap/Job共5个
-已核验UID对象，未获追加清理授权，**namespace未回收**，不能把工作负载停止当作cleanup=true。
+已核验UID对象；截至原阶段收口未获追加清理授权，**当时namespace未回收**，工作负载停止不等于cleanup=true。
 原失败和冻结计划不改写，未重跑测试；CNI/容量/跨节点/24h与signal窗口仍未资格，candidate=null。
+[M26R5C](milestone-26-remediation-5-cleanup.md)实现 `7655f561a0e51d7ad9c4b620064d915ca40d5a50`：
+共享清理按正式指标 API 语义及实际 get/list discovery 区分只读 PodMetrics，持久对象仍完整盘点；
+真实原始 44 行清单回放及身份/foreign/输出/超时拒绝通过。quota 保留到最后完整检查，NS 最后删除。
+一次独立清理窗口于 2026-09-28 08:36:23Z—08:38:32Z 完成，128.940秒；仅五个原登记 UID
+各一次条件 DELETE，独立 GET 确认 namespace、Job、原 Pod 不存在，cleanup=true；44条CLI全部结束。
+本次没有创建对象/负载或 SDK/ES/Go 重跑，200产品输入及1073/189/3120份原证据 hash 不变。
+全部 Python 普通140通过，优化115通过/25既有skip；清理后仅在 `fa89628` 补回逐对象失败记录。原 M26R5 及原180秒恢复仍failed，后续回收不倒写原成功。
+candidate=null、resource partial、CNI/容量/跨节点/完整平台/24h及启动signal窗口门槛保持。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
