@@ -12,7 +12,7 @@ M21状态更正：**M21R已获统筹有限独立验收**：三个归属根因修
 变化时间早于首次fixture Docker修改，环境原因未证实，不能称全部检查通过。
 统筹193mutation=180APPLIED/13UNKNOWN，187version1，9owner回收；CP events.max1429/OOM0
 仍是压力而非余量。详情见[M21R](milestone-21-remediation.md)。
-原[M22](milestone-22.md)**独立审查未通过**：最低50ops/s测量431/3000迟到丢弃、2569成功、candidate=null，确认/直连/过载恢复未运行。原失败及完整证据保留，不是Weir吞吐上限证据。[M22R](milestone-22-remediation.md)仅补校准工具可信性和有限原生发生器预检，执行证据待独立验收；维护入口使用version2计划，尚不构成容量或24h资格。
+原[M22](milestone-22.md)**独立审查未通过**：最低50ops/s测量431/3000迟到丢弃、2569成功、candidate=null，确认/直连/过载恢复未运行。原失败及完整证据保留，不是Weir吞吐上限证据。[M22R](milestone-22-remediation.md)仅补校准工具可信性和有限原生发生器预检，执行证据待独立验收；维护入口使用version2计划。M22R原生timing-only50档1000计划/143丢弃、wake p99=8.9ms，按冻结规则NO-GO、candidate=null；仅跑原方法三点各20s，完整ES/Weir校准及后续路径not-run。工具/计时证据待独立验收，不构成容量或24h资格。
 
 ## 目标来源与范围
 

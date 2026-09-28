@@ -1,0 +1,361 @@
+{
+  "schema_version": 2,
+  "milestone": "M22R",
+  "status": "NO-GO; execution evidence pending independent acceptance",
+  "candidate_rps": null,
+  "qualified": false,
+  "generator_qualified": false,
+  "chat_id": "01a0e53e-b2dc-7532-a5ad-e935ec3925a3",
+  "baseline": "7806c5ff679f51ebd364640116677f5c905ce525",
+  "native_source": "3c78a0aad16e695aa4daf26177ce5a3bca10ee87",
+  "implementation_source": "cc992f71a2d78cd86bc4eeea2fba1fc45fa183e8",
+  "profile_path": "scripts/capacity-plan-m22r.json",
+  "profile_sha256": "766534e4dba448becae84ccb50bc94179b563bf940a3f9be569375b344370a8b",
+  "expanded_plan_path": "docs/calibration-plan-m22r.json",
+  "expanded_plan_sha256": "f2c429dc82125a91da85d8f55733e476008f928ffa3d2c8d4a1ee935de6c4830",
+  "client_sha256": "46605874af06709cd19fe6617cd6220b2dc9a76d398e094785be7b3f6deebd9f",
+  "product_source": "315819fcd2c0cae1c22604e85ccdb5bb9291f585",
+  "product_binary_sha256": "9def37fc9f4d552d35af552f87f86ba0b45bd2bdcf948114237fb5d312c97a32",
+  "product_image_id": "sha256:caa699e6ca172cbfa24ed4d311f4cb346817a354b05df52601abd954edcb4dab",
+  "native_evidence_root": "/Users/liran/Projects/liran/go/weir/.testdata/m22r/native-pacing",
+  "native_manifest_sha256": "6aa562eb4bf2ce0f1ae4d62a6066e2af466ccada8ee64110d102997d4ea2731a",
+  "native_files_verified": 145,
+  "native_bytes": 1203069,
+  "native_timing_probe_seconds": 60,
+  "native_diagnostic_elapsed_seconds": 60.4357399159926,
+  "native_invocation_seconds": 67.58239154203329,
+  "native_invocation_exit_code": 0,
+  "native_diagnostic_probes": [
+    {
+      "rate": 50,
+      "planned": 1000,
+      "started": 857,
+      "dropped": 143,
+      "reasons": [
+        "all: errors/drop/unknown",
+        "read: errors/drop/unknown",
+        "put: errors/drop/unknown"
+      ],
+      "timing": {
+        "wake": {
+          "p50_us": 1400,
+          "p95_us": 6700,
+          "p99_us": 8900,
+          "max_ns": 9604212
+        },
+        "decision": {
+          "p50_us": 1400,
+          "p95_us": 6700,
+          "p99_us": 8900,
+          "max_ns": 9673337
+        },
+        "construct": {
+          "p50_us": 100,
+          "p95_us": 100,
+          "p99_us": 100,
+          "max_ns": 472000
+        },
+        "handoff": {
+          "p50_us": 100,
+          "p95_us": 100,
+          "p99_us": 100,
+          "max_ns": 360417
+        },
+        "worker_start": {
+          "p50_us": 1100,
+          "p95_us": 4300,
+          "p99_us": 4900,
+          "max_ns": 5014342
+        },
+        "lag": {
+          "p50_us": 1100,
+          "p95_us": 4400,
+          "p99_us": 5000,
+          "max_ns": 5031592
+        }
+      },
+      "cpu": {
+        "max_interval_fraction": 0.18920726796172171,
+        "quota_fraction": 0.011260919509690066,
+        "throttled_seconds": 0.0
+      },
+      "peak": {
+        "rss_bytes": 17883136,
+        "cgroup_bytes": 18382848,
+        "fd": 7,
+        "owner": null,
+        "connections": 0,
+        "tcp_connections": 0
+      },
+      "samples": 12,
+      "gomaxprocs": 1
+    },
+    {
+      "rate": 200,
+      "planned": 4000,
+      "started": 3998,
+      "dropped": 2,
+      "reasons": [
+        "all: errors/drop/unknown",
+        "read: errors/drop/unknown"
+      ],
+      "timing": {
+        "wake": {
+          "p50_us": 800,
+          "p95_us": 1800,
+          "p99_us": 2100,
+          "max_ns": 5297922
+        },
+        "decision": {
+          "p50_us": 800,
+          "p95_us": 1800,
+          "p99_us": 2100,
+          "max_ns": 5314297
+        },
+        "construct": {
+          "p50_us": 100,
+          "p95_us": 100,
+          "p99_us": 100,
+          "max_ns": 865833
+        },
+        "handoff": {
+          "p50_us": 100,
+          "p95_us": 100,
+          "p99_us": 100,
+          "max_ns": 291000
+        },
+        "worker_start": {
+          "p50_us": 900,
+          "p95_us": 1900,
+          "p99_us": 2100,
+          "max_ns": 4752633
+        },
+        "lag": {
+          "p50_us": 900,
+          "p95_us": 1900,
+          "p99_us": 2100,
+          "max_ns": 4755299
+        }
+      },
+      "cpu": {
+        "max_interval_fraction": 0.10724406207174514,
+        "quota_fraction": 0.02108952176870427,
+        "throttled_seconds": 0.0
+      },
+      "peak": {
+        "rss_bytes": 18939904,
+        "cgroup_bytes": 18366464,
+        "fd": 7,
+        "owner": null,
+        "connections": 0,
+        "tcp_connections": 0
+      },
+      "samples": 12,
+      "gomaxprocs": 1
+    },
+    {
+      "rate": 800,
+      "planned": 16000,
+      "started": 15988,
+      "dropped": 12,
+      "reasons": [
+        "all: errors/drop/unknown",
+        "read: errors/drop/unknown",
+        "put: errors/drop/unknown"
+      ],
+      "timing": {
+        "wake": {
+          "p50_us": 700,
+          "p95_us": 1400,
+          "p99_us": 1600,
+          "max_ns": 13014465
+        },
+        "decision": {
+          "p50_us": 700,
+          "p95_us": 1400,
+          "p99_us": 1600,
+          "max_ns": 13042548
+        },
+        "construct": {
+          "p50_us": 100,
+          "p95_us": 100,
+          "p99_us": 100,
+          "max_ns": 294458
+        },
+        "handoff": {
+          "p50_us": 100,
+          "p95_us": 100,
+          "p99_us": 100,
+          "max_ns": 330834
+        },
+        "worker_start": {
+          "p50_us": 700,
+          "p95_us": 1400,
+          "p99_us": 1600,
+          "max_ns": 4784131
+        },
+        "lag": {
+          "p50_us": 700,
+          "p95_us": 1400,
+          "p99_us": 1600,
+          "max_ns": 4785506
+        }
+      },
+      "cpu": {
+        "max_interval_fraction": 0.20237614555420963,
+        "quota_fraction": 0.040542515715753256,
+        "throttled_seconds": 0.0
+      },
+      "peak": {
+        "rss_bytes": 21356544,
+        "cgroup_bytes": 18276352,
+        "fd": 7,
+        "owner": null,
+        "connections": 0,
+        "tcp_connections": 0
+      },
+      "samples": 12,
+      "gomaxprocs": 1
+    }
+  ],
+  "stop_reason": "native50 wake p99 already exceeds5ms; no supported post-wake correction",
+  "complete_calibration_invocations": 0,
+  "actual_database_mutations": 0,
+  "gates": {
+    "original_M22_independent_acceptance": "failed",
+    "four_original_negative_cases_after_remediation": "passed",
+    "missing_metrics_full_evaluator_negative_case": "passed",
+    "new_resource_timing_budget_cleanup_offline_tests": "passed",
+    "default_test_race_vet_and_integration_vet": "passed",
+    "capacity_race_three_rounds_normal_and_integration": "passed",
+    "native_original_50_generator_qualification": "failed",
+    "native_original_200_generator_qualification": "failed",
+    "native_original_800_generator_qualification": "failed",
+    "native_revised_policy_diagnostics": "not-run",
+    "native_full_ES_Weir_capacity_search": "not-run",
+    "native_stability_three_confirmations_and_fallback": "not-run",
+    "native_direct_three_points_and_two_confirmations": "not-run",
+    "native_overload_and_recovery": "not-run",
+    "native_product_mutation_id_version_payload_audit": "not-run",
+    "native_client_sample_coverage_identity_limits": "passed",
+    "native_new_Weir_ES_resource_validator_positive_path": "not-run",
+    "product_70_inputs_OCI_binary_identity": "passed",
+    "owned_fixture_cleanup_and_inventory_comparison": "passed",
+    "M22R_independent_acceptance": "not-run",
+    "24h_and_remaining_platform_backend_profiles": "not-run"
+  },
+  "cleanup_confirmed": true,
+  "cleanup_resources": [
+    {
+      "resource": "weir-m22-r-pacing-20260928-client: diagnostics",
+      "clean": true
+    },
+    {
+      "resource": "weir-m22-r-pacing-20260928-client",
+      "clean": true
+    },
+    {
+      "resource": "network",
+      "clean": true
+    },
+    {
+      "resource": "client image tag",
+      "clean": true
+    },
+    {
+      "resource": "generated build/import intermediates",
+      "clean": true
+    }
+  ],
+  "inventory_difference": {
+    "default_bridge_changed": false,
+    "bridge_before": {
+      "Id": "8c91ae6437d86138f2625e25a3b80016b714c491fc2f8828eb6a2ea441de581e",
+      "Name": "bridge",
+      "Created": "2026-09-28T00:06:27.502131333Z",
+      "Driver": "bridge",
+      "IPAM": {
+        "Config": [
+          {
+            "Gateway": "172.17.0.1",
+            "Subnet": "172.17.0.0/16"
+          }
+        ],
+        "Driver": "default",
+        "Options": null
+      }
+    },
+    "bridge_after": {
+      "Id": "8c91ae6437d86138f2625e25a3b80016b714c491fc2f8828eb6a2ea441de581e",
+      "Name": "bridge",
+      "Created": "2026-09-28T00:06:27.502131333Z",
+      "Driver": "bridge",
+      "IPAM": {
+        "Config": [
+          {
+            "Gateway": "172.17.0.1",
+            "Subnet": "172.17.0.0/16"
+          }
+        ],
+        "Driver": "default",
+        "Options": null
+      }
+    },
+    "nondefault_changed": false
+  },
+  "native_tool_inputs": {
+    "internal/testutil/testcapacity/audit.go": "9f1f7048ff3e55401f66dec6ca477280bb47d57ce6820197113f0ab6e54fdcdf",
+    "internal/testutil/testcapacity/audit_test.go": "ba9298d38d026c342d47c9cba6446b07241346d863b99ba3d01c6baeada48282",
+    "internal/testutil/testcapacity/client.go": "e1af1e4762fc5d7789c5e318769a014c278b4c35edbba30208a6b29a395f0a7b",
+    "internal/testutil/testcapacity/client_test.go": "441b0f892fb7368186441544818b4a19a88e461b774c1b9f90e0cfafe7c7d7d2",
+    "internal/testutil/testcapacity/document.go": "91fd5c903c5db4c1445a02c936467bd8fa2a7b79511affe028774a54e68af9ca",
+    "internal/testutil/testcapacity/document_test.go": "eab2cb3fd0a8852175324a7d7f3640b583669f980788306bc99a8dcc25be2e07",
+    "internal/testutil/testcapacity/engine.go": "3ef770b3299f22bf9c3f6611c0096a0b37e4f57135fc88a28219a6325d61a026",
+    "internal/testutil/testcapacity/engine_test.go": "b9186994e4e92a3fbb6ebe7054cc85d3eb6c07cfea621591ccd98ad96f96e965",
+    "internal/testutil/testcapacity/histogram.go": "45f736a736f022a721ef2f6d624dbaf268fbab3f7d9f7abbcf0622302ffb72ae",
+    "internal/testutil/testcapacity/histogram_test.go": "03f49c4c70dbc96e8457a33b1527335f2a111fb673d8611a9335fa0caabd15c7",
+    "internal/testutil/testcapacity/main.go": "57d3fba030e40338a13723837713988f22eeade0009f117ab3f54f69d2d10792",
+    "internal/testutil/testcapacity/observe.go": "adebec1ebfbd06bc093cc16a453f668d982cdca6fcb81b2cbaf915afbaab67e4",
+    "internal/testutil/testcapacity/pacing.go": "1d0a9ed939cd432eec723058467f1b83097f73f25b0dfb5909823959e9eb477d",
+    "scripts/test-capacity.py": "10cd4c9cd5c5cc6ec69603ccbd6954bd37627ee465ed87d90e8cd7433e35ea12",
+    "scripts/capacity_fixture.py": "700ae781ed11b6e298ef70beca25a89d627ca85b62130f2174bc135d059126e5",
+    "scripts/capacity_report.py": "7e4bbbc3e72f70e8b8f8ff3f8a7147a10413b6457c9286afa0b218581c1f30f3",
+    "scripts/capacity_artifact.py": "da382ed8eafd859483825138ddfb3ba75806bff02cc65f802cafb81762697c68",
+    "scripts/capacity_contract.py": "72e423433fec6a0c25f0ffeeb328f32f979252d7dd737fb55570033f95c38c72",
+    "scripts/capacity_pacing.py": "a02344e3e3f0e7aa7090fe2075d45398f5d21768a9e75f5aa03ace48206e449d",
+    "scripts/package.py": "5d3348b57abcf8d57e419ecf4eb5b5bf1a513f058b30902df98a930d6a286e81",
+    "scripts/capacity-plan-m22r.json": "766534e4dba448becae84ccb50bc94179b563bf940a3f9be569375b344370a8b"
+  },
+  "delivery_tool_inputs": {
+    "internal/testutil/testcapacity/audit.go": "9f1f7048ff3e55401f66dec6ca477280bb47d57ce6820197113f0ab6e54fdcdf",
+    "internal/testutil/testcapacity/audit_test.go": "ba9298d38d026c342d47c9cba6446b07241346d863b99ba3d01c6baeada48282",
+    "internal/testutil/testcapacity/client.go": "e1af1e4762fc5d7789c5e318769a014c278b4c35edbba30208a6b29a395f0a7b",
+    "internal/testutil/testcapacity/client_test.go": "441b0f892fb7368186441544818b4a19a88e461b774c1b9f90e0cfafe7c7d7d2",
+    "internal/testutil/testcapacity/document.go": "91fd5c903c5db4c1445a02c936467bd8fa2a7b79511affe028774a54e68af9ca",
+    "internal/testutil/testcapacity/document_test.go": "eab2cb3fd0a8852175324a7d7f3640b583669f980788306bc99a8dcc25be2e07",
+    "internal/testutil/testcapacity/engine.go": "3ef770b3299f22bf9c3f6611c0096a0b37e4f57135fc88a28219a6325d61a026",
+    "internal/testutil/testcapacity/engine_test.go": "b9186994e4e92a3fbb6ebe7054cc85d3eb6c07cfea621591ccd98ad96f96e965",
+    "internal/testutil/testcapacity/histogram.go": "45f736a736f022a721ef2f6d624dbaf268fbab3f7d9f7abbcf0622302ffb72ae",
+    "internal/testutil/testcapacity/histogram_test.go": "03f49c4c70dbc96e8457a33b1527335f2a111fb673d8611a9335fa0caabd15c7",
+    "internal/testutil/testcapacity/main.go": "57d3fba030e40338a13723837713988f22eeade0009f117ab3f54f69d2d10792",
+    "internal/testutil/testcapacity/observe.go": "adebec1ebfbd06bc093cc16a453f668d982cdca6fcb81b2cbaf915afbaab67e4",
+    "internal/testutil/testcapacity/pacing.go": "1d0a9ed939cd432eec723058467f1b83097f73f25b0dfb5909823959e9eb477d",
+    "scripts/test-capacity.py": "6c9593c101de1d092c6a5c052ad64b0c3b4035f652a2cb5804f96914cdcade43",
+    "scripts/capacity_fixture.py": "51adf506ea278a4b7c856a2280fa8e70dbbc2cf3b7038538201a8f4f5148aaba",
+    "scripts/capacity_report.py": "565b18009e4ea096812e42e160dc56107776ec945f497e3c7aff2fb26194c936",
+    "scripts/capacity_artifact.py": "da382ed8eafd859483825138ddfb3ba75806bff02cc65f802cafb81762697c68",
+    "scripts/capacity_contract.py": "72e423433fec6a0c25f0ffeeb328f32f979252d7dd737fb55570033f95c38c72",
+    "scripts/capacity_pacing.py": "a02344e3e3f0e7aa7090fe2075d45398f5d21768a9e75f5aa03ace48206e449d",
+    "scripts/package.py": "5d3348b57abcf8d57e419ecf4eb5b5bf1a513f058b30902df98a930d6a286e81",
+    "scripts/capacity-plan-m22r.json": "766534e4dba448becae84ccb50bc94179b563bf940a3f9be569375b344370a8b"
+  },
+  "post_native_change": "Python-only complete Guard label semantics and process affinity/TCP validation, grouped command/evaluator options, bounded auxiliary process-state capture; unchanged Go generator and frozen pacing contract. Native evidence remains3c78a0a; no extra probe/capacity invocation.",
+  "minimum_environment": "Coordinator-selected native Linux arm64 runner able to pass the unchanged50ops/s open-loop dispatch p99<=5ms,zero-drop covered1CPU/512MiB/cpuset client diagnostic. No conclusion about VM root cause and no request to raise SLOs/resources. Full profile still requires original isolated Weir2CPU1GiB,ES3CPU3GiB,client1CPU512MiB and observer budgets.",
+  "limitations": [
+    "Timing-only probes have no RPC/DB workload and establish no Weir/ES capacity",
+    "Native resource maxima are sampled, not atomic peaks",
+    "Weir heap/goroutine and full validator positive paths not newly measured",
+    "Original M21R bridge cause remains unresolved despite unchanged current inventory",
+    "Other profiles,24h,other native platforms,OpenSearch security and Linux Mongo gaps remain required"
+  ]
+}

@@ -59,10 +59,43 @@ WEIR_CAPACITY_INTEGRATION=1 python3 scripts/capacity_pacing.py \
 
 固定先做原计时方法的50/200/800ops/s各20s（仅添加观测，原5ms逐条过期）。若50档wake p99已超过5ms，则没有支持“仅修唤醒后路径即可合格”的证据，完成原三点即停止。若wake路径可行，再做唯一允许的20ms过期/最多8条追赶修正，同三速率各20s。总计最多6探针、各≤20s、native诊断总≤300s；全部保留，没有重复同一点选绿。
 
+`legacy-expiry`使用冻结的新仪表化引擎保留原timer/5ms过期策略，decision仍按新定义在统计锁后观察；包含新增观测开销及该边界差异，不称旧M22二进制逐位复现。
+
 这些是同native Linux arm64发生器、64workers和真实1CPU/512MiB/CPU5的**timing-only诊断**。它们不发送RPC/DB mutation，不能冒充Weir/ES容量或网络资格。最低档新方法必须满足原dispatch p99、零drop和完整采样/计数，才允许新owner进行**最多一次**完整原M22容量调用。工具hash或profile hash改变将拒绝复用发生器receipt。
 
 完整调用仍保留50…3200阶梯、20s warm+60s measure、三次120s确认、最多一档fallback、直连三点+两确认、2倍30s/70%120s恢复，以及原100/250ms时延、5ms lag和所有资源门槛。离线模拟覆盖完整成功、无候选、确认失败及一次降档、过载施压不足、恢复不合格、硬证据失败直接停止；真实未走到的分支明确not-run。
 
 ## 执行结果
 
-原生结果及最终门槛将在本轮诊断完成后补入；此段不预宣称资格。
+**NO-GO，candidate=null。** 原生发生器最低档未合格，因此没有启动完整Weir/ES校准。执行证据待独立验收，脚本exit0仅表示本次有界调查与清理完成。
+
+| 原方法速率 | planned / started / drop | 全部到期wake p99 / max | decision p99 | 已派发lag p99 | 平均CPU / throttle |
+| --- | --- | --- | --- | --- | --- |
+| 50 | 1000 /857 /143 | 8.9ms /9.604ms | 8.9ms | 5.0ms | 1.126% /0s |
+| 200 | 4000 /3998 /2 | 2.1ms /5.298ms | 2.1ms | 2.1ms | 2.109% /0s |
+| 800 | 16000 /15988 /12 | 1.6ms /13.014ms | 1.6ms | 1.6ms | 4.054% /0s |
+
+三点共21000次计划、20843次worker调用、157次expired；全部为timing-only，真实DB mutation=0。50档的construct/handoff p99均为100us桶，max分别0.472/0.360ms；主要迟滞已在首次wake观测时出现。已派发lag排除了过期项，不能拿其5ms边界证明完整50档合格。200/800的较低wake p99不改变最低50档失败，也不证明Weir吞吐。
+
+按预先冻结条件，50档wake p99>5ms后不运行新过期策略三点，不反复跑到偶然绿，不启动ES/Weir。真实确认、预设降档、直连、过载、恢复及产品id/version1/payload审计全部 **not-run**。这些算法路径仅有离线模拟；新增Weir/ES资源验收的正向原生路径也未执行。
+
+真实client是Linux arm64、Linux7.0.12-linuxkit、GOMAXPROCS=1、cpuset5、cpu.max100000/100000、memory.max536870912、swap.max0。每点12个client样本完整夹住20s窗口，OOM/kill均0；最大所见RSS21,356,544B、cgroup18,382,848B、FD7。资源/CPU均为采样证据。总定时负载60s，native诊断墙钟60.436s，含准备/清理完整调用67.582s，未超冻结预算。
+
+原生测量source `3c78a0aad16e695aa4daf26177ce5a3bca10ee87`，工具binary SHA256 `46605874af06709cd19fe6617cd6220b2dc9a76d398e094785be7b3f6deebd9f`。固定profile SHA256 `766534e4dba448becae84ccb50bc94179b563bf940a3f9be569375b344370a8b`；[expanded M22R plan](calibration-plan-m22r.json) SHA256 `f2c429dc82125a91da85d8f55733e476008f928ffa3d2c8d4a1ee935de6c4830`。145份native证据共1,203,069B已逐项重算hash、21项tool inputs已对原生source Git对象校验，70产品输入再次一致。原生manifest SHA256 `6aa562eb4bf2ce0f1ae4d62a6066e2af466ccada8ee64110d102997d4ea2731a`。
+
+最终Python实现 `cc992f71a2d78cd86bc4eeea2fba1fc45fa183e8` 在测量后补齐Guard标签互斥语义、实际process affinity/TCP字段校验，并把超过四参数的入口整理为具名options、将辅助process-state查询的捕获也限定为64KiB；没有改Go发生器、资源或计时契约，没有新增探针。原生证据仍归属3c78a0a；新旧tool hashes分别列在[机器基线](capacity-baseline-m22r.json)，不拿最终工具hash冒充测量来源。当前入口也不会接受不匹配的旧工具资格receipt。
+
+## 验证与交接边界
+
+- 全默认CGO0 test count1：61.856s通过；CGO1全race count1：65.119s通过；vet/integration vet/Linux arm64 integration vet通过（Linux项仅静态）。普通和integration capacity各三轮race通过，8.773/9.016s。Go代码此后未变。
+- 最终Python普通30项通过；优化模式30项发现、20项明确普通模式专属跳过，其余10项及优化入口提前拒绝通过；packaging5项通过。完整搜索的success/no-candidate/confirmation failure/fallback/underload/recovery failure/fatal observation分支均离线执行。
+- 原审查四反例修后4/4通过。保留原反例文件，移植副本仅补新schema观测元数据、将旧文件描述符fake替换为真实受控17MiB输出child；拒绝超量与诊断失败后必须尝试rm的断言未弱化。另存合法合成counts/低延迟但无Weir metrics的完整evaluate反例：pass=false，owner/connections=null。
+- 测试开发中清理EPERM/INT异常、优化测试导入失败等日志均保留；首次未设GOROOT的编译失败控制台记录保留于本聊天，显式设置固定GOROOT后通过。未把这些失败混成native容量失败，也没有删除原M22的五次准备失败。
+- owned client `5687229cb393843d218d4cefe4e4d7dc1bf640524fb3801ba6cfdc8119b14e7e`已stop/rm，自有client image tag已删除，生成binary/tar已按hash记录回收。network=none，没有创建新网络/卷；Weir/ES/observer从未启动。最终只读复核running容器0、该owner容器/网络/tag0；原4个退出M2容器、redis_default及既有制品保持。
+- 初始/首次修改前/最终库存已保存；本次default bridge与所有非默认对象无变化。M21R历史bridge原因仍未证实，原外层审计退出1继续保留。
+
+最小外部决策是由统筹选择可在相同1CPU/512MiB预算下满足原50档计时资格的native Linux arm64 runner；可先只提供该client诊断环境，不能因此提高5ms门槛或扩大预算。本轮只证明当前固定环境/发生器组合未满足最低档，未证明具体VM成因。是否换runner由统筹决定，本聊天停止，不启动下一阶段、自动化或重复调查。
+
+原生记录在 `.testdata/m22r/native-pacing`，补充反例、验证和逐桶重算在 `.testdata/m22r`。最终门槛逐项passed/failed/not-run及证据索引见机器基线/receipt。其他平台、profile、24h、Weir goroutine/heap、OpenSearch安全和Linux Mongo缺口保持；Weir认证排除、通用ProgramTransform首版延期/UNSUPPORTED保持。
+
+最终[补救receipt](milestone-22-remediation-receipt.json)索引197份保留证据、1,423,813B，索引SHA256 `fad69feaf8008f3608b48b1c16117a9e894b0a8bff860994ed63338fc0451032`。索引不含其自身或Python缓存；原生145份manifest保持不变。
