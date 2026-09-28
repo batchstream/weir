@@ -13,6 +13,12 @@ CI与本机空凭据上下文均完整下载两包index/双平台内容并核对
 准确image运行、snapshot和五个计时探针全部not-run，resource-evidence=not-run、
 generator-ready-for-next-investigation=false、candidate=null、full-calibration=not-run。
 现有CNI明确禁用network-policy agent，网络隔离未资格；不能把模板配额或namespace当作实际隔离证据。
+[M25R](milestone-25-remediation.md)以最终修复基线、新独占namespace完成一次补证尝试：
+默认metadata解析及版本Job server dry-run通过，但Pod因显式Never与Priority admission计算的
+PreemptLowerPriority不一致被拒绝；Job在120秒期限后失败，没有运行Pod、snapshot或计时探针。
+本轮仍为准入阻塞NO-GO，timing_pass=false、resource-evidence=not-run、generator-ready=false；
+准确运行时imageID/binary与资源/latency仍未知，candidate=null、full-calibration/24h=not-run。
+全部4个自有对象按UID删除并独立确认namespace消失，cleanup=true；原M25失败未改写。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
