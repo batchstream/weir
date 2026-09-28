@@ -1,0 +1,111 @@
+name: Verified Weir images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weir-main-images
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOENV: 'off'
+  GOWORK: 'off'
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  GOPROXY: 'off'
+  GOSUMDB: 'off'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  test:
+    if: github.repository == 'batchstream/weir' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: batchstream/weir
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed native SDK and public modules
+        run: python3 scripts/ci-tools.py test
+      - name: Native CGO0 default tests
+        run: CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
+      - name: Native CGO1 race tests
+        run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
+      - name: Static vet and isolated helper regressions
+        run: |
+          CGO_ENABLED=0 go vet ./...
+          CGO_ENABLED=0 go vet -tags=integration ./...
+          CGO_ENABLED=1 go test -race -tags=integration -count=1 -timeout=180s ./internal/testutil/testcapacity
+          python3 -m unittest discover -s scripts -p package_test.py
+          python3 -m unittest discover -s scripts -p ci_images_test.py
+          python3 -m unittest discover -s scripts -p 'capacity_*_test.py'
+          python3 -m unittest discover -s scripts -p test_capacity_test.py
+          git diff --exit-code
+
+  publish:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      delivery: ${{ steps.publish.outputs.delivery }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: batchstream/weir
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed build and registry tools
+        run: python3 scripts/ci-tools.py publish
+      - name: Reproduce and validate both images
+        run: timeout 24m python3 scripts/ci-images.py build
+      - name: Login using job-owned registry state
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          mkdir -p .testdata/m24/ci/publisher/docker
+          printf '%s' "$GHCR_TOKEN" | docker --config "$PWD/.testdata/m24/ci/publisher/docker" login ghcr.io --username "$GHCR_USER" --password-stdin
+      - name: Publish exact verified content
+        id: publish
+        run: python3 scripts/ci-images.py publish
+      - name: Anonymous full pull and native amd64 smoke
+        run: python3 scripts/ci-images.py anonymous
+      - name: Remove job registry login
+        if: always()
+        run: |
+          if test -d .testdata/m24/ci/publisher/docker; then
+            docker --config "$PWD/.testdata/m24/ci/publisher/docker" logout ghcr.io
+          fi
+
+  smoke-arm64:
+    needs: publish
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: batchstream/weir
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed registry tool
+        run: python3 scripts/ci-tools.py smoke
+      - name: Anonymous full pull and native arm64 smoke
+        env:
+          WEIR_DELIVERY: ${{ needs.publish.outputs.delivery }}
+        run: python3 scripts/ci-images.py anonymous

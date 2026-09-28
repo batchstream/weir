@@ -41,6 +41,36 @@ regression; a clean scan alone does not establish deployment safety.
 Dependencies beside the archives distinguish the module graph from binary-linked
 modules; they are inventory, not a security audit or a standard SBOM.
 
+The manually dispatched `Verified Weir images` Actions workflow publishes only
+`ghcr.io/batchstream/weir` and `ghcr.io/batchstream/weir-qualification`, tagged with
+the complete source commit. It is restricted to the public batchstream/weir main
+branch. No latest tag, Git tag, GitHub Release, automatic deployment or artifact
+upload is created. The separate qualification image contains only the internal
+integration helper and the same pinned runtime base; it is not a product API.
+
+The workflow first runs native Linux amd64/arm64 default CGO0 tests, independent
+CGO1 race, static vet and tool regressions. It then uses the existing clean-source
+packager for two independent six-target product builds and two Linux helper
+builds, validating both OCI indices twice. SDK, Buildx, BuildKit and regctl pins
+are in scripts/ci-tools.json. Public SDK/module download is preparation; tests
+and builds run with offline proxies, local toolchain, disabled Go env/workspace
+and read-only modules. Source exports and build caches are independent per round.
+
+Verified OCI archives are imported by standard regctl without rebuilding. Final
+registry content is downloaded and checked before the full source tag is set;
+existing tags with different digests fail without overwrite. A fresh anonymous
+client downloads every platform blob of each index and checks source labels,
+base layers and extracted binary hashes. Each native Linux platform then runs
+the exact product `-version` and a one-second, network-disabled helper pacing
+smoke under finite CPU/memory/PID/time limits. This proves execution and output
+contracts only; it does not qualify generator timing, databases, EKS or 24h soak.
+
+GHCR packages initially default to private. An anonymous failure is retained as
+a blocked delivery, even after a successful authenticated push. The approved
+package administrator may select Public in each package's settings; no token,
+organization policy or registry workaround is needed. See docs/milestone-24.md
+for actual attempt URLs, source/delivery commits, public status and digests.
+
 Darwin uses current physical footprint in bytes from the system libproc API,
 through fixed purego v0.10.2. Its Apache-2.0 and Go-derived BSD-3-Clause notices
 are included in Darwin archives under licenses/. The existing CGO_ENABLED=0

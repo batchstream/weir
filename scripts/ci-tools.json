@@ -1,0 +1,50 @@
+{
+  "checkout": {
+    "version": "v7.0.1",
+    "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1"
+  },
+  "buildkit": {
+    "version": "v0.33.0",
+    "image": "docker.io/moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3"
+  },
+  "go": {
+    "amd64": {
+      "url": "https://go.dev/dl/go1.27.1.linux-amd64.tar.gz",
+      "sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445"
+    },
+    "arm64": {
+      "url": "https://go.dev/dl/go1.27.1.linux-arm64.tar.gz",
+      "sha256": "3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec"
+    }
+  },
+  "buildx": {
+    "version": "v0.37.1",
+    "linux-amd64": {
+      "url": "https://github.com/docker/buildx/releases/download/v0.37.1/buildx-v0.37.1.linux-amd64",
+      "sha256": "9447199cdb435f25880548343c128a4b6650e8891ee598905d8d29d39a8e359b"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/docker/buildx/releases/download/v0.37.1/buildx-v0.37.1.linux-arm64",
+      "sha256": "e5cc9fe3bbff5cbc91230981f7860e06076110730a2db997082652199042a1f2"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/docker/buildx/releases/download/v0.37.1/buildx-v0.37.1.darwin-arm64",
+      "sha256": "c3cbbc820d578b0aa8158dd62ef1af25a0c8a75ef53331dbe4e219471e1dbe8c"
+    }
+  },
+  "regctl": {
+    "version": "v0.11.6",
+    "linux-amd64": {
+      "url": "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-linux-amd64",
+      "sha256": "8e0e62a497fcdb8048d18aa927a139613176ba0531f412bc541044e28f9856bd"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-linux-arm64",
+      "sha256": "a9b71a3ee79b2d1dbbd7d51fd5e8fa214722c192864235d3d8764463c751a1ff"
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/regclient/regclient/releases/download/v0.11.6/regctl-darwin-arm64",
+      "sha256": "5b52b71861abc300ab513e87a4c3794cff6508035ac7f6b6bdfa1fa5688c0040"
+    }
+  }
+}

@@ -46,7 +46,7 @@ def allowed(name):
         name.startswith(('api/', 'internal/', 'cmd/weir/')) and not name.startswith('internal/testutil/'))
 
 
-def source_files(root, revision):
+def source_files(root, revision, *, qualification=False):
     # Inspect every tracked path before opening any source blob, even excluded files.
     if not re.fullmatch('[0-9a-f]{40}', revision):
         raise ValueError('expected immutable full source SHA')
@@ -58,7 +58,9 @@ def source_files(root, revision):
         mode, kind, oid = metadata.decode().split()
         if secret_path(name):
             raise ValueError('tracked secret-style path refused: ' + name)
-        if allowed(name):
+        helper = qualification and (name == 'scripts/qualification.Dockerfile' or (
+            name.startswith('internal/testutil/testcapacity/') and name.endswith('.go') and not name.endswith('_test.go')))
+        if allowed(name) or helper:
             if mode not in ('100644', '100755') or kind != 'blob' or '..' in PurePosixPath(name).parts:
                 raise ValueError('non-regular build input refused: ' + name)
             files.append((name, oid))
@@ -78,7 +80,7 @@ def clean_head(root):
 
 def go_environment():
     # Ignore user Go settings, workspace, compiler overrides, proxies and experiments.
-    env = {k: os.environ[k] for k in ('PATH', 'HOME', 'TMPDIR', 'SYSTEMROOT') if k in os.environ}
+    env = {k: os.environ[k] for k in ('PATH', 'HOME', 'TMPDIR', 'SYSTEMROOT', 'GOROOT', 'GOMODCACHE') if k in os.environ}
     env.update(GOENV='off', GOTOOLCHAIN='local', GOWORK='off', GOPROXY='off', GOSUMDB='off',
                GOFLAGS='', GOEXPERIMENT='', CGO_ENABLED='0', GOAMD64='v1', GOARM64='v8.0')
     actual = run(['go', 'env', 'GOVERSION'], env=env).decode().strip()
@@ -165,8 +167,11 @@ def verify_archive(path, members, epoch):
                     raise ValueError('archive content/metadata mismatch')
 
 
-def oci_receipt(archive_path, binaries):
+def oci_receipt(archive_path, binaries, options=None):
     # Inspect BuildKit output; never synthesize an OCI implementation or its tar layers.
+    options = options or {}
+    binary_name = options.get('binary_name', 'weir')
+    revision, base_layers = options.get('revision'), options.get('base_layers')
     with tarfile.open(archive_path) as bundle:
         def blob(digest):
             data = bundle.extractfile('blobs/sha256/' + digest.removeprefix('sha256:')).read()
@@ -186,14 +191,27 @@ def oci_receipt(archive_path, binaries):
             config = json.loads(blob(manifest['config']['digest']))
             arch = config['architecture']
             runtime = config['config']
-            if config['os'] != 'linux' or arch not in ('amd64', 'arm64') or runtime['User'] != '65532:65532' or runtime['Entrypoint'] != ['/weir']:
+            if config['os'] != 'linux' or arch not in ('amd64', 'arm64') or runtime['User'] != '65532:65532' or runtime['Entrypoint'] != ['/' + binary_name]:
                 raise ValueError('unexpected image runtime/target')
+            if arch in images or descriptor.get('platform', {}).get('architecture') != arch:
+                raise ValueError('duplicate or inconsistent OCI platform')
+            if revision is not None:
+                labels = runtime.get('Labels', {})
+                if labels.get('org.opencontainers.image.revision') != revision or labels.get('org.opencontainers.image.source') != 'https://github.com/batchstream/weir':
+                    raise ValueError('image source labels mismatch')
+            layers = [layer['digest'] for layer in manifest['layers']]
+            if base_layers is not None and layers[:-1] != base_layers[arch]:
+                raise ValueError('image must contain exact base layers plus one binary layer')
             found = None
-            for layer in manifest['layers']:
+            for number, layer in enumerate(manifest['layers']):
                 raw = blob(layer['digest'])
                 with tarfile.open(fileobj=io.BytesIO(raw), mode='r:*') as content:
                     for entry in content:
-                        if entry.name.lstrip('./') == 'weir' and entry.isfile():
+                        name = entry.name.removeprefix('./')
+                        if base_layers is not None and number == len(layers) - 1:
+                            if name != binary_name or not entry.isfile() or entry.mode != 0o555:
+                                raise ValueError('unexpected file in application layer')
+                        if name == binary_name and entry.isfile():
                             found = sha(content.extractfile(entry).read())
             if found != binaries['linux-' + arch]:
                 raise ValueError('wrong binary in OCI image')
@@ -224,19 +242,29 @@ def build_once(opts):
         modules.append({key: module[key] for key in ('Path', 'Version', 'Sum', 'GoModSum', 'GoVersion', 'Main') if key in module})
     write_json(output / 'module-graph.json', modules)
     binary_hashes, artifact_hashes = {}, {}
+    qualification = opts.get('qualification', False)
+    binary_name = 'qualification' if qualification else 'weir'
+    targets = (('linux', 'amd64'), ('linux', 'arm64')) if qualification else TARGETS
     flags = ['-trimpath', '-buildvcs=false', '-mod=readonly', '-ldflags=-buildid= -X main.sourceRevision=' + opts['revision']]
-    for system, arch in TARGETS:
+    if qualification:
+        flags.append('-tags=integration')
+    for system, arch in targets:
         target = system + '-' + arch
         print('build', output.name, target, flush=True)
         dest = output / 'binaries' / target
         dest.mkdir(parents=True)
-        binary = dest / ('weir.exe' if system == 'windows' else 'weir')
+        binary = dest / (binary_name + ('.exe' if system == 'windows' else ''))
         target_env = dict(env, GOOS=system, GOARCH=arch)
-        run(['go', 'build', *flags, '-o', str(binary), './cmd/weir'], cwd=source, env=target_env)
+        entry = './internal/testutil/testcapacity' if qualification else './cmd/weir'
+        run(['go', 'build', *flags, '-o', str(binary), entry], cwd=source, env=target_env)
         info = build_info(binary, (system, arch), env)
+        if run(['go', 'tool', 'buildid', str(binary)], env=env).strip():
+            raise ValueError('binary build ID must be empty')
         info.update(source=opts['revision'], flags=flags, cpu_baseline='v1' if arch == 'amd64' else 'v8.0')
         write_json(output / (target + '-linked.json'), info)
         binary_hashes[target] = sha(binary.read_bytes())
+        if qualification:
+            continue
         members = {binary.name: (binary.read_bytes(), 0o755),
                    'README.md': ((source / 'packaging/README.md').read_bytes(), 0o644),
                    'node.example.json': ((source / 'packaging/node.example.json').read_bytes(), 0o644)}
@@ -254,14 +282,15 @@ def build_once(opts):
         base = json.loads((source / 'packaging/base.json').read_text())
         context = source.parent / 'oci-context'
         context.mkdir()
-        shutil.copyfile(source / 'packaging/Dockerfile', context / 'Dockerfile')
+        dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'packaging/Dockerfile'
+        shutil.copyfile(source / dockerfile, context / 'Dockerfile')
         for arch in ('amd64', 'arm64'):
             dest = context / ('linux-' + arch)
             dest.mkdir()
-            shutil.copyfile(output / 'binaries' / ('linux-' + arch) / 'weir', dest / 'weir')
+            shutil.copyfile(output / 'binaries' / ('linux-' + arch) / binary_name, dest / binary_name)
         for file in context.rglob('*'):
             os.utime(file, (opts['epoch'], opts['epoch']))
-        oci = output / 'weir-linux.oci.tar'
+        oci = output / (binary_name + '-linux.oci.tar')
         args = ['docker', 'buildx', 'build', '--builder', opts['builder'], '--platform=linux/amd64,linux/arm64',
                 '--no-cache', '--provenance=false', '--sbom=false', '--network=none',
                 '--build-arg', 'BASE=' + base['image'] + '@' + base['index'],
@@ -273,7 +302,8 @@ def build_once(opts):
         (output / 'oci-build.log').write_text(result.stdout)
         if result.returncode:
             raise RuntimeError('OCI build failed; see ' + str(output / 'oci-build.log'))
-        receipt['oci'] = oci_receipt(oci, binary_hashes)
+        image_options = dict(binary_name=binary_name, revision=opts['revision'], base_layers=opts.get('base_layers'))
+        receipt['oci'] = oci_receipt(oci, binary_hashes, image_options)
         receipt['base'] = base
     write_json(output / 'receipt.json', receipt)
     checksums = []

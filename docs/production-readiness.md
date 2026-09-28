@@ -1,6 +1,10 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+M23 已获统筹独立验收：最终 main `d4081c449b6e80e639a1ce6930a090746bd2c813`，
+完整 DNS fixture、默认 CGO0/race/vet、integration/Windows静态检查通过；原失败历史保留。
+[M24](milestone-24.md)仅准备固定源码的手动 Actions/两个公开 GHCR 包交付及原生短时 smoke，
+结果按真实执行补录，不代表 EKS、发生器5ms、DB容量或24h资格。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
@@ -43,7 +47,9 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
   不允许 OOM/死锁/泄漏/账本超额；warm-up 后 OS 内存、goroutine、句柄、连接须有稳定上界。
   Go heap、OS RSS/commit memory 和 cgroup 分别测量。当前短时本机测试不能代替这些门槛。
 - 用户已明确回答“同意首版延期通用脚本（推荐）”。ProgramTransform 移出 V1 必需门槛，继续 UNSUPPORTED 并保留未来完整架构需求。[M13](milestone-13.md) 调查交付获独立验收、候选 NO-GO，不能写成 runtime 安全通过；BackendExpression/Native 是当前 V1 的转换与原生能力范围。其他六平台、后端、部署、资源、容量和 24h soak 门槛不变。
-- 只准备和验证本地产物；当前授权不含 push、发布、生产部署、已有秘密访问或收费资源。
+- 原阶段只准备和验证本地产物；M24另获明确授权正常push现有batchstream/weir、Actions构建并公开
+  ghcr.io/batchstream/weir与ghcr.io/batchstream/weir-qualification。授权不含Git tag/Release、
+  生产部署、已有秘密访问或收费资源；本阶段不执行EKS测试。
   缺 runner 是外部证据阻塞，先推进独立工作，确需机器/费用时提出最小需求。
 
 用户随后明确缩减范围：**不新增 Weir 自身认证功能，按可信内网程序验收**。
