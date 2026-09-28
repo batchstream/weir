@@ -3,10 +3,16 @@
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
 M23 已获统筹独立验收：最终 main `d4081c449b6e80e639a1ce6930a090746bd2c813`，
 完整 DNS fixture、默认 CGO0/race/vet、integration/Windows静态检查通过；原失败历史保留。
-[M24](milestone-24.md)已完成执行者的固定源码 Actions/两个公开 GHCR 包交付与匿名原生短时 smoke，
-准确镜像source为 `fc0eb867ac4511a5c29dbc32b02768a3ad7a3139`，待统筹独立验收。
+[M24](milestone-24.md)的固定源码 Actions/两个公开 GHCR 包交付与匿名原生短时 smoke
+已获统筹有限独立验收；准确镜像source为 `fc0eb867ac4511a5c29dbc32b02768a3ad7a3139`。
 第1次打包入口失败保留；第2次四个job成功，两Linux架构默认CGO0/race/vet及准确image启动通过。
 CI与本机空凭据上下文均完整下载两包index/双平台内容并核对hash；不代表EKS、发生器5ms、DB容量或24h资格。
+[M25](milestone-25.md)在授权现有EKS完成只读预检，并创建全新独占namespace及Policy/Quota；
+唯一冻结入口因缺labels的标准对象触发metadata模板错误，**尚未创建任何Job/Pod**。
+首次入口/清理失败保留；修复模板后仅做UID条件恢复清理，已确认namespace消失，没有第二次原生尝试。
+准确image运行、snapshot和五个计时探针全部not-run，resource-evidence=not-run、
+generator-ready-for-next-investigation=false、candidate=null、full-calibration=not-run。
+现有CNI明确禁用network-policy agent，网络隔离未资格；不能把模板配额或namespace当作实际隔离证据。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
