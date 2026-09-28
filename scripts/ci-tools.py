@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import subprocess
 import tarfile
+import tempfile
 
 
 def download(pin, destination):
@@ -43,9 +44,18 @@ def main():
             raise ValueError('native Go driver/compiler mismatch: ' + go_version)
         print(go_version, flush=True)
         env.update(GOPROXY='https://proxy.golang.org', GOSUMDB='sum.golang.org')
-        subprocess.run(['go', 'mod', 'download'], env=env, check=True, timeout=300)
+        module_inputs = {name: Path(name).read_bytes() for name in ('go.mod', 'go.sum')}
+        # The packager inventories the complete module graph, including lazy test dependencies.
+        # Download in a temporary module copy: full downloads may add unused zip sums.
+        with tempfile.TemporaryDirectory(prefix='module-prepare-', dir=root) as work:
+            for name, raw in module_inputs.items():
+                (Path(work) / name).write_bytes(raw)
+            subprocess.run(['go', 'mod', 'download', 'all'], cwd=work, env=env, check=True, timeout=300)
+        if module_inputs != {name: Path(name).read_bytes() for name in module_inputs}:
+            raise ValueError('module preparation changed fixed go.mod/go.sum')
         env.update(GOPROXY='off', GOSUMDB='off')
         subprocess.run(['go', 'mod', 'verify'], env=env, check=True, timeout=60)
+        subprocess.run(['go', 'list', '-m', '-json', 'all'], env=env, check=True, timeout=60, stdout=subprocess.DEVNULL)
     if args.mode != 'test':
         dest = bins / 'regctl'
         download(pins['regctl']['linux-' + arch], dest)

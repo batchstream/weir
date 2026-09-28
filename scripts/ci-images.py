@@ -89,12 +89,20 @@ def build():
                                             input_sha256=package.sha(json.dumps(receipt['inputs'], sort_keys=True).encode()))
         package.write_json(OUT / 'delivery.json', delivery)
         print('DELIVERY=' + json.dumps(delivery, sort_keys=True), flush=True)
+    except subprocess.CalledProcessError as error:
+        print((error.stderr or b'')[-16000:].decode(errors='replace'), flush=True)
+        raise
+    except RuntimeError:
+        for log in OUT.glob('*-*/oci-build.log'):
+            print(log.name + '\n' + log.read_text()[-16000:], flush=True)
+        raise
     finally:
         # This client directory and unique builder were created by this invocation.
-        inspection = package.run(['docker', 'buildx', 'inspect', builder, '--format', '{{.Name}}'], env=env).decode().strip()
-        if inspection != builder:
+        inspection = package.run(['docker', 'buildx', 'ls', '--format', '{{.Name}}'], env=env).decode().splitlines()
+        if inspection.count(builder) != 1:
             raise ValueError('builder owner changed; refuse cleanup')
         package.run(['docker', 'buildx', 'rm', builder], env=env)
+        print('BUILD_CLEANUP=' + builder, flush=True)
 
 
 def check_existing(reference, expected, env):

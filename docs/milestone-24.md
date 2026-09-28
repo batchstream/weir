@@ -34,6 +34,15 @@ CGO0/trimpath/buildvcsfalse/空 buildid/CPU baseline/sourceRevision 检查。
 ## 执行证据
 
 实现提交之后实际执行；结果、所有 Actions 尝试、准确源码和最终文档提交区别在阶段收尾补入。
+初始实现 `f9b3f82431afdf1f0b8d76870d8c7432eb216abf` 已正常push。
+第1次 [36366147893](https://github.com/batchstream/weir/actions/runs/36366147893) 失败保留：
+两个原生Linux test job均成功（CGO0、CGO1 race、vet/integration vet、helper race和38项Python回归），
+但发布job尚未构建即因离线完整module graph缺少lazy依赖失败；清理又使用了Buildx不支持的
+`inspect --format`，遮住原始stderr。未登录、未发布任何镜像，arm64镜像smoke未运行。
+原始job上的builder未由脚本成功回收，随该标准托管VM结束；不称本次脚本清理通过。
+空module cache独立重现原失败；准备阶段在独立临时module副本`go mod download all`，
+下载可为该临时副本补充未链接依赖zip校验项，仓库go.mod/go.sum保持原样；原始文件的立即离线
+list/verify已实测通过。清理使用已验证的`buildx ls --format`检查唯一自有builder，保留原始错误。
 证据根 `.testdata/m24/`，忽略且不进入镜像/提交。
 本地已验证 package、OCI负面/匿名身份/不可覆盖回归、容量工具离线回归；
 用历史 M20 OCI 做标准 regctl 导入导出验证，index/manifest/config/layers/binary 不变，
