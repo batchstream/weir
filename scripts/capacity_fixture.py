@@ -389,6 +389,10 @@ class Observer:
         self.root = Path(options['root'])
         self.role = options['role']
         self.command = options['command']
+        self.stream_limits = options.get('stream_limits', [64 << 20, 64 << 20])
+        if (not isinstance(self.stream_limits, (list, tuple)) or len(self.stream_limits) != 2 or
+                any(type(n) is not int or not 0 < n <= 64 << 20 for n in self.stream_limits)):
+            raise ValueError('observer stream limits')
         self.streams = [bytearray(), bytearray()]
         self.entries = []
         self.parsed = 0
@@ -447,7 +451,8 @@ class Observer:
                 if not chunk:
                     self.eof[index] = True
                     break
-                available = (64 << 20)-sum(map(len, self.streams))
+                available = min((64 << 20)-sum(map(len, self.streams)),
+                                self.stream_limits[index]-len(self.streams[index]))
                 self.streams[index].extend(chunk[:available])
                 with target.open('ab') as output:
                     output.write(chunk[:available])
