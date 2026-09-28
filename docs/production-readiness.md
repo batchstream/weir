@@ -1,6 +1,17 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M31](milestone-31.md)完成正式 qualification observer 的本地收尾修复，实现 `3cf2c94`。三个实际消费者在完整 identity/样本/terminal/资源校验后发送 EOF，再确认 exit0、双 EOF、Wait/Join、句柄关闭；四秒完成等待嵌入原关闭预算。
+提前 EOF/非法字节/错误样本/信号/读写失败均非零；拒绝流和主动提前停止使用取消字节，避免清理 EOF 被误当正常成功。通用 Observer、upload/release、产品协议/执行语义及原有预算不变。
+默认离线 Go test/race/vet 与 focused integration test/race/vet 均通过；Python 补丁前全套普通251通过、优化225通过/26skip，最终受影响普通92通过、优化70通过/22项旧入口skip。
+真实 Go 完成函数与三个实际 Python 消费者通过外部管道连接，6/71/1350合成样本均完成；没有运行真实140秒/45分钟采样或数据库。
+唯一缓存 Linux arm64 无网络小容器原生11顶层/25含子例通过，主10.964秒、清理0.127秒；仅正式完成逻辑/真实管道和有限proc自采样，不是完整proc+DB HTTP或EKS资源验收。
+460个不同host PID新查询均不存在，自有容器按ID/label已回收；四个原有容器/非默认网络未变，default bridge ID变化单独保留、原因unknown，不宣称全局盘点无变化。
+历史3296份文件hash/size重验未变。Weir正式70项输入不变，helper81→82且已不同于旧image source `4abc8761…`；旧approvedImages/digest未改，本轮没有发布、push/Actions或EKS/aws。
+M30R7诊断已验收，正式资源仍partial/not-qualified、timing=not-run、candidate=null；CNI/跨两worker/六平台/两规格/后端/容量延迟恢复/24h门槛全部保持。一次完成回调后停止，无timer。
+
+以下保留各阶段当轮历史结果；旧报告中的“下一阶段”描述不表示新的执行授权。
+
 [M30R7](milestone-30r7.md)完成唯一小型无数据库三臂exec诊断，**仅支持固定条件下完整输出后EOF确认的缓解，不是正式helper修复或资源资格**。
 同一固定ES image仅运行shell、同一1CPU/256MiB Pod：A立即退出只收到249,915bytes（五完整记录+4091byte尾片、无terminal），exit1/reset；
 B完整校验295,041bytes、hash/0–5顺序/terminal后关闭stdin，收到ack-eof并exit0；C不确认但持续排空，完整输出后按4秒等待上限exit74，明确不算成功资格。
