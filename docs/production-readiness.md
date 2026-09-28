@@ -1,6 +1,17 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R4](milestone-30r4.md)将静态预检置于唯一120秒资源窗口之前，完整25秒CLI+4秒Stop/Wait余额不足时零派发。
+实现/实际执行`92b04b5167127c067413624aec35c00f6e82d1d6`；普通191通过，优化166通过/25既有skip；75项输入冻结，正式输入未变。
+真实静态阶段112.785秒后才启动资源窗口；prepare与native写入前GET在同一窗口26.664秒内完成，恢复0次。
+一次完整helper上传后，release CLI reset/exit1但收到回执；同一身份/Completed0/完整有序日志确认远端管理完成，PUT1，无重放。
+Weir/ES各5完整样本，均缺正常结束记录，Weir第6样本截断、client snapshot未跑，**本轮仍NO-GO**。
+Job/Pod/ConfigMap/Policy已按UID删除并exit0空GET确认，远端进程已停止；最终盘点第三批GET触及对象阶段本地截止。
+Quota `2deaa5be-0822-4db5-83bc-df4d2ec9233e`及namespace `weir-qual-m30r4-20260928-233348`
+（UID `f6b048cc-447d-4ee8-8835-11ef13542758`）未删除，cleanup=false；无追加查询/删除或预算扩展，残留交统筹。
+143 CLI全部结束/Wait，零文档工作量；partial/not-qualified、timing=not-run、candidate=null；CNI disabled及其他required门槛不变。
+旧四轮1001份封存文件未变；未push/Actions/发布/Go修改/新镜像/负载。以下保留当轮历史结果。
+
 [M30R3](milestone-30r3.md)实现一次释放后的远端完成确认和分阶段180秒清理，普通186通过、优化161通过/25既有skip。
 实现/实际执行源码`fea02e9c40385049851bd3eaaaffc19aea3fc4bf`，image source仍`4abc8761…`；204 Go/module和Weir70/helper81正式输入未变。
 唯一prepare成功，首次固定node/UID全namespace资源查询满足原门槛；native第二次Pod读取触及共享120秒窗口本地截止，exit-15，**NO-GO**。
