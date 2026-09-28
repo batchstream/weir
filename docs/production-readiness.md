@@ -1,6 +1,18 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R2](milestone-30r2.md)固定节点资源预检已修复并真实通过，但唯一无负载采样仍 **NO-GO**。
+实现/实际运行 `238fabd…`，公开 image source `4abc8761…`；204 Go/module 和产品70/helper81正式输入未变。
+三次均按同一 node/UID 获取全部 namespace 的限定节点 Pod：6 Pods，CPU余量7.030，原资源门槛满足；只读恢复0次。
+普通178通过，优化153通过/25既有skip；准确helper完整链和旧M30/M30R封存文件重验通过。
+Job/Pod dry-run及实际创建、一次21,046,963-byte helper传入和身份复核成功；FIFO释放exec连接重置，缺完整回执。
+bootstrap后续Completed且Weir/client Running，但不重放释放/空索引PUT；管理结果UNKNOWN、最多一次，零文档工作量。
+Weir/ES observer与client snapshot均未执行，三角色实际FD/PID/cgroup等仍unknown。
+119条CLI/exec均Wait；Job/Pod/ConfigMap/Policy/Quota已按UID删除并确认，准确Pod消失提供远端进程收口证据。
+namespace `weir-qual-m30r2-20260928-222403` UID `6a72c1a1-68a9-4a15-920c-94f49d0a0557` DELETE成功/Terminating，
+最终GET触及原清理截止，消失未确认；cleanup=false、未扩大180秒窗口，精确清单交统筹收口。
+resource_evidence=partial/not-qualified、timing=not-run、candidate=null；CNI agent仍disabled，其他required门槛保持。
+未push/Actions/发布/新镜像/负载，原失败不倒写。
 [M30R](milestone-30r.md)补证在只读准备阶段 **NO-GO**：全集群 Pod 资源投影响应体在既有10秒请求截止内未完成，
 无法核定节点余量；按本轮失败停止约束未重试。实现/实际准备源码 `df2c1517…`，公开 image source仍 `4abc8761…`。
 已重新核验既有准确arm64 helper完整应用层/binary、204个Go/module及产品70/helper81构建输入；未重新下载或构建。
