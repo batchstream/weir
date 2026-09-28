@@ -392,6 +392,11 @@ class Observer:
         self.streams = [bytearray(), bytearray()]
         self.entries = []
         self.parsed = 0
+        self.eof = [False, False]
+        self.failure = None
+        self.first_exit_observed = None
+        self.stop_requested = None
+        self.stopped = None
         self.started = time.monotonic()
         self.child = subprocess.Popen(self.command, env=options.get('env'), stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
@@ -408,40 +413,56 @@ class Observer:
             raise
 
     def record(self):
+        code = self.child.poll()
+        if code is not None and self.first_exit_observed is None:
+            self.first_exit_observed = time.monotonic()
         value = dict(command=self.command, pid=self.child.pid, role=self.role, elapsed=time.monotonic()-self.started,
-                     exit=self.child.poll(), bytes=[len(raw) for raw in self.streams])
+                     exit=code, bytes=[len(raw) for raw in self.streams], eof=self.eof, failure=self.failure,
+                     started_monotonic=self.started, first_exit_observed_monotonic=self.first_exit_observed,
+                     stop_requested_monotonic=self.stop_requested, stopped_monotonic=self.stopped)
         (self.root/(self.role+'-exec.json')).write_text(json.dumps(value, indent=2)+'\n')
 
     def poll(self):
         changed = False
         for index, pipe in enumerate(self.pipes):
+            if self.eof[index]:
+                continue
             target = self.root/(self.role+('.jsonl' if index == 0 else '.err'))
             target.touch(exist_ok=True)
-            while True:
+            # Return to the owner and the other pipe even under continuous output.
+            for _ in range(16):
                 try:
                     chunk = os.read(pipe.fileno(), 65536)
                 except BlockingIOError:
                     break
                 if not chunk:
+                    self.eof[index] = True
                     break
                 available = (64 << 20)-sum(map(len, self.streams))
                 self.streams[index].extend(chunk[:available])
                 with target.open('ab') as output:
                     output.write(chunk[:available])
                 if len(chunk) > available:
-                    raise RuntimeError('observer output bound')
+                    self.failure = self.failure or 'observer output bound'
                 changed = True
-        if changed or self.child.poll() is not None:
-            self.record()
         raw = self.streams[0]
         end = raw.rfind(b'\n')+1
-        for line in raw[self.parsed:end].splitlines():
-            self.entries.append(json.loads(line))
+        try:
+            for line in raw[self.parsed:end].splitlines():
+                self.entries.append(json.loads(line))
+        except ValueError as exc:
+            self.failure = self.failure or 'invalid observer JSON: '+str(exc)
         self.parsed = end
         if any(entry.get('errors') for entry in self.entries):
-            raise RuntimeError(self.role+' observer sample error')
+            self.failure = self.failure or self.role+' observer sample error'
         if self.child.poll() not in (None, 0):
-            raise RuntimeError(self.role+' observer exited: '+bytes(self.streams[1]).decode(errors='replace'))
+            self.failure = self.failure or self.role+' observer exited: '+bytes(self.streams[1]).decode(errors='replace')
+        if all(self.eof) and raw and not raw.endswith(b'\n'):
+            self.failure = self.failure or 'truncated observer output'
+        if changed or self.child.poll() is not None:
+            self.record()
+        if self.failure:
+            raise RuntimeError(self.failure)
         return self.entries
 
     def write_input(self, data, deadline):
@@ -466,27 +487,34 @@ class Observer:
         self.child.stdin.close()
         return offset
 
-    def stop(self):
+    def stop(self, deadline=None):
+        if self.stopped is not None:
+            if self.failure:
+                raise RuntimeError(self.failure)
+            return
+        self.stop_requested = time.monotonic()
         self.child.stdin.close()
-        until = time.monotonic()+4
+        until = min(self.stop_requested+4, deadline-4) if deadline is not None else self.stop_requested+4
         try:
-            while self.child.poll() is None and time.monotonic() < until:
+            while time.monotonic() < until:
                 try:
                     self.poll()
                 except (RuntimeError, ValueError):
                     pass
+                if self.child.poll() is not None and all(self.eof):
+                    break
                 time.sleep(.02)
-            if self.child.poll() is None:
-                raise RuntimeError('observer exec did not stop after stdin EOF')
-            self.child.wait(timeout=1)
-            try:
-                self.poll()
-            except RuntimeError:
-                pass  # cancellation exit is retained, never counted as a full stream
-            if self.streams[0] and not self.streams[0].endswith(b'\n'):
-                raise RuntimeError('truncated observer output')
+            if self.child.poll() is None or not all(self.eof):
+                self.failure = self.failure or 'observer exec did not stop/drain after stdin EOF'
         finally:
             stop_group(self.child)
+            try:
+                self.poll()
+            except (RuntimeError, ValueError):
+                pass
             self.child.stdout.close()
             self.child.stderr.close()
+            self.stopped = time.monotonic()
             self.record()
+        if self.failure:
+            raise RuntimeError(self.failure)

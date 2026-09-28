@@ -194,6 +194,55 @@ class Run(loop.Run):
                 'exec', '-i', self.pod_entry['name'], '--container', container, '--']+command
         return argv
 
+    def observe(self, role):
+        require(role in ('weir', 'es'), 'observer role')
+        total_deadline = self.deadline
+        started = time.monotonic()
+        until = min(total_deadline, started+30)
+        require(until-started >= 18, 'observer/Stop/Wait budget')
+        operation = dict(started_monotonic=started, deadline_monotonic=until)
+        # Claim before the identity reads; a failed role is never replayed.
+        with (self.root/(role+'-operation.json')).open('x') as output:
+            json.dump(operation, output, indent=2)
+        self.deadline = until-8  # EOF drain (4s) and existing Stop/Wait (4s).
+        observer = None
+        try:
+            self.monitor()
+            require(time.monotonic()+18 <= until, 'observer/Stop/Wait budget after identity')
+            container = 'weir' if role == 'weir' else 'elasticsearch'
+            command = self.exec_command(container, ['/helper/qualification', '-mode', 'observe', '-role', role,
+                                       '-pid', '1' if role == 'weir' else 'java', '-seconds', '10'])
+            options = dict(root=self.root, role=role, command=command)
+            observer = Observer(options)
+            try:
+                while True:
+                    require(time.monotonic() < self.deadline, 'observer deadline')
+                    entries = observer.poll()
+                    if observer.child.poll() is not None and all(observer.eof):
+                        break
+                    time.sleep(.02)
+                require(len(entries) == 8 and entries[-1].get('type') == 'observer_end' and
+                        entries[-1].get('role') == role and entries[-1].get('samples') == 6,
+                        'six samples/normal observer_end')
+                require([s.get('sequence') for s in entries[1:-1]] == list(range(6)), 'sample sequence')
+            except BaseException as exc:
+                try:
+                    observer.stop(deadline=until)
+                except BaseException as closing:
+                    exc.add_note('observer stop: '+str(closing))
+                raise
+            else:
+                observer.stop(deadline=until)
+            # No child is alive while a control-plane call can block.
+            self.monitor()
+        except BaseException as exc:
+            operation['error'] = str(exc)
+            raise
+        finally:
+            self.deadline = total_deadline
+            operation.update(finished_monotonic=time.monotonic(), pid=observer.child.pid if observer else None)
+            self.save(role+'-operation.json', operation)
+
     def transfer(self, until):
         require(not (self.root/'release.json').exists(), 'release already attempted')
         self.configuration()
@@ -390,7 +439,7 @@ def execute(run, plan_sha256):
     run.run(['git','diff','--exit-code',SOURCE,'--','*.go','go.mod','go.sum','packaging','scripts/qualification.Dockerfile'])
     with (run.root.parent/'invocation.json').open('x') as output:json.dump(dict(start=time.time(),plan_sha256=plan_sha256),output)
     run.pod_entry=None;run.pod_ready=False;run.runtime_evidence=False;run.job_create_attempted=False
-    observers={};result=dict(profile=plan['profile'] if 'profile' in plan else 'm30-eks-no-load-resource-preflight',passed=False,network_isolation='unqualified',resource_evidence='partial/not-qualified',timing='not-run',candidate=None,
+    result=dict(profile=plan['profile'] if 'profile' in plan else 'm30-eks-no-load-resource-preflight',passed=False,network_isolation='unqualified',resource_evidence='partial/not-qualified',timing='not-run',candidate=None,
                              trials=0,seeds=0,planned=0,document_mutations=0,empty_index_put_completed=None,errors=[])
     run.remote_started=time.monotonic();run.deadline=run.remote_started+900
     try:
@@ -426,17 +475,8 @@ def execute(run, plan_sha256):
         require(boundary.endswith('loopback-check-complete\n') and 'own-pod-ip='+str(address)+'\n' in boundary,'loopback boundary')
         native=run.exec_owned('elasticsearch',['/bin/bash','--noprofile','--norc','-c','set -eu; uname -smr; id; getconf CLK_TCK; sha256sum /usr/share/elasticsearch/jdk/bin/java'])
         run.save('native-identity.txt',native)
-        for role,container in (('weir','weir'),('es','elasticsearch')):
-            run.monitor()
-            command=run.exec_command(container,['/helper/qualification','-mode','observe','-role',role,'-pid','1' if role=='weir' else 'java','-seconds','10'])
-            options=dict(root=run.root,role=role,command=command)
-            observers[role]=Observer(options)
-        end=min(run.deadline,time.monotonic()+30)
-        while any(o.child.poll() is None for o in observers.values()):
-            require(time.monotonic()<end,'observer deadline')
-            for observer in observers.values():observer.poll()
-            time.sleep(.05)
-        for observer in observers.values():observer.poll()
+        for role in ('weir', 'es'):
+            run.observe(role)
         raw=run.exec_owned('qualification',['/qualification','-mode','snapshot'])
         run.save('client-snapshot.json',raw)
         result['observations']=observation_report(run.root,native.splitlines())
@@ -464,9 +504,6 @@ def execute(run, plan_sha256):
         signal.signal(signal.SIGINT,signal.SIG_IGN);signal.signal(signal.SIGTERM,signal.SIG_IGN)
         result['fixture_seconds']=time.monotonic()-run.remote_started
         cleanup_started=time.monotonic();run.deadline=cleanup_started+180;run.cleaning=True
-        for role,observer in observers.items():
-            try:observer.stop()
-            except BaseException as exc:result['errors'].append(role+' stop: '+str(exc));result['passed']=False
         if run.pod_entry:
             try:
                 pod=run.selected_object('Pod',run.pod_entry['name'])

@@ -563,4 +563,103 @@ class Raw(unittest.TestCase):
             with self.assertRaises(ValueError):pre.observation_report(root,native)
 
 
+class Observation(unittest.TestCase):
+    def command(self, role, *, seconds=0, ending=True):
+        records = [dict(type='identity', role=role)]
+        records += [dict(type='sample', sequence=i, padding='x'*48000) for i in range(6)]
+        if ending:
+            records += [dict(type='observer_end', role=role, samples=6)]
+        code = ('import json,sys,time; records='+repr(records)+'; start=time.monotonic(); '
+                '\nfor record in records:\n'
+                ' if record["type"]=="sample":time.sleep(max(0,start+record["sequence"]*'+str(seconds)+'/5-time.monotonic()))\n'
+                ' print(json.dumps(record),flush=True)\n'
+                ' sys.stderr.write("e"*48000);sys.stderr.flush()\n')
+        return [sys.executable, '-c', code]
+
+    def test_real_six_samples_then_join_before_slow_identity_and_next_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory);run = pre.Run(root, pre.loop.TARGET)
+            original_deadline = run.deadline
+            calls = []
+            def monitor():
+                for record in root.glob('*-exec.json'):
+                    saved = json.loads(record.read_text())
+                    self.assertIsNotNone(saved['exit'])
+                    self.assertIsNotNone(saved['stopped_monotonic'])
+                    self.assertEqual(saved['eof'], [True, True])
+                calls.append('monitor');time.sleep(.03)
+            def command(container, argv):
+                role = argv[argv.index('-role')+1]
+                calls.append(role)
+                return self.command(role, seconds=10 if role=='weir' else 0)
+            with patch.object(run, 'monitor', side_effect=monitor), patch.object(run, 'exec_command', side_effect=command):
+                run.observe('weir');run.observe('es')
+                with self.assertRaises(FileExistsError):run.observe('weir')
+            self.assertEqual(calls, ['monitor', 'weir', 'monitor', 'monitor', 'es', 'monitor'])
+            self.assertEqual(run.deadline, original_deadline)
+            self.assertEqual(len(pre.read_stream(root/'weir.jsonl')), 8)
+
+    def test_missing_end_and_nonzero_do_not_reach_later_monitor(self):
+        for failure in ('end', 'exit', 'partial', 'sequence'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);run=pre.Run(root,pre.loop.TARGET)
+                command=self.command('weir',ending=failure!='end')
+                if failure=='exit':command[-1]+='\nsys.exit(7)'
+                if failure=='partial':command[-1]+='\nsys.stdout.write("{")'
+                if failure=='sequence':command[-1]=command[-1].replace("'sequence': 5", "'sequence': 4")
+                with patch.object(run,'monitor') as monitor,patch.object(run,'exec_command',return_value=command):
+                    with self.assertRaises((ValueError,RuntimeError)):run.observe('weir')
+                self.assertEqual(monitor.call_count,1)
+                saved=json.loads((root/'weir-exec.json').read_text())
+                self.assertIsNotNone(saved['stopped_monotonic'])
+                self.assertIsNotNone(saved['exit'])
+
+    def test_identity_failure_and_exhausted_budget_spawn_nothing(self):
+        for failure in ('identity', 'expired', 'slow-monitor'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
+                run=pre.Run(Path(directory),pre.loop.TARGET)
+                clock=[1000.0];run.deadline=1030 if failure!='expired' else 1017.99
+                def monitor():
+                    if failure=='identity':raise ValueError('runtime identity changed')
+                    clock[0]+=13
+                with patch.object(pre.time,'monotonic',side_effect=lambda:clock[0]),patch.object(run,'monitor',side_effect=monitor),patch.object(run,'exec_command') as command:
+                    with self.assertRaises(ValueError):run.observe('weir')
+                command.assert_not_called()
+                self.assertFalse((run.root/'weir-exec.json').exists())
+
+    def test_deadline_and_signal_close_stdin_and_join_before_diagnostic_failure(self):
+        for failure in ('deadline','cancel'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
+                run=pre.Run(Path(directory),pre.loop.TARGET)
+                command=[sys.executable,'-c','import sys;print("{}",flush=True);sys.stdin.read();print("{\\"cancelled\\":true}",flush=True)']
+                original=Observer.poll
+                def poll(observer):
+                    original(observer)
+                    if observer.entries and observer.stop_requested is None:
+                        if failure=='cancel':raise KeyboardInterrupt('cancelled')
+                        run.deadline=time.monotonic()-1
+                    return observer.entries
+                with patch.object(run,'monitor'),patch.object(run,'exec_command',return_value=command),patch.object(Observer,'poll',poll):
+                    with self.assertRaises((ValueError,KeyboardInterrupt)):run.observe('weir')
+                saved=json.loads((run.root/'weir-exec.json').read_text())
+                self.assertEqual(saved['exit'],0)
+                self.assertEqual(saved['eof'],[True,True])
+                self.assertIsNotNone(saved['stopped_monotonic'])
+                self.assertTrue(pre.read_stream(run.root/'weir.jsonl')[-1]['cancelled'])
+                # This represents a later blocking/failing diagnostic; ownership
+                # has already ended before it can use the control-plane path.
+                with self.assertRaisesRegex(ValueError,'diagnostic'):
+                    time.sleep(.02);raise ValueError('diagnostic failed')
+
+    def test_post_observation_identity_drift_occurs_after_wait(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run=pre.Run(Path(directory),pre.loop.TARGET)
+            command=self.command('weir')
+            with patch.object(run,'monitor',side_effect=[None,ValueError('runtime identity changed')]),patch.object(run,'exec_command',return_value=command):
+                with self.assertRaisesRegex(ValueError,'identity changed'):run.observe('weir')
+            saved=json.loads((run.root/'weir-exec.json').read_text())
+            self.assertEqual(saved['exit'],0)
+            self.assertIsNotNone(saved['stopped_monotonic'])
+
+
 if __name__=='__main__':unittest.main()
