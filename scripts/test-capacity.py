@@ -14,9 +14,10 @@ import tarfile
 import time
 
 import package as packaging
-from capacity_fixture import Fixture, REPO, LABEL, inventory_diff, sha
+from capacity_fixture import Fixture, FixtureInterrupted, REPO, LABEL, inventory_diff, sha
 from capacity_artifact import docker_archive
-from capacity_report import evaluate, resource_gate, window_gate, timestamp, prom, metric
+from capacity_report import evaluate, resource_gate, window_gate, timestamp, prom, metric, require_evidence, db_gate
+from capacity_contract import PLAN, PLAN_PATH, Budget
 
 
 def prepare(f, plan, artifact):
@@ -59,13 +60,15 @@ def prepare(f, plan, artifact):
     cfg["services"][0]["local"].update(concurrency=4,batch_operations=16)
     f.save("node.json",cfg)
     effective=json.loads(f.run([str(f.root/"client-host"),"-mode","config","-config",str(f.root/"node.json")],env=env).stdout)
+    if any(effective["timing"][key] != plan["client"][key] for key in ("expiry_ms", "max_catchup_per_wake", "deadline_ms")):
+        raise RuntimeError("compiled timing contract differs from versioned plan")
     f.save("effective-config.json",effective)
     raw=(f.root/"client").read_bytes()
     with tarfile.open(f.root/"client.tar","w") as archive:
         entry=tarfile.TarInfo("client");entry.size=len(raw);entry.mode=0o555
         archive.addfile(entry,io.BytesIO(raw))
     inputs={str(p.relative_to(REPO)):sha(p) for p in sorted((REPO/"internal/testutil/testcapacity").glob("*.go"))}
-    inputs.update({str(p.relative_to(REPO)):sha(p) for p in [REPO/"scripts/test-capacity.py",REPO/"scripts/capacity_fixture.py",REPO/"scripts/capacity_report.py",REPO/"scripts/capacity_artifact.py",REPO/"scripts/capacity-plan.json"]})
+    inputs.update({str(p.relative_to(REPO)):sha(p) for p in [REPO/"scripts/test-capacity.py",REPO/"scripts/capacity_fixture.py",REPO/"scripts/capacity_report.py",REPO/"scripts/capacity_artifact.py",REPO/"scripts/capacity_contract.py",REPO/"scripts/capacity_pacing.py",REPO/"scripts/package.py",PLAN_PATH]})
     host={"uname":f.run(["uname","-a"]).stdout.strip(),"cpu":f.run(["sysctl","-n","machdep.cpu.brand_string"]).stdout.strip(),"logical_cpu":f.run(["sysctl","-n","hw.logicalcpu"]).stdout.strip(),"shared_physical_host":True}
     frozen={"schema_version":1,"profile":plan,"tool_inputs":inputs,"client_sha256":hashlib.sha256(raw).hexdigest(),"source":f.run(["git","rev-parse","HEAD"]).stdout.strip(),"effective":effective,"host":host,"vm":json.loads((f.root/"vm.json").read_text())}
     f.save("calibration-plan.json",frozen)
@@ -73,7 +76,7 @@ def prepare(f, plan, artifact):
     return sha(f.root/"calibration-plan.json")
 
 
-def start(f,plan):
+def start(f,plan,budget):
     f.first_mutation()
     if hasattr(f,"product_archive"):
         f.run(["docker","image","load","--platform","linux/arm64","--input",str(f.product_archive)],120)
@@ -103,7 +106,14 @@ def start(f,plan):
         time.sleep(1)
     else:
         raise TimeoutError("ES readiness")
-    f.run(["docker","exec",f.containers[f.owner+"-client"],"/client","-mode","setup"],60)
+    entry = budget.reserve("bootstrap", seeds=plan["client"]["corpus"])
+    f.save("mutation-budget.json", budget.snapshot())
+    setup = f.run(["docker","exec",f.containers[f.owner+"-client"],"/client","-mode","setup","-mutation-reservation",str(entry["reserved"])],60,check=False)
+    records = [json.loads(line) for line in setup.stdout.splitlines()]
+    budget.reconcile(entry, records, setup.returncode == 0)
+    f.save("mutation-budget.json", budget.snapshot())
+    if setup.returncode:
+        raise RuntimeError("bootstrap setup failed; reserved/started evidence retained")
     weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly"],"command":["-config","/node.json"]}
     f.create("weir",weir_spec)
     for role,observed in (("observer-weir","weir"),("observer-es","es")):
@@ -147,7 +157,14 @@ def read_observer(f,role):
             raise RuntimeError("running product identity")
         f.save(role+"-process-identity.json",entries[0])
     for entry in entries:
-        if "time" in entry and (not samples or timestamp(entry["time"])>timestamp(samples[-1]["time"])):
+        if "time" in entry:
+            duplicates = [s for s in samples[-4:] if s["time"] == entry["time"]]
+            if duplicates:
+                if duplicates != [entry]:
+                    raise RuntimeError("observer changed a previously emitted sample")
+                continue
+            if samples and timestamp(entry["time"]) <= timestamp(samples[-1]["time"]):
+                raise RuntimeError("nonmonotonic observer timestamps")
             samples.append(entry)
     if len(samples)>1350:
         raise RuntimeError("resource sample bound")
@@ -156,62 +173,80 @@ def read_observer(f,role):
 
 
 class Calibration:
-    def __init__(self,f,plan):
+    def __init__(self,f,plan,budget=None):
         self.f,self.plan=f,plan
         self.results=[]
-        self.planned=self.mutations=self.load_seconds=0
+        self.budget = budget if budget is not None else Budget()
 
     def trial(self,name,rate,seconds,**options):
         direct=options.get("direct",False)
         recovery=options.get("recovery",0)
         warm=options.get("warm",20)
         planned=rate*(warm+seconds)+recovery*120
-        self.planned+=planned;self.mutations+=planned//10+1000;self.load_seconds+=warm+seconds+(120 if recovery else 0)
-        if self.planned>5000000 or self.mutations>500000 or self.load_seconds>2100:
-            raise RuntimeError("cumulative calibration budget")
+        entry = self.budget.reserve(name, planned=planned, seeds=self.plan["client"]["corpus"], seconds=warm+seconds+(120 if recovery else 0))
         f=self.f
-        command=["docker","exec",f.containers[f.owner+"-client"],"/client","-mode","trial","-prefix",name,"-rate",str(rate),"-seconds",str(seconds),"-warm",str(warm)]
+        f.save("mutation-budget.json", self.budget.snapshot())
+        command=["docker","exec",f.containers[f.owner+"-client"],"/client","-mode","trial","-prefix",name,"-rate",str(rate),"-seconds",str(seconds),"-warm",str(warm),"-mutation-reservation",str(entry["reserved"])]
         if not direct:command += ["-target","weir:7447"]
         if recovery:command += ["-recovery-rate",str(recovery)]
-        result=f.run(command,360,check=False)
+        result=f.run(command,360,check=False,monitor=self.observe)
         f.save(name+".jsonl",result.stdout)
         entries=[json.loads(line) for line in result.stdout.splitlines() if line]
+        self.budget.reconcile(entry, entries, result.returncode == 0)
+        f.save("mutation-budget.json", self.budget.snapshot())
         if result.returncode:
             raise RuntimeError(f"trial {name} exit {result.returncode}; retained command evidence")
         audits=[e for e in entries if e["type"]=="audit"]
         if len(audits)!=(2 if recovery else 1) or any(a["error"]!="<nil>" for a in audits):
             raise RuntimeError("full audit missing/failed")
+        # Allow the next2s observer sample to bracket the trial's final arrival.
+        time.sleep(2.1)
+        self.observe()
         weir=read_observer(f,"weir");db=read_observer(f,"es")
-        for samples in (weir,db):
-            for s in samples:
-                if s.get("errors"):
-                    raise RuntimeError("resource observation failure")
-        resource_gate(weir,False)
-        resource_gate(db,False)
-        for role in ("weir","es","client","observer-weir","observer-es"):
-            obj=f.owned(f.owner+"-"+role)
-            if not obj["State"]["Running"] or obj["State"]["OOMKilled"] or obj["RestartCount"]:
-                raise RuntimeError("container stopped/OOM/restart")
-        clients=[e["sample"] for e in entries if e["type"]=="client_sample"]
+        clients=[e["sample"] for e in entries if e["type"] in ("client_start", "client_sample")]
         trials=[e["trial"] for e in entries if e["type"]=="trial"]
-        report=evaluate(trials[0],weir,clients,db)
+        report=evaluate(trials[0],weir,clients,db,stable=not recovery)
+        require_evidence(report)
         report.update(direct=direct,audits=[{k:v for k,v in a.items() if k!="ledger"} for a in audits])
         if recovery:
-            rt=trials[1];passing=[not window_gate(w) for w in rt["ten_second_windows"]]
+            rt=trials[1]
+            full = evaluate(rt,weir,clients,db)
+            require_evidence(full)
             recovered=None
-            for n in range(min(3,len(passing))):
-                begin=timestamp(rt["start"])+n*10
-                tail=[s for s in weir if timestamp(s["time"])>=begin]
-                reasons,_=resource_gate(tail)
-                if all(passing[n:]) and not reasons:
+            for n in range(min(3,len(rt["ten_second_windows"]))):
+                checks=[]
+                for index in range(n,len(rt["ten_second_windows"])):
+                    cohort=dict(rt)
+                    cohort["options"]=dict(rt["options"], WarmSeconds=index*10, Seconds=10)
+                    cohort["measure"]=rt["ten_second_windows"][index]
+                    check=evaluate(cohort,weir,clients,db)
+                    require_evidence(check)
+                    checks.append(check["pass"])
+                if all(checks):
                     recovered=(n+1)*10
                     break
             report["recovery"]={"rate":recovery,"seconds":recovered,"pass":recovered is not None,"windows":rt["ten_second_windows"],"measure":rt["measure"]}
-            report["overload_applied"] = trials[0]["measure"]["all"]["started"]==trials[0]["measure"]["all"]["planned"] and trials[0]["measure"]["all"]["client_drop"]==0
+            offered=trials[0]["measure"]["all"]
+            report["overload_applied"] = offered["started"]==offered["planned"] and offered["client_drop"]==0 and 0 <= offered["lag"]["p99_us"] <= self.plan["thresholds"]["lag_p99_us"]
         self.results.append(report)
         f.save("results.json",self.results)
         print(json.dumps({"phase":name,"rate":rate,"pass":report["pass"],"reasons":report["reasons"]}),flush=True)
         return report
+
+    def observe(self):
+        for role in ("weir", "es"):
+            samples=read_observer(self.f,role)
+            reasons,_=resource_gate(samples,False,role)
+            if reasons:
+                raise RuntimeError("observation/hard boundary; stop: "+"; ".join(reasons))
+            if not samples or time.time()-timestamp(samples[-1]["time"]) > self.plan["sampling"]["max_gap_seconds"]:
+                raise RuntimeError("observer stale; stop")
+            if role == "weir":
+                db_gate(samples,False)
+        for role in ("weir","es","client","observer-weir","observer-es"):
+            obj=self.f.owned(self.f.owner+"-"+role)
+            if not obj["State"]["Running"] or obj["State"]["OOMKilled"] or obj["RestartCount"]:
+                raise RuntimeError("container stopped/OOM/restart")
 
     def run(self):
         candidate=None
@@ -232,6 +267,8 @@ class Calibration:
         if not confirmed:
             return {"candidate_rps":None,"status":"confirmation failed; failures retained"}
         overload=self.trial("overload",candidate*2,30,recovery=candidate*7//10,warm=0)
+        if not overload["overload_applied"] or not overload["recovery"]["pass"]:
+            return {"candidate_rps":None,"status":"overload not applied or recovery unqualified", "overload_applied":overload["overload_applied"],"recovery":overload["recovery"]}
         for i,rate in enumerate((candidate//2,candidate,candidate*2)):
             self.trial("direct-"+str(i),rate,60,direct=True)
         for i in range(2):
@@ -242,23 +279,34 @@ class Calibration:
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--evidence",required=True);parser.add_argument("--owner",required=True)
+    parser.add_argument("--generator-evidence",type=Path,required=True)
     parser.add_argument("--artifact",type=Path,default=REPO/"dist/m20/first")
     args=parser.parse_args()
     f=Fixture(args.evidence,args.owner)
-    plan=json.loads((REPO/"scripts/capacity-plan.json").read_text())
+    plan=PLAN
     result={"schema_version":1,"status":"failed","profile":plan,"unknown":["independent acceptance","24h leak freedom","Weir goroutine census","physical host exclusivity","other profiles/platforms/backends"]}
     error=None
+    budget=Budget()
     def interrupted(signum,frame):
-        raise InterruptedError(f"signal {signum}")
+        signal.signal(signal.SIGINT,signal.SIG_IGN)
+        signal.signal(signal.SIGTERM,signal.SIG_IGN)
+        raise FixtureInterrupted(f"signal {signum}")
     signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
     try:
+        qualification=json.loads(args.generator_evidence.read_text())
+        if not qualification.get("generator_qualified") or qualification["profile_sha256"] != sha(PLAN_PATH):
+            raise RuntimeError("native generator qualification required")
+        for name,digest in qualification["tool_inputs"].items():
+            if sha(REPO/name)!=digest:
+                raise RuntimeError("generator-qualified tool inputs changed")
         f.preflight()
         result["plan_sha256"]=prepare(f,plan,args.artifact)
-        start(f,plan)
-        calibration=Calibration(f,plan)
+        start(f,plan,budget)
+        calibration=Calibration(f,plan,budget)
         result.update(calibration.run())
-        result["counts"]={"planned":calibration.planned,"mutations_with_seed":calibration.mutations,"load_seconds":calibration.load_seconds}
+        result["counts"]=budget.snapshot()
         time.sleep(12)
+        calibration.observe()
         final=read_observer(f,"weir")[-1]
         f.save("quiescent.json",final)
         m=prom(final["metrics"])
@@ -269,6 +317,7 @@ def main():
     finally:
         signal.signal(signal.SIGTERM,signal.SIG_IGN);signal.signal(signal.SIGINT,signal.SIG_IGN)
         clean=f.cleanup();result["cleanup_confirmed"]=clean
+        result["counts"]=budget.snapshot()
         try:
             after=f.inventory();f.save("inventory-final.json",after)
             if f.first:
@@ -279,10 +328,19 @@ def main():
         except BaseException as exc:
             error=error or str(exc);result["inventory_error"]=str(exc)
         result["elapsed_seconds"]=time.monotonic()-f.started
+        result["qualified"]=bool(result.get("candidate_rps")) and not error and clean
+        if not result["qualified"]:
+            result["candidate_rps"]=None
         result["exit_code"]=int(bool(error) or not clean)
-        f.save("capacity-baseline.json",result)
-        manifest={str(p.relative_to(f.root)):{"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(f.root.rglob("*")) if p.is_file()}
-        f.save("manifest.json",manifest)
+        result["cleanup_resources"]=f.cleanup_result
+        try:
+            f.save("capacity-baseline.json",result)
+            manifest={str(p.relative_to(f.root)):{"bytes":p.stat().st_size,"sha256":sha(p)} for p in sorted(f.root.rglob("*")) if p.is_file()}
+            f.save("manifest.json",manifest)
+        except (OSError, RuntimeError) as exc:
+            result.update(qualified=False,candidate_rps=None,exit_code=1,evidence_error=str(exc))
+            error=error or str(exc)
+            print(json.dumps(result),flush=True)
     print(json.dumps({"exit_code":result["exit_code"],"evidence":str(f.root),"error":error,"candidate_rps":result.get("candidate_rps")}),flush=True)
     return result["exit_code"]
 

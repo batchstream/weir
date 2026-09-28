@@ -9,6 +9,12 @@ import (
 )
 
 const (
+	arrivalExpiry = 20 * time.Millisecond
+	catchupLimit  = 8
+	callLifetime  = time.Second
+)
+
+const (
 	dropped byte = iota
 	applied
 	unknown
@@ -17,27 +23,37 @@ const (
 )
 
 type Operation struct {
-	ID      string
-	Write   bool
-	Number  int
-	Planned time.Time
+	ID       string
+	Write    bool
+	Number   int
+	Planned  time.Time
+	Decision time.Time
 }
 type Result struct {
 	Outcome byte
 	Class   string
 }
 type Metrics struct {
-	Planned   uint64            `json:"planned"`
-	Started   uint64            `json:"started"`
-	Completed uint64            `json:"completed"`
-	Success   uint64            `json:"success"`
-	Drop      uint64            `json:"client_drop"`
-	Late      uint64            `json:"client_late"`
-	Unknown   uint64            `json:"unknown"`
-	Failures  map[string]uint64 `json:"failures"`
-	Arrival   Histogram         `json:"arrival"`
-	Dispatch  Histogram         `json:"dispatch"`
-	Lag       Histogram         `json:"lag"`
+	Planned         uint64            `json:"planned"`
+	Started         uint64            `json:"started"`
+	Completed       uint64            `json:"completed"`
+	Success         uint64            `json:"success"`
+	Drop            uint64            `json:"client_drop"`
+	Late            uint64            `json:"client_late"`
+	Unknown         uint64            `json:"unknown"`
+	Due             uint64            `json:"due"`
+	CancelledFuture uint64            `json:"cancelled_future"`
+	WorkerExpired   uint64            `json:"worker_expired"`
+	DropReasons     map[string]uint64 `json:"drop_reasons"`
+	Wake            Histogram         `json:"wake"`
+	Decision        Histogram         `json:"decision"`
+	Construct       Histogram         `json:"construct"`
+	Handoff         Histogram         `json:"handoff"`
+	WorkerStart     Histogram         `json:"worker_start"`
+	Failures        map[string]uint64 `json:"failures"`
+	Arrival         Histogram         `json:"arrival"`
+	Dispatch        Histogram         `json:"dispatch"`
+	Lag             Histogram         `json:"lag"`
 }
 type Window struct {
 	All  Metrics `json:"all"`
@@ -45,11 +61,13 @@ type Window struct {
 	Put  Metrics `json:"put"`
 }
 type TrialOptions struct {
-	Rate        int
-	WarmSeconds int
-	Seconds     int
-	Prefix      string
-	Workers     int
+	Rate         int
+	WarmSeconds  int
+	Seconds      int
+	Prefix       string
+	Workers      int
+	TimingOnly   bool
+	LegacyExpiry bool
 }
 type Trial struct {
 	Options TrialOptions `json:"options"`
@@ -80,18 +98,58 @@ func (m *Metrics) finish(r Result, op Operation, dispatch, end time.Time) {
 		m.Unknown++
 	}
 }
-func (w *Window) plan(write bool, late bool, drop bool) {
+
+type Decision struct {
+	Operation   Operation
+	Wake        time.Time
+	Constructed time.Time
+	Reason      string
+	Future      bool
+}
+
+func (w *Window) plan(d Decision) {
 	ms := []*Metrics{&w.All, &w.Read}
-	if write {
+	if d.Operation.Write {
 		ms[1] = &w.Put
 	}
 	for _, m := range ms {
 		m.Planned++
-		if drop {
-			m.Drop++
+		if d.Future {
+			m.CancelledFuture++
+		} else {
+			m.Due++
+			m.Wake.Add(d.Wake.Sub(d.Operation.Planned))
+			m.Construct.Add(d.Constructed.Sub(d.Wake))
+			m.Decision.Add(d.Operation.Decision.Sub(d.Operation.Planned))
 		}
-		if late {
-			m.Late++
+		if d.Reason != "" {
+			m.Drop++
+			if m.DropReasons == nil {
+				m.DropReasons = map[string]uint64{}
+			}
+			m.DropReasons[d.Reason]++
+			if d.Reason == "expired" {
+				m.Late++
+			}
+		}
+	}
+}
+
+func (w *Window) worker(op Operation, start time.Time, expired bool) {
+	ms := []*Metrics{&w.All, &w.Read}
+	if op.Write {
+		ms[1] = &w.Put
+	}
+	for _, m := range ms {
+		m.Handoff.Add(start.Sub(op.Decision))
+		m.WorkerStart.Add(start.Sub(op.Planned))
+		if expired {
+			m.Drop++
+			m.WorkerExpired++
+			if m.DropReasons == nil {
+				m.DropReasons = map[string]uint64{}
+			}
+			m.DropReasons["worker_deadline_or_cancel"]++
 		}
 	}
 }
@@ -104,7 +162,7 @@ func (w *Window) finish(r Result, op Operation, dispatch, end time.Time) {
 	}
 }
 func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, error) {
-	if opts.Rate < 1 || opts.Rate > 6400 || opts.Seconds < 1 || opts.Seconds > 120 || opts.WarmSeconds < 0 || opts.WarmSeconds > 20 || opts.Workers < 1 || opts.Workers > 64 || opts.Rate*(opts.WarmSeconds+opts.Seconds)%10 != 0 || opts.Rate*(opts.WarmSeconds+opts.Seconds)/10 > 100000 {
+	if opts.Rate < 1 || opts.Rate > 6400 || opts.Seconds < 1 || opts.Seconds > 120 || opts.WarmSeconds < 0 || opts.WarmSeconds > 20 || opts.Workers < 1 || opts.Workers > 64 || opts.Rate*(opts.WarmSeconds+opts.Seconds)%10 != 0 || opts.Rate*(opts.WarmSeconds+opts.Seconds)/10 > 100000 || (opts.LegacyExpiry && !opts.TimingOnly) {
 		return nil, errors.New("trial bounds")
 	}
 	total := opts.Rate * (opts.WarmSeconds + opts.Seconds)
@@ -112,29 +170,35 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 	jobs := make(chan Operation)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	window := func(op Operation) *Window {
+	windows := func(op Operation) []*Window {
 		if op.Number < opts.Rate*opts.WarmSeconds {
-			return &t.Warm
+			return []*Window{&t.Warm}
 		}
-		return &t.Measure
+		return []*Window{&t.Measure, &t.Windows[(op.Number/opts.Rate-opts.WarmSeconds)/10]}
 	}
 	for worker := 0; worker < opts.Workers; worker++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for op := range jobs {
-				deadline := op.Planned.Add(time.Second)
-				call, cancel := context.WithDeadline(ctx, deadline)
+				start := time.Now()
+				call, cancel := context.WithDeadline(ctx, op.Planned.Add(callLifetime))
 				dispatch := time.Now()
-				result := client.Call(call, op)
+				expired := call.Err() != nil || !dispatch.Before(op.Planned.Add(callLifetime))
+				result := Result{Class: "ok", Outcome: applied}
+				if !expired && !opts.TimingOnly {
+					result = client.Call(call, op)
+				}
 				end := time.Now()
 				cancel()
 				mu.Lock()
-				window(op).finish(result, op, dispatch, end)
-				if op.Number >= opts.Rate*opts.WarmSeconds {
-					t.Windows[(op.Number/opts.Rate-opts.WarmSeconds)/10].finish(result, op, dispatch, end)
+				for _, w := range windows(op) {
+					w.worker(op, start, expired)
+					if !expired {
+						w.finish(result, op, dispatch, end)
+					}
 				}
-				if op.Write {
+				if op.Write && !expired {
 					t.Ledger[op.Number/10] = result.Outcome
 				}
 				mu.Unlock()
@@ -146,40 +210,56 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 	if !timer.Stop() {
 		<-timer.C
 	}
+	catchup := 0
+	expiry := arrivalExpiry
+	if opts.LegacyExpiry {
+		expiry = 5 * time.Millisecond
+	}
 	for n := 0; n < total; n++ {
 		scheduled := t.Start.Add(time.Duration(int64(n) * int64(time.Second) / int64(opts.Rate)))
-		if wait := time.Until(scheduled); wait > 0 {
+		waited := false
+		if wait := time.Until(scheduled); wait > 0 && ctx.Err() == nil {
 			timer.Reset(wait)
+			waited = true
 			select {
 			case <-timer.C:
 			case <-ctx.Done():
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
+				timer.Stop()
 			}
 		}
+		// Wake is the first observation after the timer select (or overdue loop).
+		wake := time.Now()
+		future := ctx.Err() != nil && wake.Before(scheduled)
 		write := n%10 == 9
 		id := readID(n)
 		if write {
 			id = fmt.Sprintf("%s-%06d", opts.Prefix, n/10)
 		}
+		constructed := time.Now()
 		op := Operation{ID: id, Write: write, Number: n, Planned: scheduled}
-		late := time.Since(scheduled) > 5*time.Millisecond
-		drop := true
 		mu.Lock()
-		if !late && ctx.Err() == nil {
+		op.Decision = time.Now()
+		d := Decision{Operation: op, Wake: wake, Constructed: constructed, Future: future}
+		if waited {
+			catchup = 0
+		}
+		switch {
+		case ctx.Err() != nil:
+			d.Reason = "cancelled"
+		case op.Decision.Sub(scheduled) > expiry:
+			d.Reason = "expired"
+		case !opts.LegacyExpiry && catchup >= catchupLimit:
+			d.Reason = "catchup_bound"
+		default:
+			catchup++
 			select {
 			case jobs <- op:
-				drop = false
 			default:
+				d.Reason = "no_worker"
 			}
 		}
-		window(op).plan(write, late, drop)
-		if n >= opts.Rate*opts.WarmSeconds {
-			t.Windows[(n/opts.Rate-opts.WarmSeconds)/10].plan(write, late, drop)
+		for _, w := range windows(op) {
+			w.plan(d)
 		}
 		mu.Unlock()
 	}
@@ -188,7 +268,7 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 	wg.Wait()
 	t.End = time.Now()
 	for _, m := range []*Metrics{&t.Warm.All, &t.Measure.All} {
-		if m.Planned != m.Completed+m.Drop || m.Completed != m.Started {
+		if m.Planned != m.Completed+m.Drop || m.Completed != m.Started || m.Planned != m.Due+m.CancelledFuture {
 			return t, errors.New("count identity")
 		}
 	}

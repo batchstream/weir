@@ -13,6 +13,7 @@ from capacity_fixture import Fixture, inventory_diff
 from capacity_report import window_gate
 
 
+@unittest.skipUnless(__debug__, "ordinary fixture rejects optimized Python")
 class Safety(unittest.TestCase):
     def setUp(self):
         self.env=patch.dict(os.environ,{"WEIR_CAPACITY_INTEGRATION":"1"})
@@ -68,7 +69,7 @@ class Safety(unittest.TestCase):
             with patch.object(f,"run",side_effect=run),patch.object(f,"owned",side_effect=[RuntimeError("foreign owner"),obj,obj]):
                 self.assertFalse(f.cleanup())
             result=json.loads((f.root/"cleanup.json").read_text())
-            self.assertEqual([x["clean"] for x in result],[False,True,True])
+            self.assertEqual([x["clean"] for x in result["resources"]],[False,True,True,True])
 
     def test_optimized_entry_has_no_side_effects(self):
         with tempfile.TemporaryDirectory() as base:
@@ -126,7 +127,8 @@ class CountSafety(unittest.TestCase):
     def test_quantiles_are_recomputed_and_drop_is_not_success(self):
         histogram={"buckets":[{"upper_us":1000,"count":9}],"p50_us":1000,"p95_us":1000,"p99_us":1000}
         metrics={"planned":10,"started":9,"completed":9,"success":9,"client_drop":1,"client_late":1,"unknown":0,"failures":{},"arrival":histogram,"dispatch":histogram,"lag":histogram}
-        window={name:metrics for name in ("all","read","put")}
+        from capacity_report_test import metrics as clean_metrics
+        window={"all":metrics,"read":metrics,"put":clean_metrics(0)}
         self.assertTrue(window_gate(window))
         histogram["p99_us"]=100
         with self.assertRaises(RuntimeError):window_gate(window)

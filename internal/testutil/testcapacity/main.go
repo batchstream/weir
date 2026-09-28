@@ -26,8 +26,10 @@ func main() {
 		os.Exit(1)
 	}
 }
-func run() error {
-	mode := flag.String("mode", "", "config, trial, observe, idle")
+func run() (runErrFinal error) {
+	mode := flag.String("mode", "", "config, trial, observe, idle, pace")
+	legacy := flag.Bool("legacy-expiry", false, "diagnostic-only original 5ms expiry")
+	reservation := flag.Int("mutation-reservation", 0, "controller reservation including seeds")
 	backend := flag.String("backend", "http://elasticsearch:9200", "owned backend")
 	target := flag.String("target", "", "weir target or empty direct")
 	prefix := flag.String("prefix", "trial", "unique trial prefix")
@@ -61,7 +63,8 @@ func run() error {
 		limits := store.DefaultLimits()
 		limits.Concurrency = 4
 		limits.BatchOperations = 16
-		out := map[string]any{"config": cfg, "store_effective": limits}
+		timing := map[string]any{"expiry_ms": arrivalExpiry.Milliseconds(), "max_catchup_per_wake": catchupLimit, "deadline_ms": callLifetime.Milliseconds()}
+		out := map[string]any{"config": cfg, "store_effective": limits, "timing": timing}
 		return encoder.Encode(out)
 	}
 	if *mode == "snapshot" {
@@ -136,6 +139,7 @@ func run() error {
 					s.DB = string(raw)
 				}
 			}
+			s.DurationNS = time.Since(s.Time).Nanoseconds()
 			if err = encoder.Encode(s); err != nil {
 				return err
 			}
@@ -155,7 +159,20 @@ func run() error {
 		defer c.Close()
 		call, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
-		return c.setup(call)
+		if *reservation != corpusSize {
+			return errors.New("bootstrap reservation")
+		}
+		defer func() {
+			receipt := map[string]any{"type": "mutation_receipt", "started": c.MutationsStarted.Load()}
+			if e := encoder.Encode(receipt); e != nil {
+				runErrFinal = e
+			}
+		}()
+		return c.setup(call, encoder)
+	}
+	if *mode == "pace" {
+		opts := TrialOptions{Rate: *rate, Seconds: *seconds, Workers: 64, Prefix: "pace", TimingOnly: true, LegacyExpiry: *legacy}
+		return pacing(ctx, encoder, opts)
 	}
 	if *mode != "trial" {
 		return errors.New("unknown mode")
@@ -165,9 +182,19 @@ func run() error {
 		return err
 	}
 	defer c.Close()
+	planned := *rate*(*warm+*seconds) + *recovery*120
+	if *reservation != corpusSize+planned/10 || planned%10 != 0 || *reservation > 100000 {
+		return errors.New("trial reservation")
+	}
+	defer func() {
+		receipt := map[string]any{"type": "mutation_receipt", "started": c.MutationsStarted.Load()}
+		if e := encoder.Encode(receipt); e != nil {
+			runErrFinal = e
+		}
+	}()
 	deadline, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
-	if err = c.setup(deadline); err != nil {
+	if err = c.setup(deadline, encoder); err != nil {
 		return err
 	}
 	begin := sample("self")
@@ -175,7 +202,7 @@ func run() error {
 	if err = encoder.Encode(start); err != nil {
 		return err
 	}
-	samples := make(chan Sample, 100)
+	samples := make(chan Sample, 160)
 	done := make(chan struct{})
 	sampleCtx, stopSamples := context.WithCancel(deadline)
 	go func() {
@@ -205,8 +232,19 @@ func run() error {
 		opts.Prefix = *prefix + "-recovery"
 		rt, runErr = runTrial(deadline, c, opts)
 	}
+	if t != nil && runErr == nil {
+		last := t
+		if rt != nil {
+			last = rt
+		}
+		until := last.Start.Add(time.Duration(last.Options.WarmSeconds+last.Options.Seconds) * time.Second)
+		if wait := time.Until(until); wait > 0 {
+			time.Sleep(wait)
+		}
+	}
 	stopSamples()
 	<-done
+	samples <- sample("self")
 	close(samples)
 	if t == nil {
 		return runErr

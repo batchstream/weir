@@ -5,15 +5,25 @@ import os
 from pathlib import Path
 import re
 import signal
+import selectors
 import subprocess
 import time
 
 REPO = Path(__file__).resolve().parent.parent
 LABEL = "weir.capacity"
+from capacity_contract import PLAN
+
+STREAM_LIMIT = PLAN["output"]["stream_bytes"]
+OUTPUT_LIMIT = PLAN["output"]["combined_bytes"]
+EVIDENCE_LIMIT = PLAN["budgets"]["evidence_bytes"]
 
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+class FixtureInterrupted(BaseException):
+    pass
 
 
 class Fixture:
@@ -50,53 +60,116 @@ class Fixture:
         self.before = None
         self.first = None
         self.tag = owner+"-client:local"
+        self.cleaning = False
+        self.diagnostic_errors = []
+
+    def evidence_size(self):
+        return sum(p.stat().st_size for p in self.root.rglob("*") if p.is_file())
 
     def save(self, name, value):
         data = value if isinstance(value, str) else json.dumps(value, indent=2)+"\n"
-        if len(data.encode()) > 16<<20:
-            raise RuntimeError("individual evidence bound")
-        (self.root/name).write_text(data)
-        self.check_size()
+        raw = data.encode()
+        target = self.root/name
+        old = target.stat().st_size if target.exists() else 0
+        if len(raw) > OUTPUT_LIMIT or self.evidence_size()-old+len(raw) > EVIDENCE_LIMIT:
+            raise RuntimeError("individual/total evidence bound before write")
+        target.write_bytes(raw)
 
     def check_size(self):
-        if sum(p.stat().st_size for p in self.root.rglob("*") if p.is_file()) > 256<<20:
+        if self.evidence_size() > EVIDENCE_LIMIT:
             raise RuntimeError("total evidence bound")
 
-    def run(self, args, timeout=30, check=True, env=None):
+    def command_record(self, record):
+        raw = (json.dumps(record)+"\n").encode()
+        target = self.root/"commands.jsonl"
+        if self.evidence_size()+len(raw) > EVIDENCE_LIMIT:
+            raise RuntimeError("command evidence bound")
+        with target.open("ab") as log:
+            log.write(raw)
+
+    def diagnostic_failure(self, exc):
+        self.diagnostic_errors.append(str(exc)[:1000])
+        if not self.cleaning:
+            raise exc
+
+    def run(self, args, timeout=30, check=True, env=None, monitor=None):
         timeout = min(timeout, self.deadline-time.monotonic())
         if timeout <= 0:
             raise TimeoutError("invocation/cleanup budget")
         self.number += 1
-        record = {"number":self.number, "start":time.time(), "argv":args}
-        with (self.root/"commands.jsonl").open("a") as log:
-            log.write(json.dumps(record)+"\n")
-        # Disk files bound retained output, with a separate polling cap for noisy children.
-        stdout = self.root/f"command-{self.number:04d}.out"
-        stderr = self.root/f"command-{self.number:04d}.err"
-        child = None
+        command_number = self.number
+        record = {"number": command_number, "start": time.time(), "argv": args}
         try:
-            with stdout.open("wb") as out, stderr.open("wb") as err:
-                child = subprocess.Popen(args, cwd=REPO, env=env or self.env, stdout=out, stderr=err, start_new_session=True)
-                until = time.monotonic()+timeout
-                while child.poll() is None:
-                    if time.monotonic() >= until or stdout.stat().st_size+stderr.stat().st_size > 16<<20:
-                        raise TimeoutError("command time/output bound")
-                    time.sleep(.05)
-                result = subprocess.CompletedProcess(args, child.returncode, stdout.read_text(), stderr.read_text())
+            self.command_record(record)
+        except (OSError, RuntimeError) as exc:
+            self.diagnostic_failure(exc)
+        child = None
+        streams = [bytearray(), bytearray()]
+        retained = 0
+        truncated = False
+        available = max(0, min(OUTPUT_LIMIT, EVIDENCE_LIMIT-self.evidence_size()-4096))
+        if self.cleaning:
+            available = OUTPUT_LIMIT
+        # Pipes cap kernel buffering. Only bounded chunks and retained prefixes enter
+        # memory; the child never receives an evidence-file descriptor.
+        try:
+            child = subprocess.Popen(args, cwd=REPO, env=env or self.env,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     start_new_session=True)
+            until = time.monotonic()+timeout
+            next_monitor = time.monotonic()+2
+            with selectors.DefaultSelector() as selector:
+                for index, pipe in enumerate((child.stdout, child.stderr)):
+                    os.set_blocking(pipe.fileno(), False)
+                    selector.register(pipe, selectors.EVENT_READ, index)
+                while selector.get_map():
+                    if time.monotonic() >= until:
+                        raise TimeoutError("command timeout")
+                    if monitor and time.monotonic() >= next_monitor:
+                        monitor()
+                        next_monitor = time.monotonic()+2
+                    for key, _ in selector.select(min(.05, max(0, until-time.monotonic()))):
+                        chunk = os.read(key.fd, PLAN["output"]["read_chunk_bytes"])
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        dest = streams[key.data]
+                        limit = min(STREAM_LIMIT-len(dest), available-retained)
+                        dest.extend(chunk[:limit])
+                        retained += min(len(chunk), limit)
+                        if len(chunk) > limit:
+                            truncated = True
+                            raise RuntimeError("command output/evidence bound")
+                child.wait(timeout=max(.01, until-time.monotonic()))
+            result = subprocess.CompletedProcess(args, child.returncode,
+                                                streams[0].decode(errors="replace"),
+                                                streams[1].decode(errors="replace"))
             if check and result.returncode:
                 raise RuntimeError(f"command {self.number} exit {result.returncode}: {result.stderr[:1000]}")
             return result
         finally:
-            if child is not None and child.poll() is None:
-                os.killpg(child.pid, signal.SIGTERM)
+            # Stop the entire group even when its leader already exited and left
+            # descendants holding pipes. Always reap the leader.
+            if child is not None:
                 try:
-                    child.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait(timeout=2)
-            record.update(end=time.time(), exit=child.returncode if child else None)
-            with (self.root/"commands.jsonl").open("a") as log:
-                log.write(json.dumps(record)+"\n")
+                    stop_group(child)
+                finally:
+                    child.stdout.close()
+                    child.stderr.close()
+            record.update(end=time.time(), exit=child.returncode if child else None,
+                          retained_bytes=[len(s) for s in streams], truncated=truncated)
+            for suffix, raw in zip(("out", "err"), streams):
+                try:
+                    target = self.root/f"command-{command_number:04d}.{suffix}"
+                    if self.evidence_size()+len(raw) > EVIDENCE_LIMIT:
+                        raise RuntimeError("final evidence bound")
+                    target.write_bytes(raw)
+                except (OSError, RuntimeError) as exc:
+                    self.diagnostic_failure(exc)
+            try:
+                self.command_record(record)
+            except (OSError, RuntimeError) as exc:
+                self.diagnostic_failure(exc)
 
     def inventory(self):
         containers = self.run(["docker","ps","-a","--no-trunc","--format",'{{json .}}']).stdout
@@ -104,7 +177,8 @@ class Fixture:
         cs = [{k:c[k] for k in ("ID","Names","State","Image")} for c in map(json.loads,filter(None,containers.splitlines()))]
         nets = []
         for identity in self.run(["docker","network","ls","-q","--no-trunc"]).stdout.split():
-            obj = json.loads(self.run(["docker","network","inspect",identity]).stdout)[0]
+            template = '{'+','.join('"'+k+'":{{json .'+k+'}}' for k in ("Id","Name","Created","Driver","IPAM"))+'}'
+            obj = json.loads(self.run(["docker","network","inspect","--format",template,identity]).stdout)
             nets.append({k:obj[k] for k in ("Id","Name","Created","Driver","IPAM")})
         vols = self.run(["docker","volume","ls","--format",'{{json .}}']).stdout
         return {"containers":sorted(cs,key=lambda c:c["ID"]),"networks":sorted(nets,key=lambda n:n["Name"]),"volumes":sorted(vols.splitlines())}
@@ -120,8 +194,9 @@ class Fixture:
         for args, reason in checks:
             if self.run(args).stdout.strip():
                 raise RuntimeError(reason)
-        info = json.loads(self.run(["docker","info","--format",'{{json .}}']).stdout)
-        selected = {k:info[k] for k in ("NCPU","MemTotal","KernelVersion","Architecture","ServerVersion","OSType")}
+        fields = ("NCPU","MemTotal","KernelVersion","Architecture","ServerVersion","OSType")
+        template = '{'+','.join('"'+k+'":{{json .'+k+'}}' for k in fields)+'}'
+        selected = json.loads(self.run(["docker","info","--format",template]).stdout)
         if selected["NCPU"] != 8 or selected["MemTotal"] != 8319770624 or selected["Architecture"] != "aarch64" or selected["KernelVersion"] != "7.0.12-linuxkit":
             raise RuntimeError("frozen VM profile unavailable")
         self.save("vm.json",selected)
@@ -159,12 +234,14 @@ class Fixture:
         return cid
 
     def owned(self, name):
-        obj = json.loads(self.run(["docker","inspect",name]).stdout)[0]
+        template = '{"Config":{"Labels":{{json .Config.Labels}}},'+','.join('"'+k+'":{{json .'+k+'}}' for k in ("Id","Name","Image","HostConfig","State","RestartCount"))+'}'
+        obj = json.loads(self.run(["docker","inspect","--format",template,name]).stdout)
         if obj["Name"] != "/"+name or obj["Config"]["Labels"].get(LABEL)!=self.owner or (name in self.containers and obj["Id"]!=self.containers[name]):
             raise RuntimeError("container owner/ID mismatch")
         return obj
 
     def cleanup(self):
+        self.cleaning = True
         self.deadline = min(self.started+2700,time.monotonic()+180)
         result = []
         def attempt(name, action):
@@ -176,7 +253,7 @@ class Fixture:
         # Candidates are recorded before create. Only matching owner/name may be recovered.
         for name in reversed(self.attempted):
             def remove(n=name):
-                inspect = self.run(["docker","inspect",n],check=False)
+                inspect = self.run(["docker","inspect","--format","{{.Id}}",n],check=False)
                 if inspect.returncode:
                     # A failed query is not proof of absence; verify exact name listing.
                     if self.run(["docker","ps","-aq","--filter","name=^/"+n+"$"]).stdout.strip():
@@ -185,9 +262,15 @@ class Fixture:
                 obj = self.owned(n)
                 cid = obj["Id"]
                 self.run(["docker","stop","--time","8",cid],timeout=15)
-                self.save(n+"-final-state.json",self.owned(n)["State"])
-                log = self.run(["docker","logs","--tail","10000",cid],check=False)
-                self.save(n+"-final.log",log.stdout+log.stderr)
+                final = self.owned(n)
+                if final["State"].get("Running"):
+                    raise RuntimeError("owned container still running after stop: "+cid)
+                def diagnostics():
+                    self.save(n+"-final-state.json", final["State"])
+                    log = self.run(["docker", "logs", "--tail", "10000", cid])
+                    self.save(n+"-final.log", log.stdout+log.stderr)
+                attempt(n+": diagnostics", diagnostics)
+                # Diagnostic failure cannot skip independently verified removal.
                 self.run(["docker","rm",cid])
                 if self.run(["docker","ps","-aq","--filter","id="+cid]).stdout.strip():
                     raise RuntimeError("container removal unconfirmed")
@@ -222,8 +305,42 @@ class Fixture:
                     path.unlink()
             self.save("intermediate-reclamation.json",reclaimed)
         attempt("generated build/import intermediates",reclaim_intermediates)
-        self.save("cleanup.json",result)
-        return all(r["clean"] for r in result)
+        self.cleanup_result = result
+        try:
+            self.save("cleanup.json", {"resources": result, "diagnostic_errors": self.diagnostic_errors})
+        except (OSError, RuntimeError) as exc:
+            self.diagnostic_errors.append(str(exc)[:1000])
+        return all(r["clean"] for r in result) and not self.diagnostic_errors
+
+
+def stop_group(child):
+    """Own session only. Darwin can report EPERM for a group of zombies."""
+    def send(sig):
+        try:
+            os.killpg(child.pid, sig)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            # Do not treat EPERM as absence: query only this owned process group.
+            query = subprocess.run(["ps", "-o", "pid=,pgid=,stat=", "-g", str(child.pid)],
+                                   capture_output=True, text=True, timeout=2)
+            if query.returncode not in (0, 1) or len(query.stdout) > 65536:
+                raise RuntimeError("owned process group state unconfirmed")
+            for line in query.stdout.splitlines():
+                pid, group, state = line.split()
+                if int(group) == child.pid and not state.startswith("Z"):
+                    raise RuntimeError("owned process group remains: "+pid)
+    try:
+        send(signal.SIGTERM)
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        send(signal.SIGKILL)
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=2)
 
 
 def inventory_diff(before, after):

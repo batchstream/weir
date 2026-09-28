@@ -53,8 +53,48 @@ func TestTrialBounds(t *testing.T) {
 
 func TestLateDropHasNoFabricatedLatency(t *testing.T) {
 	var w Window
-	w.plan(true, true, true)
+	now := time.Now()
+	op := Operation{Write: true, Planned: now.Add(-21 * time.Millisecond), Decision: now}
+	d := Decision{Operation: op, Wake: now, Constructed: now, Reason: "expired"}
+	w.plan(d)
 	if w.All.Planned != 1 || w.All.Drop != 1 || w.All.Late != 1 || w.Put.Drop != 1 || w.Read.Planned != 0 || w.All.Arrival.Percentile(99) != -1 || w.All.Lag.Percentile(99) != -1 {
 		t.Fatal(w)
+	}
+}
+
+func TestDueAndCancelledTimingConservation(t *testing.T) {
+	opts := TrialOptions{Rate: 1000, Seconds: 1, Workers: 64, Prefix: "timing", TimingOnly: true}
+	trial, err := runTrial(context.Background(), nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := trial.Measure.All
+	count := func(h Histogram) uint64 {
+		var n uint64
+		for _, c := range h.Counts {
+			n += c
+		}
+		return n
+	}
+	if m.Due != 1000 || m.CancelledFuture != 0 || count(m.Wake) != 1000 || count(m.Decision) != 1000 || count(m.Construct) != 1000 || count(m.Handoff) != m.Started+m.WorkerExpired || count(m.Lag) != m.Started {
+		t.Fatal("timing count identity", m.Planned, m.Due, m.Started, m.Drop)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	trial, err = runTrial(ctx, nil, opts)
+	m = trial.Measure.All
+	if err == nil || m.CancelledFuture != 1000 || m.Due != 0 || count(m.Wake) != 0 || count(m.Decision) != 0 || m.Started != 0 {
+		t.Fatal("future cancellation fabricated observations", m.CancelledFuture, m.Due, err)
+	}
+}
+
+func TestLateSLODoesNotFabricateCompletion(t *testing.T) {
+	now := time.Now()
+	op := Operation{Planned: now.Add(-7 * time.Millisecond), Decision: now, Write: true}
+	d := Decision{Operation: op, Wake: now.Add(-time.Millisecond), Constructed: now}
+	var w Window
+	w.plan(d)
+	if w.All.Drop != 0 || w.All.Wake.Percentile(99) != 6000 || w.All.Decision.Percentile(99) != 7000 || w.All.Arrival.Percentile(99) != -1 {
+		t.Fatal("arrival timing is not completion or per-item5ms expiry")
 	}
 }

@@ -1,0 +1,183 @@
+{
+  "schema_version": 2,
+  "scope": "M22R tool remediation and bounded generator qualification; original M22 remains failed",
+  "baseline": "7806c5ff679f51ebd364640116677f5c905ce525",
+  "artifact_source": "315819fcd2c0cae1c22604e85ccdb5bb9291f585",
+  "binary_sha256": "9def37fc9f4d552d35af552f87f86ba0b45bd2bdcf948114237fb5d312c97a32",
+  "image_id": "sha256:caa699e6ca172cbfa24ed4d311f4cb346817a354b05df52601abd954edcb4dab",
+  "es_image_id": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+  "resources": {
+    "weir": {
+      "cpu": 2,
+      "cpuset": "0-1",
+      "memory_mib": 1024,
+      "process_budget_mib": 768,
+      "pids": 256
+    },
+    "es": {
+      "cpu": 3,
+      "cpuset": "2-4",
+      "memory_mib": 3072,
+      "heap_mib": 1024,
+      "data_tmpfs_mib": 1024,
+      "pids": 512
+    },
+    "client": {
+      "cpu": 1,
+      "cpuset": "5",
+      "memory_mib": 512,
+      "pids": 256
+    },
+    "observer_weir": {
+      "cpu": 0.125,
+      "cpuset": "6",
+      "memory_mib": 64,
+      "pids": 64
+    },
+    "observer_es": {
+      "cpu": 0.125,
+      "cpuset": "7",
+      "memory_mib": 64,
+      "pids": 64
+    }
+  },
+  "swap": "disabled: memory-swap equals memory on every container",
+  "client": {
+    "workers": 64,
+    "queued": 0,
+    "grpc_connections": 4,
+    "http_connections": 62,
+    "observer_http_connections": 2,
+    "deadline_ms": 1000,
+    "seed": "weir-m22-seed-20260928",
+    "corpus": 1000,
+    "document_bytes": 1024,
+    "read_percent": 90,
+    "put_percent": 10,
+    "expiry_ms": 20,
+    "max_catchup_per_wake": 8
+  },
+  "document": "JSON data string generated from independent SHA256 hexadecimal blocks; 4 bits entropy per character, about 2:1 compressible; no indexed payload, no query workload",
+  "backend_semantics": {
+    "version": "8.19.22",
+    "primaries": 1,
+    "replicas": 0,
+    "mapping_enabled": false,
+    "refresh_interval": "1s",
+    "translog_durability": "request",
+    "wait_for_active_shards": 1,
+    "write_refresh": false,
+    "read_realtime": true,
+    "auto_create_index": false,
+    "auth": false,
+    "pipeline": false,
+    "routing": false
+  },
+  "trial_policy": "persistent ES and Weir processes throughout; recreate owned index and seed1000 before each trial;20s warmup then measurement, including direct and confirmations; overload followed immediately by recovery on same data without reset or warmup",
+  "rates": [
+    50,
+    100,
+    200,
+    400,
+    800,
+    1600,
+    3200
+  ],
+  "search": {
+    "warm_seconds": 20,
+    "measure_seconds": 60,
+    "stop_at_first_failure": true
+  },
+  "confirmation": {
+    "rounds": 3,
+    "seconds": 120,
+    "fallback_levels": 1
+  },
+  "direct": {
+    "http_replay_prevention": "non-rewindable bodies including empty chunked GET; no GetBody, proxy or redirect",
+    "fractions": [
+      0.5,
+      1,
+      2
+    ],
+    "point_seconds": 60,
+    "candidate_extra_rounds": 2,
+    "candidate_seconds": 120,
+    "rate_rounding": "exact integer fraction",
+    "minimum_rate": 1
+  },
+  "overload": {
+    "factor": 2,
+    "max_rate": 6400,
+    "seconds": 30,
+    "recovery_fraction": 0.7,
+    "recovery_seconds": 120,
+    "recover_within_seconds": 30,
+    "continuous_window_seconds": 10,
+    "definition": "first passing10s arrival cohort ending within30s, with all later10s cohorts and resource samples passing"
+  },
+  "thresholds": {
+    "p95_us": 100000,
+    "p99_us": 250000,
+    "lag_p99_us": 5000,
+    "errors": 0,
+    "unknown": 0,
+    "client_drop": 0,
+    "rss_mib": 614,
+    "cgroup_mib": 819,
+    "oom": 0,
+    "restart": 0,
+    "ledger_overrun": 0,
+    "regression_explain_percent": 10
+  },
+  "sampling": {
+    "seconds": 2,
+    "client_self": true,
+    "observer_namespaces": "only own target PID/network; /proc/1/root/sys/fs/cgroup plus process status/fd/net; SYS_PTRACE and DAC_READ_SEARCH only for own namespace proc access; ES JVM selected by exact bootstrap main class within owned PID namespace, not launcher/tini",
+    "go_goroutines": "client sampled; exact Weir artifact has no low-cost census, Weir unverified",
+    "quiescence_seconds": 12,
+    "not_atomic_peak": true,
+    "max_gap_seconds": 6,
+    "max_sample_seconds": 2,
+    "clock_tolerance_seconds": 1,
+    "coverage": "bracket each full load and stability/recovery window; monotonic per observer; sampled maxima only"
+  },
+  "budgets": {
+    "planned": 5000000,
+    "mutations": 500000,
+    "trial_mutations": 100000,
+    "evidence_bytes": 268435456,
+    "load_seconds": 2100,
+    "invocation_seconds": 2700,
+    "cleanup_seconds": 180
+  },
+  "stop": "any correctness audit failure, OOM/restart, ledger overrun, owner uncertainty, nondefault inventory change, activity-time unexplained network change or resource bound fails stops calibration; no product optimization or automatic retries",
+  "generator_limits": {
+    "CPU_quota_fraction_stop": 0.9,
+    "DB_CPU_quota_fraction_stop": 0.9,
+    "DB_queue_or_rejected_stop": true,
+    "resource_sample_interval_seconds": 2
+  },
+  "diagnostics": {
+    "rates": [
+      50,
+      200,
+      800
+    ],
+    "seconds": 20,
+    "max_probes": 6,
+    "native_seconds": 300,
+    "mode": "timing-only same engine and fixed64 workers, no RPC or database capacity claim",
+    "initial": "instrumented original timer,5ms per-arrival expiry",
+    "only_correction": "separate20ms expiry from unchanged5ms dispatch p99; at most8 overdue arrivals per timer wake, no spin or shifted schedules",
+    "correction_condition": "50ops/s wake p99 <=5ms: verify the single revised expiry/catchup policy; otherwise no evidence for a post-wake fix and stop after original three probes",
+    "minimum_qualification": "corrected50ops/s all/read/put dispatch lag p99<=5ms, zero drop/error, complete counts and covered client resources; original result alone does not qualify corrected engine"
+  },
+  "output": {
+    "stream_bytes": 8388608,
+    "combined_bytes": 16777216,
+    "read_chunk_bytes": 65536,
+    "total_evidence_bytes": 268435456,
+    "overflow": "retain bounded prefix, separate command metadata truncated=true, fail and Stop/Wait process group"
+  }
+}

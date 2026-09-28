@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
@@ -18,11 +19,12 @@ import (
 )
 
 type Client struct {
-	HTTP        *http.Client
-	Transport   *http.Transport
-	Backend     string
-	Connections []*grpc.ClientConn
-	RPC         []pb.WeirClient
+	MutationsStarted atomic.Uint64
+	HTTP             *http.Client
+	Transport        *http.Transport
+	Backend          string
+	Connections      []*grpc.ClientConn
+	RPC              []pb.WeirClient
 }
 
 func newClient(backend, target string) (*Client, error) {
@@ -80,6 +82,9 @@ func failure(class string, write bool) Result {
 	return r
 }
 func (c *Client) Call(ctx context.Context, op Operation) Result {
+	if op.Write {
+		c.MutationsStarted.Add(1)
+	}
 	if ctx.Err() != nil {
 		r := Result{Class: "deadline_before_call", Outcome: notStarted}
 		return r

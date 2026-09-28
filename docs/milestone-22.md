@@ -1,5 +1,9 @@
 # M22: first reference capacity calibration
 
+Historical M22 was rejected by independent review. Its plan/results below remain
+unchanged; the maintained entry now uses [M22R](milestone-22-remediation.md) and
+requires a matching native generator qualification receipt.
+
 This bounded stage adds only an internal load command and an explicitly opted-in
 standalone OCI fixture. Product inputs remain those of M20 source
 `315819fcd2c0cae1c22604e85ccdb5bb9291f585`. The bounded measured attempt completed with no qualifying capacity candidate,

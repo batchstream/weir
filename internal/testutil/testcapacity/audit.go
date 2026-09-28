@@ -9,7 +9,7 @@ import (
 
 // Every trial recreates only records in the exclusively owned ES container.
 // All operations, including setup and audit, are single attempts.
-func (c *Client) setup(ctx context.Context) error {
+func (c *Client) setup(ctx context.Context, encoder *json.Encoder) error {
 	code, _, err := c.request(ctx, "DELETE", "/records", nil)
 	if err != nil || (code != 200 && code != 404) {
 		return fmt.Errorf("reset status=%d: %w", code, err)
@@ -21,6 +21,14 @@ func (c *Client) setup(ctx context.Context) error {
 	}
 	for i := 0; i < corpusSize; i++ {
 		op := Operation{ID: fmt.Sprintf("read-%04d", i), Write: true}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		progress := map[string]any{"type": "setup_progress", "started": i + 1}
+		if err := encoder.Encode(progress); err != nil {
+			return err
+		}
+		c.MutationsStarted.Add(1)
 		r := c.direct(ctx, op)
 		if r.Class != "ok" {
 			return fmt.Errorf("seed %d: %s", i, r.Class)

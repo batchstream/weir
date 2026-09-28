@@ -14,15 +14,21 @@ import (
 	"time"
 )
 
+var observationEpoch = time.Now()
+
 type Sample struct {
-	Time       time.Time         `json:"time"`
-	Files      map[string]string `json:"files"`
-	FD         int               `json:"fd"`
-	Goroutines int               `json:"goroutines,omitempty"`
-	RSS        uint64            `json:"rss_bytes"`
-	Metrics    string            `json:"metrics,omitempty"`
-	DB         string            `json:"db,omitempty"`
-	Errors     []string          `json:"errors,omitempty"`
+	Role        string            `json:"role"`
+	MonotonicNS int64             `json:"monotonic_ns"`
+	DurationNS  int64             `json:"duration_ns"`
+	GOMAXPROCS  int               `json:"gomaxprocs,omitempty"`
+	Time        time.Time         `json:"time"`
+	Files       map[string]string `json:"files"`
+	FD          int               `json:"fd"`
+	Goroutines  int               `json:"goroutines,omitempty"`
+	RSS         uint64            `json:"rss_bytes"`
+	Metrics     string            `json:"metrics,omitempty"`
+	DB          string            `json:"db,omitempty"`
+	Errors      []string          `json:"errors,omitempty"`
 }
 
 func boundedFile(name string) (string, error) {
@@ -39,6 +45,11 @@ func boundedFile(name string) (string, error) {
 }
 func sample(pid string) Sample {
 	s := Sample{Time: time.Now(), Files: map[string]string{}}
+	s.MonotonicNS = time.Since(observationEpoch).Nanoseconds()
+	s.Role = "weir"
+	if pid != "1" {
+		s.Role = "es"
+	}
 	proc := "/proc/" + pid
 	cg := proc + "/root/sys/fs/cgroup"
 	for _, name := range []string{"memory.current", "memory.max", "memory.swap.max", "memory.events", "cpu.max", "cpu.stat", "cpuset.cpus.effective", "io.stat", "pids.current", "pids.max"} {
@@ -72,7 +83,10 @@ func sample(pid string) Sample {
 	}
 	if pid == "self" {
 		s.Goroutines = runtime.NumGoroutine()
+		s.GOMAXPROCS = runtime.GOMAXPROCS(0)
+		s.Role = "client"
 	}
+	s.DurationNS = time.Since(s.Time).Nanoseconds()
 	return s
 }
 func executableHash(pid string) (string, error) {
