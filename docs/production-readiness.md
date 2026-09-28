@@ -1,6 +1,14 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R4C2](milestone-30r4c2.md)修复完整catalog盘点批次为固定最多5类，原Namespace/Quota两个准确UID已回收。
+实现/唯一执行 `8a6c8c4fb4e0b767ef9126dccac33578f1d8650e`；聚焦49项通过，完整普通207通过，优化182通过/25既有skip。
+仅cleanup-only新增冻结300秒，普通fixture默认180秒不变。
+唯一窗口130.151秒：61类完整13批均成功，foreign/default/Event/Secret0和删除前身份检查通过；两目标各1次条件DELETE。
+命令30 exit0空GET确认Namespace真正不存在，零残留；30条CLI全部结束/Wait，无新对象/负载或预算外GET。
+M30R4/M30R4C旧failed/cleanup=false永久保留；observer/client缺口、partial/not-qualified、timing=not-run、candidate=null和所有其他门槛不变。
+以下为各阶段当轮历史结果。
+
 [M30R4C](milestone-30r4c.md)只尝试准确 Namespace/Quota 两残留清理，**清理仍失败，两个 UID 未清除**。
 实现/唯一执行 `db68a3845291e20d7ecbf750c91184101fd97a7b`；入口区分当前 DELETE 目标与冻结原始历史 UID，共享清理机制未改。
 聚焦40项通过；完整普通198通过，优化173通过/25项既有skip。唯一180秒窗口在40.907秒停止：身份/空Pod/Secret零计数通过，
