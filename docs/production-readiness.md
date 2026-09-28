@@ -1,6 +1,16 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R7](milestone-30r7.md)完成唯一小型无数据库三臂exec诊断，**仅支持固定条件下完整输出后EOF确认的缓解，不是正式helper修复或资源资格**。
+同一固定ES image仅运行shell、同一1CPU/256MiB Pod：A立即退出只收到249,915bytes（五完整记录+4091byte尾片、无terminal），exit1/reset；
+B完整校验295,041bytes、hash/0–5顺序/terminal后关闭stdin，收到ack-eof并exit0；C不确认但持续排空，完整输出后按4秒等待上限exit74，明确不算成功资格。
+三臂整体29.907/30.102/33.931秒，均双EOF/Join、前后同身份，exec存活期间控制面CLI重叠0；普通GET/exec10秒flag和kubectl原hash不变。
+主900秒含静态准备实际266.066秒，原300秒清理108.778秒，六准确UID各一次Orphan DELETE/空GET确认；command139确认namespace不存在，零残留。
+两次完整61类型/13批盘点、foreign/default/Event/Secret0守卫通过；139普通CLI全部exit0，原A失败和C预期非零原样封存。
+受影响普通144项通过，最终入口12项普通复验、最终优化144项通过；唯一已缓存无网络小容器验证准确shell/EOF/20秒保险并回收。
+2707份历史封存及204Go/module、70/81正式输入未变。仅诊断入口/可选Observer输出上限和报告变化，无正式helper/Go/module/镜像/push/Actions/数据库或容量工作。
+丢字节具体层和M30R6根因仍unknown；CNI仍disabled，resource partial/not-qualified、timing=not-run、candidate=null及所有其他required保持。下一正式收尾修复须由统筹另行决定，无timer。
+
 [M30R6](milestone-30r6.md)使用基线 `bc0f373` 原脚本进行唯一一次新 namespace 无负载 EKS 采样，**仍 NO-GO，六对象已清理**。
 静态检查63.875秒后才启动唯一120秒资源窗，prepare/native写前四GET共10.584秒，固定节点/UID与原余量门槛通过，恢复0次。
 准确helper一次上传43.775秒、release exit0，完整有序日志与同身份Completed0确认空索引PUT1；planned/document mutation0，无重放。
