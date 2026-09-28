@@ -1,0 +1,9 @@
+{
+  "source": "M28R fixture-1, 2026-09-28; artifact source 1ffc092c2f85a992f341831f23a5833ff6a96073",
+  "review": "Owned non-secret proc/cgroup/TCP, public metrics, filtered ES numeric stats and native identity. Exact bytes, including limits padding; no environment or credentials. Two samples per role; no observer_end or load.",
+  "sha256": {
+    "native-identity.txt": "c290d257ea377071551b2ce20eb8deaf88cbab90e41d400e698677816a3c808b",
+    "weir.jsonl": "0bdeba48e5870c1468f47ec02ac0dd66bbf45c3398fcb58658fb87cd051a5332",
+    "es.jsonl": "395205e9ba68d2cdc6c5dcc90eef4207d289c7dc09764fb55078fe14802f537d"
+  }
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One frozen M28R native short fixture; no EKS, image build, or capacity search."""
+"""Frozen native short fixture in an explicitly owned stage and shared budget."""
 import argparse
 import json
 import os
@@ -106,11 +106,16 @@ def verify(obj, options):
     require(host['NetworkMode']==('none' if role=='es' else 'container:'+options['es']), 'network namespace drift')
     require(obj['Config']['User']==('1000:0' if role=='es' else '65532:65532'), 'container UID')
     require(obj['Image']==(loop.ES['config'] if role=='es' else ENVIRONMENT), 'image identity')
-    require(all(m['Type']=='bind' and not m['RW'] and m['Source'].startswith(str(common.REPO/'.testdata/m28r')+'/') for m in obj['Mounts']),'static mounts')
+    root=options['root'];artifacts=root.parent/'artifacts'
+    mounts={str(artifacts):'/qualification'}
+    if role=='es':mounts.update({str(root/name):'/'+name for name in ('local-check.sh','es-start.sh')})
+    if role=='weir':mounts[str(root/'node.json')]='/node.json'
+    require(len(obj['Mounts'])==len(mounts) and all(m['Type']=='bind' and not m['RW'] and
+            mounts.get(m['Source'])==m['Destination'] for m in obj['Mounts']),'static mounts')
 
 
 def execute(run, plan):
-    containers={};observers={};result=dict(passed=False,cleanup=False,errors=[])
+    containers={};observers={};result=dict(passed=False,cleanup=False,load_started=False,errors=[])
     started=time.monotonic();run.deadline=plan["fixture_deadline_monotonic"]
     def monitor():
         for role,observer in observers.items():
@@ -119,7 +124,7 @@ def execute(run, plan):
     run.monitor=monitor
     try:
         require(all(common.digest(p)==value for p,value in plan['inputs'].items()),'frozen inputs changed')
-        source=json.loads((run.root.parent/'source-inputs.json').read_text())
+        source=json.loads(Path(plan['source_manifest']).read_text())
         require(source['source']==plan['source'] and all(common.digest(common.REPO/p)==value for p,value in source['inputs'].items()), 'source input drift')
         for name,command in inventories().items():run.save(name+'-before.txt',run.run(command))
         for image in (ENVIRONMENT,loop.ES['reference']):
@@ -139,7 +144,7 @@ def execute(run, plan):
             argv=[part.replace('{es}',containers.get('es','')) for part in plan['commands'][role]]
             cid=run.run(argv).strip();require(re.fullmatch('[0-9a-f]{64}',cid),'create ID')
             containers[role]=cid;run.save('owned.json',containers)
-            options=dict(cid=cid,owner=plan['owner'],role=role,es=containers['es'])
+            options=dict(cid=cid,owner=plan['owner'],role=role,es=containers['es'],root=run.root)
             actual=inspect(run,cid);verify(actual,options);run.save(role+'-created.json',actual)
             run.run(['docker','start',cid])
             if role=='es':
@@ -186,6 +191,10 @@ def execute(run, plan):
             identity_options=dict(role=role,hashes=hashes,native=native)
             observer_identity(entries[0],series[0],identity_options)
         for name in ('through','direct'):
+            # Persist before spawning: even an interrupted seed rules out retry.
+            result['load_started']=True
+            load_started=dict(trial=name,time=time.time())
+            run.save('load-started.json',load_started)
             command=['docker','exec',containers['client'],'/qualification/client','-mode','trial','-backend','http://127.0.0.1:9200',
                      '-prefix','m28r-'+name,'-rate','50','-warm','20','-seconds','20','-mutation-reservation','1200']
             if name=='through':command+=['-target','127.0.0.1:7447']
@@ -235,26 +244,71 @@ def execute(run, plan):
     return result
 
 
+def stage_window(args):
+    root=args.evidence.resolve();stage=root.parent
+    require(root==args.evidence.absolute() and stage.parent==common.REPO.resolve()/'.testdata' and
+            stage.name not in ('m28','m28r') and not root.exists(), 'new resolved stage evidence path')
+    require(re.fullmatch('[0-9a-f]{40}',args.source),'implementation source SHA')
+    budget_path=stage/'stage-budget.json'
+    require(budget_path.resolve()==budget_path,'budget symlink')
+    budget=json.loads(budget_path.read_text())
+    require(budget['evidence_root']==str(stage) and budget['attempts']==['fixture-1','fixture-2'] and
+            budget['seconds']==900 and budget['cleanup_seconds']==120 and
+            budget['planned']==6000 and budget['document_mutations']==2400,'frozen stage budget')
+    require(re.fullmatch('weir-[a-z0-9-]{1,40}',budget['owner']) and
+            root.name in budget['attempts'] and args.owner==budget['owner']+'-'+root.name,'frozen attempt/owner')
+    for name in ('artifacts','artifacts.json','source-inputs-'+args.source+'.json'):
+        target=stage/name
+        require(target.exists() and target.resolve()==target,'missing/aliased stage input')
+    require(all(p.is_file() and not p.is_symlink() for p in (stage/'artifacts').iterdir()),'artifact path')
+    window=stage/'native-window.json'
+    require(window.resolve()==window,'window symlink')
+    if root.name=='fixture-1':
+        native_window=dict(start_utc=time.time(),start_monotonic=time.monotonic(),
+                           deadline_monotonic=time.monotonic()+900,budget_sha256=common.digest(budget_path))
+        with window.open('x') as stream:json.dump(native_window,stream)
+    native_window=json.loads(window.read_text())
+    require(native_window['budget_sha256']==common.digest(budget_path),'stage budget changed')
+    deadline=native_window['deadline_monotonic']
+    require(native_window['start_monotonic']<=time.monotonic()<deadline and
+            0<=time.time()-native_window['start_utc']<900,'total native window exhausted')
+    if root.name=='fixture-2':
+        previous=stage/'fixture-1'
+        for target in (previous,previous/'result.json',previous/'plan.json',stage/'retry-review.json',stage/'fixture-1.claim'):
+            require(target.resolve()==target,'retry evidence symlink')
+        require((stage/'fixture-1.claim').is_file() and not (previous/'load-started.json').exists(),'prior attempt/zero load required')
+        result=json.loads((previous/'result.json').read_text())
+        require(result['passed'] is False and result['cleanup'] is True and result['load_started'] is False,'retry prohibited after load/unclean/success')
+        review=json.loads((stage/'retry-review.json').read_text())
+        require(review['classification']=='fixture-text-wiring' and review['previous_plan_sha256']==common.digest(previous/'plan.json') and
+                review['new_source']==args.source and json.loads((previous/'plan.json').read_text())['source']!=args.source,
+                'retry needs evidence review and new implementation')
+        replay=stage/'retry-raw-replay.json'
+        require(replay.resolve()==replay and common.digest(replay)==review['replay_sha256'],'retry replay evidence')
+    # Claims survive moved failed directories; a used attempt cannot be reclaimed.
+    claim=dict(owner=args.owner,source=args.source)
+    with (stage/(root.name+'.claim')).open('x') as stream:json.dump(claim,stream)
+    return root, budget, deadline
+
+
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--evidence',type=Path,required=True);parser.add_argument('--owner',required=True)
-    args=parser.parse_args();root=args.evidence.absolute()
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--evidence',type=Path,required=True);parser.add_argument('--owner',required=True)
+    parser.add_argument('--source',required=True)
+    args=parser.parse_args()
     require(os.environ.get('WEIR_CAPACITY_INTEGRATION')=='1','explicit integration opt-in')
-    require(root.parent==common.REPO/'.testdata/m28r' and root.name=='fixture-1' and not root.exists() and
-            re.fullmatch('weir-m28r-[a-z0-9-]{1,32}',args.owner),'new owned M28R evidence path')
-    window=root.parent/'native-window.json'
-    native_window=dict(start_utc=time.time(),deadline_monotonic=time.monotonic()+900)
-    with window.open('x') as stream:
-        json.dump(native_window,stream)
-    deadline=json.loads(window.read_text())['deadline_monotonic'];require(time.monotonic()<deadline,'total native window exhausted')
+    root,budget,deadline=stage_window(args)
     root.mkdir(mode=0o700);(root/'docker-config').mkdir(mode=0o700);(root/'docker-config/config.json').write_text('{}\n')
     os.environ['DOCKER_CONFIG']=str(root/'docker-config');os.environ['DOCKER_HOST']='unix:///var/run/docker.sock'
     run=common.Run(root,None);run.save('node.json',loop.configuration());run.save('local-check.sh',local_check());run.save('es-start.sh',ES_START)
     artifacts=root.parent/'artifacts'
     options=dict(root=root,artifacts=artifacts,owner=args.owner)
-    files=[p for p in artifacts.iterdir() if p.is_file()]+[root/'node.json',root/'local-check.sh',root/'es-start.sh',root.parent/'source-inputs.json',root.parent/'artifacts.json']
+    source_manifest=root.parent/('source-inputs-'+args.source+'.json')
+    files=list(artifacts.iterdir())+[root/'node.json',root/'local-check.sh',root/'es-start.sh',source_manifest,root.parent/'artifacts.json',root.parent/'stage-budget.json']
     files += sorted((common.REPO/'scripts').glob('*.py'))+sorted((common.REPO/'scripts').glob('*.sh'))+sorted((common.REPO/'scripts').glob('*.json'))
-    plan=dict(fixture_deadline_monotonic=deadline,owner=args.owner,source=os.environ['WEIR_M28R_SOURCE'],commands=commands(options),inputs={str(p):common.digest(p) for p in files},
-              budget=json.loads((root.parent/'scope.json').read_text()),runtime='same-architecture native Linux arm64 Docker VM; binaries built on Darwin Go1.27.1 CGO0',
+    plan=dict(fixture_deadline_monotonic=deadline,owner=args.owner,source=args.source,source_manifest=str(source_manifest),
+              artifact_source=json.loads((root.parent/'artifacts.json').read_text())['source'],commands=commands(options),inputs={str(p):common.digest(p) for p in files},
+              budget=budget,runtime='same-architecture native Linux arm64 Docker VM; binaries built on Darwin Go1.27.1 CGO0',
               observer_seconds=140,observer_samples=71,observer_expected_CLK_TCK=100,planned=6000,document_mutations=2400,seconds=900,cleanup_seconds=120)
     run.save('plan.json',plan);(root/'plan.json').chmod(0o400);run.save('plan.sha256',common.digest(root/'plan.json'))
     def interrupted(signum,frame):raise KeyboardInterrupt('signal '+str(signum))

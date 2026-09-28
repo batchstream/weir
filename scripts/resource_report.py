@@ -79,9 +79,14 @@ def stream_report(samples, role):
         files = sample['files']
         require(isinstance(files, dict) and all(isinstance(v, str) and len(v.encode()) <= 262144 for v in files.values()), 'raw files must contain bounded text')
         tcp_connections(files)  # Shared network namespace, not process-owned connections.
-        limits = files['limits'].splitlines()
-        require(limits and limits[0].split() == ['Limit', 'Soft', 'Limit', 'Hard', 'Limit', 'Units'] and
-                any(re.fullmatch(r'Max open files\s+4096\s+4096\s+files', line) for line in limits[1:]), 'raw limits/FD profile')
+        # Kernel columns are padded; only the field tokens carry meaning.
+        limits = [line.split() for line in files['limits'].splitlines()]
+        require(limits and limits[0] == ['Limit', 'Soft', 'Limit', 'Hard', 'Limit', 'Units'], 'raw limits header')
+        fd_limits = [fields[3:] for fields in limits[1:] if fields[:3] == ['Max', 'open', 'files']]
+        require(len(fd_limits) == 1 and len(fd_limits[0]) == 3, 'missing/duplicate/extra FD limit fields')
+        soft, hard, unit = fd_limits[0]
+        require(soft.isascii() and soft.isdecimal() and hard.isascii() and hard.isdecimal() and
+                integer(int(soft), True) == integer(int(hard), True) == 4096 and unit == 'files', 'raw limits/FD profile')
         require(files['status'] == sample['process']['status'] and files['stat'] == sample['process']['stat'] and files['cgroup'] == target['cgroup'], 'raw process mismatch')
         cpus, mib, pids = LIMITS[role]
         require(int(files['memory.max']) == mib*1024**2 and int(files['memory.swap.max']) == 0 and int(files['pids.max']) == pids, 'resource limit drift')

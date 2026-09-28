@@ -2,12 +2,13 @@ import base64
 import datetime
 import copy
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
 
 from capacity_report_test import sample as old_sample, metrics, BASE
-from resource_report import stream_report, coverage, read_stream, report
+from resource_report import stream_report, coverage, read_stream, report, observer_identity
 
 
 def sample(role, second, sequence):
@@ -155,6 +156,62 @@ class ResourceEvidence(unittest.TestCase):
             self.assertEqual(report(directory)['resource_evidence'],'partial')
 
 
+class NativeReplay(unittest.TestCase):
+    root = Path(__file__).parent/'fixtures/m28r-resource'
+
+    def test_all_original_samples_and_identity_without_completion(self):
+        provenance = json.loads((self.root/'provenance.json').read_text())
+        for name, digest in provenance['sha256'].items():
+            self.assertEqual(hashlib.sha256((self.root/name).read_bytes()).hexdigest(), digest)
+        streams = {role:read_stream(self.root/(role+'.jsonl')) for role in ('weir','es')}
+        hashes = dict(weir=streams['weir'][0]['exe_sha256'],client=streams['weir'][0]['observer']['exe_sha256'])
+        native = (self.root/'native-identity.txt').read_text().splitlines()
+        for role, entries in streams.items():
+            options = dict(role=role,hashes=hashes,native=native)
+            observer_identity(entries[0],entries[1],options)
+            result = stream_report(entries[1:],role)
+            self.assertEqual(result['samples'],2)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = dict(inputs=hashes,observer_seconds=140,observer_samples=71,planned=6000,document_mutations=2400)
+            (root/'plan.json').write_text(json.dumps(plan))
+            for name in provenance['sha256']:
+                (root/name).write_bytes((self.root/name).read_bytes())
+            result = report(root)
+            self.assertEqual(result['resource_evidence'],'partial',result)
+            self.assertTrue(result['errors'])
+            self.assertEqual(result['trials'],[])
+
+    def test_raw_whitespace_and_combined_missing_conflicting_fields(self):
+        for role in ('weir','es'):
+            raw = read_stream(self.root/(role+'.jsonl'))[1:]
+            for separator in (' ', '\t', ' \t  '):
+                values = copy.deepcopy(raw)
+                for s in values:
+                    s['files']['limits'] = ''.join(separator+separator.join(line.split())+' \t\n' for line in s['files']['limits'].splitlines())
+                    for name in ('cpu.max','cpu.stat','memory.events','net/tcp','net/tcp6'):
+                        s['files'][name] = ''.join(separator+separator.join(line.split())+' \t\n' for line in s['files'][name].splitlines())
+                self.assertEqual(stream_report(values,role)['samples'],2)
+                for tail in ('', '4096 4096 files\nMax open files 4096 4096 files',
+                             '4096 4096 files\nMax open files 4096 8192 files',
+                             '4096 4096 bytes', '4096 4096 files extra', '4096 files',
+                             '-4096 4096 files', '+4096 4096 files', '4_096 4096 files',
+                             '4096.0 4096 files', 'unlimited 4096 files', '4096 8192 files'):
+                    with self.subTest(role=role,separator=separator,tail=tail):
+                        bad = copy.deepcopy(values)
+                        lines = [line for line in bad[1]['files']['limits'].splitlines() if line.split()[:3] != ['Max','open','files']]
+                        if tail:lines.append('Max open files '+tail)
+                        bad[1]['files']['limits'] = '\n'.join(lines)+'\n'
+                        with self.assertRaises(ValueError):stream_report(bad,role)
+                for missing in ('cpu.stat','net/tcp6'):
+                    bad = copy.deepcopy(values);bad[1]['files'].pop(missing)
+                    with self.assertRaises(KeyError):stream_report(bad,role)
+                bad = copy.deepcopy(values)
+                if role == 'es':bad[1]['db']='{"nodes":{}}'
+                else:bad[1]['metrics'] += 'go_goroutines 1\n'
+                with self.assertRaises(ValueError):stream_report(bad,role)
+
+
 class CompleteReport(unittest.TestCase):
     def test_positive_and_complete_timing_no_go(self):
         for drops,slow in ((0,False),(1,False),(0,True)):
@@ -166,6 +223,20 @@ class CompleteReport(unittest.TestCase):
                 self.assertEqual(result['totals']['mutations'],2400-2*drops)
                 self.assertEqual(result['totals']['planned'],6000)
                 self.assertIsNone(result['candidate'])
+
+    def test_full_report_padded_limits_and_conflicting_duplicate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);streams=complete_fixture(root)
+            for name,entries in streams.items():
+                for row in entries:
+                    s=row.get('sample',row)
+                    if 'files' in s:
+                        s['files']['limits']='Limit\tSoft Limit\tHard Limit\tUnits  \n Max\topen files  4096\t4096  files  \t\n'
+                (root/(name+'.jsonl')).write_text(''.join(json.dumps(row)+'\n' for row in entries))
+            self.assertEqual(report(root)['resource_evidence'],'complete-for-declared-visible-leaf-profile')
+            streams['es'][2]['files']['limits'] += 'Max open files 4096 8192 files\n'
+            (root/'es.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in streams['es']))
+            self.assertEqual(report(root)['resource_evidence'],'partial')
 
     def test_full_report_rejects_each_corruption(self):
         def contradicted_ledger(stream):

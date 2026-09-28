@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import resource_local as local
@@ -45,20 +46,22 @@ class LocalResourceFixture(unittest.TestCase):
             self.assertEqual(len(Path(root,'weir.jsonl').read_text().splitlines()),2)
             self.assertIsNotNone(json.loads(Path(root,'weir-exec.json').read_text())['exit'])
 
-    def test_one_native_entry_cannot_restart_after_preserved_failure(self):
+    def test_native_entry_cannot_reuse_window_after_preserved_failure(self):
         original=local.common.REPO
         with tempfile.TemporaryDirectory() as directory:
-            repo=Path(directory);stage=repo/'.testdata/m28r';stage.mkdir(parents=True)
+            repo=Path(directory).resolve();stage=repo/'.testdata/m28r2';stage.mkdir(parents=True)
             (repo/'scripts').mkdir()
             for name in ('eks_loopback_check.sh','eks_loopback_bootstrap.sh'):
                 (repo/'scripts'/name).write_bytes((original/'scripts'/name).read_bytes())
             (repo/'deploy/kubernetes').mkdir(parents=True)
             (repo/'deploy/kubernetes/node.example.json').write_bytes((original/'deploy/kubernetes/node.example.json').read_bytes())
             (stage/'artifacts').mkdir();(stage/'artifacts/client').write_text('synthetic')
-            (stage/'scope.json').write_text('{}');(stage/'source-inputs.json').write_text('{}');(stage/'artifacts.json').write_text('{}')
+            budget=dict(evidence_root=str(stage),owner='weir-test',attempts=['fixture-1','fixture-2'],seconds=900,cleanup_seconds=120,planned=6000,document_mutations=2400)
+            (stage/'stage-budget.json').write_text(json.dumps(budget))
+            (stage/('source-inputs-'+'f'*40+'.json')).write_text('{}');(stage/'artifacts.json').write_text('{"source":"old-binary-source"}')
             root=stage/'fixture-1'
-            argv=['resource_local.py','--evidence',str(root),'--owner','weir-m28r-test']
-            environment=dict(WEIR_CAPACITY_INTEGRATION='1',WEIR_M28R_SOURCE='f'*40)
+            argv=['resource_local.py','--evidence',str(root),'--owner','weir-test-fixture-1','--source','f'*40]
+            environment=dict(WEIR_CAPACITY_INTEGRATION='1')
             failed=dict(passed=False,cleanup=True)
             with patch.object(local.common,'REPO',repo), patch.object(sys,'argv',argv), patch.dict(os.environ,environment), patch.object(local,'execute',return_value=failed) as execute:
                 self.assertEqual(local.main(),1)
@@ -66,9 +69,57 @@ class LocalResourceFixture(unittest.TestCase):
                 self.assertEqual(plan['source'],'f'*40)
                 self.assertEqual(plan['observer_samples'],71)
                 self.assertEqual(plan['seconds'],900)
+                self.assertEqual(plan['artifact_source'],'old-binary-source')
                 root.rename(stage/'preserved-failure')
                 with self.assertRaises(FileExistsError):local.main()
                 self.assertEqual(execute.call_count,1)
+
+    def test_shared_budget_paths_and_second_attempt_gate(self):
+        for rejected in ('load','unclean','success','no-review','same-source','expired','changed-budget','alias','owner','third'):
+            with self.subTest(rejected=rejected),tempfile.TemporaryDirectory() as directory:
+                repo=Path(directory).resolve();stage=repo/'.testdata/m28r2';stage.mkdir(parents=True)
+                budget=dict(evidence_root=str(stage),owner='weir-test',attempts=['fixture-1','fixture-2'],seconds=900,cleanup_seconds=120,planned=6000,document_mutations=2400)
+                (stage/'stage-budget.json').write_text(json.dumps(budget))
+                (stage/'artifacts').mkdir();(stage/'artifacts/client').write_text('synthetic')
+                (stage/'artifacts.json').write_text('{}')
+                for source in ('a'*40,'b'*40):(stage/('source-inputs-'+source+'.json')).write_text('{}')
+                args=SimpleNamespace(evidence=stage/'fixture-1',owner='weir-test-fixture-1',source='a'*40)
+                with patch.object(local.common,'REPO',repo):
+                    root,_,deadline=local.stage_window(args);root.mkdir()
+                    plan=dict(source=args.source)
+                    (root/'plan.json').write_text(json.dumps(plan))
+                    result=dict(passed=False,cleanup=True,load_started=False)
+                    (stage/'retry-raw-replay.json').write_text('{"synthetic_test_only":true}')
+                    review=dict(classification='fixture-text-wiring',previous_plan_sha256=local.common.digest(root/'plan.json'),new_source='b'*40,replay_sha256=local.common.digest(stage/'retry-raw-replay.json'))
+                    (stage/'retry-review.json').write_text(json.dumps(review))
+                    args=SimpleNamespace(evidence=stage/'fixture-2',owner='weir-test-fixture-2',source='b'*40)
+                    if rejected=='load':(root/'load-started.json').write_text('{}')
+                    if rejected=='unclean':result['cleanup']=False
+                    if rejected=='success':result['passed']=True
+                    if rejected=='no-review':(stage/'retry-review.json').write_text('{}')
+                    if rejected=='same-source':args.source='a'*40
+                    if rejected=='expired':
+                        window=json.loads((stage/'native-window.json').read_text());window['deadline_monotonic']=time.monotonic()-1
+                        (stage/'native-window.json').write_text(json.dumps(window))
+                    if rejected=='changed-budget':(stage/'stage-budget.json').write_text(json.dumps(budget)+'\n')
+                    if rejected=='alias':
+                        (repo/'alias').symlink_to(stage,target_is_directory=True);args.evidence=repo/'alias/fixture-2'
+                    if rejected=='owner':args.owner='foreign'
+                    if rejected=='third':args.evidence=stage/'fixture-3'
+                    (root/'result.json').write_text(json.dumps(result))
+                    with self.assertRaises((ValueError,KeyError)):local.stage_window(args)
+                    # With the same original window and reviewed zero-load failure,
+                    # the second claim succeeds once, never extends the deadline.
+                    (stage/'stage-budget.json').write_text(json.dumps(budget))
+                    window=json.loads((stage/'native-window.json').read_text());window['deadline_monotonic']=deadline
+                    (stage/'native-window.json').write_text(json.dumps(window))
+                    (stage/'retry-review.json').write_text(json.dumps(review))
+                    result=dict(passed=False,cleanup=True,load_started=False)
+                    (root/'result.json').write_text(json.dumps(result))
+                    if (root/'load-started.json').exists():continue
+                    args=SimpleNamespace(evidence=stage/'fixture-2',owner='weir-test-fixture-2',source='b'*40)
+                    self.assertEqual(local.stage_window(args)[2],deadline)
+                    with self.assertRaises(FileExistsError):local.stage_window(args)
 
     def test_execute_failure_stops_execs_before_owned_cleanup(self):
         for foreign in (False,True):
@@ -78,7 +129,7 @@ class LocalResourceFixture(unittest.TestCase):
                 (root.parent/'source-inputs.json').write_text(json.dumps(source))
                 run=local.common.Run(root,None);owner='weir-m28r-wiring'
                 options=dict(root=root,artifacts=root,owner=owner)
-                plan=dict(source='f'*40,inputs={},owner=owner,fixture_deadline_monotonic=time.monotonic()+20,commands=commands(options))
+                plan=dict(source='f'*40,source_manifest=str(root.parent/'source-inputs.json'),inputs={},owner=owner,fixture_deadline_monotonic=time.monotonic()+20,commands=commands(options))
                 calls=[];objects={};observers=[]
                 def fake_command(argv,timeout=25,**kwargs):
                     calls.append(argv)
@@ -95,8 +146,11 @@ class LocalResourceFixture(unittest.TestCase):
                                   CapDrop=['ALL'],CapAdd=[],SecurityOpt=['no-new-privileges=true'],Privileged=False,
                                   ReadonlyRootfs=True,PidMode='',IpcMode='private',CgroupnsMode='private',
                                   PublishAllPorts=False,PortBindings={},NetworkMode='none' if role=='es' else 'container:'+'a'*64)
+                        mounts={str(root.parent/'artifacts'):'/qualification'}
+                        if role=='es':mounts.update({str(root/name):'/'+name for name in ('local-check.sh','es-start.sh')})
+                        if role=='weir':mounts[str(root/'node.json')]='/node.json'
                         objects[cid]=dict(Id=cid,Name='/'+owner+'-'+role,Config=dict(User='1000:0' if role=='es' else '65532:65532',Labels={local.LABEL:owner}),
-                                          Image=local.loop.ES['config'] if role=='es' else local.ENVIRONMENT,HostConfig=host,Mounts=[],State=dict(Running=True,OOMKilled=False),RestartCount=0)
+                                          Image=local.loop.ES['config'] if role=='es' else local.ENVIRONMENT,HostConfig=host,Mounts=[dict(Source=s,Destination=d,Type='bind',RW=False) for s,d in mounts.items()],State=dict(Running=True,OOMKilled=False),RestartCount=0)
                         return cid
                     if action=='inspect':
                         actual=copy.deepcopy(objects[argv[2]])
