@@ -124,6 +124,14 @@ trial/seed/document mutation均0，仅两次空索引管理PUT；计时/容量/s
 误拒绝Linux合法行尾填充，负载前停止：Weir/ES各2样本、trial/seed/document mutation均0、1次空索引管理PUT。
 **M28R仍NO-GO/partial**；冻结实现未再修改或重跑，三个自有容器和两个exec已清理，旧M28的744文件hash未变。
 限额解析的原始文本覆盖缺口仍需补救；candidate=null、计时/容量/soak not-run，未发布、未EKS或恢复定时器。
+[M28R2](milestone-28-remediation-2.md)实现 `66829c0` 将limits改为唯一行字段语义校验，
+原样2+2真实样本/身份全部通过局部检查，旧完整报告仍partial；Go/module204输入未变，复用source `1ffc092`四binary。
+一次新冻结本地Linux arm64 attempt完成Weir/ES各71样本/140秒、client两组各23样本及固定双短trial，
+**本轮声明的可见leaf资源采样完整**，待统筹独立复核。6000planned含seed、2399文档mutation，
+3990实际trial操作成功、10次发生器drop、零失败/UNKNOWN，DB/ledger/receipt守恒；5ms门槛仍未过，**timing NO-GO**。
+fixture154.247秒/清理3.236秒，三个自有容器及两个observer均Wait/回收并另查零残留；未用第二次attempt。
+M28/M28R全部历史hash不变。candidate=null、容量/24h未运行；旧GHCR仍fc0eb86，未push/CI/EKS或发布。
+采样完整不等于生产/容量资格，隐藏祖先unknown，CNI/跨节点、六平台、其他规格/后端安全及其他required门槛保持。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
