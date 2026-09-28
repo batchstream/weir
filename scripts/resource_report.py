@@ -21,7 +21,9 @@ def integer(value, positive=False):
 
 
 def read_stream(path):
-    raw = Path(path).read_bytes()
+    with Path(path).open('rb') as stream:
+        raw = stream.read((64 << 20)+1)
+    require(raw, 'empty resource stream: '+Path(path).name)
     require(len(raw) <= 64 << 20 and raw.endswith(b'\n'), 'stream size/truncated tail')
     lines = raw.splitlines()
     require(len(lines) <= 2000 and all(len(line) <= 1 << 20 for line in lines), 'line/count bound')
@@ -166,7 +168,7 @@ def coverage(samples, start, end):
 def report(root):
     root=Path(root)
     result=dict(resource_evidence='partial',scope='visible cgroup-v2 leaf on local native Linux arm64 only',candidate=None,
-                capacity_qualification='not-run',timing_qualification='NO-GO',errors=[],roles={},trials=[])
+                capacity_qualification='not-run',timing_qualification='not-run',errors=[],roles={},trials=[])
     try:
         plan=json.loads((root/'plan.json').read_text())
         hashes={Path(name).name:value for name,value in plan['inputs'].items()}
@@ -196,6 +198,7 @@ def report(root):
         timing=[]
         for name in ('through','direct'):
             entries=read_stream(root/(name+'.jsonl'))
+            result['timing_qualification']='incomplete'
             trials=[e for e in entries if e.get('type')=='trial'];require(len(trials)==1 and trials[0]['run_error']=='<nil>', 'trial error/count')
             trial=trials[0]['trial'];options=trial['options']
             require(options['Rate']==50 and options['WarmSeconds']==20 and options['Seconds']==20 and trial['planned']==2000, 'frozen load drift')

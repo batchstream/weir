@@ -273,3 +273,32 @@ func TestEvidenceInputCancellation(t *testing.T) {
 		t.Fatal("input reader not joined")
 	}
 }
+
+func TestJVMModuleMarkerAndLauncher(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "7")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "comm"), []byte("java\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(directory, "cmdline")
+	for _, raw := range []string{"java\x00-m\x00org.elasticsearch.server/org.elasticsearch.bootstrap.Elasticsearch\x00", "java\x00org.elasticsearch.bootstrap.Elasticsearch\x00"} {
+		if err := os.WriteFile(name, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		pid, err := findJVM(root)
+		if err != nil || pid != "7" {
+			t.Fatal(pid, err)
+		}
+	}
+	for _, raw := range []string{"java\x00org.elasticsearch.launcher.CliToolLauncher\x00", "java\x00-Dother=org.elasticsearch.bootstrap.Elasticsearch\x00"} {
+		if err := os.WriteFile(name, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := findJVM(root); err == nil {
+			t.Fatal("launcher/unrelated argument accepted")
+		}
+	}
+}

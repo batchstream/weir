@@ -277,7 +277,7 @@ func findJVM(root string) (string, error) {
 		}
 		match := false
 		for _, arg := range strings.Split(raw, "\x00") {
-			if arg == "org.elasticsearch.bootstrap.Elasticsearch" {
+			if arg == "org.elasticsearch.bootstrap.Elasticsearch" || arg == "org.elasticsearch.server/org.elasticsearch.bootstrap.Elasticsearch" {
 				match = true
 			}
 		}
