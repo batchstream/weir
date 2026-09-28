@@ -324,18 +324,9 @@ def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qua
                                "--cli-connect-timeout","5","--cli-read-timeout","10","--no-cli-pager"]))
     require(cluster["arn"]==TARGET["context"] and cluster["status"]=="ACTIVE" and cluster["version"]=="1.36","cluster identity/version")
     require(not run.kube(["get","namespace",owner,"--ignore-not-found","-o","name"]).strip(),"namespace collision")
-    nodes,used=run.nodes()
-    candidates=[]; assessments=[]
-    for node in sorted(nodes,key=lambda n:n["name"]):
-        try:
-            spare=node_gate(node,used.get(node["name"],dict(cpu=0,memory=0,pods=0,**{"ephemeral-storage":0})),minimum=MINIMUM)
-            candidates.append((node,spare))
-            assessments.append(dict(node=node,spare=spare,eligible=True))
-        except (ValueError,KeyError) as exc:
-            assessments.append(dict(node=node,eligible=False,error=str(exc)))
-    run.save("node-assessment.json",assessments)
-    require(candidates,"no suitable existing node under corrected resource model; no writes")
-    selected,spare=candidates[0]
+    run.plan = dict(node=run.node_scope)
+    assessment = run.check_node()
+    selected, spare = assessment["node"], assessment["spare"]
     for kind,verbs in dict(namespaces=("create","get","delete"),jobs=("create","get","list","delete"),pods=("create","get","list","delete"),
                            events=("list",),configmaps=("create","get","delete"),resourcequotas=("create","get","delete"),
                            networkpolicies=("create","get","delete"),**{"pods/log":("get",),"pods/exec":("create",)}).items():
@@ -346,7 +337,7 @@ def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qua
     require(not run.run(["git","status","--porcelain"]).strip(),"committed clean implementation required")
     run.run(["git","diff","--exit-code",image_source,"--","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"])
     source=run.run(["git","rev-parse","HEAD"]).strip()
-    context = dict(node=selected, initial_spare=spare, cluster=cluster, source=source)
+    context = dict(node=selected, initial_spare=spare, resource_preflight=run.resource_preflight, cluster=cluster, source=source)
     return context
 
 
@@ -354,7 +345,7 @@ def prepare(run, owner):
     context = prepare_context(run, owner)
     selected, spare, cluster, source = (context[key] for key in ("node", "initial_spare", "cluster", "source"))
     plan=dict(schema_version=1,profile="m26r-single-pod-loopback-limited-functional",target=TARGET,namespace=owner,owner=owner,
-              node=selected,initial_spare=spare,cluster=cluster,sampled_at=time.time(),atomic_snapshot=False,source=source,image_source=SOURCE,
+              node=selected,initial_spare=spare,resource_preflight=context["resource_preflight"],cluster=cluster,sampled_at=time.time(),atomic_snapshot=False,source=source,image_source=SOURCE,
               images=dict(IMAGES,es=ES),tool_inputs={name:common.digest(common.REPO/name) for name in FILES},minimum=MINIMUM,
               resource_peak=dict(cpu=6,memory_mib=4608,ephemeral_mib=2560),sequence=["elasticsearch-startup","empty-index-init","weir+client","through-weir","direct-es"],
               trials=dict(rate=50,warm=20,seconds=20,workers=64,connections=4,deadline_ms=1000,expiry_ms=20,catchup=8,corpus=1000,document_bytes=1024),
@@ -402,6 +393,7 @@ def namespace_start(run):
 
 def execute(run, options):
     plan=json.loads((run.root/"plan.json").read_text())
+    run.resource_preflight=plan.get("resource_preflight")
     require(common.digest(run.root/"plan.json")==options.plan_sha256 and plan["target"]==TARGET,"plan hash/context")
     require(plan["node"]["uid"]==options.node_uid and plan["minimum"]==MINIMUM,"node/minimum drift")
     require(plan["images"]==dict(IMAGES,es=ES) and plan["objects"]==objects(plan),"frozen artifacts/templates drift")
@@ -518,6 +510,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode",choices=("prepare","run"));parser.add_argument("--evidence",type=Path,required=True)
     parser.add_argument("--owner");parser.add_argument("--plan-sha256");parser.add_argument("--node-uid")
+    parser.add_argument("--node-name")
     parser.add_argument("--registry-evidence",type=Path)
     args=parser.parse_args();root=args.evidence.absolute()
     require(root.parent.resolve()==(common.REPO/".testdata/m26r").resolve() and not root.is_symlink(),"controlled evidence path")
@@ -531,6 +524,7 @@ def main():
         proof=json.loads(args.registry_evidence.read_text())
         require(proof["manifest"]==ES["manifest"] and proof["config"]==ES["config"] and proof["architecture"]=="arm64" and proof["version"]=="8.19.22" and proof["user"]=="1000:0","ES registry identity")
         run.registry_evidence=dict(path=str(args.registry_evidence.absolute()),sha256=common.digest(args.registry_evidence),proof=proof)
+        run.node_scope=dict(name=args.node_name,uid=args.node_uid)
         prepare(run,args.owner);return 0
     return execute(run,args)
 

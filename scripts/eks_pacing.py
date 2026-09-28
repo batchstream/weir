@@ -234,6 +234,12 @@ def pod_check(pod, options):
             require(container["state"]["terminated"]["exitCode"] == 0 and container["state"]["terminated"]["reason"] == "Completed", "container exit/OOM")
 
 
+class CommandFailure(ValueError):
+    def __init__(self, number, code, stderr):
+        super().__init__(f"command {number} exit {code}; see retained stderr")
+        self.number, self.code, self.stderr = number, code, stderr
+
+
 class Run:
     node_minimum = None
 
@@ -252,6 +258,9 @@ class Run:
         self.remote_started = None
         self.defaults = {}
         self.event_uids = set()
+        self.node_scope = None
+        self.resource_preflight = None
+        self.mutation_attempted = False
 
     def save(self, name, data):
         raw = data.encode() if isinstance(data, str) else (json.dumps(data, indent=2)+"\n").encode()
@@ -302,7 +311,9 @@ class Run:
                         streams[key.data].extend(chunk[:capacity])
                         require(len(chunk) <= capacity, "command output overflow")
                 child.wait(timeout=max(.01, until-time.monotonic()))
-            require(child.returncode == 0, f"command {number} exit {child.returncode}; see retained stderr")
+            if child.returncode != 0:
+                failure = CommandFailure(number, child.returncode, streams[1].decode(errors="replace"))
+                raise failure
             return streams[0].decode()
         finally:
             if child is not None:
@@ -318,6 +329,8 @@ class Run:
             require(not self.diagnostic_errors, "command evidence unavailable")
 
     def kube(self, args, namespace=None):
+        if args[0] not in ("get", "auth", "api-resources"):
+            self.mutation_attempted = True
         argv = ["kubectl", "--context", self.target["context"], "--request-timeout=10s"]
         if namespace:
             argv += ["--namespace", namespace]
@@ -328,21 +341,62 @@ class Run:
         raw = self.kube(["get", kind, name, "--ignore-not-found", "-o", "go-template="+OBJECT_TEMPLATE], namespace)
         return json.loads(raw) if raw.strip() else None
 
-    def nodes(self):
+    def nodes(self, selection):
+        require(isinstance(selection, dict) and isinstance(selection.get("name"), str) and
+                re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,252}", selection["name"]) and
+                isinstance(selection.get("uid"), str) and re.fullmatch(r"[A-Za-z0-9-]{1,128}", selection["uid"]), "explicit node name/UID required")
+        scope = dict(name=selection["name"], uid=selection["uid"])
+        if self.resource_preflight is None:
+            started = time.monotonic()
+            self.resource_preflight = dict(node=scope, started=started, deadline=started+120, recovery=None)
+        require(self.resource_preflight["node"] == scope, "frozen resource node scope drift")
+        self.save("resource-preflight.json", self.resource_preflight)
         fields = dict(name=".metadata.name", uid=".metadata.uid", arch=".status.nodeInfo.architecture",
                       os=".status.nodeInfo.operatingSystem", kernel=".status.nodeInfo.kernelVersion",
                       kubelet=".status.nodeInfo.kubeletVersion", allocatable=".status.allocatable",
                       conditions=".status.conditions", taints=".spec.taints", unschedulable=".spec.unschedulable",
                       deleting=".metadata.deletionTimestamp")
-        template = JSON_TEMPLATE+'[{{range $i,$n := .items}}{{if $i}},{{end}}{'+','.join('"'+k+'":{{template "json" '+v+'}}' for k, v in fields.items())+'}{{end}}]'
-        nodes = json.loads(self.kube(["get", "nodes", "-o", "go-template="+template]))
-        raw = self.kube(["get", "pods", "--all-namespaces", "-o", "go-template="+projection(JSON_TEMPLATE)])
-        used, details = allocated(raw)
+        template = JSON_TEMPLATE+'{'+','.join('"'+k+'":{{template "json" '+v+'}}' for k, v in fields.items())+'}'
+        commands = [["get", "node", scope["name"], "-o", "go-template="+template],
+                    ["get", "pods", "--all-namespaces", "--field-selector=spec.nodeName="+scope["name"], "--chunk-size=0", "-o", "go-template="+projection(JSON_TEMPLATE, scoped=True)]]
+        outputs = []
+        for args in commands:
+            argv = ["kubectl", "--context", self.target["context"], "--request-timeout=10s"]+args
+            # The common read-only window is never renewed. After a write,
+            # dispatch checks use only the original native deadline, no recovery.
+            written = self.mutation_attempted or bool(self.owned)
+            deadline = self.deadline if written else min(self.deadline, self.resource_preflight["deadline"])
+            require(time.monotonic() < deadline-4, "resource preflight deadline")
+            try:
+                raw = self.run(argv, min(25, deadline-time.monotonic()-4))
+            except CommandFailure as exc:
+                read_timeout = exc.code == 1 and any(message in exc.stderr for message in (
+                    "Client.Timeout or context cancellation while reading body", "net/http: timeout awaiting response headers"))
+                read_timeout &= not any(message in exc.stderr.lower() for message in ("forbidden", "unauthorized", "notfound"))
+                require(read_timeout and not written and
+                        self.resource_preflight["recovery"] is None and time.monotonic() < deadline-4, "resource GET failed; recovery ineligible: "+str(exc))
+                recovery = dict(failed_command=exc.number, reason=exc.stderr, argv=argv,
+                                stdout=f"command-{exc.number:04d}.out", stderr=f"command-{exc.number:04d}.err", exit=exc.code)
+                self.resource_preflight["recovery"] = recovery
+                self.save("resource-preflight.json", self.resource_preflight)
+                raw = self.run(argv, min(25, deadline-time.monotonic()-4))
+            require(time.monotonic() < deadline, "resource preflight deadline")
+            outputs.append(raw)
+            if len(outputs) == 1:
+                node = json.loads(raw)
+                require(isinstance(node, dict) and set(node) == set(fields) and
+                        node["name"] == scope["name"] and node["uid"] == scope["uid"], "frozen node identity/incomplete projection")
+                empty = dict(cpu=0, memory=0, pods=0, **{"ephemeral-storage":0})
+                # Reject known node failures before any subsequent resource GET.
+                # This is only a prerequisite; the real ledger is checked below.
+                node_gate(node, empty, scope["uid"], self.node_minimum)
+        nodes = [node]
+        used, details = allocated(outputs[1], node_name=scope["name"])
         self.save(f"resource-accounting-{self.number}.json", serializable(dict(nodes=used, pods=details)))
         return nodes, used
 
     def check_node(self):
-        nodes, used = self.nodes()
+        nodes, used = self.nodes(self.plan["node"])
         matches = [n for n in nodes if n["name"] == self.plan["node"]["name"]]
         require(len(matches) == 1, "frozen node disappeared")
         spare = node_gate(matches[0], used.get(matches[0]["name"], dict(cpu=0, memory=0, pods=0, **{"ephemeral-storage": 0})), self.plan["node"]["uid"], self.node_minimum)
@@ -644,18 +698,9 @@ def prepare(run, owner):
                             networkpolicies=("create", "get", "delete"), **{"pods/log": ("get",)}).items():
         for verb in verbs:
             require(run.kube(["auth", "can-i", verb, kind], None if kind == "namespaces" else owner).strip() == "yes", "missing permission: "+verb+" "+kind)
-    nodes, used = run.nodes()
-    run.save("preflight-nodes.json", nodes)
-    run.save("preflight-allocated.json", {n: {k: str(v) for k, v in fields.items()} for n, fields in used.items()})
-    selected = None
-    for node in sorted(nodes, key=lambda n: n["name"]):
-        try:
-            spare = node_gate(node, used.get(node["name"], dict(cpu=0, memory=0, pods=0, **{"ephemeral-storage": 0})))
-            selected = node
-            break
-        except ValueError:
-            continue
-    require(selected is not None, "no suitable existing node; stop before writes")
+    run.plan = dict(node=run.node_scope)
+    assessment = run.check_node()
+    selected, spare = assessment["node"], assessment["spare"]
     cni_template = r'''{{range .spec.template.spec.containers}}{{.name}} {{.image}}{{range .env}}{{if or (eq .name "ENABLE_NETWORK_POLICY") (eq .name "NETWORK_POLICY_ENFORCING_MODE")}} {{.name}}={{.value}}{{end}}{{end}}{{range .args}}{{if or (eq . "--enable-network-policy=true") (eq . "--enable-network-policy=false")}} {{.}}{{end}}{{end}}{{"\n"}}{{end}}'''
     cni_args = ["get", "daemonset", "aws-node", "-o", "go-template="+cni_template]
     cni = run.kube(cni_args, "kube-system")
@@ -664,7 +709,7 @@ def prepare(run, owner):
     require(not run.run(["git", "status", "--porcelain"]).strip(), "clean committed implementation required")
     run.run(["git", "diff", "--exit-code", SOURCE, "--", "*.go", "go.mod", "go.sum", "scripts/qualification.Dockerfile"])
     plan = dict(schema_version=1, profile="eks-m25-timing-only-v1", target=run.target, namespace=owner, owner=owner,
-                node=selected, initial_spare=spare, cluster=cluster, sampled_at=time.time(), atomic_snapshot=False,
+                node=selected, initial_spare=spare, resource_preflight=run.resource_preflight, cluster=cluster, sampled_at=time.time(), atomic_snapshot=False,
                 source=head, image_source=SOURCE, images=IMAGES, tool_inputs={name: digest(REPO/name) for name in FILES},
                 sequence=["version", "snapshot"]+["pace-"+str(i) for i in range(5)], rates=RATES,
                 seconds=20, planned=23000, database_mutations=0, cpu=1, memory_bytes=512*1024**2,
@@ -679,6 +724,7 @@ def prepare(run, owner):
 
 def execute(run, options):
     plan = json.loads((run.root/"plan.json").read_text())
+    run.resource_preflight = plan.get("resource_preflight")
     require(digest(run.root/"plan.json") == options.plan_sha256 and plan["target"] == run.target, "frozen plan/context mismatch")
     require(plan["node"]["uid"] == options.node_uid, "node confirmation mismatch")
     require(plan["namespace"] == plan["owner"] and re.fullmatch(r"weir-qual-m25-[a-z0-9-]{1,25}", plan["owner"]) is not None, "frozen namespace/owner")
@@ -767,6 +813,7 @@ def main():
     for name in ("context", "cluster", "region"):
         parser.add_argument("--"+name, required=True)
     parser.add_argument("--owner")
+    parser.add_argument("--node-name")
     parser.add_argument("--node-uid")
     parser.add_argument("--plan-sha256")
     args = parser.parse_args()
@@ -787,6 +834,7 @@ def main():
     signal.signal(signal.SIGINT, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
     if args.mode == "prepare":
+        run.node_scope = dict(name=args.node_name, uid=args.node_uid)
         prepare(run, args.owner)
         return 0
     return execute(run, args)

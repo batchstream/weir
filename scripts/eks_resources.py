@@ -14,7 +14,7 @@ TRACKED = ("cpu", "memory", "ephemeral-storage")
 MAX = Decimal(2**63-1)
 
 
-def projection(json_template):
+def projection(json_template, *, scoped=False):
     # The API returns only these resource/identity fields. No business names,
     # namespace, env, commands, volumes, annotations, full spec, or logs.
     container = '''{{define "resourceContainer"}}{"name":{{template "json" .name}},"restartPolicy":{{template "json" .restartPolicy}},"resources":{{template "json" .resources}},"allocatedResources":{{template "json" .allocatedResources}},"claims":{{if .resources.claims}}true{{else}}false{{end}},"resizePolicy":{{template "json" .resizePolicy}}}{{end}}'''
@@ -27,7 +27,10 @@ def projection(json_template):
                        ("containerStatuses", ".status.containerStatuses"), ("initContainerStatuses", ".status.initContainerStatuses")):
         body += ',"'+name+'": [{{range $i,$c := '+path+'}}{{if $i}},{{end}}{{template "resourceContainer" $c}}{{end}}]'
     body += ''',"resizeConditions":[{{$first := true}}{{range .status.conditions}}{{if or (eq .type "PodResizePending") (eq .type "PodResizeInProgress")}}{{if not $first}},{{end}}{{$first = false}}{"type":{{template "json" .type}},"status":{{template "json" .status}},"reason":{{template "json" .reason}}}{{end}}{{end}}],"unsupported":{{if or .spec.resourceClaims .status.resourceClaimStatuses .status.nodeAllocatableResourceClaimStatuses .spec.ephemeralContainers .status.ephemeralContainerStatuses}}true{{else}}false{{end}}'''
-    return json_template+container+'[{{range $i,$p := .items}}{{if $i}},{{end}}{{with $p}}{'+body+'}{{end}}{{end}}]'
+    items = '[{{range $i,$p := .items}}{{if $i}},{{end}}{{with $p}}{'+body+'}{{end}}{{end}}]'
+    if scoped:
+        items = '''{"kind":{{template "json" .kind}},"apiVersion":{{template "json" .apiVersion}},"itemsType":{{printf "%q" (printf "%T" .items)}},"continue":{{template "json" .metadata.continue}},"remainingItemCount":{{template "json" .metadata.remainingItemCount}},"items":'''+items+'}'
+    return json_template+container+items
 
 
 def resource_map(raw):
@@ -137,12 +140,25 @@ def pod_requests(pod):
     return total, detail
 
 
-def allocated(raw):
+def allocated(raw, *, node_name=None):
     pods = json.loads(raw)
+    if node_name is not None:
+        require(isinstance(pods, dict) and set(pods) == {"kind", "apiVersion", "itemsType", "continue", "remainingItemCount", "items"}, "complete resource envelope required")
+        require(pods["kind"] in ("List", "PodList") and pods["apiVersion"] == "v1" and
+                pods["itemsType"] == "[]interface {}" and pods["continue"] in (None, "") and
+                (pods["remainingItemCount"] is None or type(pods["remainingItemCount"]) is int and pods["remainingItemCount"] == 0), "partial/invalid resource response")
+        pods = pods["items"]
     require(isinstance(pods, list), "structured resource projection required")
     used, details, seen = {}, [], set()
     for pod in pods:
         require(isinstance(pod, dict) and pod.get("uid") and "nodeName" in pod, "Pod identity missing")
+        if node_name is not None:
+            require(isinstance(pod["uid"], str) and pod["uid"].strip() == pod["uid"] and pod["nodeName"] == node_name, "Pod UID/node scope mismatch")
+            fields = {"uid", "nodeName", "phase", "deleting", "resources", "statusResources", "allocatedResources", "overhead", "resize", "resizeConditions", "unsupported", "containers", "initContainers", "containerStatuses", "initContainerStatuses"}
+            require(set(pod) == fields and type(pod["unsupported"]) is bool, "incomplete Pod projection")
+            for group in ("containers", "initContainers", "containerStatuses", "initContainerStatuses"):
+                require(isinstance(pod[group], list), "incomplete container projection")
+                require(all(isinstance(c, dict) and set(c) == {"name", "restartPolicy", "resources", "allocatedResources", "claims", "resizePolicy"} and type(c["claims"]) is bool for c in pod[group]), "incomplete container fields")
         require(pod["uid"] not in seen, "duplicate Pod UID")
         seen.add(pod["uid"])
         node = pod["nodeName"]

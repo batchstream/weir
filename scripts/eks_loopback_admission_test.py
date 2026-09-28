@@ -66,6 +66,7 @@ class AdmissionReplay(unittest.TestCase):
         self.write_config()
         self.run = loop.Run(self.evidence, loop.TARGET)
         self.run.plan = plan()
+        self.run.node_scope = self.run.plan["node"]
         self.run.template = loop.objects(plan())["job"]
         self.run.pod_entry = None
         self.run.pod_ready = False

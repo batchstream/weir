@@ -158,7 +158,7 @@ def plan():
 
 
 def node():
-    value = dict(name="node", uid="node-uid", arch="arm64", os="linux", unschedulable=False, deleting=None, taints=[],
+    value = dict(name="node", uid="node-uid", kernel="offline", kubelet="offline", arch="arm64", os="linux", unschedulable=False, deleting=None, taints=[],
                  conditions=[dict(type=k, status="True" if k == "Ready" else "False") for k in ("Ready", "MemoryPressure", "DiskPressure", "PIDPressure")],
                  allocatable=dict(cpu="8", memory="16Gi", pods="30"))
     return value
@@ -506,11 +506,14 @@ if verb == "create":
     if obj["kind"] == "Job" and "--dry-run=server" not in args:
         (root/"actual-job.json").write_text(json.dumps(obj))
     print(json.dumps(obj))
-elif verb == "get" and kind == "nodes":
-    print(json.dumps([cfg["node"]]))
+elif verb == "get" and kind == "node":
+    if args[2] != cfg["node"]["name"]: raise ValueError("node scope")
+    print(json.dumps(cfg["node"]))
 elif verb == "get" and kind == "pods":
     if "--all-namespaces" in args:
-        print("[]")
+        if "--field-selector=spec.nodeName="+cfg["node"]["name"] not in args or "--chunk-size=0" not in args: raise ValueError("Pod scope")
+        response = dict(kind="List",apiVersion="v1",itemsType="[]interface {}",remainingItemCount=None,items=[],**{"continue":None})
+        print(json.dumps(response))
     elif cfg.get("actual_pod"):
         print(cfg["actual_pod"]["metadata"]["name"])
 elif verb == "get" and kind == "Pod":

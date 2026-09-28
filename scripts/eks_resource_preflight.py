@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One frozen M30/M30R EKS invocation, exact M29 helper, no document workload."""
+"""One frozen EKS resource invocation, exact M29 helper, no document workload."""
 import argparse
 import hashlib
 import ipaddress
@@ -258,14 +258,24 @@ def observation_report(root, native):
     return result
 
 
+def scope_check(root, owner=None):
+    name = root.parent.name
+    require(re.fullmatch(r'[a-z][a-z0-9]{0,15}', name), 'single evidence run name')
+    base = common.REPO/'.testdata'
+    require(root == base/name/'native' and root.resolve() == root and base.resolve() == base and
+            not root.is_symlink() and not root.parent.is_symlink(), 'controlled absolute evidence root')
+    if owner is not None:
+        require(isinstance(owner, str) and re.fullmatch('weir-qual-'+name+r'-[a-z0-9-]{1,25}', owner), 'evidence owner scope')
+
+
 def prepare(run, owner):
     milestone=run.root.parent.name
-    require(milestone in ('m30','m30r'), 'explicit evidence scope')
+    scope_check(run.root, owner)
     helper=verified_helper(run.root.parent)
     require(run.run(['kubectl','config','current-context']).strip()==loop.TARGET['context'],'current context drift')
     context=loop.prepare_context(run,owner,image_source=SOURCE,owner_pattern='weir-qual-'+milestone+r'-[a-z0-9-]{1,25}')
     plan=dict(schema_version=1,profile=milestone+'-eks-no-load-resource-preflight',evidence_root=str(run.root.resolve()),target=loop.TARGET,owner=owner,namespace=owner,
-              node=context['node'],initial_spare=context['initial_spare'],cluster=context['cluster'],source=context['source'],image_source=SOURCE,
+              node=context['node'],initial_spare=context['initial_spare'],resource_preflight=context['resource_preflight'],cluster=context['cluster'],source=context['source'],image_source=SOURCE,
               images=IMAGES,helper=helper,budgets=BUDGET,minimum=loop.MINIMUM,sampled_at=time.time(),atomic_snapshot=False,
               tool_inputs={p:common.digest(common.REPO/p) for p in FILES},
               sequence=['ES native sidecar','bootstrap upload verified','UID recheck','release','empty records index','Weir/client','two ten-second observers','one client snapshot','cleanup'])
@@ -277,7 +287,10 @@ def prepare(run, owner):
 def execute(run, plan_sha256):
     require(common.digest(run.root/'plan.json')==plan_sha256,'plan hash')
     plan=json.loads((run.root/'plan.json').read_text());run.plan=plan
+    scope_check(run.root, plan['owner'])
+    require(plan['namespace']==plan['owner'] and plan['profile']==run.root.parent.name+'-eks-no-load-resource-preflight','frozen owner/profile')
     require(plan['evidence_root']==str(run.root.resolve()),'frozen evidence path')
+    run.resource_preflight=plan['resource_preflight']
     require(plan['target']==loop.TARGET and plan['images']==IMAGES and plan['image_source']==SOURCE and plan['budgets']==BUDGET and plan['minimum']==loop.MINIMUM,'frozen boundary')
     require(plan['helper']==verified_helper(run.root.parent) and plan['objects']==objects(plan),'artifact/template drift')
     require(plan['tool_inputs']=={p:common.digest(common.REPO/p) for p in FILES},'script drift')
@@ -400,14 +413,18 @@ def main():
     require(os.environ.get('WEIR_EKS_M30')=='1','explicit WEIR_EKS_M30=1 required')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode',choices=('prepare','run'));parser.add_argument('--owner');parser.add_argument('--plan-sha256')
-    parser.add_argument('--evidence',choices=('m30','m30r'),default='m30')
+    parser.add_argument('--evidence',required=True)
+    parser.add_argument('--node-name');parser.add_argument('--node-uid')
     args=parser.parse_args();root=common.REPO/'.testdata'/args.evidence/'native'
+    scope_check(root, args.owner if args.mode=='prepare' else None)
     if args.mode=='prepare':root.mkdir(mode=0o700)
     else:require(root.is_dir() and root.stat().st_mode & 0o777==0o700,'private evidence')
     run=Run(root,loop.TARGET);run.number=max([int(p.stem.split('-')[1]) for p in root.glob('command-*.json')]+[0])
     def interrupted(signum,frame):raise KeyboardInterrupt('signal '+str(signum))
     signal.signal(signal.SIGINT,interrupted);signal.signal(signal.SIGTERM,interrupted)
-    if args.mode=='prepare':prepare(run,args.owner);return 0
+    if args.mode=='prepare':
+        run.node_scope=dict(name=args.node_name,uid=args.node_uid)
+        prepare(run,args.owner);return 0
     return execute(run,args.plan_sha256)
 
 

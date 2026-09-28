@@ -223,10 +223,28 @@ class Transfer(unittest.TestCase):
 
 
 class Lifecycle(unittest.TestCase):
+    def test_evidence_single_run_owner_path_and_create_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo=Path(directory).resolve()
+            with patch.object(pre.common,'REPO',repo):
+                root=repo/'.testdata'/'m30r2'/'native'
+                pre.scope_check(root,'weir-qual-m30r2-offline')
+                root.parent.mkdir(parents=True)
+                root.mkdir(mode=0o700)
+                with self.assertRaises(FileExistsError):root.mkdir(mode=0o700)
+                for invalid in (repo/'other'/'m30r2'/'native',repo/'.testdata'/'..'/'native',repo/'.testdata'/'bad-name'/'native'):
+                    with self.assertRaises(ValueError):pre.scope_check(invalid)
+                for owner in ('weir-qual-m30-offline','weir-qual-m30r-offline','business'):
+                    with self.assertRaises(ValueError):pre.scope_check(root,owner)
+                alias=repo/'.testdata'/'alias';alias.symlink_to(root.parent,target_is_directory=True)
+                with self.assertRaises(ValueError):pre.scope_check(alias/'native')
+
     def test_transfer_failure_cleans_owned_namespace_and_cannot_reinvoke(self):
         for sig in (signal.SIGINT,signal.SIGTERM):self.addCleanup(signal.signal,sig,signal.getsignal(sig))
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)/'native';root.mkdir();p=plan()
+            repo=Path(directory);root=repo/'.testdata'/'m30'/'native';root.mkdir(parents=True);p=plan()
+            p['profile']='m30-eks-no-load-resource-preflight'
+            p['resource_preflight']=dict(node=p['node'],started=time.monotonic(),deadline=time.monotonic()+120,recovery=None)
             p['evidence_root']=str(root.resolve())
             (root/'plan.json').write_text(json.dumps(p));sha=pre.common.digest(root/'plan.json')
             run=pre.Run(root,pre.loop.TARGET);calls=[]
@@ -247,7 +265,7 @@ class Lifecycle(unittest.TestCase):
                 calls.append('cleanup');self.assertLessEqual(run.deadline-time.monotonic(),180)
                 result=dict(confirmed=True,resources=[])
                 return result
-            with patch.object(pre,'verified_helper',return_value=p['helper']),patch.object(run,'run',side_effect=command),patch.object(run,'kube',side_effect=kube),patch.object(run,'check_node'),patch.object(pre.loop,'namespace_start',side_effect=start),patch.object(run,'create',return_value=job),patch.object(run,'current_pod',side_effect=current),patch.object(run,'transfer',side_effect=transfer),patch.object(run,'selected_object',return_value=pod),patch.object(run,'cleanup',side_effect=cleanup):
+            with patch.object(pre,'scope_check'),patch.object(pre,'verified_helper',return_value=p['helper']),patch.object(run,'run',side_effect=command),patch.object(run,'kube',side_effect=kube),patch.object(run,'check_node'),patch.object(pre.loop,'namespace_start',side_effect=start),patch.object(run,'create',return_value=job),patch.object(run,'current_pod',side_effect=current),patch.object(run,'transfer',side_effect=transfer),patch.object(run,'selected_object',return_value=pod),patch.object(run,'cleanup',side_effect=cleanup):
                 self.assertEqual(pre.execute(run,sha),1)
                 self.assertEqual(calls,['transfer failed','cleanup'])
                 result=json.loads((root/'result.json').read_text())

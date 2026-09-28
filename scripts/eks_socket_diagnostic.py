@@ -98,6 +98,7 @@ def execute(run, options):
     require(all(common.digest(Path(proof["path"]).parent/name) == value for name,value in proof["proof"]["files"].items()), "registry raw drift")
     require(run.run(["git", "rev-parse", "HEAD"]).strip() == plan["source"] and not run.run(["git", "status", "--porcelain"]).strip(), "source/worktree drift")
     run.plan = plan
+    run.resource_preflight = plan.get("resource_preflight")
     run.pod_entry = None
     run.pod_ready = False
     run.runtime_evidence = False
@@ -159,6 +160,7 @@ def main():
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--owner")
     parser.add_argument("--plan-sha256")
+    parser.add_argument("--node-name")
     parser.add_argument("--node-uid")
     parser.add_argument("--registry-evidence", type=Path)
     args = parser.parse_args()
@@ -179,6 +181,7 @@ def main():
         require(proof["manifest"] == loop.ES["manifest"] and proof["config"] == loop.ES["config"] and
                 proof["architecture"] == "arm64" and proof["version"] == "8.19.22" and proof["user"] == "1000:0", "ES registry identity")
         run.registry_evidence = dict(path=str(args.registry_evidence.absolute()), sha256=common.digest(args.registry_evidence), proof=proof)
+        run.node_scope = dict(name=args.node_name, uid=args.node_uid)
         prepare(run, args.owner)
         return 0
     return execute(run, args)

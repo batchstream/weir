@@ -68,10 +68,15 @@ def main():
             if cfg.get("discovery_timeout"):
                 time.sleep(40)
             print(json.dumps(cfg["discovery"]))
-        elif kind == "nodes":
-            print(json.dumps([cfg["node"]]))
+        elif kind == "node":
+            if args[2] != cfg["node"]["name"]:
+                raise ValueError("node scope")
+            print(json.dumps(cfg["node"]))
         elif kind == "pods" and "--all-namespaces" in args:
-            print("[]")
+            if "--field-selector=spec.nodeName="+cfg["node"]["name"] not in args or "--chunk-size=0" not in args:
+                raise ValueError("Pod scope")
+            response = dict(kind="List", apiVersion="v1", itemsType="[]interface {}", remainingItemCount=None, items=[], **{"continue":None})
+            print(json.dumps(response))
         elif kind == "pods" and cfg.get("cleanup_objects"):
             for key, obj in state.items():
                 if key.startswith("Pod/"):
