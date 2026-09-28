@@ -198,13 +198,54 @@ class AdmissionTests(unittest.TestCase):
                     tool_inputs={p:common.digest(common.REPO/p) for p in tail.FILES}, kubectl_sha256=tail.KUBECTL_SHA,
                     resource_preflight=dict(node=tail.NODE, started=100, deadline=220))
         root = common.REPO/'.testdata/m30r7/native'
-        tail.plan_check(plan, root)
-        for key, value in (('profile','m30r6-eks-no-load-resource-preflight'), ('arms',tail.ARMS[:2]),
-                           ('arms',tail.ARMS+tail.ARMS[:1]), ('budgets',dict(tail.BUDGET, arm_seconds=61)),
-                           ('payload',dict(tail.payload_contract(),bytes=1))):
-            changed = copy.deepcopy(plan); changed[key] = value
-            with self.assertRaises(ValueError):
-                tail.plan_check(changed, root)
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory)/'kubectl'
+            executable.write_text('owned fixture, never executed\n')
+            executable.chmod(0o700)
+            for path in ('', directory):
+                with self.subTest(path=path), patch.dict(os.environ, PATH=path):
+                    tail.plan_check(plan, root)
+                    for key, value in (('profile','m30r6-eks-no-load-resource-preflight'), ('arms',tail.ARMS[:2]),
+                                       ('arms',tail.ARMS+tail.ARMS[:1]), ('budgets',dict(tail.BUDGET, arm_seconds=61)),
+                                       ('payload',dict(tail.payload_contract(),bytes=1)), ('tool_inputs',{}),
+                                       ('kubectl_sha256','0'*64), ('stage_deadline',1001)):
+                        changed = copy.deepcopy(plan); changed[key] = value
+                        with self.assertRaises(ValueError):
+                            tail.plan_check(changed, root)
+
+    def test_runtime_missing_or_changed_kubectl_refuses_before_commands_and_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory).resolve()
+            executable = repository/'kubectl'
+            executable.write_text('owned fixture, never executed\n')
+            executable.chmod(0o700)
+            root = repository/'.testdata/m30r7/native'
+            run = tail.Run(root, tail.loop.TARGET)
+            for path, reason in (('', 'kubectl missing'), (directory, 'kubectl drift')):
+                with self.subTest(path=path), patch.dict(os.environ, PATH=path), patch.object(common, 'REPO', repository), \
+                        patch.object(run, 'run', side_effect=AssertionError('external command')) as command:
+                    with self.assertRaisesRegex(ValueError, reason):
+                        tail.prepare(run, self.plan['owner'])
+                    with self.assertRaisesRegex(ValueError, reason):
+                        tail.execute(run, 'unused')
+                    command.assert_not_called()
+                    self.assertEqual(list(repository.iterdir()), [executable])
+
+    def test_execute_refuses_changed_source_before_invocation_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'kubectl'
+            executable.write_text('owned fixture, never executed\n')
+            executable.chmod(0o700)
+            plan_path = root/'plan.json'
+            plan_path.write_text(json.dumps(dict(source='a'*40)))
+            run = tail.Run(root, tail.loop.TARGET)
+            with patch.dict(os.environ, PATH=directory), patch.object(tail, 'KUBECTL_SHA', common.digest(executable)), \
+                    patch.object(tail, 'plan_check'), patch.object(run, 'run', return_value='b'*40) as command:
+                with self.assertRaisesRegex(ValueError, 'clean committed source'):
+                    tail.execute(run, common.digest(plan_path))
+                command.assert_called_once_with(['git', 'rev-parse', 'HEAD'])
+            self.assertEqual(set(root.iterdir()), {executable, plan_path})
 
     def test_insufficient_stage_budget_dispatches_nothing(self):
         with tempfile.TemporaryDirectory() as directory:

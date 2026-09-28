@@ -135,6 +135,9 @@ class CompletionConsumers(unittest.TestCase):
         records, profile = case['records'], case['profile']
         mode, command = case.get('mode', 'complete'), case.get('command')
         role = profile['role']
+        # Synthetic caller only: receive/validate 4s + EOF/drain 4s + Stop/Wait 4s.
+        # The 5s override is retained solely for the original-window counterexample.
+        deadline = time.monotonic()+case.get('budget_seconds', 12)
         options = dict(root=root, role=role, command=command or stream_command(root, records, mode=mode))
         owner = Observer(options)
         self.owners.append(owner)
@@ -146,7 +149,6 @@ class CompletionConsumers(unittest.TestCase):
             with patch.object(pre, 'Observer', return_value=owner), patch.object(run, 'exec_command', return_value=options['command']), patch.object(run, 'monitor', side_effect=monitor):
                 run.observe(role)
         else:
-            deadline = time.monotonic()+5
             f = SimpleNamespace(root=root, observations={}, observers={role:owner},
                                 observation_profiles={role:profile}, deadline=deadline)
             def save(name, value):
@@ -179,12 +181,103 @@ class CompletionConsumers(unittest.TestCase):
                     if kind == 'calibration':
                         entry.stop_observers(f)
                     else:
-                        abort_observation(owner, time.monotonic()+8)
+                        abort_observation(owner, deadline)
                 except BaseException as closing:
                     if error is None:
                         raise
                     error.add_note('consumer cleanup: '+str(closing))
         return owner
+
+    @unittest.skipUnless(__debug__, 'legacy calibration explicitly rejects -O')
+    def test_calibration_frozen_budget_preserves_old_window_counterexample(self):
+        for budget in (5, 12):
+            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                records, profile = stream_fixture(root, 'weir', 1350)
+                command = stream_command(root, records)
+                # Only producer startup is delayed; synthetic sample/terminal clocks
+                # remain a coherent fixed 2698s profile, not 2698s of real sampling.
+                command[2] = 'import time;time.sleep(1.2);'+command[2]
+                started = time.monotonic()
+                timeline = dict(budget_seconds=budget, producer_start_delay=1.2, started=started,
+                                sample_clock='synthetic 2s intervals, fixed terminal', stops=[])
+                original_poll, original_stop = Observer.poll, Observer.stop
+                def poll(owner):
+                    entries = original_poll(owner)
+                    now = time.monotonic()
+                    if entries:
+                        timeline.setdefault('first_record', now)
+                    if entries and entries[-1].get('type') == 'observer_end':
+                        timeline.setdefault('terminal_received', now)
+                    if all(owner.eof):
+                        timeline.setdefault('both_eof', now)
+                    return entries
+                def stop(owner, deadline=None):
+                    now = time.monotonic()
+                    detail = dict(entered=now, deadline=deadline, stdin_closed=owner.child.stdin.closed,
+                                  drain_deadline=min(now+4, deadline-4), global_remaining=deadline-now)
+                    timeline['stops'].append(detail)
+                    try:
+                        return original_stop(owner, deadline)
+                    finally:
+                        detail.update(returned=time.monotonic(), exit=owner.child.returncode,
+                                      joined=owner.joined, stopped=owner.stopped)
+                case = dict(records=records, profile=profile, command=command, budget_seconds=budget)
+                with patch.object(Observer, 'poll', poll), patch.object(Observer, 'stop', stop):
+                    if budget == 5:
+                        with self.assertRaisesRegex(RuntimeError, 'did not stop/drain') as caught:
+                            self.consumer(root, 'calibration', case)
+                        timeline['error'] = str(caught.exception)
+                    else:
+                        self.consumer(root, 'calibration', case)
+                owner = self.owners[-1]
+                receipt = json.loads((root/'weir-completion.json').read_text())
+                timeline.update(finished=time.monotonic(), receipt=receipt, samples=len(owner.entries)-2,
+                                exit=owner.child.returncode, eof=owner.eof, joined=owner.joined,
+                                pipes_closed=all(p.closed for p in (owner.child.stdin, *owner.pipes)))
+                print('COMPLETION_BUDGET=' + json.dumps(timeline, sort_keys=True), flush=True)
+                evidence = os.environ.get('WEIR_COMPLETION_EVIDENCE')
+                if evidence:
+                    target = Path(evidence)/('budget-'+str(budget))
+                    target.mkdir()
+                    (target/'timeline.json').write_text(json.dumps(timeline, indent=2)+'\n')
+                    for name in ('weir.jsonl','weir.err','weir-exec.json','weir-completion.json','input.jsonl'):
+                        (target/name).write_bytes((root/name).read_bytes())
+                self.assertEqual(timeline['samples'], 1350)
+                self.assertTrue(owner.joined and all(owner.eof) and timeline['pipes_closed'])
+                self.assertLess(timeline['finished'], started+budget)
+                first = timeline['stops'][0]
+                self.assertTrue(first['stdin_closed'])
+                self.assertGreater(first['global_remaining'], 0)
+                self.assertLessEqual(timeline['terminal_received'], receipt['validated_monotonic'])
+                self.assertLessEqual(receipt['validated_monotonic'], receipt['eof_sent_monotonic'])
+                if budget == 5:
+                    self.assertLess(first['drain_deadline'], first['entered'])
+                    self.assertEqual(receipt['outcome'], 'failed')
+                else:
+                    self.assertGreater(first['drain_deadline'], first['entered'])
+                    self.assertLessEqual(receipt['validated_monotonic'], started+4)
+                    self.assertLessEqual(timeline['both_eof'], receipt['waited_monotonic'])
+                    self.assertEqual(receipt['outcome'], 'complete')
+                    self.assertEqual(owner.child.returncode, 0)
+
+    def test_frozen_total_deadline_still_aborts_and_waits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records, profile = stream_fixture(root, 'weir', 71)
+            command = [sys.executable, '-c', 'import time;time.sleep(15)']
+            case = dict(records=records, profile=profile, command=command)
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, 'test consumer deadline'):
+                self.consumer(root, 'local', case)
+            elapsed = time.monotonic()-started
+            owner = self.owners[-1]
+            self.assertGreaterEqual(elapsed, 12)
+            self.assertLess(elapsed, 13)
+            self.assertNotEqual(owner.child.returncode, 0)
+            self.assertFalse((root/'weir-completion.json').exists())
+            print('COMPLETION_DEADLINE=' + json.dumps(dict(budget=12, elapsed=elapsed, exit=owner.child.returncode,
+                                                          joined=owner.joined, eof=owner.eof)), flush=True)
 
     def test_three_consumers_complete_and_reject_malformed_streams(self):
         kinds = ['eks','local']+(['calibration'] if __debug__ else [])

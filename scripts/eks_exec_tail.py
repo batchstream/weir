@@ -284,17 +284,23 @@ def plan_check(plan, root):
     require(all(common.exact_value(plan.get(k), v) for k, v in frozen.items()), 'frozen diagnostic contract')
     require({k: plan['node'][k] for k in NODE} == NODE and plan['objects'] == objects(plan), 'node/template drift')
     require(plan['tool_inputs'] == {p: common.digest(common.REPO/p) for p in FILES}, 'input drift')
-    require(plan['kubectl_sha256'] == KUBECTL_SHA == common.digest(shutil.which('kubectl')), 'kubectl drift')
+    require(plan['kubectl_sha256'] == KUBECTL_SHA, 'kubectl drift')
     require(plan['resource_preflight']['node'] == NODE and
             plan['resource_preflight']['deadline']-plan['resource_preflight']['started'] == 120, 'resource window drift')
     require(plan['stage_deadline']-plan['stage_started'] == BUDGET['remote_seconds'], 'stage budget drift')
 
 
+def kubectl_check():
+    executable = shutil.which('kubectl')
+    require(executable is not None, 'kubectl missing')
+    require(common.digest(executable) == KUBECTL_SHA, 'kubectl drift')
+
+
 def prepare(run, owner):
     require(run.root == common.REPO/'.testdata/m30r7/native' and run.root.resolve() == run.root, 'evidence scope')
+    kubectl_check()
     with (run.root.parent/'prepare-once.json').open('x') as output:
         json.dump(dict(start=time.time(), owner=owner), output)
-    require(common.digest(shutil.which('kubectl')) == KUBECTL_SHA, 'kubectl drift')
     require(run.run(['kubectl', 'version', '--client', '-o', 'json']), 'kubectl identity')
     require(run.run(['kubectl', 'config', 'current-context']).strip() == loop.TARGET['context'], 'current context drift')
     run.node_scope = NODE
@@ -333,6 +339,7 @@ def namespace_start(run):
 
 
 def execute(run, plan_sha):
+    kubectl_check()
     require(common.digest(run.root/'plan.json') == plan_sha, 'plan hash')
     plan = json.loads((run.root/'plan.json').read_text())
     plan_check(plan, run.root)
