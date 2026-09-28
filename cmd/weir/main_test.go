@@ -24,6 +24,14 @@ func TestVersionWithoutConfiguration(t *testing.T) {
 	}
 }
 
+func TestHelpWithoutConfiguration(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var output bytes.Buffer
+	if err := run([]string{"-help"}, &output); err != nil || !strings.Contains(output.String(), "Usage of weir") {
+		t.Fatal("help must short circuit server startup", err, output.String())
+	}
+}
+
 func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.json")
 	cases := [][]string{{"-unknown"}, {"-version=invalid"}, {"extra"}, {"-version", "extra"}, {"-version", "-config", missing}, {"-config", missing, "-database", "unexpected"}}

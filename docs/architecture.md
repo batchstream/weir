@@ -1728,6 +1728,18 @@ Typical deployments remain one or two Weir hops.
 Runtime states are Constructing -> Serving -> Draining -> Closed. Draining is
 monotonic and begins from one process-owned barrier:
 
+The CLI registers SIGINT/SIGTERM once before `app.Open` and unregisters only after
+owned cleanup. Its five-second startup context is a child of that signal context;
+`Open` checks cancellation between acquisitions and `Start(ctx)` refuses an already
+canceled startup before publishing readiness. Failed partial assembly retains its
+independent one-second cleanup budget. After successful assembly, every exit path
+closes the node with an independent five-second drain context, including output
+failure and cancellation before Start. Startup cancellation exits nonzero; a
+normal serving signal exits zero only if shutdown has no error. A concurrent
+independent error is retained, and backend errors remain redacted. The CLI's writer
+owns listener output. This does not promise graceful handling before registration
+or for SIGKILL; POSIX signal evidence does not qualify Windows signal behavior.
+
 1. Mark readiness NOT_SERVING and reject new application/peer calls and new Bulk
    operations. Stop new connection acceptance, preserving existing result paths.
 2. Continue dispatching already admitted finite pending work while deadlines and

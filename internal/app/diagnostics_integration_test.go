@@ -43,7 +43,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer n.Close(context.Background())
-	n.Start()
+	n.Start(context.Background())
 	families := testmetrics.Scrape(t, n.DiagnosticAddress())
 	// M14 adds 7 unlabelled gauges, 4 profile states and 3 selected scopes.
 	const maximumSeries = 2043 + 7 + 4 + 3 + 1

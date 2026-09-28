@@ -35,16 +35,22 @@ type Node struct {
 	stopGuard               context.CancelFunc
 	guardDone               chan struct{}
 	start                   sync.Once
+	startErr                error
+	serving                 sync.WaitGroup
 	once                    sync.Once
 	closeErr                error
 	Errors                  chan error
 }
 
-func (n *Node) Start() {
+func (n *Node) Start(startup context.Context) error {
 	n.start.Do(func() {
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		if n.closed {
+			n.startErr = errors.New("node closed")
+			return
+		}
+		if n.startErr = startup.Err(); n.startErr != nil {
 			return
 		}
 		n.started = true
@@ -54,14 +60,18 @@ func (n *Node) Start() {
 		go func() { defer close(n.guardDone); n.guard.Run(ctx) }()
 		for i, srv := range n.servers {
 			listener := n.listeners[i]
-			go func() { n.listenerEnded(srv.Serve(listener)) }()
+			n.serving.Go(func() { n.listenerEnded(srv.Serve(listener)) })
 			<-srv.Serving()
 		}
-		n.state = "serving"
 		if n.diagnostics != nil {
-			go func() { n.listenerEnded(n.diagnostics.serve()) }()
+			n.serving.Go(func() { n.listenerEnded(n.diagnostics.serve()) })
 		}
+		if n.startErr = startup.Err(); n.startErr != nil {
+			return
+		}
+		n.state = "serving"
 	})
+	return n.startErr
 }
 func (n *Node) Addresses() []string {
 	addresses := make([]string, len(n.listeners))
@@ -109,6 +119,7 @@ func (n *Node) Close(ctx context.Context) error {
 		n.state = "closed"
 		n.mu.Unlock()
 		n.closeDiagnostics()
+		n.serving.Wait()
 	})
 	return n.closeErr
 }

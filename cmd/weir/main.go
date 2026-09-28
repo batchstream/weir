@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,7 +21,7 @@ func main() {
 		os.Exit(1)
 	}
 }
-func run(args []string, output io.Writer) error {
+func run(args []string, output io.Writer) (resultErr error) {
 	flags := flag.NewFlagSet("weir", flag.ContinueOnError)
 	flags.SetOutput(output)
 	version := flags.Bool("version", false, "print build identity without loading configuration or connecting")
@@ -113,28 +114,48 @@ func run(args []string, output io.Writer) error {
 			cfg.Routes = append(cfg.Routes, route)
 		}
 	}
-	startup, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	// The CLI owns signals from before assembly until all owned resources close.
+	signals, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancelSignal()
+	startup, stop := context.WithTimeout(signals, 5*time.Second)
 	defer stop()
 	node, err := app.Open(startup, cfg)
 	if err != nil {
 		return err
 	}
-	node.Start()
-	fmt.Printf("Weir listening on %v; static local/peer profile, not production ready\n", node.Addresses())
-	if node.DiagnosticAddress() != "" {
-		fmt.Printf("Diagnostics listening on %s\n", node.DiagnosticAddress())
-	}
-	signals, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancelSignal()
-	select {
-	case <-signals.Done():
-	case err = <-node.Errors:
-	}
-	drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	closeErr := node.Close(drain)
-	if err != nil {
+	defer func() {
+		// A startup cancellation must not cancel the drain budget too.
+		drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resultErr = errors.Join(resultErr, node.Close(drain))
+		// Close joins the listeners. Preserve their errors even if a signal won
+		// the select below; normal shutdown contributes only nil errors.
+		for {
+			select {
+			case err := <-node.Errors:
+				resultErr = errors.Join(resultErr, err)
+			default:
+				return
+			}
+		}
+	}()
+	if err := node.Start(startup); err != nil {
 		return err
 	}
-	return closeErr
+	stop()
+	_, err = fmt.Fprintf(output, "Weir listening on %v; static local/peer profile, not production ready\n", node.Addresses())
+	if err != nil {
+		return errors.New("listener output failed")
+	}
+	if node.DiagnosticAddress() != "" {
+		if _, err := fmt.Fprintf(output, "Diagnostics listening on %s\n", node.DiagnosticAddress()); err != nil {
+			return errors.New("listener output failed")
+		}
+	}
+	select {
+	case <-signals.Done():
+		return nil
+	case err := <-node.Errors:
+		return err
+	}
 }

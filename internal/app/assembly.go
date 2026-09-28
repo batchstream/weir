@@ -19,6 +19,9 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	limits := cfg.Limits.serverLimits()
 	admission, err := server.NewAdmission(limits)
 	if err != nil {
@@ -40,6 +43,9 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}()
 	services := make(map[string]server.Service)
 	for _, definition := range cfg.Services {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var service server.Service
 		if definition.Remote != nil {
 			remoteConfig := server.RemoteConfig{Endpoints: definition.Remote.Endpoints, Relays: definition.Remote.Relays}
@@ -85,6 +91,9 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	// Construct and validate both transports before binding either address.
 	for _, address := range []string{cfg.Application, cfg.Peer} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if address == "" {
 			continue
 		}
@@ -102,6 +111,9 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err := node.openDiagnostics(cfg.Diagnostics); err != nil {
 			return nil, err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	complete = true
 	return node, nil

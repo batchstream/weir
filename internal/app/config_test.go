@@ -109,7 +109,7 @@ func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	if len(node.runtimes) != 0 || len(node.remotes) != 1 || len(node.targets) != 1 {
 		t.Fatal("forward-only created database state")
 	}
-	node.Start()
+	node.Start(context.Background())
 	var group sync.WaitGroup
 	for range 8 {
 		group.Go(func() {
@@ -121,7 +121,7 @@ func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 		})
 	}
 	group.Wait()
-	node.Start()
+	node.Start(context.Background())
 	for _, address := range node.Addresses() {
 		conn, err := net.DialTimeout("tcp", address, 100*time.Millisecond)
 		if err == nil {
@@ -219,7 +219,7 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer node.Close(context.Background())
-	node.Start()
+	node.Start(context.Background())
 	addresses := node.Addresses()
 	if len(addresses) != 2 || addresses[0] == addresses[1] {
 		t.Fatal("ephemeral listeners not distinct", addresses)

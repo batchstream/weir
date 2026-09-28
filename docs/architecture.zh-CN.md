@@ -754,6 +754,14 @@ ASCII("weir-rendezvous-v1") || 0x00 || u32be(len(key)) || key
 
 Constructing -> Serving -> Draining -> Closed 单调迁移，drain 从进程统一 barrier 开始：
 
+CLI 在 `app.Open` 前统一注册一次 SIGINT/SIGTERM，所有自有资源关闭后才注销。
+5秒 startup context 从 signal context 派生；Open 在资源取得边界检查取消，
+`Start(ctx)` 对已取消的启动不发布 ready。部分组装失败仍使用独立1秒清理预算；
+组装成功后的所有退出路径（包括输出失败、Start前取消）使用独立5秒 drain context。
+启动取消为非零退出；正常 serving 收到信号且关闭无错误才 exit0。并发的独立错误仍保留，
+后端错误继续脱敏，监听信息通过 CLI 传入的 writer 输出。注册之前或 SIGKILL 不承诺优雅关闭；
+POSIX信号证据不等于 Windows 原生资格。
+
 1. readiness 改 NOT_SERVING，拒绝新应用/peer 调用和 Bulk 操作，停止接新连接，保留已有结果路径。
 2. 原 deadline 和 drain deadline 内继续派发有限已准入 pending，直接 flush 收集窗；不等无限 Bulk producer half-close。
 3. 已接收未准入项可 NOT_STARTED + UNAVAILABLE；不继续读取无界输入只为制造拒绝结果。尽量完成已知结果，再关流；未报告已发送写入在客户端为 UNKNOWN。

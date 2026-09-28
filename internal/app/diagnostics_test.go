@@ -58,8 +58,8 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if recorder.Code != 503 || n.ready() {
 		t.Fatal("ready before Start")
 	}
-	n.Start()
-	second.Start()
+	n.Start(context.Background())
+	second.Start(context.Background())
 	if health(t, n, "/readyz") != 200 || health(t, n, "/livez") != 200 {
 		t.Fatal("not serving")
 	}
@@ -130,7 +130,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 3 {
-		n.Start()
+		n.Start(context.Background())
 		if err := n.Close(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -149,7 +149,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 }
 func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 	n := diagnosticNode(t)
-	n.Start()
+	n.Start(context.Background())
 	before := testmetrics.Scrape(t, n.DiagnosticAddress())
 	conn, err := grpc.NewClient("passthrough:///"+n.Addresses()[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 	if err != nil {
@@ -196,7 +196,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		}
 	}
 	n := diagnosticNode(t)
-	n.Start()
+	n.Start(context.Background())
 	var sockets []net.Conn
 	defer func() {
 		for _, conn := range sockets {
@@ -278,7 +278,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 }
 func TestDiagnosticsScrapeCloseRace(t *testing.T) {
 	n := diagnosticNode(t)
-	n.Start()
+	n.Start(context.Background())
 	var group sync.WaitGroup
 	for range 2 {
 		group.Go(func() {
@@ -331,7 +331,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	defer n.Close(context.Background())
 	listener := &smallSendListener{Listener: n.diagnostics.listener}
 	n.diagnostics.listener = listener
-	n.Start()
+	n.Start(context.Background())
 	for round := 0; round < 3; round++ {
 		var sockets []net.Conn
 		for range diagnosticHandlers {
@@ -390,10 +390,10 @@ func TestDiagnosticsDisabledAndFatalListenerReadiness(t *testing.T) {
 	if disabled.diagnostics != nil || disabled.DiagnosticAddress() != "" {
 		t.Fatal("disabled diagnostics created listener")
 	}
-	disabled.Start()
+	disabled.Start(context.Background())
 	_ = disabled.Close(context.Background())
 	n := diagnosticNode(t)
-	n.Start()
+	n.Start(context.Background())
 	_ = n.listeners[0].Close()
 	select {
 	case <-n.Errors:
