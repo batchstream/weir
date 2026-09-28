@@ -29,7 +29,7 @@ KINDS = {"Namespace": ("v1", "namespaces"), "Job": ("batch/v1", "jobs"),
 # Emit the admitted spec as JSON, but never return unexpected literal env values.
 JSON_TEMPLATE = '''{{define "json"}}{{$t := printf "%T" .}}{{if eq $t "map[string]interface {}"}}{ {{$first := true}}{{range $k,$v := .}}{{if not $first}},{{end}}{{$first = false}}{{printf "%q" $k}}:{{if eq $k "env"}}[{{range $i,$e := $v}}{{if $i}},{{end}}{"name":{{printf "%q" $e.name}}{{if $e.valueFrom}},"valueFrom":{{template "json" $e.valueFrom}}{{else}},"value":{{if or (eq $e.name "GOMAXPROCS") (eq $e.name "WEIR_CAPACITY_INTEGRATION") (eq $e.name "ES_JAVA_OPTS") (eq $e.name "AWS_EC2_METADATA_DISABLED")}}{{template "json" $e.value}}{{else}}"REDACTED"{{end}}{{end}}}{{end}}]{{else}}{{template "json" $v}}{{end}}{{end}} }{{else if eq $t "[]interface {}"}}[{{range $i,$v := .}}{{if $i}},{{end}}{{template "json" $v}}{{end}}]{{else if eq $t "string"}}{{printf "%q" .}}{{else if eq $t "<nil>"}}null{{else}}{{.}}{{end}}{{end}}'''
 OBJECT_TEMPLATE = JSON_TEMPLATE + '''{"apiVersion":{{printf "%q" .apiVersion}},"kind":{{printf "%q" .kind}},"metadata":{"name":{{printf "%q" .metadata.name}},"namespace":{{template "json" .metadata.namespace}},"uid":{{template "json" .metadata.uid}},"labels":{{template "json" .metadata.labels}},"ownerReferences":{{template "json" .metadata.ownerReferences}},"deletionTimestamp":{{template "json" .metadata.deletionTimestamp}}},"spec":{{template "json" .spec}},"status":{{template "json" .status}},"data":{{template "json" .data}}}'''
-META_TEMPLATE = r'''{{range .items}}{{.apiVersion}}|{{.kind}}|{{.metadata.name}}|{{.metadata.uid}}|{{if .metadata.labels}}{{index .metadata.labels "qualification.weir.io/owner"}}{{end}}|{{range .metadata.ownerReferences}}{{.uid}},{{end}}|{{if .involvedObject}}{{.involvedObject.uid}}{{else if .regarding}}{{.regarding.uid}}{{end}}{{"\n"}}{{end}}'''
+META_TEMPLATE = r'''{{range .items}}{{.apiVersion}}|{{.kind}}|{{.metadata.name}}|{{.metadata.uid}}|{{if .metadata.labels}}{{index .metadata.labels "qualification.weir.io/owner"}}{{end}}|{{range .metadata.ownerReferences}}{{.uid}},{{end}}|{{if .involvedObject}}{{.involvedObject.uid}}{{else if .regarding}}{{.regarding.uid}}{{end}}|{{.metadata.namespace}}{{"\n"}}{{end}}'''
 EVENT_TEMPLATE = JSON_TEMPLATE + '''[{{range $i,$e := .items}}{{if $i}},{{end}}{"uid":{{template "json" .metadata.uid}},"namespace":{{template "json" .metadata.namespace}},"involvedObject":{{template "json" .involvedObject}},"reason":{{template "json" .reason}},"message":{{template "json" .message}},"count":{{template "json" .count}},"firstTimestamp":{{template "json" .firstTimestamp}},"lastTimestamp":{{template "json" .lastTimestamp}},"eventTime":{{template "json" .eventTime}},"series":{{template "json" .series}}}{{end}}]'''
 
 
@@ -49,7 +49,7 @@ def owner_check(obj, expected):
     require(isinstance(obj, dict), "owned object disappeared")
     meta = obj["metadata"]
     require(meta["uid"] == expected["uid"] and meta["name"] == expected["name"] and
-            meta.get("labels", {}).get(LABEL) == expected["owner"], "object UID/owner drift")
+            (meta.get("labels") or {}).get(LABEL) == expected["owner"], "object UID/owner drift")
 
 
 def job_template(plan, step):
@@ -251,6 +251,7 @@ class Run:
         self.namespace = None
         self.remote_started = None
         self.defaults = {}
+        self.event_uids = set()
 
     def save(self, name, data):
         raw = data.encode() if isinstance(data, str) else (json.dumps(data, indent=2)+"\n").encode()
@@ -273,12 +274,15 @@ class Run:
         self.number += 1
         number = self.number
         record = dict(argv=argv, start=time.time(), monotonic_start=time.monotonic())
-        self.diagnostic(f"command-{number:04d}.json", record)
+        self.save(f"command-{number:04d}.json", record)
         streams = [bytearray(), bytearray()]
         child = None
         try:
+            # Reserve Stop/Wait time inside both the CLI and invocation budgets.
+            allowance = min(timeout, 21) if self.cleaning else timeout
+            until = min(self.deadline-(4 if self.cleaning else 0), record["monotonic_start"]+allowance)
+            require(time.monotonic() < until, "insufficient command/Stop/Wait budget")
             child = subprocess.Popen(argv, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-            until = min(self.deadline, time.monotonic()+timeout)
             next_observation = time.monotonic()+2
             with selectors.DefaultSelector() as selector:
                 for index, pipe in enumerate((child.stdout, child.stderr)):
@@ -311,6 +315,7 @@ class Run:
             for suffix, raw in zip(("out", "err"), streams):
                 self.diagnostic(f"command-{number:04d}.{suffix}", raw.decode(errors="replace"))
             self.diagnostic(f"command-{number:04d}.json", record)
+            require(not self.diagnostic_errors, "command evidence unavailable")
 
     def kube(self, args, namespace=None):
         argv = ["kubectl", "--context", self.target["context"], "--request-timeout=10s"]
@@ -444,7 +449,18 @@ class Run:
         # diagnostic recording. Disk failure still refuses the unsafe delete.
         (self.root/filename).write_text(json.dumps(options))
         require((self.root/filename).is_file() and json.loads((self.root/filename).read_text()) == options, "delete body unavailable")
-        self.kube(["delete", "--raw", uri, "-f", str(self.root/filename)], namespace)
+        require(not self.diagnostic_errors, "delete evidence unavailable")
+        try:
+            self.kube(["delete", "--raw", uri, "-f", str(self.root/filename)], namespace)
+        except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+            # Never replay an ambiguous DELETE. A fresh GET can confirm absence.
+            current = self.selected_object(entry["kind"], entry["name"])
+            readback = dict(error=str(exc), current=current)
+            self.save("delete-"+entry["uid"]+"-readback.json", readback)
+            if current is None:
+                return
+            owner_check(current, entry)
+            raise
         until = min(self.deadline, time.monotonic()+35)
         while time.monotonic() < until:
             current = self.selected_object(entry["kind"], entry["name"])
@@ -456,25 +472,61 @@ class Run:
 
     def inventory(self):
         names = self.kube(["api-resources", "--namespaced=true", "--verbs=list", "-o", "name"]).split()
-        require(names and all(re.fullmatch(r"[a-z0-9.-]+", n) for n in names), "API discovery")
+        require(names and all(re.fullmatch(r"[a-z][a-z0-9.-]*", n) for n in names), "API discovery")
         names = [n for n in names if n != "secrets"]
-        # No Secret query: the namespace quota supplies a conservative count.
+        metrics = None
+        if "pods.metrics.k8s.io" in names:
+            # API discovery describes server semantics, not the caller's RBAC.
+            metrics = json.loads(self.kube(["get", "--raw", "/apis/metrics.k8s.io/v1beta1"]))
+            self.save(f"metrics-discovery-{self.number:04d}.json", metrics)
+            require(metrics.get("kind") == "APIResourceList" and
+                    metrics.get("groupVersion") == "metrics.k8s.io/v1beta1", "metrics discovery identity")
+            pods = [r for r in metrics.get("resources", []) if r.get("name") == "pods"]
+            require(len(pods) == 1 and pods[0].get("namespaced") is True and
+                    pods[0].get("kind") == "PodMetrics" and
+                    set(pods[0].get("verbs", [])) == {"get", "list"}, "metrics API is not the readonly Pod view")
+        # No Secret query: retain the registered quota until the final inventory.
         quota = self.selected_object("ResourceQuota", "budget")
-        require(quota is not None and quota["status"]["used"]["count/secrets"] == "0", "Secret count unavailable/nonzero")
-        raw = self.kube(["get", ",".join(names), "-o", "go-template="+META_TEMPLATE], self.plan["namespace"])
-        rows = [r.split("|") for r in raw.splitlines()]
-        require(all(len(r) == 7 for r in rows), "inventory projection")
-        return rows
+        expected = next((e for e in self.owned if e["kind"] == "ResourceQuota" and e["name"] == "budget"), None)
+        require(expected is not None, "quota not registered")
+        owner_check(quota, expected)
+        require(quota.get("spec", {}).get("hard", {}).get("count/secrets") == "0" and
+                quota.get("status", {}).get("hard", {}).get("count/secrets") == "0" and
+                quota.get("status", {}).get("used", {}).get("count/secrets") == "0", "Secret count unavailable/nonzero")
+        # Small sequential batches keep a large API catalog within each CLI's
+        # time limit without filtering out unknown lifecycle resources.
+        rows = []
+        for start in range(0, len(names), 20):
+            raw = self.kube(["get", ",".join(names[start:start+20]), "-o", "go-template="+META_TEMPLATE], self.plan["namespace"])
+            rows.extend(r.split("|") for r in raw.splitlines())
+        self.save(f"inventory-raw-{self.number:04d}.json", rows)
+        require(all(len(r) == 8 and r[7] == self.plan["namespace"] for r in rows), "inventory namespace/projection")
+        persistent, views = [], []
+        for row in rows:
+            if row[:2] == ["metrics.k8s.io/v1beta1", "PodMetrics"]:
+                require(metrics is not None and bool(re.fullmatch(r"[a-z0-9][a-z0-9.-]*", row[2])) and
+                        row[3] in ("", "<no value>") and not row[5] and not row[6], "uncertain PodMetrics projection")
+                views.append(row)
+            else:
+                persistent.append(row[:7])
+        classified = dict(persistent=persistent, readonly_pod_metrics=views)
+        self.save(f"inventory-classified-{self.number:04d}.json", classified)
+        return persistent
 
     def foreign_check(self, rows):
-        known = {e["uid"] for e in self.owned}
+        known = {e["uid"]: e for e in self.owned}
         for version, kind, name, uid, owner, refs, regarding in rows:
+            require(uid not in ("", "<no value>"), "persistent UID missing")
             if uid in known:
+                expected = known[uid]
+                require((version, kind, name) == (KINDS[expected["kind"]][0], expected["kind"], expected["name"]),
+                        "owned object API/name drift")
                 require(owner == self.plan["owner"], "owned object relabelled")
             elif (kind, name) in self.defaults:
-                require(uid == self.defaults[kind, name], "namespace default UID changed")
-            elif kind == "Event":
-                require(regarding in known, "foreign event")
+                require(version == "v1" and uid == self.defaults[kind, name] and not owner and not refs,
+                        "namespace default identity changed")
+            elif kind == "Event" and version in ("v1", "events.k8s.io/v1"):
+                require(regarding in known or regarding in self.event_uids, "foreign event")
             else:
                 raise ValueError("foreign resource: "+kind+"/"+name+"/"+uid)
 
@@ -536,9 +588,9 @@ class Run:
                 if failure is None:
                     raise ValueError("Job cleanup failed: "+"; ".join(cleanup_errors))
 
-    def cleanup(self):
+    def cleanup(self, *, deadline=None):
         self.cleaning = True
-        self.deadline = time.monotonic()+180
+        self.deadline = time.monotonic()+180 if deadline is None else deadline
         results = []
         if not self.namespace:
             result = dict(confirmed=not self.remote_started, resources=results, diagnostic_errors=self.diagnostic_errors)
@@ -547,26 +599,29 @@ class Run:
             current = self.selected_object("Namespace", self.namespace["name"])
             owner_check(current, self.namespace)
             rows = self.inventory()
-            self.diagnostic("cleanup-inventory.json", rows)
+            self.save("cleanup-inventory.json", rows)
             self.foreign_check(rows)
-        except BaseException as exc:
-            result = dict(confirmed=False, resources=results, error="cleanup ownership uncertain: "+str(exc))
-            return result
-        for entry in sorted((e for e in self.owned if e["kind"] != "Namespace"), key=lambda e: (e["kind"] != "Job", e["kind"] != "Pod")):
-            try:
+            require(not self.diagnostic_errors, "cleanup evidence unavailable")
+            order = {"Job": 0, "Pod": 1, "ConfigMap": 2, "NetworkPolicy": 3, "ResourceQuota": 4}
+            entries = sorted((e for e in self.owned if e["kind"] != "Namespace"), key=lambda e: order[e["kind"]])
+            for entry in entries:
+                if entry["kind"] == "ResourceQuota":
+                    # Recheck the complete inventory while zero-secret enforcement
+                    # and its observed count still exist. Namespace goes last.
+                    rows = self.inventory()
+                    self.save("cleanup-final-inventory.json", rows)
+                    self.foreign_check(rows)
+                    owner_check(self.selected_object("Namespace", self.namespace["name"]), self.namespace)
                 self.delete(entry)
-                results.append(dict(resource=entry, clean=True))
-            except BaseException as exc:
-                results.append(dict(resource=entry, clean=False, error=str(exc)))
-        if all(r["clean"] for r in results):
-            try:
-                # Quota is now gone; use its last zero-secret observation plus
-                # immutable namespace UID. No unowned object is individually removed.
-                self.delete(self.namespace)
-                results.append(dict(resource=self.namespace, clean=True))
-            except BaseException as exc:
-                results.append(dict(resource=self.namespace, clean=False, error=str(exc)))
-        result = dict(confirmed=bool(results) and all(r["clean"] for r in results) and not self.diagnostic_errors,
+                receipt = dict(resource=entry, clean=True)
+                results.append(receipt)
+            self.delete(self.namespace)
+            receipt = dict(resource=self.namespace, clean=True)
+            results.append(receipt)
+        except BaseException as exc:
+            result = dict(confirmed=False, resources=results, error=str(exc), diagnostic_errors=self.diagnostic_errors)
+            return result
+        result = dict(confirmed=bool(results) and not self.diagnostic_errors,
                       resources=results, diagnostic_errors=self.diagnostic_errors)
         return result
 

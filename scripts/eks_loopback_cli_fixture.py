@@ -12,7 +12,7 @@ def main():
     root = Path(sys.argv[0]).parent
     cfg = json.loads((root/"scenario.json").read_text())
     state_file = root/"state.json"
-    state = json.loads(state_file.read_text()) if state_file.exists() else {}
+    state = json.loads(state_file.read_text()) if state_file.exists() else copy.deepcopy(cfg.get("cleanup_objects", {}))
     args = sys.argv[1:]
     program = Path(sys.argv[0]).name
     with (root/"calls.jsonl").open("a") as output:
@@ -49,7 +49,7 @@ def main():
             obj["metadata"]["uid"] = "synthetic-"+kind
             if kind == "ResourceQuota":
                 obj["spec"]["hard"].update(cfg.get("quota_updates", {}))
-                obj["status"] = dict(used={"count/secrets":"0"})
+                obj["status"] = dict(hard=obj["spec"]["hard"], used={"count/secrets":"0"})
         if not dry:
             key = kind+"/"+obj["metadata"]["name"]
             if key in state:
@@ -60,10 +60,22 @@ def main():
         print(json.dumps(obj))
     elif verb == "get":
         kind = args[1]
-        if kind == "nodes":
+        if kind == "--raw":
+            if args[2] != "/apis/metrics.k8s.io/v1beta1":
+                raise ValueError("unexpected raw endpoint")
+            if cfg.get("discovery_failure"):
+                raise ValueError("recorded discovery unavailable")
+            if cfg.get("discovery_timeout"):
+                time.sleep(40)
+            print(json.dumps(cfg["discovery"]))
+        elif kind == "nodes":
             print(json.dumps([cfg["node"]]))
         elif kind == "pods" and "--all-namespaces" in args:
             print("[]")
+        elif kind == "pods" and cfg.get("cleanup_objects"):
+            for key, obj in state.items():
+                if key.startswith("Pod/"):
+                    print(obj["metadata"]["name"])
         elif kind == "pods":
             if "Pod/synthetic-pod" in state:
                 print("synthetic-pod")
@@ -71,13 +83,25 @@ def main():
             print("[]")
         elif kind == "daemonset":
             print("aws-node synthetic --enable-network-policy=false")
+        elif "," in kind and cfg.get("cleanup_rows"):
+            if "secrets" in kind.split(","):
+                raise ValueError("Secret query prohibited")
+            # Retained original CLI output is one complete multi-resource list.
+            rows = cfg["cleanup_rows"] if "configmaps" in kind.split(",") else []
+            if cfg.get("foreign_after_delete") and len(state) < len(cfg["cleanup_objects"]):
+                rows = rows+[cfg["foreign_after_delete"]]
+            for row in rows:
+                key = row[1]+"/"+row[2]
+                if key in cfg["cleanup_objects"] and key not in state:
+                    continue
+                print("|".join(row))
         elif "," in kind:
             for obj in state.values():
                 if obj["kind"] == "Namespace":
                     continue
                 meta = obj["metadata"]
                 refs = "".join(r["uid"]+"," for r in meta.get("ownerReferences") or [])
-                print("|".join([obj["apiVersion"],obj["kind"],meta["name"],meta["uid"],meta["labels"][cfg["label"]],refs,""]))
+                print("|".join([obj["apiVersion"],obj["kind"],meta["name"],meta["uid"],meta["labels"][cfg["label"]],refs,"",meta["namespace"]]))
         else:
             key = ("Namespace" if kind == "namespace" else kind)+"/"+args[2]
             if key in state:
@@ -103,10 +127,15 @@ def main():
         if not args[2].endswith("/"+plural+"/"+obj["metadata"]["name"]):
             raise ValueError("delete URL")
         del state[matches[0]]
+        if obj["kind"] == "Namespace":
+            state.clear()
+        if cfg.get("ambiguous_delete"):
+            state_file.write_text(json.dumps(state))
+            raise RuntimeError("DELETE response lost after server deletion")
     elif verb == "auth":
         print("yes")
     elif verb == "api-resources":
-        print("jobs.batch\npods\nresourcequotas\nconfigmaps\nnetworkpolicies.networking.k8s.io\nsecrets")
+        print("\n".join(cfg.get("api_resources", ["jobs.batch", "pods", "resourcequotas", "configmaps", "networkpolicies.networking.k8s.io", "secrets"])))
     elif verb == "logs":
         print(cfg["bootstrap_log"] if "--container=bootstrap" in args else "synthetic lifecycle log")
     elif verb == "exec":

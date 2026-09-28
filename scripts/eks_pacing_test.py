@@ -346,8 +346,8 @@ func main(){
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertNotIn("not-for-output", process.stdout)
             if template == entry.META_TEMPLATE:
-                self.assertEqual(process.stdout, "v1|ConfigMap|kube-root-ca.crt|root-uid|||\nv1|ServiceAccount|default|sa-uid|||\n"
-                                 "v1|ConfigMap|nil|nil-uid|||\nv1|ConfigMap|empty|empty-uid|||\nv1|ConfigMap|owned|owned-uid|owner||\n")
+                self.assertEqual(process.stdout, "v1|ConfigMap|kube-root-ca.crt|root-uid||||<no value>\nv1|ServiceAccount|default|sa-uid||||<no value>\n"
+                                 "v1|ConfigMap|nil|nil-uid||||<no value>\nv1|ConfigMap|empty|empty-uid||||<no value>\nv1|ConfigMap|owned|owned-uid|owner|||<no value>\n")
             elif template == entry.OBJECT_TEMPLATE:
                 rendered = json.loads(process.stdout)
                 self.assertEqual(rendered["spec"]["containers"][0]["env"][-1]["value"], "REDACTED")
@@ -414,7 +414,7 @@ func main(){
                 self.run.delete(owned)
             kube.assert_not_called()
 
-    def test_diagnostic_failure_still_cleans_independent_owned_objects(self):
+    def test_diagnostic_failure_or_foreign_object_stops_cleanup(self):
         ns = dict(kind="Namespace", name=plan()["namespace"], uid="ns-uid", owner=plan()["owner"])
         job = dict(kind="Job", name="pace-0", uid="job-uid", owner=plan()["owner"])
         pod_entry = dict(kind="Pod", name="probe", uid="pod-uid", owner=plan()["owner"])
@@ -424,7 +424,7 @@ func main(){
         with patch.object(self.run, "selected_object", return_value=obj), patch.object(self.run, "inventory", return_value=[]), \
                 patch.object(self.run, "save", side_effect=OSError("diagnostic disk failure")), patch.object(self.run, "delete") as delete:
             result = self.run.cleanup()
-            self.assertEqual(delete.call_count, 3)
+            delete.assert_not_called()
             self.assertFalse(result["confirmed"])
         foreign = [["v1", "Pod", "foreign", "foreign-uid", "another-owner", "", ""]]
         with patch.object(self.run, "selected_object", return_value=obj), patch.object(self.run, "inventory", return_value=foreign), patch.object(self.run, "delete") as delete:
@@ -733,6 +733,186 @@ else:
         with self.assertRaisesRegex(ValueError, "Job controller failure"):
             self.run.run_job("version")
         self.assertTrue((self.root/"deleted").exists())
+
+
+class CleanupReplay(unittest.TestCase):
+    """Replay the complete retained M26R5 metadata and actual API discovery."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.fixture = json.loads((entry.REPO/"scripts/fixtures/eks-cleanup-m26r5.json").read_text())
+        self.run = entry.Run(self.root, self.fixture["target"])
+        self.run.plan = dict(namespace=self.fixture["namespace"], owner=self.fixture["namespace"])
+        self.run.owned = copy.deepcopy(self.fixture["owned"])
+        self.run.namespace = self.run.owned[0]
+        self.run.defaults = {(e["kind"], e["name"]): e["uid"] for e in self.fixture["defaults"]}
+        objects = {}
+        for e in self.run.owned+self.fixture["defaults"]:
+            version = entry.KINDS[e["kind"]][0] if e["kind"] in entry.KINDS else "v1"
+            labels = {entry.LABEL: e["owner"]} if "owner" in e else None
+            meta = dict(name=e["name"], uid=e["uid"], namespace=self.fixture["namespace"], labels=labels)
+            obj = dict(apiVersion=version, kind=e["kind"], metadata=meta)
+            if e["kind"] == "ResourceQuota":
+                obj.update(spec=dict(hard={"count/secrets": "0"}),
+                           status=dict(hard={"count/secrets": "0"}, used={"count/secrets": "0"}))
+            if e["kind"] == "Job":
+                obj["status"] = dict(failed=1, conditions=[dict(type="Failed", status="True")])
+            objects[e["kind"]+"/"+e["name"]] = obj
+        rows = [row+[self.fixture["namespace"]] for row in self.fixture["rows"]]
+        self.cfg = dict(namespace=self.fixture["namespace"], cluster=dict(arn=self.fixture["target"]["context"]),
+                        label=entry.LABEL, cleanup_objects=objects, cleanup_rows=rows,
+                        discovery=self.fixture["discovery"], api_resources=self.fixture["api_resources"],
+                        plurals={kind: value[1] for kind, value in entry.KINDS.items()})
+        cli = self.root/"kubectl"
+        source = (entry.REPO/"scripts/eks_loopback_cli_fixture.py").read_text()
+        cli.write_text("#!"+sys.executable+"\n"+source)
+        cli.chmod(0o700)
+        (self.root/"git").symlink_to(cli)
+        environment = dict(PATH=str(self.root)+os.pathsep+os.environ["PATH"])
+        patched = patch.dict(os.environ, environment)
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.configure()
+
+    def configure(self):
+        (self.root/"scenario.json").write_text(json.dumps(self.cfg))
+
+    def calls(self):
+        p = self.root/"calls.jsonl"
+        return [json.loads(line) for line in p.read_text().splitlines()] if p.exists() else []
+
+    def test_real_inventory_old_rejection_new_classification_and_uid_cleanup(self):
+        # The old foreign_check receives the unclassified rows and rejects them.
+        with self.assertRaisesRegex(ValueError, "UID missing"):
+            self.run.foreign_check(self.fixture["rows"])
+        owned_before = copy.deepcopy(self.run.owned)
+        rows = self.run.inventory()
+        self.assertEqual(rows, [r for r in self.fixture["rows"] if r[1] != "PodMetrics"])
+        self.run.foreign_check(rows)
+        self.assertEqual(self.run.owned, owned_before)
+        classified = json.loads(next(self.root.glob("inventory-classified-*.json")).read_text())
+        self.assertEqual(len(classified["readonly_pod_metrics"]), 1)
+        result = self.run.cleanup()
+        self.assertTrue(result["confirmed"], result)
+        deleted = [r["resource"]["kind"] for r in result["resources"]]
+        self.assertEqual(deleted[-2:], ["ResourceQuota", "Namespace"])
+        self.assertEqual(len(deleted), 6)
+        for call in self.calls():
+            if "get" in call:
+                self.assertNotIn("secrets", call[call.index("get")+1].split(","))
+            if "delete" in call:
+                body = json.loads(Path(call[-1]).read_text())
+                self.assertIn(body["preconditions"]["uid"], {e["uid"] for e in owned_before})
+                self.assertNotIn("metrics.k8s.io", call[call.index("--raw")+1])
+
+    def test_unknown_api_identity_and_foreign_rows_block_all_deletes(self):
+        original = copy.deepcopy(self.cfg["cleanup_rows"])
+        metrics = next(i for i, r in enumerate(original) if r[1] == "PodMetrics")
+        pod_index = next(i for i, r in enumerate(original) if r[1] == "Pod")
+        default_index = next(i for i, r in enumerate(original) if r[2] == "default")
+        cases = [(metrics, 0, "metrics.k8s.io/v9"), (metrics, 0, "unknown.test/v1"),
+                 (metrics, 1, "UnknownView"), (metrics, 3, "unexpected-uid"),
+                 (metrics, 7, "foreign-namespace"), (pod_index, 3, "replacement-uid"),
+                 (pod_index, 3, ""), (pod_index, 4, "changed-owner"),
+                 (pod_index, 0, "unknown.test/v1"), (default_index, 3, "replacement-default"),
+                 (default_index, 4, self.fixture["namespace"])]
+        for index, field, value in cases:
+            with self.subTest(index=index, field=field, value=value):
+                self.cfg["cleanup_rows"] = copy.deepcopy(original)
+                self.cfg["cleanup_rows"][index][field] = value
+                self.configure()
+                result = self.run.cleanup()
+                self.assertFalse(result["confirmed"], result)
+                self.assertFalse(any("delete" in c for c in self.calls()))
+        self.cfg["cleanup_rows"] = original+[original[pod_index][:]]
+        self.cfg["cleanup_rows"][-1][2:4] = ["foreign", "foreign-uid"]
+        self.configure()
+        self.assertFalse(self.run.cleanup()["confirmed"])
+        self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_discovery_mutation_missing_failure_and_secret_count_fail_closed(self):
+        original = copy.deepcopy(self.cfg)
+        for scenario in ("mutation", "missing", "failure", "secret", "quota-owner", "missing-discovery"):
+            with self.subTest(scenario=scenario):
+                self.cfg = copy.deepcopy(original)
+                if scenario == "mutation":
+                    self.cfg["discovery"]["resources"][1]["verbs"].append("delete")
+                elif scenario == "missing":
+                    self.cfg["discovery"]["resources"] = []
+                elif scenario == "failure":
+                    self.cfg["discovery_failure"] = True
+                elif scenario == "missing-discovery":
+                    self.cfg["api_resources"].remove("pods.metrics.k8s.io")
+                elif scenario == "secret":
+                    self.cfg["cleanup_objects"]["ResourceQuota/budget"]["status"]["used"]["count/secrets"] = "1"
+                else:
+                    self.cfg["cleanup_objects"]["ResourceQuota/budget"]["metadata"]["labels"] = None
+                self.configure()
+                # The external CLI normally persists its simulated server state.
+                (self.root/"state.json").write_text(json.dumps(self.cfg["cleanup_objects"]))
+                result = self.run.cleanup()
+                self.assertFalse(result["confirmed"], result)
+                self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_final_inventory_keeps_quota_and_namespace_on_new_foreign_object(self):
+        row = ["v1", "Pod", "foreign", "foreign-uid", self.fixture["namespace"], "", "", self.fixture["namespace"]]
+        self.cfg["foreign_after_delete"] = row
+        self.configure()
+        result = self.run.cleanup()
+        self.assertFalse(result["confirmed"])
+        state = json.loads((self.root/"state.json").read_text())
+        self.assertIn("ResourceQuota/budget", state)
+        self.assertIn("Namespace/"+self.fixture["namespace"], state)
+
+    def test_ambiguous_delete_is_read_back_without_replaying(self):
+        self.cfg["ambiguous_delete"] = True
+        self.configure()
+        job = next(e for e in self.run.owned if e["kind"] == "Job")
+        self.run.delete(job)
+        deletes = [c for c in self.calls() if "delete" in c]
+        self.assertEqual(len(deletes), 1)
+        receipt = json.loads((self.root/("delete-"+job["uid"]+"-readback.json")).read_text())
+        self.assertIsNone(receipt["current"])
+
+    def test_deadline_and_evidence_failure_prevent_deletion_and_reap_cli(self):
+        self.cfg["discovery_timeout"] = True
+        self.configure()
+        result = self.run.cleanup(deadline=time.monotonic()+4.5)
+        self.assertFalse(result["confirmed"])
+        self.assertFalse(any("delete" in c for c in self.calls()))
+        records = [json.loads(p.read_text()) for p in self.root.glob("command-*.json")]
+        self.assertTrue(all("end" in r and r["exit"] is not None for r in records))
+        self.cfg.pop("discovery_timeout")
+        self.configure()
+        with patch.object(self.run, "save", side_effect=OSError("disk unavailable")):
+            result = self.run.cleanup()
+        self.assertFalse(result["confirmed"])
+        self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_stopped_cleanup_entry_uses_only_five_uids_and_one_invocation(self):
+        import eks_cleanup
+        pod = next(e for e in self.run.owned if e["kind"] == "Pod")
+        self.run.owned.remove(pod)
+        del self.cfg["cleanup_objects"]["Pod/"+pod["name"]]
+        self.cfg["cleanup_rows"] = [r for r in self.cfg["cleanup_rows"] if r[1] not in ("Pod", "PodMetrics")]
+        self.configure()
+        frozen = dict(self.run.plan, target=self.fixture["target"], seconds=180, inputs={},
+                      implementation="synthetic-implementation", owned=self.run.owned,
+                      defaults=self.fixture["defaults"], stopped_pod=pod)
+        (self.root/"plan.json").write_text(json.dumps(frozen))
+        (self.root/"plan.json").chmod(0o400)
+        plan_sha = entry.digest(self.root/"plan.json")
+        result = eks_cleanup.execute(self.root, plan_sha)
+        self.assertTrue(result["confirmed"], result)
+        self.assertTrue(result["namespace_absent"] and result["job_absent"] and result["pod_absent"])
+        deletes = [c for c in self.calls() if "delete" in c]
+        self.assertEqual(len(deletes), 5)
+        self.assertTrue(all(json.loads(Path(c[-1]).read_text())["preconditions"]["uid"] != pod["uid"] for c in deletes))
+        with self.assertRaises((FileExistsError, ValueError)):
+            eks_cleanup.execute(self.root, plan_sha)
+        self.assertEqual(len([c for c in self.calls() if "delete" in c]), 5)
 
 
 if __name__ == "__main__":
