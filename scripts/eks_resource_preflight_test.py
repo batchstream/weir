@@ -21,6 +21,7 @@ from capacity_fixture import Observer
 from eks_loopback_admission_test import responses
 from eks_loopback_test import live_pod, tcp_table
 from resource_report_test import complete_fixture
+from observer_completion_test import stream_fixture, stream_command
 
 
 def plan():
@@ -568,6 +569,7 @@ class Raw(unittest.TestCase):
             native=(root/'native-identity.txt').read_text().splitlines()
             for role in ('weir','es'):
                 entries=pre.read_stream(root/(role+'.jsonl'));entries=entries[:7]+[entries[-1]];entries[-1]['samples']=6
+                entries[-1]['ended_at']=entries[-2]['end']
                 for entry in entries:
                     if entry.get('type')=='identity':
                         entry['observer']['exe_sha256']=pre.IMAGES['tool']['binary']
@@ -586,17 +588,14 @@ class Raw(unittest.TestCase):
 
 
 class Observation(unittest.TestCase):
-    def command(self, role, *, seconds=0, ending=True):
-        records = [dict(type='identity', role=role)]
-        records += [dict(type='sample', sequence=i, padding='x'*48000) for i in range(6)]
-        if ending:
-            records += [dict(type='observer_end', role=role, samples=6)]
-        code = ('import json,sys,time; records='+repr(records)+'; start=time.monotonic(); '
-                '\nfor record in records:\n'
-                ' if record["type"]=="sample":time.sleep(max(0,start+record["sequence"]*'+str(seconds)+'/5-time.monotonic()))\n'
-                ' print(json.dumps(record),flush=True)\n'
-                ' sys.stderr.write("e"*48000);sys.stderr.flush()\n')
-        return [sys.executable, '-c', code]
+    def command(self, role, *, root, seconds=0, ending=True):
+        records, _ = stream_fixture(root, role)
+        if not ending:
+            records = records[:-1]
+        command = stream_command(root, records, seconds=seconds)
+        if not ending:
+            command[2] = command[2].replace('control=sys.stdin.buffer.read()', 'sys.exit(0)')
+        return command
 
     def test_real_six_samples_then_join_before_slow_identity_and_next_role(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -613,7 +612,7 @@ class Observation(unittest.TestCase):
             def command(container, argv):
                 role = argv[argv.index('-role')+1]
                 calls.append(role)
-                return self.command(role, seconds=10 if role=='weir' else 0)
+                return self.command(role, root=root, seconds=10 if role=='weir' else 0)
             with patch.object(run, 'monitor', side_effect=monitor), patch.object(run, 'exec_command', side_effect=command):
                 run.observe('weir');run.observe('es')
                 with self.assertRaises(FileExistsError):run.observe('weir')
@@ -625,10 +624,11 @@ class Observation(unittest.TestCase):
         for failure in ('end', 'exit', 'partial', 'sequence'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 root=Path(directory);run=pre.Run(root,pre.loop.TARGET)
-                command=self.command('weir',ending=failure!='end')
-                if failure=='exit':command[-1]+='\nsys.exit(7)'
-                if failure=='partial':command[-1]+='\nsys.stdout.write("{")'
-                if failure=='sequence':command[-1]=command[-1].replace("'sequence': 5", "'sequence': 4")
+                command=self.command('weir',root=root,ending=failure!='end')
+                if failure=='exit':command[2]+='\nsys.exit(7)'
+                if failure=='partial':command[2]+='\nsys.stdout.write("{")'
+                if failure=='sequence':
+                    path=Path(command[-1]);path.write_text(path.read_text().replace('"sequence": 5', '"sequence": 4'))
                 with patch.object(run,'monitor') as monitor,patch.object(run,'exec_command',return_value=command):
                     with self.assertRaises((ValueError,RuntimeError)):run.observe('weir')
                 self.assertEqual(monitor.call_count,1)
@@ -653,6 +653,7 @@ class Observation(unittest.TestCase):
         for failure in ('deadline','cancel'):
             with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
                 run=pre.Run(Path(directory),pre.loop.TARGET)
+                stream_fixture(run.root, 'weir')
                 command=[sys.executable,'-c','import sys;print("{}",flush=True);sys.stdin.read();print("{\\"cancelled\\":true}",flush=True)']
                 original=Observer.poll
                 def poll(observer):
@@ -676,7 +677,7 @@ class Observation(unittest.TestCase):
     def test_post_observation_identity_drift_occurs_after_wait(self):
         with tempfile.TemporaryDirectory() as directory:
             run=pre.Run(Path(directory),pre.loop.TARGET)
-            command=self.command('weir')
+            command=self.command('weir',root=run.root)
             with patch.object(run,'monitor',side_effect=[None,ValueError('runtime identity changed')]),patch.object(run,'exec_command',return_value=command):
                 with self.assertRaisesRegex(ValueError,'identity changed'):run.observe('weir')
             saved=json.loads((run.root/'weir-exec.json').read_text())
@@ -692,6 +693,7 @@ class ObservationBudget(unittest.TestCase):
         clock = [1000.0]
         events = []
         run = pre.Run(root, pre.loop.TARGET)
+        stream_fixture(root, 'weir')
         total = 1000+scenario.get('remaining', 900)
         run.deadline = total
         monitors = [scenario.get('before', 11.863840415957384), scenario.get('after', 8.571337417000905)]
@@ -737,7 +739,10 @@ class ObservationBudget(unittest.TestCase):
         owner.stop.side_effect = stop
         outcome = None
         budgets = dict(pre.BUDGET, role_seconds=scenario.get('role', 60))
-        with patch.object(pre, 'BUDGET', budgets), patch.object(pre.time, 'monotonic', side_effect=lambda:clock[0]), patch.object(run, 'monitor', side_effect=monitor), patch.object(run, 'exec_command', return_value=['unused']), patch.object(pre, 'Observer', side_effect=create) as created:
+        def sampled(observer, profile):
+            records = observer.poll()
+            return records, bool(records)
+        with patch.object(pre, 'BUDGET', budgets), patch.object(pre.time, 'monotonic', side_effect=lambda:clock[0]), patch.object(run, 'monitor', side_effect=monitor), patch.object(run, 'exec_command', return_value=['unused']), patch.object(pre, 'Observer', side_effect=create) as created, patch.object(pre, 'observation_samples', side_effect=sampled), patch.object(pre, 'observation_series'), patch.object(pre, 'finish_observation', side_effect=lambda observer,profile,deadline:observer.stop(deadline=deadline)):
             try:
                 run.observe('weir')
             except BaseException as exc:
@@ -835,6 +840,7 @@ class ObservationBudget(unittest.TestCase):
         for name in ('weir.jsonl', 'weir-exec.json'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
                 run = pre.Run(Path(root), pre.loop.TARGET)
+                stream_fixture(run.root, 'weir')
                 owners = []
                 original = Observer.poll
                 def poll(observer):
@@ -861,6 +867,7 @@ class ObservationBudget(unittest.TestCase):
         for error in (KeyboardInterrupt('cancelled'), SystemExit('exit requested')):
             with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as root:
                 run = pre.Run(Path(root), pre.loop.TARGET)
+                stream_fixture(run.root, 'weir')
                 owners = []
                 original_poll = Observer.poll
                 original_stop = Observer.stop

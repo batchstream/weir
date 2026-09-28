@@ -18,6 +18,7 @@ from capacity_fixture import Fixture, FixtureInterrupted, REPO, LABEL, inventory
 from capacity_artifact import docker_archive
 from capacity_report import evaluate, resource_gate, window_gate, timestamp, prom, metric, require_evidence, db_gate
 from capacity_contract import PLAN, PLAN_PATH, Budget
+from observer_completion import observation_samples, finish_observation, cancel_observation, abort_observation
 
 
 def prepare(f, plan, artifact):
@@ -70,7 +71,7 @@ def prepare(f, plan, artifact):
         entry=tarfile.TarInfo("client");entry.size=len(raw);entry.mode=0o555
         archive.addfile(entry,io.BytesIO(raw))
     inputs={str(p.relative_to(REPO)):sha(p) for p in sorted((REPO/"internal/testutil/testcapacity").glob("*.go"))}
-    inputs.update({str(p.relative_to(REPO)):sha(p) for p in [REPO/"scripts/test-capacity.py",REPO/"scripts/capacity_fixture.py",REPO/"scripts/capacity_report.py",REPO/"scripts/capacity_artifact.py",REPO/"scripts/capacity_contract.py",REPO/"scripts/capacity_pacing.py",REPO/"scripts/package.py",PLAN_PATH]})
+    inputs.update({str(p.relative_to(REPO)):sha(p) for p in [REPO/"scripts/test-capacity.py",REPO/"scripts/capacity_fixture.py",REPO/"scripts/capacity_report.py",REPO/"scripts/capacity_artifact.py",REPO/"scripts/capacity_contract.py",REPO/"scripts/capacity_pacing.py",REPO/"scripts/package.py",REPO/"scripts/observer_completion.py",REPO/"scripts/resource_report.py",PLAN_PATH]})
     host={"uname":f.run(["uname","-a"]).stdout.strip(),"cpu":f.run(["sysctl","-n","machdep.cpu.brand_string"]).stdout.strip(),"logical_cpu":f.run(["sysctl","-n","hw.logicalcpu"]).stdout.strip(),"shared_physical_host":True}
     frozen={"schema_version":1,"profile":plan,"tool_inputs":inputs,"client_sha256":hashlib.sha256(raw).hexdigest(),"source":f.run(["git","rev-parse","HEAD"]).stdout.strip(),"effective":effective,"host":host,"vm":json.loads((f.root/"vm.json").read_text())}
     f.save("calibration-plan.json",frozen)
@@ -119,6 +120,11 @@ def start(f,plan,budget):
     weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly"],"command":["-config","/node.json"]}
     f.create("weir",weir_spec)
     f.observers = {}
+    native=f.run(["docker","exec",f.containers[f.owner+"-es"],"/bin/bash","--noprofile","--norc","-c",
+                  "set -eu; uname -smr; id; getconf CLK_TCK; sha256sum /usr/share/elasticsearch/jdk/bin/java"],10).stdout
+    f.save("native-identity.txt",native)
+    f.observation_profiles={role:dict(role=role,hashes=dict(weir=plan['binary_sha256'],client=sha(f.root/'client')),
+                                     native=native.splitlines(),seconds=2698,samples=1350) for role in ('weir','es')}
     for role in ("weir", "es"):
         cid=f.containers[f.owner+"-"+role]
         command=["docker","exec","-i","--user","65532:65532" if role=="weir" else "1000:0",
@@ -147,14 +153,13 @@ def read_observer(f,role):
     if not hasattr(f,"observations"):
         f.observations={}
     samples=f.observations.setdefault(role,[])
-    entries=f.observers[role].poll()
+    observer=f.observers[role]
+    current,complete=observation_samples(observer,f.observation_profiles[role])
+    entries=observer.entries
     if not samples:
         if not entries or "exe_sha256" not in entries[0]:
             raise RuntimeError("missing observer process identity")
-        if role=="weir" and entries[0]["exe_sha256"]!="9def37fc9f4d552d35af552f87f86ba0b45bd2bdcf948114237fb5d312c97a32":
-            raise RuntimeError("running product identity")
         f.save(role+"-process-identity.json",entries[0])
-    current=[entry for entry in entries if "time" in entry]
     if current[:len(samples)] != samples:
         raise RuntimeError("observer changed previously emitted samples")
     for entry in current[len(samples):]:
@@ -164,7 +169,34 @@ def read_observer(f,role):
     if len(samples)>1350:
         raise RuntimeError("resource sample bound")
     f.save(role+"-samples.jsonl","".join(json.dumps(s)+"\n" for s in samples))
+    if complete and observer.stopped is None:
+        reasons,_=resource_gate(samples,False,role)
+        if role=='es':reasons+=db_gate(samples,False)
+        if reasons:raise RuntimeError('observer resource boundary: '+'; '.join(reasons))
+        finish_observation(observer,f.observation_profiles[role],f.deadline)
     return samples
+
+
+def stop_observers(f):
+    # Calibration usually ends before the 2698-second observation cap. This is
+    # intentional cancellation, never a normal complete observation receipt.
+    errors=[]
+    for role,observer in list(getattr(f,'observers',{}).items()):
+        deadline=min(f.deadline,time.monotonic()+8)
+        try:
+            read_observer(f,role)
+            if observer.stopped is None:
+                cancel_observation(observer,deadline)
+        except BaseException as exc:
+            errors.append(exc)
+            try:abort_observation(observer,deadline)
+            except BaseException as closing:exc.add_note('observer abort: '+str(closing))
+        finally:
+            if observer.joined and observer.stopped is not None:
+                del f.observers[role] # Already Waited/closed; Fixture.cleanup owns the rest.
+    if errors:
+        for exc in errors[1:]:errors[0].add_note('observer stop: '+str(exc))
+        raise errors[0]
 
 
 class Calibration:
@@ -317,6 +349,9 @@ def main():
         error=str(exc);result["error"]=error
     finally:
         signal.signal(signal.SIGTERM,signal.SIG_IGN);signal.signal(signal.SIGINT,signal.SIG_IGN)
+        try:stop_observers(f)
+        except BaseException as exc:
+            error=error or str(exc);result['observer_stop_error']=str(exc)
         clean=f.cleanup();result["cleanup_confirmed"]=clean
         result["counts"]=budget.snapshot()
         try:

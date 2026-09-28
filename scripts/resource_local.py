@@ -13,6 +13,7 @@ import eks_loopback as loop
 from local_es_prerequisite import INSPECT, local_check
 from capacity_fixture import Observer
 from resource_report import report, require, LIMITS, stream_report, trial_report, observer_identity
+from observer_completion import observation_samples, finish_observation, abort_observation
 
 ENVIRONMENT = 'sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9'
 LABEL = 'qualification.weir.io/owner'
@@ -114,13 +115,21 @@ def verify(obj, options):
             mounts.get(m['Source'])==m['Destination'] for m in obj['Mounts']),'static mounts')
 
 
+def monitor_observations(observers, profiles, deadline):
+    for role, observer in observers.items():
+        series, complete = observation_samples(observer, profiles[role])
+        if len(series) >= 2:
+            stream_report(series, role)
+        if complete and observer.stopped is None:
+            finish_observation(observer, profiles[role], deadline)
+
+
 def execute(run, plan):
     containers={};observers={};result=dict(passed=False,cleanup=False,load_started=False,errors=[])
     started=time.monotonic();run.deadline=plan["fixture_deadline_monotonic"]
+    profiles={}
     def monitor():
-        for role,observer in observers.items():
-            series=[sample for sample in observer.poll() if 'files' in sample]
-            if len(series)>=2:stream_report(series,role)
+        monitor_observations(observers, profiles, min(started+300, run.deadline))
     run.monitor=monitor
     try:
         require(all(common.digest(p)==value for p,value in plan['inputs'].items()),'frozen inputs changed')
@@ -175,15 +184,16 @@ def execute(run, plan):
                 require(record['exit']==1 and actual['State']['Running'] and not actual['State']['OOMKilled'] and
                         time.monotonic()<ready_until, 'Weir startup readiness deadline/exit')
                 time.sleep(.1)
+        hashes={Path(p).name:v for p,v in plan['inputs'].items()}
+        native=(run.root/'native-identity.txt').read_text().splitlines()
         for role in ('weir','es'):
             command=['docker','exec','-i','--user','65532:65532' if role=='weir' else '1000:0',containers[role],
                      '/qualification/client','-mode','observe','-role',role,'-pid','1' if role=='weir' else 'java','-seconds','140']
             options=dict(root=run.root,role=role,command=command)
             observers[role]=Observer(options)
+            profiles[role]=dict(role=role,hashes=hashes,native=native,seconds=140,samples=71)
         until=time.monotonic()+6
         while time.monotonic()<until:monitor();time.sleep(.05)
-        hashes={Path(p).name:v for p,v in plan['inputs'].items()}
-        native=(run.root/'native-identity.txt').read_text().splitlines()
         for role,observer in observers.items():
             entries=observer.poll();series=[e for e in entries if 'files' in e]
             require(len(series)>=2,'preload observer unavailable')
@@ -203,7 +213,7 @@ def execute(run, plan):
             _,client,_,_=trial_report(entries,name)
             stream_report(client,'client')
             run.save('socket-'+name+'.log',run.run(['docker','exec',containers['es'],'/usr/bin/timeout','20','/bin/bash','--noprofile','--norc','/local-check.sh','main'],25))
-        while any(o.child.poll() is None for o in observers.values()):
+        while any(o.stopped is None for o in observers.values()):
             require(time.monotonic()<started+300,'observer completion deadline');monitor();time.sleep(.05)
         monitor()
         for role,cid in containers.items():
@@ -218,7 +228,7 @@ def execute(run, plan):
         cleanup_start=time.monotonic();run.deadline=cleanup_start+120;run.cleaning=True
         cleanup_errors=[]
         for role,observer in observers.items():
-            try:observer.stop()
+            try:abort_observation(observer)
             except BaseException as exc:cleanup_errors.append(role+' exec: '+str(exc))
         for role,cid in reversed(list(containers.items())):
             try:

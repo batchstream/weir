@@ -16,6 +16,7 @@ from capacity_artifact import application_binary
 from capacity_fixture import Observer
 from capacity_report import counter, integer, prom, timestamp, weir_metrics
 from resource_report import process, observer_identity, read_stream, require
+from observer_completion import observation_samples, finish_observation, abort_observation
 
 SOURCE = '4abc8761f9f0e08af978d5ae5c14176f8188cfa3'
 IMAGES = dict(
@@ -27,7 +28,7 @@ IMAGES = dict(
               config='sha256:063aa9659604ca3b7ab3814e31341727fe2ccce6f6758456d3f97c4b911209ee',
               binary='d41f70ca4bbe129bff11b76f3d973cdb288d839c4df72a348cac04a233b76482'), es=loop.ES)
 FILES = tuple(dict.fromkeys(loop.FILES + ('scripts/eks_resource_preflight.py', 'scripts/eks_resource_preflight_test.py',
-    'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py',
+    'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py', 'scripts/observer_completion.py',
     'scripts/fixtures/eks-resource-admitted-job-m30.json', 'scripts/fixtures/eks-resource-release-m30r2.json')))
 BUDGET = dict(remote_seconds=900, cleanup_seconds=300, artifact_ready_seconds=420, upload_seconds=300,
               role_seconds=60, observer_eof_seconds=4, command_stop_seconds=4, namespace_reserve_seconds=45,
@@ -220,25 +221,25 @@ class Run(loop.Run):
             options = dict(root=self.root, role=role, command=command)
             observer = Observer(options)
             try:
+                native = (self.root/'native-identity.txt').read_text().splitlines()
+                profile = dict(role=role, samples=BUDGET['samples'], seconds=BUDGET['observer_seconds'],
+                               minimum_seconds=9.5, max_gap_seconds=4, native=native,
+                               hashes=dict(weir=IMAGES['version']['binary'], client=IMAGES['tool']['binary']))
                 while True:
                     require(time.monotonic() < self.deadline, 'observer deadline')
-                    entries = observer.poll()
+                    _, complete = observation_samples(observer, profile)
                     require(time.monotonic() < self.deadline, 'observer deadline')
-                    if observer.child.poll() is not None and all(observer.eof):
+                    if complete:
+                        observation_series(observer.entries, role, native)
+                        finish_observation(observer, profile, until)
                         break
                     time.sleep(.02)
-                require(len(entries) == BUDGET['samples']+2 and entries[-1].get('type') == 'observer_end' and
-                        entries[-1].get('role') == role and entries[-1].get('samples') == BUDGET['samples'],
-                        'six samples/normal observer_end')
-                require([s.get('sequence') for s in entries[1:-1]] == list(range(BUDGET['samples'])), 'sample sequence')
             except BaseException as exc:
                 try:
-                    observer.stop(deadline=until)
+                    abort_observation(observer, until)
                 except BaseException as closing:
                     exc.add_note('observer stop: '+str(closing))
                 raise
-            else:
-                observer.stop(deadline=until)
             # No child is alive while a control-plane call can block.
             self.deadline = until-BUDGET['command_stop_seconds']
             require(time.monotonic() < self.deadline, 'post-observation identity budget')
@@ -396,25 +397,31 @@ def observation_report(root, native):
     result = {}
     for role in ('weir','es'):
         entries=read_stream(root/(role+'.jsonl'))
-        require(len(entries)==8 and entries[-1].get('type')=='observer_end' and entries[-1]['samples']==6 and entries[-1]['role']==role, 'six samples/normal observer_end')
-        samples=entries[1:-1]
-        options=dict(role=role,hashes=dict(weir=IMAGES['version']['binary'],client=IMAGES['tool']['binary']),native=native)
-        observer_identity(entries[0],samples[0],options)
-        values=[sample_check(s,role) for s in samples]
-        require(all(v==values[0] for v in values),'sample identity/limits drift')
-        require([s['sequence'] for s in samples]==list(range(6)), 'sample sequence')
-        seconds=(samples[-1]['monotonic_ns']-samples[0]['monotonic_ns'])/1e9
-        require(9.5 <= seconds <= 12, 'ten second observation')
-        for previous,current in zip(samples,samples[1:]):
-            require(0 < current['monotonic_ns']-previous['monotonic_ns'] <= 4e9,'observation gap')
-            for field in ('cpu.stat','memory.events'):
-                before,after=counter(previous['files'][field]),counter(current['files'][field])
-                require(all(k in after and after[k]>=v for k,v in before.items()),'counter decrease')
-        result[role]=dict(values[0], samples=6,seconds=seconds,sampled_maximum_rss=max(s['rss_bytes'] for s in samples))
+        result[role]=observation_series(entries, role, native)
     result['client']=sample_check(json.loads((root/'client-snapshot.json').read_text()),'client')
     identities=[result[role]['target']['namespaces'] for role in ('weir','es','client')]
     for key in ('pid','mnt','cgroup'): require(len({i[key] for i in identities})==3,'role namespace not independent: '+key)
     require(len({i['net'] for i in identities})==1,'shared loopback namespace')
+    return result
+
+
+def observation_series(entries, role, native):
+    require(len(entries)==8 and entries[-1].get('type')=='observer_end' and entries[-1]['samples']==6 and entries[-1]['role']==role, 'six samples/normal observer_end')
+    samples=entries[1:-1]
+    require(0 <= timestamp(entries[-1]['ended_at'])-timestamp(samples[-1]['end']) <= 2, 'observer completion clock')
+    options=dict(role=role,hashes=dict(weir=IMAGES['version']['binary'],client=IMAGES['tool']['binary']),native=native)
+    observer_identity(entries[0],samples[0],options)
+    values=[sample_check(s,role) for s in samples]
+    require(all(v==values[0] for v in values),'sample identity/limits drift')
+    require([s['sequence'] for s in samples]==list(range(6)), 'sample sequence')
+    seconds=(samples[-1]['monotonic_ns']-samples[0]['monotonic_ns'])/1e9
+    require(9.5 <= seconds <= 12, 'ten second observation')
+    for previous,current in zip(samples,samples[1:]):
+        require(0 < current['monotonic_ns']-previous['monotonic_ns'] <= 4e9,'observation gap')
+        for field in ('cpu.stat','memory.events'):
+            before,after=counter(previous['files'][field]),counter(current['files'][field])
+            require(all(k in after and after[k]>=v for k,v in before.items()),'counter decrease')
+    result=dict(values[0], samples=6,seconds=seconds,sampled_maximum_rss=max(s['rss_bytes'] for s in samples))
     return result
 
 

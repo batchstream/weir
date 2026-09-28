@@ -95,19 +95,10 @@ func run() (runErrFinal error) {
 		if err != nil {
 			return err
 		}
-		observation, cancelObservation := context.WithCancel(ctx)
-		joined := make(chan struct{})
-		go func() {
-			defer close(joined)
-			var control [1]byte
-			_, _ = stdin.Read(control[:])
-			cancelObservation()
-		}()
-		err = observe(observation, encoder, sampler, *seconds)
-		cancelObservation()
-		stdin.Close()
-		<-joined
-		return err
+		control := newObservationControl(ctx, stdin)
+		output.Context = control.Context
+		err = observe(control, encoder, sampler, *seconds)
+		return errors.Join(err, control.close())
 	}
 	if *mode == "setup" {
 		c, err := newClient(*backend, "")

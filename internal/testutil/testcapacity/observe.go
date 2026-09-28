@@ -548,7 +548,7 @@ type evidenceWriter struct {
 }
 
 func (w *evidenceWriter) Write(raw []byte) (int, error) {
-	if err := w.Context.Err(); err != nil {
+	if err := context.Cause(w.Context); err != nil {
 		return 0, err
 	}
 	if len(raw) > 1<<20 || w.Bytes+len(raw) > 64<<20 {
@@ -561,7 +561,8 @@ func (w *evidenceWriter) Write(raw []byte) (int, error) {
 	w.Bytes += n
 	return n, err
 }
-func observe(ctx context.Context, encoder *json.Encoder, o *Sampler, seconds int) error {
+func observe(control *observationControl, encoder *json.Encoder, o *Sampler, seconds int) error {
+	ctx := control.Context
 	if seconds < 2 || seconds > 2698 {
 		return errors.New("observer duration bound")
 	}
@@ -592,6 +593,9 @@ func observe(ctx context.Context, encoder *json.Encoder, o *Sampler, seconds int
 	defer ticker.Stop()
 	for n := 0; n <= seconds/2; n++ {
 		s := o.sample(ctx, c)
+		if err := context.Cause(ctx); err != nil {
+			return err
+		}
 		if err = encoder.Encode(s); err != nil {
 			return err
 		}
@@ -599,12 +603,11 @@ func observe(ctx context.Context, encoder *json.Encoder, o *Sampler, seconds int
 			return errors.New("invalid resource sample")
 		}
 		if n == seconds/2 {
-			receipt := map[string]any{"type": "observer_end", "samples": o.Sequence, "role": o.Role, "ended_at": time.Now().UTC()}
-			return encoder.Encode(receipt)
+			return control.finish(encoder, o, seconds)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return context.Cause(ctx)
 		case <-ticker.C:
 		}
 	}
