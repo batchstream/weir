@@ -1,6 +1,16 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R6](milestone-30r6.md)使用基线 `bc0f373` 原脚本进行唯一一次新 namespace 无负载 EKS 采样，**仍 NO-GO，六对象已清理**。
+静态检查63.875秒后才启动唯一120秒资源窗，prepare/native写前四GET共10.584秒，固定节点/UID与原余量门槛通过，恢复0次。
+准确helper一次上传43.775秒、release exit0，完整有序日志与同身份Completed0确认空索引PUT1；planned/document mutation0，无重放。
+Weir observer在原60秒角色窗口第20.845秒失败：exec13.815秒后TCP reset/exit1，仅五个完整样本，第六条4091bytes截断、无observer_end；ES/client按首败未运行。
+双EOF/Join/Stop完整，observer存活期间无控制面CLI重叠；reset发起方及根因仍unknown，不据此解释M30R4。
+主900秒实际300.193秒，原300秒清理实际105.087秒；完整61类型/13批盘点、外来资源/default/Event归属与Secret零计数守卫保持，六准确UID各一次DELETE，command165 exit0空GET确认namespace不存在。
+165普通CLI均exit0，加独立upload exit0/Weir observer exit1均已收口；107当前历史及此前1977文件、204Go/module和70/81正式输入未变。
+没有脚本/产品/helper/镜像修改、负载、push/Actions或追加窗口。CNI仍disabled；resource partial/not-qualified、timing=not-run、candidate=null与其他required保持。
+以下保留各阶段当轮历史结果；M30R5R本地修复通过不等于本轮原生采样通过。
+
 [M30R5R](milestone-30r5r.md)仅完成本地 observer 无条件收尾与下一预检预算修正。
 原 record 文件 I/O 反例已复现；修后错误仍返回，但真实 child 已 Wait、三管道关闭。初始化、排空/记录/关闭/Wait 错误及取消首败有独立进程/句柄回归。
 下次无负载预检冻结单角色完整 60 秒（受主 900 秒约束，含前后身份检查和收尾），仅该 profile 清理 300 秒并保留 45 秒 namespace 预留；共享默认 180 秒不变。
