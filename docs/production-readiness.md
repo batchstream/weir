@@ -73,6 +73,15 @@ ES143在后，无OOM/restart；同快照新旧guard均23。属于实际非回环
 测试管理/文档写0，两个main未启动；六对象UID清理并确认namespace消失。
 Python普通124通过，优化99通过/25既有skip；固定Go/协议/镜像/CI输入未变，本轮未重复Go测试。
 本轮未修改配置再试；candidate=null，功能闭环/容量/过载/恢复/24h未跑，signal窗口仍未解决。
+[M26R4](milestone-26-remediation-4.md)实现 `8a080b76693e4042fe0e45b900fbe9bf07283d46`：
+共享 ES fixture 固定 `AWS_EC2_METADATA_DISABLED=true`，仅新增该非秘密字段投影，guard 不变。
+准确镜像内 SDK2.31.78 在 network-none 的两全新 JVM 对照通过：false 向自有假 loopback 发2请求，
+true 发0请求并明确禁用；未访问真实 IMDS。唯一 ES 本地启动因容器 hostname 解析失败导致
+日志初始化 exit1，就绪/版本/settings/socket 采样未到达；固定计划未改写或重跑，故 **EKS 未运行**。
+普通 Python130通过，优化105通过/25既有skip；真实 API 形状、两trial与失败/取消/UID清理的离线接线通过。
+两自有容器均按精确ID停止/Wait/清理，所有验证进程结束，200产品输入及3120既有证据未变。
+EKS namespace/Job/Pod/管理写/文档写/真实trial均0，功能闭环仍未通过，candidate=null；
+CNI/跨节点/容量/过载/恢复/24h、startup signal窗口与其他资格缺口不变。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
