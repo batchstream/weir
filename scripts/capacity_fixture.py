@@ -315,6 +315,38 @@ class Fixture:
         return all(r["clean"] for r in result) and not self.diagnostic_errors
 
 
+def group_states(group):
+    """Bound the selected ps query too, including its timeout and final read."""
+    query = subprocess.Popen(["ps", "-o", "pid=,pgid=,stat=", "-g", str(group)],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             start_new_session=True)
+    raw = bytearray()
+    until = time.monotonic()+2
+    try:
+        os.set_blocking(query.stdout.fileno(), False)
+        with selectors.DefaultSelector() as selector:
+            selector.register(query.stdout, selectors.EVENT_READ)
+            while True:
+                if time.monotonic() >= until:
+                    raise RuntimeError("owned group query timeout")
+                if not selector.select(.05):
+                    continue
+                chunk = os.read(query.stdout.fileno(), 4096)
+                if not chunk:
+                    break
+                if len(raw)+len(chunk) > 65536:
+                    raise RuntimeError("owned group query output bound")
+                raw.extend(chunk)
+        if query.wait(timeout=max(.01,until-time.monotonic())) not in (0, 1):
+            raise RuntimeError("owned process group state unconfirmed")
+        return raw.decode().splitlines()
+    finally:
+        if query.poll() is None:
+            query.kill()
+        query.wait(timeout=2)
+        query.stdout.close()
+
+
 def stop_group(child):
     """Own session only. Darwin can report EPERM for a group of zombies."""
     def send(sig):
@@ -324,11 +356,7 @@ def stop_group(child):
             return
         except PermissionError:
             # Do not treat EPERM as absence: query only this owned process group.
-            query = subprocess.run(["ps", "-o", "pid=,pgid=,stat=", "-g", str(child.pid)],
-                                   capture_output=True, text=True, timeout=2)
-            if query.returncode not in (0, 1) or len(query.stdout) > 65536:
-                raise RuntimeError("owned process group state unconfirmed")
-            for line in query.stdout.splitlines():
+            for line in group_states(child.pid):
                 pid, group, state = line.split()
                 if int(group) == child.pid and not state.startswith("Z"):
                     raise RuntimeError("owned process group remains: "+pid)

@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from capacity_fixture import Fixture, STREAM_LIMIT, OUTPUT_LIMIT, EVIDENCE_LIMIT
+from capacity_fixture import Fixture, STREAM_LIMIT, OUTPUT_LIMIT, EVIDENCE_LIMIT, group_states
 
 
 @unittest.skipUnless(__debug__, "fixture requires ordinary Python")
@@ -84,6 +84,14 @@ except FixtureInterrupted: pass
         self.assertEqual(called,[True])
         record=json.loads((self.f.root/'commands.jsonl').read_text().splitlines()[-1])
         self.assertIsNotNone(record["exit"])
+
+    def test_auxiliary_process_query_has_capture_bound(self):
+        real = subprocess.Popen
+        def noisy(*args,**kwargs):
+            return real([sys.executable,"-c","import os; os.write(1,b'x'*1000000)"],**kwargs)
+        with patch('capacity_fixture.subprocess.Popen',side_effect=noisy):
+            with self.assertRaisesRegex(RuntimeError,"output bound"):
+                group_states(99999999)
 
     def test_before_write_size_limit_and_cleanup_without_disk(self):
         with patch.object(self.f,'evidence_size',return_value=EVIDENCE_LIMIT):
