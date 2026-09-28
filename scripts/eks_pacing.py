@@ -335,7 +335,13 @@ class Run:
         self.save("admitted-Pod-"+job["metadata"]["name"]+".json", response)
         meta = response["metadata"]
         require(response["apiVersion"] == "v1" and response["kind"] == "Pod", "Pod dry-run kind drift")
-        require(all(meta.get(k) == v for k, v in request["metadata"].items()) and
+        # Admission may append labels; only requested labels establish fixture
+        # identity. Execution fields still go through the strict spec check.
+        labels = meta.get("labels")
+        require(meta.get("name") == request["metadata"]["name"] and
+                meta.get("namespace") == request["metadata"]["namespace"] and
+                isinstance(labels, dict) and
+                all(labels.get(k) == v for k, v in request["metadata"]["labels"].items()) and
                 not meta.get("ownerReferences"), "Pod dry-run metadata drift")
         admitted_spec(response["spec"], request["spec"], pod=True)
 

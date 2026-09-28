@@ -17,6 +17,110 @@ from eks_pacing_report import HISTOGRAMS, IMAGES, node_gate, pacing, resources
 from capacity_report_test import sample as old_sample, metrics as old_metrics
 
 
+# M25R2 recorded Pod response shape; environment bindings replaced. The
+# extra unrelated label proves acceptance is not a topology-label allowlist.
+ADMITTED_POD = json.loads('''
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "version-admission",
+    "namespace": "weir-qual-m25-offline",
+    "uid": "dry-uid",
+    "labels": {
+      "qualification.weir.io/owner": "weir-qual-m25-offline",
+      "topology.kubernetes.io/region": "offline-region",
+      "topology.kubernetes.io/zone": "offline-zone",
+      "example.test/extra": "unrelated"
+    },
+    "ownerReferences": null
+  },
+  "spec": {
+    "activeDeadlineSeconds": 100,
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "args": [
+          "-version"
+        ],
+        "image": "ghcr.io/batchstream/weir@sha256:cc6428d1ead507e531f95b8c45926f8bf31abf8ba9cb89cf6e8eca4a865b1f10",
+        "imagePullPolicy": "Always",
+        "name": "probe",
+        "resources": {
+          "limits": {
+            "cpu": "1",
+            "memory": "512Mi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "512Mi"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          },
+          "readOnlyRootFilesystem": true,
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+      }
+    ],
+    "dnsConfig": {
+      "nameservers": [
+        "127.0.0.1"
+      ]
+    },
+    "dnsPolicy": "None",
+    "enableServiceLinks": false,
+    "nodeName": "node",
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "runAsGroup": 65532,
+      "runAsNonRoot": true,
+      "runAsUser": 65532,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 10,
+    "tolerations": [
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/not-ready",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/unreachable",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      }
+    ]
+  },
+  "status": {
+    "phase": "Pending",
+    "qosClass": "Guaranteed"
+  }
+}
+''')
+
+
 def sample(second):
     value = old_sample("client", second)
     value["files"].update({"pids.max": "max\n", "cpuset.cpus.effective": "0-7\n", "io.stat": "",
@@ -396,7 +500,9 @@ if verb == "create":
         if cfg.get("reject_pod"):
             sys.stderr.write("synthetic Pod admission refused")
             sys.exit(1)
-        obj["spec"].update(priority=0, preemptionPolicy="PreemptLowerPriority")
+        obj = cfg["pod_response"]
+        obj.update(cfg.get("object_updates", {}))
+        obj["metadata"].update(cfg.get("metadata_updates", {}))
         obj["spec"].update(cfg.get("pod_updates", {}))
         if cfg.get("remove_node"):
             obj["spec"].pop("nodeName")
@@ -406,7 +512,14 @@ if verb == "create":
 elif verb == "get" and kind == "nodes":
     print(json.dumps([cfg["node"]]))
 elif verb == "get" and kind == "pods":
-    pass
+    if "--all-namespaces" not in args and cfg.get("actual_pod"):
+        print(cfg["actual_pod"]["metadata"]["name"])
+elif verb == "get" and kind == "Pod":
+    if not (root/"pod-deleted").exists():
+        print(json.dumps(cfg["actual_pod"]))
+elif verb == "logs":
+    response = dict(synthetic=True)
+    print(json.dumps(response))
 elif verb == "get" and kind == "events":
     assert "--field-selector=involvedObject.uid=job-uid" in args
     print(json.dumps(cfg.get("events", [])))
@@ -418,11 +531,13 @@ elif verb == "get" and kind == "Job":
 elif verb == "delete":
     assert kind == "--raw"
     body = json.loads(pathlib.Path(args[-1]).read_text())
-    assert body["preconditions"] == {"uid": "job-uid"}
+    expected_uid = "job-uid" if args[2].endswith("/jobs/version") else cfg["actual_pod"]["metadata"]["uid"]
+    assert body["preconditions"] == {"uid": expected_uid}
     if cfg.get("reject_delete"):
         sys.stderr.write("synthetic cleanup refused")
         sys.exit(1)
-    (root/"deleted").touch()
+    marker = "deleted" if body["preconditions"]["uid"] == "job-uid" else "pod-deleted"
+    (root/marker).touch()
 else:
     raise AssertionError(args)
 ''')
@@ -434,7 +549,7 @@ else:
         self.configure()
 
     def configure(self, **fields):
-        config = dict(node=node(), **fields)
+        config = dict(node=node(), pod_response=ADMITTED_POD, **fields)
         (self.root/"scenario.json").write_text(json.dumps(config))
 
     def calls(self):
@@ -471,9 +586,14 @@ else:
         secret_ref = dict(name="unread")
         env_from = dict(secretRef=secret_ref)
         injected = dict(container, envFrom=[env_from])
+        wrong_image = dict(container, image="foreign")
+        wrong_resources = copy.deepcopy(container)
+        wrong_resources["resources"]["limits"]["cpu"] = "2"
         changes = [dict(nodeName=""), dict(nodeName="other"), dict(preemptionPolicy="Never"), dict(priority=10),
                    dict(priorityClassName="injected"), dict(containers=[container, sidecar]), dict(volumes=[volume]),
-                   dict(containers=[injected]), dict(hostNetwork=True), dict(hostPID=True), dict(dnsPolicy="ClusterFirst")]
+                   dict(containers=[injected]), dict(hostNetwork=True), dict(hostPID=True), dict(hostIPC=True),
+                   dict(dnsPolicy="ClusterFirst"), dict(containers=[wrong_image]), dict(containers=[wrong_resources]),
+                   dict(securityContext={}), dict(unknownField=True)]
         for changed in changes:
             with self.subTest(changed=changed):
                 self.configure(pod_updates=changed)
@@ -484,6 +604,90 @@ else:
         with self.assertRaises(ValueError):
             self.run.create(template)
         self.assertTrue(all("--dry-run=server" in args for args in self.calls() if "create" in args))
+
+    def test_recorded_extra_labels_reach_simulated_create_and_cleanup(self):
+        event = self.failed_event()
+        self.configure(events=[event])
+        with self.assertRaisesRegex(ValueError, "Job FailedCreate"):
+            self.run.run_job("version")
+        self.assertTrue((self.root/"actual-job.json").exists())
+        self.assertTrue((self.root/"deleted").exists())
+        admitted = json.loads((self.root/"admitted-Pod-version.json").read_text())
+        self.assertEqual(admitted, ADMITTED_POD)
+        self.assertEqual(sum("create" in args and "--dry-run=server" not in args for args in self.calls()), 1)
+        self.assertTrue(all("end" in json.loads(p.read_text()) for p in self.root.glob("command-*.json")))
+
+    def test_dry_run_identity_changes_rejected_before_simulated_create(self):
+        template = entry.job_template(plan(), "version")
+        labels = ADMITTED_POD["metadata"]["labels"]
+        missing = {k: v for k, v in labels.items() if k != entry.LABEL}
+        overwritten = dict(labels)
+        overwritten[entry.LABEL] = "foreign"
+        ref = dict(apiVersion="batch/v1", kind="Job", name="version", uid="fabricated", controller=True)
+        changes = [dict(labels=missing), dict(labels=overwritten), dict(labels=None), dict(labels=[]),
+                   dict(name="another"), dict(namespace="another"), dict(ownerReferences=[ref])]
+        for changed in changes:
+            with self.subTest(changed=changed):
+                self.configure(metadata_updates=changed)
+                with self.assertRaisesRegex(ValueError, "metadata drift"):
+                    self.run.create(template)
+        for changed in (dict(apiVersion="other/v1"), dict(kind="Job")):
+            self.configure(object_updates=changed)
+            with self.assertRaisesRegex(ValueError, "kind drift"):
+                self.run.create(template)
+        self.assertFalse((self.root/"actual-job.json").exists())
+        self.assertEqual(self.run.owned, [])
+        self.assertTrue(all("--dry-run=server" in args for args in self.calls() if "create" in args))
+
+    def test_every_requested_fixture_label_is_preserved(self):
+        template = entry.job_template(plan(), "version")
+        template["spec"]["template"]["metadata"]["labels"]["example.test/selector"] = "fixture"
+        response = copy.deepcopy(ADMITTED_POD)
+        response["metadata"]["labels"]["example.test/selector"] = "fixture"
+        self.configure(metadata_updates=response["metadata"])
+        self.run.pod_dry_run(template)
+        for value in ("changed", None):
+            response["metadata"]["labels"]["example.test/selector"] = value
+            self.configure(metadata_updates=response["metadata"])
+            with self.assertRaisesRegex(ValueError, "metadata drift"):
+                self.run.pod_dry_run(template)
+        self.assertFalse((self.root/"actual-job.json").exists())
+
+    def test_actual_pod_extra_labels_preserve_controller_and_uid_boundaries(self):
+        template = entry.job_template(plan(), "version")
+        actual = pod()
+        actual["metadata"].update(name="version-test", labels=copy.deepcopy(ADMITTED_POD["metadata"]["labels"]))
+        actual["metadata"]["ownerReferences"][0]["name"] = "version"
+        actual["spec"] = copy.deepcopy(ADMITTED_POD["spec"])
+        actual["status"]["containerStatuses"][0]["imageID"] = IMAGES["version"]["reference"]
+        self.configure(actual_pod=actual)
+        expected = dict(synthetic=True)
+        self.assertEqual(self.run.run_job("version"), expected)
+        self.assertEqual([e["kind"] for e in self.run.owned], ["Job", "Pod"])
+        self.assertTrue((self.root/"pod-deleted").exists())
+        options = dict(job=self.run.owned[0], template=template, pod_uid="replacement-uid")
+        with self.assertRaisesRegex(ValueError, "Pod UID drift"):
+            entry.pod_check(actual, options)
+        mutations = [lambda p: p["metadata"]["labels"].__setitem__(entry.LABEL, "foreign"),
+                     lambda p: p["metadata"]["ownerReferences"][0].update(uid="foreign"),
+                     lambda p: p["metadata"]["ownerReferences"][0].update(controller=False),
+                     lambda p: p["metadata"].update(ownerReferences=[])]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                (self.root/"deleted").unlink()
+                (self.root/"pod-deleted").unlink(missing_ok=True)
+                self.run.owned = []
+                foreign = copy.deepcopy(actual)
+                mutate(foreign)
+                self.configure(actual_pod=foreign)
+                before = len(self.calls())
+                with self.assertRaises(ValueError):
+                    self.run.run_job("version")
+                self.assertEqual([e["kind"] for e in self.run.owned], ["Job"])
+                deletes = [a for a in self.calls()[before:] if "delete" in a]
+                self.assertEqual(len(deletes), 1)
+                self.assertIn("/jobs/version", deletes[0][-3])
+                self.assertFalse((self.root/"pod-deleted").exists())
 
     def test_changed_request_node_never_reaches_cli(self):
         for value in ("", "another-node", None):
