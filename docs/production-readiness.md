@@ -43,7 +43,18 @@ generator-ready-for-next-investigation=true仅指统筹可评估下一步；DB c
 准确ES manifest/config经匿名只读校验，但实际imageID/readiness/回环监听/RPC/DB审计/资源均not-run；
 candidate=null，完整校准/过载/恢复/24h仍not-run，CNI agent仍disabled、网络隔离unqualified。
 本机缺索引启动反例与正向控制的SIGTERM退出断言失败均保留；默认test/race/vet及脚本回归通过。
-无自有集群资源，所有本地子进程已Wait；M26待统筹独立复核，不自动续开测试。
+无自有集群资源，所有本地子进程已Wait；统筹复核指出资源重复计账与启动接线均属测试前提缺口。
+[M26R](milestone-26-remediation.md)实现 `2852dd36c15b05fc12535ae8622be0b54c20682c`：
+共享具名spec/allocated/actuated逐项max、有序init/原生sidecar阶段峰值、Pod-level覆盖及一次overhead；
+真实创建前预检CPU余量7.030达到原7门槛，不能归因为资源不足。新增ES原生sidecar→一次空索引
+bootstrap init→准确Weir/client启动布局，Pod峰值仍6CPU/4608MiB/2560MiB。
+唯一冻结尝试的Job server dry-run获API接受，但入口将1024Mi→1Gi、3072Mi→3Gi的规范化误判
+为资源漂移；响应还省略零值探针默认字段。仍为入口缺陷NO-GO，Pod dry-run/实际Job/Pod/DB写均0。
+离线95项及优化模式70项（25项既有skip）、Go默认/race/vet通过，未覆盖上述API规范化；冻结后未改实现或重试。
+四个自有对象均按UID删除，namespace另行查询不存在，cleanup=true；RPC/DB审计/运行时imageID与
+资源证据均not-run（原result的generic partial初始化值不代表实际采样）。candidate=null，
+校准/过载/恢复/24h仍not-run，网络隔离仍unqualified。原M26证据94项hash不变、exit -15及
+signal注册窗口未解决；本轮提交后停止，待统筹独立验收。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
