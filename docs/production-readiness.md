@@ -19,6 +19,14 @@ PreemptLowerPriority不一致被拒绝；Job在120秒期限后失败，没有运
 本轮仍为准入阻塞NO-GO，timing_pass=false、resource-evidence=not-run、generator-ready=false；
 准确运行时imageID/binary与资源/latency仍未知，candidate=null、full-calibration/24h=not-run。
 全部4个自有对象按UID删除并独立确认namespace消失，cleanup=true；原M25失败未改写。
+[M25R2](milestone-25-remediation-2.md)修正统筹强制Never的不兼容约束，补Pod级server dry-run和
+按Job UID观察FailedCreate的早停。实现 `c6fc02495bf8942eea7d5512c90f30905d83facb` 完成本地验证后，
+新冻结namespace唯一尝试的Job/Pod server dry-run均成功；普通优先级与固定nodeName符合预期，
+但Pod响应的region/zone拓扑标签触发入口过严的metadata相等比较，仍在实际Job create前停止。
+Job/Pod/probe/planned均0，version/snapshot/resource-evidence=not-run、timing_pass/generator-ready=false；
+这是入口兼容缺口，无EKS性能结论。3个自有对象按UID回收、namespace独立确认消失，cleanup=true。
+冻结后未改实现或重试；真实FailedCreate早停仅有离线证据。原失败保留，DB candidate=null、
+full-calibration/24h=not-run，CNI隔离仍unqualified；本轮待统筹独立验收。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
