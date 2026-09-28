@@ -19,22 +19,34 @@ def execute(root, plan_sha256):
     target_check(plan["target"])
     require(plan["namespace"] == plan["owner"] and plan["seconds"] == 180, "cleanup scope/budget")
     require(all(digest(p) == sha for p, sha in plan["inputs"].items()), "frozen cleanup input drift")
-    owned = plan["owned"]
+    owned, stopped = plan["owned"], plan["stopped"]
     expected = {("Namespace", plan["namespace"]), ("Job", "loopback"), ("ConfigMap", "configuration"),
                 ("NetworkPolicy", "default-deny"), ("ResourceQuota", "budget")}
-    require(len(owned) == 5 and {(e["kind"], e["name"]) for e in owned} == expected and
-            len({e["uid"] for e in owned}) == 5 and
-            all(e["uid"] and e["owner"] == plan["owner"] for e in owned), "exact five registered targets required")
+    residuals = {("Namespace", plan["namespace"]), ("ResourceQuota", "budget")}
+    require(len(owned) in (2, 5) and
+            {(e["kind"], e["name"]) for e in owned} == (residuals if len(owned) == 2 else expected),
+            "exact two or five registered targets required")
+    original = plan["original_owned"]
+    require(original in plan["inputs"], "original ownership evidence must be frozen")
+    registered = json.loads(Path(original).read_text())
+    identities = owned+stopped
+    pods = [e for e in stopped if e["kind"] == "Pod"]
+    require(len(pods) == 1 and pods[0]["name"].startswith("loopback-"), "historical Pod identity")
+    require(len(identities) == 6 and len({e["uid"] for e in identities}) == 6 and
+            {(e["kind"], e["name"]) for e in identities} == expected | {("Pod", pods[0]["name"])} and
+            all(e["uid"] and e["owner"] == plan["owner"] for e in identities) and
+            sorted(identities, key=lambda e: e["uid"]) == sorted(registered, key=lambda e: e["uid"]),
+            "targets/history must partition original registered identities")
     run = Run(root, plan["target"])
     require(run.run(["git", "rev-parse", "HEAD"]).strip() == plan["implementation"] and
             not run.run(["git", "status", "--porcelain"]).strip(), "clean implementation required")
     run.plan, run.owned = plan, owned
     run.namespace = next(e for e in owned if e["kind"] == "Namespace")
     run.defaults = {(e["kind"], e["name"]): e["uid"] for e in plan["defaults"]}
-    require(set(run.defaults) == {("ConfigMap", "kube-root-ca.crt"), ("ServiceAccount", "default")}, "recorded defaults required")
-    # Historical Pod UID permits only its existing Events, never a Pod DELETE.
-    require(plan["stopped_pod"]["kind"] == "Pod" and bool(plan["stopped_pod"]["uid"]), "historical Pod identity")
-    run.event_uids = {plan["stopped_pod"]["uid"]}
+    require(len(plan["defaults"]) == 2 and all(run.defaults.values()) and
+            set(run.defaults) == {("ConfigMap", "kube-root-ca.crt"), ("ServiceAccount", "default")}, "recorded defaults required")
+    # Historical workload UIDs permit only Events. Reappearing objects are foreign.
+    run.event_uids = {e["uid"] for e in stopped if e["kind"] in ("Job", "Pod")}
     run.cleaning = True
     started = time.monotonic()
     run.deadline = started+180
@@ -65,15 +77,10 @@ def execute(root, plan_sha256):
             require(not run.kube(args, plan["namespace"]).strip(), "Pod present; stop without adopting/deleting")
             result = run.cleanup(deadline=run.deadline)
         if result["confirmed"]:
-            # Independent readback, never infer namespace absence from DELETE exit 0.
-            namespace = run.selected_object("Namespace", plan["namespace"])
-            run.save("final-namespace.json", namespace)
-            require(namespace is None, "namespace absence not confirmed")
-            for kind, name in (("Job", "loopback"), ("Pod", plan["stopped_pod"]["name"])):
-                obj = run.selected_object(kind, name)
-                run.save("final-"+kind+".json", obj)
-                require(obj is None, "workload absence not confirmed")
-            result.update(namespace_absent=True, job_absent=True, pod_absent=True)
+            # Initial GET or shared delete() has already confirmed absence with
+            # a successful GET. A missing namespace also closes its workloads.
+            result.update(namespace_absent=True, job_absent=True, pod_absent=True,
+                          workload_absence_basis="successful namespace absence GET")
     except BaseException as exc:
         result.update(confirmed=False, error=str(exc))
     result.update(start=invocation["start"], end=time.time(), elapsed_seconds=time.monotonic()-started,

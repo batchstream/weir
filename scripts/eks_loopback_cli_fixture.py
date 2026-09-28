@@ -91,6 +91,8 @@ def main():
         elif "," in kind and cfg.get("cleanup_rows"):
             if "secrets" in kind.split(","):
                 raise ValueError("Secret query prohibited")
+            if cfg.get("inventory_failure_batch") in kind.split(","):
+                raise ValueError("incomplete inventory batch")
             # Retained original CLI output is one complete multi-resource list.
             rows = cfg["cleanup_rows"] if "configmaps" in kind.split(",") else []
             if cfg.get("foreign_after_delete") and len(state) < len(cfg["cleanup_objects"]):

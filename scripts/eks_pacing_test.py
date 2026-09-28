@@ -948,28 +948,193 @@ class CleanupReplay(unittest.TestCase):
         self.assertFalse(result["confirmed"])
         self.assert_scoped_deletes()
 
-    def test_stopped_cleanup_entry_uses_only_five_uids_and_one_invocation(self):
+    def stopped_plan(self, target_count):
+        original = self.root/"original-owned.json"
+        original.write_text(json.dumps(self.fixture["owned"]))
+        stopped_kinds = {"Pod"} if target_count == 5 else {"Pod", "Job", "ConfigMap", "NetworkPolicy"}
+        stopped = [e for e in self.run.owned if e["kind"] in stopped_kinds]
+        self.run.owned = [e for e in self.run.owned if e not in stopped]
+        for e in stopped:
+            del self.cfg["cleanup_objects"][e["kind"]+"/"+e["name"]]
+        stopped_uids = {e["uid"] for e in stopped}
+        self.cfg["cleanup_rows"] = [r for r in self.cfg["cleanup_rows"] if r[3] not in stopped_uids and r[1] != "PodMetrics"]
+        inputs = {str(original): entry.digest(original)}
+        frozen = dict(self.run.plan, target=self.fixture["target"], seconds=180, inputs=inputs,
+                      implementation="synthetic-implementation", owned=self.run.owned, stopped=stopped,
+                      defaults=self.fixture["defaults"], original_owned=str(original))
+        return frozen
+
+    def execute_stopped(self, frozen):
         import eks_cleanup
-        pod = next(e for e in self.run.owned if e["kind"] == "Pod")
-        self.run.owned.remove(pod)
-        del self.cfg["cleanup_objects"]["Pod/"+pod["name"]]
-        self.cfg["cleanup_rows"] = [r for r in self.cfg["cleanup_rows"] if r[1] not in ("Pod", "PodMetrics")]
         self.configure()
-        frozen = dict(self.run.plan, target=self.fixture["target"], seconds=180, inputs={},
-                      implementation="synthetic-implementation", owned=self.run.owned,
-                      defaults=self.fixture["defaults"], stopped_pod=pod)
         (self.root/"plan.json").write_text(json.dumps(frozen))
         (self.root/"plan.json").chmod(0o400)
         plan_sha = entry.digest(self.root/"plan.json")
-        result = eks_cleanup.execute(self.root, plan_sha)
+        with patch("eks_pacing.stop_group", wraps=entry.stop_group) as stop:
+            result = eks_cleanup.execute(self.root, plan_sha)
+        records = [json.loads(p.read_text()) for p in self.root.glob("command-*.json")]
+        self.assertEqual(len(records), stop.call_count)
+        self.assertTrue(all("end" in r and r["exit"] is not None for r in records))
+        self.assertTrue(all(c.args[0].returncode is not None for c in stop.call_args_list))
+        return result
+
+    def test_stopped_cleanup_entry_uses_only_five_uids_and_one_invocation(self):
+        import eks_cleanup
+        frozen = self.stopped_plan(5)
+        pod = frozen["stopped"][0]
+        result = self.execute_stopped(frozen)
         self.assertTrue(result["confirmed"], result)
         self.assertTrue(result["namespace_absent"] and result["job_absent"] and result["pod_absent"])
         deletes = [c for c in self.calls() if "delete" in c]
         self.assertEqual(len(deletes), 5)
         self.assertTrue(all(json.loads(Path(c[-1]).read_text())["preconditions"]["uid"] != pod["uid"] for c in deletes))
         with self.assertRaises((FileExistsError, ValueError)):
-            eks_cleanup.execute(self.root, plan_sha)
+            eks_cleanup.execute(self.root, entry.digest(self.root/"plan.json"))
         self.assertEqual(len([c for c in self.calls() if "delete" in c]), 5)
+
+    def test_two_residuals_preserve_history_events_and_delete_only_two_once(self):
+        import eks_cleanup
+        frozen = self.stopped_plan(2)
+        events = [r for r in self.cfg["cleanup_rows"] if r[1] == "Event"]
+        self.assertEqual({r[6] for r in events}, {e["uid"] for e in frozen["stopped"] if e["kind"] in ("Pod", "Job")})
+        result = self.execute_stopped(frozen)
+        self.assertTrue(result["confirmed"], result)
+        self.assertTrue(result["namespace_absent"] and result["job_absent"] and result["pod_absent"])
+        deletes = [c for c in self.calls() if "delete" in c]
+        self.assertEqual([json.loads(Path(c[-1]).read_text())["preconditions"]["uid"] for c in deletes],
+                         [e["uid"] for kind in ("ResourceQuota", "Namespace") for e in frozen["owned"] if e["kind"] == kind])
+        self.assertEqual(sum("api-resources" in c for c in self.calls()), 1)
+        self.assertEqual(sum("go-template="+entry.META_TEMPLATE in c for c in self.calls()), 4)
+        before = self.calls()
+        with self.assertRaisesRegex(ValueError, "already invoked"):
+            eks_cleanup.execute(self.root, entry.digest(self.root/"plan.json"))
+        self.assertEqual(self.calls(), before)
+        last = json.loads(sorted(self.root.glob("command-*.json"))[-1].read_text())
+        self.assertIn("Namespace", last["argv"])
+        self.assertEqual(last["exit"], 0)
+        self.assertEqual(sorted(self.root.glob("command-*.out"))[-1].read_text(), "")
+
+    def test_two_residuals_reject_foreign_and_reappearing_objects(self):
+        scenarios = ("event", "persistent", "default", "root-ca", "Pod", "Job", "ConfigMap", "NetworkPolicy")
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                if scenario == "event":
+                    next(r for r in self.cfg["cleanup_rows"] if r[1] == "Event")[6] = "foreign-uid"
+                elif scenario in ("default", "root-ca"):
+                    name = "default" if scenario == "default" else "kube-root-ca.crt"
+                    next(r for r in self.cfg["cleanup_rows"] if r[2] == name)[3] = "replacement-default"
+                else:
+                    historical = next((e for e in frozen["stopped"] if e["kind"] == scenario), None)
+                    if historical:
+                        version = entry.KINDS[scenario][0]
+                        row = [version, scenario, historical["name"], historical["uid"], frozen["owner"], "", "", frozen["namespace"]]
+                    else:
+                        row = ["unknown.test/v1", "UnknownPersistent", "foreign", "new-uid", frozen["owner"], "", "", frozen["namespace"]]
+                    self.cfg["cleanup_rows"].append(row)
+                    if scenario == "Pod":
+                        meta = dict(name=historical["name"], uid=historical["uid"])
+                        self.cfg["cleanup_objects"]["Pod/"+historical["name"]] = dict(metadata=meta)
+                result = self.execute_stopped(frozen)
+                self.assertFalse(result["confirmed"], result)
+                self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_two_residuals_reject_identity_secret_and_incomplete_inventory(self):
+        scenarios = ("namespace-uid", "namespace-owner", "quota-uid", "quota-owner", "quota-absent",
+                     "secret-spec", "secret-hard", "secret-used", "secret-unknown", "inventory-failed", "inventory-malformed")
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                objects = self.cfg["cleanup_objects"]
+                quota = objects["ResourceQuota/budget"]
+                if scenario.startswith(("namespace-", "quota-")):
+                    obj = objects["Namespace/"+frozen["namespace"]] if scenario.startswith("namespace-") else quota
+                    if scenario.endswith("uid"):
+                        obj["metadata"]["uid"] = "same-name-new-uid"
+                    elif scenario.endswith("owner"):
+                        obj["metadata"]["labels"][entry.LABEL] = "other-owner"
+                    else:
+                        del objects["ResourceQuota/budget"]
+                elif scenario == "secret-spec":
+                    quota["spec"]["hard"]["count/secrets"] = "1"
+                elif scenario == "secret-hard":
+                    quota["status"]["hard"]["count/secrets"] = "1"
+                elif scenario == "secret-used":
+                    quota["status"]["used"]["count/secrets"] = "1"
+                elif scenario == "secret-unknown":
+                    quota["status"]["used"] = {}
+                elif scenario == "inventory-failed":
+                    self.cfg["inventory_failure_batch"] = "elasticmapsservers.maps.k8s.elastic.co"
+                else:
+                    self.cfg["cleanup_rows"][0] = self.cfg["cleanup_rows"][0][:-1]
+                result = self.execute_stopped(frozen)
+                self.assertFalse(result["confirmed"], result)
+                self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_two_residuals_timeout_and_disk_failure_stop_without_mutation(self):
+        frozen = self.stopped_plan(2)
+        self.cfg["discovery_timeout"] = True
+        original_run = entry.Run.run
+        def short_discovery(run, argv, timeout=25, *, monitor=False):
+            return original_run(run, argv, .2 if "/apis/metrics.k8s.io/v1beta1" in argv else timeout, monitor=monitor)
+        with patch.object(entry.Run, "run", short_discovery):
+            result = self.execute_stopped(frozen)
+        self.assertFalse(result["confirmed"])
+        self.assertFalse(any("delete" in c for c in self.calls()))
+        self.assertTrue(any(json.loads(p.read_text())["exit"] == -15 for p in self.root.glob("command-*.json")))
+        self.setUp()
+        frozen = self.stopped_plan(2)
+        original_save = entry.Run.save
+        def failed_inventory_save(run, name, data):
+            if name == "cleanup-final-inventory.json":
+                raise OSError("disk unavailable")
+            return original_save(run, name, data)
+        with patch.object(entry.Run, "save", failed_inventory_save):
+            result = self.execute_stopped(frozen)
+        self.assertFalse(result["confirmed"])
+        self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_two_residuals_absent_namespace_stops_after_first_get(self):
+        frozen = self.stopped_plan(2)
+        self.cfg["cleanup_objects"] = {}
+        result = self.execute_stopped(frozen)
+        self.assertTrue(result["confirmed"] and result["already_absent"])
+        self.assertEqual(len([c for c in self.calls() if c[0] == "kubectl"]), 1)
+
+    def test_two_residuals_ambiguous_delete_never_replayed_and_failed_get_not_absence(self):
+        frozen = self.stopped_plan(2)
+        self.cfg["ambiguous_delete"] = True
+        result = self.execute_stopped(frozen)
+        self.assertTrue(result["confirmed"], result)
+        self.assertEqual(sum("delete" in c for c in self.calls()), 2)
+        self.setUp()
+        frozen = self.stopped_plan(2)
+        self.cfg["namespace_readback_failure"] = True
+        result = self.execute_stopped(frozen)
+        self.assertFalse(result["confirmed"], result)
+        self.assertEqual(sum("delete" in c for c in self.calls()), 2)
+
+    def test_stopped_partition_must_match_frozen_original_evidence(self):
+        import eks_cleanup
+        for scenario in ("replacement", "overlap", "extra-target", "unfrozen"):
+            with self.subTest(scenario=scenario):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                if scenario == "replacement":
+                    frozen["stopped"][0]["uid"] = "adopted-uid"
+                elif scenario == "overlap":
+                    frozen["owned"].append(frozen["stopped"][0])
+                elif scenario == "extra-target":
+                    frozen["owned"] = self.fixture["owned"]
+                else:
+                    frozen["inputs"] = {}
+                (self.root/"plan.json").write_text(json.dumps(frozen))
+                (self.root/"plan.json").chmod(0o400)
+                with self.assertRaises(ValueError):
+                    eks_cleanup.execute(self.root, entry.digest(self.root/"plan.json"))
+                self.assertEqual(self.calls(), [])
 
 
 if __name__ == "__main__":
