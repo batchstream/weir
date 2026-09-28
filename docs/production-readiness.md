@@ -12,7 +12,10 @@ M21状态更正：**M21R已获统筹有限独立验收**：三个归属根因修
 变化时间早于首次fixture Docker修改，环境原因未证实，不能称全部检查通过。
 统筹193mutation=180APPLIED/13UNKNOWN，187version1，9owner回收；CP events.max1429/OOM0
 仍是压力而非余量。详情见[M21R](milestone-21-remediation.md)。
-原[M22](milestone-22.md)**独立审查未通过**：最低50ops/s测量431/3000迟到丢弃、2569成功、candidate=null，确认/直连/过载恢复未运行。原失败及完整证据保留，不是Weir吞吐上限证据。[M22R](milestone-22-remediation.md)仅补校准工具可信性和有限原生发生器预检，执行证据待独立验收；维护入口使用version2计划。M22R原生timing-only50档1000计划/143丢弃、wake p99=8.9ms，按冻结规则NO-GO、candidate=null；仅跑原方法三点各20s，完整ES/Weir校准及后续路径not-run。工具/计时证据待独立验收，不构成容量或24h资格。
+原[M22](milestone-22.md)**独立审查未通过**：最低50ops/s测量431/3000迟到丢弃、2569成功、candidate=null，确认/直连/过载恢复未运行。原失败及完整证据保留，不是Weir吞吐上限证据。
+[M22R](milestone-22-remediation.md)的工具修复与有限发生器NO-GO调查已获统筹有限独立复核；不能称全部验收检查通过。统筹在最终main `16c7f35303123dde809ed768c76680e4bf5dcb3e` 首次CGO0默认测试遇到历史DNS夹具UDP/TCP同号端口碰撞，后续race通过不撤销该失败。这是测试夹具缺陷，没有产品resolver/后端回归证据。[M23](milestone-23.md)只修复完整socket获取、有限碰撞重试与失败清理，并补确定性回归；不改变产品DNS或容量门槛。
+
+M22R执行者原生timing-only50档1000计划/143丢弃、wake p99=8.9ms仍保留。统筹最终入口六个20s原生计时探针中，修订bounded-50虽零丢弃，dispatch p99=8.3ms仍超过5ms：**generator_qualified=false、candidate=null**。200档短时通过不允许跳过最低档，不能据此解释Weir吞吐上限或断言VM/内核原因；合适native runner仍是后续容量工作的外部输入。完整ES/Weir容量阶梯、确认、直连、过载/恢复均not-run。工具修复、有限发生器调查和M23离线夹具回归都不构成容量、24h或其他native平台资格；其他矩阵门槛继续required/blocked。
 
 ## 目标来源与范围
 
