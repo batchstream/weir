@@ -26,3 +26,15 @@ The original frozen template explicitly included false and failed strict compari
 The offline fix omits that default in the request; ES and Weir retain explicit true.
 No persistent Job/Pod or native sampling occurred, and the corrected template has
 not been retried on EKS in M30.
+
+## M30R2 release transport and runtime replay
+
+`eks-resource-release-m30r2.json` retains the exact command 74 reset stderr/CLI
+record, upload identities, Pod observations 72/75 and cleanup-before-pod, Job
+response 59, frozen plan and owned UIDs from `.testdata/m30r2/native/`.
+M30R2 never obtained complete bootstrap logs, so its PUT remains UNKNOWN, 0–1.
+The replay combines those original states with explicitly synthetic success
+logs, a tiny helper and immutable ConfigMap only for offline positive cases.
+It also rejects the original missing-log case; no offline result qualifies EKS
+or changes the historical M30R2 outcome. Shell tests independently generate
+complete guard logs using local proc/HTTP fixtures and exercise the same parser.

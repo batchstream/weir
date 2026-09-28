@@ -28,7 +28,7 @@ KINDS = {"Namespace": ("v1", "namespaces"), "Job": ("batch/v1", "jobs"),
          "ConfigMap": ("v1", "configmaps")}
 # Emit the admitted spec as JSON, but never return unexpected literal env values.
 JSON_TEMPLATE = '''{{define "json"}}{{$t := printf "%T" .}}{{if eq $t "map[string]interface {}"}}{ {{$first := true}}{{range $k,$v := .}}{{if not $first}},{{end}}{{$first = false}}{{printf "%q" $k}}:{{if eq $k "env"}}[{{range $i,$e := $v}}{{if $i}},{{end}}{"name":{{printf "%q" $e.name}}{{if $e.valueFrom}},"valueFrom":{{template "json" $e.valueFrom}}{{else}},"value":{{if or (eq $e.name "GOMAXPROCS") (eq $e.name "WEIR_CAPACITY_INTEGRATION") (eq $e.name "ES_JAVA_OPTS") (eq $e.name "AWS_EC2_METADATA_DISABLED")}}{{template "json" $e.value}}{{else}}"REDACTED"{{end}}{{end}}}{{end}}]{{else}}{{template "json" $v}}{{end}}{{end}} }{{else if eq $t "[]interface {}"}}[{{range $i,$v := .}}{{if $i}},{{end}}{{template "json" $v}}{{end}}]{{else if eq $t "string"}}{{printf "%q" .}}{{else if eq $t "<nil>"}}null{{else}}{{.}}{{end}}{{end}}'''
-OBJECT_TEMPLATE = JSON_TEMPLATE + '''{"apiVersion":{{printf "%q" .apiVersion}},"kind":{{printf "%q" .kind}},"metadata":{"name":{{printf "%q" .metadata.name}},"namespace":{{template "json" .metadata.namespace}},"uid":{{template "json" .metadata.uid}},"labels":{{template "json" .metadata.labels}},"ownerReferences":{{template "json" .metadata.ownerReferences}},"deletionTimestamp":{{template "json" .metadata.deletionTimestamp}}},"spec":{{template "json" .spec}},"status":{{template "json" .status}},"data":{{template "json" .data}}}'''
+OBJECT_TEMPLATE = JSON_TEMPLATE + '''{"apiVersion":{{printf "%q" .apiVersion}},"kind":{{printf "%q" .kind}},"metadata":{"name":{{printf "%q" .metadata.name}},"namespace":{{template "json" .metadata.namespace}},"uid":{{template "json" .metadata.uid}},"labels":{{template "json" .metadata.labels}},"ownerReferences":{{template "json" .metadata.ownerReferences}},"deletionTimestamp":{{template "json" .metadata.deletionTimestamp}}},"spec":{{template "json" .spec}},"status":{{template "json" .status}},"data":{{template "json" .data}},"immutable":{{template "json" .immutable}}}'''
 META_TEMPLATE = r'''{{range .items}}{{.apiVersion}}|{{.kind}}|{{.metadata.name}}|{{.metadata.uid}}|{{if .metadata.labels}}{{index .metadata.labels "qualification.weir.io/owner"}}{{end}}|{{range .metadata.ownerReferences}}{{.uid}},{{end}}|{{if .involvedObject}}{{.involvedObject.uid}}{{else if .regarding}}{{.regarding.uid}}{{end}}|{{.metadata.namespace}}{{"\n"}}{{end}}'''
 EVENT_TEMPLATE = JSON_TEMPLATE + '''[{{range $i,$e := .items}}{{if $i}},{{end}}{"uid":{{template "json" .metadata.uid}},"namespace":{{template "json" .metadata.namespace}},"involvedObject":{{template "json" .involvedObject}},"reason":{{template "json" .reason}},"message":{{template "json" .message}},"count":{{template "json" .count}},"firstTimestamp":{{template "json" .firstTimestamp}},"lastTimestamp":{{template "json" .lastTimestamp}},"eventTime":{{template "json" .eventTime}},"series":{{template "json" .series}}}{{end}}]'''
 
@@ -650,12 +650,15 @@ class Run:
             result = dict(confirmed=not self.remote_started, resources=results, diagnostic_errors=self.diagnostic_errors)
             return result
         deleting = None
+        overall_deadline = self.deadline
+        # Leave 45 seconds of the same 180-second budget for namespace DELETE
+        # and successful absence readback, including the CLI Stop/Wait reserve.
+        self.deadline = overall_deadline-45
         try:
+            budget = dict(deadline=overall_deadline, objects_deadline=self.deadline, namespace_reserve_seconds=45)
+            self.save("cleanup-budget.json", budget)
             current = self.selected_object("Namespace", self.namespace["name"])
             owner_check(current, self.namespace)
-            rows = self.inventory()
-            self.save("cleanup-inventory.json", rows)
-            self.foreign_check(rows)
             require(not self.diagnostic_errors, "cleanup evidence unavailable")
             order = {"Job": 0, "Pod": 1, "ConfigMap": 2, "NetworkPolicy": 3, "ResourceQuota": 4}
             entries = sorted((e for e in self.owned if e["kind"] != "Namespace"), key=lambda e: order[e["kind"]])
@@ -672,6 +675,9 @@ class Run:
                 receipt = dict(resource=entry, clean=True)
                 results.append(receipt)
                 deleting = None
+            require(any(e["kind"] == "ResourceQuota" for e in entries), "final quota/inventory unavailable")
+            require(time.monotonic() < self.deadline-4, "namespace confirmation reserve exhausted")
+            self.deadline = overall_deadline
             deleting = self.namespace
             self.delete(self.namespace)
             receipt = dict(resource=self.namespace, clean=True)

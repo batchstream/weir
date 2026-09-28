@@ -28,7 +28,7 @@ IMAGES = dict(
               binary='d41f70ca4bbe129bff11b76f3d973cdb288d839c4df72a348cac04a233b76482'), es=loop.ES)
 FILES = tuple(dict.fromkeys(loop.FILES + ('scripts/eks_resource_preflight.py', 'scripts/eks_resource_preflight_test.py',
     'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py',
-    'scripts/fixtures/eks-resource-admitted-job-m30.json')))
+    'scripts/fixtures/eks-resource-admitted-job-m30.json', 'scripts/fixtures/eks-resource-release-m30r2.json')))
 BUDGET = dict(remote_seconds=900, cleanup_seconds=180, artifact_ready_seconds=420, upload_seconds=300,
               observer_seconds=10, interval_seconds=2, samples=6, planned=0, document_mutations=0, empty_index_put=1,
               helper_volume_mib=64, helper_charged_to='bootstrap 256Mi ephemeral; aggregate remains 2560Mi')
@@ -109,7 +109,51 @@ def objects(plan):
         else:
             container['command'] = ['/usr/bin/timeout', '420', '/bin/bash', '--noprofile', '--norc', '/qualification/helper-bootstrap.sh']
     result['config']['data'].update({'helper-bootstrap.sh':scripts['bootstrap'], 'helper-upload.sh':scripts['upload'], 'helper-release.sh':scripts['release']})
+    result['config']['immutable'] = True
     return result
+
+
+def bootstrap_receipt(raw):
+    require(0 < len(raw.encode()) < 262144 and raw.endswith('\n'), 'bootstrap log incomplete/bounded')
+    lines = raw.splitlines()
+    waiting = '{"bootstrap":"waiting-for-verified-helper"}'
+    verified = '{"artifact":"verified-before-management"}'
+    started = '{"management":"create-empty-records","reserved":1,"started":1}'
+    completed = '{"management":"create-empty-records","completed":1,"document_mutations":0}'
+    require(lines[:2] == [waiting, verified] and lines[-1] == completed, 'bootstrap ordered receipt')
+    records = [line for line in lines if any('"'+key+'"' in line for key in ('bootstrap', 'artifact', 'management', 'acknowledged'))]
+    acknowledgement = '{"acknowledged":true,"shards_acknowledged":true,"index":"records"}'
+    require(records == [waiting, verified, started, acknowledgement, completed], 'bootstrap unique management receipts')
+    require(lines[-4:] == ['loopback-check-complete', started, acknowledgement, completed] and
+            lines.count('loopback-check-complete') == 1, 'bootstrap complete boundary/order')
+    # Check the complete frozen guard's output shape, including raw table byte
+    # counts. A success suffix alone must not hide missing middle log evidence.
+    require(all(re.fullmatch(r'/\S*/'+name, line) for name, line in zip(('curl', 'nc', 'timeout'), lines[2:5])) and
+            len(lines) > 5, 'bootstrap command paths')
+    rest = '\n'.join(lines[5:-4])+'\n'
+    for field in ('version', 'nodes'):
+        value, end = json.JSONDecoder().raw_decode(rest)
+        require(isinstance(value, dict) and field in value, 'bootstrap guard HTTP logs')
+        rest = rest[end:].lstrip('\n')
+    address, rest = rest.split('\n', 1)
+    require(address.startswith('own-pod-ip=') and ipaddress.ip_address(address[11:]).version == 4, 'bootstrap PodIP log')
+    rows = []
+    for table in ('tcp', 'tcp6', 'udp', 'udp6'):
+        name = '/proc/net/'+table
+        begin = 'socket-table-begin table='+name+' atomic=false max_bytes=65536 max_lines=256 read_seconds=2 process=unknown\n'
+        require(rest.startswith(begin), 'bootstrap socket log order')
+        raw_table, rest = rest[len(begin):].split('\nsocket-table-end table='+name+' bytes=', 1)
+        count, rest = rest.split('\n', 1)
+        require(count == str(len(raw_table.encode()))+' read_status=1' and raw_table.endswith('\n'), 'bootstrap socket log truncated')
+        table_lines = raw_table.splitlines()
+        require(table_lines and 'local_address' in table_lines[0] and 'inode' in table_lines[0], 'bootstrap socket header')
+        for row in table_lines[1:]:
+            if not row:
+                continue
+            parts = row.split()
+            require(len(parts) >= 10, 'bootstrap socket row incomplete')
+            rows.append(f'socket-row table={name} local={parts[1]} remote={parts[2]} state={parts[3]} uid={parts[7]} inode={parts[9]} process=unknown raw={row}')
+    require(rest.splitlines() == rows, 'bootstrap socket decisions incomplete/contradictory')
 
 
 class Run(loop.Run):
@@ -121,13 +165,26 @@ class Run(loop.Run):
         common.owner_check(self.selected_object('Namespace', self.plan['namespace']), self.namespace)
         return super().current_pod()
 
-    def bootstrap(self):
+    def configuration(self):
+        expected = next(e for e in self.owned if e['kind'] == 'ConfigMap' and e['name'] == 'configuration')
+        config = self.selected_object('ConfigMap', expected['name'])
+        common.owner_check(config, expected)
+        require(config.get('immutable') is True and config.get('data') == self.plan['objects']['config']['data'] and
+                not config['metadata'].get('deletionTimestamp'), 'frozen bootstrap configuration drift')
+        self.save('bootstrap-configuration-'+str(self.number)+'.json', config)
+
+    def bootstrap(self, *, completed=False):
         pod = self.current_pod()
         require(pod is not None, 'bootstrap Pod missing')
         states = [s for s in pod['status'].get('initContainerStatuses', []) if s['name'] == 'bootstrap']
         require(len(states) == 1, 'bootstrap status missing')
         state = states[0]
-        require(state.get('state', {}).get('running') and state.get('restartCount') == 0 and not state.get('lastState'), 'bootstrap not stable Running')
+        require(state.get('restartCount') == 0 and not state.get('lastState'), 'bootstrap restart/history')
+        terminal = state.get('state', {}).get('terminated')
+        if completed:
+            require(terminal and terminal.get('exitCode') == 0 and terminal.get('reason') == 'Completed', 'bootstrap not Completed0')
+        else:
+            require(state.get('state', {}).get('running'), 'bootstrap not stable Running')
         require(state['imageID'] == loop.ES['reference'] and state['containerID'].startswith('containerd://'), 'bootstrap runtime image')
         result = dict(namespace_uid=self.namespace['uid'], job_uid=self.job['uid'], pod_uid=self.pod_entry['uid'], imageID=state['imageID'], containerID=state['containerID'])
         return result
@@ -138,6 +195,8 @@ class Run(loop.Run):
         return argv
 
     def transfer(self, until):
+        require(not (self.root/'release.json').exists(), 'release already attempted')
+        self.configuration()
         before = self.bootstrap()
         self.save('upload-before.json', before)
         helper = self.plan['helper']
@@ -165,11 +224,42 @@ class Run(loop.Run):
         require(before == after, 'bootstrap/Pod UID changed during upload')
         # Release is separate from upload so no index operation can precede the
         # post-transfer API identity check and exact stdout receipt.
-        command = self.exec_command('bootstrap', ['/usr/bin/timeout', '5', '/bin/bash', '--noprofile', '--norc', '/qualification/helper-release.sh'])
         require(time.monotonic() < min(until, self.deadline)-10, 'release deadline')
-        receipt = json.loads(self.run(command, 10))
-        require(receipt == dict(artifact='released'), 'release receipt')
-        self.save('release.json', receipt)
+        attempt = dict(identity=before, attempted_at=time.time(), attempts=1, transport='pending', remote_outcome='UNKNOWN')
+        with (self.root/'release.json').open('x') as output:
+            json.dump(attempt, output, indent=2)
+        raw = ''
+        try:
+            command = self.exec_command('bootstrap', ['/usr/bin/timeout', '5', '/bin/bash', '--noprofile', '--norc', '/qualification/helper-release.sh'])
+            raw = self.run(command, 10)
+            attempt['transport'] = 'exit0'
+        except common.CommandFailure as exc:
+            # Only a completed nonzero CLI is an uncertain reply. Cancellation,
+            # local deadlines, output bounds and evidence failures still stop.
+            attempt.update(transport='failed', error=str(exc), command=exc.number, exit=exc.code)
+            raw = (self.root/f'command-{exc.number:04d}.out').read_text()
+        finally:
+            self.save('release.json', attempt)
+        if raw:
+            require(raw == '{"artifact":"released"}\n', 'contradictory/incomplete release receipt')
+            attempt['receipt'] = json.loads(raw)
+        self.save('release.json', attempt)
+        # Both reply paths converge here; no release/upload/PUT is replayed.
+        while time.monotonic() < min(until, self.deadline):
+            self.current_pod()
+            if self.pod_ready:
+                break
+            time.sleep(.5)
+        require(self.pod_ready and time.monotonic() < min(until, self.deadline), 'artifact/runtime ready deadline')
+        require(self.bootstrap(completed=True) == before, 'bootstrap completion identity drift')
+        self.configuration()
+        raw = self.kube(['logs', self.pod_entry['name'], '--container=bootstrap', '--limit-bytes=262144', '--tail=-1'], self.plan['namespace'])
+        self.save('bootstrap.log', raw)
+        bootstrap_receipt(raw)
+        require(self.bootstrap(completed=True) == before, 'bootstrap log identity drift')
+        require(time.monotonic() < min(until, self.deadline), 'bootstrap confirmation deadline')
+        attempt['remote_outcome'] = 'confirmed Completed0 with full ordered logs'
+        self.save('release.json', attempt)
 
 
 def sample_check(sample, role):
@@ -320,16 +410,7 @@ def execute(run, plan_sha256):
             time.sleep(.5)
         require(time.monotonic()<until,'bootstrap startup deadline')
         run.transfer(until)
-        while time.monotonic()<until:
-            run.current_pod()
-            if run.pod_ready:break
-            time.sleep(.5)
-        require(run.pod_ready and time.monotonic()<until,'artifact/runtime ready deadline')
         run.deadline=total_deadline
-        bootstrap=run.kube(['logs',run.pod_entry['name'],'--container=bootstrap','--limit-bytes=262144','--tail=-1'],plan['namespace'])
-        run.save('bootstrap.log',bootstrap)
-        require(bootstrap.startswith('{"bootstrap":"waiting-for-verified-helper"}\n{"artifact":"verified-before-management"}\n') and
-                bootstrap.endswith('{"management":"create-empty-records","completed":1,"document_mutations":0}\n'), 'bootstrap ordered receipt')
         result['empty_index_put_completed']=1
         management=dict(reserved=1,started_lower_bound=1,started_upper_bound=1,completed=1,document_mutations=0)
         run.save('bootstrap-management.json',management)
@@ -363,7 +444,7 @@ def execute(run, plan_sha256):
         result['errors'].append(str(exc))
         # Retain owned startup failures within the original overall window.
         run.deadline=run.remote_started+900
-        if run.pod_entry:
+        if run.pod_entry and not isinstance(exc, (KeyboardInterrupt, SystemExit)):
             for container in ('bootstrap','elasticsearch','weir','qualification'):
                 try:
                     pod=run.selected_object('Pod',run.pod_entry['name'])
@@ -372,7 +453,9 @@ def execute(run, plan_sha256):
                     command=['kubectl','--context',run.target['context'],'--request-timeout=5s','--namespace',plan['namespace'],
                              'logs',run.pod_entry['name'],'--container='+container,'--limit-bytes=65536','--tail=-1']
                     run.save('failure-'+container+'.log',run.run(command,6))
-                except BaseException as diagnostic:
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as diagnostic:
                     error=dict(error=str(diagnostic))
                     run.save('failure-'+container+'-error.json',error)
     finally:

@@ -32,6 +32,25 @@ def plan():
     return result
 
 
+def completion_log():
+    # Synthetic success receipts only. The original M30R2 bootstrap logs were
+    # not recovered; combining these with its status is offline replay only.
+    raw = ('{"bootstrap":"waiting-for-verified-helper"}\n'
+           '{"artifact":"verified-before-management"}\n'
+           'BOUNDARY\n'
+           '{"management":"create-empty-records","reserved":1,"started":1}\n'
+           '{"acknowledged":true,"shards_acknowledged":true,"index":"records"}\n'
+           '{"management":"create-empty-records","completed":1,"document_mutations":0}\n')
+    header = tcp_table().splitlines()[0]+'\n'
+    boundary = '/usr/bin/curl\n/usr/bin/nc\n/usr/bin/timeout\n'
+    boundary += '{"version":{"number":"8.19.22"}}\n{"nodes":{}}\nown-pod-ip=10.0.0.2\n'
+    for table in ('tcp', 'tcp6', 'udp', 'udp6'):
+        boundary += f'socket-table-begin table=/proc/net/{table} atomic=false max_bytes=65536 max_lines=256 read_seconds=2 process=unknown\n'
+        boundary += header+f'\nsocket-table-end table=/proc/net/{table} bytes={len(header.encode())} read_status=1\n'
+    boundary += 'loopback-check-complete\n'
+    return raw.replace('BOUNDARY\n', boundary)
+
+
 class Artifact(unittest.TestCase):
     def archive(self, names=('qualification',), kind=tarfile.REGTYPE, mode=0o555):
         stream=io.BytesIO()
@@ -191,10 +210,11 @@ class Transfer(unittest.TestCase):
                     calls.append(argv)
                     return [sys.executable,'-c',code]
                 def release(*args,**kwargs):
-                    calls.append('released');return '{"artifact":"released"}'
+                    calls.append('released');return '{"artifact":"released"}\n'
                 before=dict(pod_uid='owned',containerID='same')
                 after=dict(before,pod_uid='foreign') if failure=='uid' else before
-                with patch.object(run,'bootstrap',side_effect=[before,after]),patch.object(run,'exec_command',side_effect=command),patch.object(run,'run',side_effect=release):
+                with patch.object(run,'configuration'),patch.object(run,'bootstrap',side_effect=[before,after,before,before]),patch.object(run,'exec_command',side_effect=command),patch.object(run,'run',side_effect=release),patch.object(run,'current_pod'),patch.object(run,'kube',return_value=completion_log()):
+                    run.pod_ready=True
                     until=time.monotonic()+(-1 if failure=='deadline' else 20)
                     if failure:
                         with self.assertRaises((ValueError,RuntimeError)):run.transfer(until)
@@ -220,6 +240,153 @@ class Transfer(unittest.TestCase):
                 self.assertEqual((helper/'qualification').exists(),data==b'hello')
                 self.assertTrue((helper/'release').exists())
                 if data==b'hello':self.assertEqual((helper/'qualification').stat().st_mode & 0o777,0o555)
+
+
+class ReleaseReplay(unittest.TestCase):
+    """Real bounded CLI children, original reset/status, synthetic success log."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.fixture = json.loads((Path(__file__).with_name('fixtures')/'eks-resource-release-m30r2.json').read_text())
+        self.run = pre.Run(self.root, pre.loop.TARGET)
+        self.run.plan = copy.deepcopy(self.fixture['plan'])
+        helper = self.root/'qualification';helper.write_bytes(b'hello')
+        self.run.plan['helper'] = dict(path=str(helper),size=5,sha256=hashlib.sha256(b'hello').hexdigest())
+        self.run.plan['objects'] = pre.objects(self.run.plan)
+        self.run.template = self.run.plan['objects']['job']
+        self.run.owned = copy.deepcopy(self.fixture['owned'])
+        self.run.namespace = next(e for e in self.run.owned if e['kind']=='Namespace')
+        self.run.job = next(e for e in self.run.owned if e['kind']=='Job')
+        self.run.pod_entry = next(e for e in self.run.owned if e['kind']=='Pod')
+        self.run.pod_ready = False
+        self.run.runtime_evidence = False
+        self.phase = 'running_pod'
+        self.config = copy.deepcopy(self.run.plan['objects']['config'])
+        self.config['metadata']['uid'] = next(e['uid'] for e in self.run.owned if e['kind']=='ConfigMap')
+        ns = self.run.namespace
+        self.namespace = dict(metadata=dict(name=ns['name'],uid=ns['uid'],labels={pre.common.LABEL:ns['owner']}))
+        self.calls = []
+        self.release_raw = '{"artifact":"released"}\n'
+        self.release_code = 0
+        self.release_script = None
+        self.log = completion_log()
+        self.mutate = None
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            self.addCleanup(signal.signal,sig,signal.getsignal(sig))
+            def cancelled(signum, frame):
+                raise KeyboardInterrupt('signal '+str(signum))
+            signal.signal(sig, cancelled)
+
+    def selected(self, kind, name):
+        if kind == 'Namespace':return self.namespace
+        if kind == 'Job':return self.fixture['job']
+        if kind == 'ConfigMap':return self.config
+        if kind == 'Pod':return self.fixture[self.phase]
+        raise ValueError(kind)
+
+    def command(self, container, argv):
+        self.calls.append(argv[-1])
+        if argv[-1].endswith('helper-upload.sh'):
+            receipt = dict(artifact='uploaded',size=5,sha256=self.run.plan['helper']['sha256'])
+            code = 'import sys; sys.stdin.buffer.read(); print('+repr(json.dumps(receipt))+')'
+        else:
+            self.assertTrue((self.root/'release.json').exists())
+            self.phase = 'ready_pod'
+            if self.mutate:self.mutate()
+            code = self.release_script or ('import sys; sys.stdout.write('+repr(self.release_raw)+'); sys.stderr.write('+repr(self.fixture['release_stderr'] if self.release_code else '')+'); sys.exit('+str(self.release_code)+')')
+        return [sys.executable,'-c',code]
+
+    def transfer(self):
+        with patch.object(self.run,'selected_object',side_effect=self.selected),patch.object(self.run,'job_events'),patch.object(self.run,'exec_command',side_effect=self.command),patch.object(self.run,'kube',return_value=self.log):
+            self.run.transfer(time.monotonic()+30)
+
+    def test_full_and_missing_reply_converge_on_same_completion(self):
+        for mode in ('full','reset','empty'):
+            with self.subTest(mode=mode):
+                self.release_raw = '{"artifact":"released"}\n' if mode=='full' else ''
+                self.release_code = int(mode=='reset')
+                self.transfer()
+                receipt = json.loads((self.root/'release.json').read_text())
+                self.assertEqual(receipt['transport'],'failed' if mode=='reset' else 'exit0')
+                self.assertIn('confirmed',receipt['remote_outcome'])
+                if mode=='reset':self.assertEqual((self.root/'command-0001.err').read_text(),self.fixture['release_stderr'])
+                self.assertEqual(self.calls.count('/qualification/helper-release.sh'),1)
+                with self.assertRaisesRegex(ValueError,'already attempted'):self.transfer()
+                self.assertEqual(len(self.calls),2)
+                # Reset only this offline harness between independent scenarios.
+                (self.root/'release.json').unlink();self.calls.clear();self.phase='running_pod';self.run.number=0
+
+    def test_original_terminal_without_logs_stays_unknown(self):
+        self.release_raw='';self.release_code=1;self.log=''
+        with self.assertRaises(ValueError):self.transfer()
+        receipt=json.loads((self.root/'release.json').read_text())
+        self.assertEqual(receipt['remote_outcome'],'UNKNOWN')
+        self.assertEqual(self.calls.count('/qualification/helper-release.sh'),1)
+
+    def test_identity_terminal_configuration_and_restart_failures(self):
+        baseline=copy.deepcopy(self.fixture)
+        cases = ('pod','job','namespace','container','image','restart','lastState','failed','config','config-uid','mutable')
+        for case in cases:
+            with self.subTest(case=case):
+                self.fixture=copy.deepcopy(baseline)
+                self.phase='running_pod';self.calls=[]
+                def mutate():
+                    pod=self.fixture['ready_pod'];state=next(s for s in pod['status']['initContainerStatuses'] if s['name']=='bootstrap')
+                    if case=='pod':pod['metadata']['uid']='foreign'
+                    elif case=='job':self.fixture['job']['metadata']['uid']='foreign'
+                    elif case=='namespace':self.namespace['metadata']['uid']='foreign'
+                    elif case=='container':state['containerID']='containerd://foreign'
+                    elif case=='image':state['imageID']='foreign'
+                    elif case=='restart':state['restartCount']=1
+                    elif case=='lastState':state['lastState']=dict(terminated=dict(exitCode=0))
+                    elif case=='failed':state['state']['terminated']['exitCode']=1
+                    elif case=='config':self.config['data']['helper-bootstrap.sh']='changed'
+                    elif case=='config-uid':self.config['metadata']['uid']='foreign'
+                    else:self.config['immutable']=False
+                self.mutate=mutate
+                with self.assertRaises(ValueError):self.transfer()
+                self.assertEqual(json.loads((self.root/'release.json').read_text())['remote_outcome'],'UNKNOWN')
+                self.assertEqual(self.calls.count('/qualification/helper-release.sh'),1)
+                (self.root/'release.json').unlink()
+                self.namespace['metadata']['uid']=self.run.namespace['uid']
+                self.config=copy.deepcopy(self.run.plan['objects']['config'])
+                self.config['metadata']['uid']=next(e['uid'] for e in self.run.owned if e['kind']=='ConfigMap')
+                if hasattr(self.run,'identities'):del self.run.identities
+
+    def test_missing_reordered_truncated_duplicate_and_contradictory_logs(self):
+        raw=completion_log();lines=raw.splitlines(keepends=True)
+        variants=['',''.join(lines[1:]),raw[:-1],raw[:50],raw+lines[-1],raw.replace('"completed":1','"completed":0'),
+                  raw.replace(lines[1],''),raw.replace(lines[-3],''),raw.replace(lines[-2],''),
+                  lines[1]+lines[0]+''.join(lines[2:]),raw.replace('read_status=1','read_status=0'),
+                  raw.replace('socket-table-begin table=/proc/net/tcp ', 'socket-table-begin table=/proc/net/udp '),
+                  raw.replace('local_address','missing'),raw+'x'*262144]
+        for log in variants:
+            with self.subTest(length=len(log)),self.assertRaises((ValueError,IndexError)):pre.bootstrap_receipt(log)
+        self.log=raw.replace(lines[-2],'')
+        with self.assertRaises(ValueError):self.transfer()
+        self.assertEqual(json.loads((self.root/'release.json').read_text())['remote_outcome'],'UNKNOWN')
+
+    def test_contradictory_reply_cancellation_and_local_timeout_stop(self):
+        for mode in ('wrong','partial','SIGINT','SIGTERM','timeout','remote-deadline'):
+            with self.subTest(mode=mode):
+                self.calls=[];self.phase='running_pod';self.release_script=None
+                self.release_raw='wrong\n' if mode=='wrong' else '{"artifact":' if mode=='partial' else ''
+                if mode in ('SIGINT','SIGTERM'):
+                    self.release_script='import os,signal,time; os.kill(os.getppid(),signal.'+mode+');time.sleep(30)'
+                elif mode=='timeout':
+                    self.release_script='import time;time.sleep(30)'
+                    self.mutate=lambda:setattr(self.run,'deadline',time.monotonic()+.1)
+                elif mode=='remote-deadline':
+                    self.mutate=lambda:setattr(self.run,'deadline',time.monotonic()+.1)
+                    self.release_script='import time;time.sleep(.2)'
+                with self.assertRaises((ValueError,KeyboardInterrupt)):self.transfer()
+                self.assertEqual(self.calls.count('/qualification/helper-release.sh'),1)
+                self.assertEqual(json.loads((self.root/'release.json').read_text())['remote_outcome'],'UNKNOWN')
+                records=[json.loads(p.read_text()) for p in self.root.glob('command-*.json')]
+                self.assertTrue(all(r['exit'] is not None and 'end' in r for r in records))
+                (self.root/'release.json').unlink();self.run.deadline=time.monotonic()+900;self.mutate=None
 
 
 class Lifecycle(unittest.TestCase):

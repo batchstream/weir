@@ -109,6 +109,8 @@ def main():
                 print("|".join([obj["apiVersion"],obj["kind"],meta["name"],meta["uid"],meta["labels"][cfg["label"]],refs,"",meta["namespace"]]))
         else:
             key = ("Namespace" if kind == "namespace" else kind)+"/"+args[2]
+            if key.startswith("Namespace/") and key not in state and cfg.get("namespace_readback_failure"):
+                raise RuntimeError("namespace GET failed with empty stdout")
             if key in state:
                 obj = copy.deepcopy(state[key])
                 if cfg.get("diagnostic_uid_drift") and kind == "Pod":

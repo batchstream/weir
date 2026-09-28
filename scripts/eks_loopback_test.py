@@ -254,6 +254,14 @@ else: print((r/"settings.json").read_text())
                     self.assertIn("--retry",call)
                     self.assertTrue(call[-1].startswith("http://127.0.0.1:9200/"))
                 if scenario=="uncertain-put":self.assertIn('"reserved":1,"started":1',result.stdout)
+                if scenario=="valid":
+                    from eks_resource_preflight import bootstrap_receipt
+                    # The shell actually generated these complete bytes. Only
+                    # local fixture paths and the two transfer markers are adapted.
+                    raw='{"bootstrap":"waiting-for-verified-helper"}\n{"artifact":"verified-before-management"}\n'
+                    raw+=result.stdout.replace('table='+str(root)+'/', 'table=/proc/net/')
+                    bootstrap_receipt(raw)
+
 
 
 

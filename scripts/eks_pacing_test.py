@@ -430,7 +430,7 @@ func main(){
         with patch.object(self.run, "selected_object", return_value=obj), patch.object(self.run, "inventory", return_value=foreign), patch.object(self.run, "delete") as delete:
             result = self.run.cleanup()
             self.assertFalse(result["confirmed"])
-            delete.assert_not_called()
+            self.assertEqual([c.args[0]["kind"] for c in delete.call_args_list], ["Job", "Pod"])
 
     def test_wrong_plan_context_node_image_and_namespace_collision_before_create(self):
         frozen = dict(plan(), target=dict(context="expected"))
@@ -810,34 +810,83 @@ class CleanupReplay(unittest.TestCase):
                 self.assertIn(body["preconditions"]["uid"], {e["uid"] for e in owned_before})
                 self.assertNotIn("metrics.k8s.io", call[call.index("--raw")+1])
 
-    def test_unknown_api_identity_and_foreign_rows_block_all_deletes(self):
+    def assert_scoped_deletes(self):
+        deletes = [c for c in self.calls() if 'delete' in c]
+        safe = {e['uid'] for e in self.run.owned if e['kind'] not in ('ResourceQuota','Namespace')}
+        self.assertTrue(deletes)
+        self.assertTrue(all(json.loads(Path(c[-1]).read_text())['preconditions']['uid'] in safe for c in deletes))
+        state = json.loads((self.root/'state.json').read_text())
+        self.assertIn('ResourceQuota/budget',state)
+        self.assertIn('Namespace/'+self.fixture['namespace'],state)
+        self.assertFalse(any(k.startswith('Pod/') or k.startswith('Job/') for k in state))
+
+    def test_one_fresh_inventory_after_owned_processes_before_quota(self):
+        result=self.run.cleanup()
+        self.assertTrue(result['confirmed'],result)
+        calls=self.calls()
+        inventories=[i for i,c in enumerate(calls) if 'api-resources' in c]
+        self.assertEqual(len(inventories),1)
+        deletes=[(i,json.loads(Path(c[-1]).read_text())['preconditions']['uid']) for i,c in enumerate(calls) if 'delete' in c]
+        kinds={e['uid']:e['kind'] for e in self.run.owned}
+        self.assertEqual([kinds[uid] for _,uid in deletes],['Job','Pod','ConfigMap','NetworkPolicy','ResourceQuota','Namespace'])
+        self.assertLess(deletes[3][0],inventories[0]);self.assertLess(inventories[0],deletes[4][0])
+        budget=json.loads((self.root/'cleanup-budget.json').read_text())
+        self.assertEqual(budget['deadline']-budget['objects_deadline'],45)
+        self.assertEqual(budget['namespace_reserve_seconds'],45)
+        self.assertLessEqual(budget['deadline']-time.monotonic(),180)
+
+    def test_each_fresh_uid_or_owner_change_prevents_that_delete(self):
+        original=copy.deepcopy(self.cfg)
+        for owned in self.run.owned:
+            for field in ('uid','owner'):
+                with self.subTest(kind=owned['kind'],field=field):
+                    self.cfg=copy.deepcopy(original)
+                    obj=self.cfg['cleanup_objects'][owned['kind']+'/'+owned['name']]
+                    if field=='uid':obj['metadata']['uid']='replacement'
+                    else:obj['metadata']['labels'][entry.LABEL]='foreign'
+                    (self.root/'state.json').write_text(json.dumps(self.cfg['cleanup_objects']))
+                    before=len(self.calls());self.configure()
+                    self.assertFalse(self.run.cleanup()['confirmed'])
+                    deletes=[c for c in self.calls()[before:] if 'delete' in c]
+                    self.assertFalse(any(json.loads(Path(c[-1]).read_text())['preconditions']['uid']==owned['uid'] for c in deletes))
+
+    def test_final_namespace_nonzero_empty_get_is_not_absence(self):
+        self.cfg['namespace_readback_failure']=True
+        self.configure()
+        result=self.run.cleanup()
+        self.assertFalse(result['confirmed'])
+        last=json.loads(sorted(self.root.glob('command-*.json'))[-1].read_text())
+        self.assertNotEqual(last['exit'],0)
+        self.assertEqual(sorted(self.root.glob('command-*.out'))[-1].read_text(),'')
+        self.assertEqual(sum('delete' in c and any(a.endswith('/namespaces/'+self.fixture['namespace']) for a in c) for c in self.calls()),1)
+
+    def test_unknown_api_identity_and_foreign_rows_keep_quota_and_namespace(self):
         original = copy.deepcopy(self.cfg["cleanup_rows"])
         metrics = next(i for i, r in enumerate(original) if r[1] == "PodMetrics")
         pod_index = next(i for i, r in enumerate(original) if r[1] == "Pod")
         default_index = next(i for i, r in enumerate(original) if r[2] == "default")
         cases = [(metrics, 0, "metrics.k8s.io/v9"), (metrics, 0, "unknown.test/v1"),
                  (metrics, 1, "UnknownView"), (metrics, 3, "unexpected-uid"),
-                 (metrics, 7, "foreign-namespace"), (pod_index, 3, "replacement-uid"),
-                 (pod_index, 3, ""), (pod_index, 4, "changed-owner"),
-                 (pod_index, 0, "unknown.test/v1"), (default_index, 3, "replacement-default"),
+                 (metrics, 7, "foreign-namespace"), (default_index, 3, "replacement-default"),
                  (default_index, 4, self.fixture["namespace"])]
         for index, field, value in cases:
             with self.subTest(index=index, field=field, value=value):
                 self.cfg["cleanup_rows"] = copy.deepcopy(original)
                 self.cfg["cleanup_rows"][index][field] = value
                 self.configure()
+                (self.root/"state.json").write_text(json.dumps(self.cfg["cleanup_objects"]))
                 result = self.run.cleanup()
                 self.assertFalse(result["confirmed"], result)
-                self.assertFalse(any("delete" in c for c in self.calls()))
+                self.assert_scoped_deletes()
         self.cfg["cleanup_rows"] = original+[original[pod_index][:]]
         self.cfg["cleanup_rows"][-1][2:4] = ["foreign", "foreign-uid"]
         self.configure()
         self.assertFalse(self.run.cleanup()["confirmed"])
-        self.assertFalse(any("delete" in c for c in self.calls()))
+        self.assert_scoped_deletes()
 
     def test_discovery_mutation_missing_failure_and_secret_count_fail_closed(self):
         original = copy.deepcopy(self.cfg)
-        for scenario in ("mutation", "missing", "failure", "secret", "quota-owner", "missing-discovery"):
+        for scenario in ("mutation", "missing", "failure", "secret", "secret-missing", "secret-hard", "quota-owner", "missing-discovery"):
             with self.subTest(scenario=scenario):
                 self.cfg = copy.deepcopy(original)
                 if scenario == "mutation":
@@ -850,6 +899,10 @@ class CleanupReplay(unittest.TestCase):
                     self.cfg["api_resources"].remove("pods.metrics.k8s.io")
                 elif scenario == "secret":
                     self.cfg["cleanup_objects"]["ResourceQuota/budget"]["status"]["used"]["count/secrets"] = "1"
+                elif scenario == "secret-missing":
+                    self.cfg["cleanup_objects"]["ResourceQuota/budget"]["status"]["used"] = {}
+                elif scenario == "secret-hard":
+                    self.cfg["cleanup_objects"]["ResourceQuota/budget"]["status"]["hard"]["count/secrets"] = "1"
                 else:
                     self.cfg["cleanup_objects"]["ResourceQuota/budget"]["metadata"]["labels"] = None
                 self.configure()
@@ -857,7 +910,7 @@ class CleanupReplay(unittest.TestCase):
                 (self.root/"state.json").write_text(json.dumps(self.cfg["cleanup_objects"]))
                 result = self.run.cleanup()
                 self.assertFalse(result["confirmed"], result)
-                self.assertFalse(any("delete" in c for c in self.calls()))
+                self.assert_scoped_deletes()
 
     def test_final_inventory_keeps_quota_and_namespace_on_new_foreign_object(self):
         row = ["v1", "Pod", "foreign", "foreign-uid", self.fixture["namespace"], "", "", self.fixture["namespace"]]
@@ -882,9 +935,10 @@ class CleanupReplay(unittest.TestCase):
     def test_deadline_and_evidence_failure_prevent_deletion_and_reap_cli(self):
         self.cfg["discovery_timeout"] = True
         self.configure()
-        result = self.run.cleanup(deadline=time.monotonic()+4.5)
+        result = self.run.cleanup(deadline=time.monotonic()+55)
         self.assertFalse(result["confirmed"])
-        self.assertFalse(any("delete" in c for c in self.calls()))
+        self.assert_scoped_deletes()
+        self.assertGreater(self.run.deadline, time.monotonic()-4)
         records = [json.loads(p.read_text()) for p in self.root.glob("command-*.json")]
         self.assertTrue(all("end" in r and r["exit"] is not None for r in records))
         self.cfg.pop("discovery_timeout")
@@ -892,7 +946,7 @@ class CleanupReplay(unittest.TestCase):
         with patch.object(self.run, "save", side_effect=OSError("disk unavailable")):
             result = self.run.cleanup()
         self.assertFalse(result["confirmed"])
-        self.assertFalse(any("delete" in c for c in self.calls()))
+        self.assert_scoped_deletes()
 
     def test_stopped_cleanup_entry_uses_only_five_uids_and_one_invocation(self):
         import eks_cleanup
