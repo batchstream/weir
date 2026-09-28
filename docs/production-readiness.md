@@ -1,6 +1,14 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R5R](milestone-30r5r.md)仅完成本地 observer 无条件收尾与下一预检预算修正。
+原 record 文件 I/O 反例已复现；修后错误仍返回，但真实 child 已 Wait、三管道关闭。初始化、排空/记录/关闭/Wait 错误及取消首败有独立进程/句柄回归。
+下次无负载预检冻结单角色完整 60 秒（受主 900 秒约束，含前后身份检查和收尾），仅该 profile 清理 300 秒并保留 45 秒 namespace 预留；共享默认 180 秒不变。
+旧 GET 耗时离线回放加受控建立/10秒六样本/关闭共33.435秒：30秒拒绝、60秒完成；没有真实 EKS 验证，不能作为原生资格。
+普通 GET/exec 的10秒flag、真实采样和资源/身份/无重放门槛不变。原 reset unknown、缺 observer_end/client、partial/not-qualified、timing=not-run、candidate=null 及全部其他required仍保留。
+最终普通235项通过，优化210项通过/25项既有skip；聚焦普通63项、优化55项通过/8项既有skip。M30R5的168份及此前1809份历史文件、204Go/module和Weir70/helper81正式输入未变。
+没有 EKS/网络实验/产品Go/module/正式helper/镜像/push变化。以下保留各阶段当轮历史结果；其中 M30R5 原30秒本地额度已由 M30R5R 更新为待验证的60秒。
+
 [M30R5](milestone-30r5.md)仅本地取证及生命周期修复，**真实EKS采样仍未通过，reset根因未知**。
 准确kubectl v1.35.2 EKS fork（darwin/amd64）在loopback对照中以原10秒flag完成10.1秒升级流；普通Pod GET仍在10秒超时。
 六次冻结实验结束，stdin EOF协议及管道背压有本地证据；不据此认定旧EKS reset原因，也未调大timeout或访问EKS。
