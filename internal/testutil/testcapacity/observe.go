@@ -562,7 +562,7 @@ func (w *evidenceWriter) Write(raw []byte) (int, error) {
 	return n, err
 }
 func observe(ctx context.Context, encoder *json.Encoder, o *Sampler, seconds int) error {
-	if seconds < 2 || seconds > 898 {
+	if seconds < 2 || seconds > 2698 {
 		return errors.New("observer duration bound")
 	}
 	endpoint := "http://127.0.0.1:7449"

@@ -123,7 +123,7 @@ def start(f,plan,budget):
         cid=f.containers[f.owner+"-"+role]
         command=["docker","exec","-i","--user","65532:65532" if role=="weir" else "1000:0",
                  "-e","WEIR_CAPACITY_INTEGRATION=1",cid,"/qualification-client","-mode","observe",
-                 "-role",role,"-pid","1" if role=="weir" else "java","-seconds","898"]
+                 "-role",role,"-pid","1" if role=="weir" else "java","-seconds","2698"]
         options=dict(root=f.root,role=role,command=command,env=f.env)
         f.observers[role]=Observer(options)
     f.run(["docker","exec",f.containers[f.owner+"-weir"],"/weir","-probe","ready"],10)
