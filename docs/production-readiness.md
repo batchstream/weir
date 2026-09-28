@@ -1,6 +1,15 @@
 # Weir 生产资格验收清单
 
-日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R4C](milestone-30r4c.md)只尝试准确 Namespace/Quota 两残留清理，**清理仍失败，两个 UID 未清除**。
+实现/唯一执行 `db68a3845291e20d7ecbf750c91184101fd97a7b`；入口区分当前 DELETE 目标与冻结原始历史 UID，共享清理机制未改。
+聚焦40项通过；完整普通198通过，优化173通过/25项既有skip。唯一180秒窗口在40.907秒停止：身份/空Pod/Secret零计数通过，
+完整盘点第一批触及21秒单命令本地截止、exit-15；没有完成foreign/default UID守卫，没有任何DELETE或最终namespace absence证据。
+10条CLI全部Stop/Wait；不再追加在线查询、重试或第二窗口。Quota `2deaa5be-0822-4db5-83bc-df4d2ec9233e`、
+namespace UID `f6b048cc-447d-4ee8-8835-11ef13542758` 最后成功读取仍在，准确残留交统筹。
+M30R4原失败/cleanup=false、缺失observer_end/client、partial/not-qualified、timing=not-run、candidate=null及全部其他required门槛不变。
+以下保留各阶段当轮历史结果。
+
 [M30R4](milestone-30r4.md)将静态预检置于唯一120秒资源窗口之前，完整25秒CLI+4秒Stop/Wait余额不足时零派发。
 实现/实际执行`92b04b5167127c067413624aec35c00f6e82d1d6`；普通191通过，优化166通过/25既有skip；75项输入冻结，正式输入未变。
 真实静态阶段112.785秒后才启动资源窗口；prepare与native写入前GET在同一窗口26.664秒内完成，恢复0次。
