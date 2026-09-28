@@ -1,6 +1,13 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M32](milestone-32.md)双原生 CI 外部 Go→Python 管道接线已提交并普通推送，受测 source `b420c8ea4957db177a801c1efe3b0321b14b893d`，但**新镜像交付未完成**。
+唯一 [run 36482306611](https://github.com/batchstream/weir/actions/runs/36482306611) 两架构默认CGO0/race/vet/helper回归通过；各255项普通Python中252通过、3error、0skip，优化因普通失败未运行。
+新外部EKS/local真实管道各6/71样本通过；calibration大流正例收尾失败，另有既有kubectl文件hash环境依赖错误。原失败保留，未放宽/删测或第二次run。
+publish及smoke均skipped，无新image source/digest、复现/匿名完整内容或六短smoke证据；旧M29/source4abc制品仍不含M31修复，EKS profile/统筹approvedImages未改。
+206个Go/module、产品70/helper82正式输入与M31不变；3581份历史封存hash/size未变，真实child与本地watcher已收口，无本轮builder/container/login残留。
+本轮无EKS/aws/DB/负载，resource partial/not-qualified、timing not-run、candidate null与其他required门槛保持。失败回调统筹后停止，无timer。
+
 [M31](milestone-31.md)完成正式 qualification observer 的本地收尾修复，实现 `3cf2c94`。三个实际消费者在完整 identity/样本/terminal/资源校验后发送 EOF，再确认 exit0、双 EOF、Wait/Join、句柄关闭；四秒完成等待嵌入原关闭预算。
 提前 EOF/非法字节/错误样本/信号/读写失败均非零；拒绝流和主动提前停止使用取消字节，避免清理 EOF 被误当正常成功。通用 Observer、upload/release、产品协议/执行语义及原有预算不变。
 默认离线 Go test/race/vet 与 focused integration test/race/vet 均通过；Python 补丁前全套普通251通过、优化225通过/26skip，最终受影响普通92通过、优化70通过/22项旧入口skip。
