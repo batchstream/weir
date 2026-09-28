@@ -107,11 +107,18 @@ startup随信号取消，取消后的Start不发布ready；全部成功组装退
 启动取消明确exit1，正常serving信号关闭无错误才exit0；脱敏错误、UNKNOWN/无重放及资源owner保持。
 准确本地Darwin arm64 CGO0/CGO1 race与network-none原生Linux arm64 CGO0新产物的真实SIGTERM边界通过；
 两个平台各固定10次首条监听即信号、两种握手各3次；在途UNKNOWN单次发送、默认30秒输入stall下5秒drain、重复Close回归通过。
-全默认非缓存test/race、相关三轮race、普通/integration vet及六目标命令和integration编译/静态vet通过，待统筹独立验收。
+全默认非缓存test/race、相关三轮race、普通/integration vet及六目标命令和integration编译/静态vet通过，M27已获统筹独立有限验收。
 Linux日志驱动启动前失败、额外app测试缺仓库示例输入的失败均保留；只纠正自身夹具，分别补首次执行/单失败case与原未运行server组，未重复整套求绿。
 7个自有容器全部按准确ID回收，测试进程已Wait；没有EKS或push/CI/镜像更新。
 旧公开GHCR仍source `fc0eb867ac4511a5c29dbc32b02768a3ad7a3139`；合成HTTP不构成真实DB资格，Windows/其他架构未原生运行。
 本轮仅补局部生命周期证据，capacity candidate=null及所有其他required缺口不变，原M26R5失败不倒写。
+[M28](milestone-28.md)仅新增每Node一次标准Go/process collector，并将integration资源观察改为同容器同非root UID，
+读取自身cgroup并校验进程/namespace身份；旧特权observer已移除，未改变产品调度/DB/AIMD/Guard。
+本地三次冻结启动在负载前停止：只读ES临时配置、过早ready探测、JVM模块main匹配；所有失败保留。
+最后匹配问题已离线修复，但允许的启动修正已用完，未第四次原生运行。**resource evidence仍partial，M28 NO-GO**；
+trial/seed/document mutation均0，仅两次空索引管理PUT；计时/容量/soak not-run，candidate=null。
+最终默认/race各220、边界race3共33、vet/六平台编译及受影响Python回归通过；这些不代替完整三角色原生采样。
+七自有容器及两个observer exec均停止/Wait/准确ID回收。M27/M28仍未发布，无EKS/push/CI；其他required门槛保持。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
