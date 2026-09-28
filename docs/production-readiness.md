@@ -102,6 +102,16 @@ Job/Pod随后按原900秒deadline停止，Pod已不存在；仍剩NS/Quota/Polic
 本次没有创建对象/负载或 SDK/ES/Go 重跑，200产品输入及1073/189/3120份原证据 hash 不变。
 全部 Python 普通140通过，优化115通过/25既有skip；清理后仅在 `fa89628` 补回逐对象失败记录。原 M26R5 及原180秒恢复仍failed，后续回收不倒写原成功。
 candidate=null、resource partial、CNI/容量/跨节点/完整平台/24h及启动signal窗口门槛保持。
+[M27](milestone-27.md)实现 `e072d3b9f1ab23801ead183beb1cb786ec1b8fa6`：CLI在Open前统一注册信号，
+startup随信号取消，取消后的Start不发布ready；全部成功组装退出路径保留独立5秒drain，部分失败仍用1秒清理context。
+启动取消明确exit1，正常serving信号关闭无错误才exit0；脱敏错误、UNKNOWN/无重放及资源owner保持。
+准确本地Darwin arm64 CGO0/CGO1 race与network-none原生Linux arm64 CGO0新产物的真实SIGTERM边界通过；
+两个平台各固定10次首条监听即信号、两种握手各3次；在途UNKNOWN单次发送、默认30秒输入stall下5秒drain、重复Close回归通过。
+全默认非缓存test/race、相关三轮race、普通/integration vet及六目标命令和integration编译/静态vet通过，待统筹独立验收。
+Linux日志驱动启动前失败、额外app测试缺仓库示例输入的失败均保留；只纠正自身夹具，分别补首次执行/单失败case与原未运行server组，未重复整套求绿。
+7个自有容器全部按准确ID回收，测试进程已Wait；没有EKS或push/CI/镜像更新。
+旧公开GHCR仍source `fc0eb867ac4511a5c29dbc32b02768a3ad7a3139`；合成HTTP不构成真实DB资格，Windows/其他架构未原生运行。
+本轮仅补局部生命周期证据，capacity candidate=null及所有其他required缺口不变，原M26R5失败不倒写。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
@@ -170,6 +180,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 
 | 必需项 | 当前状态与证据 | 后续资格门槛/阻塞 |
 | --- | --- | --- |
+| CLI启动信号/取消/有界退出 | [M27](milestone-27.md)本地源码单次信号所有权、独立startup/drain、错误保留与真实Darwin/Linux arm64进程边界通过；固定10次监听即信号、握手每种3次，待独立验收；夹具失败与补证分别保留 | 合成HTTP非DB资格；旧GHCR未含修复，Windows/其他native平台、注册前/SIGKILL及整体生产资格不由此覆盖 |
 | 原生 BackendExpression | 已实现；固定后端有限真实验证见 [M7](milestone-7.md)、`internal/backend/{mongodb,search}/expression.go`、对应 tests、`internal/server/expression_integration_test.go` | 仅明确 profile；不含泛化语言、跨记录、pipeline/upsert、其他版本/拓扑 |
 | 通用 ProgramTransform | **用户已批准首版延期；未来实现仍阻塞**。`internal/protocol/protocol.go` 仍拒绝；[M1](milestone-1.md) 的 GopherLua 失败保留；[M13](milestone-13.md)、`experiments/goluaprobe` 实证 golua v0.3.0 编译低估、VM 分配先做后查/漏账、字符串/helper fuel 和取消缺口，NO-GO | 必须闭环确定性、编译/VM/helper/bridge 分配前计账与取消；极值/opaque userdata 透传不等于通用 typed transform。四种 action、安全输出、完整 codec、Mongo transaction/Search OCC 是未来恢复该功能的 required 门槛；首版不再规划 VM fork 或通用 RMW 接线 |
 | Weir TLS/认证/授权 | **用户明确排除，不算阻断；既有体系已移除**；[M8](milestone-8.md)、`internal/server/forwarding.go` | application/peer 均为明文 HTTP/2，入口可达来源由部署隔离负责；hop 没有密码学身份保证。旧 identity/allow/server_name 配置严格拒绝，无开关、证书 fixture 或空壳权限接口 |
