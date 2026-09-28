@@ -35,7 +35,7 @@ INSPECT = '{' + ','.join('"'+key+'":{{json .'+key+'}}' for key in
     '},"HostConfig":{' + ','.join('"'+key+'":{{json .HostConfig.'+key+'}}' for key in
     ('NetworkMode', 'NanoCpus', 'Memory', 'MemorySwap', 'PidsLimit', 'CapDrop', 'CapAdd',
      'SecurityOpt', 'Privileged', 'PortBindings', 'PublishAllPorts', 'Binds', 'Tmpfs',
-     'ReadonlyRootfs', 'RestartPolicy', 'LogConfig', 'PidMode', 'IpcMode')) + '}}'
+     'ReadonlyRootfs', 'RestartPolicy', 'LogConfig', 'PidMode', 'IpcMode', 'CgroupnsMode')) + '}}'
 
 
 def local_check():

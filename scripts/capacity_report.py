@@ -8,10 +8,18 @@ from capacity_contract import PLAN
 
 
 def timestamp(value):
+    if not isinstance(value, str) or not re.search(r'(Z|\+00:00)$', value):
+        raise ValueError("missing UTC timestamp")
     result = datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
     if not math.isfinite(result):
         raise ValueError("invalid timestamp")
     return result
+
+
+def integer(value, positive=False):
+    if type(value) is not int or not (0 < value if positive else 0 <= value) or value > 2**64-1:
+        raise ValueError("invalid integer")
+    return value
 
 
 def number(value, positive=False):
@@ -64,8 +72,16 @@ def counter(raw):
 
 def histogram_count(hist, count):
     buckets = hist["buckets"]
-    if any(not isinstance(b["count"], int) or b["count"] <= 0 for b in buckets):
-        raise RuntimeError("invalid histogram bucket")
+    if not isinstance(buckets, list):
+        raise ValueError("histogram buckets must be an array")
+    for bucket in buckets:
+        integer(bucket["count"], True)
+        bound = bucket["upper_us"]
+        if type(bound) is not int or not (bound == -1 or
+                100 <= bound <= 10000 and bound % 100 == 0 or
+                10000 < bound <= 1000000 and bound % 1000 == 0 or
+                1000000 < bound <= 2000000 and bound % 10000 == 0):
+            raise ValueError("invalid histogram bound")
     bounds = [b["upper_us"] if b["upper_us"] >= 0 else math.inf for b in buckets]
     if bounds != sorted(set(bounds)) or sum(b["count"] for b in buckets) != count:
         raise RuntimeError("histogram count/order identity")
@@ -78,24 +94,74 @@ def histogram_count(hist, count):
             if accumulated >= want:
                 calculated = bucket["upper_us"]
                 break
-        if hist["p"+str(p)+"_us"] != calculated:
+        quantile = hist["p"+str(p)+"_us"]
+        if type(quantile) is not int or quantile != calculated:
             raise RuntimeError("histogram quantile mismatch")
+    if "max_ns" in hist:
+        maximum = integer(hist["max_ns"])
+        if not count:
+            if maximum != 0:
+                raise ValueError("empty histogram maximum")
+        else:
+            last = buckets[-1]["upper_us"]
+            step = 100 if last <= 10000 else 1000 if last <= 1000000 else 10000
+            if not (maximum > 2000000000 if last == -1 else
+                    max(0, last-step)*1000 < maximum <= last*1000 or last == 100 and maximum == 0):
+                raise ValueError("histogram maximum/bucket mismatch")
+
+
+def metrics_sum(total, parts):
+    """Compare additive counts and buckets, never sum percentiles."""
+    keys = ["planned", "started", "completed", "success", "client_drop", "client_late", "unknown"]
+    histograms = ["arrival", "dispatch", "lag"]
+    maps = ["failures"]
+    if "due" in total:
+        keys += ["due", "cancelled_future", "worker_expired"]
+        histograms += ["wake", "decision", "construct", "handoff", "worker_start"]
+        maps += ["drop_reasons"]
+    for key in keys:
+        if integer(total[key]) != sum(integer(part[key]) for part in parts):
+            raise ValueError("aggregate count mismatch: "+key)
+    for key in maps:
+        merged = {}
+        for part in parts:
+            for name, value in (part[key] or {}).items():
+                merged[name] = merged.get(name, 0)+integer(value, True)
+        if (total[key] or {}) != merged:
+            raise ValueError("aggregate outcome mismatch: "+key)
+    for key in histograms:
+        merged = {}
+        for part in parts:
+            for bucket in part[key]["buckets"]:
+                bound = bucket["upper_us"]
+                merged[bound] = merged.get(bound, 0)+bucket["count"]
+        if {b["upper_us"]: b["count"] for b in total[key]["buckets"]} != merged:
+            raise ValueError("aggregate histogram mismatch: "+key)
+        if "max_ns" in total[key] and total[key]["max_ns"] != max(part[key]["max_ns"] for part in parts):
+            raise ValueError("aggregate histogram maximum mismatch")
 
 
 def window_gate(window):
     reasons = []
     for key in ("planned", "started", "completed", "success", "client_drop", "client_late", "unknown"):
-        if any(not isinstance(window[k][key], int) or window[k][key] < 0 for k in ("all", "read", "put")):
-            raise RuntimeError("invalid count")
+        for kind in ("all", "read", "put"):
+            integer(window[kind][key])
         if window["all"][key] != window["read"][key]+window["put"][key]:
             raise RuntimeError("all != read + put")
     for kind in ("all", "read", "put"):
         m = window[kind]
+        failures = m["failures"]
+        if failures is not None and not isinstance(failures, dict):
+            raise ValueError("invalid failures map")
+        for value in (failures or {}).values():
+            integer(value, True)
         if m["planned"] != m["completed"]+m["client_drop"] or m["started"] != m["completed"]:
             raise RuntimeError("count identity")
         if m["completed"] != m["success"]+sum((m["failures"] or {}).values()):
             raise RuntimeError("outcome identity")
         failures = m["failures"] or {}
+        if m["unknown"] > sum(failures.values()) or m["client_late"] > m["client_drop"]:
+            raise ValueError("unknown/late count identity")
         if any(failures.get(key, 0) for key in ("payload_or_response", "correlation", "invalid_bulk", "invalid_ack", "invalid_outcome")):
             raise RuntimeError("correctness response failure; stop calibration")
         if m["client_drop"] or m["unknown"] or m["success"] != m["planned"]:
@@ -103,6 +169,14 @@ def window_gate(window):
         for name in ("arrival", "dispatch", "lag"):
             histogram_count(m[name], m["completed"])
         if "due" in m:
+            for key in ("due", "cancelled_future", "worker_expired"):
+                integer(m[key])
+            if m["drop_reasons"] is not None and not isinstance(m["drop_reasons"], dict):
+                raise ValueError("invalid drop reasons map")
+            for value in (m["drop_reasons"] or {}).values():
+                integer(value, True)
+            if m["worker_expired"] > m["client_drop"] or m["client_late"] != (m["drop_reasons"] or {}).get("expired", 0):
+                raise ValueError("worker/late drop identity")
             if m["planned"] != m["due"]+m["cancelled_future"] or sum((m["drop_reasons"] or {}).values()) != m["client_drop"]:
                 raise RuntimeError("due/drop timing identity")
             for name in ("wake", "decision", "construct"):
@@ -114,6 +188,7 @@ def window_gate(window):
                                            ("lag", "p99_us", PLAN["thresholds"]["lag_p99_us"])):
             if m["planned"] and not 0 <= m[histogram][quantile] <= bound:
                 reasons.append(kind+":"+histogram+"/"+quantile)
+    metrics_sum(window["all"], [window["read"], window["put"]])
     return reasons
 
 

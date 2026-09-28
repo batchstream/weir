@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen M28 local native short fixture; no EKS, image build, or capacity search."""
+"""One frozen M28R native short fixture; no EKS, image build, or capacity search."""
 import argparse
 import json
 import os
@@ -12,7 +12,7 @@ import eks_pacing as common
 import eks_loopback as loop
 from local_es_prerequisite import INSPECT, local_check
 from capacity_fixture import Observer
-from resource_report import report, require, LIMITS, stream_report
+from resource_report import report, require, LIMITS, stream_report, trial_report, observer_identity
 
 ENVIRONMENT = 'sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9'
 LABEL = 'qualification.weir.io/owner'
@@ -60,6 +60,7 @@ def commands(options):
         argv=['docker','create','--pull=never','--name',owner+'-'+role,'--label',LABEL+'='+owner,
               '--platform','linux/arm64','--network','none' if role=='es' else 'container:{es}',
               '--user',uid,'--read-only','--cap-drop=ALL','--security-opt','no-new-privileges=true',
+              '--cgroupns','private',
               '--cpus',str(cpus),'--memory',str(mib)+'m','--memory-swap',str(mib)+'m','--pids-limit',str(pids),
               '--ulimit','nofile=4096:4096','--log-driver','local','--log-opt','max-size=4m',
               '--log-opt','max-file=1','--log-opt','compress=false',
@@ -100,11 +101,12 @@ def verify(obj, options):
     require(host['NanoCpus']==cpus*10**9 and host['Memory']==host['MemorySwap']==mib*1024**2 and host['PidsLimit']==pids,'container limits')
     require(host['CapDrop']==['ALL'] and not host['CapAdd'] and host['SecurityOpt']==['no-new-privileges=true'] and
             not host['Privileged'] and host['ReadonlyRootfs'] and not host['PidMode'] and
-            not host['PublishAllPorts'] and not host['PortBindings'] and host['IpcMode']=='private','container isolation')
+            not host['PublishAllPorts'] and not host['PortBindings'] and host['IpcMode']=='private' and
+            host['CgroupnsMode']=='private','container isolation')
     require(host['NetworkMode']==('none' if role=='es' else 'container:'+options['es']), 'network namespace drift')
     require(obj['Config']['User']==('1000:0' if role=='es' else '65532:65532'), 'container UID')
     require(obj['Image']==(loop.ES['config'] if role=='es' else ENVIRONMENT), 'image identity')
-    require(all(m['Type']=='bind' and not m['RW'] and m['Source'].startswith(str(common.REPO/'.testdata/m28')+'/') for m in obj['Mounts']),'static mounts')
+    require(all(m['Type']=='bind' and not m['RW'] and m['Source'].startswith(str(common.REPO/'.testdata/m28r')+'/') for m in obj['Mounts']),'static mounts')
 
 
 def execute(run, plan):
@@ -117,6 +119,8 @@ def execute(run, plan):
     run.monitor=monitor
     try:
         require(all(common.digest(p)==value for p,value in plan['inputs'].items()),'frozen inputs changed')
+        source=json.loads((run.root.parent/'source-inputs.json').read_text())
+        require(source['source']==plan['source'] and all(common.digest(common.REPO/p)==value for p,value in source['inputs'].items()), 'source input drift')
         for name,command in inventories().items():run.save(name+'-before.txt',run.run(command))
         for image in (ENVIRONMENT,loop.ES['reference']):
             raw=run.run(['docker','image','inspect',image,'--format','{"Id":{{json .Id}},"Os":{{json .Os}},"Architecture":{{json .Architecture}}}'])
@@ -127,8 +131,11 @@ def execute(run, plan):
         for role in ('es','client','weir'):
             if role=='weir':
                 # Only empty index metadata before product startup; no extra seed.
-                run.run(['docker','exec',containers['es']]+loop.CURL+['-X','PUT','-H','Content-Type: application/json',
+                raw=run.run(['docker','exec',containers['es']]+loop.CURL+['-X','PUT','-H','Content-Type: application/json',
                     '--data','{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"enabled":false}}','http://127.0.0.1:9200/records'])
+                require(json.loads(raw)['acknowledged'] is True, 'preload index management PUT')
+                management=dict(index_create=1,document_mutations=0,response=json.loads(raw))
+                run.save('preload-management.json',management)
             argv=[part.replace('{es}',containers.get('es','')) for part in plan['commands'][role]]
             cid=run.run(argv).strip();require(re.fullmatch('[0-9a-f]{64}',cid),'create ID')
             containers[role]=cid;run.save('owned.json',containers)
@@ -150,7 +157,7 @@ def execute(run, plan):
                     require(json.loads(raw)['version']['number']=='8.19.22','ES version');run.save('es-version.json',raw);break
                 run.save('socket-before.log',run.run(['docker','exec',cid,'/usr/bin/timeout','20','/bin/bash','--noprofile','--norc','/local-check.sh'],25))
             if role=='client':
-                run.save('native-tests.log',run.run(['docker','exec',cid,'/qualification/observe.test','-test.v','-test.run','^(TestNativeSelfObservation|TestNativeObservationExitedTarget|TestProcessParsing|TestObservation|TestBoundedObservation|TestTargetIdentity|TestEvidence)'],45))
+                run.save('native-tests.log',run.run(['docker','exec',cid,'/qualification/observe.test','-test.v','-test.run','^(TestNativeSelfObservation|TestNativeObservationExitedTarget|TestProcessParsing|TestObservation|TestBoundedObservation|TestTargetIdentity|TestJVMModule|TestEvidence)'],45))
                 run.save('native-runtime-test.log',run.run(['docker','exec',cid,'/qualification/app.test','-test.v','-test.run','^TestStandardRuntimeCollectors$'],15))
         ready_until=time.monotonic()+5
         while True:
@@ -170,16 +177,22 @@ def execute(run, plan):
             observers[role]=Observer(options)
         until=time.monotonic()+6
         while time.monotonic()<until:monitor();time.sleep(.05)
-        require(all(len(o.poll())>=3 for o in observers.values()),'preload observer unavailable')
+        hashes={Path(p).name:v for p,v in plan['inputs'].items()}
+        native=(run.root/'native-identity.txt').read_text().splitlines()
+        for role,observer in observers.items():
+            entries=observer.poll();series=[e for e in entries if 'files' in e]
+            require(len(series)>=2,'preload observer unavailable')
+            stream_report(series,role)
+            identity_options=dict(role=role,hashes=hashes,native=native)
+            observer_identity(entries[0],series[0],identity_options)
         for name in ('through','direct'):
             command=['docker','exec',containers['client'],'/qualification/client','-mode','trial','-backend','http://127.0.0.1:9200',
-                     '-prefix','m28-'+name,'-rate','50','-warm','20','-seconds','20','-mutation-reservation','1200']
+                     '-prefix','m28r-'+name,'-rate','50','-warm','20','-seconds','20','-mutation-reservation','1200']
             if name=='through':command+=['-target','127.0.0.1:7447']
             raw=run.run(command,65,monitor=True);run.save(name+'.jsonl',raw)
             entries=[json.loads(line) for line in raw.splitlines()]
-            trials=[entry['trial'] for entry in entries if entry.get('type')=='trial'];require(len(trials)==1,'trial missing')
-            for window in (trials[0]['warm'],trials[0]['measure']):require(not window['all']['failures'] and not window['all']['unknown'],'real safety/data/transport failure; no retry')
-            require(any(entry.get('type')=='audit' and entry['error']=='<nil>' for entry in entries),'DB audit missing/error')
+            _,client,_,_=trial_report(entries,name)
+            stream_report(client,'client')
             run.save('socket-'+name+'.log',run.run(['docker','exec',containers['es'],'/usr/bin/timeout','20','/bin/bash','--noprofile','--norc','/local-check.sh','main'],25))
         while any(o.child.poll() is None for o in observers.values()):
             require(time.monotonic()<started+300,'observer completion deadline');monitor();time.sleep(.05)
@@ -226,22 +239,21 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--evidence',type=Path,required=True);parser.add_argument('--owner',required=True)
     args=parser.parse_args();root=args.evidence.absolute()
     require(os.environ.get('WEIR_CAPACITY_INTEGRATION')=='1','explicit integration opt-in')
-    require(root.parent==common.REPO/'.testdata/m28' and not root.exists() and re.fullmatch('weir-m28-[a-z0-9-]{1,32}',args.owner),'new owned evidence path')
-    prior=[p for p in root.parent.glob('fixture-*') if p.is_dir()];require(len(prior)<3,'wiring corrections exhausted')
-    for attempt in prior:
-        previous=json.loads((attempt/'result.json').read_text())
-        require(previous['cleanup'] or (attempt/'owned-cleanup-proof.json').is_file(), 'previous owned cleanup unconfirmed')
-    if prior:require((root.parent/('correction-'+str(len(prior))+'.json')).is_file(),'explicit documented wiring correction required')
+    require(root.parent==common.REPO/'.testdata/m28r' and root.name=='fixture-1' and not root.exists() and
+            re.fullmatch('weir-m28r-[a-z0-9-]{1,32}',args.owner),'new owned M28R evidence path')
     window=root.parent/'native-window.json'
-    if not window.exists():window.write_text(json.dumps(dict(start_utc=time.time(),deadline_monotonic=time.monotonic()+900)))
+    native_window=dict(start_utc=time.time(),deadline_monotonic=time.monotonic()+900)
+    with window.open('x') as stream:
+        json.dump(native_window,stream)
     deadline=json.loads(window.read_text())['deadline_monotonic'];require(time.monotonic()<deadline,'total native window exhausted')
     root.mkdir(mode=0o700);(root/'docker-config').mkdir(mode=0o700);(root/'docker-config/config.json').write_text('{}\n')
     os.environ['DOCKER_CONFIG']=str(root/'docker-config');os.environ['DOCKER_HOST']='unix:///var/run/docker.sock'
     run=common.Run(root,None);run.save('node.json',loop.configuration());run.save('local-check.sh',local_check());run.save('es-start.sh',ES_START)
-    artifacts=common.REPO/'.testdata/m28/artifacts'
+    artifacts=root.parent/'artifacts'
     options=dict(root=root,artifacts=artifacts,owner=args.owner)
-    files=[p for p in artifacts.iterdir() if p.is_file()]+[root/'node.json',root/'local-check.sh',root/'es-start.sh',Path(__file__),common.REPO/'scripts/resource_report.py',common.REPO/'scripts/capacity_fixture.py',root.parent/'source-inputs.json']
-    plan=dict(fixture_deadline_monotonic=deadline,owner=args.owner,source=os.environ['WEIR_M28_SOURCE'],commands=commands(options),inputs={str(p):common.digest(p) for p in files},
+    files=[p for p in artifacts.iterdir() if p.is_file()]+[root/'node.json',root/'local-check.sh',root/'es-start.sh',root.parent/'source-inputs.json',root.parent/'artifacts.json']
+    files += sorted((common.REPO/'scripts').glob('*.py'))+sorted((common.REPO/'scripts').glob('*.sh'))+sorted((common.REPO/'scripts').glob('*.json'))
+    plan=dict(fixture_deadline_monotonic=deadline,owner=args.owner,source=os.environ['WEIR_M28R_SOURCE'],commands=commands(options),inputs={str(p):common.digest(p) for p in files},
               budget=json.loads((root.parent/'scope.json').read_text()),runtime='same-architecture native Linux arm64 Docker VM; binaries built on Darwin Go1.27.1 CGO0',
               observer_seconds=140,observer_samples=71,observer_expected_CLK_TCK=100,planned=6000,document_mutations=2400,seconds=900,cleanup_seconds=120)
     run.save('plan.json',plan);(root/'plan.json').chmod(0o400);run.save('plan.sha256',common.digest(root/'plan.json'))
