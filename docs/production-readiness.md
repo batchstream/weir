@@ -1,6 +1,15 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-28。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R](milestone-30r.md)补证在只读准备阶段 **NO-GO**：全集群 Pod 资源投影响应体在既有10秒请求截止内未完成，
+无法核定节点余量；按本轮失败停止约束未重试。实现/实际准备源码 `df2c1517…`，公开 image source仍 `4abc8761…`。
+已重新核验既有准确arm64 helper完整应用层/binary、204个Go/module及产品70/helper81构建输入；未重新下载或构建。
+普通全套169通过、优化144通过/25既有skip，最终普通/优化预检定向各12通过；新增离线夹具首败保留。
+没有冻结运行计划或native invocation，零namespace/Job/Pod创建、上传/exec/样本、DB/采样HTTP请求和文档工作量。
+6条只读CLI有完整退出记录，最终新GET确认本轮namespace不存在，无自有UID或进程残留。
+当前cluster/node身份已读回，但可用余量/CNI复查及三角色FD/PID/cgroup等仍unknown；旧值不当新事实。
+resource_evidence=partial/not-qualified、timing=not-run、candidate=null；所有其他required门槛不变。
+本轮只做本地提交，未push/Actions/发布；原M30 342文件及manifest hash保持，原失败不倒写。
 [M30](milestone-30.md)新镜像 EKS 无负载预检 **NO-GO**：准确M29 arm64 helper应用层已匿名完整取得并验证，
 但唯一native invocation在Job dry-run的bootstrap卷`readOnly:false`默认省略处严格拒绝。
 零持久Job/Pod、上传/exec/采样、索引PUT/seed/trial/文档mutation；本轮四个登记对象（含namespace）已删除，
