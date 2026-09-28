@@ -1,6 +1,14 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M32R2](milestone-32-remediation-2.md)修正资格脚本的原始起点/绝对截止关系，足额边界准入、真实不足及冻结漂移严格拒绝；正式时长、Go/module、70产品/82helper输入及workflow/pins均未改。
+本地完整普通264通过、优化236通过/28既有skip，各一次外层356.580/339.173秒，均≤360；207组小数/JSON/nextafter控制时钟回执保留，原60/120/900误拒与300逆运算反例未改写。
+实现/CI/image source `278264db2f9617ad583c6b56d19b8aaf5943e771` 的唯一 [run36493558434](https://github.com/batchstream/weir/actions/runs/36493558434) 四job成功：两native Linux各35条非缓存Go package PASS、264普通/236优化通过+28skip，实际Go→三消费者普通6/71/1350与优化两消费者执行。
+两包各两轮复现、4次匿名双架构全内容导出、6次准确native version/1秒pace/snapshot与owner清理通过，已公开完整sourceSHA标签。产品index `sha256:aee0c24fd5a0edbe81d335522e2741b34ca267f8246c893e15d6ef0097c18bb4`；helper index `sha256:364474990ae529650ac69a83f29e15cdbc82474c6eb5dca4ccb0d3cdf3874999`。
+本轮交付待统筹独立验收；旧M29 approvedImages/EKS接线未改。resource partial/not-qualified、timing not-run、candidate null、丢字节层unknown及其他required门槛保持。无EKS/aws/DB/负载/新本地容器/额外run或timer。
+
+以下保留各阶段当轮历史结果；旧报告中的当前/下一阶段描述不表示新授权或覆盖最新状态。
+
 [M32R](milestone-32-remediation.md)完成两项测试前提补救：离线计划与实际kubectl身份检查分离，合成consumer固定12秒总窗（4+4+4），正式Go/消费者/EOF/资源/SLO均未变。
 本地普通259通过、优化231通过/28项既有入口限制skip，实际Go→三消费者6/71/1350和优化两消费者通过；原5秒大流反例保留。
 实现/候选source `6e7b296d6460ccd4ed13843e2b1df35eb63caed5` 已普通推送，唯一 [run 36488063884](https://github.com/batchstream/weir/actions/runs/36488063884) 最终failure：amd64普通259通过、优化230通过/1failure/28skip；arm64普通257通过/2failure，优化未运行。
@@ -374,12 +382,12 @@ M16准确image连接自有Darwin Mongo8.0.32的历史证据不冒充新M17 image
 
 | 平台/架构 | build / reproducible | native-run/conformance | resource/lifecycle | ≥24h soak | 整体 qualified / 阻塞 |
 | --- | --- | --- | --- | --- | --- |
-| Linux amd64 | M29六目标binary/archive双次一致，两个Linux OCI公开发布；M17历史保留 | M29原生默认CGO0/race/vet/helper/Python与准确image版本、pace/snapshot smoke通过；后端conformance未验证，待统筹独立验收 | 未验证 | 未验证 | 否；仅原生离线测试和制品短启动，后端/资源/容量/24h仍未通过 |
-| Linux arm64 | M29六目标binary/archive双次一致，两个Linux OCI公开发布；M20历史保留 | M29原生默认CGO0/race/vet/helper/Python与准确image版本、pace/snapshot smoke通过；M20旧准确image/K8s1.36.4/ES8.19.22单副本已获有限独立验收；原M21失败保留；M21R旧image有限功能已独立验收，外层网络断言失败保留；M17历史保留 | M20参考单Pod规格已验收（stall3s）；M21小规格0.5CPU/384MiB、256MiB预算/default stall30s、5s关闭与有限资源回收已有限独立验收；M14R/M19R历史保留 | 未验证 | 否；M29未跑新image后端/EKS，M21R仅有限多worker功能获独立验收，参考三副本容量/跨机/24h未验证；OS安全与Linux Mongo内核阻塞 |
-| macOS amd64 | M29六目标双次编译/归档一致；M19R历史保留、仅Darwin链接purego | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
-| macOS arm64 | M29六目标双次编译/归档一致；M19R历史保留 | M19R旧准确归档TLS Mongo读写/UNKNOWN/取消/关闭；M17两Search历史资格保留 | M19R CGO0/race分列三轮footprint/迟滞/恢复，应用取消/Close；准确归档正常及在途SIGTERM通过；强压仅app test构建 | 未验证 | 否；只有本机短时资源证据，完整生产范围和长测未资格 |
-| Windows amd64 | M29六目标双次编译/归档一致；M17历史保留 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
-| Windows arm64 | M29六目标双次编译/归档一致；M17历史保留 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
+| Linux amd64 | M32R2六目标binary/archive及两个Linux OCI双次一致、公开完整sourceSHA标签；待统筹独立验收 | M32R2原生CGO0/race/vet/helper、264普通/236优化+28skip、实际Go管道及准确image版本/pace/snapshot通过；后端conformance未验证 | 未验证 | 未验证 | 否；M32R2仅原生离线测试和制品短启动，后端/资源/容量/24h仍未通过 |
+| Linux arm64 | M32R2六目标binary/archive及两个Linux OCI双次一致、公开完整sourceSHA标签；待统筹独立验收 | M32R2原生CGO0/race/vet/helper、264普通/236优化+28skip、实际Go管道及准确image版本/pace/snapshot通过；M20旧准确image/K8s1.36.4/ES8.19.22单副本已获有限独立验收；原M21失败保留；M21R旧image有限功能已独立验收，外层网络断言失败保留；M17历史保留 | M20参考单Pod规格已验收（stall3s）；M21小规格0.5CPU/384MiB、256MiB预算/default stall30s、5s关闭与有限资源回收已有限独立验收；M14R/M19R历史保留 | 未验证 | 否；M32R2未跑新image后端/EKS，M21R仅有限多worker功能获独立验收，参考三副本容量/跨机/24h未验证；OS安全与Linux Mongo内核阻塞 |
+| macOS amd64 | M32R2六目标双次编译/归档一致，待统筹独立验收；M19R历史保留、仅Darwin链接purego | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
+| macOS arm64 | M32R2六目标双次编译/归档一致，待统筹独立验收；M19R历史保留 | M19R旧准确归档TLS Mongo读写/UNKNOWN/取消/关闭；M17两Search历史资格保留 | M19R CGO0/race分列三轮footprint/迟滞/恢复，应用取消/Close；准确归档正常及在途SIGTERM通过；强压仅app test构建 | 未验证 | 否；只有本机短时资源证据，完整生产范围和长测未资格 |
+| Windows amd64 | M32R2六目标双次编译/归档一致，待统筹独立验收；M17历史保留 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
+| Windows arm64 | M32R2六目标双次编译/归档一致，待统筹独立验收；M17历史保留 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
 
 后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。M14 仅补 Linux 内存 profile 与有限原生运行证据，原失败和 [M14R 补救](milestone-14-remediation.md) 分别保留；无关挂载不再改变静态身份，只有完整可信的相关变化才永久闭锁。M15 本地可复现打包和有限准确产物运行已获独立验收。M16已获标准SBOM、冻结库扫描及必要补丁的有限独立验收；M17更新到ES8.19.22/OS2.19.6，功能/制品已获统筹有限独立验收，安全目标未闭环。M18有限调查及一个官方3.8.0候选比较已获统筹独立验收；部分入口条件已排除，JDK/插件剩余证据及最小官方上游路线明确，OpenSearch安全门槛仍blocked，活跃profile不变。M19调查历史保留；统筹明确允许固定purego上游内部机制后，M19R已接线当前footprint，并单列CGO0与CGO1有限原生证据，见补救报告；这不是整体资格。OS bundled JDK/插件安全阻断、其他平台原生运行、完整部署矩阵、跨物理机Kubernetes/版本升级、真实发布签名、独立安全审查、参考负载校准/长测仍 required。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
