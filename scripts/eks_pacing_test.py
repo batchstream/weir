@@ -67,6 +67,7 @@ def pod():
                   imageID=IMAGES["tool"]["reference"], state=dict(terminated=dict(exitCode=0, reason="Completed")))
     value = dict(metadata=dict(name="pace-0-test", namespace=plan()["namespace"], uid="pod-uid", labels={entry.LABEL: plan()["owner"]}, ownerReferences=[ref]),
                  spec=copy.deepcopy(template["spec"]["template"]["spec"]), status=dict(phase="Succeeded", containerStatuses=[status]))
+    value["spec"].update(priority=0, preemptionPolicy="PreemptLowerPriority")
     return value
 
 
@@ -119,6 +120,12 @@ class PureBoundaries(unittest.TestCase):
                      lambda p: p["metadata"]["ownerReferences"][0].update(uid="foreign"),
                      lambda p: p["status"]["containerStatuses"][0].update(imageID="sha256:wrong"),
                      lambda p: p["status"]["containerStatuses"][0].update(restartCount=1)]
+        mutations += [lambda p: p["spec"].update(nodeName=""), lambda p: p["spec"].pop("nodeName"),
+                      lambda p: p["spec"].update(nodeName="another-node"),
+                      lambda p: p["spec"].update(preemptionPolicy="Never"),
+                      lambda p: p["spec"].pop("preemptionPolicy"), lambda p: p["spec"].pop("priority"),
+                      lambda p: p["spec"].update(priority=1), lambda p: p["spec"].update(priority=False),
+                      lambda p: p["spec"].update(priorityClassName="injected")]
         for mutate in mutations:
             value = pod()
             mutate(value)
@@ -129,6 +136,20 @@ class PureBoundaries(unittest.TestCase):
         actual["spec"]["backoffLimit"] = 1
         with self.assertRaises(ValueError):
             entry.job_check(actual, template)
+
+    def test_template_omission_is_distinct_from_pod_admission_defaults(self):
+        frozen = plan()
+        template = entry.job_template(frozen, "version")
+        spec = template["spec"]["template"]["spec"]
+        for field in ("priority", "priorityClassName", "preemptionPolicy"):
+            self.assertNotIn(field, spec)
+        entry.job_check(template, template)
+        with self.assertRaises(ValueError):
+            entry.admitted_spec(spec, spec, pod=True)
+        for value in ("", None):
+            frozen["node"]["name"] = value
+            with self.assertRaises(ValueError):
+                entry.job_template(frozen, "version")
 
     def test_resource_unknown_is_not_zero_or_docker_qualification(self):
         result = resources([sample(0), sample(2)])
@@ -208,9 +229,18 @@ func main(){
         driver.write_text(source)
         metadata = dict(items=[dict(apiVersion="v1", kind="ConfigMap", metadata=dict(name="kube-root-ca.crt", uid="root-uid"), data=dict(marker="not-for-output")),
                                dict(apiVersion="v1", kind="ServiceAccount", metadata=dict(name="default", uid="sa-uid"))])
+        for name, labels in (("nil", None), ("empty", {}), ("owned", {entry.LABEL: "owner"})):
+            meta = dict(name=name, uid=name+"-uid", labels=labels)
+            obj = dict(apiVersion="v1", kind="ConfigMap", metadata=meta)
+            metadata["items"].append(obj)
         value = dict(pod(), apiVersion="v1", kind="Pod")
         value["spec"]["containers"][0]["env"].append(dict(name="INJECTED", value="not-for-output"))
-        for template, obj in ((entry.META_TEMPLATE, metadata), (entry.OBJECT_TEMPLATE, value)):
+        ref = dict(apiVersion="batch/v1", kind="Job", namespace=plan()["namespace"], name="version", uid="job-uid")
+        event_meta = dict(uid="event-uid", namespace=plan()["namespace"])
+        event = dict(metadata=event_meta, involvedObject=ref, reason="FailedCreate", message="admission refused", count=2,
+                     firstTimestamp="2026-09-28T00:00:00Z", lastTimestamp="2026-09-28T00:00:01Z")
+        event_list = dict(items=[event])
+        for template, obj in ((entry.META_TEMPLATE, metadata), (entry.OBJECT_TEMPLATE, value), (entry.EVENT_TEMPLATE, event_list)):
             filename = self.root/"input.json"
             filename.write_text(json.dumps(dict(Template=template, Object=obj)))
             process = subprocess.run([go, "run", str(driver), str(filename)], env=env, cwd=self.root,
@@ -218,10 +248,17 @@ func main(){
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertNotIn("not-for-output", process.stdout)
             if template == entry.META_TEMPLATE:
-                self.assertEqual(process.stdout, "v1|ConfigMap|kube-root-ca.crt|root-uid|||\nv1|ServiceAccount|default|sa-uid|||\n")
-            else:
+                self.assertEqual(process.stdout, "v1|ConfigMap|kube-root-ca.crt|root-uid|||\nv1|ServiceAccount|default|sa-uid|||\n"
+                                 "v1|ConfigMap|nil|nil-uid|||\nv1|ConfigMap|empty|empty-uid|||\nv1|ConfigMap|owned|owned-uid|owner||\n")
+            elif template == entry.OBJECT_TEMPLATE:
                 rendered = json.loads(process.stdout)
                 self.assertEqual(rendered["spec"]["containers"][0]["env"][-1]["value"], "REDACTED")
+            else:
+                rendered = json.loads(process.stdout)
+                self.assertEqual(rendered[0]["involvedObject"], ref)
+                self.assertEqual(rendered[0]["reason"], "FailedCreate")
+                self.assertEqual(rendered[0]["count"], 2)
+                self.assertIsNone(rendered[0]["series"])
 
     def test_bounded_children_timeout_output_and_signal(self):
         cases = [("import time; time.sleep(10)", .05), ("import os; os.write(1,b'x'*(9<<20))", 5),
@@ -325,6 +362,174 @@ def argparse_options(root):
     import argparse
     value = argparse.Namespace(plan_sha256=entry.digest(root/"plan.json"), node_uid="node-uid")
     return value
+
+
+class AdmissionFlow(unittest.TestCase):
+    """Run the real entry/child boundary with a local CLI, never cluster access."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        target = dict(context="offline-context", region="unused", cluster="unused")
+        self.run = entry.Run(self.root, target)
+        self.run.plan = plan()
+        cli = self.root/"kubectl"
+        cli.write_text("#!"+sys.executable+'''\nimport json, pathlib, sys
+root = pathlib.Path(__file__).parent
+args = sys.argv[1:]
+with (root/"calls.jsonl").open("a") as output:
+    output.write(json.dumps(args)+"\\n")
+assert args[:3] == ["--context", "offline-context", "--request-timeout=10s"]
+args = args[3:]
+if args[0] == "--namespace":
+    assert args[1] == "weir-qual-m25-offline"
+    args = args[2:]
+cfg = json.loads((root/"scenario.json").read_text())
+verb, kind = args[:2]
+if verb == "create":
+    obj = json.loads(pathlib.Path(args[args.index("-f")+1]).read_text())
+    obj["metadata"]["uid"] = "job-uid" if obj["kind"] == "Job" else "dry-uid"
+    if obj["kind"] == "Pod":
+        assert "--dry-run=server" in args
+        assert not obj["metadata"].get("ownerReferences")
+        if cfg.get("reject_pod"):
+            sys.stderr.write("synthetic Pod admission refused")
+            sys.exit(1)
+        obj["spec"].update(priority=0, preemptionPolicy="PreemptLowerPriority")
+        obj["spec"].update(cfg.get("pod_updates", {}))
+        if cfg.get("remove_node"):
+            obj["spec"].pop("nodeName")
+    if obj["kind"] == "Job" and "--dry-run=server" not in args:
+        (root/"actual-job.json").write_text(json.dumps(obj))
+    print(json.dumps(obj))
+elif verb == "get" and kind == "nodes":
+    print(json.dumps([cfg["node"]]))
+elif verb == "get" and kind == "pods":
+    pass
+elif verb == "get" and kind == "events":
+    assert "--field-selector=involvedObject.uid=job-uid" in args
+    print(json.dumps(cfg.get("events", [])))
+elif verb == "get" and kind == "Job":
+    if not (root/"deleted").exists():
+        obj = json.loads((root/"actual-job.json").read_text())
+        obj["status"] = cfg.get("job_status", {})
+        print(json.dumps(obj))
+elif verb == "delete":
+    assert kind == "--raw"
+    body = json.loads(pathlib.Path(args[-1]).read_text())
+    assert body["preconditions"] == {"uid": "job-uid"}
+    if cfg.get("reject_delete"):
+        sys.stderr.write("synthetic cleanup refused")
+        sys.exit(1)
+    (root/"deleted").touch()
+else:
+    raise AssertionError(args)
+''')
+        cli.chmod(0o700)
+        environment = dict(PATH=str(self.root)+os.pathsep+os.environ["PATH"])
+        patched = patch.dict(os.environ, environment)
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.configure()
+
+    def configure(self, **fields):
+        config = dict(node=node(), **fields)
+        (self.root/"scenario.json").write_text(json.dumps(config))
+
+    def calls(self):
+        filename = self.root/"calls.jsonl"
+        result = [json.loads(line) for line in filename.read_text().splitlines()] if filename.exists() else []
+        return result
+
+    def failed_event(self):
+        ref = dict(apiVersion="batch/v1", kind="Job", name="version", namespace=plan()["namespace"], uid="job-uid")
+        event = dict(uid="event-uid", namespace=plan()["namespace"], involvedObject=ref, reason="FailedCreate",
+                     message="synthetic controller admission refusal", count=3,
+                     firstTimestamp="2026-09-28T00:00:00Z", lastTimestamp="2026-09-28T00:00:01Z")
+        return event
+
+    def test_pod_dry_run_failure_prevents_real_job_or_pod_creation(self):
+        self.configure(reject_pod=True)
+        with self.assertRaisesRegex(ValueError, "exit 1"):
+            self.run.run_job("version")
+        creates = [args for args in self.calls() if "create" in args]
+        self.assertEqual(len(creates), 2)
+        self.assertTrue(all("--dry-run=server" in args for args in creates))
+        self.assertFalse((self.root/"actual-job.json").exists())
+        self.assertEqual(self.run.owned, [])
+        request = json.loads((self.root/"dry-run-Pod-version.json").read_text())
+        template = entry.job_template(plan(), "version")
+        self.assertEqual(request["spec"], template["spec"]["template"]["spec"])
+        self.assertNotIn("ownerReferences", request["metadata"])
+
+    def test_unexpected_pod_defaults_and_binding_stop_before_job_creation(self):
+        template = entry.job_template(plan(), "version")
+        container = template["spec"]["template"]["spec"]["containers"][0]
+        sidecar = dict(name="sidecar")
+        volume = dict(name="injected")
+        secret_ref = dict(name="unread")
+        env_from = dict(secretRef=secret_ref)
+        injected = dict(container, envFrom=[env_from])
+        changes = [dict(nodeName=""), dict(nodeName="other"), dict(preemptionPolicy="Never"), dict(priority=10),
+                   dict(priorityClassName="injected"), dict(containers=[container, sidecar]), dict(volumes=[volume]),
+                   dict(containers=[injected]), dict(hostNetwork=True), dict(hostPID=True), dict(dnsPolicy="ClusterFirst")]
+        for changed in changes:
+            with self.subTest(changed=changed):
+                self.configure(pod_updates=changed)
+                with self.assertRaises(ValueError):
+                    self.run.create(template)
+                self.assertFalse((self.root/"actual-job.json").exists())
+        self.configure(remove_node=True)
+        with self.assertRaises(ValueError):
+            self.run.create(template)
+        self.assertTrue(all("--dry-run=server" in args for args in self.calls() if "create" in args))
+
+    def test_changed_request_node_never_reaches_cli(self):
+        for value in ("", "another-node", None):
+            template = entry.job_template(plan(), "version")
+            template["spec"]["template"]["spec"]["nodeName"] = value
+            with self.assertRaisesRegex(ValueError, "template drift"):
+                self.run.create(template)
+        self.assertEqual(self.calls(), [])
+
+    def test_first_failed_create_stops_and_reclaims_exact_job(self):
+        event = self.failed_event()
+        self.configure(events=[event])
+        started = time.monotonic()
+        with self.assertRaisesRegex(ValueError, "Job FailedCreate"):
+            self.run.run_job("version")
+        self.assertLess(time.monotonic()-started, 10)
+        calls = self.calls()
+        self.assertEqual(sum("events" in args for args in calls), 1)
+        self.assertEqual(sum("create" in args and "--dry-run=server" not in args for args in calls), 1)
+        self.assertTrue((self.root/"deleted").exists())
+        evidence = json.loads((self.root/"version-failed-create.json").read_text())
+        self.assertEqual(evidence["events"], [event])
+
+    def test_foreign_event_uid_is_rejected_and_cleanup_error_preserves_original(self):
+        event = self.failed_event()
+        event["involvedObject"]["uid"] = "another-job"
+        self.configure(events=[event])
+        with self.assertRaisesRegex(ValueError, "Event UID/identity drift"):
+            self.run.run_job("version")
+        self.assertFalse((self.root/"version-failed-create.json").exists())
+        # A fresh local fixture state, not an application retry.
+        (self.root/"deleted").unlink()
+        event = self.failed_event()
+        self.configure(events=[event], reject_delete=True)
+        with self.assertRaisesRegex(ValueError, "Job FailedCreate"):
+            self.run.run_job("version")
+        errors = json.loads((self.root/"version-cleanup-errors.json").read_text())
+        self.assertIn("exit 1", errors[0])
+
+    def test_no_event_keeps_job_deadline_failure_fallback(self):
+        condition = dict(type="Failed", status="True", reason="DeadlineExceeded")
+        status = dict(conditions=[condition])
+        self.configure(job_status=status)
+        with self.assertRaisesRegex(ValueError, "Job controller failure"):
+            self.run.run_job("version")
+        self.assertTrue((self.root/"deleted").exists())
 
 
 if __name__ == "__main__":

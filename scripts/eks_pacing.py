@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explicit M25 preflight/run; no services, databases, arbitrary args or retries."""
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -28,6 +29,7 @@ KINDS = {"Namespace": ("v1", "namespaces"), "Job": ("batch/v1", "jobs"),
 JSON_TEMPLATE = '''{{define "json"}}{{$t := printf "%T" .}}{{if eq $t "map[string]interface {}"}}{ {{$first := true}}{{range $k,$v := .}}{{if not $first}},{{end}}{{$first = false}}{{printf "%q" $k}}:{{if eq $k "env"}}[{{range $i,$e := $v}}{{if $i}},{{end}}{"name":{{printf "%q" $e.name}},"value":{{if or (eq $e.name "GOMAXPROCS") (eq $e.name "WEIR_CAPACITY_INTEGRATION")}}{{template "json" $e.value}}{{else}}"REDACTED"{{end}}{{if $e.valueFrom}},"valueFrom":{{template "json" $e.valueFrom}}{{end}}}{{end}}]{{else}}{{template "json" $v}}{{end}}{{end}} }{{else if eq $t "[]interface {}"}}[{{range $i,$v := .}}{{if $i}},{{end}}{{template "json" $v}}{{end}}]{{else if eq $t "string"}}{{printf "%q" .}}{{else if eq $t "<nil>"}}null{{else}}{{.}}{{end}}{{end}}'''
 OBJECT_TEMPLATE = JSON_TEMPLATE + '''{"apiVersion":{{printf "%q" .apiVersion}},"kind":{{printf "%q" .kind}},"metadata":{"name":{{printf "%q" .metadata.name}},"namespace":{{template "json" .metadata.namespace}},"uid":{{template "json" .metadata.uid}},"labels":{{template "json" .metadata.labels}},"ownerReferences":{{template "json" .metadata.ownerReferences}}},"spec":{{template "json" .spec}},"status":{{template "json" .status}}}'''
 META_TEMPLATE = r'''{{range .items}}{{.apiVersion}}|{{.kind}}|{{.metadata.name}}|{{.metadata.uid}}|{{if .metadata.labels}}{{index .metadata.labels "qualification.weir.io/owner"}}{{end}}|{{range .metadata.ownerReferences}}{{.uid}},{{end}}|{{if .involvedObject}}{{.involvedObject.uid}}{{else if .regarding}}{{.regarding.uid}}{{end}}{{"\n"}}{{end}}'''
+EVENT_TEMPLATE = JSON_TEMPLATE + '''[{{range $i,$e := .items}}{{if $i}},{{end}}{"uid":{{template "json" .metadata.uid}},"namespace":{{template "json" .metadata.namespace}},"involvedObject":{{template "json" .involvedObject}},"reason":{{template "json" .reason}},"message":{{template "json" .message}},"count":{{template "json" .count}},"firstTimestamp":{{template "json" .firstTimestamp}},"lastTimestamp":{{template "json" .lastTimestamp}},"eventTime":{{template "json" .eventTime}},"series":{{template "json" .series}}}{{end}}]'''
 
 
 def digest(path):
@@ -50,6 +52,8 @@ def owner_check(obj, expected):
 
 
 def job_template(plan, step):
+    require(isinstance(plan["node"]["name"], str) and bool(plan["node"]["name"]) and
+            bool(plan["node"]["uid"]), "frozen node name/UID required")
     tool = step != "version"
     args = ["-mode", "snapshot"] if step == "snapshot" else ["-version"]
     if step.startswith("pace-"):
@@ -68,7 +72,7 @@ def job_template(plan, step):
         container["env"] = [dict(name="GOMAXPROCS", value="1"), dict(name="WEIR_CAPACITY_INTEGRATION", value="1")]
     spec = dict(nodeName=plan["node"]["name"], restartPolicy="Never", activeDeadlineSeconds=100,
                 terminationGracePeriodSeconds=10, automountServiceAccountToken=False, enableServiceLinks=False,
-                preemptionPolicy="Never", dnsPolicy="None", dnsConfig=dict(nameservers=["127.0.0.1"]),
+                dnsPolicy="None", dnsConfig=dict(nameservers=["127.0.0.1"]),
                 securityContext=dict(runAsNonRoot=True, runAsUser=65532, runAsGroup=65532,
                                      seccompProfile=dict(type="RuntimeDefault")), containers=[container])
     labels = {LABEL: plan["owner"]}
@@ -79,8 +83,11 @@ def job_template(plan, step):
     return result
 
 
-def admitted_spec(actual, expected):
+def admitted_spec(actual, expected, *, pod=False):
     """Reject unknown admission fields; allow only standard, inert API defaults."""
+    require(bool(expected.get("nodeName")), "frozen nodeName required")
+    require(not any(k in expected for k in ("preemptionPolicy", "priority", "priorityClassName")),
+            "priority fields must be omitted from the frozen template")
     extra = dict(actual)
     for key, value in expected.items():
         if key == "containers":
@@ -95,8 +102,15 @@ def admitted_spec(actual, expected):
             extra.pop(key)
         else:
             require(extra.pop(key, None) == value, "Pod admission drift: "+key)
+    # Job templates do not go through Pod Priority admission. Actual/dry-run
+    # Pods must contain its ordinary defaults, bound to the exact frozen node.
+    priority = extra.pop("priority", None if pod else 0)
+    require(type(priority) is int and priority == 0, "Pod priority drift/missing")
+    policy = extra.pop("preemptionPolicy", None if pod else "PreemptLowerPriority")
+    require(policy == "PreemptLowerPriority", "Pod preemption policy drift/missing")
+    require(extra.pop("priorityClassName", "") == "", "unexpected PriorityClass")
     defaults = dict(schedulerName="default-scheduler", serviceAccountName="default", serviceAccount="default",
-                    priority=0, hostNetwork=False, hostPID=False, hostIPC=False)
+                    hostNetwork=False, hostPID=False, hostIPC=False)
     for key, value in defaults.items():
         require(extra.pop(key, value) == value, "Pod default drift: "+key)
     # The API normally injects these two node-lifecycle tolerations. Freeze them
@@ -123,7 +137,7 @@ def pod_check(pod, options):
     refs = meta["ownerReferences"]
     require(len(refs) == 1 and refs[0]["uid"] == job["uid"] and refs[0]["name"] == job["name"] and
             refs[0]["kind"] == "Job" and refs[0]["apiVersion"] == "batch/v1" and refs[0]["controller"] is True, "Job to Pod owner chain")
-    admitted_spec(pod["spec"], template["spec"]["template"]["spec"])
+    admitted_spec(pod["spec"], template["spec"]["template"]["spec"], pod=True)
     status = pod.get("status") or {}
     require(not status.get("initContainerStatuses") and not status.get("ephemeralContainerStatuses"), "extra container statuses")
     statuses = status.get("containerStatuses", [])
@@ -276,6 +290,8 @@ class Run:
     def create(self, obj):
         kind, name = obj["kind"], obj["metadata"]["name"]
         require(kind in KINDS and kind != "Pod", "unsupported creation")
+        if kind == "Job":
+            require(obj == job_template(self.plan, name), "frozen Job template drift")
         namespace = None if kind == "Namespace" else self.plan["namespace"]
         filename = f"create-{kind}-{name}.json"
         self.save(filename, obj)
@@ -283,6 +299,7 @@ class Run:
         dry = json.loads(self.kube(args+["--dry-run=server"], namespace))
         if kind == "Job":
             job_check(dry, obj)
+            self.pod_dry_run(obj)
             self.check_node()
         # CREATE only; an AlreadyExists or ambiguous response is never adopted.
         result = json.loads(self.kube(args, namespace))
@@ -303,6 +320,42 @@ class Run:
             require(actual.get("podSelector") == {} and actual.get("policyTypes") == expected["policyTypes"] and
                     not actual.get("ingress") and not actual.get("egress"), "network policy admission drift")
         return entry
+
+    def pod_dry_run(self, job):
+        # This request tests Pod admission only. It has no fabricated controller
+        # UID and never falls back to persistent creation. The real chain is
+        # checked separately when the Job controller creates its Pod.
+        template = copy.deepcopy(job["spec"]["template"])
+        template["metadata"].update(name=job["metadata"]["name"]+"-admission", namespace=self.plan["namespace"])
+        request = dict(apiVersion="v1", kind="Pod", metadata=template["metadata"], spec=template["spec"])
+        filename = "dry-run-Pod-"+job["metadata"]["name"]+".json"
+        self.save(filename, request)
+        args = ["create", "--dry-run=server", "-f", str(self.root/filename), "-o", "go-template="+OBJECT_TEMPLATE]
+        response = json.loads(self.kube(args, self.plan["namespace"]))
+        self.save("admitted-Pod-"+job["metadata"]["name"]+".json", response)
+        meta = response["metadata"]
+        require(response["apiVersion"] == "v1" and response["kind"] == "Pod", "Pod dry-run kind drift")
+        require(all(meta.get(k) == v for k, v in request["metadata"].items()) and
+                not meta.get("ownerReferences"), "Pod dry-run metadata drift")
+        admitted_spec(response["spec"], request["spec"], pod=True)
+
+    def job_events(self, job):
+        args = ["get", "events", "--field-selector=involvedObject.uid="+job["uid"], "-o", "go-template="+EVENT_TEMPLATE]
+        events = json.loads(self.kube(args, self.plan["namespace"]))
+        require(isinstance(events, list) and len(events) <= 32, "Job Event count/type")
+        for event in events:
+            ref = event["involvedObject"]
+            expected = dict(uid=job["uid"], name=job["name"], namespace=self.plan["namespace"], kind="Job", apiVersion="batch/v1")
+            require(event["namespace"] == self.plan["namespace"] and
+                    all(ref.get(k) == v for k, v in expected.items()), "Job Event UID/identity drift")
+            require(isinstance(event["reason"], str) and len(event["reason"]) <= 256 and
+                    isinstance(event["message"], str) and len(event["message"]) <= 4096, "Job Event text bound")
+        failed = [event for event in events if event["reason"] == "FailedCreate"]
+        if failed:
+            filename = job["name"]+"-failed-create.json"
+            observed = dict(observed_at=time.time(), events=failed)
+            self.save(filename, observed)
+            raise ValueError("Job FailedCreate; see "+filename)
 
     def delete(self, entry):
         current = self.selected_object(entry["kind"], entry["name"])
@@ -378,13 +431,14 @@ class Run:
                         self.save("owned.json", self.owned)
                     pod_check(pod, options)
                     self.save(step+"-pod.json", pod)
-                    if pod["status"].get("phase") in ("Succeeded", "Failed"):
-                        raw = self.kube(["logs", "pod/"+names[0], "--container=probe", "--limit-bytes="+str(LIMIT), "--tail=-1"], self.plan["namespace"])
-                        self.save(step+"-raw.json", raw)
-                        require(len(raw.encode()) < LIMIT, "potentially truncated logs")
-                        require(pod["status"]["phase"] == "Succeeded", "Job failed")
-                        self.check_node()
-                        return json.loads(raw)
+                self.job_events(job)
+                if names and pod["status"].get("phase") in ("Succeeded", "Failed"):
+                    raw = self.kube(["logs", "pod/"+names[0], "--container=probe", "--limit-bytes="+str(LIMIT), "--tail=-1"], self.plan["namespace"])
+                    self.save(step+"-raw.json", raw)
+                    require(len(raw.encode()) < LIMIT, "potentially truncated logs")
+                    require(pod["status"]["phase"] == "Succeeded", "Job failed")
+                    self.check_node()
+                    return json.loads(raw)
                 job_state = self.selected_object("Job", job["name"])
                 owner_check(job_state, job)
                 require(not any(c["type"] == "Failed" and c["status"] == "True" for c in (job_state.get("status") or {}).get("conditions", [])), "Job controller failure")
@@ -402,7 +456,11 @@ class Run:
                 except BaseException as exc:
                     cleanup_errors.append(str(exc))
             if cleanup_errors:
-                self.diagnostic(step+"-cleanup-errors.json", cleanup_errors)
+                try:
+                    self.diagnostic(step+"-cleanup-errors.json", cleanup_errors)
+                except (OSError, ValueError):
+                    if failure is None:
+                        raise
                 if failure is None:
                     raise ValueError("Job cleanup failed: "+"; ".join(cleanup_errors))
 
@@ -448,7 +506,7 @@ def prepare(run, owner):
     require(cluster["arn"] == run.target["context"] and cluster["status"] == "ACTIVE", "cluster identity/status")
     require(not run.kube(["get", "namespace", owner, "--ignore-not-found", "-o", "name"]).strip(), "namespace collision")
     for kind, verbs in dict(namespaces=("create", "get", "delete"), jobs=("create", "get", "list", "delete"),
-                            pods=("get", "list", "delete"), resourcequotas=("create", "get", "delete"),
+                            pods=("create", "get", "list", "delete"), events=("list",), resourcequotas=("create", "get", "delete"),
                             networkpolicies=("create", "get", "delete"), **{"pods/log": ("get",)}).items():
         for verb in verbs:
             require(run.kube(["auth", "can-i", verb, kind], None if kind == "namespaces" else owner).strip() == "yes", "missing permission: "+verb+" "+kind)
