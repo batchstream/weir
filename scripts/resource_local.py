@@ -152,7 +152,17 @@ def execute(run, plan):
             if role=='client':
                 run.save('native-tests.log',run.run(['docker','exec',cid,'/qualification/observe.test','-test.v','-test.run','^(TestNativeSelfObservation|TestNativeObservationExitedTarget|TestProcessParsing|TestObservation|TestBoundedObservation|TestTargetIdentity|TestEvidence)'],45))
                 run.save('native-runtime-test.log',run.run(['docker','exec',cid,'/qualification/app.test','-test.v','-test.run','^TestStandardRuntimeCollectors$'],15))
-        run.run(['docker','exec',containers['weir'],'/qualification/weir','-probe','ready'],10)
+        ready_until=time.monotonic()+5
+        while True:
+            try:
+                run.run(['docker','exec',containers['weir'],'/qualification/weir','-probe','ready'],3)
+                break
+            except ValueError:
+                record=json.loads((run.root/f'command-{run.number:04d}.json').read_text())
+                actual=inspect(run,containers['weir'])
+                require(record['exit']==1 and actual['State']['Running'] and not actual['State']['OOMKilled'] and
+                        time.monotonic()<ready_until, 'Weir startup readiness deadline/exit')
+                time.sleep(.1)
         for role in ('weir','es'):
             command=['docker','exec','-i','--user','65532:65532' if role=='weir' else '1000:0',containers[role],
                      '/qualification/client','-mode','observe','-role',role,'-pid','1' if role=='weir' else 'java','-seconds','140']
