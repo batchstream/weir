@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """One frozen M26R same-Pod loopback attempt using only the M24 artifacts."""
 import argparse
+from datetime import datetime
 import ipaddress
 import json
 import os
@@ -21,9 +22,11 @@ ES = dict(reference="docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed
           config="sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160")
 MINIMUM = dict(cpu=7, memory=5632*1024**2, pods=3, **{"ephemeral-storage":5*1024**3})
 FILES = common.FILES + ("scripts/eks_resources_test.py", "scripts/eks_loopback.py", "scripts/eks_loopback_test.py",
+                        "scripts/eks_socket_diagnostics_test.py", "scripts/fixtures/eks-loopback-check-before-m26r3.sh",
                         "scripts/eks_loopback_admission_test.py", "scripts/eks_loopback_cli_fixture.py",
                         "scripts/fixtures/eks-loopback-admitted-job.json", "scripts/fixtures/README.md",
-                        "scripts/eks_loopback_check.sh", "scripts/eks_loopback_bootstrap.sh", "scripts/capacity_report_test.py", "deploy/kubernetes/node.example.json")
+                        "scripts/eks_loopback_check.sh", "scripts/eks_loopback_bootstrap.sh", "scripts/eks_loopback_diagnostic.sh",
+                        "scripts/capacity_report_test.py", "deploy/kubernetes/node.example.json")
 CURL = ["curl", "-q", "--silent", "--show-error", "--fail", "--noproxy", "*", "--proxy", "", "--proto", "=http",
         "--max-redirs", "0", "--retry", "0", "--connect-timeout", "1", "--max-time", "3", "--max-filesize", "262144"]
 
@@ -88,6 +91,8 @@ def pod_check(pod, options):
     common.admitted_spec(pod["spec"],template["spec"]["template"]["spec"],pod=True)
     status = pod.get("status") or {}
     require(not status.get("ephemeralContainerStatuses"),"injected ephemeral runtime")
+    outcomes = container_outcomes(status)
+    require(not outcomes["failures"], "container failure: "+json.dumps(outcomes, sort_keys=True))
     complete = True
     for key,names in (("containerStatuses",("weir","qualification")),("initContainerStatuses",("elasticsearch","bootstrap"))):
         states = status.get(key,[])
@@ -95,14 +100,11 @@ def pod_check(pod, options):
         complete &= len(states)==len(names)
         for state in states:
             name = state["name"]
-            require(state["restartCount"]==0 and not state.get("lastState"),"container restart/history: "+name)
             image = ES if name in ("elasticsearch","bootstrap") else IMAGES["version" if name=="weir" else "tool"]
             if state.get("imageID"):
                 require(state["imageID"] in {image["reference"],image["reference"].split("@")[0]+"@"+image["manifest"]},"imageID drift")
             live = bool(state.get("state",{}).get("running"))
             terminated = state.get("state",{}).get("terminated")
-            if terminated:
-                require(name=="bootstrap" and terminated["exitCode"]==0 and terminated["reason"]=="Completed","container terminated/OOM: "+name)
             ready = bool(terminated) if name=="bootstrap" else live
             if name=="elasticsearch": ready &= state.get("started") is True
             if name=="weir": ready &= state.get("ready") is True
@@ -121,6 +123,40 @@ def pod_check(pod, options):
         wanted = dict(cpu=6, memory=4608*1024**2, **{"ephemeral-storage":2560*1024**2})
         require(effective==wanted,"actual admitted resource peak drift")
     return complete
+
+
+def container_outcomes(status):
+    """Report all observations before rejecting; finish order is not causality."""
+    rows = []
+    failures = []
+    finished = []
+    for key in ("initContainerStatuses", "containerStatuses"):
+        for state in status.get(key, []):
+            terminal = state.get("state", {}).get("terminated")
+            row = dict(name=state["name"], restartCount=state.get("restartCount"),
+                       lastState=state.get("lastState"), state=state.get("state"))
+            rows.append(row)
+            failed = state.get("restartCount") != 0 or bool(state.get("lastState"))
+            if terminal:
+                failed |= not (state["name"] == "bootstrap" and terminal.get("exitCode") == 0 and terminal.get("reason") == "Completed")
+            if failed:
+                failures.append(state["name"])
+                try:
+                    moment = datetime.fromisoformat(terminal["finishedAt"].replace("Z", "+00:00"))
+                    require(moment.tzinfo is not None, "missing timezone")
+                    # A previous restart may have failed earlier than this state.
+                    require(state.get("restartCount") == 0 and not state.get("lastState"), "prior state")
+                    finished.append((moment, state["name"]))
+                except (AttributeError, KeyError, TypeError, ValueError):
+                    pass
+    earliest = None
+    if finished and len(finished) == len(failures):
+        finished.sort()
+        if len(finished) == 1 or finished[0][0] < finished[1][0]:
+            earliest = finished[0][1]
+    result = dict(containers=sorted(rows, key=lambda row: row["name"]), failures=sorted(failures),
+                  earliest_failed_finish=earliest, ordering="finishedAt only; cause and cleanup attribution unknown")
+    return result
 
 
 class Run(common.Run):
@@ -153,6 +189,7 @@ class Run(common.Run):
             self.save("owned.json",self.owned)
         self.save(f"pod-observation-{self.number}.json",pod)
         status = pod.get("status") or {}
+        self.save(f"container-outcomes-{self.number}.json", container_outcomes(status))
         if any(s.get("containerID") for key in ("containerStatuses", "initContainerStatuses") for s in status.get(key, [])):
             self.runtime_evidence = True
         options = dict(job=self.job,template=self.template,pod_uid=self.pod_entry["uid"] if self.pod_entry else None)
@@ -191,8 +228,8 @@ class Run(common.Run):
         self.save(f"boundary-{self.number}.txt",raw)
         self.exec_owned("weir",["/weir","-probe","ready"])
         sample = json.loads(self.exec_owned("qualification",["/qualification","-mode","snapshot"]))
-        network_check(sample["files"], require_listeners=True)
         self.save(f"client-snapshot-{self.number}.json",sample)
+        network_check(sample["files"], require_listeners=True)
         return pod
 
     def diagnostics(self, name):
@@ -206,16 +243,24 @@ class Run(common.Run):
 
 
 def network_check(files, require_listeners=False):
+    # The fixed helper captures TCP only; UDP is checked by the shell boundary.
     listeners = set()
     loop = {"0100007F","0000000000000000FFFF00000100007F"}
     for key in ("net/tcp","net/tcp6"):
-        lines=files[key].splitlines()
-        require(lines and "local_address" in lines[0],"TCP evidence missing")
+        raw = files.get(key)
+        evidence = dict(table=key, atomic=False, process="unknown", raw=raw[:65537] if isinstance(raw, str) else raw)
+        context = json.dumps(evidence)
+        require(isinstance(raw, str) and 0 < len(raw.encode()) <= 65536, "socket evidence missing/byte limit: "+context)
+        lines=raw.splitlines()
+        require(raw.endswith("\n") and len(lines) <= 256 and "local_address" in lines[0] and "inode" in lines[0], "socket evidence incomplete/header/line limit: "+context)
         for row in lines[1:]:
-            parts=row.split(); require(len(parts)>=10,"malformed socket row")
+            if not row:
+                continue
+            parts=row.split(); require(len(parts)>=10,"short-row exit=33: "+context)
             local,remote,state=parts[1:4]
-            require(local.split(":")[0] in loop,"nonloopback local socket")
-            require(remote.split(":")[0] in loop|{"00000000","0"*32},"nonloopback peer socket")
+            details = json.dumps(dict(table=key, raw=row, local=local, remote=remote, state=state, uid=parts[7], inode=parts[9], process="unknown"))
+            require(local.split(":")[0] in loop,"tcp-local-address exit=23: "+details+" snapshot="+context)
+            require(remote.split(":")[0] in loop|{"00000000","0"*32},"tcp-peer-address exit=24: "+details+" snapshot="+context)
             if state=="0A": listeners.add(int(local.split(":")[1],16))
     require(listeners <= {7447,7449,9200,9300},"unexpected listener")
     require(not require_listeners or listeners=={7447,7449,9200,9300},"required listeners missing")
@@ -436,9 +481,11 @@ def execute(run, options):
                     pod=run.selected_object("Pod",run.pod_entry["name"])
                     identity=dict(job=run.job,template=run.template,pod_uid=run.pod_entry["uid"])
                     common.pod_identity(pod,identity)
+                    run.save("final-pod.json",pod)
+                    run.save("final-container-outcomes.json",container_outcomes(pod.get("status") or {}))
                     raw=run.kube(["logs",run.pod_entry["name"],"--container="+name,"--limit-bytes="+str(common.LIMIT),"--tail=-1"],plan["namespace"])
                     run.save("final-"+name+".log",raw)
-                    run.save("final-pod.json",pod)
+                    require(len(raw.encode()) < common.LIMIT,"potentially truncated container log")
                 except BaseException as exc:run.save("final-"+name+"-error.json",dict(error=str(exc)))
         result["cleanup"]=run.cleanup()
         result["remote_elapsed_seconds"]=time.monotonic()-run.remote_started if run.remote_started else 0
