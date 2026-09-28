@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 import eks_pacing as entry
+from eks_loopback_cli_fixture import resource_name
 from eks_pacing_report import HISTOGRAMS, IMAGES, node_gate, pacing, resources
 from capacity_report_test import sample as old_sample, metrics as old_metrics
 
@@ -792,7 +793,7 @@ class CleanupReplay(unittest.TestCase):
             self.run.foreign_check(self.fixture["rows"])
         owned_before = copy.deepcopy(self.run.owned)
         rows = self.run.inventory()
-        self.assertEqual(rows, [r for r in self.fixture["rows"] if r[1] != "PodMetrics"])
+        self.assertCountEqual(rows, [r for r in self.fixture["rows"] if r[1] != "PodMetrics"])
         self.run.foreign_check(rows)
         self.assertEqual(self.run.owned, owned_before)
         classified = json.loads(next(self.root.glob("inventory-classified-*.json")).read_text())
@@ -873,6 +874,9 @@ class CleanupReplay(unittest.TestCase):
             with self.subTest(index=index, field=field, value=value):
                 self.cfg["cleanup_rows"] = copy.deepcopy(original)
                 self.cfg["cleanup_rows"][index][field] = value
+                resource = resource_name(self.cfg["cleanup_rows"][index])
+                if resource not in self.cfg["api_resources"]:
+                    self.cfg["api_resources"].append(resource)
                 self.configure()
                 (self.root/"state.json").write_text(json.dumps(self.cfg["cleanup_objects"]))
                 result = self.run.cleanup()
@@ -886,7 +890,7 @@ class CleanupReplay(unittest.TestCase):
 
     def test_discovery_mutation_missing_failure_and_secret_count_fail_closed(self):
         original = copy.deepcopy(self.cfg)
-        for scenario in ("mutation", "missing", "failure", "secret", "secret-missing", "secret-hard", "quota-owner", "missing-discovery"):
+        for scenario in ("mutation", "missing", "failure", "secret", "secret-missing", "secret-hard", "quota-owner", "discovery-identity"):
             with self.subTest(scenario=scenario):
                 self.cfg = copy.deepcopy(original)
                 if scenario == "mutation":
@@ -895,8 +899,8 @@ class CleanupReplay(unittest.TestCase):
                     self.cfg["discovery"]["resources"] = []
                 elif scenario == "failure":
                     self.cfg["discovery_failure"] = True
-                elif scenario == "missing-discovery":
-                    self.cfg["api_resources"].remove("pods.metrics.k8s.io")
+                elif scenario == "discovery-identity":
+                    self.cfg["discovery"]["groupVersion"] = "metrics.k8s.io/v9"
                 elif scenario == "secret":
                     self.cfg["cleanup_objects"]["ResourceQuota/budget"]["status"]["used"]["count/secrets"] = "1"
                 elif scenario == "secret-missing":
@@ -1004,7 +1008,7 @@ class CleanupReplay(unittest.TestCase):
         self.assertEqual([json.loads(Path(c[-1]).read_text())["preconditions"]["uid"] for c in deletes],
                          [e["uid"] for kind in ("ResourceQuota", "Namespace") for e in frozen["owned"] if e["kind"] == kind])
         self.assertEqual(sum("api-resources" in c for c in self.calls()), 1)
-        self.assertEqual(sum("go-template="+entry.META_TEMPLATE in c for c in self.calls()), 4)
+        self.assertEqual(sum("go-template="+entry.META_TEMPLATE in c for c in self.calls()), 13)
         before = self.calls()
         with self.assertRaisesRegex(ValueError, "already invoked"):
             eks_cleanup.execute(self.root, entry.digest(self.root/"plan.json"))
@@ -1033,6 +1037,9 @@ class CleanupReplay(unittest.TestCase):
                     else:
                         row = ["unknown.test/v1", "UnknownPersistent", "foreign", "new-uid", frozen["owner"], "", "", frozen["namespace"]]
                     self.cfg["cleanup_rows"].append(row)
+                    resource = resource_name(row)
+                    if resource not in self.cfg["api_resources"]:
+                        self.cfg["api_resources"].append(resource)
                     if scenario == "Pod":
                         meta = dict(name=historical["name"], uid=historical["uid"])
                         self.cfg["cleanup_objects"]["Pod/"+historical["name"]] = dict(metadata=meta)
@@ -1115,6 +1122,185 @@ class CleanupReplay(unittest.TestCase):
         result = self.execute_stopped(frozen)
         self.assertFalse(result["confirmed"], result)
         self.assertEqual(sum("delete" in c for c in self.calls()), 2)
+
+    def test_all_61_types_once_with_rows_in_their_requested_batches(self):
+        self.run.inventory()
+        batches = []
+        observed = []
+        for path in sorted(self.root.glob("command-*.json")):
+            record = json.loads(path.read_text())
+            args = record["argv"]
+            if "go-template="+entry.META_TEMPLATE not in args:
+                continue
+            requested = args[args.index("get")+1].split(",")
+            batches.append(requested)
+            rows = [line.split("|") for line in path.with_suffix(".out").read_text().splitlines()]
+            self.assertTrue(all(resource_name(row) in requested for row in rows))
+            observed.extend(row[:7] for row in rows)
+        catalog = [n for n in self.fixture["api_resources"] if n != "secrets"]
+        self.assertEqual(len(catalog), 61)
+        self.assertEqual([n for batch in batches for n in batch], catalog)
+        self.assertEqual([len(batch) for batch in batches], [5]*12+[1])
+        self.assertCountEqual(observed, self.fixture["rows"])
+        self.assertFalse(any("secrets" in batch for batch in batches))
+
+    def test_last_single_type_and_late_unknown_object_are_checked(self):
+        for resource, version, kind in (("securitygrouppolicies.vpcresources.k8s.aws", "vpcresources.k8s.aws/v1beta1", "SecurityGroupPolicy"),
+                                        ("unknownpersistents.unknown.test", "unknown.test/v1", "UnknownPersistent")):
+            with self.subTest(resource=resource):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                if resource not in self.cfg["api_resources"]:
+                    self.cfg["api_resources"].append(resource)
+                row = [version, kind, "late", "foreign-uid", "", "", "", frozen["namespace"]]
+                self.cfg["cleanup_rows"].append(row)
+                result = self.execute_stopped(frozen)
+                self.assertFalse(result["confirmed"], result)
+                self.assertIn("foreign resource", result["error"])
+                self.assertFalse(any("delete" in c for c in self.calls()))
+                batches = [c for c in self.calls() if "go-template="+entry.META_TEMPLATE in c]
+                self.assertIn(resource, batches[-1][batches[-1].index("get")+1].split(","))
+
+    def test_first_middle_last_batch_fault_stops_without_partial_acceptance(self):
+        real_clock = time.monotonic
+        for resource in ("configmaps", "elasticsearches.elasticsearch.k8s.elastic.co", "securitygrouppolicies.vpcresources.k8s.aws"):
+            for mode in ("failure", "timeout", "truncated", "malformed", "overflow"):
+                with self.subTest(resource=resource, mode=mode):
+                    self.setUp()
+                    frozen = self.stopped_plan(2)
+                    frozen["seconds"] = 300
+                    self.cfg["inventory_fault"] = dict(resource=resource, mode=mode)
+                    # One virtual second is 50 ms for every CLI and deadline.
+                    start = real_clock()
+                    def scaled_clock():
+                        return start+(real_clock()-start)*20
+                    with patch("time.monotonic", side_effect=scaled_clock):
+                        result = self.execute_stopped(frozen)
+                    self.assertFalse(result["confirmed"], result)
+                    self.assertFalse(any("delete" in c for c in self.calls()))
+                    self.assertFalse((self.root/"cleanup-final-inventory.json").exists())
+                    batches = [c for c in self.calls() if "go-template="+entry.META_TEMPLATE in c]
+                    self.assertIn(resource, batches[-1][batches[-1].index("get")+1].split(","))
+                    records = [json.loads(p.read_text()) for p in sorted(self.root.glob("command-*.json"))]
+                    if mode == "timeout":
+                        self.assertEqual(records[-1]["exit"], -15)
+
+    def test_fixed_startup_plus_per_api_cost_old20_fails_new5_passes(self):
+        # Virtual cost 2s startup + 1.05s/API: 20 types cost 23s, five 7.25s.
+        # Scale both real child sleep and the shared clock by 20. Production
+        # run(timeout=25), 21s execution and 4s Stop/Wait are unchanged.
+        self.cfg["inventory_delay"] = dict(startup=.1, per_api=.0525)
+        self.configure()
+        real_clock = time.monotonic
+        start = real_clock()
+        def scaled_clock():
+            return start+(real_clock()-start)*20
+        self.run.cleaning = True
+        old_args = ["get", ",".join(self.fixture["api_resources"][:20]), "-o", "go-template="+entry.META_TEMPLATE]
+        with patch("time.monotonic", side_effect=scaled_clock):
+            with patch("eks_pacing.stop_group", wraps=entry.stop_group) as stop:
+                with self.assertRaisesRegex(ValueError, "command timeout"):
+                    self.run.kube(old_args, self.fixture["namespace"])
+            self.assertEqual(stop.call_count, 1)
+            self.assertEqual(stop.call_args.args[0].returncode, -15)
+            old_record = json.loads((self.root/"command-0001.json").read_text())
+            self.assertGreaterEqual(old_record["monotonic_end"]-old_record["monotonic_start"], 21)
+            with patch("eks_pacing.stop_group", wraps=entry.stop_group) as stop:
+                rows = self.run.inventory()
+            self.assertTrue(all(c.args[0].returncode == 0 for c in stop.call_args_list))
+        self.assertCountEqual(rows, [r for r in self.fixture["rows"] if r[1] != "PodMetrics"])
+        self.assertEqual(sum("go-template="+entry.META_TEMPLATE in c for c in self.calls()), 14)
+
+    def test_300_second_plan_keeps_original_deadline_and_single_invocation(self):
+        import eks_cleanup
+        frozen = self.stopped_plan(2)
+        frozen["seconds"] = 300
+        result = self.execute_stopped(frozen)
+        self.assertTrue(result["confirmed"], result)
+        invocation = json.loads((self.root/"invocation.json").read_text())
+        budget = json.loads((self.root/"cleanup-budget.json").read_text())
+        self.assertEqual(invocation["deadline"]-invocation["monotonic_start"], 300)
+        self.assertEqual(budget["deadline"], invocation["deadline"])
+        self.assertEqual(budget["objects_deadline"], invocation["deadline"]-45)
+        before = self.calls()
+        with self.assertRaisesRegex(ValueError, "already invoked"):
+            eks_cleanup.execute(self.root, entry.digest(self.root/"plan.json"))
+        self.assertEqual(self.calls(), before)
+
+    def test_total_deadline_and_namespace_reserve_cannot_fund_inventory(self):
+        real_clock = time.monotonic
+        original_run = entry.Run.run
+        for elapsed in (255, 300):
+            with self.subTest(elapsed=elapsed):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                frozen["seconds"] = 300
+                offset = [0]
+                def clock():
+                    return real_clock()+offset[0]
+                def consume_inventory(run, argv, timeout=25, *, monitor=False):
+                    raw = original_run(run, argv, timeout, monitor=monitor)
+                    if "go-template="+entry.META_TEMPLATE in argv:
+                        offset[0] = elapsed
+                    return raw
+                with patch("time.monotonic", side_effect=clock), patch.object(entry.Run, "run", consume_inventory):
+                    result = self.execute_stopped(frozen)
+                self.assertFalse(result["confirmed"], result)
+                self.assertFalse(any("delete" in c for c in self.calls()))
+
+    def test_inventory_output_save_failure_prevents_deletes(self):
+        frozen = self.stopped_plan(2)
+        original_save = entry.Run.save
+        def fail_output(run, name, data):
+            if name == "command-0010.out":
+                raise OSError("disk full during first inventory output")
+            return original_save(run, name, data)
+        with patch.object(entry.Run, "save", fail_output):
+            result = self.execute_stopped(frozen)
+        self.assertFalse(result["confirmed"], result)
+        self.assertFalse(any("delete" in c for c in self.calls()))
+        self.assertIn("disk full", result["diagnostic_errors"][0])
+
+    def test_uncertain_delete_or_lost_evidence_never_replays_or_deletes_namespace(self):
+        original_save = entry.Run.save
+        for scenario in ("refused", "lost-evidence"):
+            with self.subTest(scenario=scenario):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                self.cfg["refuse_delete"] = scenario == "refused"
+                def save(run, name, data):
+                    if scenario == "lost-evidence" and run.mutation_attempted and name.endswith(".out"):
+                        raise OSError("DELETE output evidence lost")
+                    return original_save(run, name, data)
+                with patch.object(entry.Run, "save", save):
+                    result = self.execute_stopped(frozen)
+                self.assertFalse(result["confirmed"], result)
+                deletes = [i for i, c in enumerate(self.calls()) if "delete" in c]
+                self.assertEqual(len(deletes), 1)
+                self.assertTrue(all("get" in c for c in self.calls()[deletes[0]+1:]))
+                self.assertTrue(self.calls()[deletes[0]+1:])
+                body = json.loads(Path(self.calls()[deletes[0]][-1]).read_text())
+                quota = next(e for e in frozen["owned"] if e["kind"] == "ResourceQuota")
+                self.assertEqual(body["preconditions"]["uid"], quota["uid"])
+
+    def test_frozen_budget_and_input_tampering_refused_before_cli(self):
+        import eks_cleanup
+        for scenario in ("hash", "input", "unsupported-budget"):
+            with self.subTest(scenario=scenario):
+                self.setUp()
+                frozen = self.stopped_plan(2)
+                frozen["seconds"] = 300 if scenario != "unsupported-budget" else 301
+                (self.root/"plan.json").write_text(json.dumps(frozen))
+                expected = entry.digest(self.root/"plan.json")
+                if scenario == "hash":
+                    frozen["seconds"] = 180
+                    (self.root/"plan.json").write_text(json.dumps(frozen))
+                elif scenario == "input":
+                    Path(frozen["original_owned"]).write_text("[]")
+                (self.root/"plan.json").chmod(0o400)
+                with self.assertRaises(ValueError):
+                    eks_cleanup.execute(self.root, expected)
+                self.assertEqual(self.calls(), [])
 
     def test_stopped_partition_must_match_frozen_original_evidence(self):
         import eks_cleanup

@@ -8,6 +8,14 @@ import sys
 import time
 
 
+def resource_name(row):
+    version, kind = row[:2]
+    plurals = dict(ConfigMap="configmaps", ResourceQuota="resourcequotas", ServiceAccount="serviceaccounts",
+                   NetworkPolicy="networkpolicies", PodMetrics="pods", SecurityGroupPolicy="securitygrouppolicies")
+    plural = plurals.get(kind, kind.lower()+"s")
+    return plural+("."+version.split("/")[0] if "/" in version else "")
+
+
 def main():
     root = Path(sys.argv[0]).parent
     cfg = json.loads((root/"scenario.json").read_text())
@@ -77,6 +85,49 @@ def main():
                 raise ValueError("Pod scope")
             response = dict(kind="List", apiVersion="v1", itemsType="[]interface {}", remainingItemCount=None, items=[], **{"continue":None})
             print(json.dumps(response))
+        elif any(a.startswith("go-template={{range .items}}") for a in args):
+            requested = kind.split(",")
+            if "secrets" in requested:
+                raise ValueError("Secret query prohibited")
+            delay = cfg.get("inventory_delay")
+            if delay:
+                time.sleep(delay["startup"]+delay["per_api"]*len(requested))
+            fault = cfg.get("inventory_fault", {})
+            if fault.get("resource") in requested:
+                mode = fault["mode"]
+                if mode == "timeout":
+                    time.sleep(40)
+                elif mode == "overflow":
+                    os.write(1, b"x"*(9 << 20))
+                elif mode == "truncated":
+                    print("v1|Event|cut", end="", flush=True)
+                    return
+                elif mode == "malformed":
+                    print("v1|Event|cut", flush=True)
+                    return
+                raise ValueError("incomplete inventory batch")
+            if cfg.get("inventory_failure_batch") in requested:
+                raise ValueError("incomplete inventory batch")
+            if "cleanup_rows" in cfg:
+                rows = cfg["cleanup_rows"]
+                if cfg.get("foreign_after_delete") and len(state) < len(cfg["cleanup_objects"]):
+                    rows = rows+[cfg["foreign_after_delete"]]
+            else:
+                rows = []
+                for obj in state.values():
+                    if obj["kind"] == "Namespace":
+                        continue
+                    meta = obj["metadata"]
+                    refs = "".join(r["uid"]+"," for r in meta.get("ownerReferences") or [])
+                    rows.append([obj["apiVersion"], obj["kind"], meta["name"], meta["uid"],
+                                 meta["labels"][cfg["label"]], refs, "", meta["namespace"]])
+            for row in rows:
+                if resource_name(row) not in requested:
+                    continue
+                key = row[1]+"/"+row[2]
+                if key in cfg.get("cleanup_objects", {}) and key not in state:
+                    continue
+                print("|".join(row))
         elif kind == "pods" and cfg.get("cleanup_objects"):
             for key, obj in state.items():
                 if key.startswith("Pod/"):
@@ -88,27 +139,6 @@ def main():
             print("[]")
         elif kind == "daemonset":
             print("aws-node synthetic --enable-network-policy=false")
-        elif "," in kind and cfg.get("cleanup_rows"):
-            if "secrets" in kind.split(","):
-                raise ValueError("Secret query prohibited")
-            if cfg.get("inventory_failure_batch") in kind.split(","):
-                raise ValueError("incomplete inventory batch")
-            # Retained original CLI output is one complete multi-resource list.
-            rows = cfg["cleanup_rows"] if "configmaps" in kind.split(",") else []
-            if cfg.get("foreign_after_delete") and len(state) < len(cfg["cleanup_objects"]):
-                rows = rows+[cfg["foreign_after_delete"]]
-            for row in rows:
-                key = row[1]+"/"+row[2]
-                if key in cfg["cleanup_objects"] and key not in state:
-                    continue
-                print("|".join(row))
-        elif "," in kind:
-            for obj in state.values():
-                if obj["kind"] == "Namespace":
-                    continue
-                meta = obj["metadata"]
-                refs = "".join(r["uid"]+"," for r in meta.get("ownerReferences") or [])
-                print("|".join([obj["apiVersion"],obj["kind"],meta["name"],meta["uid"],meta["labels"][cfg["label"]],refs,"",meta["namespace"]]))
         else:
             key = ("Namespace" if kind == "namespace" else kind)+"/"+args[2]
             if key.startswith("Namespace/") and key not in state and cfg.get("namespace_readback_failure"):

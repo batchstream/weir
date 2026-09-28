@@ -528,7 +528,8 @@ class Run:
 
     def inventory(self):
         names = self.kube(["api-resources", "--namespaced=true", "--verbs=list", "-o", "name"]).split()
-        require(names and all(re.fullmatch(r"[a-z][a-z0-9.-]*", n) for n in names), "API discovery")
+        require(names and len(names) == len(set(names)) and
+                all(re.fullmatch(r"[a-z][a-z0-9.-]*", n) for n in names), "API discovery")
         names = [n for n in names if n != "secrets"]
         metrics = None
         if "pods.metrics.k8s.io" in names:
@@ -552,11 +553,13 @@ class Run:
         # Small sequential batches keep a large API catalog within each CLI's
         # time limit without filtering out unknown lifecycle resources.
         rows = []
-        for start in range(0, len(names), 20):
-            raw = self.kube(["get", ",".join(names[start:start+20]), "-o", "go-template="+META_TEMPLATE], self.plan["namespace"])
-            rows.extend(r.split("|") for r in raw.splitlines())
+        for start in range(0, len(names), 5):
+            raw = self.kube(["get", ",".join(names[start:start+5]), "-o", "go-template="+META_TEMPLATE], self.plan["namespace"])
+            batch = [r.split("|") for r in raw.splitlines()]
+            require((not raw or raw.endswith("\n")) and
+                    all(len(r) == 8 and r[7] == self.plan["namespace"] for r in batch), "inventory namespace/projection")
+            rows.extend(batch)
         self.save(f"inventory-raw-{self.number:04d}.json", rows)
-        require(all(len(r) == 8 and r[7] == self.plan["namespace"] for r in rows), "inventory namespace/projection")
         persistent, views = [], []
         for row in rows:
             if row[:2] == ["metrics.k8s.io/v1beta1", "PodMetrics"]:
@@ -653,7 +656,7 @@ class Run:
             return result
         deleting = None
         overall_deadline = self.deadline
-        # Leave 45 seconds of the same 180-second budget for namespace DELETE
+        # Leave 45 seconds of the same cleanup budget for namespace DELETE
         # and successful absence readback, including the CLI Stop/Wait reserve.
         self.deadline = overall_deadline-45
         try:

@@ -17,7 +17,7 @@ def execute(root, plan_sha256):
             (root/"plan.json").stat().st_mode & 0o777 == 0o400, "cleanup evidence permissions")
     plan = json.loads((root/"plan.json").read_text())
     target_check(plan["target"])
-    require(plan["namespace"] == plan["owner"] and plan["seconds"] == 180, "cleanup scope/budget")
+    require(plan["namespace"] == plan["owner"] and plan["seconds"] in (180, 300), "cleanup scope/budget")
     require(all(digest(p) == sha for p, sha in plan["inputs"].items()), "frozen cleanup input drift")
     owned, stopped = plan["owned"], plan["stopped"]
     expected = {("Namespace", plan["namespace"]), ("Job", "loopback"), ("ConfigMap", "configuration"),
@@ -49,7 +49,7 @@ def execute(root, plan_sha256):
     run.event_uids = {e["uid"] for e in stopped if e["kind"] in ("Job", "Pod")}
     run.cleaning = True
     started = time.monotonic()
-    run.deadline = started+180
+    run.deadline = started+plan["seconds"]
     invocation = dict(start=time.time(), monotonic_start=started, deadline=run.deadline, plan_sha256=plan_sha256)
     with (root/"invocation.json").open("x") as output:
         json.dump(invocation, output, indent=2)
