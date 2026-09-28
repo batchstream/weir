@@ -1,6 +1,15 @@
 # Weir 生产资格验收清单
 
 日期：2026-09-29。本文件是**必需验收目标及证据缺口清单，不是生产就绪声明**。
+[M30R5](milestone-30r5.md)仅本地取证及生命周期修复，**真实EKS采样仍未通过，reset根因未知**。
+准确kubectl v1.35.2 EKS fork（darwin/amd64）在loopback对照中以原10秒flag完成10.1秒升级流；普通Pod GET仍在10秒超时。
+六次冻结实验结束，stdin EOF协议及管道背压有本地证据；不据此认定旧EKS reset原因，也未调大timeout或访问EKS。
+无负载采样改为单observer顺序排空/EOF/Wait再查身份；失败先收口再诊断，原30秒提前计时并受900秒总界限约束。
+共享Observer保留失败、双EOF与分开的开始/首次观察退出/Stop时间；旧Stop吞错误的负例已复现并修复。
+最终普通全套218通过，优化193通过/25项既有skip；聚焦普通46通过、优化38通过/8项既有skip。没有产品/Go/module/helper/镜像/清理器变化，历史1809份封存文件未变。
+原六样本/2秒/结束记录/client要求不降；partial/not-qualified、timing=not-run、candidate=null以及全部其他required保持。
+本地main提交，不push；封存后回调统筹并停止，不自行开始下一次EKS阶段。以下保留各阶段当轮历史结果。
+
 [M30R4C2](milestone-30r4c2.md)修复完整catalog盘点批次为固定最多5类，原Namespace/Quota两个准确UID已回收。
 实现/唯一执行 `8a6c8c4fb4e0b767ef9126dccac33578f1d8650e`；聚焦49项通过，完整普通207通过，优化182通过/25既有skip。
 仅cleanup-only新增冻结300秒，普通fixture默认180秒不变。
