@@ -14,3 +14,15 @@ the replay CLI appends the namespace bound by that recorded command. Other
 object status fields in the replay are synthetic and are not native evidence.
 The same existing CLI fixture emits this complete recorded list with the first
 resource batch and exercises UID deletion and final-inventory refusal.
+
+## M30 resource preflight Job dry-run
+
+`eks-resource-admitted-job-m30.json` is the exact projected response from
+`.testdata/m30/native/command-0060.out`, SHA256 `f21bb5061b670a33c40adf257a1c477268d2074169440f9bb1eac1e482e1a797`.
+It contains only the owned Job metadata, requested execution spec and runtime status,
+with the existing allowlisted environment projection; no credentials or Secret.
+This server dry-run omitted the default false `VolumeMount.readOnly` on bootstrap.
+The original frozen template explicitly included false and failed strict comparison.
+The offline fix omits that default in the request; ES and Weir retain explicit true.
+No persistent Job/Pod or native sampling occurred, and the corrected template has
+not been retried on EKS in M30.

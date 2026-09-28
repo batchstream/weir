@@ -80,7 +80,7 @@ class Admission(unittest.TestCase):
         opts=dict(job=dict(name='loopback',uid='synthetic-job'),template=expected,pod_uid=pod['metadata']['uid'],images=pre.IMAGES)
         self.assertTrue(pre.loop.pod_check(pod,opts))
         self.assertEqual(wanted['volumes'][-1],dict(name='helper',emptyDir=dict(sizeLimit='64Mi')))
-        mounts=[(c['name'],m['readOnly']) for c in wanted['containers']+wanted['initContainers'] for m in c['volumeMounts'] if m['name']=='helper']
+        mounts=[(c['name'],m.get('readOnly',False)) for c in wanted['containers']+wanted['initContainers'] for m in c['volumeMounts'] if m['name']=='helper']
         self.assertEqual(mounts,[('weir',True),('elasticsearch',True),('bootstrap',False)])
         self.assertEqual(pre.loop.IMAGES['version']['binary'],'e152805a350d5b2968df18f736e587b649f9ef2cf3cc6c650aa44bd37cbf3b41')
         for field in ('imageID','containerID'):
@@ -92,6 +92,24 @@ class Admission(unittest.TestCase):
         with self.assertRaises(ValueError):pre.loop.pod_check(changed,opts)
         changed=copy.deepcopy(pod);changed['spec']['initContainers'][0]['volumeMounts'][-1]['readOnly']=False
         with self.assertRaises(ValueError):pre.loop.pod_check(changed,opts)
+
+
+    def test_original_m30_api_omits_default_false_mount(self):
+        path=Path(__file__).with_name('fixtures')/'eks-resource-admitted-job-m30.json'
+        actual=json.loads(path.read_text());p=plan()
+        p.update(owner=actual['metadata']['labels'][pre.common.LABEL],namespace=actual['metadata']['namespace'])
+        p['node']['name']=actual['spec']['template']['spec']['nodeName']
+        expected=pre.objects(p)['job']
+        pre.common.job_check(actual,expected)
+        bootstrap=actual['spec']['template']['spec']['initContainers'][1]
+        self.assertNotIn('readOnly',bootstrap['volumeMounts'][-1])
+        original=copy.deepcopy(expected)
+        original['spec']['template']['spec']['initContainers'][1]['volumeMounts'][-1]['readOnly']=False
+        with self.assertRaisesRegex(ValueError,'volumeMounts'):pre.common.job_check(actual,original)
+        for group,index in (('containers',0),('initContainers',0)):
+            unsafe=copy.deepcopy(actual)
+            unsafe['spec']['template']['spec'][group][index]['volumeMounts'][-1].pop('readOnly')
+            with self.assertRaisesRegex(ValueError,'volumeMounts'):pre.common.job_check(unsafe,expected)
 
 
 class Transfer(unittest.TestCase):

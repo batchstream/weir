@@ -27,7 +27,8 @@ IMAGES = dict(
               config='sha256:063aa9659604ca3b7ab3814e31341727fe2ccce6f6758456d3f97c4b911209ee',
               binary='d41f70ca4bbe129bff11b76f3d973cdb288d839c4df72a348cac04a233b76482'), es=loop.ES)
 FILES = tuple(dict.fromkeys(loop.FILES + ('scripts/eks_resource_preflight.py', 'scripts/eks_resource_preflight_test.py',
-    'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py')))
+    'scripts/capacity_artifact.py', 'scripts/resource_report.py', 'scripts/resource_report_test.py',
+    'scripts/fixtures/eks-resource-admitted-job-m30.json')))
 BUDGET = dict(remote_seconds=900, cleanup_seconds=180, artifact_ready_seconds=420, upload_seconds=300,
               observer_seconds=10, interval_seconds=2, samples=6, planned=0, document_mutations=0, empty_index_put=1,
               helper_volume_mib=64, helper_charged_to='bootstrap 256Mi ephemeral; aggregate remains 2560Mi')
@@ -100,7 +101,8 @@ def objects(plan):
     spec['volumes'].append(volume)
     for name in ('weir', 'elasticsearch', 'bootstrap'):
         container = next(c for c in spec['containers']+spec['initContainers'] if c['name'] == name)
-        mount=dict(name='helper',mountPath='/helper',readOnly=name != 'bootstrap')
+        mount=dict(name='helper',mountPath='/helper')
+        if name != 'bootstrap':mount['readOnly']=True
         container['volumeMounts'].append(mount)
         if name != 'bootstrap':
             container.setdefault('env', []).extend([dict(name='WEIR_CAPACITY_INTEGRATION', value='1'), dict(name='GOMAXPROCS', value='2' if name == 'weir' else '1')])
