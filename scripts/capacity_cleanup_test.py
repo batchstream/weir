@@ -73,6 +73,18 @@ except FixtureInterrupted: pass
                 if process.poll() is None:process.kill()
                 process.wait()
 
+    def test_observation_failure_stops_active_command(self):
+        called=[]
+        def monitor():
+            called.append(True)
+            raise RuntimeError("synthetic invalid observer")
+        options=dict(monitor=monitor)
+        with self.assertRaisesRegex(RuntimeError,"invalid observer"):
+            self.run_child("import time; time.sleep(10)",timeout=4,options=options)
+        self.assertEqual(called,[True])
+        record=json.loads((self.f.root/'commands.jsonl').read_text().splitlines()[-1])
+        self.assertIsNotNone(record["exit"])
+
     def test_before_write_size_limit_and_cleanup_without_disk(self):
         with patch.object(self.f,'evidence_size',return_value=EVIDENCE_LIMIT):
             with self.assertRaises(RuntimeError):self.f.save('too-big','x')

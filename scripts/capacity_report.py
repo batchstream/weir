@@ -45,6 +45,8 @@ def metric(values, name):
     matches = [k for k in values if k.split("{")[0] == name]
     if matches != [key]:
         raise ValueError("missing/mismatched metric: "+name)
+    if int(values[key]) != values[key]:
+        raise ValueError("fractional fixed-profile gauge: "+name)
     return values[key]
 
 
@@ -124,13 +126,23 @@ def weir_metrics(raw, stable):
     for name, value in required.items():
         if metric(m, name) != value:
             raise ValueError("invalid Guard evidence: "+name)
-    for key in ('weir_memory_sample_bytes{source="linux_rss"}',
-                'weir_memory_cgroup_state{state="v2"}',
-                'weir_memory_cgroup_scope{scope="leaf"}'):
-        if number(m[key], True) == 0:
-            raise ValueError("invalid Linux Guard label")
-    if m['weir_memory_cgroup_state{state="v2"}'] != 1 or m['weir_memory_cgroup_scope{scope="leaf"}'] != 1:
-        raise ValueError("Guard profile mismatch")
+    labelled = {
+        'weir_memory_cgroup_state{state="v2"}': 1,
+        'weir_memory_cgroup_state{state="unknown"}': 0,
+        'weir_memory_cgroup_state{state="profile_changed"}': 0,
+        'weir_memory_cgroup_state{state="not_applicable"}': 0,
+        'weir_memory_cgroup_scope{scope="leaf"}': 1,
+        'weir_memory_cgroup_scope{scope="ancestor"}': 0,
+        'weir_memory_cgroup_scope{scope="none"}': 0,
+        'weir_memory_sample_bytes{source="darwin_phys_footprint"}': 0,
+        'weir_memory_sample_bytes{source="go_sys_minus_released"}': 0,
+        'weir_memory_sample_bytes{source="unobserved"}': 0,
+    }
+    for key, expected in labelled.items():
+        if m[key] != expected:
+            raise ValueError("invalid Guard label semantics: "+key)
+    if not 0 < m['weir_memory_sample_bytes{source="linux_rss"}'] <= 1024**3 or metric(m, "weir_memory_cgroup_levels") != 1:
+        raise ValueError("Guard process/visible-cgroup profile")
     if number(metric(m, "weir_memory_cgroup_current_bytes"), True) > 1024**3:
         raise ValueError("Guard cgroup boundary")
     for name in ("native_reserved_bytes", "native_sessions", "retained_result_reserved_bytes", "retained_results", "scan_cleanups", "scan_page_reserved_bytes", "scan_pages", "scan_sessions"):
@@ -159,6 +171,26 @@ def weir_metrics(raw, stable):
     return reasons, metric(m, "weir_backend_connections_owned"), metric(m, "weir_ingress_connections")
 
 
+def tcp_connections(files):
+    active = 0
+    for key in ("net/tcp", "net/tcp6"):
+        lines = files[key].splitlines()
+        if not lines or "local_address" not in lines[0] or "st" not in lines[0].split():
+            raise ValueError("missing/truncated TCP snapshot")
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            fields = line.split()
+            if len(fields) < 10 or not re.fullmatch(r"[0-9A-F]{2}", fields[3]):
+                raise ValueError("malformed TCP snapshot")
+            state = int(fields[3], 16)
+            if not 1 <= state <= 12:
+                raise ValueError("invalid TCP state")
+            if state in (1, 2, 3, 8):
+                active += 1
+    return active
+
+
 def validate_sample(s, role):
     if s.get("role") != role or s.get("errors"):
         raise ValueError("observer role/errors")
@@ -168,6 +200,10 @@ def validate_sample(s, role):
         raise ValueError("stale sample collection")
     files = s["files"]
     limits = PLAN["resources"][role]
+    affinity = [line.split(":",1)[1].strip() for line in files["status"].splitlines() if line.startswith("Cpus_allowed_list:")]
+    if affinity != [limits["cpuset"]]:
+        raise ValueError("actual process affinity mismatch")
+    tcp_connections(files)
     for name in ("memory.current", "memory.max", "memory.swap.max", "pids.current", "pids.max"):
         number(files[name])
     if (int(files["memory.max"]) != limits["memory_mib"]*1024**2 or int(files["memory.swap.max"]) != 0 or
@@ -197,7 +233,7 @@ def resource_gate(samples, stable=True, role="weir"):
     reasons = []
     if not samples:
         return ["evidence: no "+role+" resource samples"], {}
-    peak = dict(rss_bytes=None, cgroup_bytes=None, fd=None, owner=None, connections=None)
+    peak = dict(rss_bytes=None, cgroup_bytes=None, fd=None, owner=None, connections=None, tcp_connections=None)
     previous = None
     for s in samples:
         try:
@@ -210,7 +246,8 @@ def resource_gate(samples, stable=True, role="weir"):
                 if any(cpu[k] < previous[1][k] for k in cpu if k in previous[1]):
                     raise ValueError("CPU counter reset")
             previous = (s, cpu)
-            values = dict(rss_bytes=s["rss_bytes"], cgroup_bytes=int(s["files"]["memory.current"]), fd=s["fd"])
+            connections=tcp_connections(s["files"])
+            values = dict(rss_bytes=s["rss_bytes"], cgroup_bytes=int(s["files"]["memory.current"]), fd=s["fd"], tcp_connections=connections, connections=connections)
             if role == "weir":
                 why, values["owner"], values["connections"] = weir_metrics(s.get("metrics"), stable)
                 reasons += why
@@ -287,7 +324,8 @@ def db_gate(samples, stable):
     return reasons
 
 
-def evaluate(trial, samples, clients, db_samples, stable=True):
+def evaluate(trial, observations, stable=True):
+    samples, clients, db_samples = (observations[role] for role in ("weir", "client", "es"))
     window_gate(trial["warm"])
     measure_reasons = window_gate(trial["measure"])
     if trial["measure"]["all"]["planned"] != trial["options"]["Rate"]*trial["options"]["Seconds"]:

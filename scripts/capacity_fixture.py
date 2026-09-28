@@ -92,7 +92,9 @@ class Fixture:
         if not self.cleaning:
             raise exc
 
-    def run(self, args, timeout=30, check=True, env=None, monitor=None):
+    def run(self, args, timeout=30, check=True, options=None):
+        options = options or {}
+        monitor = options.get("monitor")
         timeout = min(timeout, self.deadline-time.monotonic())
         if timeout <= 0:
             raise TimeoutError("invocation/cleanup budget")
@@ -113,7 +115,7 @@ class Fixture:
         # Pipes cap kernel buffering. Only bounded chunks and retained prefixes enter
         # memory; the child never receives an evidence-file descriptor.
         try:
-            child = subprocess.Popen(args, cwd=REPO, env=env or self.env,
+            child = subprocess.Popen(args, cwd=REPO, env=options.get("env", self.env),
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      start_new_session=True)
             until = time.monotonic()+timeout
@@ -145,7 +147,7 @@ class Fixture:
                                                 streams[0].decode(errors="replace"),
                                                 streams[1].decode(errors="replace"))
             if check and result.returncode:
-                raise RuntimeError(f"command {self.number} exit {result.returncode}: {result.stderr[:1000]}")
+                raise RuntimeError(f"command {command_number} exit {result.returncode}: {result.stderr[:1000]}")
             return result
         finally:
             # Stop the entire group even when its leader already exited and left

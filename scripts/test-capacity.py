@@ -55,11 +55,13 @@ def prepare(f, plan, artifact):
     env=dict(f.env, GOROOT=str(REPO/".tools/go1.27.1"), GOENV="off",GOTOOLCHAIN="local",GOWORK="off",GOPROXY="off",GOSUMDB="off",CGO_ENABLED="0",GOMODCACHE="/Users/liran/go/pkg/mod",GOCACHE="/Users/liran/Library/Caches/go-build",WEIR_CAPACITY_INTEGRATION="1")
     go=str(REPO/".tools/go1.27.1/bin/go")
     for system,name in (("linux","client"),("darwin","client-host")):
-        f.run([go,"build","-tags","integration","-trimpath","-buildvcs=false","-o",str(f.root/name),"./internal/testutil/testcapacity"],120,env=dict(env,GOOS=system,GOARCH="arm64"))
+        run_options = dict(env=dict(env,GOOS=system,GOARCH="arm64"))
+        f.run([go,"build","-tags","integration","-trimpath","-buildvcs=false","-o",str(f.root/name),"./internal/testutil/testcapacity"],120,options=run_options)
     cfg=json.loads((REPO/"deploy/kubernetes/node.example.json").read_text())
     cfg["services"][0]["local"].update(concurrency=4,batch_operations=16)
     f.save("node.json",cfg)
-    effective=json.loads(f.run([str(f.root/"client-host"),"-mode","config","-config",str(f.root/"node.json")],env=env).stdout)
+    run_options = dict(env=env)
+    effective=json.loads(f.run([str(f.root/"client-host"),"-mode","config","-config",str(f.root/"node.json")],options=run_options).stdout)
     if any(effective["timing"][key] != plan["client"][key] for key in ("expiry_ms", "max_catchup_per_wake", "deadline_ms")):
         raise RuntimeError("compiled timing contract differs from versioned plan")
     f.save("effective-config.json",effective)
@@ -189,7 +191,8 @@ class Calibration:
         command=["docker","exec",f.containers[f.owner+"-client"],"/client","-mode","trial","-prefix",name,"-rate",str(rate),"-seconds",str(seconds),"-warm",str(warm),"-mutation-reservation",str(entry["reserved"])]
         if not direct:command += ["-target","weir:7447"]
         if recovery:command += ["-recovery-rate",str(recovery)]
-        result=f.run(command,360,check=False,monitor=self.observe)
+        run_options = dict(monitor=self.observe)
+        result=f.run(command,360,check=False,options=run_options)
         f.save(name+".jsonl",result.stdout)
         entries=[json.loads(line) for line in result.stdout.splitlines() if line]
         self.budget.reconcile(entry, entries, result.returncode == 0)
@@ -205,12 +208,13 @@ class Calibration:
         weir=read_observer(f,"weir");db=read_observer(f,"es")
         clients=[e["sample"] for e in entries if e["type"] in ("client_start", "client_sample")]
         trials=[e["trial"] for e in entries if e["type"]=="trial"]
-        report=evaluate(trials[0],weir,clients,db,stable=not recovery)
+        observations=dict(weir=weir,client=clients,es=db)
+        report=evaluate(trials[0],observations,stable=not recovery)
         require_evidence(report)
         report.update(direct=direct,audits=[{k:v for k,v in a.items() if k!="ledger"} for a in audits])
         if recovery:
             rt=trials[1]
-            full = evaluate(rt,weir,clients,db)
+            full = evaluate(rt,observations)
             require_evidence(full)
             recovered=None
             for n in range(min(3,len(rt["ten_second_windows"]))):
@@ -219,7 +223,7 @@ class Calibration:
                     cohort=dict(rt)
                     cohort["options"]=dict(rt["options"], WarmSeconds=index*10, Seconds=10)
                     cohort["measure"]=rt["ten_second_windows"][index]
-                    check=evaluate(cohort,weir,clients,db)
+                    check=evaluate(cohort,observations)
                     require_evidence(check)
                     checks.append(check["pass"])
                 if all(checks):
@@ -255,7 +259,8 @@ class Calibration:
             if not result["pass"]:break
             candidate=rate
         if candidate is None:
-            return {"candidate_rps":None,"status":"no qualifying search point"}
+            result = {"candidate_rps":None,"status":"no qualifying search point"}
+            return result
         confirmed=False
         for attempt in range(2):
             rounds=[self.trial(f"confirm-{attempt}-{i}",candidate,120) for i in range(3)]
@@ -265,15 +270,18 @@ class Calibration:
             if attempt or index==0:break
             candidate=self.plan["rates"][index-1]
         if not confirmed:
-            return {"candidate_rps":None,"status":"confirmation failed; failures retained"}
+            result = {"candidate_rps":None,"status":"confirmation failed; failures retained"}
+            return result
         overload=self.trial("overload",candidate*2,30,recovery=candidate*7//10,warm=0)
         if not overload["overload_applied"] or not overload["recovery"]["pass"]:
-            return {"candidate_rps":None,"status":"overload not applied or recovery unqualified", "overload_applied":overload["overload_applied"],"recovery":overload["recovery"]}
+            result = {"candidate_rps":None,"status":"overload not applied or recovery unqualified", "overload_applied":overload["overload_applied"],"recovery":overload["recovery"]}
+            return result
         for i,rate in enumerate((candidate//2,candidate,candidate*2)):
             self.trial("direct-"+str(i),rate,60,direct=True)
         for i in range(2):
             self.trial("direct-confirm-"+str(i),candidate,120,direct=True)
-        return {"candidate_rps":candidate,"kind":"sustainable measured profile lower bound; not Weir maximum","status":"calibration execution pending independent acceptance","confirmation_prefixes":[r["prefix"] for r in rounds],"stable_rps_70_percent":candidate*7//10,"overload_rps_2x":candidate*2,"overload_applied":overload["overload_applied"],"recovery":{k:v for k,v in overload["recovery"].items() if k not in ("windows","measure")}}
+        result = {"candidate_rps":candidate,"kind":"sustainable measured profile lower bound; not Weir maximum","status":"calibration execution pending independent acceptance","confirmation_prefixes":[r["prefix"] for r in rounds],"stable_rps_70_percent":candidate*7//10,"overload_rps_2x":candidate*2,"overload_applied":overload["overload_applied"],"recovery":{k:v for k,v in overload["recovery"].items() if k not in ("windows","measure")}}
+        return result
 
 
 def main():

@@ -16,10 +16,14 @@ def sample(role, second):
              weir_memory_cgroup_valid=1, weir_memory_cgroup_finite=1,
              weir_memory_unknown=0, weir_memory_latched=0,
              weir_memory_budget_bytes=768<<20, weir_memory_cgroup_limit_bytes=1<<30,
-             weir_memory_cgroup_current_bytes=32<<20)
+             weir_memory_cgroup_current_bytes=32<<20, weir_memory_cgroup_levels=1)
     m['weir_memory_sample_bytes{source="linux_rss"}'] = 32<<20
     m['weir_memory_cgroup_state{state="v2"}'] = 1
     m['weir_memory_cgroup_scope{scope="leaf"}'] = 1
+    for kind,names in (("state",("unknown","profile_changed","not_applicable")),("scope",("ancestor","none"))):
+        for name in names:m[f'weir_memory_cgroup_{kind}{{{kind}="{name}"}}']=0
+    for name in ("darwin_phys_footprint","go_sys_minus_released","unobserved"):
+        m[f'weir_memory_sample_bytes{{source="{name}"}}']=0
     for name, bound, maximum in (("pending_entries","pending_entries_limit",256),
                                 ("pending_reserved_bytes","pending_reserved_bytes_limit",8<<20),
                                 ("result_reserved_entries","result_reserved_entries_limit",128),
@@ -44,6 +48,8 @@ def sample(role, second):
              "cpuset.cpus.effective":limit["cpuset"], "cpu.max":str(int(limit["cpu"]*100000))+" 100000",
              "memory.events":"low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
              "cpu.stat":f"usage_usec {100000+int(second*100)}\nuser_usec 100\nsystem_usec 100\nnr_periods 100\nnr_throttled 0\nthrottled_usec 0\n"}
+    files.update(status="Cpus_allowed_list: "+limit["cpuset"]+"\n")
+    for name in ("net/tcp","net/tcp6"):files[name]="sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n"
     result = dict(role=role,time=datetime.datetime.fromtimestamp(BASE+second,datetime.timezone.utc).isoformat(),
                   monotonic_ns=int((second+100)*1e9), duration_ns=1000000,
                   files=files, rss_bytes=32<<20, fd=10, goroutines=10, gomaxprocs=1)
@@ -73,7 +79,8 @@ class Evidence(unittest.TestCase):
 
     def test_complete_synthetic_evidence_can_pass(self):
         s,c,d = self.observations()
-        self.assertTrue(evaluate(trial(),s,c,d)["pass"])
+        observations=dict(weir=s,client=c,es=d)
+        self.assertTrue(evaluate(trial(),observations)["pass"])
         self.assertFalse(resource_gate(d,role="es")[0])
         self.assertTrue(resource_gate(d)[0])
 
@@ -85,19 +92,22 @@ class Evidence(unittest.TestCase):
                     original["metrics"].replace('store="records"','store="foreign"'),
                     '\n'.join(line for line in original["metrics"].splitlines() if not line.startswith(("weir_store_","weir_backend_")))+'\n',
                     original["metrics"].replace("weir_memory_sample_observed 1","weir_memory_sample_observed invalid")]
+        variants += [original["metrics"].replace('state="profile_changed"} 0','state="profile_changed"} 1'),
+                     original["metrics"].replace('weir_store_pending_entries{store="records"} 0','weir_store_pending_entries{store="records"} 0.5')]
         for raw in variants:
             with self.subTest(raw=str(raw)[:60]):
                 s=copy.deepcopy(original);s["metrics"]=raw
                 why,peak=resource_gate([s]);self.assertTrue(why);self.assertIsNone(peak["owner"])
                 w,c,d=self.observations()
                 for x in w:x["metrics"]=raw
-                report=evaluate(trial(),w,c,d)
+                observations=dict(weir=w,client=c,es=d)
+                report=evaluate(trial(),observations)
                 self.assertFalse(report["pass"])
                 with self.assertRaises(RuntimeError):require_evidence(report)
 
     def test_resource_missing_nonfinite_reset_and_gap(self):
         for role in ("weir","es","client"):
-            for key in ("cpu.stat","memory.current","memory.events","cpu.max","pids.max"):
+            for key in ("cpu.stat","memory.current","memory.events","cpu.max","pids.max","status","net/tcp","net/tcp6"):
                 with self.subTest(role=role,key=key):
                     s=sample(role,0);s["files"].pop(key)
                     self.assertTrue(resource_gate([s],role=role)[0])
@@ -117,7 +127,8 @@ class Evidence(unittest.TestCase):
     def test_boundary_and_interior_coverage(self):
         s,c,d=self.observations()
         for broken in ([s[4]],s[2:],s[:-2],s[:3]+s[7:]):
-            report=evaluate(trial(),broken,c,d)
+            observations=dict(weir=broken,client=c,es=d)
+            report=evaluate(trial(),observations)
             self.assertFalse(report["pass"])
             with self.assertRaises(RuntimeError):require_evidence(report)
         self.assertEqual(len(covered_samples(s,BASE,BASE+20)),11)
@@ -127,12 +138,15 @@ class Evidence(unittest.TestCase):
                    ("metrics",'weir_backend_connections_peak{store="records"} 1','weir_backend_connections_peak{store="records"} 6')]
         for key,old,new in mutations:
             s,c,d=self.observations();s[5][key]=s[5][key].replace(old,new)
-            with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),s,c,d,stable=False))
+            observations=dict(weir=s,client=c,es=d)
+            with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),observations,stable=False))
         s,c,d=self.observations();d[5]["files"]["memory.events"]=d[5]["files"]["memory.events"].replace("oom 0","oom 1")
-        with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),s,c,d,stable=False))
+        observations=dict(weir=s,client=c,es=d)
+        with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),observations,stable=False))
         for raw in ('{}','{"nodes":{}}','{"nodes":{"x":{}}}'):
             s,c,d=self.observations();s[5]["db"]=raw
-            with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),s,c,d))
+            observations=dict(weir=s,client=c,es=d)
+            with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),observations))
 
 
 class MutationBudget(unittest.TestCase):
