@@ -832,7 +832,7 @@ class CleanupReplay(unittest.TestCase):
         self.assertEqual([kinds[uid] for _,uid in deletes],['Job','Pod','ConfigMap','NetworkPolicy','ResourceQuota','Namespace'])
         self.assertLess(deletes[3][0],inventories[0]);self.assertLess(inventories[0],deletes[4][0])
         budget=json.loads((self.root/'cleanup-budget.json').read_text())
-        self.assertEqual(budget['deadline']-budget['objects_deadline'],45)
+        self.assertEqual(budget['objects_deadline'],budget['deadline']-45)
         self.assertEqual(budget['namespace_reserve_seconds'],45)
         self.assertLessEqual(budget['deadline']-time.monotonic(),180)
 
@@ -1219,7 +1219,7 @@ class CleanupReplay(unittest.TestCase):
         self.assertTrue(result["confirmed"], result)
         invocation = json.loads((self.root/"invocation.json").read_text())
         budget = json.loads((self.root/"cleanup-budget.json").read_text())
-        self.assertEqual(invocation["deadline"]-invocation["monotonic_start"], 300)
+        self.assertEqual(invocation["deadline"], invocation["monotonic_start"]+300)
         self.assertEqual(budget["deadline"], invocation["deadline"])
         self.assertEqual(budget["objects_deadline"], invocation["deadline"]-45)
         before = self.calls()

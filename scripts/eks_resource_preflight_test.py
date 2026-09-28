@@ -525,7 +525,7 @@ class Lifecycle(unittest.TestCase):
             def transfer(until):calls.append('transfer failed');raise ValueError('injected upload failure')
             def cleanup(**kwargs):
                 calls.append('cleanup')
-                self.assertEqual(kwargs['deadline']-run.deadline, 45)
+                self.assertEqual(run.deadline, kwargs['deadline']-45)
                 self.assertLessEqual(kwargs['deadline']-time.monotonic(), 300)
                 self.assertGreater(kwargs['deadline']-time.monotonic(), 295)
                 result=dict(confirmed=True,resources=[])
@@ -803,7 +803,7 @@ class ObservationBudget(unittest.TestCase):
                         result = replay.run.cleanup(deadline=deadline)
                     budget = json.loads((replay.root/'cleanup-budget.json').read_text())
                     self.assertEqual(budget['deadline'], deadline)
-                    self.assertEqual(budget['objects_deadline'], started+255)
+                    self.assertEqual(budget['objects_deadline'], deadline-45)
                     self.assertEqual(budget['namespace_reserve_seconds'], 45)
                     if spent:
                         self.assertFalse(result['confirmed'])

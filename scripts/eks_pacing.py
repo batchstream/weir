@@ -249,7 +249,8 @@ class Run:
     def __init__(self, root, target):
         self.root, self.target = root, target
         self.number = 0
-        self.deadline = time.monotonic()+900
+        self.stage_started = time.monotonic()
+        self.deadline = self.stage_started+900
         self.cleaning = False
         self.diagnostic_errors = []
         self.plan = None
@@ -366,7 +367,7 @@ class Run:
             # dispatch checks use only the original native deadline, no recovery.
             written = self.mutation_attempted or bool(self.owned)
             deadline = self.deadline if written else min(self.deadline, self.resource_preflight["deadline"])
-            require(deadline-time.monotonic() >= 25+4, "资源窗口余额不足 (resource preflight deadline): need 25s CLI + 4s Stop/Wait")
+            require(time.monotonic()+(25+4) <= deadline, "资源窗口余额不足 (resource preflight deadline): need 25s CLI + 4s Stop/Wait")
             try:
                 raw = self.run(argv, 25)
             except CommandFailure as exc:
@@ -375,7 +376,7 @@ class Run:
                 read_timeout &= not any(message in exc.stderr.lower() for message in ("forbidden", "unauthorized", "notfound"))
                 require(read_timeout and not written and
                         self.resource_preflight["recovery"] is None, "resource GET failed; recovery ineligible: "+str(exc))
-                require(deadline-time.monotonic() >= 25+4,
+                require(time.monotonic()+(25+4) <= deadline,
                         "资源窗口余额不足 (resource preflight deadline): need 25s CLI + 4s Stop/Wait; original GET: "+str(exc))
                 recovery = dict(failed_command=exc.number, reason=exc.stderr, argv=argv,
                                 stdout=f"command-{exc.number:04d}.out", stderr=f"command-{exc.number:04d}.err", exit=exc.code)

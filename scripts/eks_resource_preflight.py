@@ -202,7 +202,7 @@ class Run(loop.Run):
         started = time.monotonic()
         until = min(total_deadline, started+BUDGET['role_seconds'])
         closing = BUDGET['observer_eof_seconds']+BUDGET['command_stop_seconds']
-        require(until-started >= BUDGET['observer_seconds']+closing, 'observer/Stop/Wait budget')
+        require(started+(BUDGET['observer_seconds']+closing) <= until, 'observer/Stop/Wait budget')
         operation = dict(started_monotonic=started, deadline_monotonic=until)
         # Claim before the identity reads; a failed role is never replayed.
         with (self.root/(role+'-operation.json')).open('x') as output:
@@ -213,7 +213,7 @@ class Run(loop.Run):
         failure = None
         try:
             self.monitor()
-            require(time.monotonic()+BUDGET['observer_seconds']+closing <= until, 'observer/Stop/Wait budget after identity')
+            require(time.monotonic()+(BUDGET['observer_seconds']+closing) <= until, 'observer/Stop/Wait budget after identity')
             self.deadline = until-closing
             container = 'weir' if role == 'weir' else 'elasticsearch'
             command = self.exec_command(container, ['/helper/qualification', '-mode', 'observe', '-role', role,

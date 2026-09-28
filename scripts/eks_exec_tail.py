@@ -236,8 +236,8 @@ class Run(common.Run):
 
     def arm(self, arm):
         started, overall = time.monotonic(), self.deadline
-        until = min(overall, started+BUDGET['arm_seconds'])
-        require(until-started >= BUDGET['arm_seconds'], 'insufficient full arm budget')
+        until = started+BUDGET['arm_seconds']
+        require(until <= overall, 'insufficient full arm budget')
         result = dict(arm=arm, start=started, deadline=until)
         with (self.root/(arm['name']+'-operation.json')).open('x') as output:
             json.dump(result, output)
@@ -245,7 +245,7 @@ class Run(common.Run):
         try:
             self.deadline = until-4
             require(self.identity() is not None, 'pre-arm Pod not ready')
-            require(until-time.monotonic() >= 28, 'producer plus closing budget')
+            require(time.monotonic()+28 <= until, 'producer plus closing budget')
             command = ['kubectl', '--context', self.target['context'], '--request-timeout=10s',
                        '--namespace', self.plan['namespace'], 'exec', '-i', self.pod_entry['name'], '--container=shell',
                        '--']+COMMAND+[arm['mode']]
@@ -286,8 +286,8 @@ def plan_check(plan, root):
     require(plan['tool_inputs'] == {p: common.digest(common.REPO/p) for p in FILES}, 'input drift')
     require(plan['kubectl_sha256'] == KUBECTL_SHA, 'kubectl drift')
     require(plan['resource_preflight']['node'] == NODE and
-            plan['resource_preflight']['deadline']-plan['resource_preflight']['started'] == 120, 'resource window drift')
-    require(plan['stage_deadline']-plan['stage_started'] == BUDGET['remote_seconds'], 'stage budget drift')
+            plan['resource_preflight']['deadline'] == plan['resource_preflight']['started']+120, 'resource window drift')
+    require(plan['stage_deadline'] == plan['stage_started']+BUDGET['remote_seconds'], 'stage budget drift')
 
 
 def kubectl_check():
@@ -306,7 +306,7 @@ def prepare(run, owner):
     run.node_scope = NODE
     context = loop.prepare_context(run, owner, image_source=SOURCE, owner_pattern=r'weir-qual-m30r7-[a-z0-9-]{1,25}')
     plan = dict(context, profile=PROFILE, target=loop.TARGET, owner=owner, namespace=owner, budgets=BUDGET,
-                stage_started=run.deadline-BUDGET['remote_seconds'], stage_deadline=run.deadline,
+                stage_started=run.stage_started, stage_deadline=run.deadline,
                 arms=ARMS, command=COMMAND, minimum=loop.MINIMUM, image=loop.ES, payload=payload_contract(),
                 kubectl_sha256=KUBECTL_SHA, tool_inputs={p: common.digest(common.REPO/p) for p in FILES})
     plan['objects'] = objects(plan)
