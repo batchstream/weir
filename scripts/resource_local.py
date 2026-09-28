@@ -217,7 +217,7 @@ def main():
     args=parser.parse_args();root=args.evidence.absolute()
     require(os.environ.get('WEIR_CAPACITY_INTEGRATION')=='1','explicit integration opt-in')
     require(root.parent==common.REPO/'.testdata/m28' and not root.exists() and re.fullmatch('weir-m28-[a-z0-9-]{1,32}',args.owner),'new owned evidence path')
-    prior=list(root.parent.glob('fixture-*'));require(len(prior)<3,'wiring corrections exhausted')
+    prior=[p for p in root.parent.glob('fixture-*') if p.is_dir()];require(len(prior)<3,'wiring corrections exhausted')
     for attempt in prior:
         previous=json.loads((attempt/'result.json').read_text())
         require(previous['cleanup'] or (attempt/'owned-cleanup-proof.json').is_file(), 'previous owned cleanup unconfirmed')
