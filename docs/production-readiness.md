@@ -82,6 +82,18 @@ true 发0请求并明确禁用；未访问真实 IMDS。唯一 ES 本地启动�
 两自有容器均按精确ID停止/Wait/清理，所有验证进程结束，200产品输入及3120既有证据未变。
 EKS namespace/Job/Pod/管理写/文档写/真实trial均0，功能闭环仍未通过，candidate=null；
 CNI/跨节点/容量/过载/恢复/24h、startup signal窗口与其他资格缺口不变。
+[M26R5](milestone-26-remediation-5.md)实现 `f7e4973f3c6d6119c24e128cf2bebdecd339813b`：
+新的network-none容器具名hostname→127.0.0.1 hosts映射，本地第1次getent诊断exit2保留；
+第2次修正AI_ADDRCONFIG诊断接线后，真实libc/JDK/ES8.19.22/settings与3次socket样本通过。
+复用已接受SDK证明，189当前/3120历史证据与200产品输入未变；定向普通/优化各3通过。
+唯一EKS尝试完成bootstrap/main完整回环边界、原预算两trial：4000load全success、
+2400文档mutation、零drop/error/UNKNOWN/restart，400条Put全部APPLIED/version1。
+最差dispatch p99=1.8ms，arrival p95/p99=9.8/18ms，完整客户端样本通过；整体资源仍partial。
+但共享清理将本Pod的只读PodMetrics视图判为外来对象，**原入口passed=false/cleanup=false**；
+独立恢复清理在原180秒窗口耗尽，首次Job UID删除响应不确定；后续只读确认Job仍存在。
+Job/Pod随后按原900秒deadline停止，Pod已不存在；仍剩NS/Quota/Policy/ConfigMap/Job共5个
+已核验UID对象，未获追加清理授权，**namespace未回收**，不能把工作负载停止当作cleanup=true。
+原失败和冻结计划不改写，未重跑测试；CNI/容量/跨节点/24h与signal窗口仍未资格，candidate=null。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
