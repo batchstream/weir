@@ -119,6 +119,11 @@ Linux日志驱动启动前失败、额外app测试缺仓库示例输入的失败
 trial/seed/document mutation均0，仅两次空索引管理PUT；计时/容量/soak not-run，candidate=null。
 最终默认/race各220、边界race3共33、vet/六平台编译及受影响Python回归通过；这些不代替完整三角色原生采样。
 七自有容器及两个observer exec均停止/Wait/准确ID回收。M27/M28仍未发布，无EKS/push/CI；其他required门槛保持。
+[M28R](milestone-28-remediation.md)补了完整报告的跨记录守恒、ES形状检查和真实report()正负对照。
+一次新冻结原生启动已证明最终selector选中真实JVM、12+1个native测试通过，但新增limits解析
+误拒绝Linux合法行尾填充，负载前停止：Weir/ES各2样本、trial/seed/document mutation均0、1次空索引管理PUT。
+**M28R仍NO-GO/partial**；冻结实现未再修改或重跑，三个自有容器和两个exec已清理，旧M28的744文件hash未变。
+限额解析的原始文本覆盖缺口仍需补救；candidate=null、计时/容量/soak not-run，未发布、未EKS或恢复定时器。
 状态只对列出的平台、版本、部署形态成立。`已实现` 不等于 `已真实资格验证`；
 交叉编译、合成协议故障、本机真实后端、多机故障、长时运行分别记录。
 没有任何未决项因为登记在这里就自动 PASS 或延期。
