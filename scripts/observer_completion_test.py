@@ -1,6 +1,7 @@
 """Actual three consumers and real process pipes; sample data is synthetic."""
 import copy
 import datetime
+import hashlib
 import importlib.util
 import json
 import os
@@ -103,6 +104,13 @@ def stream_command(root, records, *, mode='complete', seconds=0):
 
 
 class CompletionConsumers(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if os.environ.get('GITHUB_ACTIONS') == 'true':
+            binary = Path(os.environ.get('WEIR_COMPLETION_TEST_BINARY', ''))
+            if not binary.is_absolute() or not binary.is_file() or not os.access(binary, os.X_OK):
+                raise RuntimeError('CI requires an absolute executable WEIR_COMPLETION_TEST_BINARY')
+
     def setUp(self):
         self.owners = []
 
@@ -251,6 +259,13 @@ class CompletionConsumers(unittest.TestCase):
                     case = dict(records=records, profile=profile, command=command)
                     owner = self.consumer(root, kind, case)
                 self.assertEqual(owner.child.returncode, 0)
+                receipt = json.loads((root/'weir-completion.json').read_text())
+                record = dict(consumer=kind, samples=count, optimized=not __debug__,
+                              source=os.environ.get('GITHUB_SHA'), platform=sys.platform,
+                              machine=os.uname().machine, binary_sha256=hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
+                              stdout_bytes=len(owner.streams[0]), stdout_sha256=hashlib.sha256(owner.streams[0]).hexdigest(),
+                              receipt=receipt)
+                print('COMPLETION_PIPE=' + json.dumps(record, sort_keys=True), flush=True)
                 evidence = os.environ.get('WEIR_COMPLETION_EVIDENCE')
                 if evidence:
                     target = Path(evidence)/('external-'+kind)

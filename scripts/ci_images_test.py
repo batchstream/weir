@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import package
+import observer_completion_test
 
 spec = importlib.util.spec_from_file_location('ci_images', Path(__file__).with_name('ci-images.py'))
 ci = importlib.util.module_from_spec(spec)
@@ -68,6 +69,28 @@ class DeliveryTests(unittest.TestCase):
         self.assertTrue({'test_capacity_test.py', 'resource_report_test.py', 'resource_local_test.py',
                          'eks_loopback_test.py', 'eks_resources_test.py', 'local_es_prerequisite_test.py'} <= tests)
         self.assertTrue(all(fnmatch.fnmatch(name, '*_test.py') for name in tests))
+
+    def test_workflow_builds_native_completion_child_before_both_python_modes(self):
+        workflow = (package.ROOT / '.github/workflows/images.yml').read_text()
+        build = 'CGO_ENABLED=0 go test -c -tags=integration -o "$WEIR_COMPLETION_TEST_BINARY" ./internal/testutil/testcapacity'
+        export = 'export WEIR_COMPLETION_TEST_BINARY="$RUNNER_TEMP/weir-completion/testcapacity.test"'
+        self.assertIn('runner: [ubuntu-24.04, ubuntu-24.04-arm]', workflow)
+        self.assertLess(workflow.index(export), workflow.index(build))
+        for mode in ('', '-O '):
+            self.assertLess(workflow.index(build), workflow.index('python3 ' + mode + '-m unittest discover'))
+
+    def test_completion_ci_refuses_missing_relative_or_nonexecutable_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory)/'child'
+            binary.write_text('fixture')
+            for value in ('', 'relative-child', str(binary), str(binary)+'-missing'):
+                env = dict(GITHUB_ACTIONS='true', WEIR_COMPLETION_TEST_BINARY=value)
+                with patch.dict(ci.os.environ, env), self.assertRaisesRegex(RuntimeError, 'CI requires'):
+                    observer_completion_test.CompletionConsumers.setUpClass()
+            binary.chmod(0o700)
+            env = dict(GITHUB_ACTIONS='true', WEIR_COMPLETION_TEST_BINARY=str(binary))
+            with patch.dict(ci.os.environ, env):
+                observer_completion_test.CompletionConsumers.setUpClass()
 
     def test_snapshot_requires_self_identity_raw_fields_and_no_errors(self):
         namespaces = {name: name + ':[123]' for name in ('pid', 'mnt', 'cgroup', 'net', 'user')}
