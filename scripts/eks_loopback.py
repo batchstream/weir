@@ -63,9 +63,10 @@ def objects(plan):
              "ingest.geoip.downloader.enabled=false", "node.store.allow_mmap=false", "cluster.name=weir-m26r", "node.name=loopback")]
     probe = dict(exec=dict(command=CURL+["http://127.0.0.1:9200/"]), initialDelaySeconds=0, periodSeconds=2,
                  timeoutSeconds=4, successThreshold=1, failureThreshold=60)
+    metadata_disabled = dict(name="AWS_EC2_METADATA_DISABLED",value="true")
     es = dict(name="elasticsearch",image=ES["reference"], imagePullPolicy="Always", restartPolicy="Always", args=args,
               securityContext=es_security,resources=dict(requests=es_res,limits=es_res),startupProbe=probe,
-              env=[dict(name="ES_JAVA_OPTS",value="-Xms1024m -Xmx1024m"),pod_ip],
+              env=[dict(name="ES_JAVA_OPTS",value="-Xms1024m -Xmx1024m"),metadata_disabled,pod_ip],
               volumeMounts=[mount,dict(name="data",mountPath="/usr/share/elasticsearch/data")])
     bootstrap = dict(name="bootstrap", image=ES["reference"],imagePullPolicy="Always", securityContext=es_security,
                      resources=dict(requests=client_res,limits=client_res), env=[pod_ip], volumeMounts=[mount],

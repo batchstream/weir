@@ -328,7 +328,11 @@ func main(){
             obj = dict(apiVersion="v1", kind="ConfigMap", metadata=meta)
             metadata["items"].append(obj)
         value = dict(pod(), apiVersion="v1", kind="Pod")
+        flag = dict(name="AWS_EC2_METADATA_DISABLED", value="true")
+        value["spec"]["containers"][0]["env"].append(flag)
         value["spec"]["containers"][0]["env"].append(dict(name="INJECTED", value="not-for-output"))
+        init_env = [flag, dict(name="INJECTED", value="not-for-output")]
+        value["spec"]["initContainers"] = [dict(name="synthetic-es", env=init_env)]
         ref = dict(apiVersion="batch/v1", kind="Job", namespace=plan()["namespace"], name="version", uid="job-uid")
         event_meta = dict(uid="event-uid", namespace=plan()["namespace"])
         event = dict(metadata=event_meta, involvedObject=ref, reason="FailedCreate", message="admission refused", count=2,
@@ -347,6 +351,9 @@ func main(){
             elif template == entry.OBJECT_TEMPLATE:
                 rendered = json.loads(process.stdout)
                 self.assertEqual(rendered["spec"]["containers"][0]["env"][-1]["value"], "REDACTED")
+                self.assertEqual(rendered["spec"]["containers"][0]["env"][-2], flag)
+                expected_env = [flag, dict(name="INJECTED", value="REDACTED")]
+                self.assertEqual(rendered["spec"]["initContainers"][0]["env"], expected_env)
             else:
                 rendered = json.loads(process.stdout)
                 self.assertEqual(rendered[0]["involvedObject"], ref)

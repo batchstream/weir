@@ -21,6 +21,9 @@ FIXTURE = Path(__file__).with_name("fixtures")/"eks-loopback-admitted-job.json"
 
 def responses():
     job = json.loads(FIXTURE.read_text())
+    # Preserve the original API recording; add only the new fixture setting.
+    setting = dict(name="AWS_EC2_METADATA_DISABLED", value="true")
+    job["spec"]["template"]["spec"]["initContainers"][0]["env"].insert(1, setting)
     pod = copy.deepcopy(ADMITTED_POD)
     pod["metadata"].update(name="loopback-admission", namespace=plan()["namespace"])
     pod["metadata"]["labels"][common.LABEL] = plan()["owner"]
@@ -88,6 +91,37 @@ class AdmissionReplay(unittest.TestCase):
         self.assertTrue(self.run.pod_ready)
         self.assertEqual(self.creates(), [("Job",True),("Pod",True),("Job",False)])
         self.assertEqual(self.run.identities["weir"]["imageID"],loop.IMAGES["version"]["reference"])
+
+    def test_metadata_flag_drift_never_persists_job(self):
+        extra = dict(name="AWS_REGION", value="us-west-1")
+        field = dict(apiVersion="v1", fieldPath="metadata.name")
+        value_from = dict(fieldRef=field)
+        reference = dict(name="AWS_EC2_METADATA_DISABLED", valueFrom=value_from)
+        changes = [
+            ("missing", lambda e: e.pop(1)),
+            ("false", lambda e: e[1].update(value="false")),
+            ("capitalized", lambda e: e[1].update(value="True")),
+            ("uppercase", lambda e: e[1].update(value="TRUE")),
+            ("boolean", lambda e: e[1].update(value=True)),
+            ("empty", lambda e: e[1].update(value="")),
+            ("order", lambda e: e.reverse()),
+            ("extra", lambda e: e.append(extra)),
+            ("unknown-field", lambda e: e[1].update(unknown="true")),
+            ("valueFrom", lambda e: e.__setitem__(1, reference)),
+        ]
+        baseline = copy.deepcopy(self.cfg)
+        for stage in ("job_response", "pod_response"):
+            for name, change in changes:
+                with self.subTest(stage=stage, change=name):
+                    self.cfg = copy.deepcopy(baseline)
+                    obj = self.cfg[stage]
+                    spec = obj["spec"]["template"]["spec"] if stage == "job_response" else obj["spec"]
+                    change(spec["initContainers"][0]["env"])
+                    self.write_config()
+                    with self.assertRaisesRegex(ValueError, "env"):
+                        self.run.create(self.run.template)
+                    self.assertEqual(self.run.owned, [])
+        self.assertFalse(any(kind == "Job" and not dry for kind, dry in self.creates()))
 
     def test_all_quantity_locations_and_probe_zero_equivalence(self):
         for name in ("job_response", "created_job", "pod_response", "actual_pod"):
@@ -251,6 +285,62 @@ class AdmissionReplay(unittest.TestCase):
         self.assertEqual(result["budget"]["reserved"], 0)
         self.assertEqual(len(result["cleanup"]["resources"]), 6)
         self.assertTrue(result["resource_evidence"].startswith("partial"))
+
+    def test_bootstrap_failure_stops_before_trial_and_cleans_exact_uids(self):
+        opts = self.prepare_lifecycle()
+        status = self.cfg["actual_pod"]["status"]["initContainerStatuses"][1]
+        status["state"]["terminated"].update(exitCode=23, reason="Error")
+        self.write_config()
+        code, result = self.execute_lifecycle(opts)
+        self.assertEqual(code, 1)
+        self.assertIn("container failure", result["error"])
+        self.assertEqual(result["budget"]["reserved"], 0)
+        self.assertFalse(any("exec" in args for args in self.calls()))
+        self.assertEqual(len(result["cleanup"]["resources"]), 6)
+
+    def test_unknown_stops_second_trial_and_keeps_reservation(self):
+        opts = self.prepare_lifecycle()
+        records = self.cfg["trials"]["through-weir"]
+        records[0]["run_error"] = "synthetic UNKNOWN mutation"
+        records[1]["audit"].update(applied=199, unknown_found=1)
+        self.write_config()
+        code, result = self.execute_lifecycle(opts)
+        self.assertEqual(code, 1)
+        self.assertEqual(result["budget"]["reserved"], 1200)
+        self.assertEqual(result["budget"]["entries"][0]["actually_started"], 1200)
+        trials = [args for args in self.calls() if "-mode" in args and "trial" in args]
+        self.assertEqual(len(trials), 1)
+        self.assertNotIn("direct-es", trials[0])
+
+    def test_cancelled_trial_reaps_cli_and_retains_unknown_budget(self):
+        def interrupted(signum, frame):
+            raise KeyboardInterrupt("signal "+str(signum))
+        signal.signal(signal.SIGTERM, interrupted)
+        opts = self.prepare_lifecycle()
+        self.cfg["cancel_trial"] = True
+        self.write_config()
+        code, result = self.execute_lifecycle(opts)
+        self.assertEqual(code, 1)
+        self.assertIn("signal", result["error"])
+        self.assertEqual(result["budget"]["reserved"], 1200)
+        self.assertIsNone(result["budget"]["entries"][0]["actually_started"])
+        trials = [args for args in self.calls() if "-mode" in args and "trial" in args]
+        self.assertEqual(len(trials), 1)
+        self.assertTrue(list(self.evidence.glob("through-weir-incomplete.jsonl")))
+
+    def test_cleanup_failure_does_not_hide_original_bootstrap_failure(self):
+        opts = self.prepare_lifecycle()
+        self.cfg["actual_pod"]["status"]["initContainerStatuses"][1]["state"]["terminated"].update(exitCode=23, reason="Error")
+        self.cfg["refuse_delete"] = True
+        self.write_config()
+        code = loop.execute(self.run, opts)
+        result = json.loads((self.evidence/"result.json").read_text())
+        self.assertEqual(code, 1)
+        self.assertIn("container failure", result["error"])
+        self.assertFalse(result["cleanup"]["confirmed"])
+        self.assertTrue(any(entry.get("error") for entry in result["cleanup"]["resources"]))
+        self.assertEqual(result["budget"]["reserved"], 0)
+        self.assertFalse(any("--force" in args for args in self.calls()))
 
     def test_runtime_uid_replacement_never_adopted_or_deleted(self):
         self.run.job = self.run.create(self.run.template)

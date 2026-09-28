@@ -87,6 +87,22 @@ class Layout(unittest.TestCase):
         self.assertNotIn("setup",objects["config"]["data"]["bootstrap.sh"])
         self.assertTrue(loop.pod_check(p,options()))
 
+    def test_functional_and_readonly_entries_share_fixed_metadata_setting(self):
+        import eks_socket_diagnostic as diagnostic
+        functional = loop.objects(plan())
+        readonly = diagnostic.objects(plan())
+        self.assertEqual(functional["job"], readonly["job"])
+        spec = functional["job"]["spec"]["template"]["spec"]
+        flags = [entry for entry in spec["initContainers"][0]["env"]
+                 if entry["name"].startswith("AWS_")]
+        expected = [dict(name="AWS_EC2_METADATA_DISABLED", value="true")]
+        self.assertEqual(flags, expected)
+        # An old frozen object cannot be passed off as a new runnable plan.
+        old = copy.deepcopy(functional["job"])
+        old["spec"]["template"]["spec"]["initContainers"][0]["env"].remove(flags[0])
+        with self.assertRaisesRegex(ValueError, "env"):
+            common.job_check(old, functional["job"])
+
     def test_injections_order_always_and_runtime_fail_closed(self):
         mutations=[lambda p:p["spec"]["initContainers"].reverse(),
                    lambda p:p["spec"]["initContainers"].append(copy.deepcopy(p["spec"]["initContainers"][1])),
@@ -130,6 +146,26 @@ class Layout(unittest.TestCase):
             result=subprocess.run([str(common.REPO/".tools/go1.27.1/bin/go"),"run",str(driver),str(root/"input.json")],env=env,capture_output=True,text=True,timeout=45)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertTrue(loop.pod_check(json.loads(result.stdout),options()))
+            # Evaluate actual Go projection, then strict runtime admission.
+            field = dict(apiVersion="v1", fieldPath="metadata.name")
+            value_from = dict(fieldRef=field)
+            reference = dict(name="AWS_EC2_METADATA_DISABLED", valueFrom=value_from)
+            extra = dict(name="UNEXPECTED", value="synthetic-not-for-output")
+            changes = [lambda e: e.pop(1), lambda e: e[1].update(value="false"),
+                       lambda e: e[1].update(value="TRUE"), lambda e: e[1].update(value=True),
+                       lambda e: e.__setitem__(1, reference), lambda e: e.reverse(),
+                       lambda e: e.append(extra)]
+            for change in changes:
+                obj = live_pod()
+                change(obj["spec"]["initContainers"][0]["env"])
+                payload = dict(Template=common.OBJECT_TEMPLATE, Object=obj)
+                (root/"input.json").write_text(json.dumps(payload))
+                command = [str(common.REPO/".tools/go1.27.1/bin/go"), "run", str(driver), str(root/"input.json")]
+                result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=45)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("synthetic-not-for-output", result.stdout)
+                with self.assertRaisesRegex(ValueError, "env"):
+                    loop.pod_check(json.loads(result.stdout), options())
 
     def test_trial_uses_warm_gate_full_audit_and_socket_boundary(self):
         result=loop.trial_report(trial_records(),"through-weir")

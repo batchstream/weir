@@ -1,8 +1,11 @@
 """Fixed offline CLI responses for the M26 loopback lifecycle tests only."""
 import copy
 import json
+import os
 from pathlib import Path
+import signal
 import sys
+import time
 
 
 def main():
@@ -86,6 +89,8 @@ def main():
                         obj["metadata"]["uid"] = "foreign-replacement"
                 print(json.dumps(obj))
     elif verb == "delete":
+        if cfg.get("refuse_delete"):
+            raise RuntimeError("synthetic cleanup refused")
         if args[1] != "--raw":
             raise ValueError("unconditional delete")
         body = json.loads(Path(args[args.index("-f")+1]).read_text())
@@ -117,6 +122,10 @@ def main():
         elif "-mode" in command:
             mode = command[command.index("-mode")+1]
             if mode == "trial":
+                if cfg.get("cancel_trial"):
+                    os.kill(os.getppid(), signal.SIGTERM)
+                    time.sleep(20)
+                    raise RuntimeError("cancelled CLI was not reaped")
                 prefix = command[command.index("-prefix")+1]
                 if prefix == "through-weir" and command[-2:] != ["-target", "127.0.0.1:7447"]:
                     raise ValueError("trial target")
