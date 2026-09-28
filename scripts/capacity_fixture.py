@@ -190,7 +190,7 @@ class Fixture:
         self.save("inventory-initial.json", self.before)
         checks = [(["docker","ps","-q"],"running containers"),
                   (["docker","ps","-aq","--filter","label="+LABEL+"="+self.owner],"owner collision"),
-                  (["docker","ps","-aq","--filter","name=^/"+self.owner+"-(es|weir|client|observer-weir|observer-es)$"],"name collision"),
+                  (["docker","ps","-aq","--filter","name=^/"+self.owner+"-(es|weir|client)$"],"name collision"),
                   (["docker","network","ls","-q","--filter","name=^"+self.owner+"$"],"network collision"),
                   (["docker","image","ls","-q","--filter","reference="+self.tag],"image tag collision")]
         for args, reason in checks:
@@ -252,6 +252,8 @@ class Fixture:
                 result.append({"resource":name,"clean":True})
             except BaseException as exc:
                 result.append({"resource":name,"clean":False,"error":str(exc)[:1000]})
+        for role, observer in getattr(self, 'observers', {}).items():
+            attempt('observer '+role, observer.stop)
         # Candidates are recorded before create. Only matching owner/name may be recovered.
         for name in reversed(self.attempted):
             def remove(n=name):
@@ -379,3 +381,90 @@ def inventory_diff(before, after):
     return {"default_bridge_changed":b.get("bridge")!=a.get("bridge"),
             "bridge_before":b.get("bridge"),"bridge_after":a.get("bridge"),
             "nondefault_changed":before["containers"]!=after["containers"] or before["volumes"]!=after["volumes"] or {k:v for k,v in b.items() if k!="bridge"}!={k:v for k,v in a.items() if k!="bridge"}}
+
+
+class Observer:
+    """One same-container exec, bounded pipes; stdin EOF cancels and joins helper."""
+    def __init__(self, options):
+        self.root = Path(options['root'])
+        self.role = options['role']
+        self.command = options['command']
+        self.streams = [bytearray(), bytearray()]
+        self.entries = []
+        self.parsed = 0
+        self.started = time.monotonic()
+        self.child = subprocess.Popen(self.command, env=options.get('env'), stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        self.pipes = [self.child.stdout, self.child.stderr]
+        try:
+            for pipe in self.pipes:
+                os.set_blocking(pipe.fileno(), False)
+            self.record()
+        except BaseException:
+            self.child.stdin.close()
+            stop_group(self.child)
+            self.child.stdout.close()
+            self.child.stderr.close()
+            raise
+
+    def record(self):
+        value = dict(command=self.command, pid=self.child.pid, role=self.role, elapsed=time.monotonic()-self.started,
+                     exit=self.child.poll(), bytes=[len(raw) for raw in self.streams])
+        (self.root/(self.role+'-exec.json')).write_text(json.dumps(value, indent=2)+'\n')
+
+    def poll(self):
+        changed = False
+        for index, pipe in enumerate(self.pipes):
+            target = self.root/(self.role+('.jsonl' if index == 0 else '.err'))
+            target.touch(exist_ok=True)
+            while True:
+                try:
+                    chunk = os.read(pipe.fileno(), 65536)
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    break
+                available = (64 << 20)-sum(map(len, self.streams))
+                self.streams[index].extend(chunk[:available])
+                with target.open('ab') as output:
+                    output.write(chunk[:available])
+                if len(chunk) > available:
+                    raise RuntimeError('observer output bound')
+                changed = True
+        if changed or self.child.poll() is not None:
+            self.record()
+        raw = self.streams[0]
+        end = raw.rfind(b'\n')+1
+        for line in raw[self.parsed:end].splitlines():
+            self.entries.append(json.loads(line))
+        self.parsed = end
+        if any(entry.get('errors') for entry in self.entries):
+            raise RuntimeError(self.role+' observer sample error')
+        if self.child.poll() not in (None, 0):
+            raise RuntimeError(self.role+' observer exited: '+bytes(self.streams[1]).decode(errors='replace'))
+        return self.entries
+
+    def stop(self):
+        self.child.stdin.close()
+        until = time.monotonic()+4
+        try:
+            while self.child.poll() is None and time.monotonic() < until:
+                try:
+                    self.poll()
+                except (RuntimeError, ValueError):
+                    pass
+                time.sleep(.02)
+            if self.child.poll() is None:
+                raise RuntimeError('observer exec did not stop after stdin EOF')
+            self.child.wait(timeout=1)
+            try:
+                self.poll()
+            except RuntimeError:
+                pass  # cancellation exit is retained, never counted as a full stream
+            if self.streams[0] and not self.streams[0].endswith(b'\n'):
+                raise RuntimeError('truncated observer output')
+        finally:
+            stop_group(self.child)
+            self.child.stdout.close()
+            self.child.stderr.close()
+            self.record()

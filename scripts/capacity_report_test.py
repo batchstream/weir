@@ -55,6 +55,8 @@ def sample(role, second):
                   files=files, rss_bytes=32<<20, fd=10, goroutines=10, gomaxprocs=1)
     if role == "weir":
         result.update(metrics=raw,db=json.dumps(dict(nodes=dict(node=node))))
+    if role == "es":
+        result.update(db=json.dumps(dict(nodes=dict(node=node))))
     return result
 
 
@@ -144,7 +146,7 @@ class Evidence(unittest.TestCase):
         observations=dict(weir=s,client=c,es=d)
         with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),observations,stable=False))
         for raw in ('{}','{"nodes":{}}','{"nodes":{"x":{}}}'):
-            s,c,d=self.observations();s[5]["db"]=raw
+            s,c,d=self.observations();d[5]["db"]=raw
             observations=dict(weir=s,client=c,es=d)
             with self.assertRaises(RuntimeError):require_evidence(evaluate(trial(),observations))
 

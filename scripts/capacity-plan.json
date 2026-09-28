@@ -27,18 +27,6 @@
       "cpuset": "5",
       "memory_mib": 512,
       "pids": 256
-    },
-    "observer_weir": {
-      "cpu": 0.125,
-      "cpuset": "6",
-      "memory_mib": 64,
-      "pids": 64
-    },
-    "observer_es": {
-      "cpu": 0.125,
-      "cpuset": "7",
-      "memory_mib": 64,
-      "pids": 64
     }
   },
   "swap": "disabled: memory-swap equals memory on every container",
@@ -47,7 +35,7 @@
     "queued": 0,
     "grpc_connections": 4,
     "http_connections": 62,
-    "observer_http_connections": 2,
+    "observer_http_connections": 1,
     "deadline_ms": 1000,
     "late_drop_ms": 5,
     "seed": "weir-m22-seed-20260928",
@@ -132,7 +120,7 @@
   "sampling": {
     "seconds": 2,
     "client_self": true,
-    "observer_namespaces": "only own target PID/network; /proc/1/root/sys/fs/cgroup plus process status/fd/net; SYS_PTRACE and DAC_READ_SEARCH only for own namespace proc access; ES JVM selected by exact bootstrap main class within owned PID namespace, not launcher/tini",
+    "observer_namespaces": "same nonroot UID via owned docker exec; own /sys/fs/cgroup, same PID/mount/cgroup namespace as target; helper included in target budget; visible cgroup-v2 leaf only",
     "go_goroutines": "client sampled; exact Weir artifact has no low-cost census, Weir unverified",
     "quiescence_seconds": 12,
     "not_atomic_peak": true

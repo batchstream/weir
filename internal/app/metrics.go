@@ -2,9 +2,16 @@ package app
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 func (n *Node) registerMetrics(cfg Config) error {
+	processOptions := collectors.ProcessCollectorOpts{}
+	for _, collector := range []prometheus.Collector{collectors.NewGoCollector(), collectors.NewProcessCollector(processOptions)} {
+		if err := n.registry.Register(collector); err != nil {
+			return err
+		}
+	}
 	if err := n.registry.Register(n); err != nil {
 		return err
 	}

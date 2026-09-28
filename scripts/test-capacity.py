@@ -14,7 +14,7 @@ import tarfile
 import time
 
 import package as packaging
-from capacity_fixture import Fixture, FixtureInterrupted, REPO, LABEL, inventory_diff, sha
+from capacity_fixture import Fixture, FixtureInterrupted, REPO, LABEL, inventory_diff, sha, Observer
 from capacity_artifact import docker_archive
 from capacity_report import evaluate, resource_gate, window_gate, timestamp, prom, metric, require_evidence, db_gate
 from capacity_contract import PLAN, PLAN_PATH, Budget
@@ -93,7 +93,7 @@ def start(f,plan,budget):
     common=["--read-only","-e","WEIR_CAPACITY_INTEGRATION=1"]
     client_spec={"image":f.image,"limits":plan["resources"]["client"],"extra":net+common,"command":["-mode","idle"]}
     f.create("client",client_spec)
-    es_extra=net+["--network-alias","elasticsearch","--tmpfs","/usr/share/elasticsearch/data:rw,size=1073741824,uid=1000,gid=0,mode=0770","-e","action.auto_create_index=false","-e","discovery.type=single-node","-e","xpack.security.enabled=false","-e","xpack.ml.enabled=false","-e","ingest.geoip.downloader.enabled=false","-e","ES_JAVA_OPTS=-Xms1024m -Xmx1024m"]
+    es_extra=net+["--user","1000:0","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--network-alias","elasticsearch","--tmpfs","/usr/share/elasticsearch/data:rw,size=1073741824,uid=1000,gid=0,mode=0770","-e","action.auto_create_index=false","-e","discovery.type=single-node","-e","xpack.security.enabled=false","-e","xpack.ml.enabled=false","-e","ingest.geoip.downloader.enabled=false","-e","ES_JAVA_OPTS=-Xms1024m -Xmx1024m"]
     es_spec={"image":plan["es_image_id"],"limits":plan["resources"]["es"],"extra":es_extra,"command":[]}
     f.create("es",es_spec)
     until=time.monotonic()+150
@@ -116,15 +116,16 @@ def start(f,plan,budget):
     f.save("mutation-budget.json", budget.snapshot())
     if setup.returncode:
         raise RuntimeError("bootstrap setup failed; reserved/started evidence retained")
-    weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly"],"command":["-config","/node.json"]}
+    weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly"],"command":["-config","/node.json"]}
     f.create("weir",weir_spec)
-    for role,observed in (("observer-weir","weir"),("observer-es","es")):
-        cid=f.containers[f.owner+"-"+observed]
-        extra=["--network","container:"+cid,"--pid","container:"+cid,"--user","0:0","--cap-add","SYS_PTRACE","--cap-add","DAC_READ_SEARCH"]+common
-        command=["-mode","observe","-pid","1" if observed=="weir" else "java"]
-        if observed=="weir":command+=["-diagnostics"]
-        observer_spec={"image":f.image,"limits":plan["resources"][role.replace("-","_")],"extra":extra,"command":command}
-        f.create(role,observer_spec)
+    f.observers = {}
+    for role in ("weir", "es"):
+        cid=f.containers[f.owner+"-"+role]
+        command=["docker","exec","-i","--user","65532:65532" if role=="weir" else "1000:0",
+                 "-e","WEIR_CAPACITY_INTEGRATION=1",cid,"/qualification-client","-mode","observe",
+                 "-role",role,"-pid","1" if role=="weir" else "java","-seconds","898"]
+        options=dict(root=f.root,role=role,command=command,env=f.env)
+        f.observers[role]=Observer(options)
     f.run(["docker","exec",f.containers[f.owner+"-weir"],"/weir","-probe","ready"],10)
     time.sleep(3)
     samples=read_observer(f,"weir")
@@ -146,28 +147,20 @@ def read_observer(f,role):
     if not hasattr(f,"observations"):
         f.observations={}
     samples=f.observations.setdefault(role,[])
-    cid=f.containers[f.owner+"-observer-"+role]
-    args=["docker","logs",cid]
-    if samples:
-        args=["docker","logs","--since",samples[-1]["time"],cid]
-    result=f.run(args,10)
-    entries=[json.loads(line) for line in result.stdout.splitlines() if line]
+    entries=f.observers[role].poll()
     if not samples:
         if not entries or "exe_sha256" not in entries[0]:
             raise RuntimeError("missing observer process identity")
         if role=="weir" and entries[0]["exe_sha256"]!="9def37fc9f4d552d35af552f87f86ba0b45bd2bdcf948114237fb5d312c97a32":
             raise RuntimeError("running product identity")
         f.save(role+"-process-identity.json",entries[0])
-    for entry in entries:
-        if "time" in entry:
-            duplicates = [s for s in samples[-4:] if s["time"] == entry["time"]]
-            if duplicates:
-                if duplicates != [entry]:
-                    raise RuntimeError("observer changed a previously emitted sample")
-                continue
-            if samples and timestamp(entry["time"]) <= timestamp(samples[-1]["time"]):
-                raise RuntimeError("nonmonotonic observer timestamps")
-            samples.append(entry)
+    current=[entry for entry in entries if "time" in entry]
+    if current[:len(samples)] != samples:
+        raise RuntimeError("observer changed previously emitted samples")
+    for entry in current[len(samples):]:
+        if samples and timestamp(entry["time"]) <= timestamp(samples[-1]["time"]):
+            raise RuntimeError("nonmonotonic observer timestamps")
+        samples.append(entry)
     if len(samples)>1350:
         raise RuntimeError("resource sample bound")
     f.save(role+"-samples.jsonl","".join(json.dumps(s)+"\n" for s in samples))
@@ -245,9 +238,9 @@ class Calibration:
                 raise RuntimeError("observation/hard boundary; stop: "+"; ".join(reasons))
             if not samples or time.time()-timestamp(samples[-1]["time"]) > self.plan["sampling"]["max_gap_seconds"]:
                 raise RuntimeError("observer stale; stop")
-            if role == "weir":
+            if role == "es":
                 db_gate(samples,False)
-        for role in ("weir","es","client","observer-weir","observer-es"):
+        for role in ("weir","es","client"):
             obj=self.f.owned(self.f.owner+"-"+role)
             if not obj["State"]["Running"] or obj["State"]["OOMKilled"] or obj["RestartCount"]:
                 raise RuntimeError("container stopped/OOM/restart")

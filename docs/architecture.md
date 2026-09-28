@@ -1793,6 +1793,10 @@ availability guarantee; Pod grace includes drain and endpoint propagation races.
 ### 15.3 Metrics and traces
 
 Use Prometheus and OpenTelemetry integration, not a custom telemetry platform.
+The Node registry registers the standard Prometheus Go and process collectors once per Node,
+alongside existing bounded ledger/connection metrics. Go heap and goroutines are runtime signals;
+platform-supported process RSS/CPU/FD metrics are separate. Collection performs no backend calls
+and adds no per-Store runtime labels or diagnostic listener.
 Bounded labels are listener/method, configured Service/Store/adapter, operation
 class, finite error/outcome, and finite controller-reduction reason.
 

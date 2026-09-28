@@ -16,8 +16,12 @@ func pacing(ctx context.Context, encoder *json.Encoder, opts TrialOptions) error
 	if opts.Seconds > 20 || (opts.Rate != 50 && opts.Rate != 200 && opts.Rate != 800) {
 		return errors.New("frozen pacing probe bounds")
 	}
+	sampler, err := newSampler("client", "self")
+	if err != nil {
+		return err
+	}
 	samples := make([]Sample, 0, 12)
-	samples = append(samples, sample("self"))
+	samples = append(samples, sampler.sample(ctx, nil))
 	done := make(chan struct{})
 	sampleCtx, stop := context.WithCancel(ctx)
 	go func() {
@@ -32,7 +36,7 @@ func pacing(ctx context.Context, encoder *json.Encoder, opts TrialOptions) error
 				if len(samples) >= 11 {
 					return
 				}
-				samples = append(samples, sample("self"))
+				samples = append(samples, sampler.sample(ctx, nil))
 			}
 		}
 	}()
@@ -45,7 +49,7 @@ func pacing(ctx context.Context, encoder *json.Encoder, opts TrialOptions) error
 	}
 	stop()
 	<-done
-	samples = append(samples, sample("self"))
+	samples = append(samples, sampler.sample(ctx, nil))
 	hash, hashErr := executableHash("self")
 	if hashErr != nil {
 		return hashErr

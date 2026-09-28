@@ -342,9 +342,10 @@ def evaluate(trial, observations, stable=True):
             reasons += why
             if role == "weir":
                 peak = maximum
-                reasons += db_gate(full, False)
-                reasons += db_gate(selected, stable)
             else:
+                if role == "es":
+                    reasons += db_gate(full, False)
+                    reasons += db_gate(selected, stable)
                 cpu = cpu_usage(selected, PLAN["resources"][role]["cpu"])
                 if role == "client":
                     client_cpu = cpu

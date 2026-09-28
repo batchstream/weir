@@ -786,7 +786,7 @@ DB失败/过载期间ready仍只表示生命周期。单副本Recreate不保证�
 
 ### 15.3 Metrics 与 trace
 
-使用 Prometheus/OpenTelemetry，不自建平台。标签只能是有限 listener/method、配置 Service/Store/Adapter、操作族、错误/outcome、有限减窗原因。
+使用 Prometheus/OpenTelemetry，不自建平台。Node registry 每 Node 注册一次标准 Go/process collector，与既有账本/连接指标并列；Go heap/goroutine 与平台支持的进程 RSS/CPU/FD 分开。采集不访问后端，不为每 Store 重复注册运行时指标，也不新增诊断监听器。标签只能是有限 listener/method、配置 Service/Store/Adapter、操作族、错误/outcome、有限减窗原因。
 
 记录 pending/reserved 项/字节、active/live session、Scan fetch/emit、output credit、准入拒绝、排队/收集延迟；批次数/字节/填充率/每后端调用对应应用项数/单项回退；C/active/增减/cooldown、后端耗时、conflict/UNKNOWN；stream bytes/frames/completion/failure/stall/truncation/cursor cleanup/hop；内存预算/用量/latch、pool 使用/等待、转换限额/cache、生命周期/drain/强停次数。
 
