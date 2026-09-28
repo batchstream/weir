@@ -21,6 +21,8 @@ ES = dict(reference="docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed
           config="sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160")
 MINIMUM = dict(cpu=7, memory=5632*1024**2, pods=3, **{"ephemeral-storage":5*1024**3})
 FILES = common.FILES + ("scripts/eks_resources_test.py", "scripts/eks_loopback.py", "scripts/eks_loopback_test.py",
+                        "scripts/eks_loopback_admission_test.py", "scripts/eks_loopback_cli_fixture.py",
+                        "scripts/fixtures/eks-loopback-admitted-job.json", "scripts/fixtures/README.md",
                         "scripts/eks_loopback_check.sh", "scripts/eks_loopback_bootstrap.sh", "scripts/capacity_report_test.py", "deploy/kubernetes/node.example.json")
 CURL = ["curl", "-q", "--silent", "--show-error", "--fail", "--noproxy", "*", "--proxy", "", "--proto", "=http",
         "--max-redirs", "0", "--retry", "0", "--connect-timeout", "1", "--max-time", "3", "--max-filesize", "262144"]
@@ -150,6 +152,9 @@ class Run(common.Run):
             self.owned.append(self.pod_entry)
             self.save("owned.json",self.owned)
         self.save(f"pod-observation-{self.number}.json",pod)
+        status = pod.get("status") or {}
+        if any(s.get("containerID") for key in ("containerStatuses", "initContainerStatuses") for s in status.get(key, [])):
+            self.runtime_evidence = True
         options = dict(job=self.job,template=self.template,pod_uid=self.pod_entry["uid"] if self.pod_entry else None)
         self.pod_ready = pod_check(pod,options)
         if self.pod_ready:
@@ -325,7 +330,7 @@ def namespace_start(run):
     until=time.monotonic()+20
     while True:
         actual=run.selected_object("ResourceQuota","budget");common.owner_check(actual,entry)
-        require(actual["spec"]["hard"]==hard,"quota admission drift")
+        common.quota_check(actual["spec"],quota["spec"])
         if (actual.get("status") or {}).get("used",{}).get("count/secrets")=="0":break
         require(time.monotonic()<until,"quota not initialized");time.sleep(.5)
     policy=dict(apiVersion="networking.k8s.io/v1",kind="NetworkPolicy",metadata=dict(metadata,name="default-deny"),
@@ -351,10 +356,10 @@ def execute(run, options):
     require(common.digest(proof["path"])==proof["sha256"],"registry evidence drift")
     require(all(common.digest(Path(proof["path"]).parent/name)==digest for name,digest in proof["proof"]["files"].items()),"registry raw evidence drift")
     require(run.run(["git","rev-parse","HEAD"]).strip()==plan["source"] and not run.run(["git","status","--porcelain"]).strip(),"source/worktree drift")
-    run.plan=plan;run.pod_entry=None;run.pod_ready=False
+    run.plan=plan;run.pod_entry=None;run.pod_ready=False;run.runtime_evidence=False;run.job_create_attempted=False
     with (run.root/"invocation.json").open("x") as handle:json.dump(dict(start=time.time(),plan_sha256=options.plan_sha256),handle)
     result=dict(profile=plan["profile"],passed=False,trials=[],candidate=None,full_calibration="not-run",overload="not-run",recovery="not-run",soak="not-run",
-                network_isolation="unqualified",resource_evidence="partial: no full Weir/ES process sampling",plan_sha256=options.plan_sha256)
+                network_isolation="unqualified",resource_evidence="not-run",plan_sha256=options.plan_sha256)
     budget=Budget()
     try:
         run.check_node()
@@ -438,6 +443,14 @@ def execute(run, options):
         result["cleanup"]=run.cleanup()
         result["remote_elapsed_seconds"]=time.monotonic()-run.remote_started if run.remote_started else 0
         result["passed"] &= result["cleanup"]["confirmed"]
+        if run.runtime_evidence:
+            result["resource_evidence"] = "partial: no full Weir/ES process sampling"
+        reservation = run.root/"bootstrap-management.json"
+        if reservation.exists():
+            management = json.loads(reservation.read_text())
+            result["bootstrap_management"] = dict(management)
+            if not run.job_create_attempted:
+                result["bootstrap_management"].update(started_upper_bound=0,completed=0)
         result["budget"]=budget.snapshot();run.save("result.json",result)
     print(json.dumps(dict(evidence=str(run.root),passed=result["passed"],error=result.get("error"),cleanup=result["cleanup"]["confirmed"])),flush=True)
     return 0 if result["passed"] else 1

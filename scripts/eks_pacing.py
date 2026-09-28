@@ -84,6 +84,62 @@ def job_template(plan, step):
     return result
 
 
+def exact_value(actual, expected):
+    """JSON equality including scalar types (Python otherwise equates False/0)."""
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(exact_value(actual[k], v) for k, v in expected.items())
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(exact_value(a, b) for a, b in zip(actual, expected))
+    return actual == expected
+
+
+def quantity_map_check(actual, expected):
+    """Exact values and keys, for resource lists including Quota hard."""
+    require(isinstance(actual, dict) and isinstance(expected, dict) and actual.keys() == expected.keys(), "resource keys drift")
+    for key, value in expected.items():
+        require(quantity(actual[key]) == quantity(value), "resource quantity drift: "+key)
+
+
+def quota_check(actual, expected):
+    actual, expected = dict(actual), dict(expected)
+    quantity_map_check(actual.pop("hard", None), expected.pop("hard"))
+    require(exact_value(actual, expected), "quota spec drift")
+
+
+def container_field_check(field, actual, expected):
+    if field == "resources":
+        require(isinstance(actual, dict) and actual.keys() == expected.keys() and
+                set(expected) <= {"requests", "limits"}, "resource requirements drift")
+        for name, values in expected.items():
+            quantity_map_check(actual[name], values)
+    elif field in ("readinessProbe", "startupProbe", "livenessProbe"):
+        require(isinstance(actual, dict), "probe type")
+        actual, expected = dict(actual), dict(expected)
+        # core/v1 Probe scalar omitempty and v1.36 SetDefaults_Probe only.
+        # Pointer fields, handlers and unknown fields get no normalization.
+        defaults = dict(initialDelaySeconds=0, timeoutSeconds=1, periodSeconds=10,
+                        successThreshold=1, failureThreshold=3)
+        for key, value in defaults.items():
+            actual.setdefault(key, value)
+            expected.setdefault(key, value)
+        require(exact_value(actual, expected), "probe admission drift: "+field)
+    else:
+        require(exact_value(actual, expected), "container admission drift: "+field)
+
+
+def volumes_check(actual, expected):
+    require(isinstance(actual, list) and len(actual) == len(expected), "volume list drift")
+    actual, expected = copy.deepcopy(actual), copy.deepcopy(expected)
+    for observed, wanted in zip(actual, expected):
+        if "sizeLimit" in wanted.get("emptyDir", {}):
+            require(isinstance(observed.get("emptyDir"), dict), "emptyDir drift")
+            left, right = observed["emptyDir"], wanted["emptyDir"]
+            require(quantity(left.pop("sizeLimit", None)) == quantity(right.pop("sizeLimit")), "emptyDir sizeLimit drift")
+    require(exact_value(actual, expected), "volume admission drift")
+
+
 def admitted_spec(actual, expected, *, pod=False):
     """Reject unknown admission fields; allow only standard, inert API defaults."""
     require(bool(expected.get("nodeName")), "frozen nodeName required")
@@ -96,13 +152,15 @@ def admitted_spec(actual, expected, *, pod=False):
             for observed, wanted in zip(actual[key], value):
                 container = dict(observed)
                 for field, expected_value in wanted.items():
-                    require(container.pop(field, None) == expected_value, "container admission drift: "+field)
+                    container_field_check(field, container.pop(field, None), expected_value)
                 for field, expected_value in dict(terminationMessagePath="/dev/termination-log", terminationMessagePolicy="File").items():
                     require(container.pop(field, expected_value) == expected_value, "container default drift")
                 require(not container, "extra container fields: "+str(sorted(container)))
             extra.pop(key)
+        elif key == "volumes":
+            volumes_check(extra.pop(key, None), value)
         else:
-            require(extra.pop(key, None) == value, "Pod admission drift: "+key)
+            require(exact_value(extra.pop(key, None), value), "Pod admission drift: "+key)
     # Job templates do not go through Pod Priority admission. Actual/dry-run
     # Pods must contain its ordinary defaults, bound to the exact frozen node.
     priority = extra.pop("priority", None if pod else 0)
@@ -113,23 +171,28 @@ def admitted_spec(actual, expected, *, pod=False):
     defaults = dict(schedulerName="default-scheduler", serviceAccountName="default", serviceAccount="default",
                     hostNetwork=False, hostPID=False, hostIPC=False)
     for key, value in defaults.items():
-        require(extra.pop(key, value) == value, "Pod default drift: "+key)
+        require(exact_value(extra.pop(key, value), value), "Pod default drift: "+key)
     # The API normally injects these two node-lifecycle tolerations. Freeze them
     # here, do not send them and never use them to accept a tainted node.
     tolerations = extra.pop("tolerations", [])
     allowed = [dict(key="node.kubernetes.io/"+key, operator="Exists", effect="NoExecute", tolerationSeconds=300)
                for key in ("not-ready", "unreachable")]
-    require(tolerations in ([], allowed), "unexpected toleration")
+    require(exact_value(tolerations, []) or exact_value(tolerations, allowed), "unexpected toleration")
     require(not extra, "extra Pod fields: "+str(sorted(extra)))
 
 
 def job_check(actual, expected):
+    require(actual["apiVersion"] == expected["apiVersion"] and actual["kind"] == "Job", "Job kind drift")
+    meta, wanted_meta = actual["metadata"], expected["metadata"]
+    require(all(meta.get(k) == wanted_meta[k] for k in ("name", "namespace")) and
+            all((meta.get("labels") or {}).get(k) == v for k, v in wanted_meta["labels"].items()) and
+            not meta.get("ownerReferences"), "Job metadata drift")
     spec = dict(actual["spec"])
     for key in ("completions", "parallelism", "backoffLimit", "activeDeadlineSeconds"):
-        require(spec.pop(key, None) == expected["spec"][key], "Job admission drift: "+key)
+        require(exact_value(spec.pop(key, None), expected["spec"][key]), "Job admission drift: "+key)
     defaults = dict(suspend=False, manualSelector=False, completionMode="NonIndexed", podReplacementPolicy="TerminatingOrFailed")
     for key, value in defaults.items():
-        require(spec.pop(key, value) == value, "Job execution mode: "+key)
+        require(exact_value(spec.pop(key, value), value), "Job execution mode: "+key)
     selector = spec.pop("selector", None)
     if selector is not None:
         wanted = {"matchLabels": {"batch.kubernetes.io/controller-uid": actual["metadata"]["uid"]}}
@@ -296,7 +359,11 @@ class Run:
             job_check(dry, obj)
             self.pod_dry_run(obj)
             self.check_node()
+        elif kind == "ResourceQuota":
+            quota_check(dry["spec"], obj["spec"])
         # CREATE only; an AlreadyExists or ambiguous response is never adopted.
+        if kind == "Job":
+            self.job_create_attempted = True
         result = json.loads(self.kube(args, namespace))
         entry = dict(kind=kind, name=name, uid=result["metadata"]["uid"], owner=self.plan["owner"])
         require(bool(entry["uid"]), "missing create UID")
@@ -307,6 +374,8 @@ class Run:
         owner_check(result, entry)
         if kind == "Job":
             job_check(result, obj)
+        elif kind == "ResourceQuota":
+            quota_check(result["spec"], obj["spec"])
         elif kind == "ConfigMap":
             require(result.get("data") == obj["data"], "ConfigMap admission drift")
         elif kind == "Namespace":
@@ -586,7 +655,7 @@ def execute(run, options):
         while True:
             observed = run.selected_object("ResourceQuota", "budget")
             owner_check(observed, quota_entry)
-            require(observed["spec"]["hard"] == hard, "quota admission drift")
+            quota_check(observed["spec"], quota["spec"])
             if (observed.get("status") or {}).get("used", {}).get("count/secrets") == "0":
                 break
             require(time.monotonic() < until, "quota accounting not initialized")

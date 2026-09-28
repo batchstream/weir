@@ -1,6 +1,6 @@
 """M25 EKS-only evidence checks. The M22R Docker resource gate is unchanged."""
 import re
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from capacity_report import counter, cpu_usage, histogram_count, select_samples, timestamp, window_gate
 
@@ -30,15 +30,20 @@ def integer(value, positive=False):
 
 
 def quantity(value):
-    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([EPTGMK]i|[EPTGMkmun]|[eE][+-]?[0-9]+)?", str(value))
+    require(isinstance(value, str) and len(value) <= 64, "resource quantity type/length")
+    match = re.fullmatch(r"\+?([0-9]+(?:\.[0-9]*)?|\.[0-9]+)([EPTGMK]i|[EPTGMkmun]|[eE][+-]?[0-9]+)?", value)
     require(match is not None, "unknown resource quantity")
     suffix = match[2] or ""
     require(len(str(value)) <= 64 and (not re.fullmatch(r"[eE][+-]?[0-9]+", suffix) or abs(int(suffix[1:])) <= 18), "resource quantity bound")
     powers = {"": 1, "n": Decimal("1e-9"), "u": Decimal("1e-6"), "m": Decimal(".001"), "k": 1000}
     powers.update({s: 1024**i for i, s in enumerate(("Ki", "Mi", "Gi", "Ti", "Pi", "Ei"), 1)})
     powers.update({s: 1000**i for i, s in enumerate(("M", "G", "T", "P", "E"), 2)})
-    factor = Decimal(10)**int(suffix[1:]) if re.fullmatch(r"[eE][+-]?[0-9]+", suffix) else powers[suffix]
-    value = Decimal(match[1])*factor
+    # At most 64 input characters and a 19-digit binary factor. Keep every
+    # digit; accounting may round UP later, admission equivalence never does.
+    with localcontext() as context:
+        context.prec = 96
+        factor = Decimal(10)**int(suffix[1:]) if re.fullmatch(r"[eE][+-]?[0-9]+", suffix) else powers[suffix]
+        value = Decimal(match[1])*factor
     require(value.is_finite() and 0 <= value <= 2**63-1, "resource quantity overflow")
     return value
 
