@@ -4,11 +4,15 @@ package testdns
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
+	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -41,13 +45,8 @@ type Server struct {
 
 func Start(t *testing.T) *Server {
 	t.Helper()
-	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
+	udp, tcp, err := listen("127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
-	}
-	tcp, err := net.Listen("tcp", udp.LocalAddr().String())
-	if err != nil {
-		_ = udp.Close()
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -69,6 +68,36 @@ func Start(t *testing.T) *Server {
 		}
 	})
 	return s
+}
+
+const maxListenAttempts = 16
+
+// listen retains both sockets before publishing a shared DNS address. UDP's
+// ephemeral port may already be occupied in TCP's independent port namespace.
+func listen(address string) (net.PacketConn, net.Listener, error) {
+	addressInUse := syscall.EADDRINUSE
+	if runtime.GOOS == "windows" {
+		// Winsock WSAEADDRINUSE differs from Go's synthetic Windows EADDRINUSE.
+		addressInUse = syscall.Errno(10048)
+	}
+	var err error
+	for range maxListenAttempts {
+		var udp net.PacketConn
+		udp, err = net.ListenPacket("udp", address)
+		if err != nil {
+			return nil, nil, err
+		}
+		var tcp net.Listener
+		tcp, err = net.Listen("tcp", udp.LocalAddr().String())
+		if err == nil {
+			return udp, tcp, nil
+		}
+		_ = udp.Close()
+		if !errors.Is(err, addressInUse) {
+			return nil, nil, err
+		}
+	}
+	return nil, nil, fmt.Errorf("bind DNS UDP/TCP after %d attempts: %w", maxListenAttempts, err)
 }
 
 func (s *Server) Set(name string, answer Answer) {
