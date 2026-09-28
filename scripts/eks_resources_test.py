@@ -319,6 +319,65 @@ sys.stdout.write(value if isinstance(value, str) else json.dumps(value))
             self.scenario['pods'] = raw
             with self.assertRaises(ValueError): self.check()
 
+    def test_complete_cli_balance_before_each_get_and_recovery(self):
+        # Controlled time, no EKS and no real 120-second sleep. Each fake CLI
+        # consumes time exactly as a bounded real child would consume it.
+        for remaining, fail, spent, expected in ((13.201, False, 0, 0), (28.999, False, 0, 0), (29, False, 0, 2),
+                                                 (40, False, 12, 1), (40, True, 12, 1),
+                                                 (60, True, 10, 3), (120, False, 120, 1), (120, True, 120, 1)):
+            with self.subTest(remaining=remaining, fail=fail, spent=spent):
+                clock = [1000.0]
+                state = dict(node=self.run.plan['node'], started=1000+remaining-120,
+                             deadline=1000+remaining, recovery=None)
+                self.run.resource_preflight = state
+                calls = []
+                def command(argv, timeout=25):
+                    calls.append((argv, timeout))
+                    self.run.number += 1
+                    if len(calls) == 1:
+                        clock[0] += spent
+                        if fail:
+                            error = entry.CommandFailure(self.run.number, 1, 'net/http: timeout awaiting response headers')
+                            raise error
+                    return json.dumps(self.n if 'node' in argv else self.envelope)
+                with patch.object(entry.time, 'monotonic', side_effect=lambda:clock[0]), patch.object(self.run, 'run', side_effect=command):
+                    if expected in (2, 3):
+                        self.run.check_node()
+                    else:
+                        with self.assertRaisesRegex(ValueError, '资源窗口余额不足|resource preflight deadline'):
+                            self.run.check_node()
+                self.assertEqual(len(calls), expected)
+                self.assertTrue(all(timeout == 25 for _, timeout in calls))
+                self.assertTrue(all('--request-timeout=10s' in argv for argv, _ in calls))
+                self.assertEqual(state['deadline'], 1000+remaining)
+                self.assertEqual(state['started'], 1000+remaining-120)
+                self.assertEqual(state['recovery'] is not None, expected == 3)
+                if expected == 3:
+                    self.assertEqual(calls[0], calls[1])
+
+    def test_local_cutoff_is_never_read_timeout_recovery(self):
+        error = ValueError('command timeout')
+        with patch.object(self.run, 'run', side_effect=error) as command:
+            with self.assertRaisesRegex(ValueError, 'command timeout'):
+                self.run.check_node()
+        self.assertEqual(command.call_count, 1)
+        self.assertIsNone(self.run.resource_preflight['recovery'])
+        failure = entry.CommandFailure(1, -15, '')
+        with patch.object(self.run, 'run', side_effect=failure) as command:
+            with self.assertRaisesRegex(ValueError, 'recovery ineligible'):
+                self.run.check_node()
+        self.assertEqual(command.call_count, 1)
+        self.assertIsNone(self.run.resource_preflight['recovery'])
+
+    def test_insufficient_balance_starts_no_real_cli_or_recovery(self):
+        self.check()
+        before = len(self.calls())
+        self.run.resource_preflight['deadline'] = time.monotonic()+28
+        with self.assertRaisesRegex(ValueError, '资源窗口余额不足'):
+            self.check()
+        self.assertEqual(len(self.calls()), before)
+        self.assertIsNone(self.run.resource_preflight['recovery'])
+
     def test_common_deadline_scope_and_output_bound(self):
         self.check()
         deadline = self.run.resource_preflight['deadline']

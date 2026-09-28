@@ -324,9 +324,6 @@ def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qua
                                "--cli-connect-timeout","5","--cli-read-timeout","10","--no-cli-pager"]))
     require(cluster["arn"]==TARGET["context"] and cluster["status"]=="ACTIVE" and cluster["version"]=="1.36","cluster identity/version")
     require(not run.kube(["get","namespace",owner,"--ignore-not-found","-o","name"]).strip(),"namespace collision")
-    run.plan = dict(node=run.node_scope)
-    assessment = run.check_node()
-    selected, spare = assessment["node"], assessment["spare"]
     for kind,verbs in dict(namespaces=("create","get","delete"),jobs=("create","get","list","delete"),pods=("create","get","list","delete"),
                            events=("list",),configmaps=("create","get","delete"),resourcequotas=("create","get","delete"),
                            networkpolicies=("create","get","delete"),**{"pods/log":("get",),"pods/exec":("create",)}).items():
@@ -337,16 +334,24 @@ def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qua
     require(not run.run(["git","status","--porcelain"]).strip(),"committed clean implementation required")
     run.run(["git","diff","--exit-code",image_source,"--","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"])
     source=run.run(["git","rev-parse","HEAD"]).strip()
+    static = dict(completed=time.time(), monotonic_completed=time.monotonic(), source=source)
+    run.save("static-preflight.json", static)
+    # Start the one freshness window only after all static prerequisites pass.
+    run.plan = dict(node=run.node_scope)
+    assessment = run.check_node()
+    selected, spare = assessment["node"], assessment["spare"]
     context = dict(node=selected, initial_spare=spare, resource_preflight=run.resource_preflight, cluster=cluster, source=source)
     return context
 
 
 def prepare(run, owner):
+    tool_inputs = {name:common.digest(common.REPO/name) for name in FILES}
+    product_inputs = {name:common.digest(common.REPO/name) for name in run.run(["git","ls-files","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"]).splitlines()}
     context = prepare_context(run, owner)
     selected, spare, cluster, source = (context[key] for key in ("node", "initial_spare", "cluster", "source"))
     plan=dict(schema_version=1,profile="m26r-single-pod-loopback-limited-functional",target=TARGET,namespace=owner,owner=owner,
               node=selected,initial_spare=spare,resource_preflight=context["resource_preflight"],cluster=cluster,sampled_at=time.time(),atomic_snapshot=False,source=source,image_source=SOURCE,
-              images=dict(IMAGES,es=ES),tool_inputs={name:common.digest(common.REPO/name) for name in FILES},minimum=MINIMUM,
+              images=dict(IMAGES,es=ES),tool_inputs=tool_inputs,minimum=MINIMUM,
               resource_peak=dict(cpu=6,memory_mib=4608,ephemeral_mib=2560),sequence=["elasticsearch-startup","empty-index-init","weir+client","through-weir","direct-es"],
               trials=dict(rate=50,warm=20,seconds=20,workers=64,connections=4,deadline_ms=1000,expiry_ms=20,catchup=8,corpus=1000,document_bytes=1024),
               budgets=dict(remote_seconds=900,cleanup_seconds=180,startup_seconds=150,planned=6000,load_planned=4000,document_mutations=2400,bootstrap_management=1,trial_management_each=3),
@@ -354,7 +359,7 @@ def prepare(run, owner):
               endpoints=dict(es="127.0.0.1:9200",transport="127.0.0.1:9300",weir="127.0.0.1:7447",diagnostics="127.0.0.1:7449",negative="verified own PodIP ports 9200/9300/7447/7449"),
               output=dict(stream_bytes=common.LIMIT,combined_bytes=common.LIMIT,total_bytes=common.TOTAL),network_isolation="unqualified",capacity_candidate=None,
               evidence_inputs=run.registry_evidence,
-              product_inputs={name:common.digest(common.REPO/name) for name in run.run(["git","ls-files","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"]).splitlines()})
+              product_inputs=product_inputs)
     plan["objects"]=objects(plan)
     plan["commands"]=dict(curl=CURL,trial_base=["/qualification","-mode","trial","-backend","http://127.0.0.1:9200","-rate","50","-warm","20","-seconds","20","-mutation-reservation","1200"],
                           config=["/qualification","-mode","config","-config","/config/node.json"],snapshot=["/qualification","-mode","snapshot"],version=["/weir","-version"],probe=["/weir","-probe","ready"])
@@ -394,6 +399,7 @@ def namespace_start(run):
 def execute(run, options):
     plan=json.loads((run.root/"plan.json").read_text())
     run.resource_preflight=plan.get("resource_preflight")
+    require(isinstance(run.resource_preflight, dict), "frozen resource preflight required; cannot start a new window")
     require(common.digest(run.root/"plan.json")==options.plan_sha256 and plan["target"]==TARGET,"plan hash/context")
     require(plan["node"]["uid"]==options.node_uid and plan["minimum"]==MINIMUM,"node/minimum drift")
     require(plan["images"]==dict(IMAGES,es=ES) and plan["objects"]==objects(plan),"frozen artifacts/templates drift")

@@ -366,20 +366,22 @@ class Run:
             # dispatch checks use only the original native deadline, no recovery.
             written = self.mutation_attempted or bool(self.owned)
             deadline = self.deadline if written else min(self.deadline, self.resource_preflight["deadline"])
-            require(time.monotonic() < deadline-4, "resource preflight deadline")
+            require(deadline-time.monotonic() >= 25+4, "资源窗口余额不足 (resource preflight deadline): need 25s CLI + 4s Stop/Wait")
             try:
-                raw = self.run(argv, min(25, deadline-time.monotonic()-4))
+                raw = self.run(argv, 25)
             except CommandFailure as exc:
                 read_timeout = exc.code == 1 and any(message in exc.stderr for message in (
                     "Client.Timeout or context cancellation while reading body", "net/http: timeout awaiting response headers"))
                 read_timeout &= not any(message in exc.stderr.lower() for message in ("forbidden", "unauthorized", "notfound"))
                 require(read_timeout and not written and
-                        self.resource_preflight["recovery"] is None and time.monotonic() < deadline-4, "resource GET failed; recovery ineligible: "+str(exc))
+                        self.resource_preflight["recovery"] is None, "resource GET failed; recovery ineligible: "+str(exc))
+                require(deadline-time.monotonic() >= 25+4,
+                        "资源窗口余额不足 (resource preflight deadline): need 25s CLI + 4s Stop/Wait; original GET: "+str(exc))
                 recovery = dict(failed_command=exc.number, reason=exc.stderr, argv=argv,
                                 stdout=f"command-{exc.number:04d}.out", stderr=f"command-{exc.number:04d}.err", exit=exc.code)
                 self.resource_preflight["recovery"] = recovery
                 self.save("resource-preflight.json", self.resource_preflight)
-                raw = self.run(argv, min(25, deadline-time.monotonic()-4))
+                raw = self.run(argv, 25)
             require(time.monotonic() < deadline, "resource preflight deadline")
             outputs.append(raw)
             if len(outputs) == 1:
@@ -704,9 +706,6 @@ def prepare(run, owner):
                             networkpolicies=("create", "get", "delete"), **{"pods/log": ("get",)}).items():
         for verb in verbs:
             require(run.kube(["auth", "can-i", verb, kind], None if kind == "namespaces" else owner).strip() == "yes", "missing permission: "+verb+" "+kind)
-    run.plan = dict(node=run.node_scope)
-    assessment = run.check_node()
-    selected, spare = assessment["node"], assessment["spare"]
     cni_template = r'''{{range .spec.template.spec.containers}}{{.name}} {{.image}}{{range .env}}{{if or (eq .name "ENABLE_NETWORK_POLICY") (eq .name "NETWORK_POLICY_ENFORCING_MODE")}} {{.name}}={{.value}}{{end}}{{end}}{{range .args}}{{if or (eq . "--enable-network-policy=true") (eq . "--enable-network-policy=false")}} {{.}}{{end}}{{end}}{{"\n"}}{{end}}'''
     cni_args = ["get", "daemonset", "aws-node", "-o", "go-template="+cni_template]
     cni = run.kube(cni_args, "kube-system")
@@ -714,9 +713,15 @@ def prepare(run, owner):
     head = run.run(["git", "rev-parse", "HEAD"]).strip()
     require(not run.run(["git", "status", "--porcelain"]).strip(), "clean committed implementation required")
     run.run(["git", "diff", "--exit-code", SOURCE, "--", "*.go", "go.mod", "go.sum", "scripts/qualification.Dockerfile"])
+    tool_inputs = {name:digest(REPO/name) for name in FILES}
+    static = dict(completed=time.time(), monotonic_completed=time.monotonic(), source=head)
+    run.save("static-preflight.json", static)
+    run.plan = dict(node=run.node_scope)
+    assessment = run.check_node()
+    selected, spare = assessment["node"], assessment["spare"]
     plan = dict(schema_version=1, profile="eks-m25-timing-only-v1", target=run.target, namespace=owner, owner=owner,
                 node=selected, initial_spare=spare, resource_preflight=run.resource_preflight, cluster=cluster, sampled_at=time.time(), atomic_snapshot=False,
-                source=head, image_source=SOURCE, images=IMAGES, tool_inputs={name: digest(REPO/name) for name in FILES},
+                source=head, image_source=SOURCE, images=IMAGES, tool_inputs=tool_inputs,
                 sequence=["version", "snapshot"]+["pace-"+str(i) for i in range(5)], rates=RATES,
                 seconds=20, planned=23000, database_mutations=0, cpu=1, memory_bytes=512*1024**2,
                 dispatch_p99_us=5000, arrival_p95_us=100000, arrival_p99_us=250000,
@@ -731,6 +736,7 @@ def prepare(run, owner):
 def execute(run, options):
     plan = json.loads((run.root/"plan.json").read_text())
     run.resource_preflight = plan.get("resource_preflight")
+    require(isinstance(run.resource_preflight, dict), "frozen resource preflight required; cannot start a new window")
     require(digest(run.root/"plan.json") == options.plan_sha256 and plan["target"] == run.target, "frozen plan/context mismatch")
     require(plan["node"]["uid"] == options.node_uid, "node confirmation mismatch")
     require(plan["namespace"] == plan["owner"] and re.fullmatch(r"weir-qual-m25-[a-z0-9-]{1,25}", plan["owner"]) is not None, "frozen namespace/owner")

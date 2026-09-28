@@ -406,6 +406,81 @@ class Lifecycle(unittest.TestCase):
                 alias=repo/'.testdata'/'alias';alias.symlink_to(root.parent,target_is_directory=True)
                 with self.assertRaises(ValueError):pre.scope_check(alias/'native')
 
+    def test_slow_static_checks_precede_one_frozen_resource_window(self):
+        from eks_resources_test import node, pod
+        for wait in (0, 121):
+            with self.subTest(wait=wait), tempfile.TemporaryDirectory() as directory:
+                for sig in (signal.SIGINT, signal.SIGTERM):
+                    self.addCleanup(signal.signal, sig, signal.getsignal(sig))
+                root = Path(directory)/'m30r4'/'native';root.mkdir(parents=True)
+                clock = [1000.0]
+                events = []
+                n = node();n.update(kernel='offline', kubelet='offline')
+                n['allocatable']['ephemeral-storage'] = '20Gi'
+                p = pod();p['containers'][0]['resources']['requests']['cpu'] = '0.5'
+                for c in p['containers']:
+                    c.update(allocatedResources=None, claims=False, resizePolicy=None)
+                envelope = dict(kind='PodList', apiVersion='v1', itemsType='[]interface {}',
+                                **{'continue':None}, remainingItemCount=None, items=[p])
+                helper = plan()['helper']
+                with patch.object(pre.time, 'monotonic', side_effect=lambda:clock[0]):
+                    run = pre.Run(root, pre.loop.TARGET)
+                    run.node_scope = dict(name='node', uid='node-uid')
+                    def command(argv, timeout=25):
+                        run.number += 1
+                        dynamic = 'get' in argv and 'auth' not in argv and ('node' in argv or 'pods' in argv)
+                        events.append(dict(argv=argv, at=clock[0], dynamic=dynamic,
+                                           window=copy.deepcopy(run.resource_preflight), timeout=timeout))
+                        if dynamic:
+                            clock[0] += 2
+                            return json.dumps(n if 'node' in argv else envelope)
+                        if 'can-i' in argv or 'daemonset' in argv:
+                            self.assertIsNone(run.resource_preflight)
+                            clock[0] += 6  # 23 permissions plus CNI take 144 seconds.
+                            return 'yes' if 'can-i' in argv else 'aws-node --enable-network-policy=false'
+                        if argv[0] == 'aws':
+                            cluster = dict(arn=pre.loop.TARGET['context'], status='ACTIVE', version='1.36')
+                            return json.dumps(cluster)
+                        if argv[:3] == ['kubectl', 'config', 'current-context']:
+                            return pre.loop.TARGET['context']
+                        return 'synthetic' if argv[:2] == ['git', 'rev-parse'] else ''
+                    with patch.object(pre, 'scope_check'), patch.object(pre, 'verified_helper', return_value=helper), patch.object(run, 'run', side_effect=command):
+                        pre.prepare(run, 'weir-qual-m30r4-offline')
+                        frozen = json.loads((root/'plan.json').read_text())
+                        state = copy.deepcopy(frozen['resource_preflight'])
+                        self.assertEqual(state['started'], 1144)
+                        self.assertEqual(state['deadline'], 1264)
+                        self.assertEqual(sum('can-i' in e['argv'] for e in events), 23)
+                        self.assertTrue(all(e['window'] is None for e in events if not e['dynamic']))
+                        self.assertEqual([e['at'] for e in events if e['dynamic']], [1144, 1146])
+                        clock[0] += wait
+                        # Execute the real prewrite checks; stop at the first write
+                        # seam. This is an offline process log, not EKS evidence.
+                        cleanup_result = dict(confirmed=False, resources=[])
+                        with patch.object(pre.loop, 'namespace_start', side_effect=ValueError('offline first write boundary')) as start, patch.object(run, 'cleanup', return_value=cleanup_result):
+                            self.assertEqual(pre.execute(run, pre.common.digest(root/'plan.json')), 1)
+                        self.assertEqual(run.resource_preflight, state)
+                        self.assertEqual(start.call_count, 0 if wait else 1)
+                        dynamic = [e for e in events if e['dynamic']]
+                        self.assertEqual(len(dynamic), 2 if wait else 4)
+                        self.assertTrue(all(e['timeout'] == 25 for e in dynamic))
+                        self.assertTrue(all(e['window'] == state for e in dynamic))
+                        result = json.loads((root/'result.json').read_text())
+                        self.assertIn('资源窗口余额不足' if wait else 'offline first write boundary', result['errors'][0])
+
+    def test_execute_cannot_start_missing_frozen_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)/'m30'/'native';root.mkdir(parents=True)
+            p = plan();p.update(profile='m30-eks-no-load-resource-preflight',
+                               evidence_root=str(root.resolve()), resource_preflight=None)
+            (root/'plan.json').write_text(json.dumps(p))
+            run = pre.Run(root, pre.loop.TARGET)
+            with patch.object(pre, 'scope_check'), patch.object(run, 'run') as command:
+                with self.assertRaisesRegex(ValueError, 'cannot start a new window'):
+                    pre.execute(run, pre.common.digest(root/'plan.json'))
+            command.assert_not_called()
+            self.assertFalse((root.parent/'invocation.json').exists())
+
     def test_transfer_failure_cleans_owned_namespace_and_cannot_reinvoke(self):
         for sig in (signal.SIGINT,signal.SIGTERM):self.addCleanup(signal.signal,sig,signal.getsignal(sig))
         with tempfile.TemporaryDirectory() as directory:

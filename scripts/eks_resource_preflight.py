@@ -362,12 +362,13 @@ def prepare(run, owner):
     milestone=run.root.parent.name
     scope_check(run.root, owner)
     helper=verified_helper(run.root.parent)
+    tool_inputs={p:common.digest(common.REPO/p) for p in FILES}
     require(run.run(['kubectl','config','current-context']).strip()==loop.TARGET['context'],'current context drift')
     context=loop.prepare_context(run,owner,image_source=SOURCE,owner_pattern='weir-qual-'+milestone+r'-[a-z0-9-]{1,25}')
     plan=dict(schema_version=1,profile=milestone+'-eks-no-load-resource-preflight',evidence_root=str(run.root.resolve()),target=loop.TARGET,owner=owner,namespace=owner,
               node=context['node'],initial_spare=context['initial_spare'],resource_preflight=context['resource_preflight'],cluster=context['cluster'],source=context['source'],image_source=SOURCE,
               images=IMAGES,helper=helper,budgets=BUDGET,minimum=loop.MINIMUM,sampled_at=time.time(),atomic_snapshot=False,
-              tool_inputs={p:common.digest(common.REPO/p) for p in FILES},
+              tool_inputs=tool_inputs,prepared_at_monotonic=time.monotonic(),
               sequence=['ES native sidecar','bootstrap upload verified','UID recheck','release','empty records index','Weir/client','two ten-second observers','one client snapshot','cleanup'])
     plan['objects']=objects(plan)
     run.save('plan.json',plan);(run.root/'plan.json').chmod(0o400)
@@ -381,6 +382,7 @@ def execute(run, plan_sha256):
     require(plan['namespace']==plan['owner'] and plan['profile']==run.root.parent.name+'-eks-no-load-resource-preflight','frozen owner/profile')
     require(plan['evidence_root']==str(run.root.resolve()),'frozen evidence path')
     run.resource_preflight=plan['resource_preflight']
+    require(isinstance(run.resource_preflight, dict), "frozen resource preflight required; cannot start a new window")
     require(plan['target']==loop.TARGET and plan['images']==IMAGES and plan['image_source']==SOURCE and plan['budgets']==BUDGET and plan['minimum']==loop.MINIMUM,'frozen boundary')
     require(plan['helper']==verified_helper(run.root.parent) and plan['objects']==objects(plan),'artifact/template drift')
     require(plan['tool_inputs']=={p:common.digest(common.REPO/p) for p in FILES},'script drift')
