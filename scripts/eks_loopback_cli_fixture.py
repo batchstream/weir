@@ -78,7 +78,13 @@ def main():
         else:
             key = ("Namespace" if kind == "namespace" else kind)+"/"+args[2]
             if key in state:
-                print(json.dumps(state[key]))
+                obj = copy.deepcopy(state[key])
+                if cfg.get("diagnostic_uid_drift") and kind == "Pod":
+                    count = int((root/"pod-reads").read_text()) if (root/"pod-reads").exists() else 0
+                    (root/"pod-reads").write_text(str(count+1))
+                    if count >= 1:
+                        obj["metadata"]["uid"] = "foreign-replacement"
+                print(json.dumps(obj))
     elif verb == "delete":
         if args[1] != "--raw":
             raise ValueError("unconditional delete")
@@ -99,6 +105,8 @@ def main():
     elif verb == "logs":
         print(cfg["bootstrap_log"] if "--container=bootstrap" in args else "synthetic lifecycle log")
     elif verb == "exec":
+        if cfg.get("diagnostic_only"):
+            raise ValueError("diagnostic driver must never exec")
         command = args[args.index("--")+1:]
         if command[-1] == "main":
             print("own-pod-ip=10.0.0.2\nloopback-check-complete")

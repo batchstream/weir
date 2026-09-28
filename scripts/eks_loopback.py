@@ -314,7 +314,7 @@ def trial_report(records, prefix):
     return result
 
 
-def prepare(run, owner):
+def prepare_context(run, owner):
     require(re.fullmatch(r"weir-qual-m26r-[a-z0-9-]{1,25}",owner) is not None,"owner syntax")
     cluster=json.loads(run.run(["aws","eks","describe-cluster","--name",TARGET["cluster"],"--region",TARGET["region"],
                                "--query","cluster.{arn:arn,name:name,version:version,status:status}","--output","json",
@@ -343,6 +343,13 @@ def prepare(run, owner):
     require(not run.run(["git","status","--porcelain"]).strip(),"committed clean implementation required")
     run.run(["git","diff","--exit-code",SOURCE,"--","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"])
     source=run.run(["git","rev-parse","HEAD"]).strip()
+    context = dict(node=selected, initial_spare=spare, cluster=cluster, source=source)
+    return context
+
+
+def prepare(run, owner):
+    context = prepare_context(run, owner)
+    selected, spare, cluster, source = (context[key] for key in ("node", "initial_spare", "cluster", "source"))
     plan=dict(schema_version=1,profile="m26r-single-pod-loopback-limited-functional",target=TARGET,namespace=owner,owner=owner,
               node=selected,initial_spare=spare,cluster=cluster,sampled_at=time.time(),atomic_snapshot=False,source=source,image_source=SOURCE,
               images=dict(IMAGES,es=ES),tool_inputs={name:common.digest(common.REPO/name) for name in FILES},minimum=MINIMUM,
