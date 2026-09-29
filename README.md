@@ -22,8 +22,13 @@ no-op outcomes, fixed versions and evidence.
 **ProgramTransform remains UNSUPPORTED; the user approved deferring it from V1.** General programs remain a future architecture requirement; other production gates are unchanged. The GopherLua candidate failed isolation
 qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
 internal foundation using a finite counter transform, not a public general runtime.
-Dynamic configuration, SDKs, queues,
-production deployment and releases are out of scope.
+Dynamic configuration and queues remain out of scope. The companion
+[Go SDK](https://github.com/batchstream/weir-go),
+[Helm chart](https://github.com/batchstream/weir-charts) and versioned release
+workflow provide the deployment path. See the
+[production deployment guide](docs/production-deployment.md) for configuration,
+network isolation, monitoring, upgrades and the required qualification evidence.
+Publishing artifacts does not close the outstanding production qualification gates.
 
 Qualification correction: the original `37d1454` implementation did not cover unary
 response sending with its server deadline. The repair and new transport regression
@@ -62,6 +67,13 @@ security candidates still block its production qualification. These are unsigned
 local artifacts, and the production gates remain open.
 
 ## Kubernetes
+
+Use the [Helm chart](https://github.com/batchstream/weir-charts) for managed installs
+and upgrades. Before startup, `weir -check-config /path/to/node.json` validates
+configuration without opening listeners, reading CA files or connecting to backends.
+For Prometheus inside an isolated cluster, explicit `diagnostics_allow_intranet: true`
+allows a non-loopback diagnostic IP; restrict port 7449 to the monitoring workload
+using enforced NetworkPolicy. Loopback remains the default.
 
 The [minimal deployment](deploy/kubernetes/README.md) uses the same binary with
 loopback exec startup/readiness/liveness probes, a ClusterIP Service, read-only

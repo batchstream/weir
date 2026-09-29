@@ -2,6 +2,11 @@ name: Verified Weir images
 
 on:
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: Optional stable release version (vMAJOR.MINOR.PATCH); only merged main is accepted
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -40,6 +45,10 @@ jobs:
           persist-credentials: false
       - name: Prepare fixed native SDK and public modules
         run: python3 scripts/ci-tools.py test
+      - name: Validate optional release version
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: python3 scripts/release.py --check-version "$RELEASE_VERSION"
       - name: Native CGO0 default tests
         run: CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
       - name: Native CGO1 race tests
@@ -87,6 +96,21 @@ jobs:
         run: python3 scripts/ci-images.py publish
       - name: Anonymous full pull and native amd64 smoke
         run: python3 scripts/ci-images.py anonymous
+      - name: Preserve verified release assets
+        if: inputs.release_version != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-release
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            .testdata/m24/ci/delivery.json
+            .testdata/m24/ci/weir-first/weir-*.tar.gz
+            .testdata/m24/ci/weir-first/weir-*.zip
+            .testdata/m24/ci/weir-first/*-linked.json
+            .testdata/m24/ci/weir-first/module-graph.json
+            .testdata/m24/ci/weir-first/receipt.json
       - name: Remove job registry login
         if: always()
         run: |
@@ -110,3 +134,44 @@ jobs:
         env:
           WEIR_DELIVERY: ${{ needs.publish.outputs.delivery }}
         run: python3 scripts/ci-images.py anonymous
+
+  release:
+    if: inputs.release_version != ''
+    needs: [publish, smoke-arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-release
+          path: .testdata/release
+      - name: Prepare pinned registry tool
+        run: python3 scripts/ci-tools.py smoke
+      - name: Login using release-owned registry state
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/weir-release-docker"
+          printf '%s' "$GHCR_TOKEN" | docker --config "$RUNNER_TEMP/weir-release-docker" login ghcr.io --username "$GHCR_USER" --password-stdin
+      - name: Publish immutable version and release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          WEIR_DELIVERY: ${{ needs.publish.outputs.delivery }}
+          DOCKER_CONFIG: ${{ runner.temp }}/weir-release-docker
+          REGCTL_CONFIG: ${{ runner.temp }}/weir-release-regctl.json
+        run: python3 scripts/release.py "$RELEASE_VERSION" .testdata/release
+      - name: Remove job registry login
+        if: always()
+        run: |
+          if test -d "$RUNNER_TEMP/weir-release-docker"; then
+            docker --config "$RUNNER_TEMP/weir-release-docker" logout ghcr.io
+          fi

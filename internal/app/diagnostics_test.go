@@ -276,6 +276,37 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 	}
 	_ = first.Close()
 }
+
+func TestIntranetDiagnosticsRequireExplicitOptIn(t *testing.T) {
+	cfg := remoteConfig(t)
+	cfg.DiagnosticsAllowIntranet = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("opt-in without diagnostic address accepted")
+	}
+	for _, address := range []string{"localhost:7449", ":7449", "invalid"} {
+		cfg.Diagnostics = address
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("invalid address accepted with opt-in", address)
+		}
+	}
+	cfg.Diagnostics = "0.0.0.0:0"
+	node, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = node.Close(context.Background()) })
+	if err := node.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(node.DiagnosticAddress())
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := testmetrics.Scrape(t, "127.0.0.1:"+port)
+	if metrics["weir_diagnostic_connections_limit"] == nil {
+		t.Fatal("wildcard diagnostic listener did not serve bounded metrics")
+	}
+}
 func TestDiagnosticsScrapeCloseRace(t *testing.T) {
 	n := diagnosticNode(t)
 	n.Start(context.Background())
