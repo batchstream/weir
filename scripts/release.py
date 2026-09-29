@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 
 
 def version_valid(value):
@@ -43,6 +44,32 @@ def verify_assets(directory, delivery):
     return assets + [checksum_file]
 
 
+def resume_release(version, assets):
+    result = subprocess.run(['gh', 'release', 'view', version, '--repo', 'batchstream/weir', '--json', 'tagName,isDraft,assets'],
+                            capture_output=True, text=True, timeout=60)
+    if result.returncode:
+        if 'not found' in result.stderr.lower() or '404' in result.stderr:
+            return False
+        raise RuntimeError('release lookup failed')
+    release = json.loads(result.stdout)
+    if release['tagName'] != version or release['isDraft']:
+        raise ValueError('existing release identity or publication state differs')
+    expected = {item.name: item for item in assets}
+    with tempfile.TemporaryDirectory(prefix='weir-release-verify-') as temporary:
+        if release['assets']:
+            run(['gh', 'release', 'download', version, '--repo', 'batchstream/weir', '--dir', temporary])
+        existing = {item.name: item for item in Path(temporary).iterdir()}
+        if not existing.keys() <= expected.keys():
+            raise ValueError('existing release has unexpected assets')
+        for name, item in existing.items():
+            if hashlib.sha256(item.read_bytes()).digest() != hashlib.sha256(expected[name].read_bytes()).digest():
+                raise ValueError('existing release asset differs: ' + name)
+        missing = [str(item) for name, item in expected.items() if name not in existing]
+        if missing:
+            run(['gh', 'release', 'upload', version, '--repo', 'batchstream/weir', *missing])
+    return True
+
+
 def publish(version, directory):
     if not version_valid(version):
         raise ValueError('release version must be vMAJOR.MINOR.PATCH')
@@ -53,10 +80,11 @@ def publish(version, directory):
     if source != os.environ['GITHUB_SHA'] or run(['git', 'rev-parse', 'HEAD']) != source:
         raise ValueError('release source differs from workflow checkout')
     assets = verify_assets(directory, delivery)
-    # A version is immutable, including a tag left by an interrupted attempt.
-    # Such an attempt requires inspection rather than replacing a published tag.
-    if run(['git', 'ls-remote', '--tags', 'origin', 'refs/tags/' + version]):
-        raise ValueError('release tag already exists; refusing replacement')
+    # Verify both lightweight and annotated tags; never retarget a version.
+    tag = 'refs/tags/' + version
+    refs = dict(line.split()[::-1] for line in run(['git', 'ls-remote', '--tags', 'origin', tag, tag + '^{}']).splitlines())
+    if refs and refs.get(tag + '^{}', refs.get(tag)) != source:
+        raise ValueError('release tag already points to a different source')
     image = 'ghcr.io/batchstream/weir'
     digest = delivery['images']['weir']['oci']['index']
     if re.fullmatch(r'sha256:[0-9a-f]{64}', digest) is None:
@@ -74,6 +102,8 @@ def publish(version, directory):
         run(['regctl', 'image', 'copy', image + '@' + digest, reference])
     if run(['regctl', 'manifest', 'head', reference]) != digest:
         raise ValueError('version image verification failed')
+    if refs and resume_release(version, assets):
+        return
     notes = directory / 'release-notes.md'
     notes.write_text(
         f'Source: `{source}` (merged main).\n\n'

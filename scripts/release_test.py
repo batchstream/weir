@@ -4,11 +4,47 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 import release
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_resume_preserves_existing_assets_and_only_adds_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            first = Path(temporary) / 'first'
+            second = Path(temporary) / 'second'
+            first.write_bytes(b'first archive')
+            second.write_bytes(b'second archive')
+            value = dict(tagName='v0.1.0', isDraft=False, assets=[dict(name='first')])
+            response = subprocess.CompletedProcess([], 0, json.dumps(value), '')
+            def command(args, **kwargs):
+                if args[2] == 'download':
+                    (Path(args[-1]) / 'first').write_bytes(first.read_bytes())
+                return ''
+            with patch.object(release.subprocess, 'run', return_value=response), patch.object(release.subprocess, 'check_output', side_effect=command) as invoke:
+                self.assertTrue(release.resume_release('v0.1.0', [first, second]))
+                self.assertEqual(invoke.call_args_list[-1].args[0],
+                                 ['gh', 'release', 'upload', 'v0.1.0', '--repo', 'batchstream/weir', str(second)])
+            def corrupt(args, **kwargs):
+                (Path(args[-1]) / 'first').write_bytes(b'changed')
+                return ''
+            with patch.object(release.subprocess, 'run', return_value=response), patch.object(release.subprocess, 'check_output', side_effect=corrupt) as invoke:
+                with self.assertRaisesRegex(ValueError, 'asset differs'):
+                    release.resume_release('v0.1.0', [first, second])
+                self.assertEqual(invoke.call_count, 1)
+
+    def test_resume_never_treats_access_failure_as_missing(self):
+        for code, error, absent in ((1, 'release not found', True), (1, 'HTTP 403 denied', False), (1, 'connection reset', False)):
+            response = subprocess.CompletedProcess([], code, '', error)
+            with patch.object(release.subprocess, 'run', return_value=response):
+                if absent:
+                    self.assertFalse(release.resume_release('v0.1.0', []))
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'lookup failed'):
+                        release.resume_release('v0.1.0', [])
+
     def test_version_is_a_canonical_stable_tag(self):
         for value in ('v0.1.0', 'v1.2.30'):
             self.assertTrue(release.version_valid(value))

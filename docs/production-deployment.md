@@ -74,8 +74,10 @@ Release assets contain reproducible archives for six build targets, source and
 linked-module inventories, the build/delivery receipts and SHA256SUMS. The OCI
 version tag points to the exact verified source image; deploy its immutable digest.
 `weir -version` reports the source commit, making the running artifact independently
-identifiable. A conflicting version tag is never overwritten. Partial publication
-is retained for inspection rather than silently replacing an existing release.
+identifiable. A conflicting version tag or release asset is never overwritten.
+A repeated dispatch of the same source/version verifies existing content and can
+finish uploading missing assets after an interruption. A changed source must use
+a new version.
 
 1. Confirm the SDK module version, chart version, image source and digest.
 2. Validate configuration, then install in an isolated namespace with owned data.
