@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaworker"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -26,6 +27,7 @@ import (
 type Config struct {
 	URI, Store, Database, Collection string
 	Pool                             uint64
+	LuaRunner                        *luaworker.Runner
 }
 type Adapter struct {
 	dialer     *boundedDialer
@@ -39,6 +41,7 @@ type plan struct {
 	id       any
 	document bson.Raw
 	action   string
+	program  *luaworker.Program
 }
 
 var namespacePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -186,12 +189,30 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
-			expression := v.AtomicTransform.GetBackendExpression()
-			if f := a.prepareExpression(expression); f != nil {
-				return nil, f
+			if program := v.AtomicTransform.GetProgram(); program != nil {
+				if a.config.LuaRunner == nil {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Lua runtime is not configured")
+				}
+				if program.Input != nil && program.Input.MediaType != "application/bson" {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
+				}
+				input := value.Value{Kind: value.Missing}
+				if program.Input != nil {
+					input, err = Decode(program.Input.Data)
+					if err != nil {
+						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input")
+					}
+				}
+				native.action = "program"
+				native.program = &luaworker.Program{Source: string(program.Source), Input: input}
+			} else {
+				expression := v.AtomicTransform.GetBackendExpression()
+				if f := a.prepareExpression(expression); f != nil {
+					return nil, f
+				}
+				native.action = "expression"
+				native.document = expression.Data
 			}
-			native.action = "expression"
-			native.document = expression.Data
 		}
 		if d != nil {
 			if d.MediaType != "application/bson" {
@@ -209,7 +230,7 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		}
 		p.Token = "write"
 		p.Batchable = true
-		if native.action == "replace" || native.action == "expression" {
+		if native.action == "replace" || native.action == "expression" || native.action == "program" {
 			p.Token = native.action + ":" + resource
 			p.Batchable = false
 		}
@@ -248,13 +269,33 @@ func equalID(v value.Value, id any) bool {
 	return false
 }
 func (a *Adapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+	if len(plans) == 0 {
+		return nil, execution.Neutral
+	}
 	if len(plans) > 1 {
+		for _, candidate := range plans {
+			if candidate.Backend.(*plan).action == "program" {
+				results := make([]*pb.BulkResult, 0, len(plans))
+				signal := execution.Healthy
+				for _, item := range plans {
+					replies, feedback := a.Execute(ctx, []*execution.Plan{item})
+					results = append(results, replies...)
+					if feedback == execution.Congested || feedback == execution.Neutral && signal == execution.Healthy {
+						signal = feedback
+					}
+				}
+				return results, signal
+			}
+		}
 		return a.executeBulk(ctx, plans)
 	}
 	p := plans[0]
 	native := p.Backend.(*plan)
 	if native.action == "expression" {
 		return a.executeExpression(ctx, p)
+	}
+	if native.action == "program" {
+		return a.executeProgram(ctx, p)
 	}
 	result := &pb.BulkResult{Index: p.Operation.Index}
 	filter := bson.D{{Key: "_id", Value: native.id}}

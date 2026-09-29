@@ -43,7 +43,7 @@ def secret_path(name):
 def allowed(name):
     return name in ('go.mod', 'go.sum') or name.startswith('packaging/') or (
         name.endswith('.go') and not name.endswith('_test.go') and
-        name.startswith(('api/', 'internal/', 'cmd/weir/')) and not name.startswith('internal/testutil/'))
+        name.startswith(('api/', 'internal/', 'cmd/weir/', 'cmd/weir-lua-worker/')) and not name.startswith('internal/testutil/'))
 
 
 def source_files(root, revision, *, qualification=False):
@@ -64,7 +64,7 @@ def source_files(root, revision, *, qualification=False):
             if mode not in ('100644', '100755') or kind != 'blob' or '..' in PurePosixPath(name).parts:
                 raise ValueError('non-regular build input refused: ' + name)
             files.append((name, oid))
-    if not {'go.mod', 'go.sum', 'cmd/weir/main.go'} <= {name for name, _ in files}:
+    if not {'go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'} <= {name for name, _ in files}:
         raise ValueError('missing required build inputs')
     return files
 
@@ -99,7 +99,7 @@ def json_stream(raw):
     return values
 
 
-def build_info(binary, target, env):
+def build_info(binary, target, env, *, allow_lua=False):
     lines = run(['go', 'version', '-m', str(binary)], env=env).decode().splitlines()
     if not lines or not lines[0].endswith(': ' + GO):
         raise ValueError('unexpected binary compiler')
@@ -118,7 +118,7 @@ def build_info(binary, target, env):
                 'GOAMD64' if arch == 'amd64' else 'GOARM64': 'v1' if arch == 'amd64' else 'v8.0'}
     if any(settings.get(k) != v for k, v in required.items()):
         raise ValueError('binary target/build settings mismatch')
-    if any('lua' in dep[0].lower() for dep in modules):
+    if not allow_lua and any('lua' in dep[0].lower() for dep in modules):
         raise ValueError('experimental Lua linked into product')
     result = {'go': GO, 'target': system + '/' + arch, 'settings': settings, 'linked_modules': modules}
     return result
@@ -202,21 +202,30 @@ def oci_receipt(archive_path, binaries, options=None):
             layers = [layer['digest'] for layer in manifest['layers']]
             if base_layers is not None and layers[:-1] != base_layers[arch]:
                 raise ValueError('image must contain exact base layers plus one binary layer')
-            found = None
+            found = {}
             for number, layer in enumerate(manifest['layers']):
                 raw = blob(layer['digest'])
                 with tarfile.open(fileobj=io.BytesIO(raw), mode='r:*') as content:
                     for entry in content:
                         name = entry.name.removeprefix('./')
+                        expected_names = {binary_name}
+                        if options.get('lua_worker_binaries'):
+                            expected_names.add(binary_name + '-lua-worker')
                         if base_layers is not None and number == len(layers) - 1:
-                            if name != binary_name or not entry.isfile() or entry.mode != 0o555:
+                            if name not in expected_names or not entry.isfile() or entry.mode != 0o555:
                                 raise ValueError('unexpected file in application layer')
-                        if name == binary_name and entry.isfile():
-                            found = sha(content.extractfile(entry).read())
-            if found != binaries['linux-' + arch]:
+                        if name in expected_names and entry.isfile():
+                            found[name] = sha(content.extractfile(entry).read())
+            if found.get(binary_name) != binaries['linux-' + arch]:
                 raise ValueError('wrong binary in OCI image')
-            images[arch] = {'manifest': descriptor['digest'], 'config': manifest['config']['digest'],
-                            'layers': [layer['digest'] for layer in manifest['layers']], 'binary_sha256': found}
+            image = {'manifest': descriptor['digest'], 'config': manifest['config']['digest'],
+                     'layers': [layer['digest'] for layer in manifest['layers']], 'binary_sha256': found[binary_name]}
+            if options.get('lua_worker_binaries'):
+                worker_name = binary_name + '-lua-worker'
+                if found.get(worker_name) != options['lua_worker_binaries']['linux-' + arch]:
+                    raise ValueError('wrong Lua worker binary in OCI image')
+                image['lua_worker_sha256'] = found[worker_name]
+            images[arch] = image
         if set(images) != {'amd64', 'arm64'}:
             raise ValueError('OCI index must contain both architectures')
         receipt = {'index': index_digest, 'outer_index_sha256': sha(outer), 'images': images}
@@ -241,7 +250,7 @@ def build_once(opts):
             raise ValueError('module replacements refused')
         modules.append({key: module[key] for key in ('Path', 'Version', 'Sum', 'GoModSum', 'GoVersion', 'Main') if key in module})
     write_json(output / 'module-graph.json', modules)
-    binary_hashes, artifact_hashes = {}, {}
+    binary_hashes, lua_worker_hashes, artifact_hashes = {}, {}, {}
     qualification = opts.get('qualification', False)
     binary_name = 'qualification' if qualification else 'weir'
     targets = (('linux', 'amd64'), ('linux', 'arm64')) if qualification else TARGETS
@@ -265,7 +274,12 @@ def build_once(opts):
         binary_hashes[target] = sha(binary.read_bytes())
         if qualification:
             continue
+        lua_worker = dest / ('weir-lua-worker' + ('.exe' if system == 'windows' else ''))
+        run(['go', 'build', *flags, '-o', str(lua_worker), './cmd/weir-lua-worker'], cwd=source, env=target_env)
+        build_info(lua_worker, (system, arch), env, allow_lua=True)
+        lua_worker_hashes[target] = sha(lua_worker.read_bytes())
         members = {binary.name: (binary.read_bytes(), 0o755),
+                   lua_worker.name: (lua_worker.read_bytes(), 0o755),
                    'README.md': ((source / 'packaging/README.md').read_bytes(), 0o644),
                    'node.example.json': ((source / 'packaging/node.example.json').read_bytes(), 0o644)}
         if system == 'darwin':
@@ -277,7 +291,8 @@ def build_once(opts):
     if original != {name: sha((source / name).read_bytes()) for name, _ in opts['files']}:
         raise ValueError('build modified exported inputs')
     receipt = {'source': opts['revision'], 'go': GO, 'flags': flags, 'epoch': opts['epoch'],
-               'inputs': original, 'binaries': binary_hashes, 'archives': artifact_hashes}
+               'inputs': original, 'binaries': binary_hashes, 'lua_worker_binaries': lua_worker_hashes,
+               'archives': artifact_hashes}
     if opts['oci']:
         base = json.loads((source / 'packaging/base.json').read_text())
         context = source.parent / 'oci-context'
@@ -288,6 +303,7 @@ def build_once(opts):
             dest = context / ('linux-' + arch)
             dest.mkdir()
             shutil.copyfile(output / 'binaries' / ('linux-' + arch) / binary_name, dest / binary_name)
+            shutil.copyfile(output / 'binaries' / ('linux-' + arch) / (binary_name + '-lua-worker'), dest / (binary_name + '-lua-worker'))
         for file in context.rglob('*'):
             os.utime(file, (opts['epoch'], opts['epoch']))
         oci = output / (binary_name + '-linux.oci.tar')
@@ -302,7 +318,8 @@ def build_once(opts):
         (output / 'oci-build.log').write_text(result.stdout)
         if result.returncode:
             raise RuntimeError('OCI build failed; see ' + str(output / 'oci-build.log'))
-        image_options = dict(binary_name=binary_name, revision=opts['revision'], base_layers=opts.get('base_layers'))
+        image_options = dict(binary_name=binary_name, revision=opts['revision'], base_layers=opts.get('base_layers'),
+                             lua_worker_binaries=lua_worker_hashes)
         receipt['oci'] = oci_receipt(oci, binary_hashes, image_options)
         receipt['base'] = base
     write_json(output / 'receipt.json', receipt)

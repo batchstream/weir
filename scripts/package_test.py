@@ -36,12 +36,13 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(package.secret_path(name), name)
         for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'experiments/probe.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
             self.assertFalse(package.allowed(name), name)
+        self.assertTrue(package.allowed('cmd/weir-lua-worker/main.go'))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             def git(*args):
                 return package.run(['git', *args], cwd=root)
             git('init', '-q')
-            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go'):
+            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'):
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text('fixture')
@@ -49,7 +50,7 @@ class PackageTests(unittest.TestCase):
             git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
             revision = package.clean_head(root)
             self.assertEqual(len(revision), 40)
-            self.assertEqual(len(package.source_files(root, revision)), 3)
+            self.assertEqual(len(package.source_files(root, revision)), 4)
             (root / 'extra').write_text('dirty')
             with self.assertRaises(ValueError):
                 package.clean_head(root)
@@ -66,7 +67,7 @@ class PackageTests(unittest.TestCase):
             def git(*args):
                 return package.run(['git', *args], cwd=root)
             git('init', '-q')
-            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go'):
+            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'):
                 dest = root / name
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text('original')
@@ -79,7 +80,7 @@ class PackageTests(unittest.TestCase):
             git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'moved HEAD')
             self.assertNotEqual(package.clean_head(root), revision)
             files = package.source_files(root, revision)
-            self.assertEqual({name for name, _ in files}, {'go.mod', 'go.sum', 'cmd/weir/main.go'})
+            self.assertEqual({name for name, _ in files}, {'go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'})
             for _, oid in files:
                 self.assertEqual(git('cat-file', 'blob', oid), b'original')
             with self.assertRaisesRegex(ValueError, 'immutable full source SHA'):

@@ -4,6 +4,7 @@ ARG TARGETARCH
 ARG SOURCE_REVISION
 ARG SOURCE_DATE_EPOCH
 COPY --chmod=0555 linux-${TARGETARCH}/weir /weir
+COPY --chmod=0555 linux-${TARGETARCH}/weir-lua-worker /weir-lua-worker
 USER 65532:65532
 WORKDIR /
 LABEL org.opencontainers.image.title="weir" \

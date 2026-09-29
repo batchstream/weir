@@ -16,14 +16,15 @@
 | `internal/server` | 应用/peer HTTP/2 和 RPC、精确路由、固定 Local/Remote 选择、转发和响应寿命 |
 | `internal/store` | 单 Store 的 pending/result/session 账本、调度、微批、AIMD、Adapter drain/Close |
 | `internal/execution` | Adapter 的小型多实现契约、opaque Plan、Feedback、ScanPage、Native source/sink |
-| `internal/backend/mongodb` | Mongo URI/连接/TLS/OCSP/wire guard、后端资格、CRUD、BSON codec、表达式、Native、Scan |
-| `internal/backend/search` | ES/OpenSearch 的明确 profile、HTTP/TLS 连接、JSON/响应边界、CRUD/OCC、表达式、Native、PIT Scan |
-| `internal/protocol` | 规范资源 URI、公共 framing/媒体格式/操作校验、Failure/outcome 构造；不解释后端文档 |
-| `internal/value` | 有界 ordered typed value；由 Mongo codec/表达式和测试使用，没有通用程序执行器 |
+| `internal/backend/mongodb` | Mongo URI/连接/TLS/OCSP/wire guard、后端资格、CRUD、BSON codec、表达式、事务型 Lua RMW、Native、Scan |
+| `internal/backend/search` | ES/OpenSearch 的明确 profile、HTTP/TLS 连接、JSON/响应边界、CRUD/OCC、条件式 Lua RMW、表达式、Native、PIT Scan |
+| `internal/protocol` | 规范资源 URI、公共 framing/媒体格式/操作校验、Failure/outcome 构造、`lua.v1` 信封校验；不解释后端文档 |
+| `internal/value` | 有界 ordered typed value、Mongo BSON codec 与保留原始数值词法的 JSON codec；无存储访问职责 |
+| `internal/luaworker`、`internal/luaengine` | 父进程 bounded runner/IPC 与独立 worker Lua VM；仅后者链接 Lua 引擎 |
 | `internal/overload` | 一个 Guard；Linux RSS/config 与可见 cgroup-v2 每层 current/max 独立滞回、静态 profile 校验、固定 Snapshot；Darwin 当前 physical footprint；Windows 明确 Go 降级 |
 | `internal/netlimit` | peer、Mongo 与 Search 实际复用的标准 Go DNS 有界 I/O；调用方保留并发、地址选择和生命周期 |
 | `internal/testutil` | 仓库资源定位；子包 testmongo/testsearch/testdns/testmetrics 为自有测试设施；testmemory 仅 integration Darwin mmap/SDK oracle |
-| `experiments/luaprobe` | 只有测试的 Lua 可行性探针；不进入 Weir 依赖图，ProgramTransform 仍 UNSUPPORTED |
+| `experiments/luaprobe` | 历史 Lua 可行性探针；生产 runtime 不再依赖此目录 |
 | `experiments/goluaprobe` | 固定 golua v0.3.0 的 test-only 源码/资源反例与最小 typed Value 传递；编译、VM 分配、helper fuel/取消初筛失败，不是产品 runtime；证据见 [M13](milestone-13.md) |
 
 实际生产依赖方向（省略标准库、第三方库和公共 pb）：
@@ -152,14 +153,14 @@ server 的 `fixture_integration_test.go`、`scan_fixture_integration_test.go`、
 故障特有 helper 保留在其测试文件中，未建立通用测试服务器框架。
 
 Mongo 的 `rmw_conformance_test.go` 保留原事务计数器、新事务重算和同事务 commit-only
-资格状态机及原有断言。它从未连接公共 AtomicTransform，现在仅编入 integration 测试。
+资格状态机及原有断言；它仍是 conformance harness，不是公共 ProgramTransform 的后端集成测试。
 生产 Scan 需要的 `nativeAttemptContext` 在 `attempt.go`，固定驱动的期限/取消语义未改。
-不得把该 conformance harness、typed value 或 Lua 探针解释成通用 ProgramTransform。
+当前 Lua 接线位于 `internal/value`、`internal/luaengine`、`internal/luaworker` 和各后端 `program.go`。
 
-golua 实验只依赖 `internal/value` 和固定候选；无 BSON/JSON/后端导入，无 production bridge。
-新 invocation 不复用 Runtime，危险探针的自有 test child 总是 Wait；子进程仅用于保护实验，
-不构成产品进程隔离方案。默认生产 `go list -deps ./cmd/weir` 不含任一实验 VM。
-资源初筛 NO-GO 后停止完整 action/bridge 建设，保留 `internal/protocol` 的 UNSUPPORTED 路径。
+`experiments/goluaprobe` 与 `experiments/luaprobe` 保留为历史候选调查，不是产品 runtime。
+`cmd/weir` 不链接 Lua VM；单独的 `cmd/weir-lua-worker` 链接 GopherLua 并按 `lua.v1`
+协议服务。此前资源初筛 NO-GO 针对当时的候选与实现路径，不等于当前 worker 的安全资格结论；
+当前 worker 无硬进程内存上限，不能接收不可信脚本。
 
 M12R 基线 `383b4aa` 的本地 raw/dial/closing owner、分层 remote-tail 与 replacement 两 Local
 完整生命周期已获统筹有限独立验收；原 M12 失败保留。本地 owner 上限不等于无条件的
@@ -179,7 +180,7 @@ Linux 内存 profile、可见层级与读取边界、明确降级/未知、原�
 `memory_linux.go` 才选择实际 /proc，其他 OS 不读取 Linux 文件。app metrics 仅读 Snapshot，不启动第二采样器。
 Darwin 当前 physical footprint 已由 [M19R](milestone-19-remediation.md) 接线并获统筹有限独立验收；固定 purego v0.10.2，CGO0/CGO1 原生短测分别记录。原 [M19](milestone-19.md) 未实现历史保留。
 本地 Bulk 过载关闭输入后继续交付已准入 Ticket，最后返回 ResourceExhausted；不清除结果账本或重放写入。
-通用 ProgramTransform 已获用户明确首版延期，继续 UNSUPPORTED；上文实验与未来安全契约保留。
+历史记录：ProgramTransform 曾获首版延期。2026-09-29 用户重新开启决策并要求实现；现已提供需显式配置的 `lua.v1`，但缺少硬进程内存上限，仍不得接收不可信脚本，也不代表生产资格通过。
 
 M15 的 `packaged_integration_test.go` 显式使用归档提取的 binary 和已加载的准确 OCI config ID；
 自有 Darwin Mongo TLS fixture、三轮 Linux arm64 PID1/non-root/read-only/有限资源、标准 TLS 拒绝与 UNKNOWN 无重放按 [M15](milestone-15.md) 分开记录。

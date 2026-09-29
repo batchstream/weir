@@ -19,9 +19,15 @@ Search Update requires full stored source and no default/final pipeline.
 See [milestone 7](docs/milestone-7.md) for exact bounds, native numeric semantics,
 no-op outcomes, fixed versions and evidence.
 
-**ProgramTransform remains UNSUPPORTED; the user approved deferring it from V1.** General programs remain a future architecture requirement; other production gates are unchanged. The GopherLua candidate failed isolation
-qualification; its probes are test-only. MongoDB transaction RMW is a real, tested
-internal foundation using a finite counter transform, not a public general runtime.
+**ProgramTransform supports the configured `lua.v1` runtime** for MongoDB and the
+qualified Search profiles. Set `lua_worker` to the packaged `weir-lua-worker`
+executable (or pass `-lua-worker` with local CLI flags). A transform is evaluated
+against the current record and typed `input`, then atomically committed with MongoDB
+transactions or Search sequence-number OCC. Programs are bounded and run in a
+restricted child process, but the worker has no hard per-process memory cap; only
+trusted programs should be enabled until that isolation limit is closed. See [the
+Lua runtime contract](docs/lua-worker.md). Backend-expression profiles remain
+available alongside Lua.
 Dynamic configuration and queues remain out of scope. The companion
 [Go SDK](https://github.com/batchstream/weir-go),
 [Helm chart](https://github.com/batchstream/weir-charts) and versioned release
@@ -460,7 +466,7 @@ scripts/generate.sh
 - `internal/backend/search`: qualified Search CRUD, native OCC, bounded HTTP/TLS/DNS and bulk evidence.
 - `internal/server`: shared application/peer gRPC transport, bounded forwarding and completion framing.
 - `internal/testutil`: owned Mongo/Search/DNS fixtures, metric assertions and repository asset lookup.
-- `experiments/luaprobe`: test-only runtime feasibility evidence; ProgramTransform remains unsupported.
+- `experiments/luaprobe`: historical test-only runtime feasibility evidence; the configured `lua.v1` implementation lives under `internal/luaworker` and `internal/luaengine`.
 
 Missing mutation replies are **UNKNOWN**, not proof of non-application. Never blindly
 replay them. Ordinary Delete of an absent record is APPLIED after acknowledgement.

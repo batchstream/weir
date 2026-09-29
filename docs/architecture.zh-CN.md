@@ -522,7 +522,7 @@ BSON 往返和稳定遍历需要有序 Object。Codec 可保留重复字段，�
 
 ### 10.3 TransformCodec 与 runtime 分离
 
-用户已明确同意首版延期通用 ProgramTransform：继续 UNSUPPORTED、保留未来架构需求，不再是 V1 必需资格门槛。固定进程内 runtime 实验尚未满足下述编译、分配、含 helper 的 fuel 与取消要求。Typed Value 和仅用于 integration 的 Mongo RMW harness 不是通用 runtime；Search 通用无损 codec 也未合格。实际证据（包括已获独立验收的本地连接 owner 和进程替换有限范围）记录在[生产资格清单](production-readiness.md)，下述通用转换要求在恢复该延期功能时仍必需；其他平台、后端、部署、资源和容量门槛不变。
+用户最初明确同意首版延期通用 ProgramTransform；2026-09-29 又明确重新开启决策并要求实现。当前已接入更窄、显式配置的 `lua.v1`，使用独立 worker、MongoDB transaction 与 Search seq_no OCC。这不是任意 Lua lowering，也不表示生产资格已通过。worker 尚无硬 per-process memory 上限，真实后端故障/并发和跨平台隔离证据仍缺。见[Lua runtime contract](lua-worker.md)与[生产资格清单](production-readiness.md)。完整资格仍须满足下述 runtime 要求，其他平台、后端、部署、资源和容量门槛不变。
 
 ```text
 原生不透明 current/input -> 有界 codec decode -> Weir Value
@@ -532,7 +532,7 @@ BSON 往返和稳定遍历需要有序 Object。Codec 可保留重复字段，�
 
 Codec 位于后端/转换边界，只依赖 Value 而非 Lua；runtime 只依赖 Value，不依赖 BSON/JSON。N codec、M runtime 为 N+M 集成而非 N*M 特例。不透明 Adapter 在二者都没有时仍可用。
 
-未来通用转换版本可资格验证一个固定语言/runtime profile，但不能把 Lua 扩展进调度器或做存储过程服务。隐藏文件、网络、OS、时钟、随机、module loading、native pointer、locale 和 unrestricted debug。每次新状态，确定性对象遍历，精确整数构造/运算，显式 array/null/missing；不为方便而转 float。混宽规则见 10.2。
+当前实现的完整资格仍要求固定语言/runtime profile，但不能把 Lua 扩展进调度器或做存储过程服务。隐藏文件、网络、OS、时钟、随机、module loading、native pointer、locale 和 unrestricted debug。每次新状态，确定性对象遍历，精确整数构造/运算，显式 array/null/missing；不为方便而转 float。混宽规则见 10.2。
 
 执行必须限制含 helper 工作的 fuel、分配字节、节点、深度、stack/call、source/compile、encoded output 和实际时间 watchdog。标准库能越限分配/阻塞的 runtime 不得批准进程内使用。编译在 Store execution admission 后，不在无界预准入 CPU 路径。
 
@@ -590,9 +590,9 @@ Adapter 可接受显式类型的确定性单记录 MongoDB update/update-pipelin
 
 No-op replacement/只读事务不等于独占锁。Keep/Reject/相同输出的决定只针对观察 snapshot，不针对发送时状态。真正改变状态的结果必须由原生事务验证读写依赖。集成测试必须覆盖原生 writer 冲突、同 ID 删除重建、缺失插入竞争。
 
-### 11.4 不支持的部署与操作限制
+### 11.4 已资格限定的部署与操作限制
 
-Standalone/不支持事务的配置仍可支持原生 CRUD、Native 和已验证表达式，但不能宣称通用程序转换。应 UNSUPPORTED + NOT_STARTED，不增加元数据或采用非原子 read/replace。
+配置 MongoDB 程序转换要求受支持的 replica set；启动资格检查拒绝不支持的拓扑，绝不回退为非原子 read/replace。未配置 `lua_worker` 时，Adapter 在 Prepare 阶段拒绝 `lua.v1`。原生 CRUD、Native 和已验证表达式独立于 Lua。
 
 集合/索引创建、sharding、事务前置准备由操作者负责，转换算法不偷偷创建它们。事务限制、session pinning、有界 server selection 需按支持版本验证。
 
@@ -909,26 +909,25 @@ internal/
 - session/frame/operation/result/pending/key/active/cursor/parser/cache/log/shutdown 均有限。
 - 应用/peer、unary/Bulk、batch on/off 汇入同一 Runtime；Scan continuation 使用同一调度，空闲 cursor 不占 execution window。
 
-保留 Bulk correlation、Native response completion、Scan terminal completeness、有界 hop，因为各自保护明确要求。删除 Native effect normalization、mesh framing、跨客户端读链、Delete affected-row 区分、延迟分桶、portable resume、operation folding、post-image、程序 lowering、公共动态 capability discovery。Adapter 生命周期明确，不另造 pool/session manager。
+保留 Bulk correlation、Native response completion、Scan terminal completeness、有界 hop，因为各自保护明确要求。删除 Native effect normalization、mesh framing、跨客户端读链、Delete affected-row 区分、延迟分桶、portable resume、operation folding、post-image、推测性的程序 lowering、公共动态 capability discovery。Adapter 生命周期明确，不另造 pool/session manager。
 
-## 20. 架构批准后的分阶段计划
+## 20. 分阶段实现与资格状态
 
-实施范围须单独批准。下列阶段定义依赖关系与验证门槛，不记录实施进度或批准状态。
+2026-09-29 用户授权实现受限的 `lua.v1` ProgramTransform。下列阶段仍定义剩余依赖和资格门槛；已有实现不代表这些门槛已完成。
 
-通用 ProgramTransform 及其事务/OCC runtime 接线已明确移出 V1；下表相关条目保留为未来完整架构要求。
 
 | 阶段 | 范围 | 批准/退出证据 |
 | --- | --- | --- |
-| 0 契约确认 | 决策、后端/runtime profile、精确版本和额度 | 明确书面授权，不能只因文档存在而实施。 |
+| 0 契约确认 | 固定后端/runtime profile、精确版本和额度 | 用户已批准开始实现；生产启用仍受后续资格门槛约束。 |
 | 1 协议/语义向量 | schema、URI/media、outcome、NativeCompletion、ScanEnd、peer metadata | 无效变体/状态、流完成、原生错误与 transport 区分、spoof/malformed hop。 |
 | 2 单节点 Runtime | 静态组装、单调度/账本、流内序列、AIMD、Adapter pool 所有权 | 取消竞争、独立 Read 并发、同流排序、Cmin=1/Scan 预算、单 Close、无重复计账、有限结果、离线测试。 |
-| 3 MongoDB CRUD/通用转换 | 原生原语、Delete batching、事务 RMW、无损 codec/runtime | 原生 writer/插入竞争/commit ambiguity、整数精确/保宽、attempt/fuel、standalone 拒绝程序。 |
-| 4 搜索后端 | ES/OpenSearch identity、ingest/source、OCC/Create/Replace | default bypass/final pipeline 拒绝、Native 不变、条件冲突/传输丢失；两个产品分别验证。 |
+| 3 MongoDB CRUD/`lua.v1` | 原生原语、Delete batching、事务 RMW、无损 codec/runtime | 原生 writer/插入竞争/commit ambiguity、整数精确/保宽、有界重试与 worker deadline、真实后端故障/并发。 |
+| 4 搜索后端/`lua.v1` | ES/OpenSearch identity、ingest/source、OCC/Create/Replace 与 transform OCC | default bypass/final pipeline 拒绝、Native 不变、条件冲突/传输丢失；两个产品分别验证。 |
 | 5 流式表面 | Bulk、raw Native、完整 page Scan、有界 session 和共享 fetch | partial shard、timeout/early termination、失败页不发、慢 Scan C=1 让出、Native stall、early response、cursor cleanup、RSS plateau。 |
 | 6 远程组合 | 复用 RPC、部署隔离下的 peer hop、deadline、affinity/health | direct/forward 同语义、形态不变、stream、spoof/重复/零 hop、丢结果不重放。 |
 | 7 验证与运维 | metrics、drain、打包、隔离内网监听器、profile | 多控制器/stale epoch/负载、内存 CPU 边界、各状态 drain、单次 Close、有界指标。 |
 
-表达式快路径只有 whitelist/validator 通过后才开放；否则 UNSUPPORTED。不为 benchmark 推测 Lua lowering。进程内 Lua 不能约束分配/helper/fuel 时，程序转换保持关闭，等待单独审查的 runtime 决策，不能默默降低 sandbox。
+表达式快路径只有 whitelist/validator 通过后才开放；否则 UNSUPPORTED。不为 benchmark 推测 Lua lowering。当前子进程 worker 有 wall-time 终止、请求/value/输出边界，但没有硬 per-process memory 上限；不可接收不可信脚本，也不得称为 security sandbox。
 
 ### 20.1 必须覆盖的失败与一致性场景
 

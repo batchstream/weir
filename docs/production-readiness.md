@@ -350,7 +350,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 - 冻结后每个平台/配置至少 24 小时：70% 可持续容量、受控 2 倍容量过载、慢消费者、故障恢复。
   不允许 OOM/死锁/泄漏/账本超额；warm-up 后 OS 内存、goroutine、句柄、连接须有稳定上界。
   Go heap、OS RSS/commit memory 和 cgroup 分别测量。当前短时本机测试不能代替这些门槛。
-- 用户已明确回答“同意首版延期通用脚本（推荐）”。ProgramTransform 移出 V1 必需门槛，继续 UNSUPPORTED 并保留未来完整架构需求。[M13](milestone-13.md) 调查交付获独立验收、候选 NO-GO，不能写成 runtime 安全通过；BackendExpression/Native 是当前 V1 的转换与原生能力范围。其他六平台、后端、部署、资源、容量和 24h soak 门槛不变。
+- 用户此前明确批准首版延期通用脚本；该历史决策已于 2026-09-29 被重新开启，并授权实现 opt-in `lua.v1`，见 [Lua runtime contract](lua-worker.md)。[M13](milestone-13.md) 调查交付与候选 NO-GO 仍是历史事实，不代表当前 runtime 已安全资格通过；其他平台、后端、部署、资源、容量和 24h soak 门槛不变。
 - 原阶段只准备和验证本地产物；M24另获明确授权正常push现有batchstream/weir、Actions构建并公开
   ghcr.io/batchstream/weir与ghcr.io/batchstream/weir-qualification。授权不含Git tag/Release、
   生产部署、已有秘密访问或收费资源；本阶段不执行EKS测试。
@@ -379,7 +379,7 @@ Weir 类似 Envoy/Traefik 的使用方式，支持多平台、多架构、单实
 | --- | --- | --- |
 | CLI启动信号/取消/有界退出 | [M27](milestone-27.md)本地源码单次信号所有权、独立startup/drain、错误保留与真实Darwin/Linux arm64进程边界通过；固定10次监听即信号、握手每种3次，待独立验收；夹具失败与补证分别保留 | 合成HTTP非DB资格；旧GHCR未含修复，Windows/其他native平台、注册前/SIGKILL及整体生产资格不由此覆盖 |
 | 原生 BackendExpression | 已实现；固定后端有限真实验证见 [M7](milestone-7.md)、`internal/backend/{mongodb,search}/expression.go`、对应 tests、`internal/server/expression_integration_test.go` | 仅明确 profile；不含泛化语言、跨记录、pipeline/upsert、其他版本/拓扑 |
-| 通用 ProgramTransform | **用户已批准首版延期；未来实现仍阻塞**。`internal/protocol/protocol.go` 仍拒绝；[M1](milestone-1.md) 的 GopherLua 失败保留；[M13](milestone-13.md)、`experiments/goluaprobe` 实证 golua v0.3.0 编译低估、VM 分配先做后查/漏账、字符串/helper fuel 和取消缺口，NO-GO | 必须闭环确定性、编译/VM/helper/bridge 分配前计账与取消；极值/opaque userdata 透传不等于通用 typed transform。四种 action、安全输出、完整 codec、Mongo transaction/Search OCC 是未来恢复该功能的 required 门槛；首版不再规划 VM fork 或通用 RMW 接线 |
+| 通用 ProgramTransform | **已实现 opt-in `lua.v1`，尚未生产资格通过**。协议/runtime、受限 worker、typed merge、MongoDB transaction 与 Search seq_no OCC 已接线；见 `internal/protocol`、`internal/value`、`internal/luaengine`、`internal/luaworker`、后端 `program.go` 和 [Lua runtime contract](lua-worker.md)。worker 有 wall-time 与输入/输出界限但无硬进程内存上限，只能用于可信脚本；M1/M13 的 runtime 调查结果仍是历史证据，不能当作当前 worker 的资格结论 | 仍需硬内存隔离与跨平台 worker 资格、真实 Mongo/Search 故障和并发测试（含 commit ambiguity、OCC 冲突及丢失 ACK），以及资源/长测门槛；实现和本机单测不能宣称安全或生产通过 |
 | Weir TLS/认证/授权 | **用户明确排除，不算阻断；既有体系已移除**；[M8](milestone-8.md)、`internal/server/forwarding.go` | application/peer 均为明文 HTTP/2，入口可达来源由部署隔离负责；hop 没有密码学身份保证。旧 identity/allow/server_name 配置严格拒绝，无开关、证书 fixture 或空壳权限接口 |
 | Mongo 后端连接及隐式重放 | credential-free 与显式 SCRAM-SHA-256/verified TLS 已实现且有限真实验证；生产 Open/应用装配、解密后 wire guard、391/回复丢失与生命周期实测见 [M10R](milestone-10-remediation.md)；M10 原失败保留 | 固定 Go1.27/driver2.9.1/Mongo8.0.32 单直接非分片副本集 endpoint；仅有界单 HTTP OCSP responder。其他认证、HTTPS OCSP/多个 responder、SRV/多节点、跨平台/长测仍未通过 |
 | Search 后端连接及隐式重放 | 单静态 DNS/IP endpoint 的 HTTP 或 verified HTTPS/可选 Basic；[M17](milestone-17.md)已获统筹有限独立验收：ES8.19.22/OS2.19.6 原生语义、app direct/peer、故障请求计数、DNS/TLS/Close及M12R多进程预算 | 旧profile明确拒绝；单具体index/primary、显式CA的有限证据。[M18](milestone-18.md)排除当前入口的部分SNI/SPDY/CRL条件，但JDK危险API及部分插件路径仍无法判定，OS安全门槛blocked；唯一官方3.8.0候选不足以直接替代。系统roots正向、其他拓扑、远端无限故障与长测未资格 |
@@ -416,7 +416,7 @@ M16准确image连接自有Darwin Mongo8.0.32的历史证据不冒充新M17 image
 | Windows amd64 | M32R2六目标双次编译/归档一致，待统筹独立验收；M17历史保留 | 未验证 | 关闭/句柄/commit memory未验证 | 未验证 | 否；native runner待接入 |
 | Windows arm64 | M32R2六目标双次编译/归档一致，待统筹独立验收；M17历史保留 | 未验证 | 未验证 | 未验证 | 否；native runner待接入 |
 
-后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。M14 仅补 Linux 内存 profile 与有限原生运行证据，原失败和 [M14R 补救](milestone-14-remediation.md) 分别保留；无关挂载不再改变静态身份，只有完整可信的相关变化才永久闭锁。M15 本地可复现打包和有限准确产物运行已获独立验收。M16已获标准SBOM、冻结库扫描及必要补丁的有限独立验收；M17更新到ES8.19.22/OS2.19.6，功能/制品已获统筹有限独立验收，安全目标未闭环。M18有限调查及一个官方3.8.0候选比较已获统筹独立验收；部分入口条件已排除，JDK/插件剩余证据及最小官方上游路线明确，OpenSearch安全门槛仍blocked，活跃profile不变。M19调查历史保留；统筹明确允许固定purego上游内部机制后，M19R已接线当前footprint，并单列CGO0与CGO1有限原生证据，见补救报告；这不是整体资格。OS bundled JDK/插件安全阻断、其他平台原生运行、完整部署矩阵、跨物理机Kubernetes/版本升级、真实发布签名、独立安全审查、参考负载校准/长测仍 required。
+后续串行阶段由统筹安排：M9 已完成有限静态端点/DNS 的本机资格，M8 已移除 Weir 认证并保留 hop/校验/限额/UNKNOWN；M10 原阶段未通过，M10R 修复 Mongo TLS 与有界 wire reader 层次并补有限连接证据；M11 仅补 Search 标准后端连接与有限无重放证据；M12 原预算失败保留，M12R 已通过本机有限独立验收。M13 固定候选调查独立验收为 NO-GO；用户随后明确批准 ProgramTransform 首版延期，继续 UNSUPPORTED，未来要求保留。2026-09-29 用户重新开启该决策并授权实现 opt-in `lua.v1`；当前实现与未完成资格见本清单对应行及 [Lua runtime contract](lua-worker.md)。M14 仅补 Linux 内存 profile 与有限原生运行证据，原失败和 [M14R 补救](milestone-14-remediation.md) 分别保留；无关挂载不再改变静态身份，只有完整可信的相关变化才永久闭锁。M15 本地可复现打包和有限准确产物运行已获独立验收。M16已获标准SBOM、冻结库扫描及必要补丁的有限独立验收；M17更新到ES8.19.22/OS2.19.6，功能/制品已获统筹有限独立验收，安全目标未闭环。M18有限调查及一个官方3.8.0候选比较已获统筹独立验收；部分入口条件已排除，JDK/插件剩余证据及最小官方上游路线明确，OpenSearch安全门槛仍blocked，活跃profile不变。M19调查历史保留；统筹明确允许固定purego上游内部机制后，M19R已接线当前footprint，并单列CGO0与CGO1有限原生证据，见补救报告；这不是整体资格。OS bundled JDK/插件安全阻断、其他平台原生运行、完整部署矩阵、跨物理机Kubernetes/版本升级、真实发布签名、独立安全审查、参考负载校准/长测仍 required。
 可按实际依赖拆分调整，只有一个 checkout 写入者。发现正确性/安全回归先修复。
 所有必需项没有已知 P0/P1、对应矩阵证据齐备、独立验收通过、main 干净且自有资源回收后，
 才能宣布**对应范围**合格；部分平台通过不能结束整个目标，缩小范围须用户确认。

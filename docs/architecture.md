@@ -1126,15 +1126,16 @@ JSON. Opaque operations never require this structured round-trip.
 
 ### 10.3 TransformCodec and runtime separation
 
-The user explicitly deferred general ProgramTransform from V1. It remains
-UNSUPPORTED and a future architecture requirement, not a V1 qualification blocker. Fixed in-process runtime experiments have not met the compilation,
-allocation, helper fuel, and cancellation requirements below. Typed Value and the
-integration-only Mongo RMW harness are not a general runtime; a generic lossless
-Search codec is not qualified. Actual evidence, including the independently accepted
-limited local connection-owner and process-replacement scope, is recorded in the
-[production readiness checklist](production-readiness.md). The general transform
-requirements below apply when that deferred feature is resumed; all other platform,
-backend, deployment, resource and load qualification gates remain required.
+The user deferred general ProgramTransform in the original V1 decision, then
+explicitly reopened it on September 29, 2026 and asked for implementation. Weir now
+implements the narrower, opt-in `lua.v1` profile using a separate worker process,
+MongoDB transactions, and Search sequence-number OCC. This is not arbitrary Lua
+lowering or a production qualification claim. The worker has no hard per-process
+memory cap, and real-backend fault/concurrency plus cross-platform isolation evidence
+remain required. See the [Lua runtime contract](lua-worker.md) and [production
+readiness checklist](production-readiness.md). The architecture requirements below
+remain acceptance criteria for a fully qualified runtime; other platform, backend,
+deployment, resource and load gates are unchanged.
 
 ```text
 adapter-native opaque current/input
@@ -1151,7 +1152,7 @@ on the value model, not Lua. Runtimes only depend on the value model, not BSON/J
 N codecs and M runtimes therefore need N+M integrations, not N*M special bridges.
 The opaque adapter interface remains usable without either a codec or a runtime.
 
-A future general transform release may qualify one pinned language/runtime profile. This is not a Lua extension
+Full qualification of the implemented transform requires one pinned language/runtime profile. This is not a Lua extension
 of StoreRuntime and not an arbitrary stored-procedure service. Hide filesystem,
 network, OS, clock, randomness, module loading, native pointers, locale, and
 unrestricted debug facilities. Use a fresh invocation state, deterministic
@@ -1256,7 +1257,7 @@ index failure is not automatically classified as a record conflict.
 | Event | Permitted next step | Terminal evidence if stopping |
 | --- | --- | --- |
 | Read/decode/program validation fails before commit | Abort/close bounded session; do not commit. | NOT_APPLIED, with the appropriate error. |
-| Keep or Delete of observed absence | Finish without a write; close transaction. | NOT_APPLIED, success about that observation. |
+| Keep or Delete of observed absence | Finish without a write; close transaction. | APPLIED, with no failure for that observation. |
 | Transaction conflict with definite abort / `TransientTransactionError` under the documented driver contract | Start a new transaction, read current state, run program again. | NOT_APPLIED + CONFLICT if the bounded attempt budget expires while all attempts are known not committed. |
 | Commit acknowledged under configured concern | Finish, no further execution. | APPLIED. |
 | Commit reports `UnknownTransactionCommitResult` or loses its response | Retry/resolve commit using the **same session and transaction number** under native driver rules; do not re-read or re-run program. | UNKNOWN if the original deadline/commit-resolution budget expires. |
@@ -1283,12 +1284,13 @@ the native transaction must validate the read/write dependency. Integration test
 must cover conflicts with direct native writers, deletion/recreation of the same
 ID, and missing-record insertion races.
 
-### 11.4 Unsupported deployment and operational limits
+### 11.4 Qualified deployment and operational limits
 
-A standalone deployment or unsupported transaction configuration can still support
-opaque CRUD, Native, and validated single-update expressions. It cannot advertise
-arbitrary program AtomicTransform. Reject it with UNSUPPORTED + NOT_STARTED rather
-than inventing schema metadata or implementing a non-atomic read/replace.
+A configured MongoDB adapter requires a supported replica set for program
+AtomicTransform; startup qualification rejects unsupported topologies rather than
+falling back to a non-atomic read/replace. Without `lua_worker`, adapters reject
+`lua.v1` during preparation. Opaque CRUD, Native, and validated expressions remain
+independent of Lua.
 
 Collection/index creation, sharding configuration, and transaction preparation are
 operator responsibilities. Weir does not create indexes/collections in the transform
@@ -1998,34 +2000,33 @@ Retain Bulk correlation, Native response completion, Scan terminal completeness,
 and bounded peer hop metadata because each protects a named requirement. Remove
 Native effect normalization, mesh-specific message framing, cross-client Read
 chains, Delete affected-row distinctions, latency-bucket control, portable Scan
-resume, operation folding, returned images, program lowering, and public
+resume, operation folding, returned images, speculative program lowering, and public
 capability discovery. Adapter ownership is explicit; no extra pool or
 session-manager framework is required.
 
-## 20. Staged Plan After Architecture Approval Only
+## 20. Staged Plan and Qualification Status
 
-Implementation scope requires separate approval. The stages below define
-dependencies and qualification gates, not implementation progress or approval status.
-General ProgramTransform and its transaction/OCC runtime integration are explicitly
-deferred from V1; those entries remain future full-architecture requirements.
+On September 29, 2026, the user authorized implementing the bounded `lua.v1`
+ProgramTransform path. The stages below define remaining dependencies and
+qualification gates; implementation does not imply their completion.
 
 | Stage | Scope | Approval/exit evidence |
 | --- | --- | --- |
 | 0. Ratify contracts | Resolve design choices below, pin supported backend/runtime profiles and exact limit defaults | Written architecture approval; no implementation starts merely because this document exists. |
 | 1. Protocol and semantic test vectors | Public schemas, URI/media rules, record outcomes, NativeCompletion, ScanEnd, peer metadata | Invalid variants/states; stream completion; Native database errors versus transport failure; public-header spoofing and malformed/missing peer hop tests. |
 | 2. Single-node runtime | Static assembly, one scheduler/ledger, stream-scoped sequencing, explicit-feedback AIMD, adapter-owned pools | Dispatch/cancellation races; concurrent independent Reads; ordered same-key Bulk; Cmin=1 and Scan reservations; single Close; no duplicate charges; bounded results; offline `go test ./...`. |
-| 3. Mongo opaque CRUD and general transforms | Native primitives, Delete batching without affected-row distinctions, transaction RMW, lossless codecs/runtime | Native writer conflicts, insertion races, commit ambiguity; Int32 arithmetic/overflow and width preservation; bounded attempts/fuel; standalone rejects general transforms. |
-| 4. Search adapter | Qualified ES/OpenSearch identity, ingest/source profiles, native OCC/Create/Replace | Retargeting default pipeline bypass, effective final-pipeline rejection for initial source-write profile, Native unaffected; conditional conflicts/transport loss; source/sequence rejection; independently test both products. |
+| 3. Mongo opaque CRUD and `lua.v1` | Native primitives, Delete batching without affected-row distinctions, transaction RMW, lossless codecs/runtime | Native writer conflicts, insertion races, commit ambiguity; Int32 arithmetic/overflow and width preservation; bounded retries and worker deadline; real backend fault/concurrency suite. |
+| 4. Search adapter and `lua.v1` | Qualified ES/OpenSearch identity, ingest/source profiles, native OCC/Create/Replace and transform OCC | Retargeting default pipeline bypass, effective final-pipeline rejection for initial source-write profile, Native unaffected; conditional conflicts/transport loss; source/sequence rejection; independently test both products. |
 | 5. Streaming surfaces | Bulk, raw Native responses, complete-page Scan validation, bounded session state and shared-scheduler fetches | Partial-shard/timeout/early-termination failures; failed page not emitted; C=1 stalled Scan permits short work; Native stall deadline; early native errors, cursor cleanup, RSS plateau. |
 | 6. Remote composition | Reused public RPCs, peer hop metadata under deployment isolation, deadlines, affinity/basic health | Identical direct/forwarded semantics; unary remains unary; bounded streaming; spoofed/missing/duplicate hops; zero-hop local versus forward; lost results; no replay. |
 | 7. Qualification and operations | Metrics, drain, packaging, isolated intranet listeners, documented adapter profiles | Explicit-feedback/stale-flight load tests with multiple controllers; no latency-only reduction; drain across Scan states; memory/CPU ceilings; adapter closes exactly once; bounded metrics. |
 
 The specified native-expression fast paths ship only after their deterministic
-whitelist/validator is proven; unsupported expressions are rejected meanwhile.
-Do not implement speculative Lua lowering to satisfy a benchmark. If in-process
-Lua cannot enforce allocation/helper/fuel isolation, leave program transforms
-disabled pending an explicitly reviewed runtime decision, rather than quietly
-shipping a weaker sandbox.
+whitelist/validator is proven; unsupported expressions are rejected meanwhile. Do
+not implement speculative Lua lowering to satisfy a benchmark. The current child
+worker enforces wall-time termination and bounds request/value/output sizes, but not
+hard per-process memory; do not use it for untrusted programs or describe it as a
+security sandbox.
 
 ### 20.1 Required failure/conformance scenarios
 

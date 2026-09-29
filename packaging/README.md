@@ -14,7 +14,8 @@ Application and peer gRPC are plaintext and require a trusted isolated network.
 Backend TLS retains standard certificate and hostname verification. Use a read-only
 explicit CA file when required; never disable verification. Do not embed credentials
 or private CA material in the binary/archive/image. UNKNOWN writes must not be
-implicitly replayed. ProgramTransform remains UNSUPPORTED.
+implicitly replayed. `lua.v1` ProgramTransform requires configured `lua_worker`;
+the worker has no hard per-process memory cap, so enable only trusted programs.
 
 OCI runs as UID/GID 65532 with exec ENTRYPOINT /weir. Mount configuration and any
 explicit backend CA read-only. A read-only root filesystem, dropped capabilities,

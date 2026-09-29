@@ -10,6 +10,7 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaworker"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -24,6 +25,15 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 	limits := cfg.Limits.serverLimits()
+	var luaRunner *luaworker.Runner
+	if cfg.LuaWorker != "" {
+		runnerConfig := luaworker.Config{Executable: cfg.LuaWorker}
+		runner, runnerErr := luaworker.New(runnerConfig)
+		if runnerErr != nil {
+			return nil, runnerErr
+		}
+		luaRunner = runner
+	}
 	admission, err := server.NewAdmission(limits)
 	if err != nil {
 		return nil, err
@@ -64,7 +74,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 					break
 				}
 			}
-			service.LocalStore, err = openLocal(ctx, name, definition.Local)
+			service.LocalStore, err = openLocal(ctx, name, definition.Local, luaRunner)
 			if err != nil {
 				return nil, err
 			}
@@ -119,15 +129,16 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	complete = true
 	return node, nil
 }
-func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, error) {
+func openLocal(ctx context.Context, name string, cfg *Local, luaRunner *luaworker.Runner) (*store.Runtime, error) {
 	limits := cfg.runtimeLimits()
 	var adapter execution.Adapter
 	var err error
 	if cfg.Mongo != nil {
-		config := mongodb.Config{URI: cfg.Mongo.URI, Store: name, Database: cfg.Mongo.Database, Collection: cfg.Mongo.Collection, Pool: uint64(limits.Concurrency)}
+		config := mongodb.Config{URI: cfg.Mongo.URI, Store: name, Database: cfg.Mongo.Database, Collection: cfg.Mongo.Collection, Pool: uint64(limits.Concurrency), LuaRunner: luaRunner}
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
 		config := cfg.searchConfig(name)
+		config.LuaRunner = luaRunner
 		adapter, err = search.Open(ctx, config)
 	}
 	if err != nil {
