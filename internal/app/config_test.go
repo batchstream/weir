@@ -100,6 +100,30 @@ func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
 	}
 }
 
+func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+	uri := "mongodb://user-sentinel:password-sentinel@" + address + "/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true"
+	mongo := &Mongo{URI: uri, Database: "catalog", Collection: "records"}
+	local := &Local{Mongo: mongo}
+	service := Service{Name: "database", Local: local}
+	route := Route{Store: "records", Service: service.Name}
+	cfg := DefaultConfig()
+	cfg.Application = "127.0.0.1:0"
+	cfg.Services = []Service{service}
+	cfg.Routes = []Route{route}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	node, err := Open(ctx, cfg)
+	if node != nil || err == nil || !strings.Contains(err.Error(), "MongoDB replica-set qualification failed") || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), address) || strings.Contains(err.Error(), "mongodb://") {
+		t.Fatal("startup exposed a driver connection error or lost its qualification reason", err)
+	}
+}
+
 func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	cfg := remoteConfig(t)
 	node, err := Open(context.Background(), cfg)

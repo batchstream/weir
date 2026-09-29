@@ -77,3 +77,34 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		}
 	}
 }
+
+func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
+	connection := &search.Connection{Username: "user-sentinel", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
+	backend := &Search{URL: "https://unresolved.invalid:9200", Index: "records", Profile: search.ElasticsearchProfile, Connection: connection}
+	local := &Local{Search: backend}
+	service := Service{Name: "catalog", Local: local}
+	route := Route{Store: "records", Service: service.Name}
+	cfg := DefaultConfig()
+	cfg.Application = "127.0.0.1:0"
+	cfg.Services = []Service{service}
+	cfg.Routes = []Route{route}
+	node, err := Open(context.Background(), cfg)
+	if node != nil || err == nil || !strings.Contains(err.Error(), `local Store "records" startup qualification failed: Search CA file unavailable or invalid`) || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "unresolved.invalid") {
+		t.Fatal("startup must preserve the reason while redacting configuration", err)
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/" {
+			_, _ = w.Write([]byte(`{"version":{"number":"8.19.22","build_flavor":"default"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"persistent":{"action.auto_create_index":"true"},"secret":"response-sentinel"}`))
+	})
+	endpoint := httptest.NewServer(handler)
+	defer endpoint.Close()
+	backend.URL = endpoint.URL
+	backend.Connection = nil
+	node, err = Open(context.Background(), cfg)
+	if node != nil || err == nil || !strings.Contains(err.Error(), "action.auto_create_index=false") || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), endpoint.URL) {
+		t.Fatal("startup must identify the rejected backend policy without its response", err)
+	}
+}
