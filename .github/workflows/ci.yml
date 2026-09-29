@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weir-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOENV: 'off'
+  GOWORK: 'off'
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  GOPROXY: 'off'
+  GOSUMDB: 'off'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare fixed native SDK and public modules
+        run: python3 scripts/ci-tools.py test
+      - name: Native CGO0 default tests
+        run: CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
+      - name: Native CGO1 race tests
+        run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
+      - name: Static vet and isolated helper regressions
+        run: |
+          CGO_ENABLED=0 go vet ./...
+          CGO_ENABLED=0 go vet -tags=integration ./...
+          CGO_ENABLED=1 go test -race -tags=integration -count=1 -timeout=180s ./internal/testutil/testcapacity
+          mkdir "$RUNNER_TEMP/weir-completion"
+          export WEIR_COMPLETION_TEST_BINARY="$RUNNER_TEMP/weir-completion/testcapacity.test"
+          CGO_ENABLED=0 go test -c -tags=integration -o "$WEIR_COMPLETION_TEST_BINARY" ./internal/testutil/testcapacity
+          python3 -m unittest discover -v -s scripts -p '*_test.py'
+          python3 -O -m unittest discover -v -s scripts -p '*_test.py'
+          git diff --exit-code

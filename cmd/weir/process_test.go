@@ -329,7 +329,11 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 			p.terminate(t, "backend received "+hold+"; response withheld")
 			event(t, b.canceled)
 			p.wait(t, 1)
-			if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), "local Store startup qualification failed\n") {
+			expected := "local Store \"records\" startup qualification failed: search version qualification failed\n"
+			if partial {
+				expected = "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable\n"
+			}
+			if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), expected) || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stderr.text(), b.server.URL) {
 				t.Fatal("canceled startup announced ready or lost safe error", p.stdout.text(), p.stderr.text())
 			}
 			b.idle(t)
@@ -429,7 +433,7 @@ func TestCLIStartupFailure(t *testing.T) {
 	cfg.Services[0].Local.Search.Index = "missing"
 	p := startCLI(t, cfg, "cli")
 	p.wait(t, 1)
-	if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), "local Store startup qualification failed\n") || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stderr.text(), b.server.URL) {
+	if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search index qualification failed: index qualification response unavailable\n") || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stderr.text(), b.server.URL) {
 		t.Fatal("startup error leaked or announced readiness", p.stdout.text(), p.stderr.text())
 	}
 	b.idle(t)
@@ -530,7 +534,7 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	started := time.Now()
 	cancel()
 	event(t, done)
-	if node != nil || err == nil || err.Error() != "local Store startup qualification failed" || time.Since(started) > 2*time.Second {
+	if node != nil || err == nil || err.Error() != "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable" || time.Since(started) > 2*time.Second {
 		t.Fatal("partial Open cancellation", node, err, time.Since(started))
 	}
 	event(t, b.canceled)

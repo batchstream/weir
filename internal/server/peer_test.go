@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -610,7 +611,8 @@ func TestPeerDeadlineCancellationAndMetadata(t *testing.T) {
 	f := newChain(t, 2)
 	block := make(chan struct{})
 	f.adapter.block = block
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Millisecond)
+	const budget = 180 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
 	md := metadata.Pairs("authorization", "do-not-forward", "baggage", "private=do-not-forward", "weir-request-id", "bounded-id", "traceparent", "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")
@@ -620,8 +622,10 @@ func TestPeerDeadlineCancellationAndMetadata(t *testing.T) {
 	select {
 	case received := <-f.adapter.seen:
 		effective, ok := received.Deadline()
-		if !ok || effective.After(deadline.Add(3*time.Millisecond)) {
-			t.Fatal("deadline extended", effective, deadline)
+		// gRPC transmits a relative timeout and each receiving process rebuilds
+		// its deadline. Compare the remaining budget, not cross-hop timestamps.
+		if !ok || time.Until(effective) > budget {
+			t.Fatal("forwarding reset the remaining budget", effective, deadline)
 		}
 		incoming := <-f.headers
 		if incoming.Get("authorization") != "" || incoming.Get("baggage") != "" || incoming.Get("weir-request-id") != "bounded-id" || len(incoming.Values(HopMetadata)) != 1 || incoming.Get(HopMetadata) != "2" || incoming.Get("traceparent") != md.Get("traceparent")[0] {
@@ -631,8 +635,21 @@ func TestPeerDeadlineCancellationAndMetadata(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("downstream not reached")
 	}
-	if err := <-done; status.Code(err) != codes.DeadlineExceeded {
+	err := <-done
+	// The native HTTP/2 write deadline can reset the stream before gRPC sends
+	// DeadlineExceeded trailers. Accept only that reset at the deadline; earlier
+	// failures and other Internal errors still fail this cancellation test.
+	deadlineReset := status.Code(err) == codes.Internal && strings.Contains(status.Convert(err).Message(), "RST_STREAM with error code: INTERNAL_ERROR") && !time.Now().Before(deadline)
+	if status.Code(err) != codes.DeadlineExceeded && !deadlineReset {
 		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatal("caller did not reach its deadline", ctx.Err())
+		}
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("transport ended before the caller deadline")
 	}
 	deadlineWait := time.Now().Add(time.Second)
 	for f.runtime.Snapshot().Active != 0 && time.Now().Before(deadlineWait) {
@@ -643,6 +660,26 @@ func TestPeerDeadlineCancellationAndMetadata(t *testing.T) {
 	}
 	for _, srv := range f.servers {
 		waitPeerIdle(t, srv)
+	}
+}
+
+func TestForwardContextPreservesDeadlineAndCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	state := &ingress{hops: 2, diagnostic: make(metadata.MD)}
+	ctx = context.WithValue(ctx, ingressKey, state)
+	forwarded, err := forwardContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := ctx.Deadline()
+	got, ok := forwarded.Deadline()
+	if !ok || !got.Equal(want) {
+		t.Fatal("forwarding changed the local deadline", want, got)
+	}
+	cancel()
+	if !errors.Is(forwarded.Err(), context.Canceled) {
+		t.Fatal("forwarding detached cancellation", forwarded.Err())
 	}
 }
 func waitPeerIdle(t *testing.T, srv *Server) {

@@ -1,6 +1,8 @@
 # Weir local artifact
 
-This is an unsigned local build, not a production qualification or release.
+This archive identifies an immutable source build. A GitHub Release associates
+that source with a version and publishes SHA256SUMS and verified image digests.
+Neither a local archive nor a release alone establishes production qualification.
 Run `weir -version` (Windows: `weir.exe -version`) without a database or config.
 Run `weir -config /path/to/node.json` with an explicit strict static configuration.
 The included `node.example.json` is a template: replace the database endpoint,
@@ -18,7 +20,9 @@ OCI runs as UID/GID 65532 with exec ENTRYPOINT /weir. Mount configuration and an
 explicit backend CA read-only. A read-only root filesystem, dropped capabilities,
 no-new-privileges and finite memory/CPU/PID limits are expected. Weir requires no
 writable runtime directory in this profile; /tmp from the base may remain read-only.
-Diagnostics remain loopback-only. Use `/weir -probe live` or `-probe ready`
+Diagnostics default to loopback. An explicitly isolated monitoring deployment may
+enable `diagnostics_allow_intranet` and restrict port 7449 using enforced network
+policy. Use `/weir -probe live` or `-probe ready`
 (optionally `-probe-address 127.0.0.1:7449`) for bounded exec probes without
 loading configuration or connecting to databases. Exit 0 is healthy; all failures
 exit 1. Probe/version/server flags are exclusive. See deploy/kubernetes in the
@@ -44,8 +48,11 @@ modules; they are inventory, not a security audit or a standard SBOM.
 The manually dispatched `Verified Weir images` Actions workflow publishes only
 `ghcr.io/batchstream/weir` and `ghcr.io/batchstream/weir-qualification`, tagged with
 the complete source commit. It is restricted to the public batchstream/weir main
-branch. No latest tag, Git tag, GitHub Release, automatic deployment or artifact
-upload is created. The separate qualification image contains only the internal
+branch. No latest tag or automatic deployment is created. Supplying the optional
+`release_version` input publishes a stable Git tag, verified archive assets and
+matching version image only after both native platform smoke jobs pass. See
+`docs/production-deployment.md` for release and target-environment gates.
+The separate qualification image contains only the internal
 integration helper and the same pinned runtime base; it is not a product API.
 
 The workflow first runs native Linux amd64/arm64 default CGO0 tests, independent

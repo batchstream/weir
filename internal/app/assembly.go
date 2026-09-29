@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -130,7 +131,9 @@ func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, er
 		adapter, err = search.Open(ctx, config)
 	}
 	if err != nil {
-		return nil, errors.New("local Store startup qualification failed")
+		// Both adapters redact addresses, credentials and backend response bodies
+		// before returning startup errors. Keep their actionable qualification reason.
+		return nil, fmt.Errorf("local Store %q startup qualification failed: %w", name, err)
 	}
 	return store.New(adapter, limits)
 }

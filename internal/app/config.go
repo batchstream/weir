@@ -19,14 +19,15 @@ import (
 )
 
 type Config struct {
-	Diagnostics     string          `json:"diagnostics"`
-	Application     string          `json:"application"`
-	Peer            string          `json:"peer"`
-	Services        []Service       `json:"services"`
-	Routes          []Route         `json:"routes"`
-	InitialForwards int             `json:"initial_forwards"`
-	MemoryMiB       uint64          `json:"memory_mib"`
-	Limits          TransportLimits `json:"limits"`
+	Diagnostics              string          `json:"diagnostics"`
+	DiagnosticsAllowIntranet bool            `json:"diagnostics_allow_intranet"`
+	Application              string          `json:"application"`
+	Peer                     string          `json:"peer"`
+	Services                 []Service       `json:"services"`
+	Routes                   []Route         `json:"routes"`
+	InitialForwards          int             `json:"initial_forwards"`
+	MemoryMiB                uint64          `json:"memory_mib"`
+	Limits                   TransportLimits `json:"limits"`
 }
 type Route struct {
 	Store   string `json:"store"`
@@ -154,8 +155,11 @@ func validName(name string) bool {
 	return err == nil && parsed == name && len(segments) == 0
 }
 func (cfg Config) Validate() error {
-	if cfg.Diagnostics != "" && !address(cfg.Diagnostics, true) {
-		return errors.New("diagnostics requires explicit loopback IP and port")
+	if cfg.DiagnosticsAllowIntranet && cfg.Diagnostics == "" {
+		return errors.New("diagnostics_allow_intranet requires a diagnostic listener")
+	}
+	if cfg.Diagnostics != "" && !address(cfg.Diagnostics, !cfg.DiagnosticsAllowIntranet) {
+		return errors.New("diagnostics requires explicit IP and port; non-loopback requires diagnostics_allow_intranet")
 	}
 	if cfg.Application == "" && cfg.Peer == "" || cfg.Application != "" && !address(cfg.Application, false) || cfg.Peer != "" && !address(cfg.Peer, false) {
 		return errors.New("invalid listener configuration")

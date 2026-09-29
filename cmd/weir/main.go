@@ -38,6 +38,7 @@ func run(args []string, output io.Writer) (resultErr error) {
 	searchIndex := flags.String("search-index", "records", "pre-created concrete index")
 	searchProfile := flags.String("search-profile", search.ElasticsearchProfile, "exact qualified search profile")
 	configFile := flags.String("config", "", "strict static JSON configuration; exclusive with other flags")
+	checkConfig := flags.String("check-config", "", "validate a configuration file without opening listeners, resolving DNS or connecting")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -52,6 +53,23 @@ func run(args []string, output io.Writer) (resultErr error) {
 			return fmt.Errorf("-version cannot be combined with other flags")
 		}
 		return printVersion(output)
+	}
+	checkMode := false
+	flags.Visit(func(f *flag.Flag) { checkMode = checkMode || f.Name == "check-config" })
+	if checkMode {
+		if flags.NFlag() != 1 || *checkConfig == "" {
+			return errors.New("-check-config requires a file and cannot be combined with other flags")
+		}
+		file, err := os.Open(*checkConfig)
+		if err != nil {
+			return errors.New("configuration unavailable")
+		}
+		defer file.Close()
+		if _, err := app.Decode(file); err != nil {
+			return err
+		}
+		_, err = io.WriteString(output, "configuration valid\n")
+		return err
 	}
 	probeMode := false
 	flags.Visit(func(f *flag.Flag) {
