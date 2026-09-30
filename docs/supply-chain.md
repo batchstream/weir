@@ -89,7 +89,9 @@ including tests/experiments and dependency-only modules**, not binary contents.
 `govulncheck -mode query module@version ...` provides official OSV candidates for
 that graph; it does not establish package or function reachability. Also run
 `govulncheck -test ./experiments/...` separately. Experimental Lua is not product
-runtime and ProgramTransform remains UNSUPPORTED.
+runtime. Product archives and containers include the separate `weir-lua-worker`
+binary; `lua.v1` is opt-in through `lua_worker` and is not a security sandbox for
+untrusted scripts.
 
 Validate every CycloneDX 1.6 output using official
 [CycloneDX 1.6 schemas](https://github.com/CycloneDX/specification/tree/1.6/schema),

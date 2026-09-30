@@ -15,7 +15,9 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaworker"
 	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/internal/value"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,7 +32,8 @@ type Config struct {
 	Pool                       int
 	Connection                 *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
-	Resolver *net.Resolver
+	Resolver  *net.Resolver
+	LuaRunner *luaworker.Runner
 }
 type Adapter struct {
 	dialer          *connectionDialer
@@ -46,6 +49,7 @@ type Adapter struct {
 type plan struct {
 	id, action string
 	source     []byte
+	program    *luaworker.Program
 }
 type capabilities struct{ source, write, nativeWrite bool }
 
@@ -230,14 +234,37 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
-			expression := action.AtomicTransform.GetBackendExpression()
-			if f := prepareExpression(expression); f != nil {
-				return nil, f
+			if program := action.AtomicTransform.GetProgram(); program != nil {
+				if a.config.LuaRunner == nil {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Lua runtime is not configured")
+				}
+				if program.Input != nil && program.Input.MediaType != "application/json" {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
+				}
+				input := value.Value{Kind: value.Missing}
+				if program.Input != nil {
+					if validateJSON(program.Input.Data, 4096) != nil {
+						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
+					}
+					input, err = value.DecodeJSON(program.Input.Data)
+					if err != nil {
+						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
+					}
+				}
+				native.action = "program"
+				native.program = &luaworker.Program{Source: string(program.Source), Input: input}
+				work.Batchable = false
+				work.Token = "program"
+			} else {
+				expression := action.AtomicTransform.GetBackendExpression()
+				if f := prepareExpression(expression); f != nil {
+					return nil, f
+				}
+				native.action = "expression"
+				native.source = expression.Data
+				work.Batchable = false
+				work.Token = "expression"
 			}
-			native.action = "expression"
-			native.source = expression.Data
-			work.Batchable = false
-			work.Token = "expression"
 		default:
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
 		}
@@ -309,6 +336,25 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
 	if len(works) == 0 {
 		return nil, execution.Neutral
+	}
+	if len(works) > 1 {
+		for _, candidate := range works {
+			if candidate.Backend.(*plan).action == "program" {
+				results := make([]*pb.BulkResult, 0, len(works))
+				signal := execution.Healthy
+				for _, item := range works {
+					replies, feedback := a.Execute(ctx, []*execution.Plan{item})
+					results = append(results, replies...)
+					if feedback == execution.Congested || feedback == execution.Neutral && signal == execution.Healthy {
+						signal = feedback
+					}
+				}
+				return results, signal
+			}
+		}
+	}
+	if len(works) == 1 && works[0].Backend.(*plan).action == "program" {
+		return a.executeProgram(ctx, works[0])
 	}
 	if len(works) == 1 && works[0].Backend.(*plan).action == "expression" {
 		return a.executeExpression(ctx, works[0])

@@ -150,7 +150,16 @@ func Validate(op *pb.BulkOperation, store string) *pb.Failure {
 			}
 			switch transform := a.AtomicTransform.Form.(type) {
 			case *pb.Transform_Program:
-				return Fail(pb.FailureCode_UNSUPPORTED, "ProgramTransform runtime is not qualified")
+				program := transform.Program
+				if program == nil || program.Runtime == "" || len(program.Source) == 0 || len(program.Source) > MaxExpression || !utf8.Valid(program.Source) || strings.IndexByte(string(program.Source), 0) >= 0 || strings.HasPrefix(string(program.Source), "\x1bLua") {
+					return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing or oversized program transform")
+				}
+				if program.Runtime != "lua.v1" {
+					return Fail(pb.FailureCode_UNSUPPORTED, "program runtime is unsupported")
+				}
+				if program.Input != nil {
+					docs = append(docs, program.Input)
+				}
 			case *pb.Transform_BackendExpression:
 				if transform.BackendExpression == nil || len(transform.BackendExpression.Data) == 0 || len(transform.BackendExpression.Data) > MaxExpression {
 					return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing or oversized backend expression")

@@ -27,7 +27,7 @@ func TestValidationAndUnsupported(t *testing.T) {
 	if f := Validate(op, "mongo"); f == nil || f.Code != pb.FailureCode_INVALID_ARGUMENT {
 		t.Fatal(f)
 	}
-	program := &pb.ProgramTransform{Runtime: "unqualified"}
+	program := &pb.ProgramTransform{Runtime: "unqualified", Source: []byte("return weir.keep()")}
 	programForm := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: programForm}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

@@ -1,5 +1,6 @@
 {
   "application": "127.0.0.1:7447",
+  "lua_worker": "/weir-lua-worker",
   "memory_mib": 512,
   "services": [{
     "name": "database",

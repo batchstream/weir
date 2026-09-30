@@ -41,7 +41,7 @@ func TestGRPCUnaryAndUnsupported(t *testing.T) {
 			if err != nil || bson.Raw(r.GetDocument().Data).Lookup("n").Int32() != 3 {
 				t.Fatal(err, r)
 			}
-			program := &pb.ProgramTransform{Runtime: "unqualified"}
+			program := &pb.ProgramTransform{Runtime: "unqualified", Source: []byte("return nil")}
 			programForm := &pb.Transform_Program{Program: program}
 			transform := &pb.Transform{Form: programForm}
 			m.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

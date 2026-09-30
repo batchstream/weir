@@ -3,7 +3,9 @@
 Weir is a synchronous data plane for pre-created MongoDB collections and exact
 Elasticsearch/OpenSearch profiles. Deploy the server, [Go SDK](https://github.com/batchstream/weir-go)
 and [Helm chart](https://github.com/batchstream/weir-charts) as a versioned set.
-ProgramTransform remains unsupported. Static peers and configuration changes
+`lua.v1` ProgramTransform is enabled only when `lua_worker` names the packaged
+worker executable. The child process has no hard per-process memory limit; only
+trusted programs should be enabled. Static peers and configuration changes
 require controlled restart; Weir does not perform backend failover or replay writes.
 
 ## Network and access boundary

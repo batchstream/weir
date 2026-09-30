@@ -26,7 +26,7 @@ func TestExpressionValidationBeforeExecution(t *testing.T) {
 				transform := &pb.Transform{Form: form}
 				want := pb.FailureCode_INVALID_ARGUMENT
 				if mode == "program" {
-					program := &pb.ProgramTransform{}
+					program := &pb.ProgramTransform{Runtime: "unknown", Source: []byte("return nil")}
 					transform.Form = &pb.Transform_Program{Program: program}
 					want = pb.FailureCode_UNSUPPORTED
 				}
