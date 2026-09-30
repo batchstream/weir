@@ -167,7 +167,7 @@ func TestPackagedArtifacts(t *testing.T) {
 	t.Run("linux-unknown-no-replay", func(t *testing.T) {
 		fixture := testmongo.OpenSecure(t)
 		proxy := testmongo.StartProxy(t, &fixture.Fixture)
-		proxy.DropCommand = "update"
+		proxy.DropCommand = "bulkWrite"
 		directory := filepath.Join(root, "fault")
 		if err := os.Mkdir(directory, 0755); err != nil {
 			t.Fatal(err)
@@ -192,7 +192,7 @@ func TestPackagedArtifacts(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		updates := 0
 		for _, event := range proxy.Events() {
-			if event.Command == "update" {
+			if event.Command == "bulkWrite" {
 				updates++
 				if !event.Dropped || !event.Acknowledged {
 					t.Fatal("fault evidence", event.Command)

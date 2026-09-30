@@ -55,7 +55,7 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 			native.query = value
 		}
 	}
-	p := &execution.Plan{Scan: true, Key: req.Resource, Token: "scan", Bytes: proto.Size(req) + protocol.EntryOverhead + 4096, ResultBytes: protocol.MaxDocument + protocol.ResultOverhead, PageBytes: scanPageBudget, Backend: native}
+	p := &execution.Plan{Scan: true, Key: req.Resource, Bytes: proto.Size(req) + protocol.EntryOverhead + 4096, ResultBytes: protocol.MaxDocument + protocol.ResultOverhead, PageBytes: scanPageBudget, Backend: native}
 	return p, nil
 }
 

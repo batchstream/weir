@@ -151,11 +151,11 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				}
 			}
 			if kind == "write_error" {
-				proxy.AlterCommand = "update"
+				proxy.AlterCommand = "bulkWrite"
 				proxy.AlterMode = "write_error_391"
 				proxy.AlterRemaining.Store(1)
 			} else {
-				data := bson.D{{Key: "failCommands", Value: bson.A{"update"}}, {Key: "errorCode", Value: int32(391)}, {Key: "appName", Value: "weir:" + db}}
+				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "errorCode", Value: int32(391)}, {Key: "appName", Value: "weir:" + db}}
 				testmongo.FailCommand(t, native, data, 1)
 			}
 			results, _ := adapter.Execute(ctx, []*execution.Plan{work})
@@ -164,7 +164,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			}
 			count := 0
 			for _, e := range proxy.Events() {
-				if e.Command == "update" {
+				if e.Command == "bulkWrite" {
 					count++
 				}
 			}

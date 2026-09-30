@@ -5,6 +5,12 @@ It provides record reads and mutations, duplex bulk operations, native backend
 requests, scans and static peer forwarding. Each Store owns bounded admission,
 micro-batching and adaptive database concurrency.
 
+All operations use the same Store scheduler. Every record read and mutation can
+join a bounded batch across RPCs; backend adapters merge compatible reads and
+writes while preserving individual results. Native exchanges and Scan fetches
+retain their own bounded stream state under that scheduler. Lua evaluation runs
+inside the Weir process; MongoDB program commits remain independent transactions.
+
 See the [architecture](https://github.com/batchstream/weir/blob/main/docs/architecture.md)
 for protocol semantics and guarantees.
 Use the [Go SDK](https://github.com/batchstream/weir-go) for clients and the

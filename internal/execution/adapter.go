@@ -10,9 +10,13 @@ import (
 
 type Plan struct {
 	Operation          *pb.BulkOperation
-	Key, Token         string
+	Key                string
 	Bytes, ResultBytes int
-	Batchable          bool
+	// Context preserves the caller's deadline and is canceled on abandonment.
+	// The scheduler attaches it to a copy at dispatch.
+	// Adapters check it before starting each item's next phase, but use the
+	// shared Execute context for backend calls so cancellation cannot affect peers.
+	Context context.Context
 	// Scan and Native reserve their bounded page/exchange working set for the
 	// lifetime of the one shared live-session slot.
 	Scan      bool

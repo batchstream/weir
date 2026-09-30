@@ -47,7 +47,7 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	if f := nativeDescriptor(descriptor, open.BodyMediaType); f != nil {
 		return nil, f
 	}
-	p := &execution.Plan{Native: true, Key: open.Resource, Token: "native", Bytes: proto.Size(open) + protocol.EntryOverhead, ResultBytes: protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead, PageBytes: nativeBudget, Backend: descriptor}
+	p := &execution.Plan{Native: true, Key: open.Resource, Bytes: proto.Size(open) + protocol.EntryOverhead, ResultBytes: protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead, PageBytes: nativeBudget, Backend: descriptor}
 	return p, nil
 }
 

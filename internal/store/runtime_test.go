@@ -13,12 +13,10 @@ import (
 
 func plan(index uint64, key string, read bool) *execution.Plan {
 	op := &pb.BulkOperation{Index: index}
-	token := "write"
 	bytes := protocol.ResultOverhead
 	if read {
 		r := &pb.ReadRequest{Resource: key}
 		op.Operation = &pb.BulkOperation_Read{Read: r}
-		token = "read:" + key
 		bytes += protocol.MaxDocument
 	} else {
 		e := &pb.Empty{}
@@ -26,7 +24,7 @@ func plan(index uint64, key string, read bool) *execution.Plan {
 		m := &pb.MutateRequest{Resource: key, Action: a}
 		op.Operation = &pb.BulkOperation_Mutate{Mutate: m}
 	}
-	p := &execution.Plan{Operation: op, Key: key, Token: token, Bytes: 1024, ResultBytes: bytes, Batchable: !read}
+	p := &execution.Plan{Operation: op, Key: key, Bytes: 1024, ResultBytes: bytes}
 	return p
 }
 func finish(r *Runtime, b *batch) {
@@ -136,7 +134,7 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	r.mu.Unlock()
 	read.Ack()
 }
-func TestDispatchCancellationIsNeverNotStarted(t *testing.T) {
+func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		l := DefaultLimits()
 		l.BatchOperations = 1

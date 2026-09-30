@@ -68,7 +68,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 			if (f == nil) != tc.valid {
 				t.Fatal(f)
 			}
-			if p != nil && (p.Batchable || p.ResultBytes != protocol.ResultOverhead || !bytes.Equal(p.Backend.(*plan).document, raw)) {
+			if p != nil && (p.ResultBytes != protocol.ResultOverhead || !bytes.Equal(p.Backend.(*plan).document, raw)) {
 				t.Fatal("plan/byte fidelity", p)
 			}
 		})
@@ -133,11 +133,16 @@ func TestMongoExpressionEvidence(t *testing.T) {
 		{"contradictory", bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 112}, {Key: "n", Value: 1}}, pb.MutationOutcome_UNKNOWN},
 		{"impossible", bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}, {Key: "nModified", Value: 1}}, pb.MutationOutcome_UNKNOWN},
 		{"concern", bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}, {Key: "writeConcernError", Value: bson.D{{Key: "code", Value: 64}}}}, pb.MutationOutcome_UNKNOWN},
-		{"conflict", bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 112}}, pb.MutationOutcome_NOT_APPLIED},
+		{"conflict", bson.D{{Key: "ok", Value: 0}, {Key: "n", Value: 0}, {Key: "code", Value: 112}}, pb.MutationOutcome_NOT_APPLIED},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, _ := expressionReply(expressionBSON(t, tc.doc))
+			fields, err := scanFields(expressionBSON(t, tc.doc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			item := &plan{action: "expression"}
+			r := bulkItemReply(item, fields, fields["writeConcernError"].Type != 0)
 			if r.Outcome != tc.outcome {
 				t.Fatal(r)
 			}
@@ -154,6 +159,10 @@ func FuzzMongoExpression(f *testing.F) {
 		a := &Adapter{}
 		d := &pb.Document{MediaType: ExpressionMedia, Data: raw}
 		_ = a.prepareExpression(d)
-		_, _ = expressionReply(raw)
+		fields, err := scanFields(raw)
+		if err == nil {
+			item := &plan{action: "expression"}
+			_ = bulkItemReply(item, fields, false)
+		}
 	})
 }

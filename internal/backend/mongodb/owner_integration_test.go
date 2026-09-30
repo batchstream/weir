@@ -28,7 +28,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	defer release.Do(func() { close(gate) })
 	var held atomic.Bool
 	proxy.Monitor = &event.CommandMonitor{Started: func(ctx context.Context, e *event.CommandStartedEvent) {
-		if e.CommandName == "update" && held.CompareAndSwap(false, true) {
+		if e.CommandName == "bulkWrite" && held.CompareAndSwap(false, true) {
 			close(entered)
 			select {
 			case <-gate:
@@ -54,7 +54,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("request not received")
 	}
-	t.Logf("%s command=update ID=remote-tail observer received; real DB write still held", time.Now().UTC().Format(time.RFC3339Nano))
+	t.Logf("%s command=bulkWrite ID=remote-tail observer received; real DB write still held", time.Now().UTC().Format(time.RFC3339Nano))
 	stop()
 	r := <-result
 	if r[0].GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
@@ -80,7 +80,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	ownerWait(t, func() bool { n, _ := proxy.Sockets(); return n == 2 })
 	updates := 0
 	for _, e := range proxy.Events() {
-		if e.Command == "update" && e.Acknowledged {
+		if e.Command == "bulkWrite" && e.Acknowledged {
 			updates++
 		}
 	}
@@ -94,7 +94,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 			t.Fatal("real database readback", id, count, err)
 		}
 	}
-	t.Logf("%s real DB ACK/readback after cancellation; observer tail retired in %s after gate release; update commands=2, each distinct ID once", time.Now().UTC().Format(time.RFC3339Nano), time.Since(tailStart))
+	t.Logf("%s real DB ACK/readback after cancellation; observer tail retired in %s after gate release; bulkWrite commands=2, each distinct ID once", time.Now().UTC().Format(time.RFC3339Nano), time.Since(tailStart))
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}

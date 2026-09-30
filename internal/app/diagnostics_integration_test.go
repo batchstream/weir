@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,13 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	defer n.Close(context.Background())
 	n.Start(context.Background())
 	families := testmetrics.Scrape(t, n.DiagnosticAddress())
+	// The fixed vocabulary belongs to Weir. Go and process collectors vary with
+	// the toolchain and operating system, so they do not enter this budget.
+	for name := range families {
+		if !strings.HasPrefix(name, "weir_") {
+			delete(families, name)
+		}
+	}
 	// M14 adds 7 unlabelled gauges, 4 profile states and 3 selected scopes.
 	const maximumSeries = 2043 + 7 + 4 + 3 + 1
 	if got := testmetrics.Series(families); got != maximumSeries {
@@ -59,8 +67,14 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("Store overload changed readiness")
 	}
-	if testmetrics.Series(testmetrics.Scrape(t, n.DiagnosticAddress())) != maximumSeries {
+	after := testmetrics.Scrape(t, n.DiagnosticAddress())
+	for name := range after {
+		if !strings.HasPrefix(name, "weir_") {
+			delete(after, name)
+		}
+	}
+	if testmetrics.Series(after) != maximumSeries {
 		t.Fatal("state added series")
 	}
-	t.Logf("maximum legal graph: 16 LocalStores, 2 data listeners, exactly %d standard Prometheus series; no synthetic executions", maximumSeries)
+	t.Logf("maximum legal graph: 16 LocalStores, 2 data listeners, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
 }

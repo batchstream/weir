@@ -1,5 +1,5 @@
 // Package store owns the single bounded admission ledger and scheduler for one Store.
-// Documents and adapter compatibility tokens remain opaque here.
+// Documents and backend execution phases remain opaque here.
 package store
 
 import (
@@ -64,6 +64,7 @@ type Ticket struct {
 	runtime          *Runtime
 	session          *Session
 	ctx              context.Context
+	cancel           context.CancelFunc
 	plan             *execution.Plan
 	result           *pb.BulkResult
 	ready            chan struct{}
@@ -166,7 +167,8 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 		}
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
-	t := &Ticket{runtime: r, session: s, ctx: ctx, plan: p, ready: make(chan struct{}), queuedAt: time.Now()}
+	ticketContext, cancel := context.WithCancel(ctx)
+	t := &Ticket{runtime: r, session: s, ctx: ticketContext, cancel: cancel, plan: p, ready: make(chan struct{}), queuedAt: time.Now()}
 	if p.Scan {
 		t.scan = &scanState{done: make(chan struct{})}
 		r.scan = t
@@ -182,7 +184,7 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 	r.live[t] = struct{}{}
 	r.pendingBytes += p.Bytes
 	r.resultBytes += p.ResultBytes
-	t.stopWatch = context.AfterFunc(ctx, r.signal)
+	t.stopWatch = context.AfterFunc(ticketContext, r.signal)
 	r.signal()
 	return t, nil, changed
 }
@@ -216,6 +218,7 @@ func (t *Ticket) Abandon() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	t.abandoned = true
+	t.cancel()
 	if t.state == 2 {
 		r.releaseLocked(t)
 	}
@@ -229,6 +232,7 @@ func (s *Session) Close() {
 	for t := range r.live {
 		if t.session == s {
 			t.abandoned = true
+			t.cancel()
 			if t.state == 2 {
 				r.releaseLocked(t)
 			}
@@ -241,6 +245,7 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 		return
 	}
 	t.acked = true
+	t.cancel()
 	delete(r.live, t)
 	if t == r.native {
 		r.native = nil
@@ -348,7 +353,6 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	record := make(map[string]bool)
 	selected := make(map[*Ticket]bool)
 	var items []*Ticket
-	token := ""
 	bytes := 0
 	var seed *Ticket
 	for _, t := range r.queue {
@@ -366,16 +370,15 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		}
 		if seed == nil {
 			seed = t
-			token = t.plan.Token
 		}
-		if token != t.plan.Token || t.plan.Scan != seed.plan.Scan || t.plan.Native != seed.plan.Native || record[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes {
+		if t.plan.Scan != seed.plan.Scan || t.plan.Native != seed.plan.Native || record[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes {
 			continue
 		}
 		items = append(items, t)
 		selected[t] = true
 		record[t.plan.Key] = true
 		bytes += t.plan.Bytes
-		if len(items) >= r.limits.BatchOperations || !seed.plan.Batchable {
+		if len(items) >= r.limits.BatchOperations || seed.plan.Scan || seed.plan.Native {
 			break
 		}
 	}
@@ -388,8 +391,14 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			return nil
 		}
 	}
-	deadline, _ := seed.ctx.Deadline()
-	if !r.draining && seed.plan.Batchable && len(items) < r.limits.BatchOperations && now.Sub(seed.eligible) < r.limits.Collect && (deadline.IsZero() || time.Until(deadline) > r.limits.Collect) {
+	collect := !r.draining && !seed.plan.Scan && !seed.plan.Native && len(items) < r.limits.BatchOperations && now.Sub(seed.eligible) < r.limits.Collect
+	for _, t := range items {
+		if deadline, ok := t.ctx.Deadline(); ok && deadline.Sub(now) <= r.limits.Collect {
+			collect = false
+			break
+		}
+	}
+	if collect {
 		return nil
 	}
 	latest := now
@@ -458,7 +467,9 @@ func (r *Runtime) execute(b *batch) {
 	}
 	plans := make([]*execution.Plan, len(b.items))
 	for i, t := range b.items {
-		plans[i] = t.plan
+		plan := *t.plan
+		plan.Context = t.ctx
+		plans[i] = &plan
 	}
 	r.metrics.executions.WithLabelValues("record").Inc()
 	r.metrics.batch.Observe(float64(len(plans)))

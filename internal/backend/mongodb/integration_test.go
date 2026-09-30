@@ -282,7 +282,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 	backend := testmongo.Open(t)
 	native, db := backend.Admin, backend.DB
 	proxy := testmongo.StartProxy(t, backend)
-	proxy.DropCommand = "insert"
+	proxy.DropCommand = "bulkWrite"
 	proxy.DropRemaining.Store(1)
 	o := adapterTestOptions{fixture: backend, uri: proxy.URI()}
 	a := testAdapter(t, o)
@@ -312,7 +312,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 	verifyReconnectRead(t, a, proxy, "one")
 	inserts := 0
 	for _, e := range proxy.Events() {
-		if e.Command == "insert" {
+		if e.Command == "bulkWrite" {
 			inserts++
 			if !e.Acknowledged || !e.Dropped {
 				t.Fatal("not a dropped successful reply", e)
@@ -380,7 +380,7 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 		if e.CommandName == "find" {
 			reads.Add(1)
 		}
-		if e.CommandName == "delete" {
+		if e.CommandName == "bulkWrite" {
 			deletes.Add(1)
 		}
 	}}

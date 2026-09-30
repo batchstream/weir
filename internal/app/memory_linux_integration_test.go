@@ -369,7 +369,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	// Wire counts distinguish independent calls from implicit write replays.
 	updates := 0
 	for _, e := range proxy.Events() {
-		if e.Command == "update" {
+		if e.Command == "bulkWrite" {
 			updates++
 		}
 	}

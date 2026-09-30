@@ -146,9 +146,6 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 				close(release)
 			}
 			expectedCalls := int32(1)
-			if expression && mode == "one_caller_expires" {
-				expectedCalls = 2
-			}
 			if calls.Load() != expectedCalls {
 				t.Fatal("shared batch split/replayed", calls.Load())
 			}
@@ -156,9 +153,6 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 				status, raw := b.Do(t, "GET", "/"+b.Index+"/_doc/"+id, "")
 				if expression {
 					want := `"n":1`
-					if id == "long" && mode != "one_caller_expires" {
-						want = `"n":0`
-					}
 					if !strings.Contains(string(raw), want) {
 						t.Fatal("unexpected effect", id, string(raw))
 					}

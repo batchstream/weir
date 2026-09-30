@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -20,12 +21,8 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 			_, _ = io.WriteString(w, `{"records":{"settings":{"index.uuid":"test","index.number_of_shards":"1"},"mappings":{"_source":{"enabled":true}}}}`)
 			return
 		}
-		if r.URL.Path != "/records/_doc/item" {
-			http.NotFound(w, r)
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
+		switch r.URL.Path {
+		case "/records/_mget":
 			if r.URL.Query().Get("realtime") != "true" {
 				t.Errorf("transform read was not realtime: %s", r.URL.RawQuery)
 			}
@@ -35,8 +32,8 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 			if attempt > 1 {
 				count = 10
 			}
-			_, _ = fmt.Fprintf(w, `{"_index":"records","_id":"item","found":true,"_seq_no":%d,"_primary_term":1,"_source":{"n":%d}}`, sequence, count)
-		case http.MethodPut:
+			_, _ = fmt.Fprintf(w, `{"docs":[{"_index":"records","_id":"item","found":true,"_seq_no":%d,"_primary_term":1,"_source":{"n":%d}}]}`, sequence, count)
+		case "/_bulk":
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Errorf("read replacement: %v", err)
@@ -47,16 +44,16 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 			if attempt == 2 {
 				wantBody, wantSequence = `{"n":11}`, "2"
 			}
-			if string(body) != wantBody || r.URL.Query().Get("if_seq_no") != wantSequence || r.URL.Query().Get("if_primary_term") != "1" {
+			lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+			if len(lines) != 2 || lines[1] != wantBody || !strings.Contains(lines[0], `"if_seq_no":`+wantSequence) || !strings.Contains(lines[0], `"if_primary_term":1`) {
 				t.Errorf("conditional replacement %d: body=%s query=%s", attempt, body, r.URL.RawQuery)
 			}
 			if attempt == 1 {
-				w.WriteHeader(http.StatusConflict)
-				_, _ = io.WriteString(w, `{"error":{"type":"version_conflict_engine_exception"},"status":409}`)
+				_, _ = io.WriteString(w, `{"errors":true,"took":1,"items":[{"index":{"_index":"records","_id":"item","error":{"type":"version_conflict_engine_exception"},"status":409}}]}`)
 				return
 			}
 			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, `{"_index":"records","_id":"item","_version":3,"_seq_no":3,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`)
+			_, _ = io.WriteString(w, `{"errors":false,"took":1,"items":[{"index":{"_index":"records","_id":"item","status":200,"_version":3,"_seq_no":3,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}}]}`)
 		default:
 			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
 		}
@@ -111,7 +108,7 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 					_, _ = fmt.Fprintf(w, `{"records":{"settings":{"index.uuid":"test","index.number_of_shards":"1",%q:"route"},"mappings":{"_source":{"enabled":true}}}}`, pipeline)
 					return
 				}
-				if r.URL.Path == "/records/_doc/item" {
+				if r.URL.Path == "/records/_mget" {
 					documentReads.Add(1)
 				}
 				http.NotFound(w, r)

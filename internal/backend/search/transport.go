@@ -25,6 +25,7 @@ type exchange struct {
 	limit       int
 	method      string
 	contentType string
+	jsonNodes   int
 	native      bool
 }
 
@@ -95,7 +96,11 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	if err != nil {
 		return response.StatusCode, nil, errResponse
 	}
-	if err := validateJSON(raw, 16384); err != nil {
+	nodes := call.jsonNodes
+	if nodes == 0 {
+		nodes = 16384
+	}
+	if err := validateJSON(raw, nodes); err != nil {
 		return response.StatusCode, nil, errResponse
 	}
 	return response.StatusCode, raw, nil

@@ -167,7 +167,6 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
 		native.action = "read"
-		p.Token = "read:" + resource
 		p.ResultBytes += protocol.MaxDocument
 	} else {
 		m := op.GetMutate()
@@ -225,12 +224,6 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 			}
 			native.document = d.Data
 		}
-		p.Token = "write"
-		p.Batchable = true
-		if native.action == "replace" || native.action == "expression" || native.action == "program" {
-			p.Token = native.action + ":" + resource
-			p.Batchable = false
-		}
 	}
 	// BSON filters, model envelopes and write-command overhead fit this conservative charge.
 	p.Bytes = proto.Size(op) + len(resource)*2 + 1024
@@ -264,132 +257,6 @@ func equalID(v value.Value, id any) bool {
 		return v.Kind == value.Extended && v.Type == "mongodb.bson.objectid.v1" && string(v.Data) == string(i[:])
 	}
 	return false
-}
-func (a *Adapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	if len(plans) == 0 {
-		return nil, execution.Neutral
-	}
-	if len(plans) > 1 {
-		for _, candidate := range plans {
-			if candidate.Backend.(*plan).action == "program" {
-				results := make([]*pb.BulkResult, 0, len(plans))
-				signal := execution.Healthy
-				for _, item := range plans {
-					replies, feedback := a.Execute(ctx, []*execution.Plan{item})
-					results = append(results, replies...)
-					if feedback == execution.Congested || feedback == execution.Neutral && signal == execution.Healthy {
-						signal = feedback
-					}
-				}
-				return results, signal
-			}
-		}
-		return a.executeBulk(ctx, plans)
-	}
-	p := plans[0]
-	native := p.Backend.(*plan)
-	if native.action == "expression" {
-		return a.executeExpression(ctx, p)
-	}
-	if native.action == "program" {
-		return a.executeProgram(ctx, p)
-	}
-	result := &pb.BulkResult{Index: p.Operation.Index}
-	filter := bson.D{{Key: "_id", Value: native.id}}
-	if native.action == "read" {
-		raw, err := a.collection.FindOne(ctx, filter).Raw()
-		var r *pb.ReadResult
-		switch {
-		case errors.Is(err, mongo.ErrNoDocuments):
-			r = protocol.Missing()
-		case err != nil:
-			r = protocol.ReadFailure(backendFailure(ctx, err))
-		case len(raw) > protocol.MaxDocument:
-			r = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
-		default:
-			d := &pb.Document{MediaType: "application/bson", Data: raw}
-			r = protocol.ReadDocument(d)
-		}
-		result.Result = &pb.BulkResult_Read{Read: r}
-		return []*pb.BulkResult{result}, feedback(ctx, err)
-	}
-	var err error
-	var matched int64 = 1
-	switch native.action {
-	case "create":
-		_, err = a.collection.InsertOne(ctx, native.document)
-	case "put", "replace":
-		opts := options.Replace().SetUpsert(native.action == "put")
-		var r *mongo.UpdateResult
-		r, err = a.collection.ReplaceOne(ctx, filter, native.document, opts)
-		if r != nil {
-			matched = r.MatchedCount
-		}
-	case "delete":
-		_, err = a.collection.DeleteOne(ctx, filter)
-	}
-	outcome := pb.MutationOutcome_APPLIED
-	var f *pb.Failure
-	if err != nil {
-		outcome = writeOutcome(err)
-		f = backendFailure(ctx, err)
-	} else if native.action == "replace" && matched == 0 {
-		outcome = pb.MutationOutcome_NOT_APPLIED
-		f = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
-	}
-	result.Result = &pb.BulkResult_Mutation{Mutation: protocol.Mutation(outcome, f)}
-	return []*pb.BulkResult{result}, feedback(ctx, err)
-}
-func (a *Adapter) executeBulk(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	models := make([]mongo.WriteModel, 0, len(plans))
-	for _, p := range plans {
-		native := p.Backend.(*plan)
-		filter := bson.D{{Key: "_id", Value: native.id}}
-		switch native.action {
-		case "create":
-			models = append(models, mongo.NewInsertOneModel().SetDocument(native.document))
-		case "put":
-			models = append(models, mongo.NewReplaceOneModel().SetFilter(filter).SetReplacement(native.document).SetUpsert(true))
-		case "delete":
-			models = append(models, mongo.NewDeleteOneModel().SetFilter(filter))
-		}
-	}
-	opts := options.BulkWrite().SetOrdered(false)
-	_, err := a.collection.BulkWrite(ctx, models, opts)
-	var bulk mongo.BulkWriteException
-	isBulk := errors.As(err, &bulk)
-	results := make([]*pb.BulkResult, len(plans))
-	for i, p := range plans {
-		outcome := pb.MutationOutcome_APPLIED
-		var f *pb.Failure
-		if err != nil {
-			outcome = pb.MutationOutcome_UNKNOWN
-			f = backendFailure(ctx, err)
-			if isBulk && bulk.WriteConcernError == nil {
-				outcome = pb.MutationOutcome_APPLIED
-				f = nil
-			}
-			if isBulk {
-				for _, we := range bulk.WriteErrors {
-					if we.Index == i {
-						outcome = pb.MutationOutcome_NOT_APPLIED
-						f = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "definite item rejection")
-					}
-				}
-			}
-		}
-		r := &pb.BulkResult{Index: p.Operation.Index}
-		r.Result = &pb.BulkResult_Mutation{Mutation: protocol.Mutation(outcome, f)}
-		results[i] = r
-	}
-	return results, feedback(ctx, err)
-}
-func writeOutcome(err error) pb.MutationOutcome {
-	var we mongo.WriteException
-	if errors.As(err, &we) && len(we.WriteErrors) > 0 {
-		return pb.MutationOutcome_NOT_APPLIED
-	}
-	return pb.MutationOutcome_UNKNOWN
 }
 func backendFailure(ctx context.Context, err error) *pb.Failure {
 	if ctx.Err() != nil {

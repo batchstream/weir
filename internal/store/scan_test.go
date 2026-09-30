@@ -21,7 +21,7 @@ type scanTestAdapter struct {
 
 func (a *scanTestAdapter) Prepare(*pb.BulkOperation) (*execution.Plan, *pb.Failure) { return nil, nil }
 func (a *scanTestAdapter) PrepareScan(*pb.ScanRequest) (*execution.Plan, *pb.Failure) {
-	p := &execution.Plan{Scan: true, Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, PageBytes: 1 << 20, Key: "scan", Token: "scan"}
+	p := &execution.Plan{Scan: true, Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, PageBytes: 1 << 20, Key: "scan"}
 	return p, nil
 }
 func (a *scanTestAdapter) FetchScan(ctx context.Context, _ *execution.Plan) (*execution.ScanPage, execution.Feedback) {
@@ -305,7 +305,7 @@ func TestScanCleanupDeadlineAndReservation(t *testing.T) {
 }
 
 func (a *scanTestAdapter) PrepareNative(*pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	p := &execution.Plan{Native: true, Bytes: 1024, ResultBytes: 1024, PageBytes: 1 << 20, Token: "native"}
+	p := &execution.Plan{Native: true, Bytes: 1024, ResultBytes: 1024, PageBytes: 1 << 20}
 	return p, nil
 }
 func (a *scanTestAdapter) ExecuteNative(ctx context.Context, _ *execution.Plan, _ *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {

@@ -422,7 +422,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 		result.mongo = proxy
 		result.endpoint = proxy.URI()
 		if drop {
-			proxy.DropCommand = "update"
+			proxy.DropCommand = "bulkWrite"
 			if native {
 				proxy.DropCommand = "findAndModify"
 			}
@@ -586,7 +586,7 @@ func TestPeerRealAcknowledgedReplyLossNoReplay(t *testing.T) {
 					}
 					var commands int
 					if backend.mongo != nil {
-						command := "update"
+						command := "bulkWrite"
 						if native {
 							command = "findAndModify"
 						}

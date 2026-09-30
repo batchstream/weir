@@ -1,9 +1,7 @@
 package search
 
 import (
-	"context"
 	"encoding/json"
-	"net/url"
 	"strings"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
@@ -67,23 +65,6 @@ func expressionFields(raw json.RawMessage) bool {
 	return true
 }
 
-func (a *Adapter) executeExpression(ctx context.Context, work *execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	caps, failure, sample := a.inspect(ctx, false)
-	if failure == nil && (!caps.source || !caps.nativeWrite) {
-		failure = protocol.Fail(pb.FailureCode_UNSUPPORTED, "update requires full stored source and no default or final pipeline")
-	}
-	if failure != nil {
-		return []*pb.BulkResult{protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)}, sample
-	}
-	n := work.Backend.(*plan)
-	call := exchange{path: "/" + a.config.Index + "/_update/" + url.PathEscape(n.id) + "?retry_on_conflict=0&doc_as_upsert=false&refresh=false&wait_for_active_shards=1&timeout=1s", body: n.source, contentType: "application/json", limit: metadataLimit}
-	status, raw, err := a.request(ctx, call)
-	result, sample := a.expressionReply(n, status, raw, err)
-	variant := &pb.BulkResult_Mutation{Mutation: result}
-	reply := &pb.BulkResult{Index: work.Operation.Index, Result: variant}
-	return []*pb.BulkResult{reply}, sample
-}
-
 type expressionResponse struct {
 	Index   string                                    `json:"_index"`
 	ID      string                                    `json:"_id"`
@@ -96,7 +77,16 @@ type expressionResponse struct {
 	Status  int                                       `json:"status"`
 }
 
-func (a *Adapter) expressionReply(n *plan, status int, raw []byte, err error) (*pb.MutationResult, execution.Feedback) {
+type expressionReplyOptions struct {
+	native *plan
+	status int
+	raw    []byte
+	err    error
+	bulk   bool
+}
+
+func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResult, execution.Feedback) {
+	n, status, raw, err := opts.native, opts.status, opts.raw, opts.err
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "update acknowledgement unavailable or incomplete"))
 	if err != nil || len(raw) > metadataLimit || validateJSON(raw, 4096) != nil {
 		return unknown, execution.Neutral
@@ -127,9 +117,13 @@ func (a *Adapter) expressionReply(n *plan, status int, raw []byte, err error) (*
 	}
 	switch response.Result {
 	case "noop":
-		// Both qualified Update APIs report zero shard work for a confirmed
-		// existing-record noop. This is native acknowledgement, not Program Keep.
-		if *shards.Total != 0 || *shards.Successful != 0 || *shards.Failed != 0 {
+		// Both qualified backends return zero shard work for standalone Update,
+		// but Bulk wraps the same noop with a positive primary acknowledgement.
+		if opts.bulk {
+			if *shards.Successful < 1 || *shards.Failed != 0 {
+				return unknown, execution.Neutral
+			}
+		} else if *shards.Total != 0 || *shards.Successful != 0 || *shards.Failed != 0 {
 			return unknown, execution.Neutral
 		}
 	case "updated":
