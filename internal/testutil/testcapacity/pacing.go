@@ -13,13 +13,15 @@ import (
 // A timing-only diagnostic uses the same timer, construction, handoff and worker
 // deadline path. It deliberately makes no RPC or database capacity claim.
 func pacing(ctx context.Context, encoder *json.Encoder, opts TrialOptions) error {
-	if opts.Seconds > 20 || (opts.Rate != 50 && opts.Rate != 200 && opts.Rate != 800) {
+	comparison := opts.ArrivalExpiryMS != 0 || opts.MaxCatchup != 0 || opts.ClientQueue != 0
+	if opts.Seconds > 20 || (!comparison && opts.Rate != 50 && opts.Rate != 200 && opts.Rate != 800) {
 		return errors.New("frozen pacing probe bounds")
 	}
 	sampler, err := newSampler("client", "self")
 	if err != nil {
 		return err
 	}
+	sampler.SkipNetwork = comparison
 	samples := make([]Sample, 0, 12)
 	samples = append(samples, sampler.sample(ctx, nil))
 	done := make(chan struct{})

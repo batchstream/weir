@@ -51,6 +51,8 @@ type Metrics struct {
 	Handoff         Histogram         `json:"handoff"`
 	WorkerStart     Histogram         `json:"worker_start"`
 	Failures        map[string]uint64 `json:"failures"`
+	SuccessArrival  Histogram         `json:"success_arrival"`
+	SuccessDispatch Histogram         `json:"success_dispatch"`
 	Arrival         Histogram         `json:"arrival"`
 	Dispatch        Histogram         `json:"dispatch"`
 	Lag             Histogram         `json:"lag"`
@@ -61,13 +63,17 @@ type Window struct {
 	Put  Metrics `json:"put"`
 }
 type TrialOptions struct {
-	Rate         int
-	WarmSeconds  int
-	Seconds      int
-	Prefix       string
-	Workers      int
-	TimingOnly   bool
-	LegacyExpiry bool
+	Rate            int
+	WarmSeconds     int
+	Seconds         int
+	Prefix          string
+	Workers         int
+	WriteEvery      int
+	ArrivalExpiryMS int
+	MaxCatchup      int
+	ClientQueue     int
+	TimingOnly      bool
+	LegacyExpiry    bool
 }
 type Trial struct {
 	Options TrialOptions `json:"options"`
@@ -88,6 +94,8 @@ func (m *Metrics) finish(r Result, op Operation, dispatch, end time.Time) {
 	m.Lag.Add(dispatch.Sub(op.Planned))
 	if r.Class == "ok" {
 		m.Success++
+		m.SuccessArrival.Add(end.Sub(op.Planned))
+		m.SuccessDispatch.Add(end.Sub(dispatch))
 	} else {
 		if m.Failures == nil {
 			m.Failures = map[string]uint64{}
@@ -162,12 +170,18 @@ func (w *Window) finish(r Result, op Operation, dispatch, end time.Time) {
 	}
 }
 func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, error) {
-	if opts.Rate < 1 || opts.Rate > 6400 || opts.Seconds < 1 || opts.Seconds > 120 || opts.WarmSeconds < 0 || opts.WarmSeconds > 20 || opts.Workers < 1 || opts.Workers > 64 || opts.Rate*(opts.WarmSeconds+opts.Seconds)%10 != 0 || opts.Rate*(opts.WarmSeconds+opts.Seconds)/10 > 100000 || (opts.LegacyExpiry && !opts.TimingOnly) {
+	if opts.WriteEvery == 0 {
+		opts.WriteEvery = 10
+	}
+	if opts.ArrivalExpiryMS < 0 || opts.ArrivalExpiryMS > 100 || opts.MaxCatchup < 0 || opts.MaxCatchup > 512 || opts.ClientQueue < 0 || opts.ClientQueue > 512 {
+		return nil, errors.New("pacing bounds")
+	}
+	if opts.Rate < 1 || opts.Rate > 6400 || opts.Seconds < 1 || opts.Seconds > 120 || opts.WarmSeconds < 0 || opts.WarmSeconds > 20 || opts.Workers < 1 || opts.Workers > 64 || (opts.WriteEvery != 1 && opts.WriteEvery != 10) || opts.Rate*(opts.WarmSeconds+opts.Seconds)%opts.WriteEvery != 0 || opts.Rate*(opts.WarmSeconds+opts.Seconds)/opts.WriteEvery > 300000 || (opts.LegacyExpiry && !opts.TimingOnly) {
 		return nil, errors.New("trial bounds")
 	}
 	total := opts.Rate * (opts.WarmSeconds + opts.Seconds)
-	t := &Trial{Options: opts, Ledger: make([]byte, total/10), Planned: total, Windows: make([]Window, (opts.Seconds+9)/10)}
-	jobs := make(chan Operation)
+	t := &Trial{Options: opts, Ledger: make([]byte, total/opts.WriteEvery), Planned: total, Windows: make([]Window, (opts.Seconds+9)/10)}
+	jobs := make(chan Operation, opts.ClientQueue)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	windows := func(op Operation) []*Window {
@@ -199,7 +213,7 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 					}
 				}
 				if op.Write && !expired {
-					t.Ledger[op.Number/10] = result.Outcome
+					t.Ledger[op.Number/opts.WriteEvery] = result.Outcome
 				}
 				mu.Unlock()
 			}
@@ -212,6 +226,13 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 	}
 	catchup := 0
 	expiry := arrivalExpiry
+	if opts.ArrivalExpiryMS != 0 {
+		expiry = time.Duration(opts.ArrivalExpiryMS) * time.Millisecond
+	}
+	maxCatchup := catchupLimit
+	if opts.MaxCatchup != 0 {
+		maxCatchup = opts.MaxCatchup
+	}
 	if opts.LegacyExpiry {
 		expiry = 5 * time.Millisecond
 	}
@@ -230,10 +251,10 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 		// Wake is the first observation after the timer select (or overdue loop).
 		wake := time.Now()
 		future := ctx.Err() != nil && wake.Before(scheduled)
-		write := n%10 == 9
+		write := n%opts.WriteEvery == opts.WriteEvery-1
 		id := readID(n)
 		if write {
-			id = fmt.Sprintf("%s-%06d", opts.Prefix, n/10)
+			id = fmt.Sprintf("%s-%06d", opts.Prefix, n/opts.WriteEvery)
 		}
 		constructed := time.Now()
 		op := Operation{ID: id, Write: write, Number: n, Planned: scheduled}
@@ -248,7 +269,7 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 			d.Reason = "cancelled"
 		case op.Decision.Sub(scheduled) > expiry:
 			d.Reason = "expired"
-		case !opts.LegacyExpiry && catchup >= catchupLimit:
+		case !opts.LegacyExpiry && catchup >= maxCatchup:
 			d.Reason = "catchup_bound"
 		default:
 			catchup++
@@ -256,6 +277,9 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 			case jobs <- op:
 			default:
 				d.Reason = "no_worker"
+				if opts.ClientQueue != 0 {
+					d.Reason = "client_queue_full"
+				}
 			}
 		}
 		for _, w := range windows(op) {

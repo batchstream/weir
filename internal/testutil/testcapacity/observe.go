@@ -41,30 +41,34 @@ type ProcessSample struct {
 	Stat        string          `json:"stat"`
 }
 type Sample struct {
-	Sequence       uint64            `json:"sequence"`
-	Role           string            `json:"role"`
-	MonotonicNS    int64             `json:"monotonic_ns"`
-	EndMonotonicNS int64             `json:"end_monotonic_ns"`
-	DurationNS     int64             `json:"duration_ns"`
-	Time           time.Time         `json:"time"`
-	End            time.Time         `json:"end"`
-	Files          map[string]string `json:"files"`
-	Process        ProcessSample     `json:"process"`
-	Observer       ProcessSample     `json:"observer"`
-	FD             int               `json:"fd"`
-	RSS            uint64            `json:"rss_bytes"`
-	Goroutines     int               `json:"goroutines,omitempty"`
-	GOMAXPROCS     int               `json:"gomaxprocs,omitempty"`
-	HeapAlloc      uint64            `json:"go_heap_alloc_bytes,omitempty"`
-	Metrics        string            `json:"metrics,omitempty"`
-	DB             string            `json:"db,omitempty"`
-	Errors         []string          `json:"errors,omitempty"`
+	Sequence           uint64            `json:"sequence"`
+	Role               string            `json:"role"`
+	MonotonicNS        int64             `json:"monotonic_ns"`
+	EndMonotonicNS     int64             `json:"end_monotonic_ns"`
+	DurationNS         int64             `json:"duration_ns"`
+	Time               time.Time         `json:"time"`
+	End                time.Time         `json:"end"`
+	Files              map[string]string `json:"files"`
+	Process            ProcessSample     `json:"process"`
+	Observer           ProcessSample     `json:"observer"`
+	FD                 int               `json:"fd"`
+	RSS                uint64            `json:"rss_bytes"`
+	Goroutines         int               `json:"goroutines,omitempty"`
+	GOMAXPROCS         int               `json:"gomaxprocs,omitempty"`
+	HeapAlloc          uint64            `json:"go_heap_alloc_bytes,omitempty"`
+	Metrics            string            `json:"metrics,omitempty"`
+	DB                 string            `json:"db,omitempty"`
+	Errors             []string          `json:"errors,omitempty"`
+	NetworkOmitted     bool              `json:"network_omitted,omitempty"`
+	IdentityHashCached bool              `json:"identity_hash_cached,omitempty"`
 }
 type Sampler struct {
 	Role, PID        string
 	Target, Observer ProcessIdentity
 	Previous         *Sample
 	Sequence         uint64
+	SkipNetwork      bool
+	VerifyHash       bool
 }
 
 func boundedFile(name string) (string, error) {
@@ -205,7 +209,7 @@ func executableHash(pid string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), err
 }
-func readProcess(pid string) (ProcessSample, error) {
+func readProcess(pid string, hash bool) (ProcessSample, error) {
 	p := ProcessSample{}
 	p.Identity.PID = pid
 	var err error
@@ -229,9 +233,11 @@ func readProcess(pid string) (ProcessSample, error) {
 	if err != nil {
 		return p, err
 	}
-	p.Identity.SHA256, err = executableHash(pid)
-	if err != nil {
-		return p, err
+	if hash {
+		p.Identity.SHA256, err = executableHash(pid)
+		if err != nil {
+			return p, err
+		}
 	}
 	p.Identity.Namespaces = map[string]string{}
 	for _, name := range []string{"pid", "mnt", "cgroup", "net", "user"} {
@@ -326,11 +332,11 @@ func newSampler(role, pid string) (*Sampler, error) {
 			return nil, errors.New("Weir target comm mismatch")
 		}
 	}
-	target, err := readProcess(pid)
+	target, err := readProcess(pid, true)
 	if err != nil {
 		return nil, err
 	}
-	observer, err := readProcess(strconv.Itoa(os.Getpid()))
+	observer, err := readProcess(strconv.Itoa(os.Getpid()), true)
 	if err != nil {
 		return nil, err
 	}
@@ -444,10 +450,16 @@ func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
 		}
 	}
 	var err error
-	s.Process, err = readProcess(o.PID)
+	hash := !o.SkipNetwork || o.VerifyHash
+	s.IdentityHashCached = !hash
+	s.Process, err = readProcess(o.PID, hash)
 	record(err)
-	s.Observer, err = readProcess(o.Observer.PID)
+	s.Observer, err = readProcess(o.Observer.PID, hash)
 	record(err)
+	if !hash {
+		s.Process.Identity.SHA256 = o.Target.SHA256
+		s.Observer.Identity.SHA256 = o.Observer.SHA256
+	}
 	if !reflect.DeepEqual(s.Process.Identity, o.Target) || !reflect.DeepEqual(s.Observer.Identity, o.Observer) {
 		record(errors.New("process identity changed"))
 	}
@@ -466,7 +478,13 @@ func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
 			s.Files[name] = value
 		}
 	}
-	for _, name := range []string{"limits", "net/tcp", "net/tcp6"} {
+	processFiles := []string{"limits"}
+	if o.SkipNetwork {
+		s.NetworkOmitted = true
+	} else {
+		processFiles = append(processFiles, "net/tcp", "net/tcp6")
+	}
+	for _, name := range processFiles {
 		value, e := boundedFile("/proc/" + o.PID + "/" + name)
 		record(e)
 		if e == nil {
@@ -506,8 +524,11 @@ func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
 			}
 		}
 	}
-	after, e := readProcess(o.PID)
+	after, e := readProcess(o.PID, hash)
 	record(e)
+	if !hash {
+		after.Identity.SHA256 = o.Target.SHA256
+	}
 	if !reflect.DeepEqual(after.Identity, o.Target) {
 		record(errors.New("target exited/replaced during sample"))
 	}
@@ -542,16 +563,21 @@ func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
 // Only pipes are supported: os.File deadlines stop a blocked consumer without
 // leaking a writer goroutine. Regular files must be collected by the caller.
 type evidenceWriter struct {
-	File    *os.File
-	Context context.Context
-	Bytes   int
+	File             *os.File
+	Context          context.Context
+	Bytes            int
+	SingleWriteLimit int
 }
 
 func (w *evidenceWriter) Write(raw []byte) (int, error) {
 	if err := context.Cause(w.Context); err != nil {
 		return 0, err
 	}
-	if len(raw) > 1<<20 || w.Bytes+len(raw) > 64<<20 {
+	singleWriteLimit := w.SingleWriteLimit
+	if singleWriteLimit == 0 {
+		singleWriteLimit = 1 << 20
+	}
+	if singleWriteLimit < 1<<20 || singleWriteLimit > 32<<20 || len(raw) > singleWriteLimit || w.Bytes+len(raw) > 64<<20 {
 		return 0, errors.New("evidence output bound")
 	}
 	if err := w.File.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
@@ -573,7 +599,7 @@ func observe(control *observationControl, encoder *json.Encoder, o *Sampler, sec
 	if o.Role == "client" {
 		return errors.New("client uses self sampling in trial")
 	}
-	c, err := newClient(endpoint, "")
+	c, err := newClient(endpoint, "", 62)
 	if err != nil {
 		return err
 	}

@@ -38,7 +38,7 @@ func TestPartialSetupRecordsEverySingleAttempt(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	client, err := newClient(server.URL, "")
+	client, err := newClient(server.URL, "", 62)
 	if err != nil {
 		t.Fatal(err)
 	}

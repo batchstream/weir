@@ -20,7 +20,7 @@ func TestFullResponseAndNoMutationRetry(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	c, err := newClient(server.URL, "")
+	c, err := newClient(server.URL, "", 62)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestOversizeAndBulkCorrelation(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, strings.Repeat("x", (256<<10)+1)) })
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	c, err := newClient(server.URL, "")
+	c, err := newClient(server.URL, "", 62)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +58,32 @@ func TestOversizeAndBulkCorrelation(t *testing.T) {
 	}
 }
 
+func TestKnownNativeRejectionEvidence(t *testing.T) {
+	for _, code := range []int{429, 503} {
+		kind := "es_rejected_execution_exception"
+		if code == 503 {
+			kind = "unavailable_shards_exception"
+		}
+		envelope := []byte(fmt.Sprintf(`{"error":{"type":%q}}`, kind))
+		r := parseBulk(code, envelope, "test")
+		if r.Outcome != notApplied || r.Class != "backend_rejected_not_applied" {
+			t.Fatal("known envelope rejection", r)
+		}
+		item := []byte(fmt.Sprintf(`{"errors":true,"took":0,"items":[{"index":{"_index":"records","_id":"test","status":%d,"error":{"type":%q}}}]}`, code, kind))
+		r = parseBulk(200, item, "test")
+		if r.Outcome != notApplied || r.Class != "backend_rejected_not_applied" {
+			t.Fatal("known per-item rejection", r)
+		}
+		other := []byte(`{"error":{"type":"unqualified_error"}}`)
+		r = parseBulk(code, other, "test")
+		if r.Outcome != unknown {
+			t.Fatal("unqualified rejection acquired application certainty", r)
+		}
+	}
+}
+
 func TestDeadlineBeforeDispatchNotUnknown(t *testing.T) {
-	c, err := newClient("http://127.0.0.1:1", "")
+	c, err := newClient("http://127.0.0.1:1", "", 62)
 	if err != nil {
 		t.Fatal(err)
 	}

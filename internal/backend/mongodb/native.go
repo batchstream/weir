@@ -140,7 +140,13 @@ func (a *Adapter) ExecuteNative(ctx context.Context, _ *execution.Plan, exchange
 		reply = reply[n:]
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-	return end, execution.Neutral
+	// Reuse known command-error congestion without interpreting native write effects.
+	signal := execution.Neutral
+	var commandFailure mongo.CommandError
+	if errors.As(err, &commandFailure) && feedback(ctx, err) == execution.Congested {
+		signal = execution.Congested
+	}
+	return end, signal
 }
 
 // Walk already validated bounded bytes, without materializing a query tree.

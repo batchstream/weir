@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,14 +21,28 @@ import (
 )
 
 type nativeCapture struct {
-	head   *pb.NativeHead
-	body   bytes.Buffer
-	chunks int
+	head              *pb.NativeHead
+	body              bytes.Buffer
+	chunks            int
+	headErr, chunkErr error
 }
 
-func (c *nativeCapture) Head(h *pb.NativeHead) error { c.head = h; return nil }
-func (c *nativeCapture) Chunk(b []byte) error        { c.chunks++; _, err := c.body.Write(b); return err }
-func (c *nativeCapture) Interrupt()                  {}
+func (c *nativeCapture) Head(h *pb.NativeHead) error {
+	if c.headErr != nil {
+		return c.headErr
+	}
+	c.head = h
+	return nil
+}
+func (c *nativeCapture) Chunk(b []byte) error {
+	if c.chunkErr != nil {
+		return c.chunkErr
+	}
+	c.chunks++
+	_, err := c.body.Write(b)
+	return err
+}
+func (c *nativeCapture) Interrupt() {}
 func nativeOpen(t *testing.T, index, method, path string) *pb.NativeOpen {
 	t.Helper()
 	descriptor := &spb.Request{Method: method, Path: path}
@@ -201,6 +216,119 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 				if !found {
 					t.Fatal(meta)
 				}
+			}
+		})
+	}
+}
+
+func TestNativeHTTPExplicitCongestion(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		status     int
+		body       string
+		truncated  bool
+		oversized  bool
+		failHead   bool
+		failChunk  bool
+		completion pb.NativeCompletion
+		feedback   execution.Feedback
+	}{
+		{name: "capacity", status: 429, body: "opaque capacity response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
+		{name: "unavailable", status: 503, body: "opaque unavailable response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
+		{name: "native_bad_request", status: 400, body: `{"error":"native request"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "mixed_bulk", status: 200, body: `{"errors":true,"items":[{"index":{"status":429}}]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "truncated_capacity", status: 429, body: "short", truncated: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "oversized_capacity", status: 429, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "head_failure", status: 503, body: "unavailable", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "chunk_failure", status: 429, body: "capacity", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var calls atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if test.truncated {
+					w.Header().Set("Content-Length", "100")
+				}
+				if test.oversized {
+					w.Header().Set("Content-Length", fmt.Sprint(NativeResponseLimit+1))
+				}
+				w.WriteHeader(test.status)
+				_, _ = io.WriteString(w, test.body)
+			})
+			backend := httptest.NewServer(handler)
+			defer backend.Close()
+			transport := newTransport(1)
+			transport.DisableKeepAlives = true
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
+			cfg := Config{Store: "search", Index: "records", URL: backend.URL}
+			a := &Adapter{config: cfg, nativeClient: client}
+			open := nativeOpen(t, "records", "GET", "/_doc/x")
+			plan, failure := a.PrepareNative(open)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			capture := &nativeCapture{}
+			if test.failHead {
+				capture.headErr = errors.New("output unavailable")
+			}
+			if test.failChunk {
+				capture.chunkErr = errors.New("output unavailable")
+			}
+			exchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: capture}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			end, feedback := a.ExecuteNative(ctx, plan, exchange)
+			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
+				t.Fatal(end, feedback, calls.Load())
+			}
+			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
+				metadata := &spb.Response{}
+				if err := proto.Unmarshal(capture.head.Metadata.Data, metadata); err != nil {
+					t.Fatal(err)
+				}
+				if int(metadata.StatusCode) != test.status || capture.body.String() != test.body || end.Failure != nil {
+					t.Fatal("native reply changed", metadata, capture.body.String(), end)
+				}
+			}
+		})
+	}
+}
+
+func TestNativeHTTPQualificationCongestion(t *testing.T) {
+	for _, status := range []int{429, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var calls atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path != "/records" || r.Method != http.MethodGet {
+					t.Error("Native command dispatched after qualification rejection", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, `{"error":{"type":"capacity"}}`)
+			})
+			backend := httptest.NewServer(handler)
+			defer backend.Close()
+			transport := newTransport(1)
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
+			cfg := Config{Store: "search", Index: "records", URL: backend.URL}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			a := &Adapter{config: cfg, client: client, nativeClient: client, ctx: ctx}
+			open := nativeOpen(t, "records", "POST", "/_bulk")
+			plan, failure := a.PrepareNative(open)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			capture := &nativeCapture{}
+			body := io.NopCloser(strings.NewReader("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
+			defer body.Close()
+			exchange := &execution.NativeExchange{Source: body, Sink: capture}
+			end, feedback := a.ExecuteNative(ctx, plan, exchange)
+			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || feedback != execution.Congested || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
+				t.Fatal(end, feedback, calls.Load(), capture)
 			}
 		})
 	}

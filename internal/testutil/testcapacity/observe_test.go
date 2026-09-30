@@ -147,7 +147,7 @@ func TestObservationHTTPBounds(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	defer server.Close()
-	c, err := newClient(server.URL, "")
+	c, err := newClient(server.URL, "", 62)
 	if err != nil {
 		t.Fatal(err)
 	}
