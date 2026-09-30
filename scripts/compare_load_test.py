@@ -143,11 +143,8 @@ class PairedComparison(unittest.TestCase):
             commands.append((name, options, command))
             return "node-" + name
 
-        def run(command, **_options):
-            stdout = 'type Config struct {}' if command[:2] == ["git", "show"] else "127.0.0.1:9000"
-            return subprocess.CompletedProcess(command, 0, stdout, "")
-
-        with patch.object(entry, "run", side_effect=run) as commands_run, \
+        completed = subprocess.CompletedProcess([], 0, "127.0.0.1:9000", "")
+        with patch.object(entry, "run", return_value=completed), \
                 patch.object(entry, "http", return_value="metrics"), \
                 patch.object(fixture, "stop_weir"), patch.object(fixture, "create", side_effect=create):
             fixture.start_weir("baseline")
@@ -156,14 +153,11 @@ class PairedComparison(unittest.TestCase):
             fixture.start_weir("weir")
             current_config = json.loads((fixture.root / "node.json").read_text())
             current_routes = json.loads((fixture.root / "routes.json").read_text())
-        commands_run.assert_any_call(["git", "show", self.args.baseline_source + ":internal/app/config.go"])
-        self.assertNotIn("routing_file", baseline_config)
-        self.assertEqual(current_config.pop("routing_file"), "routes.json")
+        self.assertEqual(current_config["routing_file"], "routes.json")
         self.assertNotIn("services", current_config)
         self.assertNotIn("routes", current_config)
-        self.assertEqual(baseline_config, dict(current_config, **current_routes))
+        self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
-        self.assertEqual(fixture.summary["config_formats"], {"baseline": "legacy", "weir": "split"})
         self.assertEqual(commands[0][2], ["-config", "/node.json"])
         self.assertEqual(commands[1][2], commands[0][2])
         baseline_options = commands[0][1]
@@ -176,25 +170,8 @@ class PairedComparison(unittest.TestCase):
             self.assertEqual(options[options.index("--cpuset-cpus") + 1], "3,4")
             self.assertEqual(options[options.index("--memory") + 1], "768m")
             self.assertNotIn("WEIR_CAPACITY_INTEGRATION=1", options)
-            self.assertIn("type=bind,source=" + str(fixture.root / "routes.json") + ",target=/routes.json,readonly", options)
-
-    def test_baseline_uses_split_config_when_its_source_declares_routing_file(self):
-        fixture = entry.Fixture(self.args)
-        fixture.client = "client-id"
-
-        def run(command, **_options):
-            stdout = 'RoutingFile string `json:"routing_file"`' if command[:2] == ["git", "show"] else "127.0.0.1:9000"
-            return subprocess.CompletedProcess(command, 0, stdout, "")
-
-        with patch.object(entry, "run", side_effect=run), \
-                patch.object(entry, "http", return_value="metrics"), \
-                patch.object(fixture, "stop_weir"), patch.object(fixture, "create", return_value="node"):
-            fixture.start_weir("baseline")
-        config = json.loads((fixture.root / "node.json").read_text())
-        self.assertEqual(config["routing_file"], "routes.json")
-        self.assertNotIn("services", config)
-        self.assertNotIn("routes", config)
-        self.assertEqual(fixture.summary["config_formats"], {"baseline": "split"})
+            for filename in ("node.json", "routes.json"):
+                self.assertIn("type=bind,source=" + str(fixture.root / filename) + ",target=/" + filename + ",readonly", options)
 
     def test_shared_prewarm_covers_both_production_paths_and_restores_cpu(self):
         fixture = entry.Fixture(self.args)
@@ -222,7 +199,7 @@ class PairedComparison(unittest.TestCase):
         self.assertNotIn("-target", trials[0])
         self.assertTrue(all(c[c.index("-target") + 1] == "weir:7447" for c in trials[1:]))
 
-    def test_legacy_prewarm_keeps_existing_diagnostic_modes(self):
+    def test_diagnostic_prewarm_uses_adaptive_path(self):
         self.args.modes = "adaptive,control"
         fixture = entry.Fixture(self.args)
         fixture.db = "db-id"
