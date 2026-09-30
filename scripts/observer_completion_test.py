@@ -1,4 +1,4 @@
-"""Actual three consumers and real process pipes; sample data is synthetic."""
+"""Shared completion and capacity consumer tests with real pipes and synthetic data."""
 import copy
 import datetime
 import hashlib
@@ -14,11 +14,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import eks_resource_preflight as pre
-import resource_local as local
 from capacity_fixture import Observer, stop_group
 from capacity_contract import PLAN
-from eks_loopback_test import tcp_table
 from observer_completion import observation_samples, finish_observation, abort_observation
 from resource_report_test import complete_fixture
 
@@ -58,13 +55,9 @@ def stream_fixture(root, role, count=6):
             db = json.loads(sample['db'])
             next(iter(db['nodes'].values()))['process']['timestamp'] = int(datetime.datetime.fromisoformat(sample['time']).timestamp()*1000)
             sample['db'] = json.dumps(db)
-        sample['files']['net/tcp'] = tcp_table()
         for who in ('process','observer'):
             sample[who]['status'] += 'Cpus_allowed_list: '+PLAN['resources'][role]['cpuset']+'\n'
         sample['files']['status'] = sample['process']['status']
-        sample['observer']['identity']['exe_sha256'] = pre.IMAGES['tool']['binary']
-        if role == 'weir':
-            sample['process']['identity']['exe_sha256'] = pre.IMAGES['version']['binary']
     first = records[0]
     first.update(target=samples[0]['process']['identity'], observer=samples[0]['observer']['identity'],
                  exe_sha256=samples[0]['process']['identity']['exe_sha256'])
@@ -72,7 +65,8 @@ def stream_fixture(root, role, count=6):
     native = (source/'native-identity.txt').read_text()
     (root/'native-identity.txt').write_text(native)
     profile = dict(role=role, samples=count, seconds=(count-1)*2, native=native.splitlines(),
-                   hashes=dict(weir=pre.IMAGES['version']['binary'], client=pre.IMAGES['tool']['binary']))
+                   hashes=dict(weir=streams['weir'][0]['exe_sha256'],
+                               client=streams['weir'][0]['observer']['exe_sha256']))
     return [first]+samples+[terminal], profile
 
 
@@ -141,51 +135,44 @@ class CompletionConsumers(unittest.TestCase):
         options = dict(root=root, role=role, command=command or stream_command(root, records, mode=mode))
         owner = Observer(options)
         self.owners.append(owner)
-        if kind == 'eks':
-            run = pre.Run(root, pre.loop.TARGET)
-            def monitor():
-                if owner.stop_requested is not None:
-                    self.assertTrue(owner.joined and owner.stopped is not None and all(owner.eof))
-            with patch.object(pre, 'Observer', return_value=owner), patch.object(run, 'exec_command', return_value=options['command']), patch.object(run, 'monitor', side_effect=monitor):
-                run.observe(role)
-        else:
-            f = SimpleNamespace(root=root, observations={}, observers={role:owner},
-                                observation_profiles={role:profile}, deadline=deadline)
-            def save(name, value):
-                (root/name).write_text(value if isinstance(value, str) else json.dumps(value))
-            f.save = save
-            error = None
+        f = SimpleNamespace(root=root, observations={}, observers={role:owner},
+                            observation_profiles={role:profile}, deadline=deadline)
+        def save(name, value):
+            (root/name).write_text(value if isinstance(value, str) else json.dumps(value))
+        f.save = save
+        error = None
+        if kind == 'calibration':
+            spec = importlib.util.spec_from_file_location('completion_capacity', Path(__file__).with_name('test-capacity.py'))
+            entry = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(entry)
+        try:
             if kind == 'calibration':
-                spec = importlib.util.spec_from_file_location('completion_capacity', Path(__file__).with_name('test-capacity.py'))
-                entry = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(entry)
+                while not owner.poll():
+                    if time.monotonic() >= deadline:raise RuntimeError('test identity deadline')
+                    time.sleep(.005)
+            while owner.stopped is None:
+                if kind == 'observation':
+                    _, complete = observation_samples(owner, profile)
+                    if complete:
+                        finish_observation(owner, profile, deadline)
+                else:
+                    entry.read_observer(f, role)
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('test consumer deadline')
+                time.sleep(.005)
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
             try:
                 if kind == 'calibration':
-                    while not owner.poll():
-                        if time.monotonic() >= deadline:raise RuntimeError('test identity deadline')
-                        time.sleep(.005)
-                while owner.stopped is None:
-                    if kind == 'local':
-                        profiles = {role:profile}
-                        local.monitor_observations(f.observers, profiles, deadline)
-                    else:
-                        entry.read_observer(f, role)
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError('test consumer deadline')
-                    time.sleep(.005)
-            except BaseException as exc:
-                error = exc
-                raise
-            finally:
-                try:
-                    if kind == 'calibration':
-                        entry.stop_observers(f)
-                    else:
-                        abort_observation(owner, deadline)
-                except BaseException as closing:
-                    if error is None:
-                        raise
-                    error.add_note('consumer cleanup: '+str(closing))
+                    entry.stop_observers(f)
+                else:
+                    abort_observation(owner, deadline)
+            except BaseException as closing:
+                if error is None:
+                    raise
+                error.add_note('consumer cleanup: '+str(closing))
         return owner
 
     @unittest.skipUnless(__debug__, 'legacy calibration explicitly rejects -O')
@@ -269,7 +256,7 @@ class CompletionConsumers(unittest.TestCase):
             case = dict(records=records, profile=profile, command=command)
             started = time.monotonic()
             with self.assertRaisesRegex(RuntimeError, 'test consumer deadline'):
-                self.consumer(root, 'local', case)
+                self.consumer(root, 'observation', case)
             elapsed = time.monotonic()-started
             owner = self.owners[-1]
             self.assertGreaterEqual(elapsed, 12)
@@ -279,13 +266,13 @@ class CompletionConsumers(unittest.TestCase):
             print('COMPLETION_DEADLINE=' + json.dumps(dict(budget=12, elapsed=elapsed, exit=owner.child.returncode,
                                                           joined=owner.joined, eof=owner.eof)), flush=True)
 
-    def test_three_consumers_complete_and_reject_malformed_streams(self):
-        kinds = ['eks','local']+(['calibration'] if __debug__ else [])
+    def test_completion_and_calibration_reject_malformed_streams(self):
+        kinds = ['observation']+(['calibration'] if __debug__ else [])
         for kind in kinds:
             for fault in ('complete','role','count','sequence','identity','errors','end','extra','fragment','truncated','late-extra','late-fragment','nonzero','exit-before-ack'):
                 with self.subTest(kind=kind,fault=fault), tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
-                    count = {'eks':6,'local':71,'calibration':1350}[kind]
+                    count = {'observation':71,'calibration':1350}[kind]
                     records, profile = stream_fixture(root, 'weir', count)
                     if fault == 'role':records[2]['role'] = 'es'
                     if fault == 'count':records.pop(-2)
@@ -311,12 +298,12 @@ class CompletionConsumers(unittest.TestCase):
                             self.assertNotEqual(receipt['outcome'], 'complete')
 
     def test_all_consumers_record_io_failure_and_cancel_close_owners(self):
-        kinds = ['eks','local']+(['calibration'] if __debug__ else [])
+        kinds = ['observation']+(['calibration'] if __debug__ else [])
         for kind in kinds:
             for fault in ('weir-exec.json','weir-completion.json','cancel'):
                 with self.subTest(kind=kind,fault=fault), tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
-                    count = {'eks':6,'local':71,'calibration':1350}[kind]
+                    count = {'observation':71,'calibration':1350}[kind]
                     records, profile = stream_fixture(root, 'weir', count)
                     original = Observer.poll
                     injected = False
@@ -339,10 +326,10 @@ class CompletionConsumers(unittest.TestCase):
         binary = os.environ.get('WEIR_COMPLETION_TEST_BINARY')
         if not binary:
             self.skipTest('explicit locally compiled completion test binary')
-        for kind in ['eks','local']+(['calibration'] if __debug__ else []):
+        for kind in ['observation']+(['calibration'] if __debug__ else []):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                count = {'eks':6,'local':71,'calibration':1350}[kind]
+                count = {'observation':71,'calibration':1350}[kind]
                 records, profile = stream_fixture(root, 'weir', count)
                 path = root/'go-synthetic.jsonl'
                 path.write_text(''.join(json.dumps(e)+'\n' for e in records[:-1]))
@@ -379,10 +366,10 @@ class CompletionConsumers(unittest.TestCase):
                     return entries
                 if time.monotonic() >= until:raise TimeoutError('test terminal collection bound')
                 time.sleep(.002)
-        for kind in ['eks','local']+(['calibration'] if __debug__ else []):
+        for kind in ['observation']+(['calibration'] if __debug__ else []):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                count = {'eks':6,'local':71,'calibration':1350}[kind]
+                count = {'observation':71,'calibration':1350}[kind]
                 records, profile = stream_fixture(root, 'weir', count)
                 records[0]['exe_sha256'] = 'd'*64
                 records[0]['target']['exe_sha256'] = 'd'*64

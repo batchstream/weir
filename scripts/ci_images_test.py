@@ -66,8 +66,9 @@ class DeliveryTests(unittest.TestCase):
         for mode in ('', '-O '):
             self.assertIn("python3 " + mode + "-m unittest discover -v -s scripts -p '*_test.py'", workflow)
         tests = {p.name for p in Path(__file__).parent.glob('*_test.py')}
-        self.assertTrue({'test_capacity_test.py', 'resource_report_test.py', 'resource_local_test.py',
-                         'eks_loopback_test.py', 'eks_resources_test.py', 'local_es_prerequisite_test.py'} <= tests)
+        self.assertTrue({'package_test.py', 'release_test.py', 'ci_images_test.py',
+                         'test_capacity_test.py', 'test_kubernetes_test.py', 'test_memory_linux_test.py',
+                         'resource_report_test.py', 'observer_completion_test.py'} <= tests)
         self.assertTrue(all(fnmatch.fnmatch(name, '*_test.py') for name in tests))
 
     def test_workflow_builds_native_completion_child_before_both_python_modes(self):
