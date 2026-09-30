@@ -34,7 +34,7 @@ def prepare(run, owner):
                 tool_inputs={name:common.digest(common.REPO/name) for name in FILES},
                 evidence_inputs=run.registry_evidence,
                 product_inputs={name:common.digest(common.REPO/name) for name in run.run(
-                    ["git", "ls-files", "*.go", "go.mod", "go.sum", "packaging/Dockerfile", "scripts/qualification.Dockerfile", ".github"]).splitlines()})
+                    ["git", "ls-files", "*.go", "go.mod", "go.sum", "deploy/docker/Dockerfile", "scripts/qualification.Dockerfile", ".github"]).splitlines()})
     plan["objects"] = objects(plan)
     run.save("plan.json", plan)
     (run.root/"plan.json").chmod(0o400)

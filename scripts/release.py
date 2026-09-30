@@ -114,7 +114,7 @@ def publish(version, directory):
         'Use the [Go SDK](https://github.com/batchstream/weir-go) and '
         '[Helm chart](https://github.com/batchstream/weir-charts). '
         'Deployment isolation and backend qualification remain required; see '
-        f'[the production guide](https://github.com/batchstream/weir/blob/{source}/docs/production-deployment.md).\n')
+        f'[the architecture](https://github.com/batchstream/weir/blob/{source}/docs/architecture.md).\n')
     run(['gh', 'release', 'create', version, '--repo', 'batchstream/weir', '--target', source,
          '--title', version, '--notes-file', str(notes), *map(str, assets)])
 

@@ -3,7 +3,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
- echo 'This qualification bootstrap is pinned to macOS arm64; see docs/milestone-1.md for the unqualified-platform boundary.' >&2
+ echo 'This development bootstrap supports macOS arm64 only.' >&2
  exit 1
 fi
 mkdir -p .tools
