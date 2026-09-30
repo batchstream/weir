@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,13 +19,18 @@ import (
 	"testing"
 	"time"
 
+	spb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend/mongodb"
+	searchbackend "github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 )
 
 type process struct {
@@ -119,24 +125,287 @@ func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
 	go func() { p.done <- command.Wait() }()
 	return p
 }
+
+type processSmokeOptions struct {
+	client      pb.WeirClient
+	store, root string
+	search      *testsearch.Backend
+}
+
+func processDocument(t *testing.T, store, id string, n int32) *pb.Document {
+	t.Helper()
+	document := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf(`{"n":%d}`, n))}
+	if store == "mongo" {
+		record := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: n}}
+		raw, err := bson.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		document.MediaType, document.Data = "application/bson", raw
+	}
+	return document
+}
+
+func processRecordNumber(t *testing.T, document *pb.Document) int32 {
+	t.Helper()
+	if document == nil {
+		t.Fatal("record document missing")
+	}
+	var record struct {
+		N int32 `json:"n" bson:"n"`
+	}
+	var err error
+	if document.MediaType == "application/bson" {
+		err = bson.Unmarshal(document.Data, &record)
+	} else if document.MediaType == "application/json" {
+		err = json.Unmarshal(document.Data, &record)
+	} else {
+		t.Fatal("unexpected record media type", document.MediaType)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record.N
+}
+
+func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resource := opts.root + "/s:example"
+	document := processDocument(t, opts.store, "example", 1)
+	put := &pb.MutateRequest_Put{Put: document}
+	mutation := &pb.MutateRequest{Resource: resource, Action: put}
+	result, err := opts.client.Mutate(ctx, mutation)
+	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
+		t.Fatal("three-hop mutation", result, err)
+	}
+	read := &pb.ReadRequest{Resource: resource}
+	found, err := opts.client.Read(ctx, read)
+	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
+		t.Fatal("three-hop read", found, err)
+	}
+	bulk, err := opts.client.Bulk(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := &pb.BulkOpen{Store: "weir://" + opts.store}
+	opening := &pb.BulkRequestFrame_Open{Open: open}
+	frame := &pb.BulkRequestFrame{Frame: opening}
+	if err := bulk.Send(frame); err != nil {
+		t.Fatal(err)
+	}
+	readVariant := &pb.BulkOperation_Read{Read: read}
+	readOperation := &pb.BulkOperation{Index: 0, Operation: readVariant}
+	document = processDocument(t, opts.store, "bulk-example", 2)
+	create := &pb.MutateRequest_Create{Create: document}
+	mutation = &pb.MutateRequest{Resource: opts.root + "/s:bulk-example", Action: create}
+	mutationVariant := &pb.BulkOperation_Mutate{Mutate: mutation}
+	mutationOperation := &pb.BulkOperation{Index: 1, Operation: mutationVariant}
+	for _, operation := range []*pb.BulkOperation{readOperation, mutationOperation} {
+		item := &pb.BulkRequestFrame_Operation{Operation: operation}
+		frame = &pb.BulkRequestFrame{Frame: item}
+		if err := bulk.Send(frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := bulk.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[uint64]bool)
+	for {
+		frame, err := bulk.Recv()
+		if err != nil {
+			t.Fatal("three-hop Bulk response", err)
+		}
+		if end := frame.GetEnd(); end != nil {
+			if end.ReceivedCount != 2 || end.ResultCount != 2 || len(seen) != 2 {
+				t.Fatal("Bulk terminal accounting", end, seen)
+			}
+			break
+		}
+		result := frame.GetResult()
+		if result == nil || seen[result.Index] {
+			t.Fatal("duplicate or invalid Bulk result", frame)
+		}
+		seen[result.Index] = true
+		switch result.Index {
+		case 0:
+			if processRecordNumber(t, result.GetRead().GetDocument()) != 1 {
+				t.Fatal("Bulk read changed record", result)
+			}
+		case 1:
+			if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
+				t.Fatal("Bulk create", result)
+			}
+		default:
+			t.Fatal("unexpected Bulk result index", result)
+		}
+	}
+	if _, err := bulk.Recv(); err != io.EOF {
+		t.Fatal("Bulk final status", err)
+	}
+	processNativeSmoke(t, ctx, opts)
+	if opts.store == "search" {
+		status, _ := opts.search.Do(t, "POST", "/"+opts.search.Index+"/_refresh", "")
+		if status != http.StatusOK {
+			t.Fatal("owned search index refresh", status)
+		}
+	}
+	processScanSmoke(t, ctx, opts)
+	t.Logf("three independent Weir processes, %s: Read, Mutate, mixed Bulk, Native and Scan completed", opts.store)
+}
+
+func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
+	t.Helper()
+	stream, err := opts.client.Native(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
+	open := &pb.NativeOpen{Resource: opts.root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
+	var body []byte
+	if opts.store == "mongo" {
+		query := bson.D{{Key: "_id", Value: "example"}}
+		command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
+		body, err = bson.Marshal(command)
+	} else {
+		request := &spb.Request{Method: "GET", Path: "/_doc/example", Query: "realtime=true"}
+		descriptor.Data, err = proto.Marshal(request)
+		descriptor.MediaType = searchbackend.NativeDescriptor
+		open.BodyMediaType = ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	opening := &pb.NativeRequestFrame_Open{Open: open}
+	frame := &pb.NativeRequestFrame{Frame: opening}
+	if err := stream.Send(frame); err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != 0 {
+		chunk := &pb.NativeRequestFrame_Chunk{Chunk: body}
+		frame = &pb.NativeRequestFrame{Frame: chunk}
+		if err := stream.Send(frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	var response []byte
+	headSeen := false
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal("Native response", err)
+		}
+		if head := frame.GetHead(); head != nil {
+			if headSeen || len(response) != 0 {
+				t.Fatal("Native Head order or duplicate")
+			}
+			headSeen = true
+			if opts.store == "search" {
+				metadata := &spb.Response{}
+				if proto.Unmarshal(head.GetMetadata().GetData(), metadata) != nil || metadata.StatusCode != http.StatusOK {
+					t.Fatal("Native HTTP metadata", head)
+				}
+			}
+		}
+		if chunk := frame.GetChunk(); len(chunk) != 0 {
+			if !headSeen {
+				t.Fatal("Native body preceded Head")
+			}
+			response = append(response, chunk...)
+		}
+		if end := frame.GetEnd(); end != nil {
+			if !headSeen || end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+				t.Fatal("Native terminal evidence", end)
+			}
+			break
+		}
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatal("Native final status", err)
+	}
+	if opts.store == "mongo" {
+		raw := bson.Raw(response)
+		if raw.Lookup("ok").AsInt64() != 1 || raw.Lookup("n").AsInt64() != 1 {
+			t.Fatal("Native count response", raw)
+		}
+	} else {
+		var record struct {
+			ID     string            `json:"_id"`
+			Found  bool              `json:"found"`
+			Source struct{ N int32 } `json:"_source"`
+		}
+		if json.Unmarshal(response, &record) != nil || record.ID != "example" || !record.Found || record.Source.N != 1 {
+			t.Fatal("Native realtime document response", string(response))
+		}
+	}
+}
+
+func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
+	t.Helper()
+	request := &pb.ScanRequest{Resource: opts.root, FetchItemsHint: 1}
+	stream, err := opts.client.Scan(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[string]bool)
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal("Scan response", err)
+		}
+		if end := frame.GetEnd(); end != nil {
+			if end.Failure != nil || end.DocumentCount != 2 || len(seen) != 2 {
+				t.Fatal("Scan terminal evidence", end, seen)
+			}
+			break
+		}
+		document := frame.GetDocument()
+		if document == nil {
+			t.Fatal("unexpected Scan frame", frame)
+		}
+		var id string
+		var n int32
+		if opts.store == "mongo" {
+			raw := bson.Raw(document.Data)
+			id, n = raw.Lookup("_id").StringValue(), raw.Lookup("n").Int32()
+		} else {
+			var hit struct {
+				ID     string            `json:"_id"`
+				Source struct{ N int32 } `json:"_source"`
+			}
+			if json.Unmarshal(document.Data, &hit) != nil {
+				t.Fatal("invalid Scan hit", string(document.Data))
+			}
+			id, n = hit.ID, hit.Source.N
+		}
+		if seen[id] || id != "example" && id != "bulk-example" || id == "example" && n != 1 || id == "bulk-example" && n != 2 {
+			t.Fatal("Scan repeated or changed records", id, n)
+		}
+		seen[id] = true
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatal("Scan final status", err)
+	}
+}
+
 func TestIndependentWeirProcesses(t *testing.T) {
 	// testmongo.Open gates the entire smoke before starting child processes.
 	mongoFixture := testmongo.Open(t)
 	database := mongoFixture.DB
 	search := testsearch.Open(t)
-	dir := t.TempDir()
-	binaries := make(map[string]string)
-	for _, name := range []string{"weir", "weir-example", "weir-native-example"} {
-		binary := filepath.Join(dir, name)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		cmd := exec.CommandContext(ctx, "go", "build", "-race", "-o", binary, "./cmd/"+name)
-		cmd.Dir = testutil.Root(t)
-		output, err := cmd.CombinedOutput()
-		cancel()
-		if err != nil {
-			t.Fatalf("build %s: %v %s", name, err, output)
-		}
-		binaries[name] = binary
+	binary := filepath.Join(t.TempDir(), "weir")
+	buildCtx, stopBuild := context.WithTimeout(context.Background(), 30*time.Second)
+	command := exec.CommandContext(buildCtx, "go", "build", "-race", "-o", binary, "./cmd/weir")
+	command.Dir = testutil.Root(t)
+	output, err := command.CombinedOutput()
+	stopBuild()
+	if err != nil {
+		t.Fatalf("build weir: %v %s", err, output)
 	}
 	mongo := &Mongo{URI: mongoFixture.URI, Database: database, Collection: "records"}
 	mongoLocal := &Local{Mongo: mongo}
@@ -151,7 +420,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	c.Peer = "127.0.0.1:0"
 	c.Services = []Service{mongoService, searchService}
 	c.Routes = []Route{mongoRoute, searchRoute}
-	final := startProcess(t, binaries["weir"], c)
+	final := startProcess(t, binary, c)
 	b := DefaultConfig()
 	b.Diagnostics = "127.0.0.1:0"
 	b.Peer = "127.0.0.1:0"
@@ -162,7 +431,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		b.Services = append(b.Services, service)
 		b.Routes = append(b.Routes, route)
 	}
-	middle := startProcess(t, binaries["weir"], b)
+	middle := startProcess(t, binary, b)
 	a := DefaultConfig()
 	a.Diagnostics = "127.0.0.1:0"
 	a.Application = "127.0.0.1:0"
@@ -173,18 +442,20 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		a.Services = append(a.Services, service)
 		a.Routes = append(a.Routes, route)
 	}
-	first := startProcess(t, binaries["weir"], a)
+	first := startProcess(t, binary, a)
+	conn, err := grpc.NewClient("passthrough:///"+first.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	client := pb.NewWeirClient(conn)
 	for _, kind := range []string{"mongo", "search"} {
-		for _, example := range []string{"weir-example", "weir-native-example"} {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			command := exec.CommandContext(ctx, binaries[example], "-address", first.address, "-store", kind, "-database", database, "-index", search.Index)
-			output, err := command.CombinedOutput()
-			cancel()
-			if err != nil {
-				t.Fatalf("%s/%s: %v %s", kind, example, err, output)
-			}
-			t.Logf("three independent Weir processes, %s/%s: %s", kind, example, strings.TrimSpace(string(output)))
+		root := "weir://mongo/" + database + "/records"
+		if kind == "search" {
+			root = "weir://search/" + search.Index
 		}
+		opts := processSmokeOptions{client: client, store: kind, root: root, search: search}
+		processPublicSmoke(t, opts)
 	}
 	for _, node := range []*process{first, middle, final} {
 		families := testmetrics.Scrape(t, node.diagnostic)
@@ -195,42 +466,60 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			if testmetrics.Sum(families, "weir_store_records_total") != 8 {
 				t.Fatal("process local records count", testmetrics.Sum(families, "weir_store_records_total"))
 			}
-		} else if families["weir_store_executions_total"] != nil || testmetrics.Sum(families, "weir_relay_terminations_total") != 8 {
+			if testmetrics.Sum(families, "weir_store_native_completions_total") != 2 || testmetrics.Sum(families, "weir_store_scan_terminations_total") != 2 {
+				t.Fatal("process local stream accounting")
+			}
+			for _, store := range []string{"mongo", "search"} {
+				labels := map[string]string{"store": store, "completion": "response_complete"}
+				native := testmetrics.Sample(families, "weir_store_native_completions_total", labels).GetCounter().GetValue()
+				labels = map[string]string{"store": store, "result": "exhausted"}
+				scan := testmetrics.Sample(families, "weir_store_scan_terminations_total", labels).GetCounter().GetValue()
+				if native != 1 || scan != 1 {
+					t.Fatal("process stream duplicated or incomplete", store, native, scan)
+				}
+			}
+		} else if families["weir_store_executions_total"] != nil || testmetrics.Sum(families, "weir_relay_terminations_total") != 10 {
 			t.Fatal("forward process execution duplication")
+		} else {
+			for _, store := range []string{"mongo", "search"} {
+				for _, method := range []string{"Read", "Mutate", "Bulk", "Native", "Scan"} {
+					labels := map[string]string{"service": store, "method": method, "status": "ok"}
+					if testmetrics.Sample(families, "weir_relay_terminations_total", labels).GetCounter().GetValue() != 1 {
+						t.Fatal("forward process method duplicated or incomplete", store, method)
+					}
+				}
+			}
 		}
 	}
-	t.Log("real process HTTP scrapes: C logical records=8, A/B relays=8 each, A/B have no local executions")
+	t.Log("real process HTTP scrapes: C logical records=8, Native complete=2, Scan exhausted=2; A/B relays=10 each, A/B have no local executions")
 	t.Log(fmt.Sprintf("process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets", first.command.Process.Pid, middle.command.Process.Pid, final.command.Process.Pid, search.Profile))
 	c.Peer, b.Peer, a.Application = final.address, middle.address, first.address
-	conn, err := grpc.NewClient("passthrough:///"+first.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	client := pb.NewWeirClient(conn)
-	request := &pb.ReadRequest{Resource: "weir://mongo/" + database + "/records/s:example"}
+	mongoRead := &pb.ReadRequest{Resource: "weir://mongo/" + database + "/records/s:example"}
+	searchRead := &pb.ReadRequest{Resource: "weir://search/" + search.Index + "/s:example"}
 	for _, node := range []struct {
 		name string
 		old  *process
 		cfg  Config
 	}{{"C", final, c}, {"B", middle, b}, {"A", first, a}} {
 		node.old.stop(t)
-		replacement := startProcess(t, binaries["weir"], node.cfg)
-		until := time.Now().Add(5 * time.Second)
-		for {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			result, err := client.Read(ctx, request)
-			cancel()
-			if err == nil && result.GetDocument() != nil {
-				break
+		replacement := startProcess(t, binary, node.cfg)
+		for _, request := range []*pb.ReadRequest{mongoRead, searchRead} {
+			until := time.Now().Add(5 * time.Second)
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				result, err := client.Read(ctx, request)
+				cancel()
+				if err == nil && result.GetDocument() != nil && processRecordNumber(t, result.GetDocument()) == 1 {
+					break
+				}
+				if time.Now().After(until) {
+					t.Fatal("fresh Read did not recover after process replacement", node.name, request.Resource, err)
+				}
+				// Each probe is a distinct read-only call; no failed write is retried.
+				time.Sleep(100 * time.Millisecond)
 			}
-			if time.Now().After(until) {
-				t.Fatal("fresh Read did not recover after process replacement", node.name, err)
-			}
-			// Each probe is a distinct read-only call; no failed write is retried.
-			time.Sleep(100 * time.Millisecond)
 		}
-		t.Logf("%s drained and exited; replacement PID=%d; existing clients recovered for a fresh Read", node.name, replacement.command.Process.Pid)
+		t.Logf("%s drained and exited; replacement PID=%d; existing client recovered MongoDB and Search reads", node.name, replacement.command.Process.Pid)
 	}
 }
 
