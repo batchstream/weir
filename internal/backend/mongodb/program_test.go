@@ -4,13 +4,12 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/luaworker"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestPrepareProgramTransformRequiresConfiguredWorkerAndBSONInput(t *testing.T) {
-	config := Config{Store: "mongo", Database: "db", Collection: "records", LuaRunner: &luaworker.Runner{}}
+func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
+	config := Config{Store: "mongo", Database: "db", Collection: "records"}
 	a := &Adapter{config: config}
 	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte("return weir.keep()")}
 	form := &pb.Transform_Program{Program: program}
@@ -32,11 +31,6 @@ func TestPrepareProgramTransformRequiresConfiguredWorkerAndBSONInput(t *testing.
 		t.Fatal("JSON input accepted by MongoDB adapter", failure)
 	}
 
-	a.config.LuaRunner = nil
-	program.Input = nil
-	if _, failure := a.Prepare(operation); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
-		t.Fatal("program accepted without worker configuration", failure)
-	}
 }
 
 func TestMongoProgramReplacementPreservesResourceIdentity(t *testing.T) {

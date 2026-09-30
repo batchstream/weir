@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 )
@@ -62,7 +63,7 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 		}
 		program := *native.program
 		program.Current = currentValue
-		transformed, err := a.config.LuaRunner.Run(ctx, program)
+		transformed, err := luaengine.Evaluate(ctx, program)
 		if err != nil {
 			return searchLuaFailure(parent, ctx, err)
 		}
@@ -117,7 +118,7 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 			mutation, signal := a.programWriteReply(replyOptions)
 			return mutation, signal
 		default:
-			failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua worker returned an invalid action")
+			failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
 			return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
 		}
 	}

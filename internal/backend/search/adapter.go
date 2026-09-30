@@ -15,7 +15,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaworker"
+	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"google.golang.org/protobuf/proto"
@@ -32,8 +32,7 @@ type Config struct {
 	Pool                       int
 	Connection                 *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
-	Resolver  *net.Resolver
-	LuaRunner *luaworker.Runner
+	Resolver *net.Resolver
 }
 type Adapter struct {
 	dialer          *connectionDialer
@@ -49,7 +48,7 @@ type Adapter struct {
 type plan struct {
 	id, action string
 	source     []byte
-	program    *luaworker.Program
+	program    *luaengine.Program
 }
 type capabilities struct{ source, write, nativeWrite bool }
 
@@ -235,9 +234,6 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
 			if program := action.AtomicTransform.GetProgram(); program != nil {
-				if a.config.LuaRunner == nil {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Lua runtime is not configured")
-				}
 				if program.Input != nil && program.Input.MediaType != "application/json" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
 				}
@@ -252,7 +248,8 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 					}
 				}
 				native.action = "program"
-				native.program = &luaworker.Program{Source: string(program.Source), Input: input}
+				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input}
+				native.program = luaProgram
 				work.Batchable = false
 				work.Token = "program"
 			} else {

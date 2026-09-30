@@ -13,7 +13,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaworker"
+	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -27,7 +27,6 @@ import (
 type Config struct {
 	URI, Store, Database, Collection string
 	Pool                             uint64
-	LuaRunner                        *luaworker.Runner
 }
 type Adapter struct {
 	dialer     *boundedDialer
@@ -41,7 +40,7 @@ type plan struct {
 	id       any
 	document bson.Raw
 	action   string
-	program  *luaworker.Program
+	program  *luaengine.Program
 }
 
 var namespacePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -190,9 +189,6 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
 			if program := v.AtomicTransform.GetProgram(); program != nil {
-				if a.config.LuaRunner == nil {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Lua runtime is not configured")
-				}
 				if program.Input != nil && program.Input.MediaType != "application/bson" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
 				}
@@ -204,7 +200,8 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 					}
 				}
 				native.action = "program"
-				native.program = &luaworker.Program{Source: string(program.Source), Input: input}
+				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input}
+				native.program = luaProgram
 			} else {
 				expression := v.AtomicTransform.GetBackendExpression()
 				if f := a.prepareExpression(expression); f != nil {

@@ -1,11 +1,8 @@
-// Package luaworker defines the bounded worker protocol and client runner.
-package luaworker
+// Package luaengine evaluates bounded Lua transforms in the Weir process.
+package luaengine
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,13 +12,9 @@ import (
 
 const (
 	MaxSourceBytes   = 16 << 10
-	MaxRequestBytes  = 512 << 10
-	MaxResponseBytes = 384 << 10
 	MaxMessageBytes  = 1024
-	MaxTimeout       = time.Second
-	DefaultTimeout   = 500 * time.Millisecond
+	ExecutionTimeout = 500 * time.Millisecond
 	maxConcurrent    = 4
-	maxJSONDepth     = 4*value.MaxDepth + 16
 )
 
 type Action string
@@ -34,25 +27,15 @@ const (
 )
 
 type Program struct {
-	Source  string      `json:"source"`
-	Current value.Value `json:"current"`
-	Input   value.Value `json:"input"`
+	Source  string
+	Current value.Value
+	Input   value.Value
 }
 
 type Result struct {
-	Action  Action      `json:"action"`
-	Value   value.Value `json:"value"`
-	Message string      `json:"message"`
-}
-
-type Request struct {
-	Program       Program `json:"program"`
-	TimeoutMillis int64   `json:"timeout_millis"`
-}
-
-type Response struct {
-	Result Result `json:"result"`
-	Error  string `json:"error"`
+	Action  Action
+	Value   value.Value
+	Message string
 }
 
 func ValidateProgram(program Program) error {
@@ -109,55 +92,4 @@ func validateDocumentValue(v value.Value, depth int) error {
 		}
 	}
 	return nil
-}
-
-func DecodeEnvelope(raw []byte, target any) error {
-	if len(raw) == 0 || jsonDepth(raw) > maxJSONDepth {
-		return fmt.Errorf("invalid worker envelope")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("invalid worker envelope: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return fmt.Errorf("trailing worker data")
-	}
-	return nil
-}
-
-func jsonDepth(raw []byte) int {
-	depth, largest := 0, 0
-	inString, escaped := false, false
-	for _, ch := range raw {
-		if inString {
-			if escaped {
-				escaped = false
-			} else if ch == '\\' {
-				escaped = true
-			} else if ch == '"' {
-				inString = false
-			}
-			continue
-		}
-		switch ch {
-		case '"':
-			inString = true
-		case '{', '[':
-			depth++
-			if depth > largest {
-				largest = depth
-			}
-		case '}', ']':
-			depth--
-			if depth < 0 {
-				return maxJSONDepth + 1
-			}
-		}
-	}
-	if inString || depth != 0 {
-		return maxJSONDepth + 1
-	}
-	return largest
 }

@@ -36,7 +36,7 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(package.secret_path(name), name)
         for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
             self.assertFalse(package.allowed(name), name)
-        self.assertTrue(package.allowed('cmd/weir-lua-worker/main.go'))
+        self.assertFalse(package.allowed('cmd/weir-lua-worker/main.go'))
         for name in ('README.md', 'deploy/docker/Dockerfile', 'deploy/docker/node.example.json', 'deploy/docker/licenses/purego-NOTICE.txt'):
             self.assertTrue(package.allowed(name), name)
         with tempfile.TemporaryDirectory() as temp:
@@ -44,7 +44,7 @@ class PackageTests(unittest.TestCase):
             def git(*args):
                 return package.run(['git', *args], cwd=root)
             git('init', '-q')
-            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'):
+            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go'):
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text('fixture')
@@ -52,7 +52,7 @@ class PackageTests(unittest.TestCase):
             git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
             revision = package.clean_head(root)
             self.assertEqual(len(revision), 40)
-            self.assertEqual(len(package.source_files(root, revision)), 4)
+            self.assertEqual(len(package.source_files(root, revision)), 3)
             (root / 'extra').write_text('dirty')
             with self.assertRaises(ValueError):
                 package.clean_head(root)
@@ -69,7 +69,7 @@ class PackageTests(unittest.TestCase):
             def git(*args):
                 return package.run(['git', *args], cwd=root)
             git('init', '-q')
-            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'):
+            for name in ('go.mod', 'go.sum', 'cmd/weir/main.go'):
                 dest = root / name
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text('original')
@@ -82,7 +82,7 @@ class PackageTests(unittest.TestCase):
             git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'moved HEAD')
             self.assertNotEqual(package.clean_head(root), revision)
             files = package.source_files(root, revision)
-            self.assertEqual({name for name, _ in files}, {'go.mod', 'go.sum', 'cmd/weir/main.go', 'cmd/weir-lua-worker/main.go'})
+            self.assertEqual({name for name, _ in files}, {'go.mod', 'go.sum', 'cmd/weir/main.go'})
             for _, oid in files:
                 self.assertEqual(git('cat-file', 'blob', oid), b'original')
             with self.assertRaisesRegex(ValueError, 'immutable full source SHA'):
@@ -96,11 +96,12 @@ class PackageTests(unittest.TestCase):
 
     def test_binary_target_and_linked_dependency_validation(self):
         lines = 'binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n'
-        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/arnodel/golua\tv0.3.0\th1:fixture\n', ('linux', 'arm64'), False)):
+        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/yuin/gopher-lua\tv1.1.1\th1:fixture\n', ('linux', 'arm64'), True)):
             result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
             with patch.object(subprocess, 'run', return_value=result):
                 if success:
-                    self.assertEqual(package.build_info(Path('binary'), target, {})['linked_modules'], [])
+                    self.assertEqual(package.build_info(Path('binary'), target, {})['linked_modules'],
+                                     [['github.com/yuin/gopher-lua', 'v1.1.1', 'h1:fixture']] if extra else [])
                 else:
                     with self.assertRaises(ValueError):
                         package.build_info(Path('binary'), target, {})
@@ -147,7 +148,7 @@ class PackageTests(unittest.TestCase):
                     result = package.build_once(opts)
 
                 name = 'qualification' if qualification else 'weir'
-                expected = {name} if qualification else {name, name + '-lua-worker'}
+                expected = {name}
                 for arch in ('amd64', 'arm64'):
                     context = root / 'oci-context' / ('linux-' + arch)
                     self.assertEqual({item.name for item in context.iterdir()}, expected)
@@ -156,8 +157,6 @@ class PackageTests(unittest.TestCase):
                         self.assertEqual((context / binary).read_bytes(), built.read_bytes())
                 dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'deploy/docker/Dockerfile'
                 self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
-                self.assertEqual(bool(result['lua_worker_binaries']), not qualification)
-                self.assertEqual(receipt.call_args.args[2]['lua_worker_binaries'], result['lua_worker_binaries'])
                 receipt.assert_called_once()
                 docker.assert_called_once()
 

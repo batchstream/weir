@@ -7,15 +7,32 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"github.com/batchstream/weir/internal/luaworker"
 	"github.com/batchstream/weir/internal/value"
 	lua "github.com/yuin/gopher-lua"
 )
 
 var errInvalidLuaResult = errors.New("invalid Lua result")
+var evaluations = make(chan struct{}, maxConcurrent)
 
-func Evaluate(ctx context.Context, program luaworker.Program) (luaworker.Result, error) {
-	var empty luaworker.Result
+func Evaluate(ctx context.Context, program Program) (Result, error) {
+	var empty Result
+	if ctx == nil {
+		return empty, errors.New("Lua execution context is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, ExecutionTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	if err := ValidateProgram(program); err != nil {
+		return empty, err
+	}
+	select {
+	case evaluations <- struct{}{}:
+		defer func() { <-evaluations }()
+	case <-ctx.Done():
+		return empty, ctx.Err()
+	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
@@ -38,31 +55,43 @@ func Evaluate(ctx context.Context, program luaworker.Program) (luaworker.Result,
 	state.SetGlobal("input", state.Get(-1))
 	state.Pop(1)
 	if err := state.DoString(program.Source); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return empty, contextErr
+		}
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	if state.GetTop() == 0 || state.Get(1) == lua.LNil {
-		result := luaworker.Result{Action: luaworker.Keep, Value: value.Value{Kind: value.Missing}}
-		return result, nil
+	result := Result{Action: Keep}
+	if state.GetTop() != 0 {
+		if state.GetTop() != 1 {
+			return empty, errInvalidLuaResult
+		}
+		if state.Get(1) != lua.LNil {
+			userdata, ok := state.Get(1).(*lua.LUserData)
+			if !ok {
+				return empty, errInvalidLuaResult
+			}
+			switch typed := userdata.Value.(type) {
+			case value.Value:
+				result = Result{Action: Replace, Value: typed}
+			case Result:
+				result = typed
+			default:
+				return empty, errInvalidLuaResult
+			}
+		}
 	}
-	if state.GetTop() != 1 {
-		return empty, errInvalidLuaResult
+	if err := ValidateResult(result); err != nil {
+		return empty, err
 	}
-	userdata, ok := state.Get(1).(*lua.LUserData)
-	if !ok {
-		return empty, errInvalidLuaResult
+	cloned, err := value.Clone(result.Value)
+	if err != nil {
+		return empty, err
 	}
-	switch typed := userdata.Value.(type) {
-	case value.Value:
-		result := luaworker.Result{Action: luaworker.Replace, Value: typed}
-		return result, nil
-	case luaworker.Result:
-		return typed, nil
-	default:
-		return empty, errInvalidLuaResult
-	}
+	result.Value = cloned
+	return result, nil
 }
 
 func installModule(state *lua.LState) {
@@ -99,7 +128,7 @@ func pushValue(state *lua.LState, v value.Value) {
 	state.Push(userdata)
 }
 
-func pushAction(state *lua.LState, result luaworker.Result) int {
+func pushAction(state *lua.LState, result Result) int {
 	userdata := state.NewUserData()
 	userdata.Value = result
 	state.Push(userdata)
@@ -365,7 +394,7 @@ func luaKeep(state *lua.LState) int {
 	if state.GetTop() != 0 {
 		state.RaiseError("keep takes no arguments")
 	}
-	result := luaworker.Result{Action: luaworker.Keep, Value: value.Value{Kind: value.Missing}}
+	result := Result{Action: Keep, Value: value.Value{Kind: value.Missing}}
 	return pushAction(state, result)
 }
 
@@ -373,7 +402,7 @@ func luaReplace(state *lua.LState) int {
 	if state.GetTop() != 1 {
 		state.RaiseError("replace expects one object")
 	}
-	result := luaworker.Result{Action: luaworker.Replace, Value: argumentValue(state, 1)}
+	result := Result{Action: Replace, Value: argumentValue(state, 1)}
 	return pushAction(state, result)
 }
 
@@ -381,7 +410,7 @@ func luaDelete(state *lua.LState) int {
 	if state.GetTop() != 0 {
 		state.RaiseError("delete takes no arguments")
 	}
-	result := luaworker.Result{Action: luaworker.Delete, Value: value.Value{Kind: value.Missing}}
+	result := Result{Action: Delete, Value: value.Value{Kind: value.Missing}}
 	return pushAction(state, result)
 }
 
@@ -390,9 +419,9 @@ func luaReject(state *lua.LState) int {
 		state.RaiseError("reject expects one message")
 	}
 	message := argumentString(state, 1)
-	if len(message) > luaworker.MaxMessageBytes || !utf8.ValidString(message) {
+	if len(message) > MaxMessageBytes || !utf8.ValidString(message) {
 		state.RaiseError("invalid rejection message")
 	}
-	result := luaworker.Result{Action: luaworker.Reject, Value: value.Value{Kind: value.Missing}, Message: message}
+	result := Result{Action: Reject, Value: value.Value{Kind: value.Missing}, Message: message}
 	return pushAction(state, result)
 }

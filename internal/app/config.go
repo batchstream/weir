@@ -23,7 +23,6 @@ type Config struct {
 	DiagnosticsAllowIntranet bool            `json:"diagnostics_allow_intranet"`
 	Application              string          `json:"application"`
 	Peer                     string          `json:"peer"`
-	LuaWorker                string          `json:"lua_worker"`
 	Services                 []Service       `json:"services"`
 	Routes                   []Route         `json:"routes"`
 	InitialForwards          int             `json:"initial_forwards"`
@@ -156,9 +155,6 @@ func validName(name string) bool {
 	return err == nil && parsed == name && len(segments) == 0
 }
 func (cfg Config) Validate() error {
-	if len(cfg.LuaWorker) > 4096 || strings.IndexByte(cfg.LuaWorker, 0) >= 0 {
-		return errors.New("invalid Lua worker path")
-	}
 	if cfg.DiagnosticsAllowIntranet && cfg.Diagnostics == "" {
 		return errors.New("diagnostics_allow_intranet requires a diagnostic listener")
 	}

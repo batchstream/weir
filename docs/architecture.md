@@ -1126,11 +1126,15 @@ JSON. Opaque operations never require this structured round-trip.
 
 The user deferred general ProgramTransform in the original V1 decision, then
 explicitly reopened it on September 29, 2026 and asked for implementation. Weir now
-implements the narrower, opt-in `lua.v1` profile using a separate worker process,
-MongoDB transactions, and Search sequence-number OCC. This is not arbitrary Lua
-lowering or a production qualification claim. The worker has no hard per-process
-memory cap, and real-backend fault/concurrency plus cross-platform isolation evidence
-remain required. The architecture requirements below
+implements the narrower `lua.v1` profile inside the single Weir process, using
+MongoDB transactions and Search sequence-number OCC. There is no Lua worker
+executable, child process, or runtime path configuration. Each evaluation owns a
+fresh restricted Lua state, with a 500ms deadline including admission and at most
+four concurrent evaluations per process. Source, typed values and stack are
+bounded; Lua allocation has no hard per-evaluation memory cap, so programs must
+be trusted. This is not arbitrary Lua lowering or a production qualification
+claim. Real-backend fault/concurrency and runtime resource evidence remain required.
+The architecture requirements below
 remain acceptance criteria for a fully qualified runtime; other platform, backend,
 deployment, resource and load gates are unchanged.
 
@@ -1285,9 +1289,9 @@ ID, and missing-record insertion races.
 
 A configured MongoDB adapter requires a supported replica set for program
 AtomicTransform; startup qualification rejects unsupported topologies rather than
-falling back to a non-atomic read/replace. Without `lua_worker`, adapters reject
-`lua.v1` during preparation. Opaque CRUD, Native, and validated expressions remain
-independent of Lua.
+falling back to a non-atomic read/replace. The built-in `lua.v1` runtime is
+available without additional configuration. Opaque CRUD, Native, and validated
+expressions remain independent of Lua evaluation.
 
 Collection/index creation, sharding configuration, and transaction preparation are
 operator responsibilities. Weir does not create indexes/collections in the transform
@@ -1834,7 +1838,6 @@ without importing the server.
 api/weir/                      protocol schemas and generated Go types
 cmd/
   weir/                        CLI, probes, build identity and process signals
-  weir-lua-worker/             child-process Lua runtime
 internal/
   app/                         static configuration, assembly and lifecycle
   server/                      RPC transport, routes and remote forwarding
@@ -1845,8 +1848,7 @@ internal/
     search/                    Elasticsearch/OpenSearch transport, OCC, Native and Scan
   protocol/                    canonical resources and wire validation
   value/                       lossless values and merge semantics
-  luaworker/                   bounded worker protocol and process supervision
-  luaengine/                   restricted Lua evaluation
+  luaengine/                   bounded in-process Lua evaluation and value contract
   overload/                    process memory guard
   netlimit/                    bounded DNS resolution
   testutil/                    owned fixtures and test/load helpers
@@ -2001,14 +2003,16 @@ session-manager framework is required.
 
 On September 29, 2026, the user authorized implementing the bounded `lua.v1`
 ProgramTransform path. The stages below define remaining dependencies and
-qualification gates; implementation does not imply their completion.
+qualification gates; implementation does not imply their completion. The user
+subsequently required a single Weir process with Lua evaluation in the main
+process; the separate Lua worker design has been removed.
 
 | Stage | Scope | Approval/exit evidence |
 | --- | --- | --- |
 | 0. Ratify contracts | Resolve design choices below, pin supported backend/runtime profiles and exact limit defaults | Written architecture approval; no implementation starts merely because this document exists. |
 | 1. Protocol and semantic test vectors | Public schemas, URI/media rules, record outcomes, NativeCompletion, ScanEnd, peer metadata | Invalid variants/states; stream completion; Native database errors versus transport failure; public-header spoofing and malformed/missing peer hop tests. |
 | 2. Single-node runtime | Static assembly, one scheduler/ledger, stream-scoped sequencing, explicit-feedback AIMD, adapter-owned pools | Dispatch/cancellation races; concurrent independent Reads; ordered same-key Bulk; Cmin=1 and Scan reservations; single Close; no duplicate charges; bounded results; offline `go test ./...`. |
-| 3. Mongo opaque CRUD and `lua.v1` | Native primitives, Delete batching without affected-row distinctions, transaction RMW, lossless codecs/runtime | Native writer conflicts, insertion races, commit ambiguity; Int32 arithmetic/overflow and width preservation; bounded retries and worker deadline; real backend fault/concurrency suite. |
+| 3. Mongo opaque CRUD and `lua.v1` | Native primitives, Delete batching without affected-row distinctions, transaction RMW, lossless codecs/runtime | Native writer conflicts, insertion races, commit ambiguity; Int32 arithmetic/overflow and width preservation; bounded retries and Lua execution deadline; real backend fault/concurrency suite. |
 | 4. Search adapter and `lua.v1` | Qualified ES/OpenSearch identity, ingest/source profiles, native OCC/Create/Replace and transform OCC | Retargeting default pipeline bypass, effective final-pipeline rejection for initial source-write profile, Native unaffected; conditional conflicts/transport loss; source/sequence rejection; independently test both products. |
 | 5. Streaming surfaces | Bulk, raw Native responses, complete-page Scan validation, bounded session state and shared-scheduler fetches | Partial-shard/timeout/early-termination failures; failed page not emitted; C=1 stalled Scan permits short work; Native stall deadline; early native errors, cursor cleanup, RSS plateau. |
 | 6. Remote composition | Reused public RPCs, peer hop metadata under deployment isolation, deadlines, affinity/basic health | Identical direct/forwarded semantics; unary remains unary; bounded streaming; spoofed/missing/duplicate hops; zero-hop local versus forward; lost results; no replay. |
@@ -2016,10 +2020,11 @@ qualification gates; implementation does not imply their completion.
 
 The specified native-expression fast paths ship only after their deterministic
 whitelist/validator is proven; unsupported expressions are rejected meanwhile. Do
-not implement speculative Lua lowering to satisfy a benchmark. The current child
-worker enforces wall-time termination and bounds request/value/output sizes, but not
-hard per-process memory; do not use it for untrusted programs or describe it as a
-security sandbox.
+not implement speculative Lua lowering to satisfy a benchmark. Lua executes
+directly in the single Weir process with context cancellation and source/value/stack
+limits. There is no child process or IPC protocol. Hard per-evaluation allocation
+limits and immutable compiled-program caching remain qualification work; do not
+use the runtime for untrusted programs or describe it as a security sandbox.
 
 ### 20.1 Required failure/conformance scenarios
 
