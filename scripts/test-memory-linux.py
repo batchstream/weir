@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Explicit opt-in, native Linux M14 fixture. No image pulls, credentials or host cgroup writes."""
+
 import shutil
 import signal
 import socket
@@ -18,8 +19,15 @@ OUTPUT = ROOT / ".testdata" / OWNER
 
 
 def run(args, timeout=60, env=None, log=None):
-    result = subprocess.run(args, cwd=ROOT, env=env, text=True, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, timeout=timeout)
+    result = subprocess.run(
+        args,
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+    )
     if log:
         (OUTPUT / log).write_text(result.stdout)
     else:
@@ -37,7 +45,9 @@ def inspect(kind, name):
         "network": '{"Id":{{json .Id}},"Owner":{{json (index .Labels "weir.owner")}}}',
     }
     try:
-        result = run(["docker", kind, "inspect", "--format", formats[kind], name], log=kind + "-inspect.json")
+        result = run(
+            ["docker", kind, "inspect", "--format", formats[kind], name], log=kind + "-inspect.json"
+        )
     except subprocess.CalledProcessError as error:
         # Only an exact daemon not-found response proves absence. Engine failures
         # and timeouts leave ownership/existence unknown and must not permit rm.
@@ -70,8 +80,10 @@ def cleanup(resources):
             continue
         # A logs failure must not prevent stop, and a stop failure must not hide
         # a later independent exit/absence check. Never force rm a live container.
-        commands = [(["docker", "logs", name], name + ".log"),
-                    (["docker", "stop", "--timeout=6", name], None)]
+        commands = [
+            (["docker", "logs", name], name + ".log"),
+            (["docker", "stop", "--timeout=6", name], None),
+        ]
         for args, log in commands:
             try:
                 run(args, timeout=15, log=log)
@@ -163,8 +175,11 @@ def cleanup(resources):
                 errors.append(f"{item.name} cleanup: {error}")
     except Exception as error:
         errors.append(str(error))
-    result = {"resources": receipts, "errors": errors,
-              "all_stopped": containers_stopped and network_removed and host_stopped}
+    result = {
+        "resources": receipts,
+        "errors": errors,
+        "all_stopped": containers_stopped and network_removed and host_stopped,
+    }
     return result
 
 
@@ -180,21 +195,77 @@ def main():
     database_address = "m14mongo:27017"
     test_error = None
     try:
-        engine = json.loads(run(["docker", "info", "--format", '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},"KernelVersion":{{json .KernelVersion}},"CgroupVersion":{{json .CgroupVersion}},"NCPU":{{json .NCPU}},"MemTotal":{{json .MemTotal}}}'], log="engine.json").stdout)
+        engine = json.loads(
+            run(
+                [
+                    "docker",
+                    "info",
+                    "--format",
+                    '{"OSType":{{json .OSType}},"Architecture":{{json .Architecture}},"KernelVersion":{{json .KernelVersion}},"CgroupVersion":{{json .CgroupVersion}},"NCPU":{{json .NCPU}},"MemTotal":{{json .MemTotal}}}',
+                ],
+                log="engine.json",
+            ).stdout
+        )
         image = inspect("image", IMAGE)
-        architecture = {"aarch64": "arm64", "x86_64": "amd64"}.get(engine["Architecture"], engine["Architecture"])
-        if engine["OSType"] != "linux" or str(engine["CgroupVersion"]) != "2" or image["Architecture"] != architecture or image["Os"] != "linux":
-            raise RuntimeError("requires actual Linux cgroup-v2 engine and same-architecture local pinned image; no QEMU")
+        architecture = {"aarch64": "arm64", "x86_64": "amd64"}.get(
+            engine["Architecture"], engine["Architecture"]
+        )
+        if (
+            engine["OSType"] != "linux"
+            or str(engine["CgroupVersion"]) != "2"
+            or image["Architecture"] != architecture
+            or image["Os"] != "linux"
+        ):
+            raise RuntimeError(
+                "requires actual Linux cgroup-v2 engine and same-architecture local pinned image; no QEMU"
+            )
         (OUTPUT / "image.json").write_text(json.dumps(image, indent=2))
-        env = dict(os.environ, GOPROXY="off", GOSUMDB="off", CGO_ENABLED="0", GOOS="linux", GOARCH=architecture)
-        commands = [(["go", "build", "-o", str(OUTPUT / "weir"), "./cmd/weir"], "build-cli.log"),
-                    (["go", "test", "-tags", "integration", "-c", "-o", str(OUTPUT / "overload.test"), "./internal/overload"], "build-overload.log"),
-                    (["go", "test", "-tags", "integration", "-c", "-o", str(OUTPUT / "app.test"), "./internal/app"], "build-app.log")]
+        env = dict(
+            os.environ,
+            GOPROXY="off",
+            GOSUMDB="off",
+            CGO_ENABLED="0",
+            GOOS="linux",
+            GOARCH=architecture,
+        )
+        commands = [
+            (["go", "build", "-o", str(OUTPUT / "weir"), "./cmd/weir"], "build-cli.log"),
+            (
+                [
+                    "go",
+                    "test",
+                    "-tags",
+                    "integration",
+                    "-c",
+                    "-o",
+                    str(OUTPUT / "overload.test"),
+                    "./internal/overload",
+                ],
+                "build-overload.log",
+            ),
+            (
+                [
+                    "go",
+                    "test",
+                    "-tags",
+                    "integration",
+                    "-c",
+                    "-o",
+                    str(OUTPUT / "app.test"),
+                    "./internal/app",
+                ],
+                "build-app.log",
+            ),
+        ]
         for args, log in commands:
             run(args, timeout=120, env=env, log=log)
         # Register exact candidate names before commands which can partially succeed.
         resources["network"] = network
-        run(["docker", "network", "create"] + ([] if host_db else ["--internal"]) + ["--label", "weir.owner=" + OWNER, network])
+        run(
+            ["docker", "network", "create"]
+            + ([] if host_db else ["--internal"])
+            + ["--label", "weir.owner=" + OWNER, network]
+        )
         if host_db:
             if sys.platform != "darwin":
                 raise RuntimeError("host fallback is explicit Darwin fixture only")
@@ -205,40 +276,124 @@ def main():
             data.mkdir()
             mongo_binary = ROOT / ".tools/mongodb-macos-aarch64--8.0.32/bin/mongod"
             resources["host_output"] = (OUTPUT / "mongo-host.log").open("w")
-            resources["host_mongo"] = subprocess.Popen([str(mongo_binary), "--dbpath", str(data), "--bind_ip", "127.0.0.1",
-                                          "--port", str(port), "--replSet", "m14", "--wiredTigerCacheSizeGB=0.25"],
-                                         stdout=resources["host_output"], stderr=subprocess.STDOUT)
+            resources["host_mongo"] = subprocess.Popen(
+                [
+                    str(mongo_binary),
+                    "--dbpath",
+                    str(data),
+                    "--bind_ip",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--replSet",
+                    "m14",
+                    "--wiredTigerCacheSizeGB=0.25",
+                ],
+                stdout=resources["host_output"],
+                stderr=subprocess.STDOUT,
+            )
             (OUTPUT / "mongo-host-pid").write_text(str(resources["host_mongo"].pid))
             for _ in range(50):
                 try:
-                    with socket.create_connection(("127.0.0.1", port), timeout=.1):
+                    with socket.create_connection(("127.0.0.1", port), timeout=0.1):
                         break
                 except OSError:
                     if resources["host_mongo"].poll() is not None:
                         raise RuntimeError("host fixture startup failed")
-                    time.sleep(.1)
+                    time.sleep(0.1)
             bootstrap = f'rs.initiate({{_id:"m14",members:[{{_id:0,host:"127.0.0.1:{port}"}}]}}); for(let i=0;i<100;i++){{if(db.hello().isWritablePrimary)break;sleep(100)}}; if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'
-            run(["mongosh", "--quiet", "--norc", f"mongodb://127.0.0.1:{port}/?directConnection=true", "--eval", bootstrap], timeout=30, log="mongo-bootstrap.log")
+            run(
+                [
+                    "mongosh",
+                    "--quiet",
+                    "--norc",
+                    f"mongodb://127.0.0.1:{port}/?directConnection=true",
+                    "--eval",
+                    bootstrap,
+                ],
+                timeout=30,
+                log="mongo-bootstrap.log",
+            )
             database_address = f"host.docker.internal:{port}"
         else:
             resources["containers"].append(database)
-            run(["docker", "run", "-d", "--name", database, "--label", "weir.owner=" + OWNER,
-                 "--network", network, "--network-alias", "m14mongo", "--memory=768m", "--memory-swap=768m",
-                 "--cpus=1", "--pids-limit=128", "--tmpfs", "/data/db:rw,size=256m", "--entrypoint", "mongod", IMAGE,
-                 "--bind_ip_all", "--replSet", "m14", "--wiredTigerCacheSizeGB=0.25", "--setParameter", "enableTestCommands=1"])
+            run(
+                [
+                    "docker",
+                    "run",
+                    "-d",
+                    "--name",
+                    database,
+                    "--label",
+                    "weir.owner=" + OWNER,
+                    "--network",
+                    network,
+                    "--network-alias",
+                    "m14mongo",
+                    "--memory=768m",
+                    "--memory-swap=768m",
+                    "--cpus=1",
+                    "--pids-limit=128",
+                    "--tmpfs",
+                    "/data/db:rw,size=256m",
+                    "--entrypoint",
+                    "mongod",
+                    IMAGE,
+                    "--bind_ip_all",
+                    "--replSet",
+                    "m14",
+                    "--wiredTigerCacheSizeGB=0.25",
+                    "--setParameter",
+                    "enableTestCommands=1",
+                ]
+            )
             bootstrap = '''for(let i=0;i<100;i++){try{db.adminCommand({ping:1});break}catch(e){sleep(100)}};
     rs.initiate({_id:"m14",members:[{_id:0,host:"m14mongo:27017"}]});
     for(let i=0;i<100;i++){if(db.hello().isWritablePrimary)break;sleep(100)};
     if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'''
-            run(["docker", "exec", database, "mongosh", "--quiet", "--norc", "--eval", bootstrap], timeout=30, log="mongo-bootstrap.log")
-        for name, binary, selector in [("guard", "overload.test", "^TestLinuxMemoryNative$"), ("cli", "app.test", "^TestLinuxMemoryCLI$")]:
+            run(
+                ["docker", "exec", database, "mongosh", "--quiet", "--norc", "--eval", bootstrap],
+                timeout=30,
+                log="mongo-bootstrap.log",
+            )
+        for name, binary, selector in [
+            ("guard", "overload.test", "^TestLinuxMemoryNative$"),
+            ("cli", "app.test", "^TestLinuxMemoryCLI$"),
+        ]:
             container = OWNER + "-" + name
             resources["containers"].append(container)
-            run(["docker", "create", "--name", container, "--label", "weir.owner=" + OWNER,
-                 "--network", network, "--memory=512m", "--memory-swap=512m", "--cpus=2", "--pids-limit=96",
-                 "--read-only", "--tmpfs", "/tmp:rw,size=32m", "--mount", f"type=bind,src={OUTPUT},dst=/fixture,readonly",
-                 "--env", "WEIR_M14_NATIVE=1", "--env", "WEIR_M14_MONGO_ADDR=" + database_address, "--entrypoint", "/fixture/" + binary, IMAGE,
-                 "-test.run=" + selector, "-test.count=3", "-test.timeout=120s", "-test.v"])
+            run(
+                [
+                    "docker",
+                    "create",
+                    "--name",
+                    container,
+                    "--label",
+                    "weir.owner=" + OWNER,
+                    "--network",
+                    network,
+                    "--memory=512m",
+                    "--memory-swap=512m",
+                    "--cpus=2",
+                    "--pids-limit=96",
+                    "--read-only",
+                    "--tmpfs",
+                    "/tmp:rw,size=32m",
+                    "--mount",
+                    f"type=bind,src={OUTPUT},dst=/fixture,readonly",
+                    "--env",
+                    "WEIR_M14_NATIVE=1",
+                    "--env",
+                    "WEIR_M14_MONGO_ADDR=" + database_address,
+                    "--entrypoint",
+                    "/fixture/" + binary,
+                    IMAGE,
+                    "-test.run=" + selector,
+                    "-test.count=3",
+                    "-test.timeout=120s",
+                    "-test.v",
+                ]
+            )
             result = run(["docker", "start", "--attach", container], timeout=150, log=name + ".log")
             state = inspect("container", container)
             (OUTPUT / (name + "-state.json")).write_text(json.dumps(state, indent=2))
@@ -255,7 +410,11 @@ def main():
         except Exception as error:
             receipt["errors"].append(f"cleanup receipt write: {error}")
         if receipt["errors"] or not receipt["all_stopped"]:
-            print(f"Fixture cleanup has errors or unresolved resources: {receipt}; logs: {OUTPUT}", file=sys.stderr, flush=True)
+            print(
+                f"Fixture cleanup has errors or unresolved resources: {receipt}; logs: {OUTPUT}",
+                file=sys.stderr,
+                flush=True,
+            )
             if test_error is None:
                 raise RuntimeError("fixture cleanup incomplete; see cleanup receipt")
         else:
