@@ -8,6 +8,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -88,7 +89,7 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 		}
 		program := *native.program
 		program.Current = current
-		transformed, transformErr := a.config.LuaRunner.Run(ctx, program)
+		transformed, transformErr := luaengine.Evaluate(ctx, program)
 		if transformErr != nil {
 			a.abortProgramTransaction(session)
 			return luaProgramFailure(parent, ctx, transformErr)
@@ -150,7 +151,7 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 			}
 		default:
 			a.abortProgramTransaction(session)
-			failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua worker returned an invalid action")
+			failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
 			return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
 		}
 		if ctx.Err() != nil {

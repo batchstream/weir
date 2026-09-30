@@ -1,5 +1,3 @@
-//go:build !race
-
 package search
 
 import (
@@ -8,26 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaengine"
-	"github.com/batchstream/weir/internal/luaworker"
 )
-
-func TestMain(m *testing.M) {
-	if len(os.Args) == 2 && os.Args[1] == "--weir-lua-worker" {
-		if err := luaengine.Serve(os.Stdin, os.Stdout); err != nil {
-			os.Exit(2)
-		}
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
 
 func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	var gets, puts atomic.Int32
@@ -79,13 +63,8 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	runnerConfig := luaworker.Config{Executable: os.Args[0], Timeout: time.Second}
-	runner, err := luaworker.New(runnerConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
 	a := &Adapter{
-		config: Config{Store: "search", URL: server.URL, Index: "records", LuaRunner: runner},
+		config: Config{Store: "search", URL: server.URL, Index: "records"},
 		client: server.Client(),
 		ctx:    context.Background(),
 	}
@@ -139,9 +118,8 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			runner := &luaworker.Runner{}
 			a := &Adapter{
-				config: Config{Store: "search", URL: server.URL, Index: "records", LuaRunner: runner},
+				config: Config{Store: "search", URL: server.URL, Index: "records"},
 				client: server.Client(),
 				ctx:    context.Background(),
 			}

@@ -10,7 +10,6 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaworker"
 	"github.com/batchstream/weir/internal/protocol"
 )
 
@@ -62,13 +61,8 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	programForm := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: programForm}
 	mutation.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	a.config.LuaRunner = &luaworker.Runner{}
 	if _, failure := a.Prepare(op); failure != nil {
-		t.Fatal("configured program transform rejected", failure)
-	}
-	a.config.LuaRunner = nil
-	if _, failure := a.Prepare(op); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
-		t.Fatal("transform accepted without runtime configuration")
+		t.Fatal("built-in Lua program transform rejected", failure)
 	}
 }
 func TestResponseAndRequestLimits(t *testing.T) {

@@ -2,13 +2,10 @@ package mongodb
 
 import (
 	"context"
-	"os"
 	"testing"
-	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/luaengine"
-	"github.com/batchstream/weir/internal/luaworker"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -16,27 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/drivertest"
 )
 
-func TestMain(m *testing.M) {
-	if len(os.Args) == 2 && os.Args[1] == "--weir-lua-worker" {
-		if err := luaengine.Serve(os.Stdin, os.Stdout); err != nil {
-			os.Exit(2)
-		}
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
-
 func TestMongoProgramCommitRetries(t *testing.T) {
-	t.Setenv("GORACE", "atexit_sleep_ms=0")
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runnerConfig := luaworker.Config{Executable: executable, Timeout: time.Second}
-	runner, err := luaworker.New(runnerConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
 	transientLabels := bson.A{"TransientTransactionError"}
 	transient := programCommitError(transientLabels)
 	ambiguousLabels := bson.A{"UnknownTransactionCommitResult"}
@@ -101,9 +78,8 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer client.Disconnect(context.Background())
-			config := Config{LuaRunner: runner}
-			a := &Adapter{client: client, collection: client.Database("db").Collection("records"), config: config}
-			program := &luaworker.Program{Source: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
+			a := &Adapter{client: client, collection: client.Database("db").Collection("records")}
+			program := &luaengine.Program{Source: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
 			native := &plan{id: "item", program: program}
 			result, _ := a.runProgram(context.Background(), native)
 			if result.GetOutcome() != tc.outcome || result.GetFailure().GetCode() != tc.failure {

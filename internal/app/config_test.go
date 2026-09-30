@@ -41,7 +41,7 @@ func TestStrictConfiguration(t *testing.T) {
 	if _, err := Decode(strings.NewReader(string(raw))); err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{`"unknown":1,`, `"memory_mib":1,`, `"memory_mib":512,`, `"MEMORY_MIB":512,`, `"initial_forwards":9,`} {
+	for _, fragment := range []string{`"unknown":1,`, `"lua_worker":"/unused",`, `"memory_mib":1,`, `"memory_mib":512,`, `"MEMORY_MIB":512,`, `"initial_forwards":9,`} {
 		if _, err := Decode(strings.NewReader("{" + fragment + string(raw[1:]))); err == nil {
 			t.Fatal("accepted unknown/duplicate", fragment)
 		}

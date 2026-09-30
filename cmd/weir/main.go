@@ -37,7 +37,6 @@ func run(args []string, output io.Writer) (resultErr error) {
 	searchURL := flags.String("search-url", "", "optional qualified loopback search backend")
 	searchIndex := flags.String("search-index", "records", "pre-created concrete index")
 	searchProfile := flags.String("search-profile", search.ElasticsearchProfile, "exact qualified search profile")
-	luaWorker := flags.String("lua-worker", "", "optional Lua worker executable for ProgramTransform")
 	configFile := flags.String("config", "", "strict static JSON configuration; exclusive with other flags")
 	checkConfig := flags.String("check-config", "", "validate a configuration file without opening listeners, resolving DNS or connecting")
 	if err := flags.Parse(args); err != nil {
@@ -112,7 +111,6 @@ func run(args []string, output io.Writer) (resultErr error) {
 		cfg.Diagnostics = *diagnostics
 		cfg.Application = *listen
 		cfg.MemoryMiB = *memory
-		cfg.LuaWorker = *luaWorker
 		mongo := &app.Mongo{URI: *uri, Database: *db, Collection: *collection}
 		local := &app.Local{Mongo: mongo}
 		if !*batch {

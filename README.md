@@ -17,17 +17,19 @@ indices. MongoDB program transforms require transactions on a replica set.
 
 ```sh
 go build -o bin/weir ./cmd/weir
-go build -o bin/weir-lua-worker ./cmd/weir-lua-worker
 bin/weir -version
 bin/weir -check-config deploy/docker/node.example.json
 ```
 
 Copy the [configuration template](https://github.com/batchstream/weir/blob/main/deploy/docker/node.example.json), set the
-backend address and resource names, and point `lua_worker` to the worker executable
-if using program transforms. Start with `bin/weir -config /path/to/node.json`.
+backend address and resource names. Start with `bin/weir -config /path/to/node.json`.
+Lua program transforms run inside the Weir process; no additional executable or
+runtime path configuration is required.
 The application listener uses plaintext gRPC; deploy it on an isolated network.
-Lua programs must be trusted: workers have bounded input, output and execution
-time, but no hard per-process memory limit.
+Lua programs must be trusted: each evaluation has a fresh restricted Lua state,
+a 500ms execution deadline (including admission), bounded source and typed values,
+and stack limits. At most four evaluations run concurrently in the process.
+Lua allocation has no hard per-evaluation memory limit.
 
 ## Development
 
@@ -45,7 +47,7 @@ Build reproducible release archives from a clean commit with
 ## Layout
 
 - `api/`: protocol definitions and generated Go types.
-- `cmd/`: server and Lua worker executables.
+- `cmd/weir/`: the single Weir server executable.
 - `internal/`: implementation and test helpers.
 - `examples/`: basic and native clients, plus peer configurations.
 - `deploy/`: Docker assets, third-party licenses and Kubernetes manifests.
