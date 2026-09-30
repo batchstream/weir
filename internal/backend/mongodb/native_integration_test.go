@@ -76,7 +76,10 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			}
 			capture := &nativeCapture{}
 			exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
-			end, _ := a.ExecuteNative(ctx, plan, exchange)
+			end, feedback := a.ExecuteNative(ctx, plan, exchange)
+			if mode == "overload" && feedback != execution.Congested {
+				t.Fatal("known Mongo overload did not supply congestion feedback", feedback)
+			}
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
 			if mode == "drop" || mode == "response_limit" || mode == "reauth" && os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE

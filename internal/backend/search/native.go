@@ -239,9 +239,9 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "GET requires an empty half-closed upload")), execution.Neutral
 		}
 	} else {
-		caps, failure, _ := a.inspect(ctx, true)
+		caps, failure, feedback := a.inspect(ctx, true)
 		if failure != nil {
-			return protocol.NativeFailure(false, failure), execution.Neutral
+			return protocol.NativeFailure(false, failure), feedback
 		}
 		if !caps.nativeWrite {
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native bulk requires no default/final ingest pipeline")), execution.Neutral
@@ -339,7 +339,12 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native HTTP trailers unsupported")), execution.Neutral
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-	return end, execution.Neutral
+	// Native bodies stay opaque; only complete HTTP-level rejections supply feedback.
+	feedback := execution.Neutral
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable {
+		feedback = execution.Congested
+	}
+	return end, feedback
 }
 
 // Close joins any in-progress source read before the exchange releases its
