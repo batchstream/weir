@@ -51,5 +51,5 @@ Build reproducible release archives from a clean commit with
 - `internal/`: implementation and test helpers.
 - `examples/`: basic and native clients, plus peer configurations.
 - `deploy/`: Docker assets, third-party licenses and Kubernetes manifests.
-- `scripts/`: development, release and qualification tools.
+- `scripts/`: development, CI, release and opt-in local qualification tools.
 - `docs/architecture.md`: architecture and protocol contract.
