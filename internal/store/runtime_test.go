@@ -240,8 +240,13 @@ func TestAIMDEpochAndFloor(t *testing.T) {
 	if c.window != 2 {
 		t.Fatal(c)
 	}
+	backoff := c.cooldown.Sub(now)
+	if backoff < 20*time.Millisecond || backoff > 60*time.Millisecond {
+		t.Fatal("cooldown exceeds the bounded recovery interval", backoff)
+	}
+	cooldown := c.cooldown
 	c.observe(b, execution.Congested, 8, now)
-	if c.window != 2 {
+	if c.window != 2 || !c.cooldown.Equal(cooldown) {
 		t.Fatal("old flight counted twice")
 	}
 	for i := 0; i < 4; i++ {
@@ -258,4 +263,65 @@ func TestAIMDEpochAndFloor(t *testing.T) {
 	if c.window != 2 {
 		t.Fatal("no healthy growth", c)
 	}
+}
+
+type cooldownTestAdapter struct {
+	scanTestAdapter
+	dispatched chan time.Time
+}
+
+func (a *cooldownTestAdapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+	a.dispatched <- time.Now()
+	return a.scanTestAdapter.Execute(ctx, plans)
+}
+
+func TestCongestionCooldownResumesQueuedWorkBeforeCallerDeadline(t *testing.T) {
+	limits := DefaultLimits()
+	limits.Concurrency = 1
+	limits.BatchOperations = 1
+	limits.Collect = 0
+	adapter := &cooldownTestAdapter{dispatched: make(chan time.Time, 1)}
+	r := newRuntime(adapter, limits)
+	r.mu.Lock()
+	flight := &batch{epoch: r.controller.epoch}
+	r.observeLocked(flight, execution.Congested)
+	cooldown := r.controller.cooldown
+	r.mu.Unlock()
+
+	caller, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	deadline, _ := caller.Deadline()
+	p := plan(0, "after-congestion", false)
+	ticket, failure, _ := r.Submit(caller, p, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	go r.loop()
+	defer func() {
+		ticket.Abandon()
+		shutdown, stop := context.WithTimeout(context.Background(), time.Second)
+		defer stop()
+		if err := r.Close(shutdown); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	wait, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	result, err := ticket.Wait(wait)
+	if err != nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("queued work expired before recovery dispatch", result, err)
+	}
+	select {
+	case dispatched := <-adapter.dispatched:
+		if dispatched.Before(cooldown) {
+			t.Fatal("congestion allowed dispatch during cooldown")
+		}
+		if !dispatched.Before(deadline) {
+			t.Fatal("recovery missed the caller deadline")
+		}
+	default:
+		t.Fatal("successful work was never dispatched")
+	}
+	ticket.Ack()
 }

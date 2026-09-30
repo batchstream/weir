@@ -846,7 +846,7 @@ Use one adjustment epoch to avoid reacting repeatedly to the same old flight:
 1. Tag each dispatch with its controller epoch. Confirmed backend overload,
    backend-attributed timeout, or temporary unavailability in the current epoch
    halves C, rounded down with a floor of 1; advance the epoch and clear growth credit.
-2. Pause new dispatch for one short randomized cooldown, initially 100-300 ms.
+2. Pause new dispatch for one short randomized cooldown of 20-60 ms.
    Do not add exponential recovery history or synthetic recovery requests. Already
    queued distinct requests may run after cooldown; this never replays a mutation.
 3. Old-epoch completions release permits but cannot adjust C. A physical batch
