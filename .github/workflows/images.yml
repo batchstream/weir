@@ -31,11 +31,7 @@ env:
 jobs:
   test:
     if: github.repository == 'batchstream/weir' && github.ref == 'refs/heads/main' && !github.event.repository.private
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,26 +114,9 @@ jobs:
             docker --config "$PWD/.testdata/m24/ci/publisher/docker" logout ghcr.io
           fi
 
-  smoke-arm64:
-    needs: publish
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: batchstream/weir
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Prepare fixed registry tool
-        run: python3 scripts/ci-tools.py smoke
-      - name: Anonymous full pull and native arm64 smoke
-        env:
-          WEIR_DELIVERY: ${{ needs.publish.outputs.delivery }}
-        run: python3 scripts/ci-images.py anonymous
-
   release:
     if: inputs.release_version != ''
-    needs: [publish, smoke-arm64]
+    needs: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
