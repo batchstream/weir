@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Explicit, disposable, real-ES direct/Weir load comparison. No retries.
 
-Build current binaries before invocation; --client and --weir must be linux/arm64.
+Build binaries before invocation; every supplied binary must be linux/arm64.
+--baseline-weir enables production baseline/current comparisons in one fixture.
 All containers, the network, and imported image are removed in finally. Existing
 Docker objects and backend images are never removed or modified.
 """
@@ -60,6 +61,9 @@ class Fixture:
         self.network = self.owner
         self.image = None
         self.ids = []
+        self.binaries = {"client": args.client, "weir": args.weir}
+        if args.baseline_weir is not None:
+            self.binaries["baseline"] = args.baseline_weir
         self.root = args.output.resolve()
         self.root.mkdir(parents=True, exist_ok=False)
         self.summary = {"owner": self.owner, "runs": [], "cleanup": None}
@@ -82,7 +86,7 @@ class Fixture:
         run(["docker", "network", "create", "--label", LABEL + "=" + self.owner, self.network])
         archive = self.root / "binaries.tar"
         with tarfile.open(archive, "w") as tar:
-            for name, path in (("client", self.args.client), ("weir", self.args.weir)):
+            for name, path in self.binaries.items():
                 data = path.read_bytes()
                 member = tarfile.TarInfo(name)
                 member.size, member.mode = len(data), 0o555
@@ -115,10 +119,15 @@ class Fixture:
             raise TimeoutError("database startup")
         self.client = self.create("client", ["--pids-limit", "256", "--memory", "2g", "--memory-swap", "2g",
             "--cpus", "2", "--cpuset-cpus", "1,2", "--read-only", "-e", "WEIR_CAPACITY_INTEGRATION=1"], ["-mode", "idle"])
-        self.summary["provenance"] = {"base_head": run(["git", "rev-parse", "HEAD"]).stdout.strip(),
+        source_head = run(["git", "rev-parse", "HEAD"]).stdout.strip()
+        sources = {"client": source_head, "weir": self.args.weir_source or source_head}
+        if self.args.baseline_weir is not None:
+            sources["baseline"] = self.args.baseline_source
+        self.summary["provenance"] = {"base_head": source_head,
             "dirty_files": run(["git", "status", "--short"]).stdout.splitlines(),
             "binary_sha256": {name: hashlib.sha256(path.read_bytes()).hexdigest()
-                              for name, path in (("client", self.args.client), ("weir", self.args.weir))},
+                              for name, path in self.binaries.items()},
+            "declared_binary_sources": sources,
             "es_image": self.args.es_image, "host": run(["uname", "-sm"]).stdout.strip(),
             "docker": run(["docker", "info", "--format", "{{.ServerVersion}}"] ).stdout.strip(),
             "vm": json.loads(run(["docker", "info", "--format", '{"cpus":{{.NCPU}},"memory_bytes":{{.MemTotal}},"kernel":{{json .KernelVersion}},"arch":{{json .Architecture}}}']).stdout),
@@ -153,11 +162,16 @@ class Fixture:
         return inventory
 
     def prewarm(self, write_every):
-        # Exercise both request paths at the common bootstrap CPU quota before
+        # Exercise every compared request path at the bootstrap CPU quota before
         # measurements. Each measured trial recreates the corpus afterwards.
+        run(["docker", "update", "--cpus", "1", self.db])
+        self.stop_weir()
         training = []
-        for mode in ("direct", "adaptive"):
-            if mode == "adaptive":
+        modes = ("direct", "adaptive")
+        if "baseline" in self.args.modes.split(","):
+            modes = ("direct", "baseline", "weir")
+        for mode in modes:
+            if mode != "direct":
                 self.start_weir(mode)
             prefix = "prewarm-" + str(write_every) + "-" + mode
             command = ["docker", "exec", self.client, "/client", "-mode", "trial",
@@ -181,6 +195,10 @@ class Fixture:
                        "direct_http_pool": 1, "store_concurrency_limit": self.args.pool if mode != "direct" else None,
                        "rate": 800, "seconds": 20, "metrics": trial["trial"]["measure"]["all"],
                        "audit": audit}
+            if mode in ("baseline", "weir"):
+                provenance = self.summary["provenance"]
+                receipt["binary_sha256"] = provenance["binary_sha256"][mode]
+                receipt["declared_source"] = provenance["declared_binary_sources"][mode]
             training.append(receipt)
         self.stop_weir()
         self.summary.setdefault("prewarm", []).extend(training)
@@ -207,10 +225,13 @@ class Fixture:
         self.save("node.json", config)
         # Qualifying a fresh node requires the index to exist before startup.
         run(["docker", "exec", self.client, "/client", "-mode", "setup", "-mutation-reservation", "1000"], timeout=90)
+        entrypoint = "/client"
+        if mode in ("weir", "baseline"):
+            entrypoint = "/" + mode
         options = ["--pids-limit", "256", "--memory", "768m", "--memory-swap", "768m", "--cpus", "2", "--cpuset-cpus", "3,4",
             "--network-alias", "weir", "--read-only", "-p", "127.0.0.1::7449",
             "--mount", "type=bind,source=" + str(self.root / "node.json") + ",target=/node.json,readonly",
-            "--entrypoint", "/weir" if mode == "weir" else "/client"]
+            "--entrypoint", entrypoint]
         command = ["-config", "/node.json"]
         if mode == "control":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
@@ -423,6 +444,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", type=Path, required=True)
     parser.add_argument("--weir", type=Path, required=True)
+    parser.add_argument("--baseline-weir", type=Path, help="optional production baseline binary")
+    parser.add_argument("--baseline-source", help="commit or ref used to build --baseline-weir")
+    parser.add_argument("--weir-source", help="commit or ref used to build --weir; defaults to current HEAD")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--rates", default="200,800,3200")
     parser.add_argument("--write-every", default="10,1")
@@ -437,20 +461,36 @@ def main():
     parser.add_argument("--batch-operations", type=int, default=16)
     parser.add_argument("--db-cpu", type=float, default=1)
     parser.add_argument("--db-queue", type=int, default=200)
-    parser.add_argument("--prewarm", action="store_true", help="common direct and Weir JVM training at bootstrap CPU quota")
+    parser.add_argument("--prewarm", action="store_true", help="common JVM training at bootstrap CPU quota; required for baseline/current pairs")
     parser.add_argument("--es-image", default="sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160")
     args = parser.parse_args()
     if not 1 <= args.pool <= 32 or not 0 <= args.direct_pool <= 32 or not 1 <= args.repetitions <= 4 or not 1 <= args.seconds <= 120 or not 0 <= args.warm <= 20:
         parser.error("bounded trial options required")
+    modes = args.modes.split(",")
+    if any(m not in ("direct", "weir", "baseline", "control", "adaptive") for m in modes):
+        parser.error("mode bound")
+    if "baseline" in modes and args.baseline_weir is None:
+        parser.error("baseline mode requires --baseline-weir")
+    if args.baseline_weir is not None and not args.baseline_source:
+        parser.error("--baseline-weir requires --baseline-source for build provenance")
+    if args.baseline_source and args.baseline_weir is None:
+        parser.error("--baseline-source requires --baseline-weir")
+    if "baseline" in modes and "weir" in modes and (not args.prewarm or args.repetitions < 3):
+        parser.error("baseline/current pairs require --prewarm and at least three repetitions")
+    for name in ("baseline_source", "weir_source"):
+        source = getattr(args, name)
+        if source:
+            try:
+                resolved = run(["git", "rev-parse", "--verify", "--end-of-options", source + "^{commit}"]).stdout.strip()
+            except subprocess.CalledProcessError:
+                parser.error("invalid build source: " + source)
+            setattr(args, name, resolved)
     fixture = Fixture(args)
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt("fixture interrupted; cleanup follows")
     signal.signal(signal.SIGTERM, interrupted)
     try:
         fixture.start()
-        modes = args.modes.split(",")
-        if any(m not in ("direct", "weir", "control", "adaptive") for m in modes):
-            raise ValueError("mode bound")
         for write_every in map(int, args.write_every.split(",")):
             if args.prewarm:
                 fixture.prewarm(write_every)
