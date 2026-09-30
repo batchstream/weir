@@ -78,9 +78,11 @@ func warm(t *testing.T, f fixture) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	// Same-key requests stay in distinct physical batches but may overlap across
+	// independent callers. Their backlog gives the controller saturated demand.
 	var tickets []*Ticket
+	p := readPlan(t, f, "warm")
 	for i := 0; i < 24; i++ {
-		p := readPlan(t, f, fmt.Sprint(i))
 		ticket, e, _ := f.runtime.Submit(ctx, p, nil)
 		if e != nil {
 			t.Fatal(e)
@@ -88,13 +90,14 @@ func warm(t *testing.T, f fixture) {
 		tickets = append(tickets, ticket)
 	}
 	for _, ticket := range tickets {
-		if _, err := ticket.Wait(ctx); err != nil {
-			t.Fatal(err)
+		result, err := ticket.Wait(ctx)
+		if err != nil || result.GetRead().GetFailure() != nil {
+			t.Fatal("warm point read failed", err, result)
 		}
 		ticket.Ack()
 	}
 	if f.runtime.Snapshot().Window < 2 {
-		t.Fatal("AIMD did not grow on saturated demand")
+		t.Fatal("AIMD did not grow on saturated demand", f.runtime.Snapshot())
 	}
 }
 func TestNativeIndependentReadsOverlap(t *testing.T) {
@@ -123,7 +126,7 @@ func TestNativeIndependentReadsOverlap(t *testing.T) {
 }
 func TestNativeBatchMixedDeadlines(t *testing.T) {
 	f := setup(t)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"insert"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	short, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer stop()
@@ -152,7 +155,7 @@ func TestNativeBatchMixedDeadlines(t *testing.T) {
 	if err != nil || count != 2 {
 		t.Fatal("expired dispatched mutation may still apply", count, err)
 	}
-	t.Log("shared insert: short caller timed out; both persisted; surviving caller APPLIED")
+	t.Log("shared bulkWrite: short caller timed out; both persisted; surviving caller APPLIED")
 }
 func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 	f := setup(t)
@@ -185,7 +188,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 		}
 		ticket.Ack()
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"insert"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "closeConnection", Value: true}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "closeConnection", Value: true}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	tickets = nil
 	for _, key := range []string{"unknown_a", "unknown_b"} {
@@ -206,7 +209,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 }
 func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	f := setup(t)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"insert"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -238,7 +241,7 @@ func TestNativeShutdownQueueAndExecution(t *testing.T) {
 func TestNativeWriteConcernAmbiguity(t *testing.T) {
 	f := setup(t)
 	wc := bson.D{{Key: "code", Value: 64}, {Key: "errmsg", Value: "isolated test concern failure"}}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"insert"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "writeConcernError", Value: wc}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "writeConcernError", Value: wc}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

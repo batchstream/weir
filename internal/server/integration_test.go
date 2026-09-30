@@ -200,10 +200,11 @@ func TestGRPCOutOfOrderCompletion(t *testing.T) {
 	f := setup(t, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	// Warm through the real shared path so AIMD, rather than a test-only setting, opens C=2.
+	// Independent same-key reads form separate batches, supplying saturated real
+	// backend executions so AIMD opens C=2 without a test-only window setting.
 	var tickets []*store.Ticket
 	for i := 0; i < 24; i++ {
-		r := &pb.ReadRequest{Resource: resource(f, fmt.Sprint(i))}
+		r := &pb.ReadRequest{Resource: resource(f, "warm")}
 		v := &pb.BulkOperation_Read{Read: r}
 		op := &pb.BulkOperation{Operation: v}
 		p, e := f.runtime.Prepare(op)
@@ -217,7 +218,10 @@ func TestGRPCOutOfOrderCompletion(t *testing.T) {
 		tickets = append(tickets, ticket)
 	}
 	for _, ticket := range tickets {
-		_, _ = ticket.Wait(ctx)
+		result, err := ticket.Wait(ctx)
+		if err != nil || result.GetRead().GetFailure() != nil {
+			t.Fatal("warmup read failed", result, err)
+		}
 		ticket.Ack()
 	}
 	if f.runtime.Snapshot().Window < 2 {
@@ -382,7 +386,7 @@ func TestGRPCDrainWithoutClientHalfClose(t *testing.T) {
 	f := setup(t, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	data := bson.D{{Key: "failCommands", Value: bson.A{"update"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 100}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 100}}
 	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	stream, err := f.client.Bulk(ctx)
 	if err != nil {

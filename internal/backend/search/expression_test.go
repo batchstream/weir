@@ -26,7 +26,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 	allowed := []string{`{"doc":{}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
 	for _, raw := range allowed {
 		p, f := a.Prepare(expressionOperation("weir://search/records/s:a", raw))
-		if f != nil || p.Batchable || string(p.Backend.(*plan).source) != raw {
+		if f != nil || string(p.Backend.(*plan).source) != raw {
 			t.Fatal(p, f)
 		}
 	}
@@ -54,19 +54,22 @@ func TestSearchExpressionEvidence(t *testing.T) {
 	noop := strings.ReplaceAll(strings.ReplaceAll(success, `"updated"`, `"noop"`), `:1,"failed"`, `:0,"failed"`)
 	noop = strings.ReplaceAll(noop, `"total":1`, `"total":0`)
 	for _, raw := range []string{success, noop} {
-		r, _ := a.expressionReply(n, 200, []byte(raw), nil)
+		opts := expressionReplyOptions{native: n, status: 200, raw: []byte(raw)}
+		r, _ := a.expressionReply(opts)
 		if r.Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal(raw, r)
 		}
 	}
 	for _, raw := range []string{`{}`, success[:len(success)-1], strings.ReplaceAll(success, `"_id":"a"`, `"_id":"b"`), strings.ReplaceAll(success, `"_version":1,`, ``), strings.ReplaceAll(success, `"successful":1,`, ``), strings.ReplaceAll(success, `"updated"`, `"created"`), strings.ReplaceAll(success, `"failed":0`, `"failed":null`), strings.ReplaceAll(success, `"failed":0`, `"failed":0,"failed":0`), strings.ReplaceAll(success, `"total":1,"successful":1,"failed":0`, `"total":1,"successful":9223372036854775807,"failed":9223372036854775807`)} {
-		r, _ := a.expressionReply(n, 200, []byte(raw), nil)
+		opts := expressionReplyOptions{native: n, status: 200, raw: []byte(raw)}
+		r, _ := a.expressionReply(opts)
 		if r.Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal(raw, r)
 		}
 	}
 	contradictory := []byte(`{"status":409,"error":{"type":"version_conflict_engine_exception"},"result":"updated","_seq_no":1}`)
-	r, _ := a.expressionReply(n, 409, contradictory, nil)
+	opts := expressionReplyOptions{native: n, status: 409, raw: contradictory}
+	r, _ := a.expressionReply(opts)
 	if r.Outcome != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("contradictory evidence", r)
 	}
@@ -82,7 +85,8 @@ func TestSearchExpressionEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		raw := []byte(fmt.Sprintf(`{"status":%d,"error":{"type":%q}}`, tc.status, tc.kind))
-		r, _ := a.expressionReply(n, tc.status, raw, nil)
+		opts := expressionReplyOptions{native: n, status: tc.status, raw: raw}
+		r, _ := a.expressionReply(opts)
 		if r.Outcome != pb.MutationOutcome_NOT_APPLIED || r.GetFailure().GetCode() != tc.code {
 			t.Fatal(r)
 		}

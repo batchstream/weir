@@ -32,7 +32,7 @@ func run(args []string, output io.Writer) (resultErr error) {
 	uri := flags.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
 	db := flags.String("database", "weir_m1", "pre-created database")
 	collection := flags.String("collection", "records", "pre-created collection")
-	batch := flags.Bool("batch", true, "micro-batch compatible mutations")
+	batch := flags.Bool("batch", true, "micro-batch all record operations in the shared scheduler")
 	memory := flags.Uint64("memory-mib", 512, "overload budget; qualification starting point")
 	searchURL := flags.String("search-url", "", "optional qualified loopback search backend")
 	searchIndex := flags.String("search-index", "records", "pre-created concrete index")

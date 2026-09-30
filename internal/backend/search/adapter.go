@@ -2,13 +2,11 @@
 package search
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -46,9 +44,10 @@ type Adapter struct {
 	once            sync.Once
 }
 type plan struct {
-	id, action string
-	source     []byte
-	program    *luaengine.Program
+	id, action     string
+	source         []byte
+	program        *luaengine.Program
+	expectedResult string
 }
 type capabilities struct{ source, write, nativeWrite bool }
 
@@ -203,14 +202,13 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "exact string ID of 1-512 bytes required")
 	}
 	native := &plan{id: key[2:]}
-	work := &execution.Plan{Operation: op, Key: resource, Backend: native, Bytes: proto.Size(op) + len(resource)*2 + 1024, ResultBytes: protocol.ResultOverhead, Token: "write", Batchable: true}
+	work := &execution.Plan{Operation: op, Key: resource, Backend: native, Bytes: proto.Size(op) + len(resource)*2 + 1024, ResultBytes: protocol.ResultOverhead}
 	if read := op.GetRead(); read != nil {
 		if read.AdapterOptions != nil || read.ReadMediaType != "" && read.ReadMediaType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
 		native.action = "read"
-		work.Batchable = false
-		work.Token = "read"
+		// Reserve bounded source scratch for the batched pre-read.
 		work.ResultBytes += protocol.MaxDocument
 	} else {
 		mutation := op.GetMutate()
@@ -228,8 +226,8 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		case *pb.MutateRequest_Replace:
 			native.action = "replace"
 			document = action.Replace
-			work.Batchable = false
-			work.Token = "replace"
+			// Reserve bounded source scratch for the batched pre-read.
+			work.ResultBytes += protocol.MaxDocument
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
@@ -250,8 +248,8 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 				native.action = "program"
 				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input}
 				native.program = luaProgram
-				work.Batchable = false
-				work.Token = "program"
+				// Reserve bounded source scratch for the batched pre-read.
+				work.ResultBytes += protocol.MaxDocument
 			} else {
 				expression := action.AtomicTransform.GetBackendExpression()
 				if f := prepareExpression(expression); f != nil {
@@ -259,8 +257,6 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 				}
 				native.action = "expression"
 				native.source = expression.Data
-				work.Batchable = false
-				work.Token = "expression"
 			}
 		default:
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
@@ -285,35 +281,10 @@ type getReply struct {
 	Source json.RawMessage `json:"_source"`
 	Seq    *int64          `json:"_seq_no"`
 	Term   *int64          `json:"_primary_term"`
+	Error  *nativeError    `json:"error"`
+	Status int             `json:"status"`
 }
 
-func (a *Adapter) get(ctx context.Context, p *plan) (*getReply, *pb.Failure, execution.Feedback) {
-	call := exchange{path: "/" + a.config.Index + "/_doc/" + url.PathEscape(p.id) + "?realtime=true", limit: protocol.MaxDocument + 32<<10}
-	status, raw, err := a.request(ctx, call)
-	if err == errTransport && ctx.Err() == nil {
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "record transport failed"), execution.Congested
-	}
-	if err != nil {
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or exceeds limits"), execution.Neutral
-	}
-	if status == 429 || status == 503 {
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
-	}
-	var reply getReply
-	if json.Unmarshal(raw, &reply) != nil || reply.Index != a.config.Index || reply.ID != p.id || reply.Found == nil {
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "incomplete record response"), execution.Neutral
-	}
-	if !*reply.Found && status == 404 {
-		return &reply, nil, execution.Healthy
-	}
-	if status != 200 || !*reply.Found || reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source) {
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "incomplete record response"), execution.Neutral
-	}
-	if len(reply.Source) > protocol.MaxDocument {
-		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"), execution.Neutral
-	}
-	return &reply, nil, execution.Healthy
-}
 func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.BulkResult {
 	var read *pb.ReadResult
 	switch {
@@ -328,114 +299,4 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 	variant := &pb.BulkResult_Read{Read: read}
 	result := &pb.BulkResult{Index: work.Operation.Index, Result: variant}
 	return result
-}
-
-func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	if len(works) == 0 {
-		return nil, execution.Neutral
-	}
-	if len(works) > 1 {
-		for _, candidate := range works {
-			if candidate.Backend.(*plan).action == "program" {
-				results := make([]*pb.BulkResult, 0, len(works))
-				signal := execution.Healthy
-				for _, item := range works {
-					replies, feedback := a.Execute(ctx, []*execution.Plan{item})
-					results = append(results, replies...)
-					if feedback == execution.Congested || feedback == execution.Neutral && signal == execution.Healthy {
-						signal = feedback
-					}
-				}
-				return results, signal
-			}
-		}
-	}
-	if len(works) == 1 && works[0].Backend.(*plan).action == "program" {
-		return a.executeProgram(ctx, works[0])
-	}
-	if len(works) == 1 && works[0].Backend.(*plan).action == "expression" {
-		return a.executeExpression(ctx, works[0])
-	}
-	totalBytes := 0
-	for _, work := range works {
-		totalBytes += work.Bytes
-	}
-	if len(works) > 128 || totalBytes > 8<<20 {
-		results := make([]*pb.BulkResult, len(works))
-		for i, work := range works {
-			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "batch exceeds execution bounds"))
-		}
-		return results, execution.Neutral
-	}
-	caps, failure, sample := a.inspect(ctx, false)
-	results := make([]*pb.BulkResult, len(works))
-	pending := make([]*execution.Plan, 0, len(works))
-	positions := make([]int, 0, len(works))
-	var request bytes.Buffer
-	for i, work := range works {
-		native := work.Backend.(*plan)
-		denied := failure
-		if denied == nil && (native.action == "read" && !caps.source || native.action != "read" && native.action != "delete" && !caps.write) {
-			denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored full source and no final pipeline required for this operation")
-		}
-		if denied != nil {
-			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
-			continue
-		}
-		var observed *getReply
-		if native.action == "read" || native.action == "replace" {
-			observed, denied, sample = a.get(ctx, native)
-			if native.action == "read" {
-				results[i] = readResult(work, observed, denied)
-				continue
-			}
-			if denied == nil && !*observed.Found {
-				denied = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
-				sample = execution.Neutral
-			}
-			if denied != nil {
-				results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
-				continue
-			}
-		}
-		metadata := map[string]any{"_index": a.config.Index, "_id": native.id}
-		action := native.action
-		if action != "delete" {
-			metadata["pipeline"] = "_none"
-		}
-		if action == "replace" {
-			action = "index"
-			metadata["if_seq_no"] = *observed.Seq
-			metadata["if_primary_term"] = *observed.Term
-		}
-		header := map[string]any{action: metadata}
-		encoded, _ := json.Marshal(header)
-		request.Write(encoded)
-		request.WriteByte('\n')
-		if native.source != nil {
-			// NDJSON framing requires compact source, without interpreting any number.
-			if err := json.Compact(&request, native.source); err != nil {
-				panic("validated source changed")
-			}
-			request.WriteByte('\n')
-		}
-		pending = append(pending, work)
-		positions = append(positions, i)
-	}
-	if len(pending) == 0 {
-		return results, sample
-	}
-	if request.Len() > 8<<20 {
-		for _, i := range positions {
-			results[i] = protocol.ResultError(works[i].Operation, pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native request exceeds bound"))
-		}
-		return results, execution.Neutral
-	}
-	call := exchange{path: "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1&timeout=1s", body: request.Bytes(), limit: responseLimit}
-	status, raw, err := a.request(ctx, call)
-	replies, feedback := a.bulkResults(pending, status, raw, err)
-	for i, position := range positions {
-		results[position] = replies[i]
-	}
-	return results, feedback
 }

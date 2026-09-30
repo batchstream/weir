@@ -3,6 +3,7 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -63,14 +64,17 @@ func TestSearchExpressionRealReplyFaultsAndNativeCompetition(t *testing.T) {
 			}
 			var writes, reads atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				isUpdate := strings.Contains(r.URL.Path, "/_update/")
+				isUpdate := r.URL.Path == "/_bulk"
 				if strings.Contains(r.URL.Path, "/_doc/") {
 					reads.Add(1)
 				}
 				if isUpdate {
 					writes.Add(1)
-					if r.Method != "POST" || r.URL.Query().Get("retry_on_conflict") != "0" || r.URL.Query().Get("doc_as_upsert") != "false" || r.URL.Query().Has("pipeline") || r.Header.Get("Content-Type") != "application/json" {
-						t.Error("unsafe update request", r.URL)
+					body, bodyErr := io.ReadAll(r.Body)
+					r.Body = io.NopCloser(bytes.NewReader(body))
+					lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+					if bodyErr != nil || r.Method != "POST" || r.URL.Query().Get("pipeline") != "_none" || r.Header.Get("Content-Type") != "application/x-ndjson" || len(lines) != 2 || !strings.Contains(lines[0], `"update"`) || !strings.Contains(lines[0], `"retry_on_conflict":0`) || strings.Contains(lines[0], `"pipeline"`) || strings.Contains(lines[1], "upsert") {
+						t.Error("unsafe update request", r.URL, string(body))
 					}
 					switch mode {
 					case "update":
@@ -124,7 +128,13 @@ func TestSearchExpressionRealReplyFaultsAndNativeCompetition(t *testing.T) {
 					if json.Unmarshal(raw, &fields) != nil {
 						t.Error("reply")
 					}
-					delete(fields, "_seq_no")
+					var items []map[string]map[string]json.RawMessage
+					if json.Unmarshal(fields["items"], &items) != nil || len(items) != 1 {
+						t.Error("bulk update items")
+					} else {
+						delete(items[0]["update"], "_seq_no")
+						fields["items"], _ = json.Marshal(items)
+					}
 					raw, _ = json.Marshal(fields)
 				}
 				w.WriteHeader(response.StatusCode)
@@ -298,7 +308,8 @@ func TestSearchExpressionRealConflictEvidence(t *testing.T) {
 		t.Fatal(code, string(raw))
 	}
 	n := &plan{id: "counter"}
-	result, sample := a.expressionReply(n, code, raw, nil)
+	opts := expressionReplyOptions{native: n, status: code, raw: raw}
+	result, sample := a.expressionReply(opts)
 	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT || sample != execution.Neutral {
 		t.Fatal(result, sample)
 	}

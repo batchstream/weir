@@ -22,7 +22,7 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if work.Backend.(*plan).action != "program" || work.Batchable || work.Backend.(*plan).program.Input.Kind != value.Missing {
+	if work.Backend.(*plan).action != "program" || work.Backend.(*plan).program.Input.Kind != value.Missing {
 		t.Fatalf("unexpected program plan: %#v", work)
 	}
 

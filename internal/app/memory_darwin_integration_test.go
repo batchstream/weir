@@ -31,7 +31,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 	}
 	fixture := testmongo.OpenSecure(t)
 	proxy := testmongo.StartProxy(t, &fixture.Fixture)
-	proxy.DropCommand = "update"
+	proxy.DropCommand = "bulkWrite"
 	cfg := packagedConfig(proxy.URI(), fixture.DB)
 	cfg.MemoryMiB = testmemory.Budget >> 20
 	n := secureNode(t, cfg)
@@ -158,7 +158,7 @@ func darwinUnknown(t *testing.T, client pb.WeirClient, fixture *testmongo.Secure
 	time.Sleep(200 * time.Millisecond)
 	updates := 0
 	for _, e := range proxy.Events()[before:] {
-		if e.Command == "update" {
+		if e.Command == "bulkWrite" {
 			updates++
 			if !e.Acknowledged || !e.Dropped {
 				t.Fatal("ACK loss evidence")
@@ -196,7 +196,7 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 	t.Log("exact archive", string(output))
 	fixture := testmongo.OpenSecure(t)
 	proxy := testmongo.StartProxy(t, &fixture.Fixture)
-	proxy.DropCommand = "update"
+	proxy.DropCommand = "bulkWrite"
 	observation := &budgetObservation{}
 	monitor := &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	proxy.Monitor = monitor

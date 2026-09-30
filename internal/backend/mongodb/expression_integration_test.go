@@ -120,7 +120,7 @@ func TestMongoExpressionNativeCompetition(t *testing.T) {
 				if e.CommandName == "find" {
 					reads.Add(1)
 				}
-				if e.CommandName != "update" || updates.Add(1) != 1 {
+				if e.CommandName != "bulkWrite" || updates.Add(1) != 1 {
 					return
 				}
 				replacement := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int64(20)}, {Key: "native", Value: true}}
@@ -142,7 +142,7 @@ func TestMongoExpressionNativeCompetition(t *testing.T) {
 				}
 			}}
 			monitor.Succeeded = func(_ context.Context, e *event.CommandSucceededEvent) {
-				if e.CommandName == "update" {
+				if e.CommandName == "bulkWrite" {
 					t.Logf("native update reply: %s", e.Reply)
 				}
 			}
@@ -183,16 +183,16 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 			}
 			proxy := testmongo.StartProxy(t, backend)
 			if mode == "drop" {
-				proxy.DropCommand = "update"
+				proxy.DropCommand = "bulkWrite"
 				proxy.DropRemaining.Store(1)
 			}
 			if mode == "truncate" || mode == "missing_n" {
-				proxy.AlterCommand = "update"
+				proxy.AlterCommand = "bulkWrite"
 				proxy.AlterMode = mode
 				proxy.AlterRemaining.Store(1)
 			}
 			if mode == "concern" || mode == "conflict" {
-				data := bson.D{{Key: "failCommands", Value: bson.A{"update"}}, {Key: "appName", Value: "weir:" + db}}
+				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + db}}
 				if mode == "concern" {
 					concern := bson.E{Key: "writeConcernError", Value: bson.D{{Key: "code", Value: 64}, {Key: "errmsg", Value: "fixture concern"}}}
 					data = append(data, concern)
@@ -218,7 +218,7 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 			}
 			writes := 0
 			for _, e := range proxy.Events() {
-				if e.Command == "update" {
+				if e.Command == "bulkWrite" {
 					writes++
 				}
 			}
@@ -249,7 +249,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 				t.Fatal(err)
 			}
 			proxy := testmongo.StartProxy(t, backend)
-			proxy.DropCommand = "update"
+			proxy.DropCommand = "bulkWrite"
 			proxy.DropRemaining.Store(1)
 			gate := make(chan struct{})
 			proxy.DropGate = gate
@@ -290,7 +290,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			for {
 				ack := false
 				for _, e := range proxy.Events() {
-					ack = ack || e.Command == "update" && e.Dropped && e.Acknowledged
+					ack = ack || e.Command == "bulkWrite" && e.Dropped && e.Acknowledged
 				}
 				if ack {
 					break
@@ -334,7 +334,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			}
 			writes := 0
 			for _, e := range proxy.Events() {
-				if e.Command == "update" {
+				if e.Command == "bulkWrite" {
 					writes++
 				}
 			}

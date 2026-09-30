@@ -261,9 +261,9 @@ remain accessible through validated Native calls, outside local record ordering.
 
 The full canonical record URI is the record identity. A Bulk sequence key
 combines that identity with a server-owned live stream identity, never the
-client request ID. Physical BatchKey is a different, adapter-produced token.
-Records may share a BatchKey without sharing a record or sequence key. Different
-Stores never share a batch. Record guarantees exclude concurrent namespace
+client request ID. Aggregation is local to one Store and is independent of RPC
+boundaries and record action. Different Stores never share a batch. Record
+guarantees exclude concurrent namespace
 destruction/recreation or alias retargeting; those are not competing record
 writes.
 
@@ -525,7 +525,7 @@ deadline covers queueing, transform attempts, backend work, and result delivery.
 | Native descriptor, body chunks, response metadata | Yes: preserve stateless native semantics and bounded bodies across hops; database results remain native. |
 | Scan selector and fetch hint | Yes: backend traversal intent and bounded fetching; a hint is not a query DSL. |
 | Deadline, cancellation, trace/request context | Yes, but existing gRPC/metadata mechanisms carry them; no redundant timestamp fields. |
-| BatchKey, ordering map, queue position, concurrency window | No: local scheduling details; never serialized. |
+| Native grouping, ordering map, queue position, concurrency window | No: local scheduling details; never serialized. |
 | Acceptance state, retry Boolean, idempotency promise | No: either misleading or absent from the product. |
 | Portable revision, generic query/sort/count, returned-image flag | No: unnecessary or falsely portable. |
 | Transform source digest/declaration registry | No: receiver can hash bounded source; a stored-program protocol is unnecessary. |
@@ -547,7 +547,8 @@ services.
 One internal work item references validated request data and contains resource,
 request/index identity, optional Bulk sequence key, operation class, accounted
 input bytes, deadline, response-credit reservation, and an opaque adapter plan.
-The plan contains record identity and local compatibility/BatchKey information.
+The plan contains record identity, execution class, and the adapter's prepared
+backend data. It has no per-operation batching opt-out or compatibility token.
 It is not a second public API and is never marshalled across peers. Work carries
 references rather than copies of whole Protobuf requests.
 
@@ -559,22 +560,24 @@ are operations and obligations, not final Go interface signatures:
 | Adapter operation | Responsibility |
 | --- | --- |
 | Construct/Close | Exclusively own and close bounded backend clients/pools; maintain the configured capability profile. |
-| Prepare(work) | Parse and canonical-check resource, validate media/options/action, produce record identity and physical compatibility plan; no backend I/O or unbounded work. |
-| Execute(batch, bounded emitter) | Execute a compatible bounded record batch; return one terminal result per item and backend congestion feedback; no hidden scheduler or fanout. |
+| Prepare(work) | Parse and canonical-check resource, validate media/options/action, produce record identity and bounded backend plan; no backend I/O or unbounded work. |
+| Execute(batch, bounded emitter) | Execute a bounded, possibly mixed record batch; combine compatible native requests and return one terminal result per item plus backend congestion feedback; no hidden scheduler or fanout. |
 | ExecuteNative(work, source, sink) | Execute one bounded stateless exchange; retain its dispatch permit until backend exchange/cleanup finishes; report transport completeness, not native effect normalization. |
 | FetchScan(work, cursor, page budget) | Under a dispatch permit, open or advance one cursor and return one bounded page plus native completion/error evidence; do not wait on client sends. |
 | CloseScan(cursor) | Release an adapter-owned cursor with a bounded cleanup context; no new application work or admission. |
 
-Core chooses singleton versus batch using the plan; adapters do not create their
-own batch queues. Native exchanges and Scan fetch steps use the same scheduler,
+Core collects every record action, including Read, Replace, backend expressions,
+and Lua programs. The adapter combines compatible work within the dispatched
+batch; adapters do not create their own batch queues. Native exchanges and Scan
+fetch steps use the same scheduler,
 not private execution queues. Scan session state outlives individual fetch
 permits. A single concrete implementation per backend is sufficient. Shared
 Elasticsearch/OpenSearch wire logic can live in one package with explicit tested
 capability differences, not a dynamic Provider system.
 
-The local prepared plan supplies: canonical record key when known, one bounded
-opaque compatibility token incorporating BatchKey, whether batching/streaming is
-supported, input/output framing bounds, and execution class. The adapter can
+The local prepared plan supplies the canonical record key when known,
+input/output framing bounds, execution class, and opaque backend data. At dispatch,
+Core attaches each record caller's context to a copy of its plan. The adapter can
 parse document bytes to validate native constraints; preparation must stay
 bounded and expensive transform compilation runs only after execution admission.
 Core never interprets the plan's backend-specific values.
@@ -711,14 +714,22 @@ index after bounded active-work cleanup.
 
 ### 7.3 Micro-batch algorithm
 
-Select the oldest eligible entry as the seed. Gather eligible distinct-key entries
-with exactly the same adapter compatibility token, within operation, encoded
-request-byte, and reserved-response-byte limits. Compatibility includes BatchKey,
-action compatibility, media handling, acknowledgement/refresh options, and output
-semantics. Core compares tokens; it does not decode documents to calculate them.
+Select the oldest eligible entry as the seed. Gather eligible distinct-key record
+entries within operation, encoded request-byte, and reserved-response-byte limits.
+All record actions participate, and one batch may mix Reads, Put, Create, Replace,
+Delete, and either form of AtomicTransform across unary calls and Bulk streams.
+Core does not decode documents or classify native request compatibility. Under the
+one execution permit, the adapter partitions the batch into compatible sequential
+backend phases and combines requests in each phase.
+
+Native exchanges and Scan fetch steps also enter this scheduler and admission
+ledger. Their bounded live-session reservation and independent stream/cursor state
+require individual execution steps; they are not combined with record requests or
+other arbitrary native exchanges. They have no separate fast path or work queue.
 
 Dispatch when a configured maximum is reached, the oldest eligible entry's short
-collection window expires, or remaining deadline slack requires immediate dispatch.
+collection window expires, or any selected caller's remaining deadline slack
+requires immediate dispatch.
 Start the collection window when the entry first becomes eligible and never reset
 it on subsequent arrivals. Do not form a batch and put it into another ready queue.
 Wait in the one pending set until both a dispatch slot and batch conditions exist.
@@ -728,15 +739,22 @@ same-record transform programs. Those optimizations obscure per-operation
 acknowledgement, failure, and returned-state boundaries. A physical batch has at
 most one item per canonical record key; a later operation in the same Bulk
 sequence waits for its predecessor. Independent same-key calls may execute in
-different concurrent batches; this is not global record serialization. Atomic
-program transforms are singleton in V1. Compatible simple reads/mutations may
-use native multi-get/bulk APIs. Backend batch size is independent of application
-request boundaries.
+different concurrent batches; this is not global record serialization. MongoDB
+combines point Reads in bounded native finds and mutations in MongoDB 8 verbose
+bulkWrite commands. Per-item matched evidence preserves missing-record semantics
+for Replace and backend expressions. Lua programs remain independent MongoDB
+transactions executed within the dispatched batch; combining transaction commits
+would change their atomicity and failure boundaries. Elasticsearch/OpenSearch use
+multi-get for Reads and Replace/program observations, followed by bulk writes for
+compatible ordinary, expression, and conditional program mutations. Only confirmed
+program conflicts may enter a bounded batched retry phase. Backend batch size is
+independent of application request boundaries.
 
 Batch eligibility requires adequate per-item evidence for the **promised**
 result. MongoDB aggregate matched counts cannot prove which conditional Replace
-succeeded; use qualified per-item results or singleton Replace in that case [S5,
-D13]. Ordinary Delete does not promise an affected-row count or distinguish
+succeeded; the qualified verbose bulkWrite path requires complete per-item result
+evidence rather than inferring outcomes from aggregate counts [S5, D13]. Ordinary
+Delete does not promise an affected-row count or distinguish
 already-absent records. A complete successful acknowledged Delete bulk with no
 item/write-concern errors can therefore report APPLIED for every item without
 verbose deleted counts. Mixed success/error replies still require item-level
@@ -748,13 +766,20 @@ capability fallback.
 
 Before dispatch, reserve bounded result slots/bytes for every included operation.
 Read reservations use the maximum permitted document-result size, not a guessed
-average. Mutation terminal results have a small fixed maximum. If there is not
+average. Search Replace and Lua program plans also reserve a maximum source
+document for their batched observation/evaluation phase. Mutation terminal
+results themselves have a small fixed maximum. If there is not
 enough response capacity, reduce the batch or leave that client's work pending.
 Do not execute a whole batch and then discover there is nowhere to put its results.
 
 ### 7.4 Deadlines and shared batches
 
 Recheck each item immediately before dispatch; expired items are NOT_STARTED.
+Before a later backend phase or program retry, check each item's attached caller
+context and do not start additional work for an expired caller. These per-item
+contexts are not the contexts of merged backend requests. A write already sent
+still requires actual acknowledgement evidence; cancellation never converts an
+ambiguous write into NOT_APPLIED or permits replay.
 A dispatched bulk request cannot generally cancel just one backend item. Use an
 execution context bounded by the configured backend-call maximum, shutdown deadline,
 and the latest still-relevant participant deadline. Do not let the earliest caller
@@ -1808,8 +1833,8 @@ Record:
 - Pending/reserved operations/bytes; active executions and live stream sessions;
   Scan fetch/emit state; output-credit use;
   admission rejection reason; queue wait and collection delay.
-- Physical batch size/bytes, fill ratio, application-operations-per-backend-call,
-  singleton fallback, and completion latency.
+- Dispatched batch size/bytes, fill ratio, application-operations-per-backend-call,
+  sequential native phases, and completion latency.
 - C/current active work, increases/decreases/cooldowns, backend-only latency,
   backend error class, conflict attempts, and unresolved mutation outcomes.
 - Stream bytes/frames, NativeCompletion and Scan failures, input/output stall time,
@@ -1900,7 +1925,7 @@ it is not a promise to copy Sink packages unchanged.
 | Existing component/evidence | Disposition | Would invent today? Decision and changed ownership |
 | --- | --- | --- |
 | Strict URI parser/formatter and typed key round-trip tests [S1] | Preserve mostly | Yes: one canonical identity prevents aliasing. Rename scheme, specify cross-language escaping, keep backend key grammar out of generic routing. |
-| Logical identity distinct from storage BatchKey [S4] | Preserve mostly | Yes: locality must not redefine the record. Preserve invariant and add adapter-alias tests. |
+| Logical identity distinct from physical grouping [S4] | Preserve mostly | Yes: native grouping must not redefine the record. Preserve invariant and add adapter-alias tests. |
 | Real-work feedback, congestion reduction, stale-flight epoch protection [S3] | Preserve algorithm, move ownership | Yes: StoreRuntime owns one controller; delete its independent admission queue and role interfaces. |
 | Comparable latency buckets and exclusion of emit waits [S3] | Defer controller complexity; preserve measurement separation | Backend I/O and consumer stalls differ. V1 uses explicit-feedback AIMD; no latency buckets/dual EWMAs without evidence. |
 | Process memory high/low watermark [S8] | Preserve mostly, strip roles | Yes: simple hysteresis is useful; once per new operation per process, including new frames of a long-lived Bulk. |
@@ -1940,7 +1965,7 @@ introduced complexity, and whether removal preserves the required properties.
 | StoreRuntime | Isolate queue/window/pool/batch state per Store | A process-global executor allows one Store to consume all another Store's capacity | One runtime object/state machine per Store | No for local Store isolation. |
 | Work/adapter plan | One scheduling path with opaque backend compatibility | Separate method queues duplicate admission and cannot coordinate keys | Small internal tagged work/result and opaque plan | Cannot remove common scheduling representation; it need not be a public API or large framework. |
 | Scheduler/Bulk sequence index | Bounded work and required within-stream same-key order | Goroutines waiting on semaphores hide queues; global Read serialization creates hotspots | One ledger/FIFO, one charged Scan continuation, stream-scoped sequence references | Retain for the promised Bulk order; no V1 cross-client key lock. |
-| BatchKey/collection algorithm | Automatic physical batching without identity collapse | Application-only batches miss concurrent small requests | Compatibility token comparison and short timer | Required batching would be lost; no standalone queued BatchBuilder is needed. |
+| Collection algorithm | Aggregate all record actions without identity collapse; adapters combine compatible native phases | Application-only batches miss concurrent small requests | Distinct-key selection and short timer | Required batching would be lost; no standalone queued BatchBuilder is needed. |
 | Adaptive window | Respond to explicit backend congestion | Static concurrency ignores observed overload | AIMD, one epoch and short cooldown; Cmin=1 | Keep the adaptive baseline; latency buckets/dual EWMAs and distributed quotas are unnecessary in V1. |
 | Process overload latch | Shared process exhaustion beyond Store isolation | Per-Store limits alone do not react to aggregate RSS/driver overhead | One sampler and hysteresis bit | Required overload response would be lost; predictive heap model unnecessary. |
 | Bounded session/result delivery | Slow readers and duplex flow control; finite retained results | HTTP/2 alone does not bound already consumed work/results | Finite credits, one/few frames, small fixed pump count | No without risking unbounded buffering or blocking shared executors. |
@@ -1986,7 +2011,7 @@ This pass is part of the proposal, not a future TODO.
 | Artificial portable semantics | Query/Count/revision/completion visibility removed; backend options remain explicitly native. |
 | Distributed coordination | No locks, leases, leaders, replica quota division, consensus, global ordering, or global capacity promise. |
 | Speculative extension points | Static adapters/runtime profile, no hot reload, Provider, xDS, plugin loading, program registration, or SDK-wide retry framework. |
-| Unnecessary protocol fields | No public BatchKey, local execution plan, Lua registry, affinity hint, client read-only flag, Native effect enum, or mesh-specific wrappers. Hop budget uses bounded metadata on deployment-isolated peer ingress. |
+| Unnecessary protocol fields | No public native grouping key, local execution plan, Lua registry, affinity hint, client read-only flag, Native effect enum, or mesh-specific wrappers. Hop budget uses bounded metadata on deployment-isolated peer ingress. |
 | Features outside App -> Database | Async delivery, Kafka health/topics/offsets/DLQ/settlement, schema/index management, and background jobs are absent. |
 | Hidden unbounded state | Finite sessions, frames, operation/result credits, pending set, keys tied to entries, active permits, cursor fetch, parser expansion, program cache, logs and shutdown waits. |
 | Duplicated execution paths | Public/peer, unary/Bulk, and batching-on/off converge on one runtime. Scan fetch continuations use its scheduler while idle cursor state stays outside the execution window. |
@@ -2185,7 +2210,7 @@ boundaries. The architectural review distinguishes observed code from proposals.
 | 10. StoreRuntime | 6.1 |
 | 11. Scheduler | 7 |
 | 12. Local sequencing/limits | 7.2 |
-| 13. BatchKey/micro-batching | 3.1; 7.3-7.4 |
+| 13. Universal aggregation and native batching | 3.1; 7.3-7.4 |
 | 14. Adaptive concurrency | 8 |
 | 15. Pending bounds | 7.1; 9.1 |
 | 16. Process overload | 9.3 |

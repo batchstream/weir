@@ -164,7 +164,7 @@ func TestSearchReplaceNativeCompetition(t *testing.T) {
 					w.WriteHeader(502)
 					return
 				}
-				if strings.Contains(r.URL.Path, "/_doc/race") && r.Method == "GET" && raced.CompareAndSwap(false, true) {
+				if strings.HasSuffix(r.URL.Path, "/_mget") && r.Method == "POST" && raced.CompareAndSwap(false, true) {
 					if mode != "update" {
 						status, _ := b.Do(t, "DELETE", "/"+b.Index+"/_doc/race", "")
 						if status != 200 {

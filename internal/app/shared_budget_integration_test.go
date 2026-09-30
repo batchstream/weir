@@ -72,7 +72,7 @@ func (o *budgetObservation) end() {
 }
 func budgetCommand(name string) bool {
 	switch name {
-	case "find", "count", "findAndModify", "insert", "update", "delete", "getMore", "killCursors", "endSessions", "killSessions":
+	case "find", "count", "findAndModify", "insert", "update", "delete", "bulkWrite", "getMore", "killCursors", "endSessions", "killSessions":
 		return true
 	}
 	return false
@@ -112,7 +112,7 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	proxy := testmongo.StartProxy(t, &fixture.Fixture)
 	proxy.Monitor = &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	drop := make(chan struct{})
-	proxy.DropCommand, proxy.DropGate = "update", drop
+	proxy.DropCommand, proxy.DropGate = "bulkWrite", drop
 	backend := &Mongo{URI: proxy.URI(), Database: fixture.DB, Collection: "records"}
 	local := &Local{Mongo: backend, Concurrency: concurrency, BatchOperations: 1}
 	service := Service{Name: "database", Local: local}
@@ -553,7 +553,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	budgetWait(t, "two independent Mongo pools", func() bool { n, _ := replacement.proxy.Sockets(); return n == 4 })
 	oldUpdates := 0
 	for _, e := range old.proxy.Events() {
-		if e.Command == "update" {
+		if e.Command == "bulkWrite" {
 			oldUpdates++
 		}
 	}
@@ -639,7 +639,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	}
 	dropped, updates := 0, 0
 	for _, event := range old.proxy.Events() {
-		if event.Command == "update" {
+		if event.Command == "bulkWrite" {
 			updates++
 		}
 		if event.Dropped {
@@ -648,7 +648,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	}
 	newUpdates := 0
 	for _, e := range replacement.proxy.Events() {
-		if e.Command == "update" {
+		if e.Command == "bulkWrite" {
 			newUpdates++
 		}
 	}

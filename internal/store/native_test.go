@@ -95,6 +95,7 @@ func TestNativeQueuedCancelAndRejectionDoNotRead(t *testing.T) {
 	a := &scanTestAdapter{}
 	limits := DefaultLimits()
 	limits.PendingOperations = 1
+	limits.Collect = 0
 	r := newRuntime(a, limits)
 	p := plan(0, "first", true)
 	first, f, _ := r.Submit(context.Background(), p, nil)

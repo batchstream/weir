@@ -234,7 +234,11 @@ func alterScanReply(message []byte, mode string) []byte {
 	if bson.Unmarshal(commandDocument(message), &doc) != nil {
 		return message
 	}
-	if mode == "write_error_391" {
+	bulk := false
+	for _, field := range doc {
+		bulk = bulk || field.Key == "nErrors"
+	}
+	if mode == "write_error_391" && !bulk {
 		writeError := bson.D{{Key: "index", Value: 0}, {Key: "code", Value: 391}, {Key: "errmsg", Value: "injected reauth error"}}
 		doc = bson.D{{Key: "ok", Value: 1.0}, {Key: "n", Value: 0}, {Key: "writeErrors", Value: bson.A{writeError}}}
 	}
@@ -265,6 +269,34 @@ func alterScanReply(message []byte, mode string) []byte {
 					if cursor[j].Key == "firstBatch" || cursor[j].Key == "nextBatch" {
 						cursor[j].Key = "unrecognizedBatch"
 					}
+				}
+			}
+			if bulk && (mode == "missing_n" || mode == "write_error_391") {
+				for j := range cursor {
+					if cursor[j].Key != "firstBatch" && cursor[j].Key != "nextBatch" {
+						continue
+					}
+					batch, ok := cursor[j].Value.(bson.A)
+					if !ok {
+						return message
+					}
+					for k := range batch {
+						item, ok := batch[k].(bson.D)
+						if !ok {
+							return message
+						}
+						if mode == "write_error_391" {
+							item = bson.D{{Key: "idx", Value: int32(k)}, {Key: "ok", Value: int32(0)}, {Key: "n", Value: int32(0)}, {Key: "code", Value: int32(391)}}
+						} else {
+							for m := range item {
+								if item[m].Key == "n" {
+									item[m].Key = "missing_n"
+								}
+							}
+						}
+						batch[k] = item
+					}
+					cursor[j].Value = batch
 				}
 			}
 			doc[i].Value = cursor

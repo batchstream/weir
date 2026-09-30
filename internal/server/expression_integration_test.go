@@ -157,8 +157,11 @@ func TestPublicExpressionUnaryBulkAndOpaquePeers(t *testing.T) {
 						t.Fatal(err)
 					}
 					waitScanReleased(t, f)
-					if sumLocalMetric(t, f, "weir_store_executions_total") != 10 || sumLocalMetric(t, f, "weir_store_records_total") != 10 {
-						t.Fatal("execution duplicated")
+					// Distinct records may share an execution; terminal record counts
+					// still prove every operation completed exactly once.
+					executions := sumLocalMetric(t, f, "weir_store_executions_total")
+					if executions < 1 || executions > 10 || sumLocalMetric(t, f, "weir_store_records_total") != 10 {
+						t.Fatal("aggregated execution lost or duplicated an operation", executions)
 					}
 					for _, remote := range f.metricsRemotes {
 						metrics := testmetrics.Gather(t, remote)

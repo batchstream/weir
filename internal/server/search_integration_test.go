@@ -224,7 +224,7 @@ func TestDualStoreSlowBackendAndOverloadProgress(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if strings.Contains(r.URL.Path, "/_doc/slow") {
+		if strings.HasSuffix(r.URL.Path, "/_mget") {
 			reached <- struct{}{}
 			select {
 			case <-release:
@@ -412,7 +412,20 @@ func TestDualStoreIndependentSearchReadsAndCooldown(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if strings.Contains(r.URL.Path, "/_doc/parallel") {
+		var envelope struct {
+			Docs []struct {
+				ID string `json:"_id"`
+			} `json:"docs"`
+		}
+		if strings.HasSuffix(r.URL.Path, "/_mget") && json.Unmarshal(raw, &envelope) != nil {
+			t.Error("invalid multi-get reply")
+			return
+		}
+		id := ""
+		if len(envelope.Docs) == 1 {
+			id = envelope.Docs[0].ID
+		}
+		if id == "parallel" {
 			arrived <- struct{}{}
 			select {
 			case <-release:
@@ -420,7 +433,7 @@ func TestDualStoreIndependentSearchReadsAndCooldown(t *testing.T) {
 				return
 			}
 		}
-		if strings.Contains(r.URL.Path, "/_doc/timeout") {
+		if id == "timeout" {
 			<-r.Context().Done()
 			return
 		}
@@ -435,8 +448,10 @@ func TestDualStoreIndependentSearchReadsAndCooldown(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	var tickets []*store.Ticket
+	// Same-key entries cannot share one native request, so this exercises
+	// saturated demand independently of how much distinct-key traffic coalesces.
 	for i := 0; i < 24; i++ {
-		request := &pb.ReadRequest{Resource: searchResource(f, fmt.Sprintf("warm%d", i))}
+		request := &pb.ReadRequest{Resource: searchResource(f, "warm")}
 		variant := &pb.BulkOperation_Read{Read: request}
 		op := &pb.BulkOperation{Operation: variant}
 		plan, failure := f.search.Prepare(op)

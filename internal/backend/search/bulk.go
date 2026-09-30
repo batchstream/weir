@@ -11,16 +11,6 @@ import (
 type nativeError struct {
 	Type string `json:"type"`
 }
-type itemReply struct {
-	Index  string                                   `json:"_index"`
-	ID     string                                   `json:"_id"`
-	Status int                                      `json:"status"`
-	Result string                                   `json:"result"`
-	Seq    *int64                                   `json:"_seq_no"`
-	Term   *int64                                   `json:"_primary_term"`
-	Shards *struct{ Total, Successful, Failed int } `json:"_shards"`
-	Error  *nativeError                             `json:"error"`
-}
 
 func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.Feedback) {
 	switch {
@@ -48,7 +38,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	for i, work := range works {
 		results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
 	}
-	if err != nil {
+	if err != nil || len(raw) > responseLimit || validateJSON(raw, 16384) != nil {
 		return results, execution.Neutral
 	}
 	if status != 200 {
@@ -56,7 +46,8 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			Error  *nativeError
 			Status int
 		}
-		if json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &envelope) == nil && json.Unmarshal(raw, &fields) == nil && len(fields) == 2 && envelope.Error != nil && envelope.Status == status {
 			failure, feedback := a.reject(envelope.Error.Type, status)
 			if failure != nil {
 				for i, work := range works {
@@ -68,9 +59,9 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		return results, execution.Neutral
 	}
 	var envelope struct {
-		Errors *bool                  `json:"errors"`
-		Took   *int64                 `json:"took"`
-		Items  []map[string]itemReply `json:"items"`
+		Errors *bool                        `json:"errors"`
+		Took   *int64                       `json:"took"`
+		Items  []map[string]json.RawMessage `json:"items"`
 	}
 	if json.Unmarshal(raw, &envelope) != nil || envelope.Errors == nil || envelope.Took == nil || len(envelope.Items) != len(works) {
 		return results, execution.Neutral
@@ -82,10 +73,13 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		action := native.action
 		if action == "replace" {
 			action = "index"
+		} else if action == "expression" {
+			action = "update"
 		}
 		entry := envelope.Items[i]
-		item, ok := entry[action]
-		if !ok || len(entry) != 1 || item.Index != a.config.Index || item.ID != native.id {
+		encoded, ok := entry[action]
+		var item expressionResponse
+		if !ok || len(entry) != 1 || json.Unmarshal(encoded, &item) != nil || item.Index != a.config.Index || item.ID != native.id {
 			return results, execution.Neutral
 		}
 		hadErrors = hadErrors || item.Error != nil
@@ -99,18 +93,33 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		action := native.action
 		if action == "replace" {
 			action = "index"
+		} else if action == "expression" {
+			action = "update"
 		}
-		item := envelope.Items[i][action]
+		encoded := envelope.Items[i][action]
+		var item expressionResponse
+		_ = json.Unmarshal(encoded, &item)
+		if native.program != nil || native.action == "expression" {
+			var mutation *pb.MutationResult
+			var signal execution.Feedback
+			if native.program != nil {
+				opts := programWriteReplyOptions{id: native.id, expectedResult: native.expectedResult, status: item.Status, raw: encoded}
+				mutation, signal = a.programWriteReply(opts)
+			} else {
+				opts := expressionReplyOptions{native: native, status: item.Status, raw: encoded, bulk: true}
+				mutation, signal = a.expressionReply(opts)
+			}
+			results[i] = protocol.ResultError(work.Operation, mutation.Outcome, mutation.Failure)
+			feedback = combineFeedback(feedback, signal)
+			continue
+		}
 		if item.Error != nil {
 			failure, signal := a.reject(item.Error.Type, item.Status)
-			if signal == execution.Congested {
-				feedback = execution.Congested
-			} else if feedback == execution.Healthy {
-				feedback = execution.Neutral
-			}
-			if item.Status < 400 || failure == nil {
+			if item.Status < 400 || failure == nil || item.Result != "" || item.Version != nil || item.Seq != nil || item.Term != nil || item.Shards != nil {
+				feedback = combineFeedback(feedback, execution.Neutral)
 				continue
 			}
+			feedback = combineFeedback(feedback, signal)
 			if native.action == "create" && failure.Code == pb.FailureCode_CONFLICT {
 				failure = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record already exists")
 			}
@@ -129,14 +138,14 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		if native.action == "replace" && item.Result != "updated" {
 			valid = false
 		}
-		if !valid || item.Seq == nil || item.Term == nil || *item.Seq < 0 || *item.Term < 1 || item.Shards == nil || item.Shards.Successful < 1 || item.Shards.Total < item.Shards.Successful || item.Shards.Failed < 0 || item.Shards.Failed > item.Shards.Total-item.Shards.Successful {
+		if !valid || item.Seq == nil || item.Term == nil || *item.Seq < 0 || *item.Term < 1 || item.Shards == nil || item.Shards.Successful == nil || item.Shards.Total == nil || item.Shards.Failed == nil || *item.Shards.Successful < 1 || *item.Shards.Total < *item.Shards.Successful || *item.Shards.Failed < 0 || *item.Shards.Failed > *item.Shards.Total-*item.Shards.Successful {
 			if feedback == execution.Healthy {
 				feedback = execution.Neutral
 			}
 			continue
 		}
 		var postWriteFailure *pb.Failure
-		if item.Shards.Failed != 0 {
+		if *item.Shards.Failed != 0 {
 			postWriteFailure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledged but replica acknowledgement failed")
 			if feedback == execution.Healthy {
 				feedback = execution.Neutral

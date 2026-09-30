@@ -29,7 +29,7 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	if open.Descriptor_.MediaType != NativeDescriptor || len(open.Descriptor_.Data) != 0 || open.BodyMediaType != "application/bson" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native requires empty Mongo command descriptor and BSON body")
 	}
-	p := &execution.Plan{Native: true, Key: open.Resource, Token: "native", Bytes: proto.Size(open) + protocol.EntryOverhead, ResultBytes: protocol.NativeChunk + protocol.ResultOverhead, PageBytes: scanPageBudget}
+	p := &execution.Plan{Native: true, Key: open.Resource, Bytes: proto.Size(open) + protocol.EntryOverhead, ResultBytes: protocol.NativeChunk + protocol.ResultOverhead, PageBytes: scanPageBudget}
 	return p, nil
 }
 
