@@ -42,7 +42,10 @@ func ValidateConfig(cfg Config) error {
 		if !strings.HasPrefix(endpoint, "https://") || c.Username == "" && c.Password == "" && c.CAFile == "" {
 			return errors.New("Search connection options require HTTPS and explicit content")
 		}
-		if (c.Username == "") != (c.Password == "") || len(c.Username) > 128 || len(c.Password) > 256 || strings.Contains(c.Username, ":") || !safeText(c.Username) || !safeText(c.Password) {
+		if (c.Username == "") != (c.Password == "") ||
+			len(c.Username) > 128 || len(c.Password) > 256 ||
+			strings.Contains(c.Username, ":") ||
+			!safeText(c.Username) || !safeText(c.Password) {
 			return errors.New("invalid Search credential pair")
 		}
 		if len(c.CAFile) > 2048 || !safeText(c.CAFile) {

@@ -12,6 +12,7 @@ import (
 
 const batchBodyLimit = 8 << 20
 const batchOperationLimit = 128
+
 const getFramingLimit = 32 << 10
 const getBatchItems = (batchBodyLimit - getFramingLimit) / (protocol.MaxDocument + getFramingLimit)
 
@@ -249,7 +250,11 @@ func (b *recordBatch) flush() {
 		positions = append(positions, item.position)
 	}
 	if len(works) != 0 {
-		call := exchange{path: "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1&timeout=1s", body: body[:length], limit: responseLimit}
+		call := exchange{
+			path:  "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1&timeout=1s",
+			body:  body[:length],
+			limit: responseLimit,
+		}
 		status, raw, err := b.adapter.request(b.ctx, call)
 		replies, sample := b.adapter.bulkResults(works, status, raw, err)
 		b.feedback = combineFeedback(b.feedback, sample)
@@ -277,7 +282,13 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.B
 	if len(works) == 0 {
 		return nil, execution.Neutral
 	}
-	batch := recordBatch{adapter: a, ctx: ctx, results: make([]*pb.BulkResult, len(works)), programs: make([]*programExecution, len(works)), feedback: execution.Healthy}
+	batch := recordBatch{
+		adapter:  a,
+		ctx:      ctx,
+		results:  make([]*pb.BulkResult, len(works)),
+		programs: make([]*programExecution, len(works)),
+		feedback: execution.Healthy,
+	}
 	defer batch.closePrograms()
 	totalBytes := 0
 	for _, work := range works {

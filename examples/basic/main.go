@@ -20,34 +20,46 @@ func main() {
 		panic(err)
 	}
 }
+
 func run() error {
 	address := flag.String("address", "127.0.0.1:7447", "loopback Weir listener")
 	name := flag.String("store", "mongo", "mongo or search")
 	database := flag.String("database", "weir_m1", "pre-created MongoDB database")
 	index := flag.String("index", "weir_m2_example", "pre-created Search index")
 	flag.Parse()
+
 	if *name != "mongo" && *name != "search" {
 		return fmt.Errorf("store must be mongo or search")
 	}
-	conn, err := grpc.NewClient(*address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
+
+	conn, err := grpc.NewClient(
+		*address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDisableRetry(),
+		grpc.WithDisableServiceConfig(),
+	)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+
 	client := pb.NewWeirClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	raw := bson.D{{Key: "_id", Value: "example"}, {Key: "n", Value: int32(1)}}
 	data, err := bson.Marshal(raw)
 	if err != nil {
 		return err
 	}
+
 	document := &pb.Document{MediaType: "application/bson", Data: data}
 	resource := "weir://mongo/" + protocol.EncodeSegment(*database) + "/records/s:example"
 	if *name == "search" {
 		document = &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 		resource = "weir://search/" + protocol.EncodeSegment(*index) + "/s:example"
 	}
+
 	put := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: resource, Action: put}
 	result, err := client.Mutate(ctx, mutation)
@@ -58,6 +70,7 @@ func run() error {
 	if result.Outcome != pb.MutationOutcome_APPLIED {
 		return fmt.Errorf("mutation was not acknowledged: %s", result.Outcome)
 	}
+
 	stream, err := client.Bulk(ctx)
 	if err != nil {
 		return err
@@ -84,6 +97,7 @@ func run() error {
 		}
 		sent <- stream.CloseSend()
 	}()
+
 	count := uint64(0)
 	ended := false
 	seen := make(map[uint64]bool)
@@ -118,17 +132,23 @@ func run() error {
 	if !ended {
 		return fmt.Errorf("Bulk missing End")
 	}
+
 	filter := bson.D{{Key: "_id", Value: "example"}}
 	selector := bson.D{{Key: "filter", Value: filter}}
 	encoded, err := bson.Marshal(selector)
 	if err != nil {
 		return err
 	}
+
 	native := &pb.Document{MediaType: "application/bson", Data: encoded}
 	if *name == "search" {
 		native = &pb.Document{MediaType: "application/json", Data: []byte(`{"query":{"ids":{"values":["example"]}}}`)}
 	}
-	request := &pb.ScanRequest{Resource: strings.TrimSuffix(resource, "/s:example"), Selector: native, FetchItemsHint: 8}
+	request := &pb.ScanRequest{
+		Resource:       strings.TrimSuffix(resource, "/s:example"),
+		Selector:       native,
+		FetchItemsHint: 8,
+	}
 	scan, err := client.Scan(ctx, request)
 	if err != nil {
 		return err
@@ -138,8 +158,9 @@ func run() error {
 	for {
 		frame, err := scan.Recv()
 		if err == io.EOF {
+			// Final gRPC OK, necessary but not sufficient.
 			break
-		} // Final gRPC OK, necessary but not sufficient.
+		}
 		if err != nil {
 			return fmt.Errorf("incomplete Scan: %w", err)
 		}

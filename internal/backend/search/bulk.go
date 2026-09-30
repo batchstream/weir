@@ -18,7 +18,10 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 		return protocol.Fail(pb.FailureCode_CONFLICT, "native conditional conflict"), execution.Neutral
 	case status == 404 && errorType == "index_not_found_exception":
 		return protocol.Fail(pb.FailureCode_NOT_FOUND, "configured index missing"), execution.Neutral
-	case status == 429 && (a.config.Profile == ElasticsearchProfile && errorType == "es_rejected_execution_exception" || a.config.Profile == OpenSearchProfile && errorType == "rejected_execution_exception"), status == 503 && errorType == "unavailable_shards_exception":
+	case status == 429 &&
+		(a.config.Profile == ElasticsearchProfile && errorType == "es_rejected_execution_exception" ||
+			a.config.Profile == OpenSearchProfile && errorType == "rejected_execution_exception"),
+		status == 503 && errorType == "unavailable_shards_exception":
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
 	}
 	if status != 400 {
@@ -47,7 +50,11 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			Status int
 		}
 		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &envelope) == nil && json.Unmarshal(raw, &fields) == nil && len(fields) == 2 && envelope.Error != nil && envelope.Status == status {
+		if json.Unmarshal(raw, &envelope) == nil &&
+			json.Unmarshal(raw, &fields) == nil &&
+			len(fields) == 2 &&
+			envelope.Error != nil &&
+			envelope.Status == status {
 			failure, feedback := a.reject(envelope.Error.Type, status)
 			if failure != nil {
 				for i, work := range works {
@@ -103,7 +110,12 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			var mutation *pb.MutationResult
 			var signal execution.Feedback
 			if native.program != nil {
-				opts := programWriteReplyOptions{id: native.id, expectedResult: native.expectedResult, status: item.Status, raw: encoded}
+				opts := programWriteReplyOptions{
+					id:             native.id,
+					expectedResult: native.expectedResult,
+					status:         item.Status,
+					raw:            encoded,
+				}
 				mutation, signal = a.programWriteReply(opts)
 			} else {
 				opts := expressionReplyOptions{native: native, status: item.Status, raw: encoded, bulk: true}
@@ -138,7 +150,19 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		if native.action == "replace" && item.Result != "updated" {
 			valid = false
 		}
-		if !valid || item.Seq == nil || item.Term == nil || *item.Seq < 0 || *item.Term < 1 || item.Shards == nil || item.Shards.Successful == nil || item.Shards.Total == nil || item.Shards.Failed == nil || *item.Shards.Successful < 1 || *item.Shards.Total < *item.Shards.Successful || *item.Shards.Failed < 0 || *item.Shards.Failed > *item.Shards.Total-*item.Shards.Successful {
+		if !valid ||
+			item.Seq == nil ||
+			item.Term == nil ||
+			*item.Seq < 0 ||
+			*item.Term < 1 ||
+			item.Shards == nil ||
+			item.Shards.Successful == nil ||
+			item.Shards.Total == nil ||
+			item.Shards.Failed == nil ||
+			*item.Shards.Successful < 1 ||
+			*item.Shards.Total < *item.Shards.Successful ||
+			*item.Shards.Failed < 0 ||
+			*item.Shards.Failed > *item.Shards.Total-*item.Shards.Successful {
 			if feedback == execution.Healthy {
 				feedback = execution.Neutral
 			}

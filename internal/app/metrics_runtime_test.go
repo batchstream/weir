@@ -20,7 +20,12 @@ func TestStandardRuntimeCollectors(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"go_goroutines", "go_memstats_heap_alloc_bytes", "go_memstats_alloc_bytes_total", "go_gc_duration_seconds"} {
+	for _, name := range []string{
+		"go_goroutines",
+		"go_memstats_heap_alloc_bytes",
+		"go_memstats_alloc_bytes_total",
+		"go_gc_duration_seconds",
+	} {
 		if !found[name] {
 			t.Fatal("missing", name)
 		}

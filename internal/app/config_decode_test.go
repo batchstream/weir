@@ -26,7 +26,13 @@ func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
 	if cfg.Memory != defaults.Memory || cfg.Forwarding != defaults.Forwarding || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" || defaults.Routing.File != "" {
 		t.Fatal("process defaults changed")
 	}
-	for _, field := range []string{"", `,"routing":{}`, `,"routing":{"file":""}`, `,"routing":{"file":" \t\r\n"}`, `,"routing":{"file":null}`} {
+	for _, field := range []string{
+		"",
+		`,"routing":{}`,
+		`,"routing":{"file":""}`,
+		`,"routing":{"file":" \t\r\n"}`,
+		`,"routing":{"file":null}`,
+	} {
 		input := `{"listeners":{"application":"127.0.0.1:0"}` + field + `}`
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 			t.Fatal("missing or empty routing.file accepted")
@@ -163,7 +169,16 @@ func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{`"diagnostics":null,`, `"listeners":null,`, `"memory":null,`, `"transport":null,`, `"transport":{"max_connections":null},`, `"transport":{"timeouts":{"unary":null}},`, `"forwarding":null,`, `"routing":null,`} {
+	for _, fragment := range []string{
+		`"diagnostics":null,`,
+		`"listeners":null,`,
+		`"memory":null,`,
+		`"transport":null,`,
+		`"transport":{"max_connections":null},`,
+		`"transport":{"timeouts":{"unary":null}},`,
+		`"forwarding":null,`,
+		`"routing":null,`,
+	} {
 		input := "{" + fragment + string(raw[1:])
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be null") {
 			t.Fatal("null basic field accepted", err)
@@ -212,7 +227,11 @@ func TestLoadRoutingPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 		loaded, err := Load(filename)
-		if err != nil || loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application || loaded.Basic.Routing.File != path || len(loaded.Routing.Services) != 1 || len(loaded.Routing.Routes) != 1 {
+		if err != nil ||
+			loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application ||
+			loaded.Basic.Routing.File != path ||
+			len(loaded.Routing.Services) != 1 ||
+			len(loaded.Routing.Routes) != 1 {
 			t.Fatal("routing path not resolved from basic file", err)
 		}
 	}
@@ -257,7 +276,12 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 	}
 	defer listener.Close()
 	connection := &search.Connection{Username: "user", Password: "secret-sentinel", CAFile: "/missing/ca-secret-sentinel.pem"}
-	backend := &Search{URL: "https://unresolved.invalid:443", Index: "records", Profile: search.ElasticsearchProfile, Connection: connection}
+	backend := &Search{
+		URL:        "https://unresolved.invalid:443",
+		Index:      "records",
+		Profile:    search.ElasticsearchProfile,
+		Connection: connection,
+	}
 	local := &Local{Search: backend}
 	service := Service{Name: "search", Local: local}
 	route := Route{Store: "records", Service: "search"}

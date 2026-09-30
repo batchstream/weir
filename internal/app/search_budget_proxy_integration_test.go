@@ -61,7 +61,14 @@ func startSearchBudgetProxy(t *testing.T, f *testsearch.SecureFixture, o *budget
 	}
 	clientTLS := f.Backend.Client.Transport.(*http.Transport).TLSClientConfig.Clone()
 	clientTLS.ServerName = upstream.Hostname()
-	p := &searchBudgetProxy{listener: listener, conns: make(map[net.Conn]bool), upstream: upstream.Host, clientTLS: clientTLS, observation: o, drop: make(chan struct{})}
+	p := &searchBudgetProxy{
+		listener:    listener,
+		conns:       make(map[net.Conn]bool),
+		upstream:    upstream.Host,
+		clientTLS:   clientTLS,
+		observation: o,
+		drop:        make(chan struct{}),
+	}
 	p.workers.Go(func() {
 		for {
 			conn, err := listener.Accept()
@@ -91,13 +98,20 @@ func startSearchBudgetProxy(t *testing.T, f *testsearch.SecureFixture, o *budget
 	})
 	return p
 }
+
 func (p *searchBudgetProxy) sockets() (int, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.current, p.peak
 }
+
 func (p *searchBudgetProxy) relay(client net.Conn) {
-	defer func() { _ = client.Close(); p.mu.Lock(); delete(p.conns, client); p.mu.Unlock() }()
+	defer func() {
+		_ = client.Close()
+		p.mu.Lock()
+		delete(p.conns, client)
+		p.mu.Unlock()
+	}()
 	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
 	if err := client.(*tls.Conn).Handshake(); err != nil {
 		return
@@ -117,7 +131,13 @@ func (p *searchBudgetProxy) relay(client net.Conn) {
 	p.current++
 	p.peak = max(p.peak, p.current)
 	p.mu.Unlock()
-	defer func() { _ = raw.Close(); p.mu.Lock(); delete(p.conns, backend); p.current--; p.mu.Unlock() }()
+	defer func() {
+		_ = raw.Close()
+		p.mu.Lock()
+		delete(p.conns, backend)
+		p.current--
+		p.mu.Unlock()
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	err = backend.HandshakeContext(ctx)
 	cancel()

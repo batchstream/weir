@@ -436,7 +436,13 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		a.Routing.Routes = append(a.Routing.Routes, route)
 	}
 	first := startProcess(t, binary, a)
-	conn, err := grpc.NewClient("passthrough:///"+first.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
+	conn, err := grpc.NewClient(
+		"passthrough:///"+first.address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+		grpc.WithDisableServiceConfig(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +491,13 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 	}
 	t.Log("real process HTTP scrapes: C logical records=8, Native complete=2, Scan exhausted=2; A/B relays=10 each, A/B have no local executions")
-	t.Log(fmt.Sprintf("process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets", first.command.Process.Pid, middle.command.Process.Pid, final.command.Process.Pid, search.Profile))
+	t.Log(fmt.Sprintf(
+		"process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets",
+		first.command.Process.Pid,
+		middle.command.Process.Pid,
+		final.command.Process.Pid,
+		search.Profile,
+	))
 	c.Basic.Listeners.Peer, b.Basic.Listeners.Peer, a.Basic.Listeners.Application = final.address, middle.address, first.address
 	mongoRead := &pb.ReadRequest{Resource: "weir://mongo/" + database + "/records/s:example"}
 	searchRead := &pb.ReadRequest{Resource: "weir://search/" + search.Index + "/s:example"}

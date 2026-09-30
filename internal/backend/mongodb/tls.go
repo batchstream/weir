@@ -125,7 +125,13 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 	}
 	dialer := newBoundedDialer(1, 1)
 	defer dialer.close()
-	transport := &http.Transport{DialContext: dialer.dialConnection, DisableKeepAlives: true, MaxConnsPerHost: 1, MaxResponseHeaderBytes: 16 << 10, ResponseHeaderTimeout: mongoConnectTimeout}
+	transport := &http.Transport{
+		DialContext:            dialer.dialConnection,
+		DisableKeepAlives:      true,
+		MaxConnsPerHost:        1,
+		MaxResponseHeaderBytes: 16 << 10,
+		ResponseHeaderTimeout:  mongoConnectTimeout,
+	}
 	defer transport.CloseIdleConnections()
 	bounded := &ocspTransport{transport: transport}
 	httpClient := &http.Client{Transport: bounded, Timeout: mongoConnectTimeout, CheckRedirect: rejectOCSPRedirect}

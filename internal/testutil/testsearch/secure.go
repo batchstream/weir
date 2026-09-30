@@ -78,7 +78,25 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	adminPass, appPass := randomPassword(t), randomPassword(t)
 	f.configuration(t, adminPass, appPass)
 	base := "/usr/share/" + product + "/config"
-	args := []string{"run", "--pull=never", "-d", "--name", f.name, "--hostname", "weir-node", "--label", "weir.owner=" + secureOwner, "--memory=1536m", "--cpus=2", "-p", "127.0.0.1::9200", "--mount", "type=bind,src=" + f.materials + ",dst=" + base + "/weir,readonly", "--mount", "type=bind,src=" + filepath.Join(f.materials, product+".yml") + ",dst=" + base + "/" + product + ".yml,readonly"}
+	args := []string{
+		"run",
+		"--pull=never",
+		"-d",
+		"--name",
+		f.name,
+		"--hostname",
+		"weir-node",
+		"--label",
+		"weir.owner=" + secureOwner,
+		"--memory=1536m",
+		"--cpus=2",
+		"-p",
+		"127.0.0.1::9200",
+		"--mount",
+		"type=bind,src=" + f.materials + ",dst=" + base + "/weir,readonly",
+		"--mount",
+		"type=bind,src=" + filepath.Join(f.materials, product+".yml") + ",dst=" + base + "/" + product + ".yml,readonly",
+	}
 	if product == "elasticsearch" {
 		args = append(args, "-e", "ES_JAVA_OPTS=-Xms512m -Xmx512m")
 		for _, file := range []string{"users", "users_roles", "roles.yml"} {
@@ -97,20 +115,77 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	tlsConfig := &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
-	transport := &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig, Protocols: protocols, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true, TLSHandshakeTimeout: 2 * time.Second, ResponseHeaderTimeout: 5 * time.Second}
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	transport := &http.Transport{
+		Proxy:                 nil,
+		TLSClientConfig:       tlsConfig,
+		Protocols:             protocols,
+		MaxConnsPerHost:       8,
+		MaxIdleConnsPerHost:   8,
+		DisableCompression:    true,
+		TLSHandshakeTimeout:   2 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
+	}
+	client := &http.Client{
+		Transport:     transport,
+		Timeout:       5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	t.Cleanup(transport.CloseIdleConnections)
 	profile := "elasticsearch-8.19.22"
 	if product == "opensearch" {
 		profile = "opensearch-2.19.6"
 	}
 	index := "weir_m11_" + strings.ReplaceAll(suffix, "-", "_")
-	f.Admin = &Backend{URL: "https://" + port, Profile: profile, Index: index, Client: client, Username: "weir_admin", Password: adminPass, CAFile: filepath.Join(f.materials, "ca.pem")}
-	f.Backend = &Backend{URL: f.Admin.URL, Profile: profile, Index: index, Client: client, Username: "weir_app", Password: appPass, CAFile: f.Admin.CAFile}
-	f.Denied = &Backend{URL: f.Admin.URL, Profile: profile, Index: index, Client: client, Username: "weir_reader", Password: appPass, CAFile: f.Admin.CAFile}
+	f.Admin = &Backend{
+		URL:      "https://" + port,
+		Profile:  profile,
+		Index:    index,
+		Client:   client,
+		Username: "weir_admin",
+		Password: adminPass,
+		CAFile:   filepath.Join(f.materials, "ca.pem"),
+	}
+	f.Backend = &Backend{
+		URL:      f.Admin.URL,
+		Profile:  profile,
+		Index:    index,
+		Client:   client,
+		Username: "weir_app",
+		Password: appPass,
+		CAFile:   f.Admin.CAFile,
+	}
+	f.Denied = &Backend{
+		URL:      f.Admin.URL,
+		Profile:  profile,
+		Index:    index,
+		Client:   client,
+		Username: "weir_reader",
+		Password: appPass,
+		CAFile:   f.Admin.CAFile,
+	}
 	f.waitReady(t, product == "opensearch", 90*time.Second)
 	if product == "opensearch" {
-		f.docker(t, 45*time.Second, "exec", f.name, "/usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh", "-h", "localhost", "-p", "9200", "-cn", f.name, "-cacert", base+"/weir/ca.pem", "-cert", base+"/weir/admin.pem", "-key", base+"/weir/admin.key", "-cd", base+"/weir/security/")
+		f.docker(
+			t,
+			45*time.Second,
+			"exec",
+			f.name,
+			"/usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh",
+			"-h",
+			"localhost",
+			"-p",
+			"9200",
+			"-cn",
+			f.name,
+			"-cacert",
+			base+"/weir/ca.pem",
+			"-cert",
+			base+"/weir/admin.pem",
+			"-key",
+			base+"/weir/admin.key",
+			"-cd",
+			base+"/weir/security/",
+		)
 	}
 	f.waitReady(t, false, 20*time.Second)
 	status, raw := f.Admin.Do(t, "GET", "/", "")
@@ -166,12 +241,14 @@ func randomPassword(t *testing.T) string {
 	}
 	return hex.EncodeToString(data)
 }
+
 func (f *SecureFixture) write(t *testing.T, name, body string, mode os.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(f.materials, name), []byte(body), mode); err != nil {
 		t.Fatal("fixture file creation failed")
 	}
 }
+
 func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -179,7 +256,15 @@ func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 		t.Fatal("fixture CA key generation")
 	}
 	subject := pkix.Name{CommonName: "Weir M11 temporary CA"}
-	ca := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: subject, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(12 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
+	ca := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               subject,
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(12 * time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
 	der, err := x509.CreateCertificate(rand.Reader, ca, ca, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal("fixture CA generation")
@@ -200,7 +285,16 @@ func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 			commonName = "weir-admin"
 		}
 		subject := pkix.Name{CommonName: commonName}
-		leaf := &x509.Certificate{SerialNumber: big.NewInt(int64(i + 2)), Subject: subject, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(12 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}, DNSNames: []string{"localhost", "weir-node", "search.test", "host.docker.internal"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}}
+		leaf := &x509.Certificate{
+			SerialNumber: big.NewInt(int64(i + 2)),
+			Subject:      subject,
+			NotBefore:    time.Now().Add(-time.Minute),
+			NotAfter:     time.Now().Add(12 * time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			DNSNames:     []string{"localhost", "weir-node", "search.test", "host.docker.internal"},
+			IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		}
 		der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &leafKey.PublicKey, key)
 		if err != nil {
 			t.Fatal("fixture certificate generation")
@@ -218,6 +312,7 @@ func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 	roots.AddCert(ca)
 	return roots
 }
+
 func (f *SecureFixture) configuration(t *testing.T, adminPass, appPass string) {
 	t.Helper()
 	adminHash, err := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
@@ -324,6 +419,7 @@ weir_reader:
 		f.write(t, "security/"+name+".yml", "_meta:\n  type: "+kind+"\n  config_version: 2\n"+body, 0644)
 	}
 }
+
 func (f *SecureFixture) docker(t *testing.T, limit time.Duration, args ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
@@ -339,6 +435,7 @@ func (f *SecureFixture) docker(t *testing.T, limit time.Duration, args ...string
 	}
 	return string(output)
 }
+
 func (f *SecureFixture) cleanup(t *testing.T) {
 	t.Helper()
 	owner, err := os.ReadFile(filepath.Join(f.Root, ".weir-owner"))

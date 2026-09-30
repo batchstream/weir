@@ -28,6 +28,7 @@ type Config struct {
 	URI, Store, Database, Collection string
 	Pool                             uint64
 }
+
 type Adapter struct {
 	dialer     *boundedDialer
 	client     *mongo.Client
@@ -36,6 +37,7 @@ type Adapter struct {
 	once       sync.Once
 	closeErr   error
 }
+
 type plan struct {
 	id       any
 	document bson.Raw
@@ -67,7 +69,21 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts.SetDirect(true).SetAppName("weir:" + cfg.Database).SetMaxPoolSize(cfg.Pool).SetMinPoolSize(0).SetMaxConnecting(mongoMaxConnecting).SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetCompressors(nil).SetServerMonitoringMode(options.ServerMonitoringModePoll).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second).SetReadPreference(readpref.Primary()).SetWriteConcern(writeconcern.Majority())
+	opts.SetDirect(true).
+		SetAppName("weir:" + cfg.Database).
+		SetMaxPoolSize(cfg.Pool).
+		SetMinPoolSize(0).
+		SetMaxConnecting(mongoMaxConnecting).
+		SetRetryWrites(false).
+		SetRetryReads(false).
+		SetMaxAdaptiveRetries(0).
+		SetEnableOverloadRetargeting(false).
+		SetCompressors(nil).
+		SetServerMonitoringMode(options.ServerMonitoringModePoll).
+		SetServerSelectionTimeout(2 * time.Second).
+		SetConnectTimeout(2 * time.Second).
+		SetReadPreference(readpref.Primary()).
+		SetWriteConcern(writeconcern.Majority())
 	if opts.Timeout != nil {
 		return nil, fmt.Errorf("client timeoutMS is unsupported; runtime owns execution deadlines")
 	}
@@ -78,7 +94,12 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
-	a := &Adapter{dialer: dialer, client: client, config: cfg, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
+	a := &Adapter{
+		dialer:     dialer,
+		client:     client,
+		config:     cfg,
+		collection: client.Database(cfg.Database).Collection(cfg.Collection),
+	}
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
@@ -86,6 +107,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	complete = true
 	return a, nil
 }
+
 func (a *Adapter) qualify(ctx context.Context) error {
 	cmd := bson.D{{Key: "hello", Value: 1}}
 	var hello struct {
@@ -125,6 +147,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	}
 	return nil
 }
+
 func mongoQualificationFailure(message string, err error) error {
 	var commandError mongo.CommandError
 	if errors.As(err, &commandError) {
@@ -132,6 +155,7 @@ func mongoQualificationFailure(message string, err error) error {
 	}
 	return fmt.Errorf("%s (%T)", message, err)
 }
+
 func (a *Adapter) Close() error {
 	a.once.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -147,6 +171,7 @@ func (a *Adapter) Close() error {
 	})
 	return a.closeErr
 }
+
 func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	if f := protocol.Validate(op, a.config.Store); f != nil {
 		return nil, f
@@ -229,6 +254,7 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	p.Bytes = proto.Size(op) + len(resource)*2 + 1024
 	return p, nil
 }
+
 func parseID(s string) (any, error) {
 	if strings.HasPrefix(s, "s:") {
 		return s[2:], nil
@@ -247,6 +273,7 @@ func parseID(s string) (any, error) {
 	}
 	return nil, fmt.Errorf("invalid ID")
 }
+
 func equalID(v value.Value, id any) bool {
 	switch i := id.(type) {
 	case string:
@@ -258,6 +285,7 @@ func equalID(v value.Value, id any) bool {
 	}
 	return false
 }
+
 func backendFailure(ctx context.Context, err error) *pb.Failure {
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)
@@ -268,6 +296,7 @@ func backendFailure(ctx context.Context, err error) *pb.Failure {
 	// Backend strings may contain user data; never copy them into wire errors.
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend operation failed")
 }
+
 func feedback(ctx context.Context, err error) execution.Feedback {
 	if err == nil || errors.Is(err, mongo.ErrNoDocuments) {
 		return execution.Healthy

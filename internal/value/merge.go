@@ -168,7 +168,14 @@ func validate(v Value, depth int, used *budget) error {
 }
 
 func hasPayloadExcept(v Value, allowed string) bool {
-	if allowed != "integer" && v.Integer != 0 || allowed != "float" && v.Float != 0 || allowed != "boolean" && v.Boolean || allowed != "text" && v.Text != "" || allowed != "data" && len(v.Data) != 0 || len(v.Fields) != 0 || len(v.Items) != 0 || v.Type != "" {
+	if allowed != "integer" && v.Integer != 0 ||
+		allowed != "float" && v.Float != 0 ||
+		allowed != "boolean" && v.Boolean ||
+		allowed != "text" && v.Text != "" ||
+		allowed != "data" && len(v.Data) != 0 ||
+		len(v.Fields) != 0 ||
+		len(v.Items) != 0 ||
+		v.Type != "" {
 		return true
 	}
 	return false

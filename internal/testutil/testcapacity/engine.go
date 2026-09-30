@@ -29,10 +29,12 @@ type Operation struct {
 	Planned  time.Time
 	Decision time.Time
 }
+
 type Result struct {
 	Outcome byte
 	Class   string
 }
+
 type Metrics struct {
 	Planned         uint64            `json:"planned"`
 	Started         uint64            `json:"started"`
@@ -57,11 +59,13 @@ type Metrics struct {
 	Dispatch        Histogram         `json:"dispatch"`
 	Lag             Histogram         `json:"lag"`
 }
+
 type Window struct {
 	All  Metrics `json:"all"`
 	Read Metrics `json:"read"`
 	Put  Metrics `json:"put"`
 }
+
 type TrialOptions struct {
 	Rate            int
 	WarmSeconds     int
@@ -75,6 +79,7 @@ type TrialOptions struct {
 	TimingOnly      bool
 	LegacyExpiry    bool
 }
+
 type Trial struct {
 	Options TrialOptions `json:"options"`
 	Start   time.Time    `json:"start"`
@@ -161,6 +166,7 @@ func (w *Window) worker(op Operation, start time.Time, expired bool) {
 		}
 	}
 }
+
 func (w *Window) finish(r Result, op Operation, dispatch, end time.Time) {
 	w.All.finish(r, op, dispatch, end)
 	if op.Write {
@@ -169,6 +175,7 @@ func (w *Window) finish(r Result, op Operation, dispatch, end time.Time) {
 		w.Read.finish(r, op, dispatch, end)
 	}
 }
+
 func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, error) {
 	if opts.WriteEvery == 0 {
 		opts.WriteEvery = 10
@@ -176,11 +183,27 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 	if opts.ArrivalExpiryMS < 0 || opts.ArrivalExpiryMS > 100 || opts.MaxCatchup < 0 || opts.MaxCatchup > 512 || opts.ClientQueue < 0 || opts.ClientQueue > 512 {
 		return nil, errors.New("pacing bounds")
 	}
-	if opts.Rate < 1 || opts.Rate > 6400 || opts.Seconds < 1 || opts.Seconds > 120 || opts.WarmSeconds < 0 || opts.WarmSeconds > 20 || opts.Workers < 1 || opts.Workers > 64 || (opts.WriteEvery != 1 && opts.WriteEvery != 10) || opts.Rate*(opts.WarmSeconds+opts.Seconds)%opts.WriteEvery != 0 || opts.Rate*(opts.WarmSeconds+opts.Seconds)/opts.WriteEvery > 300000 || (opts.LegacyExpiry && !opts.TimingOnly) {
+	if opts.Rate < 1 ||
+		opts.Rate > 6400 ||
+		opts.Seconds < 1 ||
+		opts.Seconds > 120 ||
+		opts.WarmSeconds < 0 ||
+		opts.WarmSeconds > 20 ||
+		opts.Workers < 1 ||
+		opts.Workers > 64 ||
+		(opts.WriteEvery != 1 && opts.WriteEvery != 10) ||
+		opts.Rate*(opts.WarmSeconds+opts.Seconds)%opts.WriteEvery != 0 ||
+		opts.Rate*(opts.WarmSeconds+opts.Seconds)/opts.WriteEvery > 300000 ||
+		(opts.LegacyExpiry && !opts.TimingOnly) {
 		return nil, errors.New("trial bounds")
 	}
 	total := opts.Rate * (opts.WarmSeconds + opts.Seconds)
-	t := &Trial{Options: opts, Ledger: make([]byte, total/opts.WriteEvery), Planned: total, Windows: make([]Window, (opts.Seconds+9)/10)}
+	t := &Trial{
+		Options: opts,
+		Ledger:  make([]byte, total/opts.WriteEvery),
+		Planned: total,
+		Windows: make([]Window, (opts.Seconds+9)/10),
+	}
 	jobs := make(chan Operation, opts.ClientQueue)
 	var mu sync.Mutex
 	var wg sync.WaitGroup

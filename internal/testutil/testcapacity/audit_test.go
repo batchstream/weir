@@ -34,7 +34,11 @@ func TestPartialSetupRecordsEverySingleAttempt(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		fmt.Fprintf(w, `{"errors":false,"took":1,"items":[{"index":{"_index":"records","_id":%q,"_version":1,"status":201,"result":"created","_seq_no":0,"_primary_term":1,"_shards":{"total":1,"successful":1,"failed":0}}}]}`, action["index"]["_id"])
+		fmt.Fprintf(
+			w,
+			`{"errors":false,"took":1,"items":[{"index":{"_index":"records","_id":%q,"_version":1,"status":201,"result":"created","_seq_no":0,"_primary_term":1,"_shards":{"total":1,"successful":1,"failed":0}}}]}`,
+			action["index"]["_id"],
+		)
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()

@@ -68,7 +68,16 @@ func (s *Server) Bulk(stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.Bu
 	invalid := make(chan *pb.BulkResult, 1)
 	ended := make(chan receiveEnd, 1)
 	activity := make(chan struct{}, 1)
-	args := receiveArgs{name: name, runtime: runtime, ctx: ctx, stream: stream, session: session, invalid: invalid, ended: ended, activity: activity}
+	args := receiveArgs{
+		name:     name,
+		runtime:  runtime,
+		ctx:      ctx,
+		stream:   stream,
+		session:  session,
+		invalid:  invalid,
+		ended:    ended,
+		activity: activity,
+	}
 	go s.receive(args)
 	idle := time.NewTimer(s.limits.Stall)
 	defer idle.Stop()
@@ -159,7 +168,10 @@ type receiveArgs struct {
 func (s *Server) receive(args receiveArgs) {
 	ctx, stream, session, invalid, ended, activity := args.ctx, args.stream, args.session, args.invalid, args.ended, args.activity
 	var count uint64
-	finish := func(err error) { end := receiveEnd{count: count, err: err}; ended <- end }
+	finish := func(err error) {
+		end := receiveEnd{count: count, err: err}
+		ended <- end
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -243,6 +255,7 @@ func (s *Server) receive(args receiveArgs) {
 		}
 	}
 }
+
 func (s *Server) send(ctx context.Context, stream grpc.BidiStreamingServer[pb.BulkRequestFrame, pb.BulkResponseFrame], frame *pb.BulkResponseFrame) error {
 	done := make(chan error, 1)
 	go func() { done <- stream.Send(frame) }()

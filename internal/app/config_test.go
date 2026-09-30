@@ -31,6 +31,7 @@ func remoteConfig(t *testing.T) Config {
 	cfg.Routing.Routes = []Route{route}
 	return cfg
 }
+
 func TestConfigurationValidation(t *testing.T) {
 	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "overflow", "zero-session"} {
 		t.Run(mode, func(t *testing.T) {
@@ -97,7 +98,12 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	node, err := Open(ctx, cfg)
-	if node != nil || err == nil || !strings.Contains(err.Error(), "MongoDB replica-set qualification failed") || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), address) || strings.Contains(err.Error(), "mongodb://") {
+	if node != nil ||
+		err == nil ||
+		!strings.Contains(err.Error(), "MongoDB replica-set qualification failed") ||
+		strings.Contains(err.Error(), "sentinel") ||
+		strings.Contains(err.Error(), address) ||
+		strings.Contains(err.Error(), "mongodb://") {
 		t.Fatal("startup exposed a driver connection error or lost its qualification reason", err)
 	}
 }
@@ -169,7 +175,15 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 			t.Fatal(listener, err)
 		}
 	}
-	for _, listener := range []string{":7447", "localhost:7447", "127.0.0.1:-1", "127.0.0.1:+1", "127.0.0.1:65536", "127.0.0.1:", "[invalid]:7447"} {
+	for _, listener := range []string{
+		":7447",
+		"localhost:7447",
+		"127.0.0.1:-1",
+		"127.0.0.1:+1",
+		"127.0.0.1:65536",
+		"127.0.0.1:",
+		"[invalid]:7447",
+	} {
 		cfg := remoteConfig(t)
 		cfg.Basic.Listeners.Application = listener
 		if err := cfg.Validate(); err == nil {
@@ -280,7 +294,13 @@ func TestRemoteEndpointListConfiguration(t *testing.T) {
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("legacy endpoint accepted", err)
 	}
-	for _, endpoints := range [][]string{nil, {}, {"peer:1", "PEER.:01"}, {"dns:///peer:1"}, {"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"}} {
+	for _, endpoints := range [][]string{
+		nil,
+		{},
+		{"peer:1", "PEER.:01"},
+		{"dns:///peer:1"},
+		{"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"},
+	} {
 		cfg.Routing.Services[0].Remote.Endpoints = endpoints
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("invalid endpoint list accepted", endpoints)

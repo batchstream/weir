@@ -54,6 +54,7 @@ func ParseResource(raw string) (string, []string, error) {
 	}
 	return pieces[0], segments, nil
 }
+
 func EncodeSegment(s string) string {
 	const hex = "0123456789ABCDEF"
 	var b strings.Builder
@@ -69,6 +70,7 @@ func EncodeSegment(s string) string {
 	}
 	return b.String()
 }
+
 func Fail(code pb.FailureCode, message string) *pb.Failure {
 	if len(message) > 1024 {
 		message = message[:1024]
@@ -76,32 +78,38 @@ func Fail(code pb.FailureCode, message string) *pb.Failure {
 	f := &pb.Failure{Code: code, Message: message}
 	return f
 }
+
 func ContextFailure(ctx context.Context) *pb.Failure {
 	if ctx.Err() == context.DeadlineExceeded {
 		return Fail(pb.FailureCode_DEADLINE_EXCEEDED, "deadline exceeded")
 	}
 	return Fail(pb.FailureCode_CANCELLED, "cancelled")
 }
+
 func Mutation(outcome pb.MutationOutcome, failure *pb.Failure) *pb.MutationResult {
 	r := &pb.MutationResult{Outcome: outcome, Failure: failure}
 	return r
 }
+
 func ReadFailure(f *pb.Failure) *pb.ReadResult {
 	v := &pb.ReadResult_Failure{Failure: f}
 	r := &pb.ReadResult{Result: v}
 	return r
 }
+
 func ReadDocument(d *pb.Document) *pb.ReadResult {
 	v := &pb.ReadResult_Document{Document: d}
 	r := &pb.ReadResult{Result: v}
 	return r
 }
+
 func Missing() *pb.ReadResult {
 	e := &pb.Empty{}
 	v := &pb.ReadResult_Missing{Missing: e}
 	r := &pb.ReadResult{Result: v}
 	return r
 }
+
 func ResultError(op *pb.BulkOperation, outcome pb.MutationOutcome, f *pb.Failure) *pb.BulkResult {
 	r := &pb.BulkResult{Index: op.GetIndex()}
 	if op.GetRead() != nil {
@@ -111,6 +119,7 @@ func ResultError(op *pb.BulkOperation, outcome pb.MutationOutcome, f *pb.Failure
 	}
 	return r
 }
+
 func Validate(op *pb.BulkOperation, store string) *pb.Failure {
 	if op == nil || proto.Size(op) > MaxFrame {
 		return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing or oversized operation")
@@ -151,7 +160,13 @@ func Validate(op *pb.BulkOperation, store string) *pb.Failure {
 			switch transform := a.AtomicTransform.Form.(type) {
 			case *pb.Transform_Program:
 				program := transform.Program
-				if program == nil || program.Runtime == "" || len(program.Source) == 0 || len(program.Source) > MaxExpression || !utf8.Valid(program.Source) || strings.IndexByte(string(program.Source), 0) >= 0 || strings.HasPrefix(string(program.Source), "\x1bLua") {
+				if program == nil ||
+					program.Runtime == "" ||
+					len(program.Source) == 0 ||
+					len(program.Source) > MaxExpression ||
+					!utf8.Valid(program.Source) ||
+					strings.IndexByte(string(program.Source), 0) >= 0 ||
+					strings.HasPrefix(string(program.Source), "\x1bLua") {
 					return Fail(pb.FailureCode_INVALID_ARGUMENT, "missing or oversized program transform")
 				}
 				if program.Runtime != "lua.v1" {
@@ -185,7 +200,9 @@ func Validate(op *pb.BulkOperation, store string) *pb.Failure {
 	}
 	return nil
 }
+
 func validMedia(s string) bool { return len(s) <= 127 && mediaPattern.MatchString(s) }
+
 func Resource(op *pb.BulkOperation) string {
 	if r := op.GetRead(); r != nil {
 		return r.Resource

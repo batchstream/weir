@@ -11,7 +11,14 @@ import (
 )
 
 func TestDurationJSON(t *testing.T) {
-	for _, duration := range []time.Duration{0, time.Nanosecond, 1500 * time.Millisecond, 30 * time.Second, 5 * time.Minute, time.Duration(1<<63 - 1)} {
+	for _, duration := range []time.Duration{
+		0,
+		time.Nanosecond,
+		1500 * time.Millisecond,
+		30 * time.Second,
+		5 * time.Minute,
+		time.Duration(1<<63 - 1),
+	} {
 		value := Duration(duration)
 		raw, err := json.Marshal(value)
 		if err != nil {
@@ -25,7 +32,17 @@ func TestDurationJSON(t *testing.T) {
 			t.Fatal("duration is not readable", string(raw))
 		}
 	}
-	for _, input := range []string{"30000", "null", "true", `""`, `"30"`, `"30sec"`, `"1ms-secret-sentinel"`, `"9223372036854775808ns"`, `"999999999999999999999h"`} {
+	for _, input := range []string{
+		"30000",
+		"null",
+		"true",
+		`""`,
+		`"30"`,
+		`"30sec"`,
+		`"1ms-secret-sentinel"`,
+		`"9223372036854775808ns"`,
+		`"999999999999999999999h"`,
+	} {
 		value := Duration(time.Second)
 		err := json.Unmarshal([]byte(input), &value)
 		if err == nil || strings.Contains(err.Error(), "sentinel") || value != Duration(time.Second) {
@@ -59,7 +76,25 @@ func TestByteSizeJSON(t *testing.T) {
 			t.Fatal("byte size did not choose the largest integral unit", tc.input, string(raw), err)
 		}
 	}
-	for _, input := range []string{"512", "null", "true", `""`, `"512"`, `"-1B"`, `"+1B"`, `"1.5GiB"`, `"1GB"`, `"1MiB "`, `" 1MiB"`, `"1mib"`, `"memory-secret-sentinel"`, `"18446744073709551616B"`, `"18014398509481984KiB"`, `"17592186044416MiB"`, `"17179869184GiB"`} {
+	for _, input := range []string{
+		"512",
+		"null",
+		"true",
+		`""`,
+		`"512"`,
+		`"-1B"`,
+		`"+1B"`,
+		`"1.5GiB"`,
+		`"1GB"`,
+		`"1MiB "`,
+		`" 1MiB"`,
+		`"1mib"`,
+		`"memory-secret-sentinel"`,
+		`"18446744073709551616B"`,
+		`"18014398509481984KiB"`,
+		`"17592186044416MiB"`,
+		`"17179869184GiB"`,
+	} {
 		value := ByteSize(512 << 20)
 		err := json.Unmarshal([]byte(input), &value)
 		if err == nil || strings.Contains(err.Error(), "sentinel") || value != 512<<20 {

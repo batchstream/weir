@@ -37,7 +37,10 @@ func TestProxyRetainsUpstreamAfterDownstreamClose(t *testing.T) {
 			})
 		}
 	})
-	t.Cleanup(func() { _ = listener.Close(); workers.Wait() })
+	t.Cleanup(func() {
+		_ = listener.Close()
+		workers.Wait()
+	})
 	opts := proxyOptions{uri: "mongodb://" + listener.Addr().String()}
 	p := startProxy(t, opts)
 	gate, received, replied := make(chan struct{}), make(chan struct{}), make(chan struct{})

@@ -36,6 +36,7 @@ func Open(t *testing.T) *Pressure {
 	t.Logf("owned pressure PID=%d baseline=%d budget=%d extra allocation ceiling=256MiB", os.Getpid(), base, Budget)
 	return pressure
 }
+
 func (p *Pressure) Set(t *testing.T, percent uint64) {
 	t.Helper()
 	target := uint64(Budget) * percent / 100
@@ -65,6 +66,7 @@ func (p *Pressure) Set(t *testing.T, percent uint64) {
 	}
 	t.Logf("mmap target=%d%% allocated=%d bytes", percent, len(p.pages)*(1<<20))
 }
+
 func Oracle(t *testing.T) uint64 {
 	t.Helper()
 	helper := os.Getenv("WEIR_M19_ORACLE")
@@ -85,6 +87,7 @@ func Oracle(t *testing.T) uint64 {
 	}
 	return footprint
 }
+
 func Difference(a, b uint64) uint64 {
 	if a > b {
 		return a - b

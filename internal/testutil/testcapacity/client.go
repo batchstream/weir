@@ -32,12 +32,32 @@ func newClient(backend, target string, pool int) (*Client, error) {
 		return nil, errors.New("HTTP connection pool bound")
 	}
 	dialer := &net.Dialer{Timeout: time.Second, KeepAlive: 30 * time.Second}
-	transport := &http.Transport{Proxy: nil, DialContext: dialer.DialContext, DisableCompression: true, MaxConnsPerHost: pool, MaxIdleConns: pool, MaxIdleConnsPerHost: pool, IdleConnTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Second, MaxResponseHeaderBytes: 16384}
-	hc := &http.Client{Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirect refused") }}
+	transport := &http.Transport{
+		Proxy:                  nil,
+		DialContext:            dialer.DialContext,
+		DisableCompression:     true,
+		MaxConnsPerHost:        pool,
+		MaxIdleConns:           pool,
+		MaxIdleConnsPerHost:    pool,
+		IdleConnTimeout:        10 * time.Second,
+		ResponseHeaderTimeout:  10 * time.Second,
+		MaxResponseHeaderBytes: 16384,
+	}
+	hc := &http.Client{
+		Transport:     transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirect refused") },
+	}
 	c := &Client{HTTP: hc, Transport: transport, Backend: backend}
 	if target != "" {
 		for i := 0; i < 4; i++ {
-			conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(16384), grpc.MaxCallSendMsgSize(16384)))
+			conn, err := grpc.NewClient(
+				target,
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithNoProxy(),
+				grpc.WithDisableRetry(),
+				grpc.WithDisableServiceConfig(),
+				grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(16384), grpc.MaxCallSendMsgSize(16384)),
+			)
 			if err != nil {
 				c.Close()
 				return nil, err
@@ -48,12 +68,14 @@ func newClient(backend, target string, pool int) (*Client, error) {
 	}
 	return c, nil
 }
+
 func (c *Client) Close() {
 	for _, conn := range c.Connections {
 		conn.Close()
 	}
 	c.Transport.CloseIdleConnections()
 }
+
 func (c *Client) request(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.Backend+path, bytes.NewReader(body))
 	if err != nil {
@@ -77,6 +99,7 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 	}
 	return reply.StatusCode, raw, err
 }
+
 func failure(class string, write bool) Result {
 	r := Result{Class: class}
 	if write {
@@ -84,6 +107,7 @@ func failure(class string, write bool) Result {
 	}
 	return r
 }
+
 func (c *Client) Call(ctx context.Context, op Operation) Result {
 	if op.Write {
 		c.MutationsStarted.Add(1)
@@ -173,6 +197,7 @@ func (c *Client) direct(ctx context.Context, op Operation) Result {
 	}
 	return parseBulk(code, raw, op.ID)
 }
+
 func parseBulk(code int, raw []byte, id string) Result {
 	if code == 429 || code == 503 {
 		var envelope struct {
@@ -201,7 +226,13 @@ func parseBulk(code int, raw []byte, id string) Result {
 			Error   json.RawMessage                         `json:"error"`
 		} `json:"items"`
 	}
-	if code != 200 || json.Unmarshal(raw, &response) != nil || response.Errors == nil || response.Took == nil || *response.Took < 0 || len(response.Items) != 1 || len(response.Items[0]) != 1 {
+	if code != 200 ||
+		json.Unmarshal(raw, &response) != nil ||
+		response.Errors == nil ||
+		response.Took == nil ||
+		*response.Took < 0 ||
+		len(response.Items) != 1 ||
+		len(response.Items[0]) != 1 {
 		return failure("invalid_bulk", true)
 	}
 	item, ok := response.Items[0]["index"]
@@ -218,7 +249,15 @@ func parseBulk(code int, raw []byte, id string) Result {
 		}
 		return failure("backend_rejection_unknown", true)
 	}
-	if item.Status != 201 || item.Result != "created" || item.Version != 1 || item.Seq == nil || *item.Seq < 0 || item.Term < 1 || item.Shards.Total != 1 || item.Shards.Successful != 1 || item.Shards.Failed != 0 {
+	if item.Status != 201 ||
+		item.Result != "created" ||
+		item.Version != 1 ||
+		item.Seq == nil ||
+		*item.Seq < 0 ||
+		item.Term < 1 ||
+		item.Shards.Total != 1 ||
+		item.Shards.Successful != 1 ||
+		item.Shards.Failed != 0 {
 		return failure("invalid_ack", true)
 	}
 	r := Result{Class: "ok", Outcome: applied}

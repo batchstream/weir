@@ -45,7 +45,14 @@ type startupBackend struct {
 
 func newStartupBackend(t *testing.T, hold string) *startupBackend {
 	t.Helper()
-	b := &startupBackend{hold: hold, entered: make(chan struct{}, 1), canceled: make(chan struct{}, 1), release: make(chan struct{}), changed: make(chan struct{})}
+
+	b := &startupBackend{
+		hold:     hold,
+		entered:  make(chan struct{}, 1),
+		canceled: make(chan struct{}, 1),
+		release:  make(chan struct{}),
+		changed:  make(chan struct{}),
+	}
 	handler := http.HandlerFunc(b.handle)
 	b.server = httptest.NewUnstartedServer(handler)
 	b.server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
@@ -61,7 +68,10 @@ func newStartupBackend(t *testing.T, hold string) *startupBackend {
 		b.changed = make(chan struct{})
 	}
 	b.server.Start()
-	t.Cleanup(func() { close(b.release); b.server.Close() })
+	t.Cleanup(func() {
+		close(b.release)
+		b.server.Close()
+	})
 	return b
 }
 
@@ -70,6 +80,7 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	b.requests = append(b.requests, r.Method+" "+r.URL.Path)
 	b.mu.Unlock()
+
 	if r.URL.Path == b.hold {
 		select {
 		case b.entered <- struct{}{}:
@@ -87,6 +98,7 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	switch r.URL.Path {
 	case "/":
@@ -101,12 +113,21 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *startupBackend) config() app.Config {
-	backend := &app.Search{URL: b.server.URL, Index: "records", Profile: search.ElasticsearchProfile}
-	local := &app.Local{Search: backend, MaxConcurrency: 1, MaxBatchOperations: 1}
+	backend := &app.Search{
+		URL:     b.server.URL,
+		Index:   "records",
+		Profile: search.ElasticsearchProfile,
+	}
+	local := &app.Local{
+		Search:             backend,
+		MaxConcurrency:     1,
+		MaxBatchOperations: 1,
+	}
 	service := app.Service{Name: "local", Local: local}
 	route := app.Route{Store: "records", Service: "local"}
 	cfg := app.DefaultConfig()
-	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address =
+		"127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
 	cfg.Routing.Services, cfg.Routing.Routes = []app.Service{service}, []app.Route{route}
 	return cfg
 }
@@ -115,6 +136,7 @@ func (b *startupBackend) idle(t *testing.T) {
 	t.Helper()
 	deadline := time.NewTimer(2 * time.Second)
 	defer deadline.Stop()
+
 	for {
 		b.mu.Lock()
 		count, peak, changed := b.connections, b.peak, b.changed
@@ -154,6 +176,7 @@ type processOutput struct {
 func (o *processOutput) Write(p []byte) (int, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+
 	if o.data.Len()+len(p) > 64<<10 {
 		return 0, errors.New("child output limit")
 	}
@@ -209,6 +232,7 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(config), cfg.Basic.Routing.File), routing, 0600); err != nil {
 		t.Fatal(err)
 	}
+
 	binary := os.Getenv("WEIR_CLI_BINARY")
 	args := []string{"serve", "--config", config}
 	if binary == "" || mode != "cli" {
@@ -218,8 +242,10 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		}
 		args = []string{"-test.run=^TestCLIProcessChild$"}
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	t.Cleanup(cancel)
+
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "WEIR_PROCESS_CHILD="+mode, "WEIR_PROCESS_CONFIG="+config)
@@ -228,14 +254,27 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = input.Close() })
+
 	stdout := &processOutput{lines: make(chan string, 16)}
 	stderr := &processOutput{lines: make(chan string, 16)}
-	p := &cliProcess{cmd: cmd, stdout: stdout, stderr: stderr, done: make(chan struct{}), started: time.Now(), input: input}
+	p := &cliProcess{
+		cmd:     cmd,
+		stdout:  stdout,
+		stderr:  stderr,
+		done:    make(chan struct{}),
+		started: time.Now(),
+		input:   input,
+	}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	go func() { p.waitErr = cmd.Wait(); close(p.done) }()
+
+	go func() {
+		p.waitErr = cmd.Wait()
+		close(p.done)
+	}()
+
 	t.Cleanup(func() {
 		select {
 		case <-p.done:
@@ -249,7 +288,20 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		if !p.sent.IsZero() {
 			afterSignal = time.Since(p.sent)
 		}
-		t.Logf("child PID=%d binary=%q mode=%s trigger=%q SIGTERM=%v exit=%d waited=true elapsed=%s after_signal=%s stdout=%q stderr=%q wait=%v", cmd.Process.Pid, binary, mode, p.trigger, !p.sent.IsZero(), cmd.ProcessState.ExitCode(), time.Since(p.started), afterSignal, stdout.text(), stderr.text(), p.waitErr)
+		t.Logf(
+			"child PID=%d binary=%q mode=%s trigger=%q SIGTERM=%v exit=%d waited=true elapsed=%s after_signal=%s stdout=%q stderr=%q wait=%v",
+			cmd.Process.Pid,
+			binary,
+			mode,
+			p.trigger,
+			!p.sent.IsZero(),
+			cmd.ProcessState.ExitCode(),
+			time.Since(p.started),
+			afterSignal,
+			stdout.text(),
+			stderr.text(),
+			p.waitErr,
+		)
 	})
 	return p
 }
@@ -326,7 +378,11 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 				cfg.Routing.Services = append([]app.Service{service}, cfg.Routing.Services...)
 				remoteRoute := app.Route{Store: "remote", Service: "remote"}
 				cfg.Routing.Routes = append(cfg.Routing.Routes, remoteRoute)
-				backend := &app.Search{URL: b.server.URL, Index: "blocked", Profile: search.ElasticsearchProfile}
+				backend := &app.Search{
+					URL:     b.server.URL,
+					Index:   "blocked",
+					Profile: search.ElasticsearchProfile,
+				}
 				local := &app.Local{Search: backend, MaxConcurrency: 1}
 				second := app.Service{Name: "second", Local: local}
 				route := app.Route{Store: "second", Service: "second"}
@@ -341,7 +397,10 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 			if partial {
 				expected = "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable\n"
 			}
-			if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), expected) || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stderr.text(), b.server.URL) {
+			if p.stdout.text() != "" ||
+				!strings.HasSuffix(p.stderr.text(), expected) ||
+				strings.Contains(p.stderr.text(), "sentinel") ||
+				strings.Contains(p.stderr.text(), b.server.URL) {
 				t.Fatal("canceled startup announced ready or lost safe error", p.stdout.text(), p.stderr.text())
 			}
 			b.idle(t)
@@ -413,10 +472,13 @@ func beforeStartChild(config string) error {
 	if err != nil {
 		return err
 	}
+
 	signals, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
+
 	startup, cancel := context.WithTimeout(signals, 5*time.Second)
 	defer cancel()
+
 	node, err := app.Open(startup, cfg)
 	if err != nil {
 		return err
@@ -436,7 +498,10 @@ func TestCLIStartupFailure(t *testing.T) {
 	cfg.Routing.Services[0].Local.Search.Index = "missing"
 	p := startCLI(t, cfg, "cli")
 	p.wait(t, 1)
-	if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search index qualification failed: index qualification response unavailable\n") || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stderr.text(), b.server.URL) {
+	if p.stdout.text() != "" ||
+		!strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search index qualification failed: index qualification response unavailable\n") ||
+		strings.Contains(p.stderr.text(), "sentinel") ||
+		strings.Contains(p.stderr.text(), b.server.URL) {
 		t.Fatal("startup error leaked or announced readiness", p.stdout.text(), p.stderr.text())
 	}
 	b.idle(t)
@@ -464,7 +529,9 @@ func TestCLISignalWithOutputFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.wait(t, 1)
-	if !strings.HasSuffix(p.stderr.text(), "listener output failed\n") || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stdout.text(), "Diagnostics listening") {
+	if !strings.HasSuffix(p.stderr.text(), "listener output failed\n") ||
+		strings.Contains(p.stderr.text(), "sentinel") ||
+		strings.Contains(p.stdout.text(), "Diagnostics listening") {
 		t.Fatal("signal swallowed independent output error or writer bypassed", p.stdout.text(), p.stderr.text())
 	}
 	closedAddresses(t, listenerAddresses(t, line))
@@ -476,13 +543,20 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 	p := startCLI(t, b.config(), "cli")
 	addresses := listenerAddresses(t, p.line(t))
 	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
-	conn, err := grpc.NewClient("passthrough:///"+addresses[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
+	conn, err := grpc.NewClient(
+		"passthrough:///"+addresses[0],
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
+
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
 	stream, err := conn.NewStream(ctx, desc, pb.Weir_Read_FullMethodName)
 	if err != nil {
@@ -511,7 +585,11 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 func TestStartupCancellationReleasesOwners(t *testing.T) {
 	b := newStartupBackend(t, "/blocked")
 	cfg := b.config()
-	backend := &app.Search{URL: b.server.URL, Index: "blocked", Profile: search.ElasticsearchProfile}
+	backend := &app.Search{
+		URL:     b.server.URL,
+		Index:   "blocked",
+		Profile: search.ElasticsearchProfile,
+	}
 	local := &app.Local{Search: backend, MaxConcurrency: 1}
 	service := app.Service{Name: "second", Local: local}
 	route := app.Route{Store: "second", Service: "second"}
@@ -521,7 +599,11 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	done := make(chan struct{})
 	var node *app.Node
 	var err error
-	go func() { node, err = app.Open(ctx, cfg); close(done) }()
+	go func() {
+		node, err = app.Open(ctx, cfg)
+		close(done)
+	}()
+
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -537,7 +619,10 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	started := time.Now()
 	cancel()
 	event(t, done)
-	if node != nil || err == nil || err.Error() != "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable" || time.Since(started) > 2*time.Second {
+	if node != nil ||
+		err == nil ||
+		err.Error() != "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable" ||
+		time.Since(started) > 2*time.Second {
 		t.Fatal("partial Open cancellation", node, err, time.Since(started))
 	}
 	event(t, b.canceled)
@@ -555,11 +640,17 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	if err := runProbe(ctx, "ready", diagnostic); err != nil {
 		t.Fatal(err)
 	}
-	conn, err := grpc.NewClient("passthrough:///"+addresses[0], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
+	conn, err := grpc.NewClient(
+		"passthrough:///"+addresses[0],
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+
 	client := pb.NewWeirClient(conn)
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 	put := &pb.MutateRequest_Put{Put: document}
@@ -567,7 +658,11 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	done := make(chan struct{})
 	var result *pb.MutationResult
 	var callErr error
-	go func() { result, callErr = client.Mutate(ctx, request); close(done) }()
+	go func() {
+		result, callErr = client.Mutate(ctx, request)
+		close(done)
+	}()
+
 	event(t, b.entered)
 	p.terminate(t, "backend received full mutation; reply withheld")
 	// Observe state transitions through real HTTP, never sleep to assume a state.

@@ -41,7 +41,11 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Routing.Services) != 1 || cfg.Routing.Services[0].Local == nil || cfg.Routing.Services[0].Local.Search == nil || len(cfg.Routing.Routes) != 1 || cfg.Routing.Routes[0].Store != "records" {
+	if len(cfg.Routing.Services) != 1 ||
+		cfg.Routing.Services[0].Local == nil ||
+		cfg.Routing.Services[0].Local.Search == nil ||
+		len(cfg.Routing.Routes) != 1 ||
+		cfg.Routing.Routes[0].Store != "records" {
 		return errors.New("control server requires one owned search Store")
 	}
 	local := cfg.Routing.Services[0].Local
@@ -53,7 +57,14 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 		limits.BatchOperations = local.MaxBatchOperations
 	}
 	backend := local.Search
-	options := search.Config{Store: "records", URL: backend.URL, Index: backend.Index, Profile: backend.Profile, Pool: limits.Concurrency, Connection: backend.Connection}
+	options := search.Config{
+		Store:      "records",
+		URL:        backend.URL,
+		Index:      backend.Index,
+		Profile:    backend.Profile,
+		Pool:       limits.Concurrency,
+		Connection: backend.Connection,
+	}
 	a, err := search.Open(ctx, options)
 	if err != nil {
 		return err
@@ -61,7 +72,10 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 	registry := prometheus.NewRegistry()
 	var adapter execution.Adapter = a
 	if suppress {
-		metric := prometheus.CounterOpts{Name: "weir_test_suppressed_congestion_total", Help: "Explicit real database congestion samples suppressed by the experimental control."}
+		metric := prometheus.CounterOpts{
+			Name: "weir_test_suppressed_congestion_total",
+			Help: "Explicit real database congestion samples suppressed by the experimental control.",
+		}
 		counter := prometheus.NewCounter(metric)
 		registry.MustRegister(counter)
 		control := &feedbackControl{Adapter: a, suppressed: counter}

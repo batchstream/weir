@@ -120,14 +120,33 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.Mutation
 		}
 		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), signal
 	}
-	if opts.status != 200 && opts.status != 201 || reply.Index != a.config.Index || reply.ID != opts.id || reply.Result != opts.expectedResult || reply.Version == nil || *reply.Version < 1 || reply.Seq == nil || *reply.Seq < 0 || reply.Term == nil || *reply.Term < 1 || reply.Shards == nil {
+	if opts.status != 200 && opts.status != 201 ||
+		reply.Index != a.config.Index ||
+		reply.ID != opts.id ||
+		reply.Result != opts.expectedResult ||
+		reply.Version == nil ||
+		*reply.Version < 1 ||
+		reply.Seq == nil ||
+		*reply.Seq < 0 ||
+		reply.Term == nil ||
+		*reply.Term < 1 ||
+		reply.Shards == nil {
 		return unknown, execution.Neutral
 	}
 	shards := reply.Shards
-	if shards.Total == nil || shards.Successful == nil || shards.Failed == nil || *shards.Total < 0 || *shards.Successful < 0 || *shards.Failed < 0 || *shards.Successful > *shards.Total || *shards.Failed > *shards.Total-*shards.Successful {
+	if shards.Total == nil ||
+		shards.Successful == nil ||
+		shards.Failed == nil ||
+		*shards.Total < 0 ||
+		*shards.Successful < 0 ||
+		*shards.Failed < 0 ||
+		*shards.Successful > *shards.Total ||
+		*shards.Failed > *shards.Total-*shards.Successful {
 		return unknown, execution.Neutral
 	}
-	if opts.expectedResult == "created" && opts.status != 201 || opts.expectedResult == "updated" && opts.status != 200 || opts.expectedResult == "deleted" && opts.status != 200 {
+	if opts.expectedResult == "created" && opts.status != 201 ||
+		opts.expectedResult == "updated" && opts.status != 200 ||
+		opts.expectedResult == "deleted" && opts.status != 200 {
 		return unknown, execution.Neutral
 	}
 	if *shards.Failed > 0 {

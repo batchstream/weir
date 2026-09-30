@@ -76,7 +76,12 @@ func (c *observationControl) finish(encoder *json.Encoder, sampler *Sampler, sec
 	}
 	// This deadline includes the terminal write, inside the existing close window.
 	deadline := time.Now().Add(4 * time.Second)
-	receipt := map[string]any{"type": "observer_end", "samples": sampler.Sequence, "role": sampler.Role, "ended_at": time.Now().UTC()}
+	receipt := map[string]any{
+		"type":     "observer_end",
+		"samples":  sampler.Sequence,
+		"role":     sampler.Role,
+		"ended_at": time.Now().UTC(),
+	}
 	if err := encoder.Encode(receipt); err != nil {
 		return err
 	}

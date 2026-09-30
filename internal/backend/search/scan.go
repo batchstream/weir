@@ -15,6 +15,7 @@ import (
 
 const scanPageBudget = 16 << 20
 const pitKeepAlive = "60s"
+
 const maxPITBytes = 16 << 10
 
 type scanPlan struct {
@@ -55,7 +56,14 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 			native.query = value
 		}
 	}
-	p := &execution.Plan{Scan: true, Key: req.Resource, Bytes: proto.Size(req) + protocol.EntryOverhead + 4096, ResultBytes: protocol.MaxDocument + protocol.ResultOverhead, PageBytes: scanPageBudget, Backend: native}
+	p := &execution.Plan{
+		Scan:        true,
+		Key:         req.Resource,
+		Bytes:       proto.Size(req) + protocol.EntryOverhead + 4096,
+		ResultBytes: protocol.MaxDocument + protocol.ResultOverhead,
+		PageBytes:   scanPageBudget,
+		Backend:     native,
+	}
 	return p, nil
 }
 
@@ -76,7 +84,11 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			page.Failure = protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan requires stored full source")
 			return page, execution.Neutral
 		}
-		call := exchange{path: "/" + a.config.Index + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false", body: []byte("{}"), limit: metadataLimit}
+		call := exchange{
+			path:  "/" + a.config.Index + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
+			body:  []byte("{}"),
+			limit: metadataLimit,
+		}
 		if a.config.Profile == OpenSearchProfile {
 			call.path = "/" + a.config.Index + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
 		}
@@ -104,7 +116,15 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		sort = "_doc"
 	} // Unique in the qualified single-shard PIT reader.
 	pit := map[string]any{"id": n.pit, "keep_alive": pitKeepAlive}
-	body := map[string]any{"pit": pit, "query": n.query, "size": n.items, "sort": []string{sort}, "track_total_hits": false, "timeout": "1s", "_source": true}
+	body := map[string]any{
+		"pit":              pit,
+		"query":            n.query,
+		"size":             n.items,
+		"sort":             []string{sort},
+		"track_total_hits": false,
+		"timeout":          "1s",
+		"_source":          true,
+	}
 	if n.hasAfter {
 		body["search_after"] = []int64{n.after}
 	}
@@ -217,7 +237,11 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 	}
 	var timedOut *bool
 	var took *int64
-	if json.Unmarshal(fields["timed_out"], &timedOut) != nil || timedOut == nil || json.Unmarshal(fields["took"], &took) != nil || took == nil || *took < 0 {
+	if json.Unmarshal(fields["timed_out"], &timedOut) != nil ||
+		timedOut == nil ||
+		json.Unmarshal(fields["took"], &took) != nil ||
+		took == nil ||
+		*took < 0 {
 		return page
 	}
 	if *timedOut {
@@ -264,7 +288,13 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			Score  json.RawMessage   `json:"_score"`
 			Sort   []json.RawMessage `json:"sort"`
 		}
-		if json.Unmarshal(row, &hit) != nil || hit.Index != a.config.Index || hit.ID == "" || len(hit.ID) > 512 || !object(hit.Source) || !scanScore(hit.Score) || len(hit.Sort) != 1 {
+		if json.Unmarshal(row, &hit) != nil ||
+			hit.Index != a.config.Index ||
+			hit.ID == "" ||
+			len(hit.ID) > 512 ||
+			!object(hit.Source) ||
+			!scanScore(hit.Score) ||
+			len(hit.Sort) != 1 {
 			return page
 		}
 		position, err := strconv.ParseInt(string(hit.Sort[0]), 10, 64)
@@ -301,7 +331,10 @@ func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 		return nil
 	}
 	n.closed = true
-	defer func() { n.pit = ""; n.query = nil }()
+	defer func() {
+		n.pit = ""
+		n.query = nil
+	}()
 	if n.pit == "" {
 		if n.opened {
 			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "PIT allocation reply lost; remote cleanup unconfirmed")

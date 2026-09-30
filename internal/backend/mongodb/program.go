@@ -21,6 +21,7 @@ import (
 
 const programAttempts = 5
 const programLifetime = 5 * time.Second
+
 const programCleanup = 200 * time.Millisecond
 
 func (a *Adapter) executeProgram(parent context.Context, work *execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
@@ -39,7 +40,10 @@ func (a *Adapter) executeProgram(parent context.Context, work *execution.Plan) (
 	}
 	native := work.Backend.(*plan)
 	result, signal := a.runProgram(parent, native)
-	if work.Context != nil && work.Context.Err() != nil && result.Failure != nil && (result.Failure.Code == pb.FailureCode_CANCELLED || result.Failure.Code == pb.FailureCode_DEADLINE_EXCEEDED) {
+	if work.Context != nil &&
+		work.Context.Err() != nil &&
+		result.Failure != nil &&
+		(result.Failure.Code == pb.FailureCode_CANCELLED || result.Failure.Code == pb.FailureCode_DEADLINE_EXCEEDED) {
 		result.Failure = protocol.ContextFailure(work.Context)
 	}
 	variant := &pb.BulkResult_Mutation{Mutation: result}

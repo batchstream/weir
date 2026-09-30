@@ -25,12 +25,14 @@ func main() {
 		panic(err)
 	}
 }
+
 func run() error {
 	address := flag.String("address", "127.0.0.1:7447", "loopback Weir listener")
 	store := flag.String("store", "mongo", "mongo or search")
 	database := flag.String("database", "weir_m1", "configured Mongo database")
 	index := flag.String("index", "weir_m2_example", "configured Search index")
 	flag.Parse()
+
 	open := &pb.NativeOpen{}
 	var body []byte
 	switch *store {
@@ -55,11 +57,18 @@ func run() error {
 	default:
 		return fmt.Errorf("unsupported store")
 	}
-	conn, err := grpc.NewClient(*address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
+
+	conn, err := grpc.NewClient(
+		*address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDisableRetry(),
+		grpc.WithDisableServiceConfig(),
+	)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	stream, err := pb.NewWeirClient(conn).Native(ctx)
@@ -67,17 +76,25 @@ func run() error {
 		return err
 	}
 	sent := make(chan error, 1)
-	go func() { sent <- upload(stream, open, body) }()
+	go func() {
+		sent <- upload(stream, open, body)
+	}()
+
 	// On every exit, wake and join the sender, including an early backend reply.
-	defer func() { cancel(); <-sent }()
+	defer func() {
+		cancel()
+		<-sent
+	}()
+
 	var end *pb.NativeEnd
 	headSeen, bodySeen := false, false
 	total := 0
 	for {
 		frame, err := stream.Recv()
 		if err == io.EOF {
+			// Final gRPC OK is necessary, but not sufficient.
 			break
-		} // Final gRPC OK is necessary, but not sufficient.
+		}
 		if err != nil {
 			return fmt.Errorf("Native response incomplete; effects unknown: %w", err)
 		}
@@ -118,6 +135,7 @@ func run() error {
 	if end == nil {
 		return fmt.Errorf("missing Native End; effects unknown")
 	}
+
 	switch end.Completion {
 	case pb.NativeCompletion_RESPONSE_COMPLETE:
 		if end.Failure != nil || !headSeen {
@@ -134,12 +152,14 @@ func run() error {
 		return fmt.Errorf("unspecified Native completion")
 	}
 }
+
 func upload(stream grpc.BidiStreamingClient[pb.NativeRequestFrame, pb.NativeResponseFrame], open *pb.NativeOpen, body []byte) error {
 	variant := &pb.NativeRequestFrame_Open{Open: open}
 	frame := &pb.NativeRequestFrame{Frame: variant}
 	if err := stream.Send(frame); err != nil {
 		return err
 	}
+
 	for len(body) > 0 {
 		n := min(protocol.NativeChunk, len(body))
 		chunk := &pb.NativeRequestFrame_Chunk{Chunk: body[:n]}

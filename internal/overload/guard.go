@@ -20,6 +20,7 @@ type Guard struct {
 	state   Snapshot
 	profile memoryProfile
 }
+
 type Snapshot struct {
 	Budget, Bytes     uint64
 	Source            string
@@ -55,11 +56,13 @@ func New(targets []Target, budget uint64) *Guard {
 	guard.sample(guard.profile.observe())
 	return guard
 }
+
 func (g *Guard) Snapshot() Snapshot {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.state
 }
+
 func (g *Guard) Run(ctx context.Context) {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
@@ -72,6 +75,7 @@ func (g *Guard) Run(ctx context.Context) {
 		}
 	}
 }
+
 func (g *Guard) sample(o observation) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

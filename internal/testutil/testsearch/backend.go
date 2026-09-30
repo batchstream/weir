@@ -38,7 +38,11 @@ func Open(t *testing.T) *Backend {
 		t.Fatal("invalid search integration profile")
 	}
 	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 8, MaxIdleConnsPerHost: 8, DisableCompression: true}
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{
+		Transport:     transport,
+		Timeout:       5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	index := fmt.Sprintf("weir_m2_%d_%d", os.Getpid(), sequence.Add(1))
 	b := &Backend{URL: endpoint, Profile: profile, Index: index, Client: client}
 	status, raw := b.Do(t, "GET", "/", "")
@@ -89,6 +93,7 @@ func (b *Backend) Create(t *testing.T, index, body string) {
 		}
 	})
 }
+
 func (b *Backend) Do(t *testing.T, method, path, body string) (int, []byte) {
 	t.Helper()
 	request, err := http.NewRequest(method, b.URL+path, bytes.NewBufferString(body))

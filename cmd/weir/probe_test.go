@@ -16,6 +16,7 @@ func TestProbeCLI(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	t.Setenv("NO_PROXY", "")
+
 	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.Header.Get("Accept-Encoding") != "" {
 			t.Error("unexpected request")
@@ -30,6 +31,7 @@ func TestProbeCLI(t *testing.T) {
 		}
 	}))
 	defer listener.Close()
+
 	address := strings.TrimPrefix(listener.URL, "http://")
 	for _, mode := range []string{"live", "ready"} {
 		var output bytes.Buffer
@@ -40,6 +42,7 @@ func TestProbeCLI(t *testing.T) {
 			t.Fatal("healthy probe should be quiet")
 		}
 	}
+
 	cases := [][]string{
 		{"probe"}, {"probe", ""}, {"probe", "metrics"}, {"probe", "--address", address},
 		{"probe", "live", "extra"}, {"probe", "live", "--version"},
@@ -56,7 +59,18 @@ func TestProbeCLI(t *testing.T) {
 }
 
 func TestProbeRejectsTargets(t *testing.T) {
-	for _, address := range []string{"", "localhost:7449", "0.0.0.0:7449", "192.0.2.1:80", "[::]:80", "127.0.0.1:0", "127.0.0.1:65536", "[::1%lo0]:80", "http://127.0.0.1:80", "127.0.0.1:80/metrics"} {
+	for _, address := range []string{
+		"",
+		"localhost:7449",
+		"0.0.0.0:7449",
+		"192.0.2.1:80",
+		"[::]:80",
+		"127.0.0.1:0",
+		"127.0.0.1:65536",
+		"[::1%lo0]:80",
+		"http://127.0.0.1:80",
+		"127.0.0.1:80/metrics",
+	} {
 		if err := runProbe(context.Background(), "live", address); err == nil {
 			t.Fatal("accepted", address)
 		}
@@ -85,6 +99,7 @@ func TestProbeBoundedResponses(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer listener.Close()
+
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -100,6 +115,7 @@ func TestProbeBoundedResponses(t *testing.T) {
 				// Keep the peer open until the probe closes it, including timeout/error paths.
 				conn.Read(buf)
 			}()
+
 			started := time.Now()
 			err = runProbe(context.Background(), "live", listener.Addr().String())
 			if (err == nil) != test.healthy {
@@ -127,13 +143,21 @@ func TestProbeCancellationAndAbsentListener(t *testing.T) {
 	if err := runProbe(context.Background(), "live", address); err == nil {
 		t.Fatal("absent listener healthy")
 	}
+
 	arrived := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(arrived); <-r.Context().Done() }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(arrived)
+		<-r.Context().Done()
+	}))
 	defer server.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	done := make(chan error, 1)
-	go func() { done <- runProbe(ctx, "live", strings.TrimPrefix(server.URL, "http://")) }()
+	go func() {
+		done <- runProbe(ctx, "live", strings.TrimPrefix(server.URL, "http://"))
+	}()
 	<-arrived
 	cancel()
 	select {

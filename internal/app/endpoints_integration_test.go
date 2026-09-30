@@ -63,7 +63,14 @@ func endpointProcessConfig(t *testing.T) Config {
 
 func endpointProcessClient(t *testing.T, address string) pb.WeirClient {
 	t.Helper()
-	conn, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.WaitForReady(false)))
+	conn, err := grpc.NewClient(
+		"passthrough:///"+address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.WaitForReady(false)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +151,11 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Logf("three independent executors share one owned Mongo DB and Search index; stopped PID=%d, replacement PID=%d received new RPC", peers[0].command.Process.Pid, replacement.command.Process.Pid)
+	t.Logf(
+		"three independent executors share one owned Mongo DB and Search index; stopped PID=%d, replacement PID=%d received new RPC",
+		peers[0].command.Process.Pid,
+		replacement.command.Process.Pid,
+	)
 }
 
 // Only this test child accepts the injected standard resolver dependency. The
@@ -174,7 +185,12 @@ func TestEndpointDNSProcessChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := server.Config{Routes: map[string]server.Service{"mongo": service, "search": service}, Limits: limits, Admission: admission, InitialForwards: 4}
+	options := server.Config{
+		Routes:          map[string]server.Service{"mongo": service, "search": service},
+		Limits:          limits,
+		Admission:       admission,
+		InitialForwards: 4,
+	}
 	srv, err := server.New(options)
 	if err != nil {
 		t.Fatal(err)
@@ -247,5 +263,11 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	if testmetrics.Sum(testmetrics.Scrape(t, second.diagnostic), "weir_store_records_total") != 1 || dns.AAAA.Load() < 2 || dns.Other.Load() != 0 {
 		t.Fatal("replacement not proven via DNS/second executor")
 	}
-	t.Logf("actual loopback DNS A to AAAA, forwarding PID=%d, executor PIDs=%d/%d, distinct new Read probes=%d; no system DNS changes", front.command.Process.Pid, first.command.Process.Pid, second.command.Process.Pid, calls)
+	t.Logf(
+		"actual loopback DNS A to AAAA, forwarding PID=%d, executor PIDs=%d/%d, distinct new Read probes=%d; no system DNS changes",
+		front.command.Process.Pid,
+		first.command.Process.Pid,
+		second.command.Process.Pid,
+		calls,
+	)
 }

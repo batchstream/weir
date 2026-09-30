@@ -21,11 +21,32 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	l := Limits{PendingOperations: 256, PendingBytes: 8 << 20, ResultOperations: 128, ResultBytes: 16 << 20, Concurrency: 4, BatchOperations: 16, BatchBytes: 1 << 20, SessionOutstanding: 8, Collect: time.Millisecond, BackendTimeout: 2 * time.Second}
+	l := Limits{
+		PendingOperations:  256,
+		PendingBytes:       8 << 20,
+		ResultOperations:   128,
+		ResultBytes:        16 << 20,
+		Concurrency:        4,
+		BatchOperations:    16,
+		BatchBytes:         1 << 20,
+		SessionOutstanding: 8,
+		Collect:            time.Millisecond,
+		BackendTimeout:     2 * time.Second,
+	}
 	return l
 }
+
 func (l Limits) Validate() error {
-	if l.PendingOperations < 1 || l.PendingOperations > 4096 || l.PendingBytes < protocol.MaxFrame || l.ResultOperations < 1 || l.ResultOperations > 4096 || l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead || l.Concurrency < 1 || l.Concurrency > 32 || l.BatchOperations < 1 || l.BatchOperations > 128 || l.BatchBytes < protocol.MaxFrame || l.BatchBytes > 8<<20 || l.SessionOutstanding < 1 || l.SessionOutstanding > 32 || l.Collect < 0 || l.Collect > 10*time.Millisecond || l.BackendTimeout <= 0 || l.BackendTimeout > 10*time.Second {
+	if l.PendingOperations < 1 || l.PendingOperations > 4096 ||
+		l.PendingBytes < protocol.MaxFrame ||
+		l.ResultOperations < 1 || l.ResultOperations > 4096 ||
+		l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
+		l.Concurrency < 1 || l.Concurrency > 32 ||
+		l.BatchOperations < 1 || l.BatchOperations > 128 ||
+		l.BatchBytes < protocol.MaxFrame || l.BatchBytes > 8<<20 ||
+		l.SessionOutstanding < 1 || l.SessionOutstanding > 32 ||
+		l.Collect < 0 || l.Collect > 10*time.Millisecond ||
+		l.BackendTimeout <= 0 || l.BackendTimeout > 10*time.Second {
 		return fmt.Errorf("invalid runtime bounds")
 	}
 	return nil
@@ -53,6 +74,7 @@ type Runtime struct {
 	scan                         *Ticket
 	native                       *Ticket
 }
+
 type Session struct {
 	runtime     *Runtime
 	id          uint64
@@ -60,6 +82,7 @@ type Session struct {
 	outstanding int
 	closed      bool
 }
+
 type Ticket struct {
 	runtime          *Runtime
 	session          *Session
@@ -77,6 +100,7 @@ type Ticket struct {
 	scan             *scanState
 	nativeEnd        *pb.NativeEnd
 }
+
 type batch struct {
 	ctx             context.Context
 	items           []*Ticket
@@ -86,6 +110,7 @@ type batch struct {
 	backendDeadline time.Time
 	timeoutOwned    bool
 }
+
 type Snapshot struct {
 	Ready, ReadyBytes                                            int
 	Cooldown                                                     bool
@@ -109,12 +134,23 @@ func New(a execution.Adapter, limits Limits) (*Runtime, error) {
 	go r.loop()
 	return r, nil
 }
+
 func newRuntime(a execution.Adapter, l Limits) *Runtime {
-	r := &Runtime{adapter: a, limits: l, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[string]bool), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
+	r := &Runtime{
+		adapter: a,
+		limits:  l,
+		live:    make(map[*Ticket]struct{}),
+		batches: make(map[*batch]struct{}),
+		keys:    make(map[string]bool),
+		wake:    make(chan struct{}, 1),
+		changed: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
 	r.controller.window = 1
 	r.metrics = newRuntimeMetrics()
 	return r
 }
+
 func (r *Runtime) NewSession() *Session {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -122,6 +158,7 @@ func (r *Runtime) NewSession() *Session {
 	s := &Session{runtime: r, id: r.nextSession, Results: make(chan *Ticket, r.limits.SessionOutstanding)}
 	return s
 }
+
 func (r *Runtime) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	plan, failure := r.adapter.Prepare(op)
 	if failure != nil {
@@ -129,6 +166,7 @@ func (r *Runtime) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	}
 	return plan, failure
 }
+
 func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -161,14 +199,26 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 		r.metrics.rejections.WithLabelValues("budget").Inc()
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit singleton bound"), changed
 	}
-	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+p.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+p.ResultBytes > r.limits.ResultBytes || s != nil && s.outstanding >= r.limits.SessionOutstanding {
+	if len(r.queue) >= r.limits.PendingOperations ||
+		r.pendingBytes+p.Bytes > r.limits.PendingBytes ||
+		len(r.live) >= r.limits.ResultOperations ||
+		r.resultBytes+p.ResultBytes > r.limits.ResultBytes ||
+		s != nil && s.outstanding >= r.limits.SessionOutstanding {
 		if s == nil {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
 		}
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
-	t := &Ticket{runtime: r, session: s, ctx: ticketContext, cancel: cancel, plan: p, ready: make(chan struct{}), queuedAt: time.Now()}
+	t := &Ticket{
+		runtime:  r,
+		session:  s,
+		ctx:      ticketContext,
+		cancel:   cancel,
+		plan:     p,
+		ready:    make(chan struct{}),
+		queuedAt: time.Now(),
+	}
 	if p.Scan {
 		t.scan = &scanState{done: make(chan struct{})}
 		r.scan = t
@@ -188,13 +238,20 @@ func (r *Runtime) Submit(ctx context.Context, p *execution.Plan, s *Session) (*T
 	r.signal()
 	return t, nil, changed
 }
+
 func (r *Runtime) signal() {
 	select {
 	case r.wake <- struct{}{}:
 	default:
 	}
 }
-func (r *Runtime) notifyLocked() { close(r.changed); r.changed = make(chan struct{}); r.signal() }
+
+func (r *Runtime) notifyLocked() {
+	close(r.changed)
+	r.changed = make(chan struct{})
+	r.signal()
+}
+
 func (t *Ticket) Wait(ctx context.Context) (*pb.BulkResult, error) {
 	select {
 	case <-t.ready:
@@ -204,7 +261,12 @@ func (t *Ticket) Wait(ctx context.Context) (*pb.BulkResult, error) {
 		return nil, ctx.Err()
 	}
 }
-func (t *Ticket) Result() *pb.BulkResult { <-t.ready; return t.result }
+
+func (t *Ticket) Result() *pb.BulkResult {
+	<-t.ready
+	return t.result
+}
+
 func (t *Ticket) Ack() {
 	r := t.runtime
 	r.mu.Lock()
@@ -213,6 +275,7 @@ func (t *Ticket) Ack() {
 		r.releaseLocked(t)
 	}
 }
+
 func (t *Ticket) Abandon() {
 	r := t.runtime
 	r.mu.Lock()
@@ -224,6 +287,7 @@ func (t *Ticket) Abandon() {
 	}
 	r.signal()
 }
+
 func (s *Session) Close() {
 	r := s.runtime
 	r.mu.Lock()
@@ -240,6 +304,7 @@ func (s *Session) Close() {
 	}
 	r.signal()
 }
+
 func (r *Runtime) releaseLocked(t *Ticket) {
 	if t.acked {
 		return
@@ -258,6 +323,7 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	t.result = nil
 	r.notifyLocked()
 }
+
 func (r *Runtime) completeLocked(t *Ticket, result *pb.BulkResult) {
 	r.terminalLocked(t, result)
 	prior := t.state
@@ -277,6 +343,7 @@ func (r *Runtime) completeLocked(t *Ticket, result *pb.BulkResult) {
 	}
 	r.notifyLocked()
 }
+
 func (r *Runtime) loop() {
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
@@ -314,6 +381,7 @@ func (r *Runtime) loop() {
 		}
 	}
 }
+
 func (r *Runtime) cancelQueuedLocked() {
 	keep := r.queue[:0]
 	for _, t := range r.queue {
@@ -348,6 +416,7 @@ func (r *Runtime) cancelQueuedLocked() {
 	}
 	r.queue = keep
 }
+
 func (r *Runtime) selectLocked(now time.Time) *batch {
 	seen := make(map[string]bool)
 	record := make(map[string]bool)
@@ -421,7 +490,15 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	if r.scan != nil && r.scan.state != 0 {
 		queued--
 	}
-	b := &batch{ctx: ctx, items: items, cancel: cancel, epoch: r.controller.epoch, saturated: r.active+1 >= r.controller.window && queued > len(items), backendDeadline: backendDeadline, timeoutOwned: owned}
+	b := &batch{
+		ctx:             ctx,
+		items:           items,
+		cancel:          cancel,
+		epoch:           r.controller.epoch,
+		saturated:       r.active+1 >= r.controller.window && queued > len(items),
+		backendDeadline: backendDeadline,
+		timeoutOwned:    owned,
+	}
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
@@ -456,6 +533,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	// Context is held by the batch runner, never by an arbitrary participant.
 	return b
 }
+
 func (r *Runtime) execute(b *batch) {
 	if b.items[0].plan.Native {
 		r.executeNative(b)
@@ -490,10 +568,21 @@ func (r *Runtime) execute(b *batch) {
 	r.observeLocked(b, fb)
 	r.notifyLocked()
 }
+
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, Window: r.controller.window, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
+	s := Snapshot{
+		Pending:      len(r.queue),
+		PendingBytes: r.pendingBytes,
+		Active:       r.active,
+		Retained:     len(r.live),
+		ResultBytes:  r.resultBytes,
+		Window:       r.controller.window,
+		Draining:     r.draining,
+		Closed:       r.closed,
+		Overloaded:   r.overloaded,
+	}
 	s.Cooldown = time.Now().Before(r.controller.cooldown)
 	s.Feedback = "unobserved"
 	if r.metrics.observed {
@@ -529,6 +618,7 @@ func (r *Runtime) Snapshot() Snapshot {
 	}
 	return s
 }
+
 func (r *Runtime) SetOverloaded(v bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -537,7 +627,13 @@ func (r *Runtime) SetOverloaded(v bool) {
 		r.notifyLocked()
 	}
 }
-func (r *Runtime) BeginDrain() { r.mu.Lock(); defer r.mu.Unlock(); r.draining = true; r.notifyLocked() }
+
+func (r *Runtime) BeginDrain() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.draining = true
+	r.notifyLocked()
+}
 
 // Close drains admitted work, then cancels execution. Adapter cleanup has its own
 // fixed two-second cap and runs exactly once, even with concurrent callers.
@@ -598,6 +694,7 @@ func (c *controller) observe(b *batch, fb execution.Feedback, max int, now time.
 		c.lastGrowth = now
 	}
 }
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a

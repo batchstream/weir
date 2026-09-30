@@ -28,6 +28,7 @@ func load(ctx context.Context, client pb.WeirClient, prefix string) error {
 	}
 	return nil
 }
+
 func mutation(ctx context.Context, client pb.WeirClient, id string) error {
 	call, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
@@ -43,6 +44,7 @@ func mutation(ctx context.Context, client pb.WeirClient, id string) error {
 	}
 	return verifyEffect(ctx, id, outcome)
 }
+
 func verifyEffect(ctx context.Context, id, outcome string) error {
 	code, raw, err := admin(ctx, "GET", "/records/_doc/"+id, "")
 	if err != nil {
@@ -67,6 +69,7 @@ func verifyEffect(ctx context.Context, id, outcome string) error {
 	fmt.Printf("readback id=%s found=%t version=%d client=%s\n", id, record.Found, record.Version, outcome)
 	return nil
 }
+
 func hold(ctx context.Context, client pb.WeirClient, prefix string) error {
 	stream, err := client.Bulk(ctx)
 	if err != nil {

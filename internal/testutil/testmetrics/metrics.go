@@ -26,6 +26,7 @@ func Parse(t *testing.T, input io.Reader) map[string]*dto.MetricFamily {
 	}
 	return families
 }
+
 func Gather(t *testing.T, collector prometheus.Collector) map[string]*dto.MetricFamily {
 	t.Helper()
 	registry := prometheus.NewPedanticRegistry()
@@ -34,6 +35,7 @@ func Gather(t *testing.T, collector prometheus.Collector) map[string]*dto.Metric
 	}
 	return Registry(t, registry)
 }
+
 func Registry(t *testing.T, registry *prometheus.Registry) map[string]*dto.MetricFamily {
 	t.Helper()
 	if _, err := registry.Gather(); err != nil {
@@ -48,6 +50,7 @@ func Registry(t *testing.T, registry *prometheus.Registry) map[string]*dto.Metri
 	}
 	return Parse(t, bytes.NewReader(recorder.Body.Bytes()))
 }
+
 func Scrape(t *testing.T, address string) map[string]*dto.MetricFamily {
 	t.Helper()
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -61,6 +64,7 @@ func Scrape(t *testing.T, address string) map[string]*dto.MetricFamily {
 	}
 	return Parse(t, response.Body)
 }
+
 func Sample(families map[string]*dto.MetricFamily, name string, labels map[string]string) *dto.Metric {
 	for _, metric := range families[name].GetMetric() {
 		match := true
@@ -81,6 +85,7 @@ func Sample(families map[string]*dto.MetricFamily, name string, labels map[strin
 	}
 	return nil
 }
+
 func Sum(families map[string]*dto.MetricFamily, name string) float64 {
 	var sum float64
 	for _, metric := range families[name].GetMetric() {
@@ -88,6 +93,7 @@ func Sum(families map[string]*dto.MetricFamily, name string) float64 {
 	}
 	return sum
 }
+
 func Series(families map[string]*dto.MetricFamily) int {
 	count := 0
 	for _, family := range families {

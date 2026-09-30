@@ -71,10 +71,15 @@ func Open(t *testing.T) *Fixture {
 	fixture := &Fixture{Admin: client, DB: db, URI: plainURI}
 	return fixture
 }
+
 func FailCommand(t *testing.T, client *mongo.Client, data bson.D, times int) {
 	t.Helper()
 	mode := bson.D{{Key: "times", Value: times}}
-	cmd := bson.D{{Key: "configureFailPoint", Value: "failCommand"}, {Key: "mode", Value: mode}, {Key: "data", Value: data}}
+	cmd := bson.D{
+		{Key: "configureFailPoint", Value: "failCommand"},
+		{Key: "mode", Value: mode},
+		{Key: "data", Value: data},
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := client.Database("admin").RunCommand(ctx, cmd).Err(); err != nil {

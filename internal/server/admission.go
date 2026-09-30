@@ -21,16 +21,26 @@ func NewAdmission(l Limits) (*Admission, error) {
 	if err := l.Validate(); err != nil {
 		return nil, err
 	}
-	a := &Admission{slots: make(chan struct{}, l.Sessions), connections: make(chan struct{}, l.Connections), draining: make(chan struct{})}
-	opts := prometheus.CounterOpts{Name: "weir_admission_rejections_total", Help: "Process ingress rejection branches; no client-controlled label values."}
+	a := &Admission{
+		slots:       make(chan struct{}, l.Sessions),
+		connections: make(chan struct{}, l.Connections),
+		draining:    make(chan struct{}),
+	}
+	opts := prometheus.CounterOpts{
+		Name: "weir_admission_rejections_total",
+		Help: "Process ingress rejection branches; no client-controlled label values.",
+	}
 	a.rejections = prometheus.NewCounterVec(opts, []string{"reason"})
 	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "route", "operation", "hop"} {
 		a.rejections.WithLabelValues(reason)
 	}
 	return a, nil
 }
+
 func (a *Admission) SetOverloaded(value bool) { a.overloaded.Store(value) }
-func (a *Admission) BeginDrain()              { a.once.Do(func() { close(a.draining) }) }
+
+func (a *Admission) BeginDrain() { a.once.Do(func() { close(a.draining) }) }
+
 func (a *Admission) check() error {
 	select {
 	case <-a.draining:

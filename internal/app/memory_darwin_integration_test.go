@@ -53,7 +53,10 @@ func TestDarwinMemoryApplication(t *testing.T) {
 			}
 		}()
 	}
-	defer func() { cancel(); producers.Wait() }()
+	defer func() {
+		cancel()
+		producers.Wait()
+	}()
 	// Include diagnostics and continuous traffic in the measured baseline.
 	darwinMetrics(t, n.DiagnosticAddress())
 	time.Sleep(500 * time.Millisecond)
@@ -114,7 +117,10 @@ func TestDarwinMemoryApplication(t *testing.T) {
 	if time.Since(began) > 3*time.Second {
 		t.Fatal("fixed repeated Close bound")
 	}
-	budgetWait(t, "app proxy sockets released", func() bool { n, _ := proxy.Sockets(); return n == 0 })
+	budgetWait(t, "app proxy sockets released", func() bool {
+		n, _ := proxy.Sockets()
+		return n == 0
+	})
 	t.Logf("continuous reads/cancellation, no rejected DB mutation; restored Read/Mutate/Bulk; repeated Close=%s sockets=0", time.Since(began))
 }
 
@@ -212,7 +218,10 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 	gate := make(chan struct{})
 	observation.hold(gate, 0)
 	var release sync.Once
-	defer release.Do(func() { close(gate); observation.hold(nil, 0) })
+	defer release.Do(func() {
+		close(gate)
+		observation.hold(nil, 0)
+	})
 	result := make(chan bool, 1)
 	request := budgetPut("weir://records/"+fixture.DB+"/records", "inflight")
 	go func() {
@@ -220,12 +229,21 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 		defer stop()
 		result <- budgetLoadCall(call, client, request, 1)
 	}()
-	budgetWait(t, "artifact in-flight", func() bool { n, _, _, _ := observation.snapshot(); return n == 1 })
+	budgetWait(t, "artifact in-flight", func() bool {
+		n, _, _, _ := observation.snapshot()
+		return n == 1
+	})
 	done := make(chan struct{})
 	start := time.Now()
-	go func() { defer close(done); p.stop(t) }()
+	go func() {
+		defer close(done)
+		p.stop(t)
+	}()
 	budgetWait(t, "artifact draining", func() bool { return healthProcessDarwin(t, p) == 503 })
-	release.Do(func() { close(gate); observation.hold(nil, 0) })
+	release.Do(func() {
+		close(gate)
+		observation.hold(nil, 0)
+	})
 	if !<-result {
 		t.Fatal("admitted write lost in drain")
 	}
@@ -238,7 +256,10 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 		t.Fatal("fixed in-flight close bound")
 	}
 	t.Logf("exact artifact in-flight SIGTERM/Wait=%s", time.Since(start))
-	budgetWait(t, "artifact sockets released", func() bool { n, _ := proxy.Sockets(); return n == 0 })
+	budgetWait(t, "artifact sockets released", func() bool {
+		n, _ := proxy.Sockets()
+		return n == 0
+	})
 	// Strong mmap hysteresis is confined to the opt-in app test above. The
 	// archive has no allocation hook; verify a second normal start/stop here.
 	fresh := startProcess(t, binary, cfg)

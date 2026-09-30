@@ -22,6 +22,7 @@ import (
 // Only these exact versions are accepted; other patches require requalification.
 const ElasticsearchVersion = "8.19.22"
 const OpenSearchVersion = "2.19.6"
+
 const ElasticsearchProfile = "elasticsearch-" + ElasticsearchVersion
 const OpenSearchProfile = "opensearch-" + OpenSearchVersion
 
@@ -32,6 +33,7 @@ type Config struct {
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
 	Resolver *net.Resolver
 }
+
 type Adapter struct {
 	dialer          *connectionDialer
 	config          Config
@@ -43,12 +45,14 @@ type Adapter struct {
 	cancel          context.CancelFunc
 	once            sync.Once
 }
+
 type plan struct {
 	id, action     string
 	source         []byte
 	program        *luaengine.Program
 	expectedResult string
 }
+
 type capabilities struct{ source, write, nativeWrite bool }
 
 var indexPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
@@ -67,7 +71,13 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
-	dialer := &connectionDialer{ctx: lifetime, resolver: cfg.Resolver, tlsConfig: tlsConfig, slots: make(chan struct{}, cfg.Pool+1), conns: make(map[*searchConn]struct{})}
+	dialer := &connectionDialer{
+		ctx:       lifetime,
+		resolver:  cfg.Resolver,
+		tlsConfig: tlsConfig,
+		slots:     make(chan struct{}, cfg.Pool+1),
+		conns:     make(map[*searchConn]struct{}),
+	}
 	transport := newTransport(cfg.Pool)
 	transport.DialContext = dialer.dial
 	transport.DialTLSContext = dialer.dial
@@ -79,13 +89,23 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	nativeTransport.TLSClientConfig = tlsConfig
 	nativeTransport.DisableKeepAlives = true
 	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
-	a := &Adapter{dialer: dialer, config: cfg, client: client, transport: transport, nativeTransport: nativeTransport, nativeClient: nativeClient, ctx: lifetime, cancel: cancel}
+	a := &Adapter{
+		dialer:          dialer,
+		config:          cfg,
+		client:          client,
+		transport:       transport,
+		nativeTransport: nativeTransport,
+		nativeClient:    nativeClient,
+		ctx:             lifetime,
+		cancel:          cancel,
+	}
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
 	}
 	return a, nil
 }
+
 func (a *Adapter) Close() error {
 	a.once.Do(func() {
 		a.cancel()
@@ -100,6 +120,7 @@ func (a *Adapter) Close() error {
 	})
 	return nil
 }
+
 func (a *Adapter) qualify(ctx context.Context) error {
 	call := exchange{path: "/", limit: metadataLimit}
 	status, raw, err := a.request(ctx, call)
@@ -144,6 +165,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	}
 	return nil
 }
+
 func (a *Adapter) inspect(ctx context.Context, native bool) (capabilities, *pb.Failure, execution.Feedback) {
 	caps := capabilities{}
 	call := exchange{path: "/" + a.config.Index + "?flat_settings=true", limit: metadataLimit, native: native}
@@ -177,17 +199,28 @@ func (a *Adapter) inspect(ctx context.Context, native bool) (capabilities, *pb.F
 		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "index qualification invalid"), execution.Neutral
 	}
 	index, ok := indexes[a.config.Index]
-	if !ok || index.DataStream != "" || index.Settings["index.uuid"] == "" || index.Settings["index.number_of_shards"] != "1" || index.Mappings.Routing.Required || index.Settings["index.routing_partition_size"] != "" && index.Settings["index.routing_partition_size"] != "1" || index.Settings["index.mode"] != "" && index.Settings["index.mode"] != "standard" {
+	if !ok ||
+		index.DataStream != "" ||
+		index.Settings["index.uuid"] == "" ||
+		index.Settings["index.number_of_shards"] != "1" ||
+		index.Mappings.Routing.Required ||
+		index.Settings["index.routing_partition_size"] != "" && index.Settings["index.routing_partition_size"] != "1" ||
+		index.Settings["index.mode"] != "" && index.Settings["index.mode"] != "standard" {
 		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "single-primary concrete standard index with default routing required"), execution.Neutral
 	}
 	source := index.Mappings.Source
-	caps.source = (source.Enabled == nil || *source.Enabled) && (source.Mode == "" || source.Mode == "stored") && len(source.Includes) == 0 && len(source.Excludes) == 0 && (index.Settings["index.mapping.source.mode"] == "" || index.Settings["index.mapping.source.mode"] == "stored")
+	caps.source = (source.Enabled == nil || *source.Enabled) &&
+		(source.Mode == "" || source.Mode == "stored") &&
+		len(source.Includes) == 0 &&
+		len(source.Excludes) == 0 &&
+		(index.Settings["index.mapping.source.mode"] == "" || index.Settings["index.mapping.source.mode"] == "stored")
 	final := index.Settings["index.final_pipeline"]
 	defaultPipeline := index.Settings["index.default_pipeline"]
 	caps.nativeWrite = (defaultPipeline == "" || defaultPipeline == "_none") && (final == "" || final == "_none")
 	caps.write = caps.source && (final == "" || final == "_none")
 	return caps, nil, execution.Neutral
 }
+
 func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	if failure := protocol.Validate(op, a.config.Store); failure != nil {
 		return nil, failure
@@ -202,7 +235,13 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "exact string ID of 1-512 bytes required")
 	}
 	native := &plan{id: key[2:]}
-	work := &execution.Plan{Operation: op, Key: resource, Backend: native, Bytes: proto.Size(op) + len(resource)*2 + 1024, ResultBytes: protocol.ResultOverhead}
+	work := &execution.Plan{
+		Operation:   op,
+		Key:         resource,
+		Backend:     native,
+		Bytes:       proto.Size(op) + len(resource)*2 + 1024,
+		ResultBytes: protocol.ResultOverhead,
+	}
 	if read := op.GetRead(); read != nil {
 		if read.AdapterOptions != nil || read.ReadMediaType != "" && read.ReadMediaType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")

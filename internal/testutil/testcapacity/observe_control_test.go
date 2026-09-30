@@ -105,7 +105,19 @@ func TestObservationCompletionProcesses(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("Unix pipe fixture")
 	}
-	for _, mode := range []string{"complete", "no-ack", "illegal", "early", "signal", "signal-after-end", "sample-error", "count-error", "blocked", "write-failure", "slow"} {
+	for _, mode := range []string{
+		"complete",
+		"no-ack",
+		"illegal",
+		"early",
+		"signal",
+		"signal-after-end",
+		"sample-error",
+		"count-error",
+		"blocked",
+		"write-failure",
+		"slow",
+	} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 			defer cancel()
