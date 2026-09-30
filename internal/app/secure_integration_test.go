@@ -5,9 +5,9 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,13 +21,11 @@ import (
 
 func secureNode(t *testing.T, cfg Config) *Node {
 	t.Helper()
-	data, err := json.Marshal(cfg)
+	filename := filepath.Join(t.TempDir(), "node.json")
+	writeConfigFiles(t, filename, cfg, 0600)
+	cfg, err := Load(filename)
 	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err = Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal("owned config decode failed")
+		t.Fatal("owned config load failed")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -231,7 +229,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
 				t.Fatal("Native lost response")
 			}
-			t.Log("production JSON Decode/Open: CRUD, conflict/missing, opaque int64, expression, Bulk End/EOF, Scan End/EOF, Native End/EOF passed")
+			t.Log("production basic/routing JSON Load/Open: CRUD, conflict/missing, opaque int64, expression, Bulk End/EOF, Scan End/EOF, Native End/EOF passed")
 		})
 	}
 }

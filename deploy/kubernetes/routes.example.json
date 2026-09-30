@@ -1,0 +1,21 @@
+{
+  "services": [
+    {
+      "name": "database",
+      "local": {
+        "concurrency": 2,
+        "search": {
+          "url": "http://elasticsearch:9200",
+          "index": "records",
+          "profile": "elasticsearch-8.19.22"
+        }
+      }
+    }
+  ],
+  "routes": [
+    {
+      "store": "records",
+      "service": "database"
+    }
+  ]
+}

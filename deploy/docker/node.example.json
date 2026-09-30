@@ -1,16 +1,5 @@
 {
   "application": "127.0.0.1:7447",
   "memory_mib": 512,
-  "services": [{
-    "name": "database",
-    "local": {
-      "concurrency": 2,
-      "mongo": {
-        "uri": "mongodb://db.example.invalid:27017/?directConnection=true",
-        "database": "example",
-        "collection": "records"
-      }
-    }
-  }],
-  "routes": [{"store": "records", "service": "database"}]
+  "routing_file": "routes.example.json"
 }

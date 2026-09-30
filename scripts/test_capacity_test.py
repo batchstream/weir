@@ -122,6 +122,25 @@ class ArtifactSafety(unittest.TestCase):
             identity["config"]=digest(wrong)
             with self.assertRaises(ValueError):docker_archive(source,dest,identity)
 
+    @unittest.skipUnless(__debug__, "entry rejects optimized Python before imports")
+    def test_product_input_identity_uses_revision_file_set(self):
+        spec=importlib.util.spec_from_file_location("capacity_entry",Path(__file__).with_name("test-capacity.py"))
+        entry=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+        source="a"*40
+        expected={"go.mod":"fixture", "deploy/docker/node.example.json":"fixture", "deploy/docker/routes.example.json":"fixture"}
+        with tempfile.TemporaryDirectory() as base:
+            artifact=Path(base)
+            for inputs in ({name:digest for name,digest in expected.items() if "routes.example" not in name}, dict(expected, extra="fixture")):
+                receipt=dict(source=source,inputs=inputs)
+                (artifact/"receipt.json").write_text(json.dumps(receipt))
+                plan=dict(artifact_source=source)
+                with patch.object(entry.packaging,"source_files",return_value=[(name,"fixture") for name in expected]) as source_files, patch.object(entry,"sha") as digest:
+                    with self.assertRaisesRegex(RuntimeError,"source/input identity"):
+                        entry.prepare(None,plan,artifact)
+                source_files.assert_called_once_with(entry.REPO,source)
+                digest.assert_not_called()
+
 
 class CountSafety(unittest.TestCase):
     def test_quantiles_are_recomputed_and_drop_is_not_success(self):

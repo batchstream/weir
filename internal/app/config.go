@@ -1,10 +1,7 @@
 package app
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"regexp"
 	"strconv"
@@ -18,17 +15,30 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
+// Config combines the separately loaded process and routing settings for assembly.
 type Config struct {
+	BasicConfig
+	RoutingConfig
+}
+
+// BasicConfig contains process settings and the routing document location.
+type BasicConfig struct {
 	Diagnostics              string          `json:"diagnostics"`
 	DiagnosticsAllowIntranet bool            `json:"diagnostics_allow_intranet"`
 	Application              string          `json:"application"`
 	Peer                     string          `json:"peer"`
-	Services                 []Service       `json:"services"`
-	Routes                   []Route         `json:"routes"`
 	InitialForwards          int             `json:"initial_forwards"`
 	MemoryMiB                uint64          `json:"memory_mib"`
 	Limits                   TransportLimits `json:"limits"`
+	RoutingFile              string          `json:"routing_file"`
 }
+
+// RoutingConfig defines the complete, static service and Store graph.
+type RoutingConfig struct {
+	Services []Service `json:"services"`
+	Routes   []Route   `json:"routes"`
+}
+
 type Route struct {
 	Store   string `json:"store"`
 	Service string `json:"service"`
@@ -71,75 +81,13 @@ type TransportLimits struct {
 
 func DefaultConfig() Config {
 	limits := TransportLimits{Connections: 16, Sessions: 16, UnaryMS: 30000, BulkMS: 900000, ScanMS: 300000, NativeMS: 300000, StallMS: 30000}
-	cfg := Config{MemoryMiB: 512, InitialForwards: 4, Limits: limits}
+	basic := BasicConfig{MemoryMiB: 512, InitialForwards: 4, Limits: limits}
+	cfg := Config{BasicConfig: basic}
 	return cfg
 }
 func (l TransportLimits) serverLimits() server.Limits {
 	limits := server.Limits{Connections: l.Connections, Sessions: l.Sessions, UnaryLifetime: time.Duration(l.UnaryMS) * time.Millisecond, BulkLifetime: time.Duration(l.BulkMS) * time.Millisecond, ScanLifetime: time.Duration(l.ScanMS) * time.Millisecond, NativeLifetime: time.Duration(l.NativeMS) * time.Millisecond, Stall: time.Duration(l.StallMS) * time.Millisecond}
 	return limits
-}
-func Decode(input io.Reader) (Config, error) {
-	cfg := DefaultConfig()
-	raw, err := io.ReadAll(io.LimitReader(input, (128<<10)+1))
-	if err != nil || len(raw) > 128<<10 {
-		return cfg, errors.New("configuration exceeds bound")
-	}
-	// encoding/json alone accepts duplicate keys; reject these before decoding.
-	tokens := json.NewDecoder(bytes.NewReader(raw))
-	if err := uniqueJSON(tokens, 0); err != nil {
-		return cfg, err
-	}
-	if _, err := tokens.Token(); err != io.EOF {
-		return cfg, errors.New("trailing configuration data")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cfg); err != nil {
-		return cfg, err
-	}
-	return cfg, cfg.Validate()
-}
-func uniqueJSON(d *json.Decoder, depth int) error {
-	if depth > 12 {
-		return errors.New("configuration nesting limit")
-	}
-	token, err := d.Token()
-	if err != nil {
-		return err
-	}
-	if delimiter, ok := token.(json.Delim); ok {
-		switch delimiter {
-		case '{':
-			seen := make(map[string]bool)
-			for d.More() {
-				key, err := d.Token()
-				if err != nil {
-					return err
-				}
-				text, ok := key.(string)
-				// Match encoding/json's case-insensitive struct field lookup so
-				// alternate casing cannot silently overwrite an earlier field.
-				keyName := strings.ToLower(text)
-				if !ok || seen[keyName] {
-					return errors.New("duplicate configuration field")
-				}
-				seen[keyName] = true
-				if err := uniqueJSON(d, depth+1); err != nil {
-					return err
-				}
-			}
-		case '[':
-			for d.More() {
-				if err := uniqueJSON(d, depth+1); err != nil {
-					return err
-				}
-			}
-		default:
-			return errors.New("invalid configuration structure")
-		}
-		_, err = d.Token()
-	}
-	return err
 }
 
 var mongoName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -155,6 +103,13 @@ func validName(name string) bool {
 	return err == nil && parsed == name && len(segments) == 0
 }
 func (cfg Config) Validate() error {
+	if err := cfg.BasicConfig.Validate(); err != nil {
+		return err
+	}
+	return cfg.RoutingConfig.Validate()
+}
+
+func (cfg BasicConfig) Validate() error {
 	if cfg.DiagnosticsAllowIntranet && cfg.Diagnostics == "" {
 		return errors.New("diagnostics_allow_intranet requires a diagnostic listener")
 	}
@@ -195,6 +150,10 @@ func (cfg Config) Validate() error {
 	if err := cfg.Limits.serverLimits().Validate(); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (cfg RoutingConfig) Validate() error {
 	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 {
 		return errors.New("invalid static graph bounds")
 	}

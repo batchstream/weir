@@ -23,7 +23,10 @@ from observer_completion import observation_samples, finish_observation, cancel_
 
 def prepare(f, plan, artifact):
     receipt=json.loads((artifact/"receipt.json").read_text())
-    if receipt["source"]!=plan["artifact_source"] or len(receipt["inputs"])!=70:
+    if receipt["source"]!=plan["artifact_source"]:
+        raise RuntimeError("product source/input identity")
+    expected_inputs={name for name,_ in packaging.source_files(REPO,receipt["source"])}
+    if set(receipt["inputs"])!=expected_inputs:
         raise RuntimeError("product source/input identity")
     for name,digest in receipt["inputs"].items():
         if packaging.secret_path(name) or not packaging.allowed(name) or sha(REPO/name)!=digest:
@@ -59,8 +62,11 @@ def prepare(f, plan, artifact):
         run_options = dict(env=dict(env,GOOS=system,GOARCH="arm64"))
         f.run([go,"build","-tags","integration","-trimpath","-buildvcs=false","-o",str(f.root/name),"./internal/testutil/testcapacity"],120,options=run_options)
     cfg=json.loads((REPO/"deploy/kubernetes/node.example.json").read_text())
-    cfg["services"][0]["local"].update(concurrency=4,batch_operations=16)
+    routes=json.loads((REPO/"deploy/kubernetes/routes.example.json").read_text())
+    cfg["routing_file"]="routes.json"
+    routes["services"][0]["local"].update(concurrency=4,batch_operations=16)
     f.save("node.json",cfg)
+    f.save("routes.json",routes)
     run_options = dict(env=env)
     effective=json.loads(f.run([str(f.root/"client-host"),"-mode","config","-config",str(f.root/"node.json")],options=run_options).stdout)
     if any(effective["timing"][key] != plan["client"][key] for key in ("expiry_ms", "max_catchup_per_wake", "deadline_ms")):
@@ -117,7 +123,7 @@ def start(f,plan,budget):
     f.save("mutation-budget.json", budget.snapshot())
     if setup.returncode:
         raise RuntimeError("bootstrap setup failed; reserved/started evidence retained")
-    weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly"],"command":["-config","/node.json"]}
+    weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly","--mount",f"type=bind,source={f.root/'routes.json'},target=/routes.json,readonly"],"command":["-config","/node.json"]}
     f.create("weir",weir_spec)
     f.observers = {}
     native=f.run(["docker","exec",f.containers[f.owner+"-es"],"/bin/bash","--noprofile","--norc","-c",

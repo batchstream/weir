@@ -9,12 +9,7 @@ import (
 )
 
 func TestDeploymentConfiguration(t *testing.T) {
-	file, err := os.Open("node.example.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	cfg, err := app.Decode(file)
+	cfg, err := app.Load("node.example.json")
 	if err != nil {
 		t.Fatal(err)
 	}

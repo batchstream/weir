@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
@@ -38,12 +37,7 @@ func (a *feedbackControl) Execute(ctx context.Context, plans []*execution.Plan) 
 }
 
 func serveControl(ctx context.Context, config string, suppress bool) error {
-	f, err := os.Open(config)
-	if err != nil {
-		return err
-	}
-	cfg, err := app.Decode(f)
-	_ = f.Close()
+	cfg, err := app.Load(config)
 	if err != nil {
 		return err
 	}

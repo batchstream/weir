@@ -126,7 +126,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				cfg := packagedSearchConfig(fixture.Backend)
 				directory := filepath.Join(root, "negative-"+negative)
 				packagedSearchFiles(t, directory, cfg)
-				filename := filepath.Join(directory, "node.json")
+				filename := filepath.Join(directory, "node-routing.json")
 				raw, err := os.ReadFile(filename)
 				if err != nil {
 					t.Fatal(err)
@@ -211,13 +211,7 @@ func packagedSearchFiles(t *testing.T, directory string, cfg Config) {
 	service := Service{Name: cfg.Services[0].Name, Local: &local}
 	cfg.Services = []Service{service}
 	cfg.Application, cfg.Diagnostics = "0.0.0.0:7447", "127.0.0.1:7449"
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "node.json"), raw, 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeConfigFiles(t, filepath.Join(directory, "node.json"), cfg, 0644)
 }
 
 func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.SecureFixture, proxy *searchBudgetProxy) {

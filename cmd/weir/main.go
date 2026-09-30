@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/app"
-	"github.com/batchstream/weir/internal/backend/search"
 )
 
 func main() {
@@ -27,18 +26,8 @@ func run(args []string, output io.Writer) (resultErr error) {
 	version := flags.Bool("version", false, "print build identity without loading configuration or connecting")
 	probe := flags.String("probe", "", "check live or ready using only loopback diagnostics; exit 0 healthy, 1 otherwise")
 	probeAddress := flags.String("probe-address", "127.0.0.1:7449", "probe-only loopback IP:port")
-	diagnostics := flags.String("diagnostics", "", "optional loopback diagnostic HTTP address; disabled by default")
-	listen := flags.String("listen", "127.0.0.1:7447", "intranet gRPC listen IP:port; loopback by default")
-	uri := flags.String("mongo-uri", "mongodb://127.0.0.1:27028/?directConnection=true", "isolated MongoDB replica-set URI")
-	db := flags.String("database", "weir_m1", "pre-created database")
-	collection := flags.String("collection", "records", "pre-created collection")
-	batch := flags.Bool("batch", true, "micro-batch all record operations in the shared scheduler")
-	memory := flags.Uint64("memory-mib", 512, "overload budget; qualification starting point")
-	searchURL := flags.String("search-url", "", "optional qualified loopback search backend")
-	searchIndex := flags.String("search-index", "records", "pre-created concrete index")
-	searchProfile := flags.String("search-profile", search.ElasticsearchProfile, "exact qualified search profile")
-	configFile := flags.String("config", "", "strict static JSON configuration; exclusive with other flags")
-	checkConfig := flags.String("check-config", "", "validate a configuration file without opening listeners, resolving DNS or connecting")
+	configFile := flags.String("config", "weir.json", "basic JSON configuration referencing a routing file")
+	checkConfig := flags.String("check-config", "", "validate basic and routing configuration without opening listeners, resolving DNS or connecting")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -48,33 +37,28 @@ func run(args []string, output io.Writer) (resultErr error) {
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected positional arguments")
 	}
-	if *version {
-		if flags.NFlag() != 1 {
-			return fmt.Errorf("-version cannot be combined with other flags")
+	versionMode, checkMode, probeMode := false, false, false
+	flags.Visit(func(f *flag.Flag) {
+		versionMode = versionMode || f.Name == "version"
+		checkMode = checkMode || f.Name == "check-config"
+		probeMode = probeMode || f.Name == "probe" || f.Name == "probe-address"
+	})
+	if versionMode {
+		if flags.NFlag() != 1 || !*version {
+			return errors.New("-version requires true and cannot be combined with other flags")
 		}
 		return printVersion(output)
 	}
-	checkMode := false
-	flags.Visit(func(f *flag.Flag) { checkMode = checkMode || f.Name == "check-config" })
 	if checkMode {
 		if flags.NFlag() != 1 || *checkConfig == "" {
 			return errors.New("-check-config requires a file and cannot be combined with other flags")
 		}
-		file, err := os.Open(*checkConfig)
-		if err != nil {
-			return errors.New("configuration unavailable")
-		}
-		defer file.Close()
-		if _, err := app.Decode(file); err != nil {
+		if _, err := app.Load(*checkConfig); err != nil {
 			return err
 		}
-		_, err = io.WriteString(output, "configuration valid\n")
+		_, err := io.WriteString(output, "configuration valid\n")
 		return err
 	}
-	probeMode := false
-	flags.Visit(func(f *flag.Flag) {
-		probeMode = probeMode || f.Name == "probe" || f.Name == "probe-address"
-	})
 	if probeMode {
 		mixed := false
 		flags.Visit(func(f *flag.Flag) {
@@ -83,54 +67,16 @@ func run(args []string, output io.Writer) (resultErr error) {
 			}
 		})
 		if mixed {
-			return fmt.Errorf("-probe cannot be combined with server or version flags")
+			return errors.New("-probe cannot be combined with configuration or version flags")
 		}
 		return runProbe(context.Background(), *probe, *probeAddress)
 	}
-	cfg := app.DefaultConfig()
-	if *configFile != "" {
-		mixed := false
-		flags.Visit(func(f *flag.Flag) {
-			if f.Name != "config" {
-				mixed = true
-			}
-		})
-		if mixed {
-			return fmt.Errorf("-config cannot be combined with local flags")
-		}
-		file, err := os.Open(*configFile)
-		if err != nil {
-			return fmt.Errorf("configuration unavailable")
-		}
-		defer file.Close()
-		cfg, err = app.Decode(file)
-		if err != nil {
-			return err
-		}
-	} else {
-		cfg.Diagnostics = *diagnostics
-		cfg.Application = *listen
-		cfg.MemoryMiB = *memory
-		mongo := &app.Mongo{URI: *uri, Database: *db, Collection: *collection}
-		local := &app.Local{Mongo: mongo}
-		if !*batch {
-			local.BatchOperations = 1
-		}
-		service := app.Service{Name: "mongo-local", Local: local}
-		route := app.Route{Store: "mongo", Service: service.Name}
-		cfg.Services = append(cfg.Services, service)
-		cfg.Routes = append(cfg.Routes, route)
-		if *searchURL != "" {
-			search := &app.Search{URL: *searchURL, Index: *searchIndex, Profile: *searchProfile}
-			local := &app.Local{Search: search}
-			if !*batch {
-				local.BatchOperations = 1
-			}
-			service := app.Service{Name: "search-local", Local: local}
-			route := app.Route{Store: "search", Service: service.Name}
-			cfg.Services = append(cfg.Services, service)
-			cfg.Routes = append(cfg.Routes, route)
-		}
+	if *configFile == "" {
+		return errors.New("-config requires a file")
+	}
+	cfg, err := app.Load(*configFile)
+	if err != nil {
+		return err
 	}
 	// The CLI owns signals from before assembly until all owned resources close.
 	signals, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

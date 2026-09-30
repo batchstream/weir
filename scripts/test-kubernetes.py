@@ -38,10 +38,15 @@ def prepare(f, artifact, profile):
         assert result.returncode==0
     for concurrency in (1,2):
         cfg=json.loads((REPO/"deploy/kubernetes/node.example.json").read_text())
+        routes=json.loads((REPO/"deploy/kubernetes/routes.example.json").read_text())
         cfg["memory_mib"]=256
-        cfg["services"][0]["local"]["concurrency"]=concurrency
-        filename=f.root/f"node-c{concurrency}.json"
-        f.save(filename.name,cfg)
+        cfg["routing_file"]="routes.json"
+        routes["services"][0]["local"]["concurrency"]=concurrency
+        directory=f.root/f"c{concurrency}"
+        directory.mkdir()
+        filename=directory/"node.json"
+        f.save(f"c{concurrency}/node.json",cfg)
+        f.save(f"c{concurrency}/routes.json",routes)
         result=subprocess.run([str(f.root/"client-host"),"-validate",str(filename)],env=env,capture_output=True,text=True,timeout=10)
         assert result.returncode==0,result.stderr
     raw=(f.root/"client").read_bytes()
@@ -272,7 +277,7 @@ def workloads(f,images,artifact,profile):
     for c in (1,2):
         # Only a new credential-free config is sent. Existing Secret content is never read.
         name=f"weir-c{c}"
-        f.run(f.kube("create","secret","generic",name,"--from-file=node.json="+str(f.root/f"node-c{c}.json")))
+        f.run(f.kube("create","secret","generic",name,"--from-file=node.json="+str(f.root/f"c{c}/node.json"),"--from-file=routes.json="+str(f.root/f"c{c}/routes.json")))
         f.run(f.kube("patch","secret",name,"--type=merge","-p",'{"immutable":true}'))
     manifest=json.loads((REPO/"deploy/kubernetes/weir.json").read_text())
     deployment=manifest["items"][0]

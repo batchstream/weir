@@ -139,7 +139,7 @@ func TestPackagedArtifacts(t *testing.T) {
 				}
 				packagedFiles(t, directory, uri, fixture.DB)
 				if negative == "hostname" {
-					filename := filepath.Join(directory, "node.json")
+					filename := filepath.Join(directory, "node-routing.json")
 					raw, err := os.ReadFile(filename)
 					if err != nil {
 						t.Fatal(err)
@@ -249,13 +249,7 @@ func packagedFiles(t *testing.T, directory, uri, database string) {
 	config := packagedConfig(parsed.String(), database)
 	config.Application = "0.0.0.0:7447"
 	config.Diagnostics = "127.0.0.1:7449"
-	raw, err := json.Marshal(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "node.json"), raw, 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeConfigFiles(t, filepath.Join(directory, "node.json"), config, 0644)
 }
 
 type packagedContainerOptions struct {

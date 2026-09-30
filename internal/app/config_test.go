@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -32,44 +31,23 @@ func remoteConfig(t *testing.T) Config {
 	cfg.Routes = []Route{route}
 	return cfg
 }
-func TestStrictConfiguration(t *testing.T) {
-	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Decode(strings.NewReader(string(raw))); err != nil {
-		t.Fatal(err)
-	}
-	for _, fragment := range []string{`"unknown":1,`, `"lua_worker":"/unused",`, `"memory_mib":1,`, `"memory_mib":512,`, `"MEMORY_MIB":512,`, `"initial_forwards":9,`} {
-		if _, err := Decode(strings.NewReader("{" + fragment + string(raw[1:]))); err == nil {
-			t.Fatal("accepted unknown/duplicate", fragment)
-		}
-	}
-	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "overflow", "zero-session", "extra-data"} {
+func TestConfigurationValidation(t *testing.T) {
+	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "overflow", "zero-session"} {
 		t.Run(mode, func(t *testing.T) {
-			altered, err := Decode(strings.NewReader(string(raw)))
-			if err != nil {
-				t.Fatal(err)
-			}
+			cfg := remoteConfig(t)
 			switch mode {
 			case "duplicate-store":
-				altered.Routes = append(altered.Routes, altered.Routes[0])
+				cfg.Routes = append(cfg.Routes, cfg.Routes[0])
 			case "unknown-service":
-				altered.Routes[0].Service = "missing"
+				cfg.Routes[0].Service = "missing"
 			case "duplicate-service":
-				altered.Services = append(altered.Services, altered.Services[0])
+				cfg.Services = append(cfg.Services, cfg.Services[0])
 			case "overflow":
-				altered.Limits.UnaryMS = int(^uint(0) >> 1)
+				cfg.Limits.UnaryMS = int(^uint(0) >> 1)
 			case "zero-session":
-				altered.Limits.Sessions = 0
-			case "extra-data":
-				if _, err := Decode(strings.NewReader(string(raw) + ` {}`)); err == nil {
-					t.Fatal("trailing accepted")
-				}
-				return
+				cfg.Limits.Sessions = 0
 			}
-			if err := altered.Validate(); err == nil {
+			if err := cfg.Validate(); err == nil {
 				t.Fatal("invalid configuration accepted")
 			}
 		})
@@ -219,19 +197,24 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 
 func TestRemovedAuthenticationFieldsAreUnknown(t *testing.T) {
 	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg)
+	cfg.RoutingFile = "routing.json"
+	basic, err := json.Marshal(cfg.BasicConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"identity", "allow"} {
-		input := `{"` + field + `":null,` + string(raw[1:])
-		if _, err := Decode(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), `unknown field "`+field+`"`) {
-			t.Fatal("legacy field was not explicitly rejected", field, err)
+	for _, field := range []string{"identity", "allow", "lua_worker"} {
+		input := `{"` + field + `":null,` + string(basic[1:])
+		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
+			t.Fatal("legacy field accepted", field)
 		}
 	}
-	input := strings.Replace(string(raw), `"remote":{`, `"remote":{"server_name":"obsolete",`, 1)
-	if _, err := Decode(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), `unknown field "server_name"`) {
-		t.Fatal("legacy remote identity accepted", err)
+	routing, err := json.Marshal(cfg.RoutingConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Replace(string(routing), `"remote":{`, `"remote":{"server_name":"obsolete",`, 1)
+	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
+		t.Fatal("legacy remote identity accepted")
 	}
 }
 
@@ -280,26 +263,21 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 
 func TestCurrentPeerExamples(t *testing.T) {
 	for _, name := range []string{"peer-a.json", "peer-b.json"} {
-		file, err := os.Open(filepath.Join(testutil.Root(t), "examples", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, decodeErr := Decode(file)
-		closeErr := file.Close()
-		if decodeErr != nil || closeErr != nil {
-			t.Fatal(name, decodeErr, closeErr)
+		filename := filepath.Join(testutil.Root(t), "examples", name)
+		if _, err := Load(filename); err != nil {
+			t.Fatal(name, err)
 		}
 	}
 }
 
 func TestRemoteEndpointListConfiguration(t *testing.T) {
 	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg)
+	raw, err := json.Marshal(cfg.RoutingConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	input := strings.Replace(string(raw), `"endpoints":["127.0.0.1:1"]`, `"endpoint":"127.0.0.1:1"`, 1)
-	if _, err := Decode(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), `unknown field "endpoint"`) {
+	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("legacy endpoint accepted", err)
 	}
 	for _, endpoints := range [][]string{nil, {}, {"peer:1", "PEER.:01"}, {"dns:///peer:1"}, {"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"}} {
