@@ -193,12 +193,20 @@ type cliProcess struct {
 func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	t.Helper()
 	t.Logf("native test runtime=%s/%s go=%s euid=%d", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Geteuid())
-	raw, err := json.Marshal(cfg)
+	cfg.RoutingFile = "routes.json"
+	raw, err := json.Marshal(cfg.BasicConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := filepath.Join(t.TempDir(), "node.json")
 	if err := os.WriteFile(config, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	routing, err := json.Marshal(cfg.RoutingConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(config), cfg.RoutingFile), routing, 0600); err != nil {
 		t.Fatal(err)
 	}
 	binary := os.Getenv("WEIR_CLI_BINARY")
@@ -401,12 +409,7 @@ func TestCLIProcessChild(t *testing.T) {
 }
 
 func beforeStartChild(config string) error {
-	file, err := os.Open(config)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	cfg, err := app.Decode(file)
+	cfg, err := app.Load(config)
 	if err != nil {
 		return err
 	}

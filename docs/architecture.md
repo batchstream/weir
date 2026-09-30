@@ -100,7 +100,7 @@ Weir runs as a trusted intranet service. Deployment network isolation controls
 access to application and peer listeners; Weir has no identity, authorization,
 TLS/mTLS, account, token, or certificate subsystem. Both listeners and RemoteWeir
 use plaintext HTTP/2 gRPC. This profile makes no claim for an unisolated public
-network. Listen addresses default to loopback; explicit intranet IPs or wildcard
+network. Configuration examples bind to loopback; explicit intranet IPs or wildcard
 binds require the deployment to enforce that isolation.
 
 Backend credentials and standard backend TLS validation remain adapter connection
@@ -173,12 +173,22 @@ the stream. Clients must not infer that unreported earlier operations failed.
 
 ### 2.4 Configuration and topology
 
-Startup is: decode strict configuration -> validate the entire graph -> construct
+Startup is: load strict basic and routing configuration -> validate the entire graph -> construct
 immutable Services and StoreRuntimes -> open listeners -> become ready. Assembly
 has one owner and unwinds already-created resources on partial failure. No global
 registries, runtime providers, route watchers, or configuration generation protocol.
 
-Conceptual configuration, not a committed configuration-file schema:
+The basic JSON file contains listeners, memory and transport limits, the initial
+forwarding budget, and a required `routing_file`. The separate routing JSON file
+contains only Services and Routes, including backend connection and local scheduler
+settings. Relative routing paths resolve from the basic file's directory. Both
+documents reject unknown fields, duplicate keys, trailing data and inputs over
+128 KiB. Parsing and complete validation have no backend, DNS or CA-file side
+effects. Configuration is immutable after startup; changing either file requires
+a restart. The CLI selects a basic file with `-config` (default `weir.json` in the
+working directory); `-check-config` validates both files without assembly.
+
+Deployment topology examples:
 
 | Deployment | Routes in the same `weir` binary |
 | --- | --- |

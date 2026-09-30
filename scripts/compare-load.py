@@ -219,12 +219,21 @@ class Fixture:
         self.stop_weir()
         config = {"application": "0.0.0.0:7447", "diagnostics": "0.0.0.0:7449",
             "diagnostics_allow_intranet": True, "memory_mib": 768,
-            "limits": {"connections": 16, "sessions": 64},
-            "services": [{"name": "database", "local": {"concurrency": self.args.pool,
+            "limits": {"connections": 16, "sessions": 64}, "routing_file": "routes.json"}
+        routes = {"services": [{"name": "database", "local": {"concurrency": self.args.pool,
                 "batch_operations": self.args.batch_operations, "search": {"url": "http://elasticsearch:9200",
                 "index": "records", "profile": "elasticsearch-8.19.22"}}}],
             "routes": [{"store": "records", "service": "database"}]}
+        split_config = True
+        if mode == "baseline":
+            source = run(["git", "show", self.args.baseline_source + ":internal/app/config.go"]).stdout
+            split_config = 'json:"routing_file"' in source
+        if not split_config:
+            config.pop("routing_file")
+            config.update(routes)
         self.save("node.json", config)
+        self.save("routes.json", routes)
+        self.summary.setdefault("config_formats", {})[mode] = "split" if split_config else "legacy"
         # Qualifying a fresh node requires the index to exist before startup.
         run(["docker", "exec", self.client, "/client", "-mode", "setup", "-mutation-reservation", "1000"], timeout=90)
         entrypoint = "/client"
@@ -233,6 +242,7 @@ class Fixture:
         options = ["--pids-limit", "256", "--memory", "768m", "--memory-swap", "768m", "--cpus", "2", "--cpuset-cpus", "3,4",
             "--network-alias", "weir", "--read-only", "-p", "127.0.0.1::7449",
             "--mount", "type=bind,source=" + str(self.root / "node.json") + ",target=/node.json,readonly",
+            "--mount", "type=bind,source=" + str(self.root / "routes.json") + ",target=/routes.json,readonly",
             "--entrypoint", entrypoint]
         command = ["-config", "/node.json"]
         if mode == "control":

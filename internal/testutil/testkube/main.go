@@ -39,12 +39,7 @@ func run() error {
 		return errors.New("explicit integration opt-in required")
 	}
 	if *config != "" {
-		f, err := os.Open(*config)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = app.Decode(f)
+		_, err := app.Load(*config)
 		return err
 	}
 	if !regexp.MustCompile(`^[a-z0-9-]{1,32}$`).MatchString(*id) {

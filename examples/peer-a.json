@@ -1,9 +1,5 @@
 {
   "application": "127.0.0.1:7447",
-  "services": [{
-    "name": "mongo-peer",
-    "remote": {"endpoints": ["127.0.0.1:7448"], "relays": 8}
-  }],
-  "routes": [{"store": "mongo", "service": "mongo-peer"}],
-  "initial_forwards": 4
+  "initial_forwards": 4,
+  "routing_file": "peer-a.routes.json"
 }

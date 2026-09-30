@@ -37,7 +37,7 @@ class PackageTests(unittest.TestCase):
         for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
             self.assertFalse(package.allowed(name), name)
         self.assertFalse(package.allowed('cmd/weir-lua-worker/main.go'))
-        for name in ('README.md', 'deploy/docker/Dockerfile', 'deploy/docker/node.example.json', 'deploy/docker/licenses/purego-NOTICE.txt'):
+        for name in ('README.md', 'deploy/docker/Dockerfile', 'deploy/docker/node.example.json', 'deploy/docker/routes.example.json', 'deploy/docker/licenses/purego-NOTICE.txt'):
             self.assertTrue(package.allowed(name), name)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -119,6 +119,7 @@ class PackageTests(unittest.TestCase):
                     'scripts/qualification.Dockerfile': b'qualification Dockerfile',
                     'README.md': b'fixture docs',
                     'deploy/docker/node.example.json': b'{}',
+                    'deploy/docker/routes.example.json': b'{"services":[],"routes":[]}',
                 }
 
                 def run(args, *, cwd=None, env=None):
@@ -157,6 +158,11 @@ class PackageTests(unittest.TestCase):
                         self.assertEqual((context / binary).read_bytes(), built.read_bytes())
                 dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'deploy/docker/Dockerfile'
                 self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
+                if not qualification:
+                    archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
+                    with tarfile.open(archive_path) as archive:
+                        for config in ('node.example.json', 'routes.example.json'):
+                            self.assertEqual(archive.extractfile(config).read(), inputs['deploy/docker/' + config])
                 receipt.assert_called_once()
                 docker.assert_called_once()
 

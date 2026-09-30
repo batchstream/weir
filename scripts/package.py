@@ -267,7 +267,8 @@ def build_once(opts):
             continue
         members = {binary.name: (binary.read_bytes(), 0o755),
                    'README.md': ((source / 'README.md').read_bytes(), 0o644),
-                   'node.example.json': ((source / 'deploy/docker/node.example.json').read_bytes(), 0o644)}
+                   'node.example.json': ((source / 'deploy/docker/node.example.json').read_bytes(), 0o644),
+                   'routes.example.json': ((source / 'deploy/docker/routes.example.json').read_bytes(), 0o644)}
         if system == 'darwin':
             for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
                 members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)

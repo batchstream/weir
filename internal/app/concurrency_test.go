@@ -25,11 +25,11 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 			cfg := DefaultConfig()
 			cfg.Application = "127.0.0.1:0"
 			cfg.Services, cfg.Routes = []Service{service}, []Route{route}
-			raw, err := json.Marshal(cfg)
+			raw, err := json.Marshal(cfg.RoutingConfig)
 			if err != nil {
 				t.Fatal(err)
 			}
-			decoded, err := Decode(bytes.NewReader(raw))
+			decoded, err := DecodeRouting(bytes.NewReader(raw))
 			if c < 0 || c > 32 {
 				if err == nil {
 					t.Fatal("invalid concurrency accepted")
@@ -49,7 +49,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 			}
 			if c == 0 {
 				omitted := strings.Replace(string(raw), `"concurrency":0,`, "", 1)
-				decoded, err = Decode(strings.NewReader(omitted))
+				decoded, err = DecodeRouting(strings.NewReader(omitted))
 				if err != nil || decoded.Services[0].Local.runtimeLimits().Concurrency != 4 {
 					t.Fatal("omitted default", err)
 				}

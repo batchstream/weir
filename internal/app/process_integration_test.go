@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -62,14 +61,8 @@ func (p *process) stop(t *testing.T) {
 
 func startProcess(t *testing.T, binary string, cfg Config) *process {
 	t.Helper()
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
 	name := filepath.Join(t.TempDir(), "node.json")
-	if err := os.WriteFile(name, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeConfigFiles(t, name, cfg, 0600)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
 	command := exec.CommandContext(ctx, binary, "-config", name)

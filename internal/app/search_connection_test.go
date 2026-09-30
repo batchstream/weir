@@ -29,11 +29,11 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	cfg.Application = "127.0.0.1:0"
 	cfg.Services = []Service{definition}
 	cfg.Routes = []Route{route}
-	raw, err := json.Marshal(cfg)
+	raw, err := json.Marshal(cfg.RoutingConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Decode(bytes.NewReader(raw)); err != nil {
+	if _, err := DecodeRouting(bytes.NewReader(raw)); err != nil {
 		t.Fatal("Decode accessed CA/DNS", err)
 	}
 	// Even an invalid later service must be rejected before the first connection.
@@ -66,13 +66,13 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal("HTTP credentials accepted/leaked")
 	}
 	backend.URL = "https://search.test:443"
-	raw, err = json.Marshal(cfg)
+	raw, err = json.Marshal(cfg.RoutingConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
 		input := strings.Replace(string(raw), `"connection":{`, `"connection":{"`+field+`":true,`, 1)
-		if _, err := Decode(strings.NewReader(input)); err == nil {
+		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 			t.Fatal("unknown connection/identity option accepted", field)
 		}
 	}

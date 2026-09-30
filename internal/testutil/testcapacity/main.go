@@ -79,12 +79,7 @@ func run() (runErrFinal error) {
 		return serveControl(ctx, *config, *suppressCongestion)
 	}
 	if *mode == "config" {
-		f, err := os.Open(*config)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		cfg, err := app.Decode(f)
+		cfg, err := app.Load(*config)
 		if err != nil {
 			return err
 		}
