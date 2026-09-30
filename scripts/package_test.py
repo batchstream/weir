@@ -103,6 +103,62 @@ class PackageTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         package.build_info(Path('binary'), target, {})
 
+    def test_oci_build_context_contains_only_built_binaries(self):
+        for qualification in (False, True):
+            with self.subTest(qualification=qualification), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source = root / 'source'
+                source.mkdir()
+                base = {'image': 'fixture', 'index': 'sha256:' + '0' * 64}
+                inputs = {
+                    'packaging/base.json': json.dumps(base).encode(),
+                    'packaging/Dockerfile': b'product Dockerfile',
+                    'scripts/qualification.Dockerfile': b'qualification Dockerfile',
+                    'packaging/README.md': b'fixture docs',
+                    'packaging/node.example.json': b'{}',
+                }
+
+                def run(args, *, cwd=None, env=None):
+                    if args[:3] == ['git', 'cat-file', 'blob']:
+                        return inputs[args[3]]
+                    if args == ['go', 'mod', 'verify'] or args[:3] == ['go', 'tool', 'buildid']:
+                        return b''
+                    if args == ['go', 'list', '-m', '-json', 'all']:
+                        return b'{}'
+                    if args[:2] == ['go', 'build']:
+                        binary = Path(args[args.index('-o') + 1])
+                        binary.write_bytes(f'{args[-1]} {env["GOOS"]}/{env["GOARCH"]}'.encode())
+                        return b''
+                    self.fail('unexpected command: ' + repr(args))
+
+                opts = dict(source=source, output=root / 'output', env={},
+                            files=[(name, name) for name in inputs], revision='0' * 40,
+                            epoch=1700000001, qualification=qualification, oci=True,
+                            builder='fixture', docker_env={})
+                linked = {}
+                oci = {'index': 'sha256:' + '1' * 64}
+                completed = subprocess.CompletedProcess([], 0, stdout='fixture OCI build')
+                with (patch.object(package, 'run', side_effect=run),
+                      patch.object(package, 'build_info', return_value=linked),
+                      patch.object(package, 'oci_receipt', return_value=oci) as receipt,
+                      patch.object(package.subprocess, 'run', return_value=completed) as docker):
+                    result = package.build_once(opts)
+
+                name = 'qualification' if qualification else 'weir'
+                expected = {name} if qualification else {name, name + '-lua-worker'}
+                for arch in ('amd64', 'arm64'):
+                    context = root / 'oci-context' / ('linux-' + arch)
+                    self.assertEqual({item.name for item in context.iterdir()}, expected)
+                    for binary in expected:
+                        built = opts['output'] / 'binaries' / ('linux-' + arch) / binary
+                        self.assertEqual((context / binary).read_bytes(), built.read_bytes())
+                dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'packaging/Dockerfile'
+                self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
+                self.assertEqual(bool(result['lua_worker_binaries']), not qualification)
+                self.assertEqual(receipt.call_args.args[2]['lua_worker_binaries'], result['lua_worker_binaries'])
+                receipt.assert_called_once()
+                docker.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

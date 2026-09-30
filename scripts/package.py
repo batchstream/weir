@@ -303,7 +303,8 @@ def build_once(opts):
             dest = context / ('linux-' + arch)
             dest.mkdir()
             shutil.copyfile(output / 'binaries' / ('linux-' + arch) / binary_name, dest / binary_name)
-            shutil.copyfile(output / 'binaries' / ('linux-' + arch) / (binary_name + '-lua-worker'), dest / (binary_name + '-lua-worker'))
+            if not qualification:
+                shutil.copyfile(output / 'binaries' / ('linux-' + arch) / (binary_name + '-lua-worker'), dest / (binary_name + '-lua-worker'))
         for file in context.rglob('*'):
             os.utime(file, (opts['epoch'], opts['epoch']))
         oci = output / (binary_name + '-linux.oci.tar')
