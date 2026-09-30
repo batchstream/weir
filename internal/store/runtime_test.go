@@ -240,8 +240,9 @@ func TestAIMDEpochAndFloor(t *testing.T) {
 	if c.window != 2 {
 		t.Fatal(c)
 	}
+	cooldown := c.cooldown
 	c.observe(b, execution.Congested, 8, now)
-	if c.window != 2 {
+	if c.window != 2 || !c.cooldown.Equal(cooldown) {
 		t.Fatal("old flight counted twice")
 	}
 	for i := 0; i < 4; i++ {

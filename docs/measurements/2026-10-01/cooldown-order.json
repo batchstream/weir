@@ -1,0 +1,446 @@
+{
+  "studies": {
+    "short": {
+      "source": ".testdata/universal-aggregation/cooldown-paired",
+      "runs": 6,
+      "modes": {
+        "baseline": {
+          "runs": 3,
+          "seconds": 60,
+          "planned": 288000,
+          "started": 262537,
+          "success_total": 262466,
+          "success_rps": 4374.433333333333,
+          "drop_total": 25463,
+          "total_loss": 25534,
+          "known_failure_total": 71,
+          "known_failure_per_started": 0.00027043807158610024,
+          "known_failure_per_started_pct": 0.027043807158610024,
+          "unknown_total": 0,
+          "pooled_success_arrival_percentiles_us": {
+            "50": 3100,
+            "95": 102000,
+            "99": 192000
+          },
+          "trial_medians": {
+            "success_rps": 4533.2,
+            "total_loss": 5336,
+            "success_arrival_p95_us": 67000,
+            "success_arrival_p99_us": 179000,
+            "known_failure_per_started": 0.00023157082207641837
+          },
+          "trial_ranges": {
+            "success_rps": [
+              3900.15,
+              4689.95
+            ],
+            "total_loss": [
+              2201,
+              17997
+            ],
+            "success_arrival_p95_us": [
+              19000,
+              177000
+            ],
+            "success_arrival_p99_us": [
+              97000,
+              243000
+            ],
+            "known_failure_per_started": [
+              0.00020251977232514017,
+              0.0003972627316298024
+            ]
+          },
+          "backend_rejected_trial_median": 3,
+          "backend_rejected_trial_range": [
+            2,
+            5
+          ],
+          "backend_rejected_sum": 10,
+          "recovery_success_total": 6000,
+          "recovery_failure_total": 0
+        },
+        "weir": {
+          "runs": 3,
+          "seconds": 60,
+          "planned": 288000,
+          "started": 271957,
+          "success_total": 271873,
+          "success_rps": 4531.216666666666,
+          "drop_total": 16043,
+          "total_loss": 16127,
+          "known_failure_total": 84,
+          "known_failure_per_started": 0.0003088723584978508,
+          "known_failure_per_started_pct": 0.030887235849785075,
+          "unknown_total": 0,
+          "pooled_success_arrival_percentiles_us": {
+            "50": 3100,
+            "95": 59000,
+            "99": 178000
+          },
+          "trial_medians": {
+            "success_rps": 4476.15,
+            "total_loss": 6477,
+            "success_arrival_p95_us": 83000,
+            "success_arrival_p99_us": 183000,
+            "known_failure_per_started": 0.00029597249732486394
+          },
+          "trial_ranges": {
+            "success_rps": [
+              4391.0,
+              4726.5
+            ],
+            "total_loss": [
+              1470,
+              8180
+            ],
+            "success_arrival_p95_us": [
+              17000,
+              87000
+            ],
+            "success_arrival_p99_us": [
+              79000,
+              261000
+            ],
+            "known_failure_per_started": [
+              0.00021219092716267225,
+              0.00041239729721155984
+            ]
+          },
+          "backend_rejected_trial_median": 3,
+          "backend_rejected_trial_range": [
+            3,
+            4
+          ],
+          "backend_rejected_sum": 10,
+          "recovery_success_total": 6000,
+          "recovery_failure_total": 0
+        }
+      },
+      "order_summary": {
+        "second_run_pair_wins": 3,
+        "second_run_known_failure_rate_wins": 2,
+        "second_run_cohort_wins": 5,
+        "AB_candidate_wins": 2,
+        "AB_pairs": 2,
+        "BA_candidate_wins": 0,
+        "BA_pairs": 1
+      },
+      "safety": {
+        "recovery_success_total": 12000,
+        "recovery_planned_total": 12000,
+        "recovery_drop_total": 0,
+        "recovery_failure_total": 0,
+        "unknown_total": 0,
+        "warm_unknown_total": 0,
+        "sampled_bound_violations": 0,
+        "all_audits_pass": true
+      },
+      "cleanup": {
+        "pass": true,
+        "errors": [],
+        "inventory_restored": false,
+        "non_default_inventory_restored": true,
+        "default_bridge_id_changed": true,
+        "remaining_owned_containers": [],
+        "remaining_owned_networks": []
+      }
+    },
+    "confirmation": {
+      "source": ".testdata/universal-aggregation/cooldown-confirmation",
+      "runs": 8,
+      "modes": {
+        "baseline": {
+          "runs": 4,
+          "seconds": 120,
+          "planned": 576000,
+          "started": 548980,
+          "success_total": 548844,
+          "success_rps": 4573.7,
+          "drop_total": 27020,
+          "total_loss": 27156,
+          "known_failure_total": 136,
+          "known_failure_per_started": 0.000247732157819957,
+          "known_failure_per_started_pct": 0.024773215781995702,
+          "unknown_total": 0,
+          "pooled_success_arrival_percentiles_us": {
+            "50": 3000,
+            "95": 41000,
+            "99": 179000
+          },
+          "trial_medians": {
+            "success_rps": 4611.4,
+            "total_loss": 5658.0,
+            "success_arrival_p95_us": 23500.0,
+            "success_arrival_p99_us": 146000.0,
+            "known_failure_per_started": 0.0002322636222439522
+          },
+          "trial_ranges": {
+            "success_rps": [
+              4390.366666666667,
+              4681.633333333333
+            ],
+            "total_loss": [
+              3551,
+              12289
+            ],
+            "success_arrival_p95_us": [
+              16000,
+              105000
+            ],
+            "success_arrival_p99_us": [
+              97000,
+              191000
+            ],
+            "known_failure_per_started": [
+              0.00010202520022445544,
+              0.0004325784712525044
+            ]
+          },
+          "backend_rejected_trial_median": 3.5,
+          "backend_rejected_trial_range": [
+            2,
+            7
+          ],
+          "backend_rejected_sum": 16,
+          "recovery_success_total": 7998,
+          "recovery_failure_total": 2
+        },
+        "weir": {
+          "runs": 4,
+          "seconds": 120,
+          "planned": 576000,
+          "started": 564582,
+          "success_total": 564458,
+          "success_rps": 4703.816666666667,
+          "drop_total": 11418,
+          "total_loss": 11542,
+          "known_failure_total": 124,
+          "known_failure_per_started": 0.00021963151499693577,
+          "known_failure_per_started_pct": 0.02196315149969358,
+          "unknown_total": 0,
+          "pooled_success_arrival_percentiles_us": {
+            "50": 3000,
+            "95": 23000,
+            "99": 98000
+          },
+          "trial_medians": {
+            "success_rps": 4716.716666666666,
+            "total_loss": 2498.5,
+            "success_arrival_p95_us": 23000.0,
+            "success_arrival_p99_us": 92000.0,
+            "known_failure_per_started": 0.0001993264669028676
+          },
+          "trial_ranges": {
+            "success_rps": [
+              4612.633333333333,
+              4769.2
+            ],
+            "total_loss": [
+              924,
+              5621
+            ],
+            "success_arrival_p95_us": [
+              6400,
+              57000
+            ],
+            "success_arrival_p99_us": [
+              63000,
+              142000
+            ],
+            "known_failure_per_started": [
+              0.00013546947302374993,
+              0.0003467531623166001
+            ]
+          },
+          "backend_rejected_trial_median": 3.5,
+          "backend_rejected_trial_range": [
+            3,
+            4
+          ],
+          "backend_rejected_sum": 14,
+          "recovery_success_total": 8000,
+          "recovery_failure_total": 0
+        }
+      },
+      "order_summary": {
+        "second_run_pair_wins": 3,
+        "second_run_known_failure_rate_wins": 2,
+        "second_run_cohort_wins": 7,
+        "AB_candidate_wins": 2,
+        "AB_pairs": 2,
+        "BA_candidate_wins": 0,
+        "BA_pairs": 2
+      },
+      "safety": {
+        "recovery_success_total": 15998,
+        "recovery_planned_total": 16000,
+        "recovery_drop_total": 0,
+        "recovery_failure_total": 2,
+        "unknown_total": 0,
+        "warm_unknown_total": 0,
+        "sampled_bound_violations": 0,
+        "all_audits_pass": true
+      },
+      "cleanup": {
+        "pass": true,
+        "errors": [],
+        "inventory_restored": false,
+        "non_default_inventory_restored": true,
+        "default_bridge_id_changed": true,
+        "remaining_owned_containers": [],
+        "remaining_owned_networks": []
+      }
+    }
+  },
+  "pairs": [
+    {
+      "study": "short",
+      "repetition": 0,
+      "order": "AB",
+      "candidate_wins_success_loss_p95": true,
+      "second_run_wins_success_loss_p95": true,
+      "candidate_change_pct": {
+        "success_rps": 14.768662743740624,
+        "total_loss": -64.01066844474079,
+        "success_arrival_p95_us": -50.847457627118644,
+        "success_arrival_p99_us": -24.691358024691358,
+        "known_failure_per_started": -46.58675222512269
+      },
+      "candidate_cohort_wins": [
+        true,
+        true
+      ]
+    },
+    {
+      "study": "short",
+      "repetition": 1,
+      "order": "BA",
+      "candidate_wins_success_loss_p95": false,
+      "second_run_wins_success_loss_p95": true,
+      "candidate_change_pct": {
+        "success_rps": -6.374268382392135,
+        "total_loss": 271.6492503407542,
+        "success_arrival_p95_us": 336.84210526315786,
+        "success_arrival_p99_us": 169.07216494845363,
+        "known_failure_per_started": 46.14498817907413
+      },
+      "candidate_cohort_wins": [
+        false,
+        false
+      ]
+    },
+    {
+      "study": "short",
+      "repetition": 2,
+      "order": "AB",
+      "candidate_wins_success_loss_p95": true,
+      "second_run_wins_success_loss_p95": true,
+      "candidate_change_pct": {
+        "success_rps": 4.264096002823625,
+        "total_loss": -72.4512743628186,
+        "success_arrival_p95_us": -74.62686567164178,
+        "success_arrival_p99_us": -55.8659217877095,
+        "known_failure_per_started": 78.08689951252525
+      },
+      "candidate_cohort_wins": [
+        true,
+        true
+      ]
+    },
+    {
+      "study": "confirmation",
+      "repetition": 0,
+      "order": "AB",
+      "candidate_wins_success_loss_p95": true,
+      "second_run_wins_success_loss_p95": true,
+      "candidate_change_pct": {
+        "success_rps": 8.395654121523632,
+        "total_loss": -89.98291154691186,
+        "success_arrival_p95_us": -80.95238095238095,
+        "success_arrival_p99_us": -60.20942408376963,
+        "known_failure_per_started": -62.76433983721138
+      },
+      "candidate_cohort_wins": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "study": "confirmation",
+      "repetition": 1,
+      "order": "BA",
+      "candidate_wins_success_loss_p95": false,
+      "second_run_wins_success_loss_p95": true,
+      "candidate_change_pct": {
+        "success_rps": -1.4738445983951465,
+        "total_loss": 58.29343846803716,
+        "success_arrival_p95_us": 256.25,
+        "success_arrival_p99_us": 46.39175257731958,
+        "known_failure_per_started": 73.96729993838942
+      },
+      "candidate_cohort_wins": [
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "study": "confirmation",
+      "repetition": 2,
+      "order": "AB",
+      "candidate_wins_success_loss_p95": true,
+      "second_run_wins_success_loss_p95": true,
+      "candidate_change_pct": {
+        "success_rps": 4.277478554301162,
+        "total_loss": -86.39776240247313,
+        "success_arrival_p95_us": -77.93103448275862,
+        "success_arrival_p99_us": -65.19337016574586,
+        "known_failure_per_started": 132.86353154915798
+      },
+      "candidate_cohort_wins": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "study": "confirmation",
+      "repetition": 3,
+      "order": "BA",
+      "candidate_wins_success_loss_p95": false,
+      "second_run_wins_success_loss_p95": false,
+      "candidate_change_pct": {
+        "success_rps": 0.5427418140625084,
+        "total_loss": -16.73667919522441,
+        "success_arrival_p95_us": 44.44444444444444,
+        "success_arrival_p99_us": -2.7027027027026973,
+        "known_failure_per_started": -48.91922146098528
+      },
+      "candidate_cohort_wins": [
+        true,
+        false,
+        false
+      ]
+    }
+  ],
+  "recommendation": "Reject the production cooldown tuning as unproven; retain the original100-300ms range. Positive aggregates do not separate the run-order effect.",
+  "runs_total": 14,
+  "pairs_total": 7,
+  "candidate_composite_wins": 4,
+  "second_run_composite_wins": 6,
+  "AB_candidate_composite_wins": 4,
+  "AB_pairs": 4,
+  "BA_candidate_composite_wins": 0,
+  "BA_pairs": 3,
+  "AB_candidate_p95_improvements": 4,
+  "BA_candidate_p95_improvements": 0,
+  "warm_unknown_total_all14": 0,
+  "notes": [
+    "AB means baseline then candidate; BA means candidate then baseline.",
+    "The studies have different20s/30s measure and10s/20s warm intervals; mode statistics are kept stratified.",
+    "Composite win means improved successRPS, lower totalLoss, and lower success-arrival p95 together.",
+    "All AB candidate p95 results improve; all BA candidate p95 results worsen. The underlying order mechanism is not established."
+  ]
+}
