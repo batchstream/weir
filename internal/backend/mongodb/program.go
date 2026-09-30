@@ -176,7 +176,9 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 		if !retryTransaction {
 			break
 		}
-		if !a.abortProgramTransaction(session) || !pauseProgram(ctx) {
+		// CommitTransaction has already ended the local transaction after a
+		// definite transient error; aborting it would block the next attempt.
+		if !pauseProgram(ctx) {
 			break
 		}
 	}
