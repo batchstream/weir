@@ -37,8 +37,26 @@ func run() (runErrFinal error) {
 	config := flag.String("config", "", "owned config")
 	pid := flag.String("pid", "1", "observed namespace pid")
 	role := flag.String("role", "", "explicit observe role: weir or es")
-	recovery := flag.Int("recovery-rate", 0, "after this trial, immediate120s recovery rate")
+	recovery := flag.Int("recovery-rate", 0, "immediate recovery phase offered operations per second")
+	recoverySeconds := flag.Int("recovery-seconds", 120, "bounded recovery duration")
+	pool := flag.Int("pool", 62, "direct backend HTTP connection cap, matching Weir concurrency for comparisons")
+	workers := flag.Int("workers", 64, "bounded client concurrency")
+	writeEvery := flag.Int("write-every", 10, "one write every 10 operations, or 1 for write-only")
+	suppressCongestion := flag.Bool("suppress-congestion", false, "integration-only causal control: suppress explicit database congestion feedback")
+	arrivalExpiryMS := flag.Int("arrival-expiry-ms", 0, "comparison-only arrival expiry override, bounded to 100 ms")
+	maxCatchup := flag.Int("max-catchup", 0, "comparison-only catchup override, bounded to 512")
+	clientQueue := flag.Int("client-queue", 0, "bounded comparison client queue, maximum 512")
+	loadDelayMS := flag.Int("load-delay-ms", 0, "integration fixture pause after setup for controller resource changes, at most 5000 ms")
 	flag.Parse()
+	if *loadDelayMS < 0 || *loadDelayMS > 5000 {
+		return errors.New("load delay bound")
+	}
+	if *recoverySeconds < 1 || *recoverySeconds > 120 {
+		return errors.New("recovery duration bound")
+	}
+	if *writeEvery != 1 && *writeEvery != 10 {
+		return errors.New("write ratio bound")
+	}
 	if os.Getenv("WEIR_CAPACITY_INTEGRATION") != "1" {
 		return errors.New("explicit integration opt-in required")
 	}
@@ -53,7 +71,13 @@ func run() (runErrFinal error) {
 	}
 	defer stdout.Close()
 	output := &evidenceWriter{File: stdout, Context: ctx}
+	if *arrivalExpiryMS != 0 || *maxCatchup != 0 || *clientQueue != 0 {
+		output.SingleWriteLimit = 32 << 20
+	}
 	encoder := json.NewEncoder(output)
+	if *mode == "serve-control" {
+		return serveControl(ctx, *config, *suppressCongestion)
+	}
 	if *mode == "config" {
 		f, err := os.Open(*config)
 		if err != nil {
@@ -101,7 +125,7 @@ func run() (runErrFinal error) {
 		return errors.Join(err, control.close())
 	}
 	if *mode == "setup" {
-		c, err := newClient(*backend, "")
+		c, err := newClient(*backend, "", *pool)
 		if err != nil {
 			return err
 		}
@@ -120,19 +144,19 @@ func run() (runErrFinal error) {
 		return c.setup(call, encoder)
 	}
 	if *mode == "pace" {
-		opts := TrialOptions{Rate: *rate, Seconds: *seconds, Workers: 64, Prefix: "pace", TimingOnly: true, LegacyExpiry: *legacy}
+		opts := TrialOptions{Rate: *rate, Seconds: *seconds, Workers: 64, Prefix: "pace", TimingOnly: true, WriteEvery: *writeEvery, LegacyExpiry: *legacy, ArrivalExpiryMS: *arrivalExpiryMS, MaxCatchup: *maxCatchup, ClientQueue: *clientQueue}
 		return pacing(ctx, encoder, opts)
 	}
 	if *mode != "trial" {
 		return errors.New("unknown mode")
 	}
-	c, err := newClient(*backend, *target)
+	c, err := newClient(*backend, *target, *pool)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	planned := *rate*(*warm+*seconds) + *recovery*120
-	if *reservation != corpusSize+planned/10 || planned%10 != 0 || *reservation > 100000 {
+	planned := *rate*(*warm+*seconds) + *recovery*(*recoverySeconds)
+	if *reservation != corpusSize+planned/(*writeEvery) || planned%(*writeEvery) != 0 || *reservation > 300000 {
 		return errors.New("trial reservation")
 	}
 	defer func() {
@@ -150,6 +174,7 @@ func run() (runErrFinal error) {
 	if err != nil {
 		return err
 	}
+	sampler.SkipNetwork = *arrivalExpiryMS != 0 || *maxCatchup != 0 || *clientQueue != 0
 	begin := sampler.sample(deadline, nil)
 	start := map[string]any{"type": "client_start", "sample": begin}
 	if err = encoder.Encode(start); err != nil {
@@ -161,6 +186,7 @@ func run() (runErrFinal error) {
 	samples := make(chan Sample, 160)
 	done := make(chan struct{})
 	sampleCtx, stopSamples := context.WithCancel(deadline)
+	defer stopSamples()
 	go func() {
 		defer close(done)
 		ticker := time.NewTicker(2 * time.Second)
@@ -184,12 +210,19 @@ func run() (runErrFinal error) {
 			}
 		}
 	}()
-	opts := TrialOptions{Rate: *rate, WarmSeconds: *warm, Seconds: *seconds, Prefix: *prefix, Workers: 64}
+	if *loadDelayMS > 0 {
+		select {
+		case <-time.After(time.Duration(*loadDelayMS) * time.Millisecond):
+		case <-deadline.Done():
+			return deadline.Err()
+		}
+	}
+	opts := TrialOptions{Rate: *rate, WarmSeconds: *warm, Seconds: *seconds, Prefix: *prefix, Workers: *workers, WriteEvery: *writeEvery, ArrivalExpiryMS: *arrivalExpiryMS, MaxCatchup: *maxCatchup, ClientQueue: *clientQueue}
 	t, runErr := runTrial(deadline, c, opts)
 	var rt *Trial
 	if runErr == nil && *recovery > 0 {
 		opts.Rate = *recovery
-		opts.Seconds = 120
+		opts.Seconds = *recoverySeconds
 		opts.WarmSeconds = 0
 		opts.Prefix = *prefix + "-recovery"
 		rt, runErr = runTrial(deadline, c, opts)
@@ -241,6 +274,7 @@ func run() (runErrFinal error) {
 		}
 	}
 	c.Close()
+	sampler.VerifyHash = true
 	out = map[string]any{"type": "client_end", "sample": sampler.sample(ctx, nil)}
 	if err = encoder.Encode(out); err != nil {
 		return err

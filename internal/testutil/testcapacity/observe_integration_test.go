@@ -51,7 +51,7 @@ func TestNativeObservationExitedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = readProcess(pid); err == nil {
+	if _, err = readProcess(pid, true); err == nil {
 		t.Fatal("exited target accepted")
 	}
 	t.Logf("child PID=%s Wait complete; exited target rejected", pid)

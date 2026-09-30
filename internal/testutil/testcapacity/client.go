@@ -27,9 +27,12 @@ type Client struct {
 	RPC              []pb.WeirClient
 }
 
-func newClient(backend, target string) (*Client, error) {
+func newClient(backend, target string, pool int) (*Client, error) {
+	if pool < 1 || pool > 62 {
+		return nil, errors.New("HTTP connection pool bound")
+	}
 	dialer := &net.Dialer{Timeout: time.Second, KeepAlive: 30 * time.Second}
-	transport := &http.Transport{Proxy: nil, DialContext: dialer.DialContext, DisableCompression: true, MaxConnsPerHost: 62, MaxIdleConns: 62, MaxIdleConnsPerHost: 62, IdleConnTimeout: 10 * time.Second, ResponseHeaderTimeout: time.Second, MaxResponseHeaderBytes: 16384}
+	transport := &http.Transport{Proxy: nil, DialContext: dialer.DialContext, DisableCompression: true, MaxConnsPerHost: pool, MaxIdleConns: pool, MaxIdleConnsPerHost: pool, IdleConnTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Second, MaxResponseHeaderBytes: 16384}
 	hc := &http.Client{Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirect refused") }}
 	c := &Client{HTTP: hc, Transport: transport, Backend: backend}
 	if target != "" {
@@ -153,6 +156,9 @@ func (c *Client) direct(ctx context.Context, op Operation) Result {
 		if err != nil {
 			return failure("transport_http", false)
 		}
+		if code == 429 || code == 503 {
+			return failure(fmt.Sprintf("backend_http_%d", code), false)
+		}
 		var rec Record
 		if code != 200 || json.Unmarshal(raw, &rec) != nil || rec.Index != "records" || rec.ID != op.ID || !rec.Found || rec.Version != 1 || !validPayload(rec.Source, op.ID) {
 			return failure("payload_or_response", false)
@@ -168,6 +174,18 @@ func (c *Client) direct(ctx context.Context, op Operation) Result {
 	return parseBulk(code, raw, op.ID)
 }
 func parseBulk(code int, raw []byte, id string) Result {
+	if code == 429 || code == 503 {
+		var envelope struct {
+			Error struct {
+				Type string `json:"type"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &envelope) == nil && knownRejection(code, envelope.Error.Type) {
+			r := Result{Class: "backend_rejected_not_applied", Outcome: notApplied}
+			return r
+		}
+		return failure(fmt.Sprintf("backend_http_%d", code), true)
+	}
 	var response struct {
 		Errors *bool  `json:"errors"`
 		Took   *int64 `json:"took"`
@@ -191,6 +209,13 @@ func parseBulk(code int, raw []byte, id string) Result {
 		return failure("correlation", true)
 	}
 	if *response.Errors || len(item.Error) > 0 {
+		var rejection struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(item.Error, &rejection) == nil && knownRejection(item.Status, rejection.Type) {
+			r := Result{Class: "backend_rejected_not_applied", Outcome: notApplied}
+			return r
+		}
 		return failure("backend_rejection_unknown", true)
 	}
 	if item.Status != 201 || item.Result != "created" || item.Version != 1 || item.Seq == nil || *item.Seq < 0 || item.Term < 1 || item.Shards.Total != 1 || item.Shards.Successful != 1 || item.Shards.Failed != 0 {
@@ -198,4 +223,8 @@ func parseBulk(code int, raw []byte, id string) Result {
 	}
 	r := Result{Class: "ok", Outcome: applied}
 	return r
+}
+
+func knownRejection(code int, kind string) bool {
+	return code == 429 && kind == "es_rejected_execution_exception" || code == 503 && kind == "unavailable_shards_exception"
 }

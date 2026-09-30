@@ -1,0 +1,92 @@
+{
+  "checks": [
+    {
+      "command": "CGO_ENABLED=0 go test -count=1 -timeout=180s ./...",
+      "exit_code": 0,
+      "name": "default Go tests"
+    },
+    {
+      "command": "CGO_ENABLED=1 go test -race -count=1 -timeout=180s ./...",
+      "exit_code": 0,
+      "name": "default Go race tests"
+    },
+    {
+      "command": "CGO_ENABLED=0 go vet ./...",
+      "exit_code": 0,
+      "name": "default vet"
+    },
+    {
+      "command": "CGO_ENABLED=0 go vet -tags=integration ./...",
+      "exit_code": 0,
+      "name": "integration vet after deferred sampler cancellation fix"
+    },
+    {
+      "command": "go test -tags=integration ./internal/testutil/testcapacity",
+      "exit_code": 0,
+      "name": "integration helper tests",
+      "seconds": 13.594
+    },
+    {
+      "command": "go test -race -tags=integration ./internal/testutil/testcapacity",
+      "exit_code": 0,
+      "name": "integration helper race tests",
+      "rechecked_after_sampler_cancel_fix": true,
+      "seconds": 17.191
+    },
+    {
+      "command": "python3 -m unittest discover -s scripts -p '*_test.py'",
+      "exit_code": 0,
+      "initial_skips": 4,
+      "name": "Python suite",
+      "seconds": 59.487,
+      "tests": 97
+    },
+    {
+      "command": "python3 -O -m unittest discover -s scripts -p '*_test.py'",
+      "exit_code": 0,
+      "initial_skips": 30,
+      "name": "Python optimized suite",
+      "seconds": 31.078,
+      "tests": 97
+    },
+    {
+      "environment": [
+        "GITHUB_ACTIONS=true",
+        "WEIR_COMPLETION_TEST_BINARY=<locally compiled integration testcapacity.test>"
+      ],
+      "exit_code": 0,
+      "name": "CI-gated real Go completion consumer tests",
+      "seconds": 3.079,
+      "skips": 0,
+      "tests": 4
+    },
+    {
+      "environment": [
+        "GITHUB_ACTIONS=true",
+        "WEIR_COMPLETION_TEST_BINARY=<locally compiled integration testcapacity.test>"
+      ],
+      "exit_code": 0,
+      "expected_legacy_debug_skips": 2,
+      "name": "CI-gated optimized real Go completion consumer tests",
+      "seconds": 1.59,
+      "tests": 4
+    },
+    {
+      "exit_code": 0,
+      "name": "gofmt, Python compilation, git diff whitespace"
+    }
+  ],
+  "go": "go1.27.1",
+  "go_environment": {
+    "GOENV": "off for broad tests/vet; original environment for helper tests",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "binary": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go"
+  },
+  "platform": "darwin/arm64",
+  "qualification_limit": "Local checks complement GitHub amd64/arm64 CI; they do not represent a MongoDB natural-load benchmark.",
+  "schema_version": 1
+}

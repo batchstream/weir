@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -20,7 +21,7 @@ func TestOpenLoopFullSlotsTimeoutAndCancellation(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	c, err := newClient(server.URL, "")
+	c, err := newClient(server.URL, "", 62)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +50,55 @@ func TestTrialBounds(t *testing.T) {
 			t.Fatal(rate)
 		}
 	}
+}
+
+func TestWriteOnlyTimingLedgerAndSuccessLatency(t *testing.T) {
+	opts := TrialOptions{Rate: 1000, Seconds: 1, Workers: 64, Prefix: "writes", WriteEvery: 1, TimingOnly: true}
+	trial, err := runTrial(context.Background(), nil, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trial.Ledger) != 1000 || trial.Measure.Read.Planned != 0 || trial.Measure.Put.Planned != 1000 || trial.Measure.Put.Completed+trial.Measure.Put.Drop != 1000 {
+		t.Fatal("write-only count or ledger mismatch", len(trial.Ledger), trial.Measure)
+	}
+	var appliedCount uint64
+	for _, outcome := range trial.Ledger {
+		if outcome == applied {
+			appliedCount++
+		}
+	}
+	var latencyCount uint64
+	for _, count := range trial.Measure.Put.SuccessArrival.Counts {
+		latencyCount += count
+	}
+	if appliedCount != trial.Measure.Put.Success || latencyCount != appliedCount {
+		t.Fatal("success/ledger/latency mismatch", appliedCount, latencyCount, trial.Measure.Put.Success)
+	}
+}
+
+func TestMaximumDispersedTrialEvidenceBound(t *testing.T) {
+	var m Metrics
+	histograms := []*Histogram{&m.Wake, &m.Decision, &m.Construct, &m.Handoff, &m.WorkerStart, &m.SuccessArrival, &m.SuccessDispatch, &m.Arrival, &m.Dispatch, &m.Lag}
+	for _, histogram := range histograms {
+		for i := range histogram.Counts {
+			histogram.Counts[i] = 1
+		}
+	}
+	window := Window{All: m, Read: m, Put: m}
+	opts := TrialOptions{Seconds: 120, WarmSeconds: 20}
+	trial := Trial{Options: opts, Warm: window, Measure: window, Windows: make([]Window, 12)}
+	for i := range trial.Windows {
+		trial.Windows[i] = window
+	}
+	value := map[string]any{"type": "trial", "trial": trial, "run_error": "<nil>"}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) <= 1<<20 || len(raw) > 32<<20 {
+		t.Fatal("unexpected worst-case evidence size", len(raw))
+	}
+	t.Log("maximum dispersed histogram trial bytes", len(raw))
 }
 
 func TestLateDropHasNoFabricatedLatency(t *testing.T) {
