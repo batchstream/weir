@@ -36,9 +36,9 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		firstRoute := Route{Store: "first", Service: "first"}
 		otherRoute := Route{Store: "second", Service: "second"}
 		failed := DefaultConfig()
-		failed.Application = "127.0.0.1:0"
-		failed.Services = []Service{firstService, otherService}
-		failed.Routes = []Route{firstRoute, otherRoute}
+		failed.Basic.Listeners.Application = "127.0.0.1:0"
+		failed.Routing.Services = []Service{firstService, otherService}
+		failed.Routing.Routes = []Route{firstRoute, otherRoute}
 		for i := 0; i < 3; i++ {
 			node, err := Open(context.Background(), failed)
 			if node != nil || err == nil {
@@ -61,15 +61,15 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "search", Service: "database"}
 	cfg := DefaultConfig()
-	cfg.Application = "127.0.0.1:0"
-	cfg.Peer = "127.0.0.1:0"
-	cfg.Services = []Service{service}
-	cfg.Routes = []Route{route}
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Routing.Services = []Service{service}
+	cfg.Routing.Routes = []Route{route}
 	node := secureNode(t, cfg)
-	remote := &Remote{Endpoints: []string{node.Addresses()[1]}, Relays: 1}
+	remote := &Remote{Endpoints: []string{node.Addresses()[1]}, MaxConcurrency: 1}
 	service = Service{Name: "database", Remote: remote}
-	cfg.Services = []Service{service}
-	cfg.Peer = ""
+	cfg.Routing.Services = []Service{service}
+	cfg.Basic.Listeners.Peer = ""
 	peer := secureNode(t, cfg)
 	for name, address := range map[string]string{"direct": node.Addresses()[0], "peer": peer.Addresses()[0]} {
 		t.Run(name, func(t *testing.T) {

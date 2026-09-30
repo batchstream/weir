@@ -17,26 +17,26 @@ import (
 )
 
 func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
-	input := `{"application":"127.0.0.1:0","routing_file":"routing.json"}`
+	input := `{"listeners":{"application":"127.0.0.1:0"},"routing":{"file":"routing.json"}}`
 	cfg, err := DecodeBasic(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defaults := DefaultConfig().BasicConfig
-	if cfg.MemoryMiB != defaults.MemoryMiB || cfg.InitialForwards != defaults.InitialForwards || cfg.Limits != defaults.Limits || defaults.Application != "" || defaults.RoutingFile != "" {
+	defaults := DefaultConfig().Basic
+	if cfg.Memory != defaults.Memory || cfg.Forwarding != defaults.Forwarding || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" || defaults.Routing.File != "" {
 		t.Fatal("process defaults changed")
 	}
-	for _, field := range []string{"", `,"routing_file":""`, `,"routing_file":" \t\r\n"`, `,"routing_file":null`} {
-		input := `{"application":"127.0.0.1:0"` + field + `}`
+	for _, field := range []string{"", `,"routing":{}`, `,"routing":{"file":""}`, `,"routing":{"file":" \t\r\n"}`, `,"routing":{"file":null}`} {
+		input := `{"listeners":{"application":"127.0.0.1:0"}` + field + `}`
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
-			t.Fatal("missing or empty routing_file accepted")
+			t.Fatal("missing or empty routing.file accepted")
 		}
 	}
-	input = `{"routing_file":"routing.json"}`
+	input = `{"routing":{"file":"routing.json"}}`
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 		t.Fatal("missing listeners accepted")
 	}
-	defaults.Application = "127.0.0.1:0"
+	defaults.Listeners.Application = "127.0.0.1:0"
 	if err := defaults.Validate(); err != nil {
 		t.Fatal("runtime basic configuration requires a file path", err)
 	}
@@ -44,26 +44,26 @@ func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
 
 func TestStrictConfigurationDocuments(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.RoutingFile = "routing.json"
-	basic, err := json.Marshal(cfg.BasicConfig)
+	cfg.Basic.Routing.File = "routing.json"
+	basic, err := json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	routing, err := json.Marshal(cfg.RoutingConfig)
+	routing, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, document := range []string{"basic", "routing"} {
 		t.Run(document, func(t *testing.T) {
 			raw := string(basic)
-			duplicate := `"MEMORY_MIB":512,`
+			duplicate := `"MEMORY":"512MiB",`
 			crossField := `"services":[],`
-			nestedDuplicate := strings.Replace(raw, `"connections":16`, `"connections":16,"CONNECTIONS":16`, 1)
+			nestedDuplicate := strings.Replace(raw, `"max_connections":16`, `"max_connections":16,"MAX_CONNECTIONS":16`, 1)
 			if document == "routing" {
 				raw = string(routing)
 				duplicate = `"SERVICES":[],`
 				crossField = `"application":"127.0.0.1:0",`
-				nestedDuplicate = strings.Replace(raw, `"relays":2`, `"relays":2,"RELAYS":2`, 1)
+				nestedDuplicate = strings.Replace(raw, `"max_concurrency":2`, `"max_concurrency":2,"MAX_CONCURRENCY":2`, 1)
 			}
 			var decodeErr error
 			if document == "basic" {
@@ -137,8 +137,8 @@ func TestConfigurationNestingBound(t *testing.T) {
 
 func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.RoutingFile = "routing.json"
-	routing, err := json.Marshal(cfg.RoutingConfig)
+	cfg.Basic.Routing.File = "routing.json"
+	routing, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +146,11 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote routing field", err)
 	}
-	basic, err := json.Marshal(cfg.BasicConfig)
+	basic, err := json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input = strings.Replace(string(basic), `"sessions":16`, `"sessions":16,"ſessions":16`, 1)
+	input = strings.Replace(string(basic), `"max_sessions":16`, `"max_sessions":16,"max_ſessions":16`, 1)
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote basic field", err)
 	}
@@ -158,12 +158,12 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 
 func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.RoutingFile = "routing.json"
-	raw, err := json.Marshal(cfg.BasicConfig)
+	cfg.Basic.Routing.File = "routing.json"
+	raw, err := json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{`"diagnostics":null,`, `"application":null,`, `"memory_mib":null,`, `"limits":null,`, `"limits":{"connections":null},`} {
+	for _, fragment := range []string{`"diagnostics":null,`, `"listeners":null,`, `"memory":null,`, `"transport":null,`, `"transport":{"max_connections":null},`, `"transport":{"timeouts":{"unary":null}},`, `"forwarding":null,`, `"routing":null,`} {
 		input := "{" + fragment + string(raw[1:])
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be null") {
 			t.Fatal("null basic field accepted", err)
@@ -193,7 +193,7 @@ func TestLoadRoutingPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := remoteConfig(t)
-	routing, err := json.Marshal(cfg.RoutingConfig)
+	routing, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +202,8 @@ func TestLoadRoutingPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"../routing.json", routingFilename} {
-		cfg.RoutingFile = path
-		basic, err := json.Marshal(cfg.BasicConfig)
+		cfg.Basic.Routing.File = path
+		basic, err := json.Marshal(cfg.Basic)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestLoadRoutingPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 		loaded, err := Load(filename)
-		if err != nil || loaded.Application != cfg.Application || loaded.RoutingFile != path || len(loaded.Services) != 1 || len(loaded.Routes) != 1 {
+		if err != nil || loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application || loaded.Basic.Routing.File != path || len(loaded.Routing.Services) != 1 || len(loaded.Routing.Routes) != 1 {
 			t.Fatal("routing path not resolved from basic file", err)
 		}
 	}
@@ -225,8 +225,8 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 		t.Fatal("missing basic error leaked path", err)
 	}
 	cfg := remoteConfig(t)
-	cfg.RoutingFile = "missing-routing-secret-sentinel.json"
-	basic, err := json.Marshal(cfg.BasicConfig)
+	cfg.Basic.Routing.File = "missing-routing-secret-sentinel.json"
+	basic, err := json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,8 +237,8 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	if _, err := Load(filename); err == nil || err.Error() != "routing configuration unavailable" {
 		t.Fatal("missing routing error leaked path", err)
 	}
-	cfg.Application = "invalid-listener-secret-sentinel"
-	basic, err = json.Marshal(cfg.BasicConfig)
+	cfg.Basic.Listeners.Application = "invalid-listener-secret-sentinel"
+	basic, err = json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,8 +262,8 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 	service := Service{Name: "search", Local: local}
 	route := Route{Store: "records", Service: "search"}
 	cfg := DefaultConfig()
-	cfg.Application = listener.Addr().String()
-	cfg.Services, cfg.Routes = []Service{service}, []Route{route}
+	cfg.Basic.Listeners.Application = listener.Addr().String()
+	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
 	filename := filepath.Join(t.TempDir(), "node.json")
 	writeConfigFiles(t, filename, cfg, 0600)
 	if _, err := Load(filename); err != nil {
@@ -282,8 +282,8 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 	invalidService := Service{Name: "invalid"}
 	route := Route{Store: "records", Service: "search"}
 	cfg := DefaultConfig()
-	cfg.Application = strings.TrimPrefix(endpoint.URL, "http://")
-	cfg.Services, cfg.Routes = []Service{service, invalidService}, []Route{route}
+	cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
+	cfg.Routing.Services, cfg.Routing.Routes = []Service{service, invalidService}, []Route{route}
 	filename := filepath.Join(t.TempDir(), "node.json")
 	writeConfigFiles(t, filename, cfg, 0600)
 	if _, err := Load(filename); err == nil || contacts.Load() != 0 {
@@ -293,7 +293,7 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 
 func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg.RoutingConfig)
+	raw, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}

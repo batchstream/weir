@@ -33,7 +33,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 	proxy := testmongo.StartProxy(t, &fixture.Fixture)
 	proxy.DropCommand = "bulkWrite"
 	cfg := packagedConfig(proxy.URI(), fixture.DB)
-	cfg.MemoryMiB = testmemory.Budget >> 20
+	cfg.Basic.Memory = ByteSize(testmemory.Budget)
 	n := secureNode(t, cfg)
 	client := endpointProcessClient(t, n.Addresses()[0])
 	packagedCalls(t, client, fixture)
@@ -181,7 +181,7 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 		t.Fatal("artifact identity")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	output, err := exec.CommandContext(ctx, binary, "-version").Output()
+	output, err := exec.CommandContext(ctx, binary, "version").Output()
 	cancel()
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +201,7 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 	monitor := &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	proxy.Monitor = monitor
 	cfg := packagedConfig(proxy.URI(), fixture.DB)
-	cfg.MemoryMiB = 256
+	cfg.Basic.Memory = 256 << 20
 	p := startProcess(t, binary, cfg)
 	t.Logf("owned artifact PID=%d", p.command.Process.Pid)
 	client := endpointProcessClient(t, p.address)

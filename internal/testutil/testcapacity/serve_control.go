@@ -41,16 +41,16 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Services) != 1 || cfg.Services[0].Local == nil || cfg.Services[0].Local.Search == nil || len(cfg.Routes) != 1 || cfg.Routes[0].Store != "records" {
+	if len(cfg.Routing.Services) != 1 || cfg.Routing.Services[0].Local == nil || cfg.Routing.Services[0].Local.Search == nil || len(cfg.Routing.Routes) != 1 || cfg.Routing.Routes[0].Store != "records" {
 		return errors.New("control server requires one owned search Store")
 	}
-	local := cfg.Services[0].Local
+	local := cfg.Routing.Services[0].Local
 	limits := store.DefaultLimits()
-	if local.Concurrency != 0 {
-		limits.Concurrency = local.Concurrency
+	if local.MaxConcurrency != 0 {
+		limits.Concurrency = local.MaxConcurrency
 	}
-	if local.BatchOperations != 0 {
-		limits.BatchOperations = local.BatchOperations
+	if local.MaxBatchOperations != 0 {
+		limits.BatchOperations = local.MaxBatchOperations
 	}
 	backend := local.Search
 	options := search.Config{Store: "records", URL: backend.URL, Index: backend.Index, Profile: backend.Profile, Pool: limits.Concurrency, Connection: backend.Connection}
@@ -77,8 +77,13 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 		_ = runtime.Close(drain)
 	}()
 	transport := server.DefaultLimits()
-	transport.Sessions = cfg.Limits.Sessions
-	transport.Connections = cfg.Limits.Connections
+	transport.Sessions = cfg.Basic.Transport.MaxSessions
+	transport.Connections = cfg.Basic.Transport.MaxConnections
+	transport.UnaryLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Unary)
+	transport.BulkLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Bulk)
+	transport.ScanLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Scan)
+	transport.NativeLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Native)
+	transport.Stall = time.Duration(cfg.Basic.Transport.Timeouts.Stall)
 	admission, err := server.NewAdmission(transport)
 	if err != nil {
 		return err
@@ -91,12 +96,12 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 	}
 	processOptions := prometheus.ProcessCollectorOpts{}
 	registry.MustRegister(runtime, s, prometheus.NewGoCollector(), prometheus.NewProcessCollector(processOptions))
-	listener, err := net.Listen("tcp", cfg.Application)
+	listener, err := net.Listen("tcp", cfg.Basic.Listeners.Application)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	diagnostics, err := net.Listen("tcp", cfg.Diagnostics)
+	diagnostics, err := net.Listen("tcp", cfg.Basic.Diagnostics.Address)
 	if err != nil {
 		return err
 	}

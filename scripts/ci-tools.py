@@ -22,9 +22,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('test', 'publish', 'smoke'))
     args = parser.parse_args()
-    if platform.system() != 'Linux':
-        raise ValueError('this bootstrap requires a native Linux runner')
-    arch = {'x86_64': 'amd64', 'aarch64': 'arm64'}[platform.machine()]
+    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
+        raise ValueError('this bootstrap requires a native Linux amd64 runner')
+    arch = 'amd64'
     pins = json.loads(Path('scripts/ci-tools.json').read_text())
     root = Path('.tools/ci').resolve()
     root.mkdir(parents=True, exist_ok=False)

@@ -45,20 +45,20 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 	proxy := startSearchBudgetProxy(t, opts.fixture, opts.observation)
 	connection := &search.Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
 	backend := &Search{URL: "https://" + proxy.listener.Addr().String(), Index: b.Index, Profile: b.Profile, Connection: connection}
-	local := &Local{Search: backend, Concurrency: opts.concurrency, BatchOperations: 1}
+	local := &Local{Search: backend, MaxConcurrency: opts.concurrency, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}
 	cfg := DefaultConfig()
-	cfg.Application, cfg.Peer, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Services, cfg.Routes = []Service{service}, []Route{route}
+	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
 	if opts.extra {
 		second := Service{Name: "second", Local: local}
 		secondRoute := Route{Store: "extra", Service: "second"}
-		cfg.Services = append(cfg.Services, second)
-		cfg.Routes = append(cfg.Routes, secondRoute)
+		cfg.Routing.Services = append(cfg.Routing.Services, second)
+		cfg.Routing.Routes = append(cfg.Routing.Routes, secondRoute)
 	}
 	p := startProcess(t, opts.binary, cfg)
-	e := &searchBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, root: "weir://records/" + b.Index, concurrency: opts.concurrency, locals: len(cfg.Services)}
+	e := &searchBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, root: "weir://records/" + b.Index, concurrency: opts.concurrency, locals: len(cfg.Routing.Services)}
 	t.Logf("start time=%s PID=%d C=%d extra-local=%t application=%s diagnostics=%s", time.Now().UTC().Format(time.RFC3339Nano), p.command.Process.Pid, opts.concurrency, opts.extra, p.address, p.diagnostic)
 	return e
 }

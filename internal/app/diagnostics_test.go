@@ -24,9 +24,9 @@ import (
 func diagnosticNode(t *testing.T) *Node {
 	t.Helper()
 	cfg := remoteConfig(t)
-	cfg.Diagnostics = "127.0.0.1:0"
-	cfg.Limits.Sessions = 1
-	cfg.Limits.StallMS = 500
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Basic.Transport.MaxSessions = 1
+	cfg.Basic.Transport.Timeouts.Stall = Duration(500 * time.Millisecond)
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 	for _, address := range []string{"localhost:1", ":0", "0.0.0.0:0", "[::]:0", "192.0.2.1:1"} {
 		cfg := remoteConfig(t)
-		cfg.Diagnostics = address
+		cfg.Basic.Diagnostics.Address = address
 		if cfg.Validate() == nil {
 			t.Fatal("non-loopback", address)
 		}
@@ -262,15 +262,15 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := remoteConfig(t)
-	cfg.Application = first.Addr().String()
-	cfg.Diagnostics = occupied.Addr().String()
+	cfg.Basic.Listeners.Application = first.Addr().String()
+	cfg.Basic.Diagnostics.Address = occupied.Addr().String()
 	_ = first.Close()
 	for range 3 {
 		if node, err := Open(context.Background(), cfg); err == nil || node != nil {
 			t.Fatal("diagnostic port conflict ignored")
 		}
 	}
-	first, err = net.Listen("tcp", cfg.Application)
+	first, err = net.Listen("tcp", cfg.Basic.Listeners.Application)
 	if err != nil {
 		t.Fatal("partial startup listener leaked", err)
 	}
@@ -279,17 +279,17 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 
 func TestIntranetDiagnosticsRequireExplicitOptIn(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.DiagnosticsAllowIntranet = true
+	cfg.Basic.Diagnostics.AllowIntranet = true
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("opt-in without diagnostic address accepted")
 	}
 	for _, address := range []string{"localhost:7449", ":7449", "invalid"} {
-		cfg.Diagnostics = address
+		cfg.Basic.Diagnostics.Address = address
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("invalid address accepted with opt-in", address)
 		}
 	}
-	cfg.Diagnostics = "0.0.0.0:0"
+	cfg.Basic.Diagnostics.Address = "0.0.0.0:0"
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -345,15 +345,15 @@ func (l *smallSendListener) Accept() (net.Conn, error) {
 }
 func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Diagnostics = "127.0.0.1:0"
-	definition := cfg.Services[0]
-	cfg.Services = nil
-	cfg.Routes = nil
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	definition := cfg.Routing.Services[0]
+	cfg.Routing.Services = nil
+	cfg.Routing.Routes = nil
 	for i := 0; i < 16; i++ {
 		definition.Name = fmt.Sprintf("%s%d", strings.Repeat("r", 58), i)
-		cfg.Services = append(cfg.Services, definition)
+		cfg.Routing.Services = append(cfg.Routing.Services, definition)
 		route := Route{Store: fmt.Sprintf("store%d", i), Service: definition.Name}
-		cfg.Routes = append(cfg.Routes, route)
+		cfg.Routing.Routes = append(cfg.Routing.Routes, route)
 	}
 	n, err := Open(context.Background(), cfg)
 	if err != nil {

@@ -6,7 +6,7 @@
         "endpoints": [
           "127.0.0.1:7448"
         ],
-        "relays": 8
+        "max_concurrency": 8
       }
     }
   ],

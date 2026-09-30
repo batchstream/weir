@@ -3,12 +3,12 @@
     {
       "name": "database",
       "local": {
-        "concurrency": 2,
-        "mongo": {
+        "mongodb": {
           "uri": "mongodb://db.example.invalid:27017/?directConnection=true",
           "database": "example",
           "collection": "records"
-        }
+        },
+        "max_concurrency": 2
       }
     }
   ],

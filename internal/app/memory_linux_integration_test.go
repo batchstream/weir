@@ -256,16 +256,16 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	monitor := &event.CommandMonitor{Started: observer.start, Succeeded: observer.finish}
 	proxy.Monitor = monitor
 	backend := &Mongo{URI: proxy.URI(), Database: db, Collection: "records"}
-	local := &Local{Mongo: backend, Concurrency: 2, BatchOperations: 1}
+	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}
 	cfg := DefaultConfig()
-	cfg.Application = "127.0.0.1:0"
-	cfg.Peer = "127.0.0.1:0"
-	cfg.Diagnostics = "127.0.0.1:0"
-	cfg.Services = []Service{service}
-	cfg.Routes = []Route{route}
-	cfg.MemoryMiB = 512
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Routing.Services = []Service{service}
+	cfg.Routing.Routes = []Route{route}
+	cfg.Basic.Memory = 512 << 20
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
 	root := "weir://records/" + db + "/records"
@@ -275,10 +275,10 @@ func TestLinuxMemoryCLI(t *testing.T) {
 			t.Fatal("pre-pressure Read/Mutate/Bulk", mode)
 		}
 	}
-	remote := &Remote{Endpoints: []string{p.addresses[1]}, Relays: 2}
+	remote := &Remote{Endpoints: []string{p.addresses[1]}, MaxConcurrency: 2}
 	remoteService := Service{Name: "database", Remote: remote}
-	cfg.Services = []Service{remoteService}
-	cfg.Peer = ""
+	cfg.Routing.Services = []Service{remoteService}
+	cfg.Basic.Listeners.Peer = ""
 	front := startProcess(t, "/fixture/weir", cfg)
 	frontClient := endpointProcessClient(t, front.address)
 	if !budgetLoadCall(ctx, frontClient, request, 1) {

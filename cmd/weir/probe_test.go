@@ -13,6 +13,7 @@ import (
 )
 
 func TestProbeCLI(t *testing.T) {
+	t.Chdir(t.TempDir())
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	t.Setenv("NO_PROXY", "")
 	listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +33,7 @@ func TestProbeCLI(t *testing.T) {
 	address := strings.TrimPrefix(listener.URL, "http://")
 	for _, mode := range []string{"live", "ready"} {
 		var output bytes.Buffer
-		if err := run([]string{"-probe", mode, "-probe-address", address}, &output); err != nil {
+		if err := run([]string{"probe", mode, "--address", address}, &output); err != nil {
 			t.Fatal(err)
 		}
 		if output.Len() != 0 {
@@ -40,11 +41,11 @@ func TestProbeCLI(t *testing.T) {
 		}
 	}
 	cases := [][]string{
-		{"-probe", ""}, {"-probe", "metrics"}, {"-probe-address", address},
-		{"-probe", "live", "extra"}, {"-probe", "live", "-version"},
-		{"-probe", "live", "-version=false"}, {"-probe", "live", "-config", "missing"},
-		{"-probe", "ready", "-mongo-uri", "must-not-connect"}, {"-probe", "live", "-diagnostics", address},
-		{"-probe", "live", "-memory-mib", "64"},
+		{"probe"}, {"probe", ""}, {"probe", "metrics"}, {"probe", "--address", address},
+		{"probe", "live", "extra"}, {"probe", "live", "--version"},
+		{"probe", "live", "--config", "missing"},
+		{"probe", "ready", "--mongo-uri", "must-not-connect"}, {"probe", "live", "--diagnostics", address},
+		{"probe", "live", "--memory-mib", "64"},
 	}
 	for _, args := range cases {
 		var output bytes.Buffer

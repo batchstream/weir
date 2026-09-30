@@ -75,10 +75,17 @@ class DeliveryTests(unittest.TestCase):
         workflow = (package.ROOT / '.github/workflows/images.yml').read_text()
         build = 'CGO_ENABLED=0 go test -c -tags=integration -o "$WEIR_COMPLETION_TEST_BINARY" ./internal/testutil/testcapacity'
         export = 'export WEIR_COMPLETION_TEST_BINARY="$RUNNER_TEMP/weir-completion/testcapacity.test"'
-        self.assertIn('runner: [ubuntu-24.04, ubuntu-24.04-arm]', workflow)
-        self.assertLess(workflow.index(export), workflow.index(build))
-        for mode in ('', '-O '):
-            self.assertLess(workflow.index(build), workflow.index('python3 ' + mode + '-m unittest discover'))
+        for name in ('ci.yml', 'images.yml'):
+            definition = (package.ROOT / '.github/workflows' / name).read_text()
+            self.assertIn('runs-on: ubuntu-24.04', definition)
+            self.assertNotIn('ubuntu-24.04-arm', definition)
+            self.assertNotIn('matrix:', definition)
+            self.assertLess(definition.index(export), definition.index(build))
+            for mode in ('', '-O '):
+                self.assertLess(definition.index(build), definition.index('python3 ' + mode + '-m unittest discover'))
+        self.assertNotIn('smoke-arm64:', workflow)
+        release_job = workflow[workflow.index('  release:'):]
+        self.assertIn('needs: publish', release_job)
 
     def test_completion_ci_refuses_missing_relative_or_nonexecutable_child(self):
         with tempfile.TemporaryDirectory() as directory:

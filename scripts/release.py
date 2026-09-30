@@ -107,8 +107,8 @@ def publish(version, directory):
     notes = directory / 'release-notes.md'
     notes.write_text(
         f'Source: `{source}` (merged main).\n\n'
-        f'Image: `{reference}@{digest}`. Native Linux amd64/arm64 tests, race tests, '
-        'reproducible builds and anonymous image smoke completed before this release. '
+        f'Image: `{reference}@{digest}`. Native Linux amd64 tests, race tests, '
+        'reproducible builds and anonymous amd64 image smoke completed before this release. '
         'Archives are provided for six targets; build availability does not imply native production qualification.\n\n'
         'Verify downloaded assets with `sha256sum -c SHA256SUMS`. The binary reports its immutable source identity.\n\n'
         'Use the [Go SDK](https://github.com/batchstream/weir-go) and '

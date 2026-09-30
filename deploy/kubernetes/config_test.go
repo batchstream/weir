@@ -13,7 +13,7 @@ func TestDeploymentConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Application != "0.0.0.0:7447" || cfg.Diagnostics != "127.0.0.1:7449" || cfg.MemoryMiB != 768 {
+	if cfg.Basic.Listeners.Application != "0.0.0.0:7447" || cfg.Basic.Diagnostics.Address != "127.0.0.1:7449" || cfg.Basic.Memory != app.ByteSize(768<<20) {
 		t.Fatal("Pod bind or memory budget changed")
 	}
 	raw, err := os.ReadFile("weir.json")
