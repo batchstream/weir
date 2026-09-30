@@ -224,16 +224,8 @@ class Fixture:
                 "batch_operations": self.args.batch_operations, "search": {"url": "http://elasticsearch:9200",
                 "index": "records", "profile": "elasticsearch-8.19.22"}}}],
             "routes": [{"store": "records", "service": "database"}]}
-        split_config = True
-        if mode == "baseline":
-            source = run(["git", "show", self.args.baseline_source + ":internal/app/config.go"]).stdout
-            split_config = 'json:"routing_file"' in source
-        if not split_config:
-            config.pop("routing_file")
-            config.update(routes)
         self.save("node.json", config)
         self.save("routes.json", routes)
-        self.summary.setdefault("config_formats", {})[mode] = "split" if split_config else "legacy"
         # Qualifying a fresh node requires the index to exist before startup.
         run(["docker", "exec", self.client, "/client", "-mode", "setup", "-mutation-reservation", "1000"], timeout=90)
         entrypoint = "/client"

@@ -87,9 +87,8 @@ The server accepts `-config` for the basic file, `-check-config /path/to/weir.js
 for offline validation, `-version`, `-probe live|ready`, `-probe-address` and
 `-help`. Validation, version and probe modes are independent of server startup.
 Backend, batching, listener and memory settings belong in the configuration
-files. To migrate an older combined file, move `services` and `routes` into a
-routing file and add `routing_file` to the remaining basic settings; replace
-server-setting flags with their configuration fields.
+files. All Weir binaries used by the load-comparison tool use this same two-file
+configuration layout.
 
 ## Development
 
