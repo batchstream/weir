@@ -65,8 +65,8 @@ func startProcess(t *testing.T, binary string, cfg Config) *process {
 	writeConfigFiles(t, name, cfg, 0600)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	command := exec.CommandContext(ctx, binary, "-config", name)
-	return watchProcess(t, command, cfg.Diagnostics != "")
+	command := exec.CommandContext(ctx, binary, "serve", "--config", name)
+	return watchProcess(t, command, cfg.Basic.Diagnostics.Address != "")
 }
 
 func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
@@ -401,7 +401,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		t.Fatalf("build weir: %v %s", err, output)
 	}
 	mongo := &Mongo{URI: mongoFixture.URI, Database: database, Collection: "records"}
-	mongoLocal := &Local{Mongo: mongo}
+	mongoLocal := &Local{MongoDB: mongo}
 	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
 	searchLocal := &Local{Search: backend}
 	mongoService := Service{Name: "mongo", Local: mongoLocal}
@@ -409,31 +409,31 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	mongoRoute := Route{Store: "mongo", Service: "mongo"}
 	searchRoute := Route{Store: "search", Service: "search"}
 	c := DefaultConfig()
-	c.Diagnostics = "127.0.0.1:0"
-	c.Peer = "127.0.0.1:0"
-	c.Services = []Service{mongoService, searchService}
-	c.Routes = []Route{mongoRoute, searchRoute}
+	c.Basic.Diagnostics.Address = "127.0.0.1:0"
+	c.Basic.Listeners.Peer = "127.0.0.1:0"
+	c.Routing.Services = []Service{mongoService, searchService}
+	c.Routing.Routes = []Route{mongoRoute, searchRoute}
 	final := startProcess(t, binary, c)
 	b := DefaultConfig()
-	b.Diagnostics = "127.0.0.1:0"
-	b.Peer = "127.0.0.1:0"
+	b.Basic.Diagnostics.Address = "127.0.0.1:0"
+	b.Basic.Listeners.Peer = "127.0.0.1:0"
 	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoints: []string{final.address}, Relays: 4}
+		remote := &Remote{Endpoints: []string{final.address}, MaxConcurrency: 4}
 		service := Service{Name: name, Remote: remote}
 		route := Route{Store: name, Service: name}
-		b.Services = append(b.Services, service)
-		b.Routes = append(b.Routes, route)
+		b.Routing.Services = append(b.Routing.Services, service)
+		b.Routing.Routes = append(b.Routing.Routes, route)
 	}
 	middle := startProcess(t, binary, b)
 	a := DefaultConfig()
-	a.Diagnostics = "127.0.0.1:0"
-	a.Application = "127.0.0.1:0"
+	a.Basic.Diagnostics.Address = "127.0.0.1:0"
+	a.Basic.Listeners.Application = "127.0.0.1:0"
 	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoints: []string{middle.address}, Relays: 4}
+		remote := &Remote{Endpoints: []string{middle.address}, MaxConcurrency: 4}
 		service := Service{Name: name, Remote: remote}
 		route := Route{Store: name, Service: name}
-		a.Services = append(a.Services, service)
-		a.Routes = append(a.Routes, route)
+		a.Routing.Services = append(a.Routing.Services, service)
+		a.Routing.Routes = append(a.Routing.Routes, route)
 	}
 	first := startProcess(t, binary, a)
 	conn, err := grpc.NewClient("passthrough:///"+first.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig())
@@ -486,7 +486,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	}
 	t.Log("real process HTTP scrapes: C logical records=8, Native complete=2, Scan exhausted=2; A/B relays=10 each, A/B have no local executions")
 	t.Log(fmt.Sprintf("process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets", first.command.Process.Pid, middle.command.Process.Pid, final.command.Process.Pid, search.Profile))
-	c.Peer, b.Peer, a.Application = final.address, middle.address, first.address
+	c.Basic.Listeners.Peer, b.Basic.Listeners.Peer, a.Basic.Listeners.Application = final.address, middle.address, first.address
 	mongoRead := &pb.ReadRequest{Resource: "weir://mongo/" + database + "/records/s:example"}
 	searchRead := &pb.ReadRequest{Resource: "weir://search/" + search.Index + "/s:example"}
 	for _, node := range []struct {
@@ -528,8 +528,8 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 		t.Fatal(err, string(output))
 	}
 	cfg := remoteConfig(t)
-	cfg.Diagnostics = "127.0.0.1:0"
-	cfg.Limits.StallMS = 1000
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Basic.Transport.Timeouts.Stall = Duration(time.Second)
 	p := startProcess(t, binary, cfg)
 	conn, err := grpc.NewClient("passthrough:///"+p.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
 	if err != nil {

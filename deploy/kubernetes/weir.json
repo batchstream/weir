@@ -43,7 +43,8 @@
                 "image": "weir:REPLACE_WITH_IMMUTABLE_IMAGE",
                 "imagePullPolicy": "IfNotPresent",
                 "args": [
-                  "-config",
+                  "serve",
+                  "--config",
                   "/etc/weir/node.json"
                 ],
                 "ports": [
@@ -75,9 +76,9 @@
                   "exec": {
                     "command": [
                       "/weir",
-                      "-probe",
+                      "probe",
                       "ready",
-                      "-probe-address",
+                      "--address",
                       "127.0.0.1:7449"
                     ]
                   },
@@ -89,9 +90,9 @@
                   "exec": {
                     "command": [
                       "/weir",
-                      "-probe",
+                      "probe",
                       "ready",
-                      "-probe-address",
+                      "--address",
                       "127.0.0.1:7449"
                     ]
                   },
@@ -103,9 +104,9 @@
                   "exec": {
                     "command": [
                       "/weir",
-                      "-probe",
+                      "probe",
                       "live",
-                      "-probe-address",
+                      "--address",
                       "127.0.0.1:7449"
                     ]
                   },

@@ -194,7 +194,7 @@ def smoke_container(options):
         if mode == 'pace':
             args += ['-seconds', '1', '-rate', '50']
     else:
-        args += [reference, '-version']
+        args += [reference, 'version']
     cid = package.run(args, env=env).decode().strip()
     try:
         raw = package.run(['docker', 'start', '--attach', cid], env=env, timeout=20)

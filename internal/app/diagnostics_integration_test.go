@@ -22,20 +22,20 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Application = first.Addr().String()
+	cfg.Basic.Listeners.Application = first.Addr().String()
 	_ = first.Close()
-	cfg.Peer = "127.0.0.1:0"
-	cfg.Diagnostics = "127.0.0.1:0"
-	cfg.Services = nil
-	cfg.Routes = nil
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	cfg.Routing.Services = nil
+	cfg.Routing.Routes = nil
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
 		mongo := &Mongo{URI: backend.URI, Database: database, Collection: "records"}
-		local := &Local{Mongo: mongo}
+		local := &Local{MongoDB: mongo}
 		service := Service{Name: name, Local: local}
-		cfg.Services = append(cfg.Services, service)
+		cfg.Routing.Services = append(cfg.Routing.Services, service)
 		route := Route{Store: name, Service: name}
-		cfg.Routes = append(cfg.Routes, route)
+		cfg.Routing.Routes = append(cfg.Routing.Routes, route)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

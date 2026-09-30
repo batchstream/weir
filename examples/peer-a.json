@@ -1,5 +1,11 @@
 {
-  "application": "127.0.0.1:7447",
-  "initial_forwards": 4,
-  "routing_file": "peer-a.routes.json"
+  "listeners": {
+    "application": "127.0.0.1:7447"
+  },
+  "forwarding": {
+    "hop_limit": 4
+  },
+  "routing": {
+    "file": "peer-a.routes.json"
+  }
 }

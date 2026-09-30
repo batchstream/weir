@@ -26,10 +26,10 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	definition := Service{Name: "search", Local: local}
 	route := Route{Store: "records", Service: "search"}
 	cfg := DefaultConfig()
-	cfg.Application = "127.0.0.1:0"
-	cfg.Services = []Service{definition}
-	cfg.Routes = []Route{route}
-	raw, err := json.Marshal(cfg.RoutingConfig)
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Routing.Services = []Service{definition}
+	cfg.Routing.Routes = []Route{route}
+	raw, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,14 +40,14 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	backend.URL = endpoint.URL
 	backend.Connection = nil
 	invalid := Service{Name: "bad"}
-	cfg.Services = append(cfg.Services, invalid)
+	cfg.Routing.Services = append(cfg.Routing.Services, invalid)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	address := listener.Addr().String()
 	_ = listener.Close()
-	cfg.Application = address
+	cfg.Basic.Listeners.Application = address
 	start := time.Now()
 	node, err := Open(context.Background(), cfg)
 	if node != nil || err == nil || contacts.Load() != 0 || time.Since(start) > time.Second {
@@ -58,7 +58,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal("preflight bound listener")
 	}
 	_ = listener.Close()
-	cfg.Services = cfg.Services[:1]
+	cfg.Routing.Services = cfg.Routing.Services[:1]
 	backend.URL = "http://host:80"
 	backend.Connection = c
 	node, err = Open(context.Background(), cfg)
@@ -66,7 +66,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal("HTTP credentials accepted/leaked")
 	}
 	backend.URL = "https://search.test:443"
-	raw, err = json.Marshal(cfg.RoutingConfig)
+	raw, err = json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,9 +85,9 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	service := Service{Name: "catalog", Local: local}
 	route := Route{Store: "records", Service: service.Name}
 	cfg := DefaultConfig()
-	cfg.Application = "127.0.0.1:0"
-	cfg.Services = []Service{service}
-	cfg.Routes = []Route{route}
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Routing.Services = []Service{service}
+	cfg.Routing.Routes = []Route{route}
 	node, err := Open(context.Background(), cfg)
 	if node != nil || err == nil || !strings.Contains(err.Error(), `local Store "records" startup qualification failed: Search CA file unavailable or invalid`) || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "unresolved.invalid") {
 		t.Fatal("startup must preserve the reason while redacting configuration", err)

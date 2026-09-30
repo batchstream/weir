@@ -15,22 +15,38 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
-// Config combines the separately loaded process and routing settings for assembly.
+// Config contains the separately loaded process and routing settings.
 type Config struct {
-	BasicConfig
-	RoutingConfig
+	Basic   BasicConfig   `json:"basic"`
+	Routing RoutingConfig `json:"routing"`
 }
 
-// BasicConfig contains process settings and the routing document location.
+// BasicConfig groups settings by their process responsibility.
 type BasicConfig struct {
-	Diagnostics              string          `json:"diagnostics"`
-	DiagnosticsAllowIntranet bool            `json:"diagnostics_allow_intranet"`
-	Application              string          `json:"application"`
-	Peer                     string          `json:"peer"`
-	InitialForwards          int             `json:"initial_forwards"`
-	MemoryMiB                uint64          `json:"memory_mib"`
-	Limits                   TransportLimits `json:"limits"`
-	RoutingFile              string          `json:"routing_file"`
+	Listeners   ListenerConfig    `json:"listeners"`
+	Diagnostics DiagnosticsConfig `json:"diagnostics"`
+	Memory      ByteSize          `json:"memory"`
+	Transport   TransportConfig   `json:"transport"`
+	Forwarding  ForwardingConfig  `json:"forwarding"`
+	Routing     RoutingSource     `json:"routing"`
+}
+
+type ListenerConfig struct {
+	Application string `json:"application"`
+	Peer        string `json:"peer"`
+}
+
+type DiagnosticsConfig struct {
+	Address       string `json:"address"`
+	AllowIntranet bool   `json:"allow_intranet"`
+}
+
+type ForwardingConfig struct {
+	HopLimit int `json:"hop_limit"`
+}
+
+type RoutingSource struct {
+	File string `json:"file"`
 }
 
 // RoutingConfig defines the complete, static service and Store graph.
@@ -49,10 +65,10 @@ type Service struct {
 	Remote *Remote `json:"remote"`
 }
 type Local struct {
-	Mongo           *Mongo  `json:"mongo"`
-	Search          *Search `json:"search"`
-	Concurrency     int     `json:"concurrency"`
-	BatchOperations int     `json:"batch_operations"`
+	MongoDB            *Mongo  `json:"mongodb"`
+	Search             *Search `json:"search"`
+	MaxConcurrency     int     `json:"max_concurrency"`
+	MaxBatchOperations int     `json:"max_batch_operations"`
 }
 type Mongo struct {
 	URI        string `json:"uri"`
@@ -66,27 +82,36 @@ type Search struct {
 	Profile    string             `json:"profile"`
 }
 type Remote struct {
-	Endpoints []string `json:"endpoints"`
-	Relays    int      `json:"relays"`
+	Endpoints      []string `json:"endpoints"`
+	MaxConcurrency int      `json:"max_concurrency"`
 }
-type TransportLimits struct {
-	Connections int `json:"connections"`
-	Sessions    int `json:"sessions"`
-	UnaryMS     int `json:"unary_ms"`
-	BulkMS      int `json:"bulk_ms"`
-	ScanMS      int `json:"scan_ms"`
-	NativeMS    int `json:"native_ms"`
-	StallMS     int `json:"stall_ms"`
+type TransportConfig struct {
+	MaxConnections int               `json:"max_connections"`
+	MaxSessions    int               `json:"max_sessions"`
+	Timeouts       TransportTimeouts `json:"timeouts"`
+}
+
+type TransportTimeouts struct {
+	Unary  Duration `json:"unary"`
+	Bulk   Duration `json:"bulk"`
+	Scan   Duration `json:"scan"`
+	Native Duration `json:"native"`
+	Stall  Duration `json:"stall"`
 }
 
 func DefaultConfig() Config {
-	limits := TransportLimits{Connections: 16, Sessions: 16, UnaryMS: 30000, BulkMS: 900000, ScanMS: 300000, NativeMS: 300000, StallMS: 30000}
-	basic := BasicConfig{MemoryMiB: 512, InitialForwards: 4, Limits: limits}
-	cfg := Config{BasicConfig: basic}
+	defaults := server.DefaultLimits()
+	timeouts := TransportTimeouts{Unary: Duration(defaults.UnaryLifetime), Bulk: Duration(defaults.BulkLifetime), Scan: Duration(defaults.ScanLifetime), Native: Duration(defaults.NativeLifetime), Stall: Duration(defaults.Stall)}
+	transport := TransportConfig{MaxConnections: defaults.Connections, MaxSessions: defaults.Sessions, Timeouts: timeouts}
+	forwarding := ForwardingConfig{HopLimit: 4}
+	basic := BasicConfig{Memory: 512 << 20, Transport: transport, Forwarding: forwarding}
+	cfg := Config{Basic: basic}
 	return cfg
 }
-func (l TransportLimits) serverLimits() server.Limits {
-	limits := server.Limits{Connections: l.Connections, Sessions: l.Sessions, UnaryLifetime: time.Duration(l.UnaryMS) * time.Millisecond, BulkLifetime: time.Duration(l.BulkMS) * time.Millisecond, ScanLifetime: time.Duration(l.ScanMS) * time.Millisecond, NativeLifetime: time.Duration(l.NativeMS) * time.Millisecond, Stall: time.Duration(l.StallMS) * time.Millisecond}
+
+func (cfg TransportConfig) serverLimits() server.Limits {
+	timeouts := cfg.Timeouts
+	limits := server.Limits{Connections: cfg.MaxConnections, Sessions: cfg.MaxSessions, UnaryLifetime: time.Duration(timeouts.Unary), BulkLifetime: time.Duration(timeouts.Bulk), ScanLifetime: time.Duration(timeouts.Scan), NativeLifetime: time.Duration(timeouts.Native), Stall: time.Duration(timeouts.Stall)}
 	return limits
 }
 
@@ -103,23 +128,23 @@ func validName(name string) bool {
 	return err == nil && parsed == name && len(segments) == 0
 }
 func (cfg Config) Validate() error {
-	if err := cfg.BasicConfig.Validate(); err != nil {
+	if err := cfg.Basic.Validate(); err != nil {
 		return err
 	}
-	return cfg.RoutingConfig.Validate()
+	return cfg.Routing.Validate()
 }
 
 func (cfg BasicConfig) Validate() error {
-	if cfg.DiagnosticsAllowIntranet && cfg.Diagnostics == "" {
-		return errors.New("diagnostics_allow_intranet requires a diagnostic listener")
+	if cfg.Diagnostics.AllowIntranet && cfg.Diagnostics.Address == "" {
+		return errors.New("diagnostics.allow_intranet requires a diagnostic listener")
 	}
-	if cfg.Diagnostics != "" && !address(cfg.Diagnostics, !cfg.DiagnosticsAllowIntranet) {
-		return errors.New("diagnostics requires explicit IP and port; non-loopback requires diagnostics_allow_intranet")
+	if cfg.Diagnostics.Address != "" && !address(cfg.Diagnostics.Address, !cfg.Diagnostics.AllowIntranet) {
+		return errors.New("diagnostics requires explicit IP and port; non-loopback requires diagnostics.allow_intranet")
 	}
-	if cfg.Application == "" && cfg.Peer == "" || cfg.Application != "" && !address(cfg.Application, false) || cfg.Peer != "" && !address(cfg.Peer, false) {
+	if cfg.Listeners.Application == "" && cfg.Listeners.Peer == "" || cfg.Listeners.Application != "" && !address(cfg.Listeners.Application, false) || cfg.Listeners.Peer != "" && !address(cfg.Listeners.Peer, false) {
 		return errors.New("invalid listener configuration")
 	}
-	listeners := []string{cfg.Application, cfg.Peer, cfg.Diagnostics}
+	listeners := []string{cfg.Listeners.Application, cfg.Listeners.Peer, cfg.Diagnostics.Address}
 	for i, listener := range listeners {
 		if listener == "" {
 			continue
@@ -139,15 +164,10 @@ func (cfg BasicConfig) Validate() error {
 			}
 		}
 	}
-	if cfg.InitialForwards < 0 || cfg.InitialForwards > 8 || cfg.MemoryMiB < 64 || cfg.MemoryMiB > 65536 {
+	if cfg.Forwarding.HopLimit < 0 || cfg.Forwarding.HopLimit > 8 || cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
 		return errors.New("invalid process bounds")
 	}
-	for _, bound := range []int{cfg.Limits.UnaryMS, cfg.Limits.BulkMS, cfg.Limits.ScanMS, cfg.Limits.NativeMS, cfg.Limits.StallMS} {
-		if bound < 1 || bound > 900000 {
-			return errors.New("invalid transport duration")
-		}
-	}
-	if err := cfg.Limits.serverLimits().Validate(); err != nil {
+	if err := cfg.Transport.serverLimits().Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -165,19 +185,19 @@ func (cfg RoutingConfig) Validate() error {
 		services[service.Name] = service
 		if r := service.Remote; r != nil {
 			_, endpointErr := server.CanonicalEndpoints(r.Endpoints)
-			if endpointErr != nil || r.Relays < 1 || r.Relays > 16 {
+			if endpointErr != nil || r.MaxConcurrency < 1 || r.MaxConcurrency > 16 {
 				return errors.New("invalid RemoteWeir")
 			}
 		}
 		if l := service.Local; l != nil {
-			if (l.Mongo == nil) == (l.Search == nil) {
+			if (l.MongoDB == nil) == (l.Search == nil) {
 				return errors.New("LocalStore requires exactly one adapter")
 			}
 			limits := l.runtimeLimits()
 			if err := limits.Validate(); err != nil {
 				return err
 			}
-			if m := l.Mongo; m != nil {
+			if m := l.MongoDB; m != nil {
 				if !mongoName.MatchString(m.Database) || !mongoName.MatchString(m.Collection) || m.URI == "" {
 					return errors.New("invalid MongoDB configuration")
 				}
@@ -212,11 +232,11 @@ func (cfg RoutingConfig) Validate() error {
 
 func (l *Local) runtimeLimits() store.Limits {
 	limits := store.DefaultLimits()
-	if l.Concurrency != 0 {
-		limits.Concurrency = l.Concurrency
+	if l.MaxConcurrency != 0 {
+		limits.Concurrency = l.MaxConcurrency
 	}
-	if l.BatchOperations != 0 {
-		limits.BatchOperations = l.BatchOperations
+	if l.MaxBatchOperations != 0 {
+		limits.BatchOperations = l.MaxBatchOperations
 	}
 	return limits
 }

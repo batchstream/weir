@@ -50,19 +50,19 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 	}
 	fixture := testmongo.OpenSecure(t)
 	mongo := &Mongo{URI: fixture.URI, Database: fixture.DB, Collection: "records"}
-	local := &Local{Mongo: mongo}
+	local := &Local{MongoDB: mongo}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "mongo", Service: "database"}
 	cfg := DefaultConfig()
-	cfg.Application = "127.0.0.1:0"
-	cfg.Peer = "127.0.0.1:0"
-	cfg.Services = []Service{service}
-	cfg.Routes = []Route{route}
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Routing.Services = []Service{service}
+	cfg.Routing.Routes = []Route{route}
 	node := secureNode(t, cfg)
-	remote := &Remote{Endpoints: []string{node.Addresses()[1]}, Relays: 1}
+	remote := &Remote{Endpoints: []string{node.Addresses()[1]}, MaxConcurrency: 1}
 	service = Service{Name: "database", Remote: remote}
-	cfg.Services = []Service{service}
-	cfg.Peer = ""
+	cfg.Routing.Services = []Service{service}
+	cfg.Basic.Listeners.Peer = ""
 	peer := secureNode(t, cfg)
 	for name, address := range map[string]string{"direct": node.Addresses()[0], "peer": peer.Addresses()[0]} {
 		t.Run(name, func(t *testing.T) {

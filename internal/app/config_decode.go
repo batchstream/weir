@@ -16,12 +16,12 @@ const maxConfigBytes = 128 << 10
 
 // DecodeBasic reads process settings without opening the routing document.
 func DecodeBasic(input io.Reader) (BasicConfig, error) {
-	cfg := DefaultConfig().BasicConfig
+	cfg := DefaultConfig().Basic
 	if err := decodeConfigJSON(input, &cfg, false); err != nil {
 		return cfg, fmt.Errorf("basic %w", err)
 	}
-	if strings.TrimSpace(cfg.RoutingFile) == "" {
-		return cfg, errors.New("basic configuration requires routing_file")
+	if strings.TrimSpace(cfg.Routing.File) == "" {
+		return cfg, errors.New("basic configuration requires routing.file")
 	}
 	return cfg, cfg.Validate()
 }
@@ -51,7 +51,7 @@ func Load(filename string) (Config, error) {
 	if closeErr != nil {
 		return cfg, errors.New("basic configuration unavailable")
 	}
-	routingFilename := basic.RoutingFile
+	routingFilename := basic.Routing.File
 	if !filepath.IsAbs(routingFilename) {
 		routingFilename = filepath.Join(filepath.Dir(filename), routingFilename)
 	}
@@ -67,7 +67,7 @@ func Load(filename string) (Config, error) {
 	if closeErr != nil {
 		return cfg, errors.New("routing configuration unavailable")
 	}
-	cfg.BasicConfig, cfg.RoutingConfig = basic, routing
+	cfg.Basic, cfg.Routing = basic, routing
 	return cfg, cfg.Validate()
 }
 

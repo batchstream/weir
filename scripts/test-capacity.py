@@ -63,8 +63,8 @@ def prepare(f, plan, artifact):
         f.run([go,"build","-tags","integration","-trimpath","-buildvcs=false","-o",str(f.root/name),"./internal/testutil/testcapacity"],120,options=run_options)
     cfg=json.loads((REPO/"deploy/kubernetes/node.example.json").read_text())
     routes=json.loads((REPO/"deploy/kubernetes/routes.example.json").read_text())
-    cfg["routing_file"]="routes.json"
-    routes["services"][0]["local"].update(concurrency=4,batch_operations=16)
+    cfg["routing"]["file"]="routes.json"
+    routes["services"][0]["local"].update(max_concurrency=4,max_batch_operations=16)
     f.save("node.json",cfg)
     f.save("routes.json",routes)
     run_options = dict(env=env)
@@ -123,7 +123,7 @@ def start(f,plan,budget):
     f.save("mutation-budget.json", budget.snapshot())
     if setup.returncode:
         raise RuntimeError("bootstrap setup failed; reserved/started evidence retained")
-    weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly","--mount",f"type=bind,source={f.root/'routes.json'},target=/routes.json,readonly"],"command":["-config","/node.json"]}
+    weir_spec={"image":plan["image_id"],"limits":plan["resources"]["weir"],"extra":net+["--network-alias","weir","--read-only","--mount",f"type=bind,source={f.root/'client'},target=/qualification-client,readonly","--mount",f"type=bind,source={f.root/'node.json'},target=/node.json,readonly","--mount",f"type=bind,source={f.root/'routes.json'},target=/routes.json,readonly"],"command":["serve","--config","/node.json"]}
     f.create("weir",weir_spec)
     f.observers = {}
     native=f.run(["docker","exec",f.containers[f.owner+"-es"],"/bin/bash","--noprofile","--norc","-c",
@@ -138,7 +138,7 @@ def start(f,plan,budget):
                  "-role",role,"-pid","1" if role=="weir" else "java","-seconds","2698"]
         options=dict(root=f.root,role=role,command=command,env=f.env)
         f.observers[role]=Observer(options)
-    f.run(["docker","exec",f.containers[f.owner+"-weir"],"/weir","-probe","ready"],10)
+    f.run(["docker","exec",f.containers[f.owner+"-weir"],"/weir","probe","ready"],10)
     time.sleep(3)
     samples=read_observer(f,"weir")
     if not samples or not any(s.get("metrics") for s in samples):

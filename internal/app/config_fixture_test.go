@@ -13,15 +13,15 @@ func writeConfigFiles(t *testing.T, filename string, cfg Config, mode os.FileMod
 	t.Helper()
 	base := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
 	routingFilename := filepath.Join(filepath.Dir(filename), base+"-routing.json")
-	cfg.RoutingFile = filepath.Base(routingFilename)
-	routing, err := json.Marshal(cfg.RoutingConfig)
+	cfg.Basic.Routing.File = filepath.Base(routingFilename)
+	routing, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(routingFilename, routing, mode); err != nil {
 		t.Fatal(err)
 	}
-	basic, err := json.Marshal(cfg.BasicConfig)
+	basic, err := json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}

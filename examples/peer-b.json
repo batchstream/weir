@@ -1,4 +1,8 @@
 {
-  "peer": "127.0.0.1:7448",
-  "routing_file": "peer-b.routes.json"
+  "listeners": {
+    "peer": "127.0.0.1:7448"
+  },
+  "routing": {
+    "file": "peer-b.routes.json"
+  }
 }

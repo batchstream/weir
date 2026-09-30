@@ -178,15 +178,19 @@ immutable Services and StoreRuntimes -> open listeners -> become ready. Assembly
 has one owner and unwinds already-created resources on partial failure. No global
 registries, runtime providers, route watchers, or configuration generation protocol.
 
-The basic JSON file contains listeners, memory and transport limits, the initial
-forwarding budget, and a required `routing_file`. The separate routing JSON file
-contains only Services and Routes, including backend connection and local scheduler
+The basic JSON file groups application and peer addresses under `listeners`,
+diagnostic HTTP settings under `diagnostics`, connection/session limits and
+timeouts under `transport`, and the hop budget under `forwarding.hop_limit`.
+`memory` is an explicitly sized string such as `"512MiB"`; timeouts are duration
+strings such as `"30s"` or `"5m"`. A required `routing.file` selects the separate
+routing JSON file, containing Services and Routes, including backend connection and local scheduler
 settings. Relative routing paths resolve from the basic file's directory. Both
 documents reject unknown fields, duplicate keys, trailing data and inputs over
 128 KiB. Parsing and complete validation have no backend, DNS or CA-file side
 effects. Configuration is immutable after startup; changing either file requires
-a restart. The CLI selects a basic file with `-config` (default `weir.json` in the
-working directory); `-check-config` validates both files without assembly.
+a restart. Cobra commands separate server startup, validation, build identity and
+health checks. `weir serve --config <file>` selects a basic file (default `weir.json`
+in the working directory); `weir check --config <file>` validates both files without assembly.
 
 Deployment topology examples:
 
@@ -207,7 +211,7 @@ gRPC connections to Weir instead of multiplying database pools per application
 process. This is connection fan-in, not an exact cluster-wide connection ceiling.
 Account for driver monitoring connections and replica topology separately.
 
-The implemented `local.concurrency` is the one static per-Local ceiling (omitted
+The implemented `local.max_concurrency` is the one static per-Local ceiling (omitted
 or zero: 4; range 1–32). Pure whole-graph validation and assembly share
 `Local.runtimeLimits`; Mongo's business pool and Search's ordinary pool use this
 same value. Read, mutations, Bulk, Native and Scan fetch share that Store's window.
@@ -641,7 +645,7 @@ For pool size P (1–32), ordinary HTTP/1 has at most P sockets and Native has a
 one separate, non-reused HTTP/1 socket. One owner caps their combined connections
 and concurrent connection attempts at P+1. A resolving slot has up to two DNS
 sockets before its one TCP socket, so combined owned sockets are at most 2(P+1).
-The app uses P=`local.concurrency` (omitted/zero defaults to 4; valid 1–32):
+The app uses P=`local.max_concurrency` (omitted/zero defaults to 4; valid 1–32):
 by default five backend TCP/handshake slots and at most ten sockets including DNS.
 Header/body, Native pump and Store ledger bounds still apply independently.
 
@@ -1820,8 +1824,9 @@ that required Store's construction clearly. Partial-Store startup is not a hidde
 fallback; V1 validates all configured local Stores before serving.
 
 The minimal Kubernetes deployment is in `deploy/kubernetes`. Its exec probe uses
-the same binary: `-probe live|ready` only requests fixed loopback diagnostics,
-without config/DB initialization. It is exclusive with server/version flags, has
+the same binary: `weir probe live|ready` only requests fixed loopback diagnostics,
+without config/DB initialization. Its `--address` flag selects a custom loopback
+address. The command has
 a 750 ms total HTTP budget, bounded headers/body, no proxy or redirect, and exits
 0 only for the exact success response. Diagnostics remain loopback-only. Startup
 suppresses the other probes until ready; readiness remains a lifecycle signal

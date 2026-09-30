@@ -58,7 +58,7 @@ func TestPackagedArtifacts(t *testing.T) {
 		t.Fatal("image identity", identity)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	output, err := exec.CommandContext(ctx, binary, "-version").Output()
+	output, err := exec.CommandContext(ctx, binary, "version").Output()
 	cancel()
 	if err != nil {
 		t.Fatal(err)
@@ -213,14 +213,14 @@ func TestPackagedArtifacts(t *testing.T) {
 
 func packagedConfig(uri, database string) Config {
 	backend := &Mongo{URI: uri, Database: database, Collection: "records"}
-	local := &Local{Mongo: backend, Concurrency: 2, BatchOperations: 1}
+	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}
 	config := DefaultConfig()
-	config.Application = "127.0.0.1:0"
-	config.Diagnostics = "127.0.0.1:0"
-	config.Services = []Service{service}
-	config.Routes = []Route{route}
+	config.Basic.Listeners.Application = "127.0.0.1:0"
+	config.Basic.Diagnostics.Address = "127.0.0.1:0"
+	config.Routing.Services = []Service{service}
+	config.Routing.Routes = []Route{route}
 	return config
 }
 
@@ -247,8 +247,8 @@ func packagedFiles(t *testing.T, directory, uri, database string) {
 	query.Set("tlsCAFile", "/fixture/ca.crt")
 	parsed.RawQuery = query.Encode()
 	config := packagedConfig(parsed.String(), database)
-	config.Application = "0.0.0.0:7447"
-	config.Diagnostics = "127.0.0.1:7449"
+	config.Basic.Listeners.Application = "0.0.0.0:7447"
+	config.Basic.Diagnostics.Address = "127.0.0.1:7449"
 	writeConfigFiles(t, filepath.Join(directory, "node.json"), config, 0644)
 }
 
@@ -301,7 +301,7 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 	args := []string{"create", "--name", opts.name, "--label", "weir.owner=" + opts.owner, "--platform=linux/arm64",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=512m", "--memory-swap=512m", "--cpus=2", "--pids-limit=96",
 		"--add-host=m15-wrong:host-gateway", "--publish", "127.0.0.1::7447", "--mount", "type=bind,src=" + opts.directory + ",dst=/fixture,readonly",
-		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "-config", "/fixture/node.json"}
+		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.json"}
 	packagedDocker(t, args...)
 	packagedDocker(t, "start", opts.name)
 	if opts.negative {
@@ -393,7 +393,7 @@ func TestPackagedImageProbe(t *testing.T) {
 		t.Fatal("PID1 privileges")
 	}
 	cmd, err := os.ReadFile("/proc/1/cmdline")
-	if err != nil || !strings.HasPrefix(string(cmd), "/weir\x00-config\x00") {
+	if err != nil || !strings.HasPrefix(string(cmd), "/weir\x00serve\x00--config\x00") {
 		t.Fatal("PID1 is not exec Weir")
 	}
 	if err := os.WriteFile("/weir-m15-readonly-check", []byte("fixture"), 0600); err == nil {

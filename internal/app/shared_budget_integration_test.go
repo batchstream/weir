@@ -114,20 +114,20 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	drop := make(chan struct{})
 	proxy.DropCommand, proxy.DropGate = "bulkWrite", drop
 	backend := &Mongo{URI: proxy.URI(), Database: fixture.DB, Collection: "records"}
-	local := &Local{Mongo: backend, Concurrency: concurrency, BatchOperations: 1}
+	local := &Local{MongoDB: backend, MaxConcurrency: concurrency, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}
 	cfg := DefaultConfig()
-	cfg.Application, cfg.Peer, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Services, cfg.Routes = []Service{service}, []Route{route}
+	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
 	if opts.extra {
 		second := Service{Name: "second", Local: local}
 		secondRoute := Route{Store: "extra", Service: "second"}
-		cfg.Services = append(cfg.Services, second)
-		cfg.Routes = append(cfg.Routes, secondRoute)
+		cfg.Routing.Services = append(cfg.Routing.Services, second)
+		cfg.Routing.Routes = append(cfg.Routing.Routes, secondRoute)
 	}
 	p := startProcess(t, binary, cfg)
-	e := &mongoBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, concurrency: concurrency, root: "weir://records/" + fixture.DB + "/records", drop: drop, locals: len(cfg.Services)}
+	e := &mongoBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, concurrency: concurrency, root: "weir://records/" + fixture.DB + "/records", drop: drop, locals: len(cfg.Routing.Services)}
 	t.Logf("start time=%s PID=%d C=%d application=%s diagnostics=%s", time.Now().UTC().Format(time.RFC3339Nano), p.command.Process.Pid, concurrency, p.address, p.diagnostic)
 	return e
 }
@@ -674,12 +674,12 @@ func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
 		addresses = append(addresses, p.addresses[1])
 		before[i] = testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_store_records_total")
 	}
-	remote := &Remote{Endpoints: addresses, Relays: 4}
+	remote := &Remote{Endpoints: addresses, MaxConcurrency: 4}
 	service := Service{Name: "remote", Remote: remote}
 	route := Route{Store: "records", Service: "remote"}
 	cfg := DefaultConfig()
-	cfg.Application, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Services, cfg.Routes = []Service{service}, []Route{route}
+	cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
 	front := startProcess(t, binary, cfg)
 	defer front.stop(t)
 	client := endpointProcessClient(t, front.address)

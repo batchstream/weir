@@ -28,16 +28,16 @@ func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 	mongo := &Mongo{URI: backend.URI, Database: db, Collection: "records"}
 	// The second valid static configuration fails only after Mongo opens.
 	search := &Search{URL: "http://127.0.0.1:1", Index: "records", Profile: "elasticsearch-8.19.22"}
-	first := &Local{Mongo: mongo}
+	first := &Local{MongoDB: mongo}
 	second := &Local{Search: search}
 	mongoService := Service{Name: "mongo", Local: first}
 	searchService := Service{Name: "search", Local: second}
 	mongoRoute := Route{Store: "mongo", Service: "mongo"}
 	searchRoute := Route{Store: "search", Service: "search"}
 	cfg := DefaultConfig()
-	cfg.Application = "127.0.0.1:0"
-	cfg.Services = []Service{mongoService, searchService}
-	cfg.Routes = []Route{mongoRoute, searchRoute}
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Routing.Services = []Service{mongoService, searchService}
+	cfg.Routing.Routes = []Route{mongoRoute, searchRoute}
 	for range 5 {
 		if routes, err := Open(ctx, cfg); err == nil || routes != nil {
 			t.Fatal("partial startup served routes")

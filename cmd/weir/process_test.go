@@ -102,12 +102,12 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 
 func (b *startupBackend) config() app.Config {
 	backend := &app.Search{URL: b.server.URL, Index: "records", Profile: search.ElasticsearchProfile}
-	local := &app.Local{Search: backend, Concurrency: 1, BatchOperations: 1}
+	local := &app.Local{Search: backend, MaxConcurrency: 1, MaxBatchOperations: 1}
 	service := app.Service{Name: "local", Local: local}
 	route := app.Route{Store: "records", Service: "local"}
 	cfg := app.DefaultConfig()
-	cfg.Application, cfg.Peer, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Services, cfg.Routes = []app.Service{service}, []app.Route{route}
+	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Routing.Services, cfg.Routing.Routes = []app.Service{service}, []app.Route{route}
 	return cfg
 }
 
@@ -193,8 +193,8 @@ type cliProcess struct {
 func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	t.Helper()
 	t.Logf("native test runtime=%s/%s go=%s euid=%d", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Geteuid())
-	cfg.RoutingFile = "routes.json"
-	raw, err := json.Marshal(cfg.BasicConfig)
+	cfg.Basic.Routing.File = "routes.json"
+	raw, err := json.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,15 +202,15 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	if err := os.WriteFile(config, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	routing, err := json.Marshal(cfg.RoutingConfig)
+	routing, err := json.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(config), cfg.RoutingFile), routing, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(filepath.Dir(config), cfg.Basic.Routing.File), routing, 0600); err != nil {
 		t.Fatal(err)
 	}
 	binary := os.Getenv("WEIR_CLI_BINARY")
-	args := []string{"-config", config}
+	args := []string{"serve", "--config", config}
 	if binary == "" || mode != "cli" {
 		binary, err = os.Executable()
 		if err != nil {
@@ -321,16 +321,16 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 			b := newStartupBackend(t, hold)
 			cfg := b.config()
 			if partial {
-				remote := &app.Remote{Endpoints: []string{"127.0.0.1:1"}, Relays: 1}
+				remote := &app.Remote{Endpoints: []string{"127.0.0.1:1"}, MaxConcurrency: 1}
 				service := app.Service{Name: "remote", Remote: remote}
-				cfg.Services = append([]app.Service{service}, cfg.Services...)
+				cfg.Routing.Services = append([]app.Service{service}, cfg.Routing.Services...)
 				remoteRoute := app.Route{Store: "remote", Service: "remote"}
-				cfg.Routes = append(cfg.Routes, remoteRoute)
+				cfg.Routing.Routes = append(cfg.Routing.Routes, remoteRoute)
 				backend := &app.Search{URL: b.server.URL, Index: "blocked", Profile: search.ElasticsearchProfile}
-				local := &app.Local{Search: backend, Concurrency: 1}
+				local := &app.Local{Search: backend, MaxConcurrency: 1}
 				second := app.Service{Name: "second", Local: local}
 				route := app.Route{Store: "second", Service: "second"}
-				cfg.Services, cfg.Routes = append(cfg.Services, second), append(cfg.Routes, route)
+				cfg.Routing.Services, cfg.Routing.Routes = append(cfg.Routing.Services, second), append(cfg.Routing.Routes, route)
 			}
 			p := startCLI(t, cfg, "cli")
 			event(t, b.entered)
@@ -397,9 +397,9 @@ func TestCLIProcessChild(t *testing.T) {
 		err = beforeStartChild(config)
 	} else if mode == "writer-error" {
 		writer := &failedOutput{}
-		err = run([]string{"-config", config}, writer)
+		err = run([]string{"serve", "--config", config}, writer)
 	} else {
-		err = run([]string{"-config", config}, os.Stdout)
+		err = run([]string{"serve", "--config", config}, os.Stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -433,7 +433,7 @@ func beforeStartChild(config string) error {
 func TestCLIStartupFailure(t *testing.T) {
 	b := newStartupBackend(t, "")
 	cfg := b.config()
-	cfg.Services[0].Local.Search.Index = "missing"
+	cfg.Routing.Services[0].Local.Search.Index = "missing"
 	p := startCLI(t, cfg, "cli")
 	p.wait(t, 1)
 	if p.stdout.text() != "" || !strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search index qualification failed: index qualification response unavailable\n") || strings.Contains(p.stderr.text(), "sentinel") || strings.Contains(p.stderr.text(), b.server.URL) {
@@ -512,10 +512,10 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	b := newStartupBackend(t, "/blocked")
 	cfg := b.config()
 	backend := &app.Search{URL: b.server.URL, Index: "blocked", Profile: search.ElasticsearchProfile}
-	local := &app.Local{Search: backend, Concurrency: 1}
+	local := &app.Local{Search: backend, MaxConcurrency: 1}
 	service := app.Service{Name: "second", Local: local}
 	route := app.Route{Store: "second", Service: "second"}
-	cfg.Services, cfg.Routes = append(cfg.Services, service), append(cfg.Routes, route)
+	cfg.Routing.Services, cfg.Routing.Routes = append(cfg.Routing.Services, service), append(cfg.Routing.Routes, route)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})

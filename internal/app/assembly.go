@@ -23,12 +23,12 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	limits := cfg.Limits.serverLimits()
+	limits := cfg.Basic.Transport.serverLimits()
 	admission, err := server.NewAdmission(limits)
 	if err != nil {
 		return nil, err
 	}
-	node := &Node{admission: admission, budget: cfg.MemoryMiB << 20, Errors: make(chan error, 3), state: "constructed", registry: prometheus.NewRegistry()}
+	node := &Node{admission: admission, budget: uint64(cfg.Basic.Memory), Errors: make(chan error, 3), state: "constructed", registry: prometheus.NewRegistry()}
 	node.targets = append(node.targets, admission)
 	drainOpts := prometheus.CounterOpts{Name: "weir_node_drains_total", Help: "First Close calls, including partial startup cleanup."}
 	durationOpts := prometheus.HistogramOpts{Name: "weir_node_drain_seconds", Help: "Node data drain and owned backend/remote cleanup duration.", Buckets: []float64{.01, .1, 1, 5, 10}}
@@ -43,13 +43,13 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		}
 	}()
 	services := make(map[string]server.Service)
-	for _, definition := range cfg.Services {
+	for _, definition := range cfg.Routing.Services {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		var service server.Service
 		if definition.Remote != nil {
-			remoteConfig := server.RemoteConfig{Endpoints: definition.Remote.Endpoints, Relays: definition.Remote.Relays}
+			remoteConfig := server.RemoteConfig{Endpoints: definition.Remote.Endpoints, Relays: definition.Remote.MaxConcurrency}
 			service.RemoteWeir, err = server.NewRemote(remoteConfig)
 			if err != nil {
 				return nil, err
@@ -58,7 +58,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 			node.remoteNames = append(node.remoteNames, definition.Name)
 		} else {
 			var name string
-			for _, route := range cfg.Routes {
+			for _, route := range cfg.Routing.Routes {
 				if route.Service == definition.Name {
 					name = route.Store
 					break
@@ -75,14 +75,14 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		services[definition.Name] = service
 	}
 	routes := make(map[string]server.Service)
-	for _, route := range cfg.Routes {
+	for _, route := range cfg.Routing.Routes {
 		routes[route.Store] = services[route.Service]
 	}
-	for i, address := range []string{cfg.Application, cfg.Peer} {
+	for i, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
 		if address == "" {
 			continue
 		}
-		options := server.Config{Routes: routes, Limits: limits, Admission: admission, InitialForwards: cfg.InitialForwards}
+		options := server.Config{Routes: routes, Limits: limits, Admission: admission, InitialForwards: cfg.Basic.Forwarding.HopLimit}
 		options.Peer = i == 1
 		listenerServer, err := server.New(options)
 		if err != nil {
@@ -91,7 +91,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		node.servers = append(node.servers, listenerServer)
 	}
 	// Construct and validate both transports before binding either address.
-	for _, address := range []string{cfg.Application, cfg.Peer} {
+	for _, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -108,8 +108,8 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	if err := node.registerMetrics(cfg); err != nil {
 		return nil, err
 	}
-	if cfg.Diagnostics != "" {
-		if err := node.openDiagnostics(cfg.Diagnostics); err != nil {
+	if cfg.Basic.Diagnostics.Address != "" {
+		if err := node.openDiagnostics(cfg.Basic.Diagnostics.Address); err != nil {
 			return nil, err
 		}
 	}
@@ -123,8 +123,8 @@ func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, er
 	limits := cfg.runtimeLimits()
 	var adapter execution.Adapter
 	var err error
-	if cfg.Mongo != nil {
-		config := mongodb.Config{URI: cfg.Mongo.URI, Store: name, Database: cfg.Mongo.Database, Collection: cfg.Mongo.Collection, Pool: uint64(limits.Concurrency)}
+	if cfg.MongoDB != nil {
+		config := mongodb.Config{URI: cfg.MongoDB.URI, Store: name, Database: cfg.MongoDB.Database, Collection: cfg.MongoDB.Collection, Pool: uint64(limits.Concurrency)}
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
 		config := cfg.searchConfig(name)

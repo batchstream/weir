@@ -18,7 +18,7 @@ func TestCanceledOpenAndValidationPrecedence(t *testing.T) {
 	if node, err := Open(ctx, cfg); node != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled Open acquired a node", node, err)
 	}
-	cfg.MemoryMiB = 0
+	cfg.Basic.Memory = 0
 	if node, err := Open(ctx, cfg); node != nil || err == nil || errors.Is(err, context.Canceled) {
 		t.Fatal("cancellation hid a real configuration failure", node, err)
 	}
@@ -27,7 +27,7 @@ func TestCanceledOpenAndValidationPrecedence(t *testing.T) {
 func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 	for _, concurrent := range []bool{false, true} {
 		cfg := remoteConfig(t)
-		cfg.Peer, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0"
+		cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
 		node, err := Open(context.Background(), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -74,7 +74,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 
 func TestCloseJoinsListenerReports(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Peer, cfg.Diagnostics = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

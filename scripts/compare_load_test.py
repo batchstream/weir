@@ -153,12 +153,12 @@ class PairedComparison(unittest.TestCase):
             fixture.start_weir("weir")
             current_config = json.loads((fixture.root / "node.json").read_text())
             current_routes = json.loads((fixture.root / "routes.json").read_text())
-        self.assertEqual(current_config["routing_file"], "routes.json")
+        self.assertEqual(current_config["routing"]["file"], "routes.json")
         self.assertNotIn("services", current_config)
         self.assertNotIn("routes", current_config)
         self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
-        self.assertEqual(commands[0][2], ["-config", "/node.json"])
+        self.assertEqual(commands[0][2], ["serve", "--config", "/node.json"])
         self.assertEqual(commands[1][2], commands[0][2])
         baseline_options = commands[0][1]
         current_options = commands[1][1]

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/app"
+	"github.com/spf13/cobra"
 )
 
 func main() {
@@ -20,66 +20,70 @@ func main() {
 		os.Exit(1)
 	}
 }
-func run(args []string, output io.Writer) (resultErr error) {
-	flags := flag.NewFlagSet("weir", flag.ContinueOnError)
-	flags.SetOutput(output)
-	version := flags.Bool("version", false, "print build identity without loading configuration or connecting")
-	probe := flags.String("probe", "", "check live or ready using only loopback diagnostics; exit 0 healthy, 1 otherwise")
-	probeAddress := flags.String("probe-address", "127.0.0.1:7449", "probe-only loopback IP:port")
-	configFile := flags.String("config", "weir.json", "basic JSON configuration referencing a routing file")
-	checkConfig := flags.String("check-config", "", "validate basic and routing configuration without opening listeners, resolving DNS or connecting")
-	if err := flags.Parse(args); err != nil {
-		if err == flag.ErrHelp {
-			return nil
-		}
-		return err
+
+func run(args []string, output io.Writer) error {
+	completion := cobra.CompletionOptions{DisableDefaultCmd: true}
+	root := &cobra.Command{
+		Use: "weir", Short: "Run and inspect a Weir node",
+		Args: cobra.NoArgs, SilenceUsage: true, SilenceErrors: true,
+		CompletionOptions: completion,
+		RunE:              func(command *cobra.Command, _ []string) error { return command.Help() },
 	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected positional arguments")
-	}
-	versionMode, checkMode, probeMode := false, false, false
-	flags.Visit(func(f *flag.Flag) {
-		versionMode = versionMode || f.Name == "version"
-		checkMode = checkMode || f.Name == "check-config"
-		probeMode = probeMode || f.Name == "probe" || f.Name == "probe-address"
-	})
-	if versionMode {
-		if flags.NFlag() != 1 || !*version {
-			return errors.New("-version requires true and cannot be combined with other flags")
-		}
-		return printVersion(output)
-	}
-	if checkMode {
-		if flags.NFlag() != 1 || *checkConfig == "" {
-			return errors.New("-check-config requires a file and cannot be combined with other flags")
-		}
-		if _, err := app.Load(*checkConfig); err != nil {
-			return err
-		}
-		_, err := io.WriteString(output, "configuration valid\n")
-		return err
-	}
-	if probeMode {
-		mixed := false
-		flags.Visit(func(f *flag.Flag) {
-			if f.Name != "probe" && f.Name != "probe-address" {
-				mixed = true
+	serveConfig := "weir.json"
+	serveCommand := &cobra.Command{
+		Use: "serve", Short: "Start the node using basic and routing configuration", Args: cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if serveConfig == "" {
+				return errors.New("--config requires a file")
 			}
-		})
-		if mixed {
-			return errors.New("-probe cannot be combined with configuration or version flags")
-		}
-		return runProbe(context.Background(), *probe, *probeAddress)
+			cfg, err := app.Load(serveConfig)
+			if err != nil {
+				return err
+			}
+			return serve(command.Context(), cfg, command.OutOrStdout())
+		},
 	}
-	if *configFile == "" {
-		return errors.New("-config requires a file")
+	serveCommand.Flags().StringVarP(&serveConfig, "config", "c", "weir.json", "basic JSON configuration referencing a routing file")
+	checkConfig := "weir.json"
+	checkCommand := &cobra.Command{
+		Use: "check", Short: "Validate configuration without listeners, DNS or backend connections", Args: cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if checkConfig == "" {
+				return errors.New("--config requires a file")
+			}
+			if _, err := app.Load(checkConfig); err != nil {
+				return err
+			}
+			_, err := io.WriteString(command.OutOrStdout(), "configuration valid\n")
+			return err
+		},
 	}
-	cfg, err := app.Load(*configFile)
-	if err != nil {
-		return err
+	checkCommand.Flags().StringVarP(&checkConfig, "config", "c", "weir.json", "basic JSON configuration referencing a routing file")
+	versionCommand := &cobra.Command{
+		Use: "version", Short: "Print build identity", Args: cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error { return printVersion(command.OutOrStdout()) },
 	}
+	probeAddress := "127.0.0.1:7449"
+	probeCommand := &cobra.Command{
+		Use: "probe live|ready", Short: "Check loopback diagnostics", Args: cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			return runProbe(command.Context(), args[0], probeAddress)
+		},
+	}
+	probeCommand.Flags().StringVar(&probeAddress, "address", "127.0.0.1:7449", "loopback diagnostic IP:port")
+	root.AddCommand(serveCommand, checkCommand, versionCommand, probeCommand)
+	root.SetOut(output)
+	root.SetErr(output)
+	if args == nil {
+		args = []string{}
+	}
+	root.SetArgs(args)
+	return root.ExecuteContext(context.Background())
+}
+
+func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr error) {
 	// The CLI owns signals from before assembly until all owned resources close.
-	signals, cancelSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
 	startup, stop := context.WithTimeout(signals, 5*time.Second)
 	defer stop()

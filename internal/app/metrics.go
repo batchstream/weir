@@ -32,7 +32,7 @@ func (n *Node) registerMetrics(cfg Config) error {
 	}
 	for i, srv := range n.servers {
 		name := "application"
-		if cfg.Application == "" || i == 1 {
+		if cfg.Basic.Listeners.Application == "" || i == 1 {
 			name = "peer"
 		}
 		labels := prometheus.Labels{"listener": name}

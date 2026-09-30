@@ -217,11 +217,11 @@ class Fixture:
 
     def start_weir(self, mode):
         self.stop_weir()
-        config = {"application": "0.0.0.0:7447", "diagnostics": "0.0.0.0:7449",
-            "diagnostics_allow_intranet": True, "memory_mib": 768,
-            "limits": {"connections": 16, "sessions": 64}, "routing_file": "routes.json"}
-        routes = {"services": [{"name": "database", "local": {"concurrency": self.args.pool,
-                "batch_operations": self.args.batch_operations, "search": {"url": "http://elasticsearch:9200",
+        config = {"listeners": {"application": "0.0.0.0:7447"},
+            "diagnostics": {"address": "0.0.0.0:7449", "allow_intranet": True}, "memory": "768MiB",
+            "transport": {"max_connections": 16, "max_sessions": 64}, "routing": {"file": "routes.json"}}
+        routes = {"services": [{"name": "database", "local": {"max_concurrency": self.args.pool,
+                "max_batch_operations": self.args.batch_operations, "search": {"url": "http://elasticsearch:9200",
                 "index": "records", "profile": "elasticsearch-8.19.22"}}}],
             "routes": [{"store": "records", "service": "database"}]}
         self.save("node.json", config)
@@ -236,13 +236,13 @@ class Fixture:
             "--mount", "type=bind,source=" + str(self.root / "node.json") + ",target=/node.json,readonly",
             "--mount", "type=bind,source=" + str(self.root / "routes.json") + ",target=/routes.json,readonly",
             "--entrypoint", entrypoint]
-        command = ["-config", "/node.json"]
+        command = ["serve", "--config", "/node.json"]
         if mode == "control":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
-            command += ["-mode", "serve-control", "-suppress-congestion"]
+            command = ["-config", "/node.json", "-mode", "serve-control", "-suppress-congestion"]
         elif mode == "adaptive":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
-            command += ["-mode", "serve-control"]
+            command = ["-config", "/node.json", "-mode", "serve-control"]
         self.weir = self.create(mode, options, command)
         port = run(["docker", "port", self.weir, "7449/tcp"]).stdout.strip().split(":")[-1]
         self.weir_url = "http://127.0.0.1:" + port

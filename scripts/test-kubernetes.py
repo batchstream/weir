@@ -39,9 +39,9 @@ def prepare(f, artifact, profile):
     for concurrency in (1,2):
         cfg=json.loads((REPO/"deploy/kubernetes/node.example.json").read_text())
         routes=json.loads((REPO/"deploy/kubernetes/routes.example.json").read_text())
-        cfg["memory_mib"]=256
-        cfg["routing_file"]="routes.json"
-        routes["services"][0]["local"]["concurrency"]=concurrency
+        cfg["memory"]="256MiB"
+        cfg["routing"]["file"]="routes.json"
+        routes["services"][0]["local"]["max_concurrency"]=concurrency
         directory=f.root/f"c{concurrency}"
         directory.mkdir()
         filename=directory/"node.json"

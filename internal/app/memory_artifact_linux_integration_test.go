@@ -30,7 +30,7 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	source := os.Getenv("WEIR_M19_SOURCE")
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "/fixture/weir", "-version").Output()
+	output, err := exec.CommandContext(ctx, "/fixture/weir", "version").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := packagedConfig(uri, db)
-	cfg.MemoryMiB = 128
+	cfg.Basic.Memory = 128 << 20
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
 	request := budgetPut("weir://records/"+db+"/records", "observed")
