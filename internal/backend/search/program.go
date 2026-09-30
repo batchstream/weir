@@ -83,7 +83,8 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 			if isProgramConflict(status, raw, requestErr) {
 				continue
 			}
-			mutation, signal := a.programWriteReply(native.id, "deleted", status, raw, requestErr)
+			replyOptions := programWriteReplyOptions{id: native.id, expectedResult: "deleted", status: status, raw: raw, err: requestErr}
+			mutation, signal := a.programWriteReply(replyOptions)
 			return mutation, signal
 		case "replace":
 			if !safeProgramSource(transformed.Value) {
@@ -112,7 +113,8 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 			if !*current.Found {
 				expected = "created"
 			}
-			mutation, signal := a.programWriteReply(native.id, expected, status, raw, requestErr)
+			replyOptions := programWriteReplyOptions{id: native.id, expectedResult: expected, status: status, raw: raw, err: requestErr}
+			mutation, signal := a.programWriteReply(replyOptions)
 			return mutation, signal
 		default:
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua worker returned an invalid action")
@@ -160,33 +162,41 @@ func isProgramConflict(status int, raw []byte, err error) bool {
 	return response.Error.Type == "version_conflict_engine_exception"
 }
 
-func (a *Adapter) programWriteReply(id, expectedResult string, status int, raw []byte, err error) (*pb.MutationResult, execution.Feedback) {
+type programWriteReplyOptions struct {
+	id             string
+	expectedResult string
+	status         int
+	raw            []byte
+	err            error
+}
+
+func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.MutationResult, execution.Feedback) {
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "conditional write acknowledgement unavailable or incomplete"))
-	if err != nil || len(raw) > metadataLimit || validateJSON(raw, 4096) != nil {
+	if opts.err != nil || len(opts.raw) > metadataLimit || validateJSON(opts.raw, 4096) != nil {
 		return unknown, execution.Neutral
 	}
 	var reply expressionResponse
-	if json.Unmarshal(raw, &reply) != nil || reply.Index != a.config.Index || reply.ID != id {
+	if json.Unmarshal(opts.raw, &reply) != nil {
 		return unknown, execution.Neutral
 	}
 	if reply.Error != nil {
-		if reply.Status != status || reply.Result != "" || reply.Version != nil || reply.Seq != nil || reply.Term != nil || reply.Shards != nil {
+		if reply.Status != opts.status || reply.Result != "" || reply.Version != nil || reply.Seq != nil || reply.Term != nil || reply.Shards != nil {
 			return unknown, execution.Neutral
 		}
-		failure, signal := a.reject(reply.Error.Type, status)
+		failure, signal := a.reject(reply.Error.Type, opts.status)
 		if failure == nil {
 			return unknown, execution.Neutral
 		}
 		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), signal
 	}
-	if status != 200 && status != 201 || reply.Result != expectedResult || reply.Version == nil || *reply.Version < 1 || reply.Seq == nil || *reply.Seq < 0 || reply.Term == nil || *reply.Term < 1 || reply.Shards == nil {
+	if opts.status != 200 && opts.status != 201 || reply.Index != a.config.Index || reply.ID != opts.id || reply.Result != opts.expectedResult || reply.Version == nil || *reply.Version < 1 || reply.Seq == nil || *reply.Seq < 0 || reply.Term == nil || *reply.Term < 1 || reply.Shards == nil {
 		return unknown, execution.Neutral
 	}
 	shards := reply.Shards
 	if shards.Total == nil || shards.Successful == nil || shards.Failed == nil || *shards.Total < 0 || *shards.Successful < 0 || *shards.Failed < 0 || *shards.Successful > *shards.Total || *shards.Failed > *shards.Total-*shards.Successful {
 		return unknown, execution.Neutral
 	}
-	if expectedResult == "created" && status != 201 || expectedResult == "updated" && status != 200 || expectedResult == "deleted" && status != 200 {
+	if opts.expectedResult == "created" && opts.status != 201 || opts.expectedResult == "updated" && opts.status != 200 || opts.expectedResult == "deleted" && opts.status != 200 {
 		return unknown, execution.Neutral
 	}
 	if *shards.Failed > 0 {
