@@ -584,7 +584,7 @@ func (c *controller) observe(b *batch, fb execution.Feedback, max int, now time.
 		c.window = maxInt(1, c.window/2)
 		c.epoch++
 		c.credit = 0
-		c.cooldown = now.Add(time.Duration(20+rand.IntN(41)) * time.Millisecond)
+		c.cooldown = now.Add(time.Duration(100+rand.IntN(201)) * time.Millisecond)
 		return
 	}
 	if fb != execution.Healthy || !b.saturated {

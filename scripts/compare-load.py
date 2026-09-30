@@ -85,9 +85,11 @@ class Fixture:
         self.save("inventory-before.json", self.inventory())
         run(["docker", "network", "create", "--label", LABEL + "=" + self.owner, self.network])
         archive = self.root / "binaries.tar"
+        binary_hashes = {}
         with tarfile.open(archive, "w") as tar:
             for name, path in self.binaries.items():
                 data = path.read_bytes()
+                binary_hashes[name] = hashlib.sha256(data).hexdigest()
                 member = tarfile.TarInfo(name)
                 member.size, member.mode = len(data), 0o555
                 tar.addfile(member, io.BytesIO(data))
@@ -120,13 +122,13 @@ class Fixture:
         self.client = self.create("client", ["--pids-limit", "256", "--memory", "2g", "--memory-swap", "2g",
             "--cpus", "2", "--cpuset-cpus", "1,2", "--read-only", "-e", "WEIR_CAPACITY_INTEGRATION=1"], ["-mode", "idle"])
         source_head = run(["git", "rev-parse", "HEAD"]).stdout.strip()
-        sources = {"client": source_head, "weir": self.args.weir_source or source_head}
+        sources = {"client": self.args.client_source or source_head,
+                   "weir": self.args.weir_source or source_head}
         if self.args.baseline_weir is not None:
             sources["baseline"] = self.args.baseline_source
         self.summary["provenance"] = {"base_head": source_head,
             "dirty_files": run(["git", "status", "--short"]).stdout.splitlines(),
-            "binary_sha256": {name: hashlib.sha256(path.read_bytes()).hexdigest()
-                              for name, path in self.binaries.items()},
+            "binary_sha256": binary_hashes,
             "declared_binary_sources": sources,
             "es_image": self.args.es_image, "host": run(["uname", "-sm"]).stdout.strip(),
             "docker": run(["docker", "info", "--format", "{{.ServerVersion}}"] ).stdout.strip(),
@@ -446,6 +448,7 @@ def main():
     parser.add_argument("--weir", type=Path, required=True)
     parser.add_argument("--baseline-weir", type=Path, help="optional production baseline binary")
     parser.add_argument("--baseline-source", help="commit or ref used to build --baseline-weir")
+    parser.add_argument("--client-source", help="commit or ref used to build --client; defaults to current HEAD")
     parser.add_argument("--weir-source", help="commit or ref used to build --weir; defaults to current HEAD")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--rates", default="200,800,3200")
@@ -477,7 +480,7 @@ def main():
         parser.error("--baseline-source requires --baseline-weir")
     if "baseline" in modes and "weir" in modes and (not args.prewarm or args.repetitions < 3):
         parser.error("baseline/current pairs require --prewarm and at least three repetitions")
-    for name in ("baseline_source", "weir_source"):
+    for name in ("baseline_source", "client_source", "weir_source"):
         source = getattr(args, name)
         if source:
             try:
