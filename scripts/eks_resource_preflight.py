@@ -464,7 +464,7 @@ def execute(run, plan_sha256):
     require(plan['helper']==verified_helper(run.root.parent) and plan['objects']==objects(plan),'artifact/template drift')
     require(plan['tool_inputs']=={p:common.digest(common.REPO/p) for p in FILES},'script drift')
     require(run.run(['git','rev-parse','HEAD']).strip()==plan['source'] and not run.run(['git','status','--porcelain']).strip(),'source/clean tree')
-    run.run(['git','diff','--exit-code',SOURCE,'--','*.go','go.mod','go.sum','packaging','scripts/qualification.Dockerfile'])
+    run.run(['git','diff','--exit-code',SOURCE,'--','*.go','go.mod','go.sum','deploy/docker','scripts/qualification.Dockerfile'])
     with (run.root.parent/'invocation.json').open('x') as output:json.dump(dict(start=time.time(),plan_sha256=plan_sha256),output)
     run.pod_entry=None;run.pod_ready=False;run.runtime_evidence=False;run.job_create_attempted=False
     result=dict(profile=plan['profile'] if 'profile' in plan else 'm30-eks-no-load-resource-preflight',passed=False,network_isolation='unqualified',resource_evidence='partial/not-qualified',timing='not-run',candidate=None,

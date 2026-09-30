@@ -34,9 +34,11 @@ class PackageTests(unittest.TestCase):
     def test_inputs_exclude_tests_local_and_secrets(self):
         for name in ('secret/.env.production', '.ssh/config', 'keys/server.pem', 'server.key', 'credentials', 'keyfile'):
             self.assertTrue(package.secret_path(name), name)
-        for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'experiments/probe.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
+        for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
             self.assertFalse(package.allowed(name), name)
         self.assertTrue(package.allowed('cmd/weir-lua-worker/main.go'))
+        for name in ('README.md', 'deploy/docker/Dockerfile', 'deploy/docker/node.example.json', 'deploy/docker/licenses/purego-NOTICE.txt'):
+            self.assertTrue(package.allowed(name), name)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             def git(*args):
@@ -111,11 +113,11 @@ class PackageTests(unittest.TestCase):
                 source.mkdir()
                 base = {'image': 'fixture', 'index': 'sha256:' + '0' * 64}
                 inputs = {
-                    'packaging/base.json': json.dumps(base).encode(),
-                    'packaging/Dockerfile': b'product Dockerfile',
+                    'deploy/docker/base.json': json.dumps(base).encode(),
+                    'deploy/docker/Dockerfile': b'product Dockerfile',
                     'scripts/qualification.Dockerfile': b'qualification Dockerfile',
-                    'packaging/README.md': b'fixture docs',
-                    'packaging/node.example.json': b'{}',
+                    'README.md': b'fixture docs',
+                    'deploy/docker/node.example.json': b'{}',
                 }
 
                 def run(args, *, cwd=None, env=None):
@@ -152,7 +154,7 @@ class PackageTests(unittest.TestCase):
                     for binary in expected:
                         built = opts['output'] / 'binaries' / ('linux-' + arch) / binary
                         self.assertEqual((context / binary).read_bytes(), built.read_bytes())
-                dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'packaging/Dockerfile'
+                dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'deploy/docker/Dockerfile'
                 self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
                 self.assertEqual(bool(result['lua_worker_binaries']), not qualification)
                 self.assertEqual(receipt.call_args.args[2]['lua_worker_binaries'], result['lua_worker_binaries'])

@@ -39,7 +39,7 @@ def manifest(reference, env):
 
 
 def base_layers(env):
-    base = json.loads((ROOT / 'packaging/base.json').read_text())
+    base = json.loads((ROOT / 'deploy/docker/base.json').read_text())
     index = manifest(base['image'] + '@' + base['index'], env)
     layers = {}
     for arch, digest in base['platforms'].items():
@@ -68,7 +68,7 @@ def build():
         layers = base_layers(env)
         go_env = package.go_environment()
         epoch = int(package.run(['git', 'show', '-s', '--format=%ct', revision], env=env).strip())
-        delivery = dict(source=revision, base=json.loads((ROOT / 'packaging/base.json').read_text()), base_layers=layers, images={})
+        delivery = dict(source=revision, base=json.loads((ROOT / 'deploy/docker/base.json').read_text()), base_layers=layers, images={})
         for name in IMAGES:
             qualification = name == 'qualification'
             files = package.source_files(ROOT, revision, qualification=qualification)

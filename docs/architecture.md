@@ -4,9 +4,7 @@ Status: proposed V1 design.
 
 This is a new design, not a Sink migration plan. No Sink API, package boundary,
 configuration format, deployment role, or storage metadata is a compatibility
-constraint. This document defines the target architecture and protocol contracts;
-brief status notes link to the separate qualification evidence. `architecture.zh-CN.md` is the
-parallel Chinese translation, with matching section and reference identifiers.
+constraint. This document defines the target architecture and protocol contracts.
 
 ## Decision Summary
 
@@ -206,7 +204,7 @@ same value. Read, mutations, Bulk, Native and Scan fetch share that Store's wind
 Count each Local adapter, even two in one process targeting the same database.
 Forwarding-only nodes have no database pool. Include every live executor during
 startup, drain and termination overlap; configured replicas are not a hard live
-process ceiling. The [qualification checklist](production-readiness.md) separates
+process ceiling. The [qualification requirements](#20-staged-plan-and-qualification-status) separate
 monitoring, Native, cleanup, DNS and remote work after cancellation. No global quota is added.
 
 For the direct/poll Mongo profile, each adapter owns at most C+1 local slots from
@@ -1132,8 +1130,7 @@ implements the narrower, opt-in `lua.v1` profile using a separate worker process
 MongoDB transactions, and Search sequence-number OCC. This is not arbitrary Lua
 lowering or a production qualification claim. The worker has no hard per-process
 memory cap, and real-backend fault/concurrency plus cross-platform isolation evidence
-remain required. See the [Lua runtime contract](lua-worker.md) and [production
-readiness checklist](production-readiness.md). The architecture requirements below
+remain required. The architecture requirements below
 remain acceptance criteria for a fully qualified runtime; other platform, backend,
 deployment, resource and load gates are unchanged.
 
@@ -1827,53 +1824,49 @@ and traces, not metric labels. Payloads and secrets are not logged by default; e
 messages are bounded and redacted. A final server-side APPLIED log is diagnostic,
 not a durable client-accessible operation receipt.
 
-## 16. Proposed Repository and Module Layout
+## 16. Repository and Module Layout
 
-The layout below illustrates responsibility boundaries, not mandatory directory
-names. The [current code guide](code-organization.md) describes the implemented
-organization; it keeps tightly coupled ownership in one package and does not
-create empty modules for capabilities that have not been implemented.
-
-Start with one repository and one Go module, `github.com/batchstream/weir`. Do not
-create another protocol repository merely because Sink has one. Public schema and
-generated types remain cleanly separated so SDKs can consume them without importing
-the server; a later repository split is packaging, not a V1 architecture dependency.
+One repository and one Go module, `github.com/batchstream/weir`, keep the public
+protocol separate from the server implementation. SDKs can import generated types
+without importing the server.
 
 ```text
-cmd/weir/                       CLI, process signal ownership
-proto/weir/v1/                  public schema source
-protocol/weir/v1/               generated public messages/client service stubs
-resource/                      canonical URI syntax/build/parse, no backend grammar
+api/weir/                      protocol schemas and generated Go types
+cmd/
+  weir/                        CLI, probes, build identity and process signals
+  weir-lua-worker/             child-process Lua runtime
 internal/
-  app/                         validated assembly and lifecycle
-  config/                      strict static decoding/defaults/validation
-  transport/                   application/peer handlers, bounded hop metadata and pumps
-  service/                     exact routes, LocalStore and RemoteWeir variants
-  store/                       StoreRuntime, Work/result contract, scheduler,
-                               batch selection, adaptive algorithm, adapter contract
+  app/                         static configuration, assembly and lifecycle
+  server/                      RPC transport, routes and remote forwarding
+  store/                       scheduling, batching, admission and adaptive concurrency
+  execution/                   shared backend execution contract
   backend/
-    mongodb/                   owned client/pool, URI grammar, codec, transaction RMW
-    search/                    shared tested ES/OpenSearch mechanics and profiles
-  transform/                   value model, codec/runtime contracts, bounded Lua profile
-  overload/                    process memory sampler and hysteresis latch
-  observability/               bounded metrics/tracing/log integration
-docs/                          architecture and later adapter/operator contracts
+    mongodb/                   client, codec, CRUD, transactions, Native and Scan
+    search/                    Elasticsearch/OpenSearch transport, OCC, Native and Scan
+  protocol/                    canonical resources and wire validation
+  value/                       lossless values and merge semantics
+  luaworker/                   bounded worker protocol and process supervision
+  luaengine/                   restricted Lua evaluation
+  overload/                    process memory guard
+  netlimit/                    bounded DNS resolution
+  testutil/                    owned fixtures and test/load helpers
+examples/                      basic and Native clients, peer configurations
+deploy/
+  docker/                      image recipe, pinned base, configuration and licenses
+  kubernetes/                  minimal manifests and configuration
+scripts/                       generation, builds, release and qualification tools
+docs/architecture.md           architecture and protocol contract
 ```
 
-In this layout, `app` imports concrete backends to construct them. Backends depend on
-the small execution contract in `store` and the value/runtime contract in
-`transform`; `store` does not import concrete backends. Transport maps generated
-messages into the small semantic work/result types and imports no BSON/JSON
-packages. RemoteWeir uses generated public RPC clients without creating local
-backend plans. Adapters own their clients; StoreRuntime owns adapter
-construction/drain/Close, not driver internals.
+`app` constructs the concrete backends. Backends and `store` depend on the shared
+`execution` contract; `store` does not import concrete backends. `server` maps RPCs
+to Store work and uses generated clients for RemoteWeir forwarding. Adapters own
+their clients; StoreRuntime owns scheduling, drain and Close. Test-only helpers
+remain under `internal/testutil` and do not enter product builds.
 
-Use real interfaces only at the two Service variants, backend adapters, codec/runtime
-boundaries, and standard external dependencies. Do not add function-variable test
-hooks, a generic retry package, lane framework, plugin manager, provider registry,
-or thin wrapper layers with one implementation. Test scheduling with deterministic
-fake adapters/clock inputs at these genuine boundaries, not production functions
-assigned to replaceable globals.
+Use interfaces at real Service, adapter and external dependency boundaries. Avoid
+empty packages for future capabilities, function-variable test hooks and thin
+wrappers with one implementation.
 
 ## 17. Evidence-Based Sink Component Review
 

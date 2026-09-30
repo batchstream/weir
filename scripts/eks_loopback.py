@@ -24,7 +24,7 @@ MINIMUM = dict(cpu=7, memory=5632*1024**2, pods=3, **{"ephemeral-storage":5*1024
 FILES = common.FILES + ("scripts/eks_resources_test.py", "scripts/eks_loopback.py", "scripts/eks_loopback_test.py",
                         "scripts/eks_socket_diagnostics_test.py", "scripts/fixtures/eks-loopback-check-before-m26r3.sh",
                         "scripts/eks_loopback_admission_test.py", "scripts/eks_loopback_cli_fixture.py",
-                        "scripts/fixtures/eks-loopback-admitted-job.json", "scripts/fixtures/README.md",
+                        "scripts/fixtures/eks-loopback-admitted-job.json",
                         "scripts/eks_loopback_check.sh", "scripts/eks_loopback_bootstrap.sh", "scripts/eks_loopback_diagnostic.sh",
                         "scripts/capacity_report_test.py", "deploy/kubernetes/node.example.json")
 CURL = ["curl", "-q", "--silent", "--show-error", "--fail", "--noproxy", "*", "--proxy", "", "--proto", "=http",
@@ -332,7 +332,7 @@ def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qua
     cni_template=r'''{{range .spec.template.spec.containers}}{{.name}} {{.image}}{{range .args}}{{if or (eq . "--enable-network-policy=true") (eq . "--enable-network-policy=false")}} {{.}}{{end}}{{end}}{{"\n"}}{{end}}'''
     run.save("cni-selected.txt",run.kube(["get","daemonset","aws-node","-o","go-template="+cni_template],"kube-system"))
     require(not run.run(["git","status","--porcelain"]).strip(),"committed clean implementation required")
-    run.run(["git","diff","--exit-code",image_source,"--","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"])
+    run.run(["git","diff","--exit-code",image_source,"--","*.go","go.mod","go.sum","deploy/docker/Dockerfile","scripts/qualification.Dockerfile"])
     source=run.run(["git","rev-parse","HEAD"]).strip()
     static = dict(completed=time.time(), monotonic_completed=time.monotonic(), source=source)
     run.save("static-preflight.json", static)
@@ -346,7 +346,7 @@ def prepare_context(run, owner, *, image_source=SOURCE, owner_pattern=r"weir-qua
 
 def prepare(run, owner):
     tool_inputs = {name:common.digest(common.REPO/name) for name in FILES}
-    product_inputs = {name:common.digest(common.REPO/name) for name in run.run(["git","ls-files","*.go","go.mod","go.sum","packaging/Dockerfile","scripts/qualification.Dockerfile"]).splitlines()}
+    product_inputs = {name:common.digest(common.REPO/name) for name in run.run(["git","ls-files","*.go","go.mod","go.sum","deploy/docker/Dockerfile","scripts/qualification.Dockerfile"]).splitlines()}
     context = prepare_context(run, owner)
     selected, spare, cluster, source = (context[key] for key in ("node", "initial_spare", "cluster", "source"))
     plan=dict(schema_version=1,profile="m26r-single-pod-loopback-limited-functional",target=TARGET,namespace=owner,owner=owner,

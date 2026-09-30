@@ -41,7 +41,7 @@ def secret_path(name):
 
 
 def allowed(name):
-    return name in ('go.mod', 'go.sum') or name.startswith('packaging/') or (
+    return name in ('go.mod', 'go.sum', 'README.md') or name.startswith('deploy/docker/') or (
         name.endswith('.go') and not name.endswith('_test.go') and
         name.startswith(('api/', 'internal/', 'cmd/weir/', 'cmd/weir-lua-worker/')) and not name.startswith('internal/testutil/'))
 
@@ -280,10 +280,10 @@ def build_once(opts):
         lua_worker_hashes[target] = sha(lua_worker.read_bytes())
         members = {binary.name: (binary.read_bytes(), 0o755),
                    lua_worker.name: (lua_worker.read_bytes(), 0o755),
-                   'README.md': ((source / 'packaging/README.md').read_bytes(), 0o644),
-                   'node.example.json': ((source / 'packaging/node.example.json').read_bytes(), 0o644)}
+                   'README.md': ((source / 'README.md').read_bytes(), 0o644),
+                   'node.example.json': ((source / 'deploy/docker/node.example.json').read_bytes(), 0o644)}
         if system == 'darwin':
-            for license_file in sorted((source / 'packaging/licenses').glob('purego-*.txt')):
+            for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
                 members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)
         dest = output / ('weir-' + target + ('.zip' if system == 'windows' else '.tar.gz'))
         archive(dest, members, opts['epoch'])
@@ -294,10 +294,10 @@ def build_once(opts):
                'inputs': original, 'binaries': binary_hashes, 'lua_worker_binaries': lua_worker_hashes,
                'archives': artifact_hashes}
     if opts['oci']:
-        base = json.loads((source / 'packaging/base.json').read_text())
+        base = json.loads((source / 'deploy/docker/base.json').read_text())
         context = source.parent / 'oci-context'
         context.mkdir()
-        dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'packaging/Dockerfile'
+        dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'deploy/docker/Dockerfile'
         shutil.copyfile(source / dockerfile, context / 'Dockerfile')
         for arch in ('amd64', 'arm64'):
             dest = context / ('linux-' + arch)
