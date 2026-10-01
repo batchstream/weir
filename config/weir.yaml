@@ -4,9 +4,9 @@
 # routes are configured in the separate routes.yaml selected by routing.file.
 # Both files contain real YAML configuration with field documentation.
 # Validate before starting:
-#   weir check
-#   weir serve
-# The default CLI path is ./config/weir.yaml. Changes require a restart.
+#   weir check --config config/weir.yaml
+#   weir serve --config config/weir.yaml
+# The default CLI path is ./weir.yaml. Changes require a restart.
 
 # Syntax: one YAML mapping per file; keys are exact lowercase names shown here.
 # Unknown/duplicate keys, multiple documents, anchors, aliases, merge keys and

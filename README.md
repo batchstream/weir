@@ -24,7 +24,7 @@ indices. MongoDB program transforms require transactions on a replica set.
 ```sh
 go build -o bin/weir ./cmd/weir
 bin/weir version
-bin/weir check
+bin/weir check --config config/weir.yaml
 ```
 
 Keep the [basic configuration](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
@@ -33,7 +33,8 @@ together in the `config/` directory. Set backend addresses, resource names,
 credentials and CA paths in the routing file, and remove services/routes you do
 not need.
 Start with `bin/weir serve --config /path/to/config/weir.yaml`;
-`bin/weir serve` loads `config/weir.yaml` from the current directory.
+`bin/weir serve` and `bin/weir check` default to `./weir.yaml` in the current
+directory. Pass `--config config/weir.yaml` to use the reference directory.
 Lua program transforms run inside the Weir process; no additional executable or
 runtime path configuration is required.
 The application listener uses plaintext gRPC; deploy it on an isolated network.
@@ -100,12 +101,47 @@ routes:
 ```
 
 Relative routing paths resolve from the basic file's directory; absolute paths
-are also supported. Configure at least one application or peer listener. Both
-files are strict single-document YAML mappings with exact lowercase field names.
+are also supported. A service can contain inline `local` or `remote` settings,
+or a nonempty `file` path to load those settings from a separate YAML file.
+For example, a routing file can refer to a file mounted into the container:
+
+```yaml
+services:
+  - name: "database"
+    file: "/etc/weir/services/database.yaml"
+routes:
+  - store: "mongo"
+    service: "database"
+```
+
+The referenced `database.yaml` contains the service body:
+
+```yaml
+local:
+  max_concurrency: 4
+  max_batch_operations: 16
+  mongodb:
+    uri: "mongodb://127.0.0.1:27017/?directConnection=true"
+    database: "example"
+    collection: "records"
+```
+
+Service file paths resolve from the routing file's directory, or can be absolute.
+Each file contains exactly one `local` or `remote` block, using the same fields
+and defaults documented in `config/routes.yaml`. The service name and its routes
+stay in the routing file. A nonempty `file` cannot be combined with inline
+`local` or `remote`; referenced files cannot contain `name` or another `file`.
+Weir reads ordinary files and follows symbolic links, so files mounted from
+[Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod)
+can use this mechanism. Configuration is read at startup; restart Weir after
+changing a service file.
+
+Configure at least one application or peer listener. All configuration files
+are strict single-document YAML mappings with exact lowercase field names.
 Unknown fields, duplicate keys, anchors, aliases, merge keys, explicit tags,
-trailing documents and files over 128 KiB are rejected. Weir validates both files
+trailing documents and files over 128 KiB are rejected. Weir validates all files
 and the complete route graph before opening listeners or backend connections.
-Changes to either file take effect after a restart.
+Changes take effect after a restart.
 
 Memory is a string containing an integer and `B`, `KiB`, `MiB` or `GiB`, such as
 `"512MiB"` or `"1GiB"`; the allowed process budget is 64 MiB through 64 GiB.
@@ -118,8 +154,8 @@ The CLI uses Cobra commands:
 
 | Command | Purpose |
 | --- | --- |
-| `weir serve --config config/weir.yaml` | Load both files and start the server. |
-| `weir check --config config/weir.yaml` | Validate both files without backend or listener access. |
+| `weir serve --config config/weir.yaml` | Load the configuration and start the server. |
+| `weir check --config config/weir.yaml` | Validate all referenced files without backend or listener access. |
 | `weir version` | Print build identity. |
 | `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
 | `weir --help` | Show commands; each command also accepts `--help`. |
@@ -147,6 +183,7 @@ Build reproducible release archives from a clean commit with
 - `api/`: protocol definitions and generated Go types.
 - `cmd/weir/`: the single Weir server executable.
 - `internal/`: implementation and test helpers.
+- `config/`: complete basic and routing configuration references.
 - `examples/`: basic and native clients, plus peer configurations.
 - `deploy/`: Docker assets, third-party licenses and Kubernetes manifests.
 - `scripts/`: development, CI, release and opt-in local qualification tools.
