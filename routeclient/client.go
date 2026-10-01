@@ -106,7 +106,7 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 	go func() {
 		err := produce(ctx, stream, opts, l)
 		sent <- err
-		if err != nil {
+		if err != nil && !errors.Is(err, io.EOF) {
 			cancel()
 		}
 	}()
@@ -139,7 +139,7 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 		}
 		if err != nil {
 			cancel()
-			if sendErr := join(); sendErr != nil && !errors.Is(sendErr, context.Canceled) {
+			if sendErr := join(); sendErr != nil && !errors.Is(sendErr, context.Canceled) && !errors.Is(sendErr, io.EOF) {
 				return sendErr
 			}
 			return fmt.Errorf("Route interrupted; uncompleted writes are indeterminate: %w", err)
@@ -237,7 +237,7 @@ func produce(ctx context.Context, stream grpc.BidiStreamingClient[pb.Request, pb
 			return errors.New("Route ID space exhausted")
 		}
 		id++
-		if call == nil || call.Version != 1 || call.Operation == nil {
+		if call == nil || call.Version != 1 || call.Operation == nil || proto.Size(call) > protocol.MaxPayload {
 			return errors.New("invalid Call")
 		}
 		data, err := proto.Marshal(call)
@@ -327,6 +327,9 @@ func validateEvent(p *pending, id uint64, e *pb.Event) error {
 
 // Record executes one read or mutation. It collects its single bounded result.
 // Use Run for batches, scans and native streaming results. It never retries.
+// A transport error can accompany a validated business result. Check the error
+// for RPC completion and retain the result as backend evidence; APPLIED is not
+// invalidated by a missing end frame or a later non-OK RPC status.
 type RecordOptions struct {
 	Destination string
 	Call        *pb.Call
@@ -348,7 +351,7 @@ func Record(ctx context.Context, client pb.WeirClient, opts RecordOptions) (*pb.
 	}
 	batch.Consume = func(_ context.Context, _ uint64, e *pb.Event) error { result = e.GetResult(); return nil }
 	if err := Run(ctx, client, batch); err != nil {
-		return nil, err
+		return result, err
 	}
 	if result == nil {
 		return nil, errors.New("missing record result")

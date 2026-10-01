@@ -29,6 +29,8 @@ type peerAdapter struct {
 	commands, closed atomic.Int32
 	block            <-chan struct{}
 	seen             chan context.Context
+	ackFailureKey    string
+	ackFailure       *pb.Failure
 }
 
 func newPeerAdapter(name string) *peerAdapter {
@@ -93,7 +95,11 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 			} else {
 				a.documents[plan.Key] = document
 			}
-			result.Result = &pb.Result_Mutation{Mutation: protocol.Mutation(pb.MutationOutcome_APPLIED, nil)}
+			var failure *pb.Failure
+			if plan.Key == a.ackFailureKey {
+				failure = a.ackFailure
+			}
+			result.Result = &pb.Result_Mutation{Mutation: protocol.Mutation(pb.MutationOutcome_APPLIED, failure)}
 		}
 		a.mu.Unlock()
 		event := &pb.Event{Version: 1, Value: &pb.Event_Result{Result: result}}
@@ -101,8 +107,8 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 	}
 	return execution.Healthy
 }
-func (a *peerAdapter) Close() error { a.closed.Add(1); return nil }
-func (a *peerAdapter) ClosePlan(context.Context,*execution.Plan) *pb.Failure { return nil }
+func (a *peerAdapter) Close() error                                           { a.closed.Add(1); return nil }
+func (a *peerAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
 func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	t.Helper()
 	adapter := newPeerAdapter(name)

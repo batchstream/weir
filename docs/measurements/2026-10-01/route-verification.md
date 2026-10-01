@@ -38,6 +38,8 @@ producer waits for more input, and joining both directions after cancellation.
 `Complete` fires only after a valid business terminal Event and the separate empty
 transport end. It preserves a completed request's evidence if the RPC later fails;
 the single-result convenience method still returns an error for a non-OK RPC.
+It returns the validated Result alongside that error, preserving APPLIED evidence
+even when the per-request end frame or final RPC success is missing.
 
 Final focused race run:
 
@@ -132,6 +134,70 @@ iterations failed during real backend fixture setup with HTTP 429: the fixture's
 512 MiB JVM heap hit its parent circuit breaker. Only the owned OpenSearch instance
 was restarted; the full backend suite and final Route race run then passed. This
 is not reported as ten successful repetitions or as a router memory result.
+
+## Post-PR review corrections
+
+The independent Agent reproduced three P2 issues against PR #20's initial commit
+`9a8f30d`, using actual protocol validation and loopback/MongoDB tests:
+
+- APPLIED plus a typed later acknowledgement failure was rejected as a protocol
+  error. Validation now accepts that combination. A two-relay Route regression
+  preserves its APPLIED/failure evidence, completes the following write and checks
+  both persisted values; malformed outcome/failure combinations remain rejected.
+- `Record` discarded a validated result after missing end or non-OK final status.
+  It now returns that Result together with the RPC error. Regressions cover both
+  write reply loss and end/trailer failure; incomplete or invalid business data
+  is still rejected and never presented as complete RPC success.
+- Native execution bypassed the configured backend timeout. MongoDB qualification
+  and command execution now share one I/O cap. Search tracks cumulative active
+  I/O and pauses while publishing output, without resetting the budget between
+  body reads. Only native streaming bypasses the scheduler's batch deadline;
+  scans and Lua singleton execution keep it.
+
+Real MongoDB native tests with a 3-second failpoint respect the default 2-second
+cap (2.00084 s). A configured 100 ms cap stops a blocked command in 100.56 ms
+and qualification in 100.74 ms; all tasks/bytes/connections recover. Real Lua
+tests use a 100 ms cap and 500 ms backend stall: Find returns NOT_APPLIED plus
+DEADLINE_EXCEEDED in 112.39 ms with the value unchanged; commit acknowledgement
+returns UNKNOWN plus DEADLINE_EXCEEDED in 100.87 ms. After the delayed command
+finishes, independent database readback observes exactly one increment (1 to 2),
+with no replay. Owned connection acquisition/release balances and retained state
+returns to zero.
+
+Search HTTP regressions cover qualification, headers, body stalls, cumulative
+multiple-read time and publication stalls longer than the I/O cap. The independent
+Agent repeated the I/O-stall and slow-publication cases under race detection ten
+times (20 cases passed). Existing actual native MongoDB, Elasticsearch and
+OpenSearch suites also passed after the correction (4.804 / 2.522 / 2.717 s).
+
+The first CI run additionally found a send/receive race: `Send` returned EOF on
+early server rejection before `Recv` delivered its authoritative status. The SDK
+now drains that status without masking it with send EOF. The existing app hop
+regression and deterministic early-rejection regression passed 100 times with
+CGO disabled. Complete SDK race tests passed five times. An oversized-input
+allocation regression also verifies rejecting the caller's preallocated excessive
+Call before allocating an encoded copy.
+
+Commands for the new actual MongoDB timeout regressions and complete post-fix
+offline checks:
+
+```sh
+GOPROXY=off WEIR_INTEGRATION=1 go test -race -tags integration -p 1 \
+  ./internal/store \
+  -run '^TestRoute(NativeBackendIODeadline|LuaDatabaseIODeadlineAndCommitUncertainty)$' \
+  -count=1 -v
+
+GOPROXY=off go test -count=1 ./...
+GOPROXY=off go test -race -count=1 ./...
+GOPROXY=off go vet ./...
+GOPROXY=off go vet -tags integration ./...
+GOPROXY=off go test -tags integration -exec /usr/bin/true ./...
+GOPROXY=off CGO_ENABLED=0 GOOS=linux go test -tags integration \
+  -exec /usr/bin/true ./...
+```
+
+All complete post-fix offline checks passed. The last two commands only compile
+tagged tests; they do not execute actual backend or Linux integration workloads.
 
 ## Measurement scope
 

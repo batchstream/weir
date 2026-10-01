@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -74,5 +75,41 @@ func TestRouteLuaPlanKeepsIndependentTransaction(t *testing.T) {
 	}
 	if !work.Singleton || work.Backend.(*plan).program == nil {
 		t.Fatal("Lua could be combined into another request's transaction")
+	}
+}
+
+func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
+	response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}}
+	replies := []bson.D{collectionQualificationResponse("db", "records"), response}
+	adapter := batchMockAdapter(t, replies, nil)
+	command := bson.D{{Key: "count", Value: "records"}}
+	raw, err := bson.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &pb.Document{MediaType: NativeDescriptor}
+	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+	native := &pb.NativeCall{Open: open, Body: raw}
+	variant := &pb.Call_Native{Native: native}
+	call := &pb.Call{Version: 1, Operation: variant}
+	work, failure := adapter.PrepareCall(1, call)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work.BackendTimeout = 50 * time.Millisecond
+	var end *pb.NativeEnd
+	emit := func(_ *execution.Plan, event *pb.Event) error {
+		if event.GetHead() != nil || event.GetChunk() != nil {
+			time.Sleep(75 * time.Millisecond)
+		}
+		if event.GetNativeEnd() != nil {
+			end = event.GetNativeEnd()
+		}
+		return nil
+	}
+	started := time.Now()
+	adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
+	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.GetFailure() != nil || time.Since(started) < 3*work.BackendTimeout {
+		t.Fatal("output stalls consumed backend I/O budget", end, time.Since(started))
 	}
 }

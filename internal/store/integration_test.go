@@ -388,3 +388,150 @@ func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
 		t.Fatal("accepted writes missing after drain", count, err)
 	}
 }
+
+func TestRouteNativeBackendIODeadline(t *testing.T) {
+	for _, test := range []struct {
+		name, command string
+		timeout       time.Duration
+		block         int32
+		completion    pb.NativeCompletion
+	}{
+		{name: "configured_command", command: "count", timeout: 100 * time.Millisecond, block: 500, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "configured_qualification", command: "listCollections", timeout: 100 * time.Millisecond, block: 500, completion: pb.NativeCompletion_NATIVE_NOT_STARTED},
+		{name: "default_command", command: "count", timeout: 2 * time.Second, block: 3000, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := setup(t)
+			f.runtime.mu.Lock()
+			f.runtime.limits.BackendTimeout = test.timeout
+			f.runtime.mu.Unlock()
+			data := bson.D{{Key: "failCommands", Value: bson.A{test.command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: test.block}}
+			testmongo.FailCommand(t, f.native, data, 1)
+			command := bson.D{{Key: "count", Value: "records"}}
+			raw, err := bson.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
+			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			native := &pb.NativeCall{Open: open, Body: raw}
+			variant := &pb.Call_Native{Native: native}
+			call := &pb.Call{Version: 1, Operation: variant}
+			work, failure := f.runtime.PrepareCall(1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			session := f.runtime.NewSession()
+			defer session.Close()
+			started := time.Now()
+			ticket, failure, _ := f.runtime.Submit(ctx, work, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			var end *pb.NativeEnd
+			for {
+				select {
+				case emission := <-session.Events:
+					if emission.Event.GetNativeEnd() != nil {
+						if end != nil {
+							t.Fatal("multiple native completion events")
+						}
+						end = emission.Event.GetNativeEnd()
+					}
+					emission.Release()
+					if emission.End {
+						ticket.Ack()
+						goto completed
+					}
+				case <-ctx.Done():
+					t.Fatal("backend deadline failed to release request", ctx.Err())
+				}
+			}
+		completed:
+			elapsed := time.Since(started)
+			if end.GetCompletion() != test.completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > test.timeout+500*time.Millisecond {
+				t.Fatal("native backend I/O escaped configured cap", end, elapsed, test.timeout)
+			}
+			waitReleased(t, f.runtime)
+			filter := bson.D{}
+			count, err := f.native.Database(f.db).Collection("records").CountDocuments(ctx, filter)
+			if err != nil || count != 0 {
+				t.Fatal("deadline affected independent backend connection", count, err)
+			}
+			t.Logf("blocked %s: configured=%s elapsed=%s completion=%s", test.command, test.timeout, elapsed, end.Completion)
+		})
+	}
+}
+
+func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
+	for _, command := range []string{"find", "commitTransaction"} {
+		t.Run(command, func(t *testing.T) {
+			f := setup(t)
+			timeout := 100 * time.Millisecond
+			f.runtime.mu.Lock()
+			f.runtime.limits.BackendTimeout = timeout
+			f.runtime.mu.Unlock()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			document := bson.D{{Key: "_id", Value: "lua-timeout"}, {Key: "n", Value: int32(1)}}
+			collection := f.native.Database(f.db).Collection("records")
+			if _, err := collection.InsertOne(ctx, document); err != nil {
+				t.Fatal(err)
+			}
+			data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
+			testmongo.FailCommand(t, f.native, data, 1)
+			program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
+			form := &pb.Transform_Program{Program: program}
+			transform := &pb.Transform{Form: form}
+			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
+			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}
+			variant := &pb.Call_Mutate{Mutate: mutation}
+			call := &pb.Call{Version: 1, Operation: variant}
+			work, failure := f.runtime.PrepareCall(1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			started := time.Now()
+			ticket, failure, _ := f.runtime.Submit(ctx, work, nil)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			result, err := ticket.Wait(ctx)
+			elapsed := time.Since(started)
+			expected := pb.MutationOutcome_NOT_APPLIED
+			if command == "commitTransaction" {
+				expected = pb.MutationOutcome_UNKNOWN
+			}
+			if err != nil || result.GetMutation().GetOutcome() != expected || result.GetMutation().GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
+				t.Fatal("Lua database I/O escaped deadline or lost uncertainty", err, result, elapsed)
+			}
+			ticket.Ack()
+			waitReleased(t, f.runtime)
+			filter := bson.D{{Key: "_id", Value: "lua-timeout"}}
+			deadline := time.Now().Add(time.Second)
+			for {
+				raw, err := collection.FindOne(ctx, filter).Raw()
+				if err != nil {
+					t.Fatal(err)
+				}
+				value := raw.Lookup("n").Int32()
+				if command == "find" {
+					if value != 1 {
+						t.Fatal("aborted transaction changed the record", value)
+					}
+					break
+				}
+				if value == 2 {
+					break
+				}
+				if value != 1 || time.Now().After(deadline) {
+					t.Fatal("uncertain commit was missing or Lua replayed", value)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			t.Logf("blocked %s: cap=%s elapsed=%s outcome=%s", command, timeout, elapsed, expected)
+		})
+	}
+}

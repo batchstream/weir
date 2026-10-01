@@ -124,5 +124,19 @@ integration passed, including three-process Mongo/Search business operations and
 process replacement recovery. The verification ledger records the complete actual
 backend suites and focused repeated race checks.
 
-Independent review begins after PR creation. Its findings, fixes and review of the
-latest commit will be recorded here before delivery.
+An independent Agent started only after PR #20 was created, from published commit
+`9a8f30d`. It reproduced three P2 issues: rejecting APPLIED plus a later typed
+acknowledgement failure, discarding a validated result on a subsequent RPC error
+in `Record`, and bypassing the backend I/O timeout for native requests. All three
+have regression tests and fixes. The timeout correction also restores the cap for
+Lua/scan singleton execution, while excluding native response publication waits.
+
+Real MongoDB timeout tests verify NOT_APPLIED for a blocked Lua read and UNKNOWN
+for a lost commit acknowledgement; independent database readback confirms exactly
+one persisted increment. Native tests cover the default 2-second cap, shorter
+configured caps and Search cumulative I/O time with slow response consumers.
+A CI-only send/receive EOF race was also reproduced and corrected; authoritative
+gRPC rejection status now survives, including 100 repeated no-CGO regressions.
+
+Review of the final published fixes is recorded in the review evidence before
+delivery; review of the initial commit alone is not final approval.

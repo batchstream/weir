@@ -450,9 +450,10 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		backendDeadline = latest
 	}
 	ctx, cancel := context.WithDeadline(context.Background(), backendDeadline)
-	// A streaming singleton follows its caller's lifetime; individual scan fetches
-	// and native backend calls enforce their own I/O cap, separate from output stalls.
-	if seed.plan.Singleton {
+	// Only Native emits directly during execution. Its backend calls enforce
+	// their own I/O cap, while output stalls follow the caller's lifetime. Scan
+	// pages and Lua results publish after execution releases this bounded batch.
+	if seed.plan.Streaming {
 		cancel()
 		ctx, cancel = context.WithCancel(seed.ctx)
 		owned = false

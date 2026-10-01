@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -84,5 +86,100 @@ func TestRouteLuaUsesSingletonCASBoundary(t *testing.T) {
 	}
 	if !work.Singleton || work.Backend.(*plan).program == nil {
 		t.Fatal("Lua escaped its bounded CAS execution")
+	}
+}
+
+func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
+	for _, phase := range []string{"qualification", "headers", "body", "cumulative_body", "slow_output"} {
+		t.Run(phase, func(t *testing.T) {
+			var calls atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/records" {
+					if phase == "qualification" {
+						<-r.Context().Done()
+						return
+					}
+					_, _ = io.WriteString(w, testIndexReply)
+					return
+				}
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				switch phase {
+				case "headers":
+					<-r.Context().Done()
+				case "body":
+					_, _ = io.WriteString(w, "prefix")
+					w.(http.Flusher).Flush()
+					<-r.Context().Done()
+				case "cumulative_body":
+					w.(http.Flusher).Flush()
+					for range 3 {
+						timer := time.NewTimer(60 * time.Millisecond)
+						select {
+						case <-r.Context().Done():
+							timer.Stop()
+							return
+						case <-timer.C:
+						}
+						_, _ = io.WriteString(w, "part")
+						w.(http.Flusher).Flush()
+					}
+				case "slow_output":
+					_, _ = io.WriteString(w, "complete")
+				}
+			})
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			config := Config{Store: "search", URL: server.URL}
+			client := server.Client()
+			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: context.Background()}
+			open := nativeOpen(t, "records", "GET", "/_doc/x")
+			open.Resource = "records"
+			native := &pb.NativeCall{Open: open}
+			variant := &pb.Call_Native{Native: native}
+			call := &pb.Call{Version: 1, Operation: variant}
+			work, failure := adapter.PrepareCall(1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			work.BackendTimeout = 100 * time.Millisecond
+			var end *pb.NativeEnd
+			var body strings.Builder
+			emit := func(_ *execution.Plan, event *pb.Event) error {
+				if phase == "slow_output" && (event.GetHead() != nil || event.GetChunk() != nil) {
+					time.Sleep(150 * time.Millisecond)
+				}
+				if chunk := event.GetChunk(); chunk != nil {
+					body.Write(chunk)
+				}
+				if event.GetNativeEnd() != nil {
+					end = event.GetNativeEnd()
+				}
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			started := time.Now()
+			adapter.Execute(ctx, []*execution.Plan{work}, emit)
+			elapsed := time.Since(started)
+			if end == nil {
+				t.Fatal("missing native completion")
+			}
+			if phase == "slow_output" {
+				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || body.String() != "complete" || elapsed < 3*work.BackendTimeout {
+					t.Fatal("output backpressure consumed backend I/O budget", end, body.String(), elapsed)
+				}
+				return
+			}
+			completion := pb.NativeCompletion_RESPONSE_INCOMPLETE
+			expectedCalls := int32(1)
+			if phase == "qualification" {
+				completion = pb.NativeCompletion_NATIVE_NOT_STARTED
+				expectedCalls = 0
+			}
+			if end.Completion != completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || calls.Load() != expectedCalls || elapsed > 5*work.BackendTimeout {
+				t.Fatal("backend phase escaped cumulative I/O deadline", phase, end, calls.Load(), elapsed)
+			}
+		})
 	}
 }

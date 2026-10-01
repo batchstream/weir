@@ -6,12 +6,14 @@ import (
 	"errors"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,6 +29,9 @@ type clientTestPeer struct {
 }
 
 func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
+	if p.mode == "reject_early" {
+		return status.Error(codes.InvalidArgument, "fixture header rejection")
+	}
 	if p.mode == "early_eof" {
 		return nil
 	}
@@ -53,6 +58,10 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 		result := &pb.Result{Index: request.Id, Result: resultValue}
 		value := &pb.Event_Result{Result: result}
 		event := &pb.Event{Version: 1, Value: value}
+		if p.mode == "write_reply_loss" || p.mode == "write_end_failure" {
+			mutation := &pb.MutationResult{Outcome: pb.MutationOutcome_APPLIED}
+			result.Result = &pb.Result_Mutation{Mutation: mutation}
+		}
 		if p.mode == "invalid_event" {
 			event.Version = 2
 		}
@@ -76,6 +85,9 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 			}
 			raw = raw[size:]
 		}
+		if p.mode == "write_reply_loss" {
+			return status.Error(codes.Unavailable, "lost terminal after acknowledged write")
+		}
 		if p.mode == "missing_end" {
 			return nil
 		}
@@ -84,7 +96,7 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 			return err
 		}
 		p.completed.Add(1)
-		if p.mode == "non_ok_after_end" {
+		if p.mode == "non_ok_after_end" || p.mode == "write_end_failure" {
 			return status.Error(codes.Unavailable, "fixture failure after business completion")
 		}
 		if p.mode == "early_eof_after_result" {
@@ -162,8 +174,15 @@ func TestRecordRejectsIncompleteAndInvalidResponses(t *testing.T) {
 			defer cancel()
 			opts := RecordOptions{Destination: "records", Call: clientTestRead()}
 			result, err := Record(ctx, client, opts)
-			if err == nil || result != nil {
-				t.Fatal("invalid or incomplete RPC leaked a collected successful result", mode, "result nil:", result == nil, "document bytes:", len(result.GetRead().GetDocument().GetData()), err)
+			if err == nil {
+				t.Fatal("invalid or incomplete RPC reported success", mode)
+			}
+			if mode == "missing_end" || mode == "non_ok_after_end" {
+				if len(result.GetRead().GetDocument().GetData()) != 257<<10 {
+					t.Fatal("complete validated business evidence was discarded", mode)
+				}
+			} else if result != nil {
+				t.Fatal("unvalidated response exposed a result", mode)
 			}
 			if mode == "non_ok_after_end" && !strings.Contains(err.Error(), "indeterminate") {
 				t.Fatal("non-OK transport terminal lost uncertainty semantics", err)
@@ -314,5 +333,72 @@ func TestRunCompleteRequiresEmptyTransportEnd(t *testing.T) {
 				t.Fatal("business and transport completion were conflated", mode, consumed, completed)
 			}
 		})
+	}
+}
+
+func TestRecordPreservesAppliedEvidenceWithRPCError(t *testing.T) {
+	for _, mode := range []string{"write_reply_loss", "write_end_failure"} {
+		t.Run(mode, func(t *testing.T) {
+			peer := &clientTestPeer{mode: mode}
+			client := clientTestConnection(t, peer)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
+			action := &pb.MutateRequest_Put{Put: document}
+			mutation := &pb.MutateRequest{Resource: "records/s:key", Action: action}
+			variant := &pb.Call_Mutate{Mutate: mutation}
+			call := &pb.Call{Version: 1, Operation: variant}
+			opts := RecordOptions{Destination: "records", Call: call}
+			result, err := Record(ctx, client, opts)
+			if status.Code(err) != codes.Unavailable || result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.Index != 1 {
+				t.Fatal("lost RPC terminal erased validated write evidence or reported success", result, err)
+			}
+		})
+	}
+}
+
+func TestRunEarlyRejectionPreservesAuthoritativeStatus(t *testing.T) {
+	peer := &clientTestPeer{mode: "reject_early"}
+	client := clientTestConnection(t, peer)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	opts := Options{Destination: "records"}
+	opts.Produce = func(context.Context) (*pb.Call, error) {
+		// Bounded source work can finish after the peer rejects RPC headers.
+		// A subsequent Send EOF must not mask the authoritative receive status.
+		time.Sleep(20 * time.Millisecond)
+		return clientTestRead(), nil
+	}
+	opts.Consume = func(context.Context, uint64, *pb.Event) error { return errors.New("rejected RPC returned a result") }
+	if err := Run(ctx, client, opts); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("Send EOF or cancellation replaced peer rejection", err)
+	}
+}
+
+func TestRunOversizedInputDoesNotAllocateEncodedCopy(t *testing.T) {
+	peer := &clientTestPeer{mode: "normal"}
+	client := clientTestConnection(t, peer)
+	body := make([]byte, protocol.MaxPayload+1)
+	descriptor := &pb.Document{MediaType: "application/vnd.weir.search-http.v1+protobuf"}
+	open := &pb.NativeOpen{Resource: "records", Descriptor_: descriptor}
+	native := &pb.NativeCall{Open: open, Body: body}
+	variant := &pb.Call_Native{Native: native}
+	call := &pb.Call{Version: 1, Operation: variant}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	opts := Options{Destination: "records"}
+	opts.Produce = func(context.Context) (*pb.Call, error) { return call, nil }
+	opts.Consume = func(context.Context, uint64, *pb.Event) error {
+		return errors.New("oversized input returned a response")
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	err := Run(ctx, client, opts)
+	runtime.ReadMemStats(&after)
+	if err == nil || peer.completed.Load() != 0 {
+		t.Fatal("oversized input was transmitted", err, peer.completed.Load())
+	}
+	if after.TotalAlloc-before.TotalAlloc >= uint64(protocol.MaxPayload) {
+		t.Fatal("SDK encoded an oversized input before rejecting it", after.TotalAlloc-before.TotalAlloc)
 	}
 }

@@ -200,6 +200,52 @@ func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 		ticket.Ack()
 	}
 }
+
+func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprint(streaming), func(t *testing.T) {
+			limits := DefaultLimits()
+			limits.BackendTimeout = 50 * time.Millisecond
+			limits.Collect = 0
+			runtime := newRuntime(nil, limits)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			work := plan(1, "singleton", false)
+			work.Singleton, work.Streaming = true, streaming
+			var session *Session
+			if streaming {
+				session = runtime.NewSession()
+				defer session.Close()
+			}
+			ticket, failure, _ := runtime.Submit(ctx, work, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			runtime.mu.Lock()
+			batch := runtime.selectLocked(time.Now())
+			runtime.mu.Unlock()
+			if batch == nil {
+				t.Fatal("singleton was not selected")
+			}
+			defer batch.cancel()
+			deadline, exists := batch.ctx.Deadline()
+			if !exists {
+				t.Fatal("execution lost fixed deadline")
+			}
+			if streaming {
+				if time.Until(deadline) < 900*time.Millisecond || batch.timeoutOwned {
+					t.Fatal("output stalls would consume backend execution deadline", deadline)
+				}
+			} else if time.Until(deadline) > limits.BackendTimeout || !batch.timeoutOwned {
+				t.Fatal("nonstreaming singleton bypassed backend deadline", deadline)
+			}
+			runtime.mu.Lock()
+			finish(runtime, batch)
+			runtime.mu.Unlock()
+			ticket.Ack()
+		})
+	}
+}
 func TestSlowConsumerRetainedBound(t *testing.T) {
 	l := DefaultLimits()
 	l.BatchOperations = 1

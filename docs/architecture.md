@@ -48,6 +48,8 @@ acknowledgement, otherwise UNKNOWN. A late protocol error or disconnect does not
 roll back preceding writes. Uncompleted writes are indeterminate. Weir never
 replays a possible mutation. Received acknowledged outcomes remain evidence even
 if another request or final transport status fails.
+APPLIED can include a typed failure of a later acknowledgement step, such as
+replica confirmation; the failure does not erase positive application evidence.
 
 ## Routing and transport
 
@@ -143,6 +145,12 @@ adapter and bounded cancellation cleanup. Sending a page does not retain an
 execution permit, so a stalled scan at concurrency one permits short record work.
 Native exchange is a singleton that can hold one execution permit during bounded
 backend streaming; slow output is canceled by the transport progress budget.
+The backend timeout defaults to 2 seconds. Native MongoDB qualification and command
+execution share one deadline; Search accumulates qualification, request and body
+read time, pausing its I/O allowance while publishing responses. Backpressure
+does not consume that allowance or grant a fresh allowance on the next read.
+Scan pages and Lua operations retain the scheduler's backend timeout; their
+publication starts after execution, outside that timeout.
 
 Lua runs in the main Weir process. MongoDB read-modify-write programs preserve
 independent transactions and same-transaction commit resolution; Search preserves
@@ -159,6 +167,9 @@ with eight input slots/16 MiB charges. Complete observes each validated request 
 Consume exposes bounded incremental Events. Callbacks must honor context and release
 Events on return. `Record` collects one bounded read/write result; collecting an
 entire batch in application callbacks requires memory for that entire batch.
+`Record` can return a validated result together with an RPC error after a lost
+end frame or failing final status. Preserve that result as backend evidence and
+check the error separately for complete RPC success.
 Reuse a connection across finite RPCs; a permanently open stream is unnecessary.
 Use static gRPC windows/buffers for the same client transport budget as peers.
 

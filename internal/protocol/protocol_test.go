@@ -160,3 +160,29 @@ func TestEventValidationAndBoundedEncoding(t *testing.T) {
 		}
 	}
 }
+
+func TestAppliedMutationMayReportPostWriteFailure(t *testing.T) {
+	failure := Fail(pb.FailureCode_UNAVAILABLE, "write acknowledged but replica acknowledgement failed")
+	mutation := Mutation(pb.MutationOutcome_APPLIED, failure)
+	value := &pb.Result_Mutation{Mutation: mutation}
+	result := &pb.Result{Index: 1, Result: value}
+	event := &pb.Event{Version: 1, Value: &pb.Event_Result{Result: result}}
+	encoded, err := MarshalEvent(event)
+	if err != nil {
+		t.Fatal("valid APPLIED evidence rejected", err)
+	}
+	decoded := &pb.Event{}
+	reader := bytes.NewBuffer(encoded)
+	if err := protodelim.UnmarshalFrom(reader, decoded); err != nil || !proto.Equal(event, decoded) || reader.Len() != 0 {
+		t.Fatal("mutation evidence changed", decoded, err)
+	}
+	failure.Code = pb.FailureCode_FAILURE_CODE_UNSPECIFIED
+	if err := ValidateEvent(event); err == nil {
+		t.Fatal("invalid failure accepted for APPLIED")
+	}
+	mutation.Outcome = pb.MutationOutcome_NOT_STARTED
+	mutation.Failure = nil
+	if err := ValidateEvent(event); err == nil {
+		t.Fatal("unfinished result without failure accepted")
+	}
+}

@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/routeclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -276,4 +277,77 @@ func TestRouteGracefulDrainPreservesAdmittedExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitPeerIdle(t, srv)
+}
+
+func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) {
+	adapter, rt := peerLocal(t, "records")
+	adapter.ackFailureKey = "data/s:ack"
+	adapter.ackFailure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledged but replica acknowledgement failed")
+	local := Service{LocalStore: rt}
+	options := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
+	backend, address := startPeerServer(t, options)
+	servers := []*Server{backend}
+	for hop := 0; hop < 2; hop++ {
+		remote := testRemote(t, address)
+		service := Service{RemoteWeir: remote}
+		options = peerServerOptions{routes: map[string]Service{"records": service}, budget: 4, peer: hop == 0}
+		relay, nextAddress := startPeerServer(t, options)
+		servers = append(servers, relay)
+		address = nextAddress
+	}
+	_, client := peerClient(t, address)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var produced int
+	results := make(map[uint64]*pb.MutationResult)
+	completed := make(map[uint64]bool)
+	opts := routeclient.Options{Destination: "records"}
+	opts.Produce = func(context.Context) (*pb.Call, error) {
+		if produced == 2 {
+			return nil, io.EOF
+		}
+		request := testMutation("persisted")
+		if produced == 0 {
+			request.Resource = adapter.ackFailureKey
+		} else {
+			request.Resource = "data/s:other"
+		}
+		produced++
+		value := &pb.Call_Mutate{Mutate: request}
+		call := &pb.Call{Version: 1, Operation: value}
+		return call, nil
+	}
+	opts.Consume = func(_ context.Context, id uint64, event *pb.Event) error {
+		result := event.GetResult()
+		if result == nil || result.GetMutation() == nil {
+			return errors.New("missing mutation evidence")
+		}
+		results[id] = result.GetMutation()
+		return nil
+	}
+	opts.Complete = func(_ context.Context, id uint64) error { completed[id] = true; return nil }
+	if err := routeclient.Run(ctx, client, opts); err != nil {
+		t.Fatal("valid acknowledgement truncated Route", err)
+	}
+	first := results[1]
+	if first == nil || first.Outcome != pb.MutationOutcome_APPLIED || !proto.Equal(first.Failure, adapter.ackFailure) {
+		t.Fatal("positive primary acknowledgement or replica failure lost", first)
+	}
+	second := results[2]
+	if second == nil || second.Outcome != pb.MutationOutcome_APPLIED || second.Failure != nil {
+		t.Fatal("peer item contaminated", second)
+	}
+	if len(completed) != 2 || !completed[1] || !completed[2] || adapter.commands.Load() != 2 {
+		t.Fatal("item completion or execution count", completed, adapter.commands.Load())
+	}
+	for _, key := range []string{adapter.ackFailureKey, "data/s:other"} {
+		request := &pb.ReadRequest{Resource: key}
+		result, err := routeRead(client, ctx, request)
+		if err != nil || string(result.GetDocument().GetData()) != "persisted" {
+			t.Fatal("applied record absent", key, result, err)
+		}
+	}
+	for _, server := range servers {
+		waitPeerIdle(t, server)
+	}
 }

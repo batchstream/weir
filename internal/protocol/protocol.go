@@ -387,9 +387,9 @@ func ValidateEvent(event *pb.Event) error {
 				}
 			} else if mutation := result.GetMutation(); mutation != nil {
 				valid = mutation.Outcome >= pb.MutationOutcome_NOT_STARTED && mutation.Outcome <= pb.MutationOutcome_UNKNOWN && validFailure(mutation.Failure)
-				if mutation.Outcome == pb.MutationOutcome_APPLIED {
-					valid = valid && mutation.Failure == nil
-				} else {
+				// Positive application evidence can coexist with a failure of
+				// subsequent acknowledgement, such as replica confirmation.
+				if mutation.Outcome != pb.MutationOutcome_APPLIED {
 					valid = valid && mutation.Failure != nil
 				}
 			}
