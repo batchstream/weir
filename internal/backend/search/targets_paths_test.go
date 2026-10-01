@@ -16,16 +16,16 @@ import (
 )
 
 func TestSearchScanAndNativeRequestTargets(t *testing.T) {
-	for _, dialect := range []string{ElasticsearchProfile, OpenSearchProfile} {
+	for _, dialect := range []string{ElasticsearchProduct, OpenSearchProduct} {
 		t.Run(dialect, func(t *testing.T) {
 			var nativeWrites, cleanups atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/":
-					if dialect == OpenSearchProfile {
-						fmt.Fprintf(w, `{"version":{"number":%q,"distribution":"opensearch"}}`, OpenSearchVersion)
+					if dialect == OpenSearchProduct {
+						fmt.Fprint(w, `{"version":{"distribution":"opensearch"}}`)
 					} else {
-						fmt.Fprintf(w, `{"version":{"number":%q,"build_flavor":"default"}}`, ElasticsearchVersion)
+						fmt.Fprint(w, `{"version":{"build_flavor":"default"}}`)
 					}
 					return
 				case "/_cluster/settings":
@@ -46,7 +46,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 						t.Error("PIT lost index identity", body.PIT.ID)
 					}
 					wantSort := "_shard_doc"
-					if dialect == OpenSearchProfile {
+					if dialect == OpenSearchProduct {
 						wantSort = "_doc"
 					}
 					if len(body.Sort) != 1 || body.Sort[0] != wantSort {
@@ -71,7 +71,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 						t.Error(err)
 					}
-					if dialect == OpenSearchProfile {
+					if dialect == OpenSearchProduct {
 						if len(body.IDs) != 1 {
 							t.Error("wrong OpenSearch PIT cleanup identity", body.IDs)
 							return
@@ -97,7 +97,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				}
 				switch parts[1] {
 				case "_pit", "_search":
-					if dialect == OpenSearchProfile {
+					if dialect == OpenSearchProduct {
 						if r.URL.Path != "/"+index+"/_search/point_in_time" {
 							t.Error("wrong OpenSearch PIT path", r.URL.Path)
 						}

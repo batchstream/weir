@@ -109,8 +109,9 @@ use only one source; inline and file sources can be mixed across the pair.
 Each local service connects to one backend server. The resource URI selects the
 MongoDB database and collection (`weir://mongo/example/records/s:one`) or Search
 index (`weir://search/records/s:one`); these targets are not configuration fields.
-Weir identifies Elasticsearch or OpenSearch and its supported version during
-startup, without a configured product profile.
+Weir identifies Elasticsearch or OpenSearch during startup, without a configured
+product profile or version allowlist. MongoDB connections also have no version
+allowlist. Required server and resource capabilities are checked before use.
 For example, a MongoDB service can use an inline username and a mounted password:
 
 ```yaml

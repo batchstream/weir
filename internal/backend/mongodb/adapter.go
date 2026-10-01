@@ -111,17 +111,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
 	}
 	if hello.SetName == "" || hello.Msg == "isdbgrid" || hello.MaxMessage > 48<<20 {
-		return fmt.Errorf("profile requires a replica set, no mongos, and bounded native messages")
-	}
-	buildInfo := bson.D{{Key: "buildInfo", Value: 1}}
-	var build struct {
-		Version string `bson:"version"`
-	}
-	if err := a.client.Database("admin").RunCommand(ctx, buildInfo).Decode(&build); err != nil {
-		return mongoQualificationFailure("MongoDB version qualification failed", err)
-	}
-	if build.Version != "8.0.32" {
-		return fmt.Errorf("only MongoDB 8.0.32 is qualified for this milestone")
+		return fmt.Errorf("MongoDB requires a replica set, no mongos, and bounded native messages")
 	}
 
 	return nil

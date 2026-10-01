@@ -646,7 +646,7 @@ NOT_APPLIED and supplies no congestion signal.
 
 #### Search backend connection profile
 
-The implemented Elasticsearch 8.19.22 / OpenSearch 2.19.6 profile uses one static
+The implemented Elasticsearch/OpenSearch connection profile uses one static
 base URL with explicit DNS/IP and port: credential-free HTTP, or standard verified
 HTTPS with optional explicit Basic credentials. The optional connection block has
 only username, password and CA file. App whole-graph validation and adapter Open
@@ -1357,16 +1357,19 @@ expressions remain independent of Lua evaluation.
 Collection/index creation, sharding configuration, and transaction preparation are
 operator responsibilities. Weir does not create indexes/collections in the transform
 algorithm to make an unsupported request succeed. Transaction limits, driver session
-pinning, and bounded server selection must be qualified against supported versions.
+pinning, and bounded server selection must be qualified for each deployment's
+MongoDB version and topology.
 
 ## 12. Elasticsearch and OpenSearch Atomic RMW
 
-The adapter identifies the product and version from the server response; no profile
-field is configured. Active exact profiles are `elasticsearch-8.19.22` and
-`opensearch-2.19.6`. Startup
-rejects other versions or distributions; accepting a profile is a semantic contract,
-not a declaration that every bundled server component is secure. Security and
-deployment qualification remain separately recorded in the production checklist.
+The adapter identifies Elasticsearch or OpenSearch from the server response; no
+profile field is configured and version numbers do not control admission. Unknown
+products are rejected. Required server policy and resource capabilities are still
+checked before use. MongoDB connections likewise have no version allowlist and
+retain their server and target capability checks. Fixed versions, image identities
+and builds in test fixtures record reproducible experiments rather than runtime
+admission policy. Security and deployment qualification remain separately recorded
+in the production checklist.
 
 For a supported concrete index with native optimistic concurrency enabled and a
 usable stored `_source`, the adapter uses `_seq_no` and `_primary_term` internally.
@@ -2137,7 +2140,7 @@ explicit-feedback AIMD; static configuration; no post-images, resume tokens, or
 automatic mutation replay. Approval may reduce capabilities further but must not
 weaken outcome, atomicity, or bounded-memory invariants.
 
-Qualification must select supported MongoDB/ES/OpenSearch versions and topology
+Qualification must pin MongoDB/ES/OpenSearch versions and topology
 profiles including ingest and partial-search behavior, validation of native-expression
 subsets, and measured defaults. General program runtime and typed arithmetic/resource
 qualification apply to a future release after the user-approved V1 deferral.
@@ -2223,7 +2226,7 @@ boundaries. The architectural review distinguishes observed code from proposals.
   ordinary Delete need not expose affected-row distinctions.
 - **D14 - OpenSearch Index Document API.**
   `https://docs.opensearch.org/latest/api-reference/document-apis/index-document/`.
-  Pin and test the supported product/version's pipeline and conditional-write behavior.
+  Pin and test the deployment product/version's pipeline and conditional-write behavior.
 - **D15 - OpenSearch Search API.**
   `https://docs.opensearch.org/latest/api-reference/search-apis/search/`.
   Qualify partial-result controls and complete-response checks independently of ES.

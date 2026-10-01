@@ -138,6 +138,7 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	index := "weir_m11_" + strings.ReplaceAll(suffix, "-", "_")
 	f.Admin = &Backend{
 		URL:      "https://" + port,
+		Product:  product,
 		Profile:  profile,
 		Index:    index,
 		Client:   client,
@@ -147,6 +148,7 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	}
 	f.Backend = &Backend{
 		URL:      f.Admin.URL,
+		Product:  product,
 		Profile:  profile,
 		Index:    index,
 		Client:   client,
@@ -156,6 +158,7 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	}
 	f.Denied = &Backend{
 		URL:      f.Admin.URL,
+		Product:  product,
 		Profile:  profile,
 		Index:    index,
 		Client:   client,

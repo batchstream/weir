@@ -217,7 +217,7 @@ func TestSearchExpressionPipelineAndSourceQualification(t *testing.T) {
 				t.Fatal(status, string(reply))
 			}
 			_, observed := b.Do(t, "GET", "/"+b.Index+"/_doc/counter", "")
-			t.Logf("%s %s native Update pipeline marker=%v; pipeline=_none rejected", b.Profile, setting, strings.Contains(string(observed), `"pipeline_marker":true`))
+			t.Logf("%s %s native Update pipeline marker=%v; pipeline=_none rejected", b.Product, setting, strings.Contains(string(observed), `"pipeline_marker":true`))
 			// Ordinary APIs keep their separate established pipeline policy.
 			if setting == "default" {
 				assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "ordinary"))), pb.MutationOutcome_APPLIED, 0)

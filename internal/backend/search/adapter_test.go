@@ -30,7 +30,7 @@ func TestJSONBoundsAndExactNumbers(t *testing.T) {
 }
 func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	cfg := Config{Store: "search"}
-	a := &Adapter{dialect: ElasticsearchProfile, config: cfg}
+	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	for _, resource := range []string{"weir://other/records/s:a", "weir://search/records/i:1", "weir://search/records/s:", "weir://search/Records/s:a", "weir://search/records/s:a?routing=x"} {
 		read := &pb.ReadRequest{Resource: resource}
 		variant := &pb.BulkOperation_Read{Read: read}
@@ -91,7 +91,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			defer cancel()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{URL: server.URL}
-			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
+			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
 			defer a.Close()
 			call := exchange{path: "/", limit: metadataLimit}
 			if _, _, err := a.request(ctx, call); err == nil {
@@ -102,7 +102,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 }
 func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 	cfg := Config{Store: "search"}
-	a := &Adapter{dialect: ElasticsearchProfile, config: cfg}
+	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
@@ -124,7 +124,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 }
 
 func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
-	a := &Adapter{dialect: ElasticsearchProfile}
+	a := &Adapter{dialect: ElasticsearchProduct}
 	for _, code := range []int{200, 400, 404, 429, 500} {
 		failure, _ := a.reject("version_conflict_engine_exception", code)
 		if failure != nil {
@@ -145,14 +145,14 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	}
 }
 
-func TestFiniteCongestionProfiles(t *testing.T) {
-	for _, profile := range []string{ElasticsearchProfile, OpenSearchProfile} {
-		a := &Adapter{dialect: profile}
+func TestFiniteCongestionProducts(t *testing.T) {
+	for _, product := range []string{ElasticsearchProduct, OpenSearchProduct} {
+		a := &Adapter{dialect: product}
 		for _, name := range []string{"es_rejected_execution_exception", "rejected_execution_exception"} {
 			failure, feedback := a.reject(name, 429)
-			matches := profile == ElasticsearchProfile && name == "es_rejected_execution_exception" || profile == OpenSearchProfile && name == "rejected_execution_exception"
+			matches := product == ElasticsearchProduct && name == "es_rejected_execution_exception" || product == OpenSearchProduct && name == "rejected_execution_exception"
 			if (failure != nil) != matches || (feedback == execution.Congested) != matches {
-				t.Fatal(profile, name, failure, feedback)
+				t.Fatal(product, name, failure, feedback)
 			}
 		}
 	}

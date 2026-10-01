@@ -22,7 +22,7 @@ func expressionOperation(resource, raw string) *pb.BulkOperation {
 
 func TestSearchExpressionValidation(t *testing.T) {
 	cfg := Config{Store: "search"}
-	a := &Adapter{dialect: ElasticsearchProfile, config: cfg}
+	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	allowed := []string{`{"doc":{}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
 	for _, raw := range allowed {
 		p, f := a.Prepare(expressionOperation("weir://search/records/s:a", raw))
@@ -47,7 +47,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 }
 
 func TestSearchExpressionEvidence(t *testing.T) {
-	a := &Adapter{dialect: ElasticsearchProfile}
+	a := &Adapter{dialect: ElasticsearchProduct}
 	n := &plan{index: "records", id: "a"}
 	success := `{"_index":"records","_id":"a","_version":1,"_seq_no":0,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`
 	noop := strings.ReplaceAll(strings.ReplaceAll(success, `"updated"`, `"noop"`), `:1,"failed"`, `:0,"failed"`)

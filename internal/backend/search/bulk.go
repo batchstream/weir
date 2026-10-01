@@ -19,8 +19,8 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 	case status == 404 && errorType == "index_not_found_exception":
 		return protocol.Fail(pb.FailureCode_NOT_FOUND, "requested index missing"), execution.Neutral
 	case status == 429 &&
-		(a.dialect == ElasticsearchProfile && errorType == "es_rejected_execution_exception" ||
-			a.dialect == OpenSearchProfile && errorType == "rejected_execution_exception"),
+		(a.dialect == ElasticsearchProduct && errorType == "es_rejected_execution_exception" ||
+			a.dialect == OpenSearchProduct && errorType == "rejected_execution_exception"),
 		status == 503 && errorType == "unavailable_shards_exception":
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
 	}
