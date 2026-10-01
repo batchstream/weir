@@ -138,5 +138,12 @@ configured caps and Search cumulative I/O time with slow response consumers.
 A CI-only send/receive EOF race was also reproduced and corrected; authoritative
 gRPC rejection status now survives, including 100 repeated no-CGO regressions.
 
-Review of the final published fixes is recorded in the review evidence before
-delivery; review of the initial commit alone is not final approval.
+The reviewer verified PR/local identity for published fix commit `7bc2bd8`,
+reran the original independent regressions, core race tests, real Native/Lua
+timeout tests and 200/800 MiB memory acceptance, and reported all confirmed
+findings closed with no remaining P0–P3 issues. The independent rerun transferred
+all bytes with zero failures and recovered every active ownership counter.
+See the [review evidence](measurements/2026-10-01/route-review.md) and
+[raw independent memory report](measurements/2026-10-01/route-memory-independent.json).
+The final report/example commit is separately checked after publication; the
+latest reviewed head and CI result are recorded in the PR description.

@@ -55,9 +55,12 @@ func run() error {
 	opts := routeclient.RecordOptions{Destination: *destination, Call: call}
 	result, err := routeclient.Record(ctx, client, opts)
 	if err != nil {
-		return fmt.Errorf("write has no complete result; effects indeterminate: %w", err)
+		if result != nil {
+			return fmt.Errorf("write RPC incomplete; backend evidence=%v: %w", result, err)
+		}
+		return fmt.Errorf("write result unavailable; effects indeterminate: %w", err)
 	}
-	if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+	if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
 		return fmt.Errorf("write: %v", result)
 	}
 	produced := 0
