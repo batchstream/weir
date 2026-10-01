@@ -62,10 +62,11 @@ func (p *process) stop(t *testing.T) {
 func startProcess(t *testing.T, binary string, cfg Config) *process {
 	t.Helper()
 	name := filepath.Join(t.TempDir(), "node.yaml")
-	writeConfigFiles(t, name, cfg, 0600)
+	routingFilename := writeConfigFiles(t, name, cfg, 0600)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	command := exec.CommandContext(ctx, binary, "serve", "--config", name)
+	args := []string{"serve", "--config", name, "--routes", routingFilename}
+	command := exec.CommandContext(ctx, binary, args...)
 	return watchProcess(t, command, cfg.Basic.Diagnostics.Address != "")
 }
 

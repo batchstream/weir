@@ -223,7 +223,6 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 
 func TestRemovedAuthenticationFieldsAreUnknown(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.yaml"
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +289,8 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 func TestCurrentPeerExamples(t *testing.T) {
 	for _, name := range []string{"peer-a.yaml", "peer-b.yaml"} {
 		filename := filepath.Join(testutil.Root(t), "examples", name)
-		if _, err := Load(filename); err != nil {
+		routingFilename := strings.TrimSuffix(filename, ".yaml") + ".routes.yaml"
+		if _, err := Load(filename, routingFilename); err != nil {
 			t.Fatal(name, err)
 		}
 	}

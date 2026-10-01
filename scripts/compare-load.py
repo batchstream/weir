@@ -390,7 +390,6 @@ class Fixture:
             "diagnostics": {"address": "0.0.0.0:7449", "allow_intranet": True},
             "memory": "768MiB",
             "transport": {"max_connections": 16, "max_sessions": 64},
-            "routing": {"file": "routes.yaml"},
         }
         routes = {
             "services": [
@@ -451,13 +450,22 @@ class Fixture:
             "--entrypoint",
             entrypoint,
         ]
-        command = ["serve", "--config", "/node.yaml"]
+        command = ["serve", "--config", "/node.yaml", "--routes", "/routes.yaml"]
         if mode == "control":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
-            command = ["-config", "/node.yaml", "-mode", "serve-control", "-suppress-congestion"]
+            command = [
+                "-config", "/node.yaml",
+                "-routes", "/routes.yaml",
+                "-mode", "serve-control",
+                "-suppress-congestion",
+            ]
         elif mode == "adaptive":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
-            command = ["-config", "/node.yaml", "-mode", "serve-control"]
+            command = [
+                "-config", "/node.yaml",
+                "-routes", "/routes.yaml",
+                "-mode", "serve-control",
+            ]
         self.weir = self.create(mode, options, command)
         port = run(["docker", "port", self.weir, "7449/tcp"]).stdout.strip().split(":")[-1]
         self.weir_url = "http://127.0.0.1:" + port

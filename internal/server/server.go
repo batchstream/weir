@@ -78,7 +78,8 @@ func New(cfg Config) (*Server, error) {
 	if err := l.Validate(); err != nil {
 		return nil, err
 	}
-	if len(cfg.Routes) == 0 || len(cfg.Routes) > 16 || cfg.Admission == nil || cfg.InitialForwards < 0 || cfg.InitialForwards > 8 {
+	if len(cfg.Routes) > 16 || cfg.Admission == nil ||
+		cfg.InitialForwards < 0 || cfg.InitialForwards > 8 {
 		return nil, status.Error(codes.InvalidArgument, "invalid routes or ingress bounds")
 	}
 	if cap(cfg.Admission.slots) != l.Sessions || cap(cfg.Admission.connections) != l.Connections {

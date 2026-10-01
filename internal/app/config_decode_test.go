@@ -16,18 +16,17 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
-	input := "listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: routing.yaml\n"
+func TestDecodeBasicDefaultsAndRemovedRoutingFields(t *testing.T) {
+	input := "listeners:\n  application: 127.0.0.1:0\n"
 	cfg, err := DecodeBasic(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defaults := DefaultConfig().Basic
-	if cfg.Memory != defaults.Memory || cfg.Forwarding != defaults.Forwarding || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" || defaults.Routing.File != "" {
+	if cfg.Memory != defaults.Memory || cfg.Forwarding != defaults.Forwarding || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
 		t.Fatal("process defaults changed")
 	}
 	for _, field := range []string{
-		"",
 		"routing: {}\n",
 		"routing:\n  file: \"\"\n",
 		"routing:\n  file: '   '\n",
@@ -35,22 +34,21 @@ func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
 	} {
 		input := "listeners:\n  application: 127.0.0.1:0\n" + field
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
-			t.Fatal("missing or empty routing.file accepted")
+			t.Fatal("removed basic routing field accepted")
 		}
 	}
-	input = "routing:\n  file: routing.yaml\n"
+	input = "{}\n"
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 		t.Fatal("missing listeners accepted")
 	}
 	defaults.Listeners.Application = "127.0.0.1:0"
 	if err := defaults.Validate(); err != nil {
-		t.Fatal("runtime basic configuration requires a file path", err)
+		t.Fatal("runtime basic configuration rejected a listener", err)
 	}
 }
 
 func TestStrictConfigurationDocuments(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.yaml"
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +157,6 @@ func TestConfigurationNestingBound(t *testing.T) {
 
 func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.yaml"
 	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +177,6 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 
 func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.yaml"
 	raw, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -232,23 +228,25 @@ func TestLoadRoutingPaths(t *testing.T) {
 	if err := os.WriteFile(routingFilename, routing, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"../routing.yaml", routingFilename} {
-		cfg.Basic.Routing.File = path
-		basic, err := yaml.Marshal(cfg.Basic)
-		if err != nil {
-			t.Fatal(err)
-		}
-		filename := filepath.Join(directory, "node.yaml")
-		if err := os.WriteFile(filename, basic, 0600); err != nil {
-			t.Fatal(err)
-		}
-		loaded, err := Load(filename)
-		if err != nil ||
-			loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application ||
-			loaded.Basic.Routing.File != path ||
-			len(loaded.Routing.Services) != 1 ||
-			len(loaded.Routing.Routes) != 1 {
-			t.Fatal("routing path not resolved from basic file", err)
+	basic, err := yaml.Marshal(cfg.Basic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filename := filepath.Join(directory, "node.yaml")
+	if err := os.WriteFile(filename, basic, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "routing.yaml"), []byte("invalid-secret-sentinel"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	for _, basicPath := range []string{"basic/node.yaml", filename} {
+		for _, routingPath := range []string{"routing.yaml", routingFilename} {
+			loaded, err := Load(basicPath, routingPath)
+			if err != nil || loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application ||
+				len(loaded.Routing.Services) != 1 || len(loaded.Routing.Routes) != 1 {
+				t.Fatal("basic and routing paths must both resolve from the working directory", err)
+			}
 		}
 	}
 }
@@ -256,11 +254,10 @@ func TestLoadRoutingPaths(t *testing.T) {
 func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	root := t.TempDir()
 	filename := filepath.Join(root, "missing-basic-secret-sentinel.yaml")
-	if _, err := Load(filename); err == nil || err.Error() != "basic configuration unavailable" {
+	if _, err := Load(filename, ""); err == nil || err.Error() != "basic configuration unavailable" {
 		t.Fatal("missing basic error leaked path", err)
 	}
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "missing-routing-secret-sentinel.yaml"
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +266,8 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	if err := os.WriteFile(filename, basic, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(filename); err == nil || err.Error() != "routing configuration unavailable" {
+	routingFilename := filepath.Join(root, "missing-routing-secret-sentinel.yaml")
+	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "routing configuration unavailable" {
 		t.Fatal("missing routing error leaked path", err)
 	}
 	cfg.Basic.Listeners.Application = "invalid-listener-secret-sentinel"
@@ -280,7 +278,7 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	if err := os.WriteFile(filename, basic, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(filename); err == nil || err.Error() != "invalid listener configuration" {
+	if _, err := Load(filename, routingFilename); err == nil || err.Error() != "invalid listener configuration" {
 		t.Fatal("invalid basic configuration reached routing file or leaked value", err)
 	}
 }
@@ -305,8 +303,8 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 	cfg.Basic.Listeners.Application = listener.Addr().String()
 	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
 	filename := filepath.Join(t.TempDir(), "node.yaml")
-	writeConfigFiles(t, filename, cfg, 0600)
-	if _, err := Load(filename); err != nil {
+	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
+	if _, err := Load(filename, routingFilename); err != nil {
 		t.Fatal("Load accessed CA, DNS, backend or occupied listener", err)
 	}
 }
@@ -325,8 +323,8 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 	cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
 	cfg.Routing.Services, cfg.Routing.Routes = []Service{service, invalidService}, []Route{route}
 	filename := filepath.Join(t.TempDir(), "node.yaml")
-	writeConfigFiles(t, filename, cfg, 0600)
-	if _, err := Load(filename); err == nil || contacts.Load() != 0 {
+	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
+	if _, err := Load(filename, routingFilename); err == nil || contacts.Load() != 0 {
 		t.Fatal("invalid later service reached startup", err, contacts.Load())
 	}
 }
@@ -347,10 +345,10 @@ func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 }
 
 func TestConfigurationScalarTypes(t *testing.T) {
-	basic := "listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: routing.yaml\n"
+	basic := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
-		"listeners:\n  application: 127001\nrouting:\n  file: routing.yaml\n",
-		"listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: true\n",
+		"listeners:\n  application: 127001\n",
+		"listeners:\n  application: 127.0.0.1:0\nmemory: true\n",
 		basic + "diagnostics:\n  allow_intranet: yes\n",
 		basic + "diagnostics:\n  allow_intranet: 'true'\n",
 		basic + "transport:\n  max_connections: '16'\n",
@@ -419,7 +417,6 @@ routes:
 		}
 	}
 	for _, document := range []string{
-		"services: null\nroutes: null\n",
 		"services: [null]\nroutes: [null]\n",
 		"services:\n  - name: remote\n    remote:\n      endpoints: null\n      max_concurrency: 2\nroutes:\n  - store: records\n    service: remote\n",
 	} {

@@ -35,12 +35,13 @@ func run() error {
 	target := flag.String("target", "dns:///weir.m21.svc.cluster.local:7447", "fixture Service or Pod address")
 	backend := flag.String("backend", "http://elasticsearch.m21.svc.cluster.local:9200", "owned backend")
 	config := flag.String("validate", "", "validate generated static config without constructing resources")
+	routes := flag.String("routes", "", "owned routing config, empty for no routes")
 	flag.Parse()
 	if os.Getenv("WEIR_KUBE_INTEGRATION") != "1" {
 		return errors.New("explicit integration opt-in required")
 	}
 	if *config != "" {
-		_, err := app.Load(*config)
+		_, err := app.Load(*config, *routes)
 		return err
 	}
 	if !regexp.MustCompile(`^[a-z0-9-]{1,32}$`).MatchString(*id) {

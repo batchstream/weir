@@ -10,7 +10,7 @@ import (
 )
 
 func TestDeploymentConfiguration(t *testing.T) {
-	cfg, err := app.Load("weir.yaml")
+	cfg, err := app.Load("weir.yaml", "routes.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestDeploymentConfiguration(t *testing.T) {
 	if len(containers) != 1 {
 		t.Fatal("deployment requires one Weir container")
 	}
-	expectedArgs := []string{"serve", "--config", "/etc/weir/node.yaml"}
+	expectedArgs := []string{"serve", "--config", "/etc/weir/node.yaml", "--routes", "/etc/weir/routes.yaml"}
 	if !slices.Equal(containers[0].Args, expectedArgs) {
 		t.Fatal("deployment must load the mounted YAML configuration")
 	}

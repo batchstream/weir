@@ -13,15 +13,14 @@ import (
 
 func TestBasicConfigurationFile(t *testing.T) {
 	filename := filepath.Join(testutil.Root(t), "config", "weir.yaml")
-	cfg, err := Load(filename)
+	cfg, err := Load(filename, "")
 	if err != nil {
-		t.Fatal("basic configuration and its adjacent routing file must load", err)
+		t.Fatal("basic configuration must load without routing", err)
 	}
 
 	expected := DefaultConfig().Basic
 	expected.Listeners.Application = "127.0.0.1:7447"
 	expected.Diagnostics.Address = "127.0.0.1:7449"
-	expected.Routing.File = "routes.yaml"
 	if cfg.Basic != expected {
 		t.Fatal("basic configuration differs from its documented defaults and addresses")
 	}

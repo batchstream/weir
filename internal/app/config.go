@@ -27,7 +27,6 @@ type BasicConfig struct {
 	Memory      ByteSize          `json:"memory" yaml:"memory"`
 	Transport   TransportConfig   `json:"transport" yaml:"transport"`
 	Forwarding  ForwardingConfig  `json:"forwarding" yaml:"forwarding"`
-	Routing     RoutingSource     `json:"routing" yaml:"routing"`
 }
 
 type ListenerConfig struct {
@@ -42,10 +41,6 @@ type DiagnosticsConfig struct {
 
 type ForwardingConfig struct {
 	HopLimit int `json:"hop_limit" yaml:"hop_limit"`
-}
-
-type RoutingSource struct {
-	File string `json:"file" yaml:"file"`
 }
 
 // RoutingConfig defines the complete, static service and Store graph.
@@ -268,7 +263,9 @@ func (cfg RoutingConfig) Validate() error {
 }
 
 func (cfg RoutingConfig) validateGraph() error {
-	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 {
+	if len(cfg.Services) > 16 ||
+		len(cfg.Routes) > 16 ||
+		(len(cfg.Services) == 0) != (len(cfg.Routes) == 0) {
 		return errors.New("invalid static graph bounds")
 	}
 	services := make(map[string]Service)

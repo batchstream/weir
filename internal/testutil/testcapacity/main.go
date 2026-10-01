@@ -36,6 +36,7 @@ func run() (runErrFinal error) {
 	seconds := flag.Int("seconds", 60, "measurement seconds")
 	warm := flag.Int("warm", 20, "warm seconds")
 	config := flag.String("config", "", "owned config")
+	routes := flag.String("routes", "", "owned routing config, empty for no routes")
 	pid := flag.String("pid", "1", "observed namespace pid")
 	role := flag.String("role", "", "explicit observe role: weir or es")
 	recovery := flag.Int("recovery-rate", 0, "immediate recovery phase offered operations per second")
@@ -77,10 +78,10 @@ func run() (runErrFinal error) {
 	}
 	encoder := json.NewEncoder(output)
 	if *mode == "serve-control" {
-		return serveControl(ctx, *config, *suppressCongestion)
+		return serveControl(ctx, *config, *routes, *suppressCongestion)
 	}
 	if *mode == "config" {
-		cfg, err := app.Load(*config)
+		cfg, err := app.Load(*config, *routes)
 		if err != nil {
 			return err
 		}

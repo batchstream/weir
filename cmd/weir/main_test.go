@@ -45,8 +45,6 @@ func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
 	passwordFile := filepath.Join(valueDirectory, "password")
 	basic := `listeners:
   application: 192.0.2.1:7447
-routing:
-  file: nested/routes.yaml
 `
 	routing := `services:
   - name: search
@@ -78,15 +76,15 @@ routes:
 
 	t.Chdir(directory)
 	var output bytes.Buffer
-	if err := run([]string{"check"}, &output); err != nil || output.String() != "configuration valid\n" {
-		t.Fatal("default basic file must resolve nested routes and credential values without startup IO", err, output.String())
+	if err := run([]string{"check", "--routes", "nested/routes.yaml"}, &output); err != nil || output.String() != "configuration valid\n" {
+		t.Fatal("explicit routes must resolve nested credential values without startup IO", err, output.String())
 	}
 
 	// Value paths belong to the routing file, even from a different working directory.
 	t.Chdir(t.TempDir())
 	for _, flag := range []string{"--config", "-c"} {
 		output.Reset()
-		if err := run([]string{"check", flag, file}, &output); err != nil {
+		if err := run([]string{"check", flag, file, "--routes", routingFile}, &output); err != nil {
 			t.Fatal(err)
 		}
 		if output.String() != "configuration valid\n" {
@@ -118,7 +116,7 @@ routes:
 		}
 		for _, command := range []string{"check", "serve"} {
 			output.Reset()
-			err := run([]string{command}, &output)
+			err := run([]string{command, "--routes", "nested/routes.yaml"}, &output)
 			if err == nil || err.Error() != tc.reason || output.Len() != 0 {
 				t.Fatal("invalid credential source must fail before startup without exposing values", command, err, output.String())
 			}
@@ -175,6 +173,7 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "completion") ||
 		strings.Contains(output.String(), "--config") ||
+		strings.Contains(output.String(), "--routes") ||
 		strings.Contains(output.String(), "--address") {
 		t.Fatal("root must show only command help and root flags", output.String())
 	}
@@ -184,13 +183,15 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 		if err := run([]string{command, "--help"}, &output); err != nil ||
 			!strings.Contains(output.String(), `-c, --config string`) ||
 			!strings.Contains(output.String(), `(default "weir.yaml")`) ||
-			!strings.Contains(output.String(), "basic YAML configuration") {
-			t.Fatal("command help must document the local configuration flag", command, err, output.String())
+			!strings.Contains(output.String(), "basic YAML configuration file") ||
+			!strings.Contains(output.String(), "--routes string") ||
+			!strings.Contains(output.String(), "optional routing YAML configuration file") {
+			t.Fatal("command help must document basic configuration and optional routes", command, err, output.String())
 		}
 	}
 }
 
-func TestCLIRequiresBasicAndRoutingFiles(t *testing.T) {
+func TestCLIRequiresBasicConfigurationAndAllowsOptionalRoutes(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for _, command := range []string{"serve", "check"} {
 		var output bytes.Buffer
@@ -201,17 +202,97 @@ func TestCLIRequiresBasicAndRoutingFiles(t *testing.T) {
 
 	basic := `listeners:
   application: 127.0.0.1:0
+`
+	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("routes.yaml", []byte("unknown: ignored-sentinel\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"check"}, {"check", "--routes", ""}, {"check", "--routes="}} {
+		var output bytes.Buffer
+		if err := run(args, &output); err != nil || output.String() != "configuration valid\n" {
+			t.Fatal("basic-only check must ignore a default routes.yaml", args, err, output.String())
+		}
+	}
+
+	for _, command := range []string{"serve", "check"} {
+		var output bytes.Buffer
+		if err := run([]string{command, "--routes", "missing.yaml"}, &output); err == nil || err.Error() != "routing configuration unavailable" || output.Len() != 0 {
+			t.Fatal("an explicit routing file must exist", command, err, output.String())
+		}
+		if err := run([]string{command, "--routes", "routes.yaml"}, &output); err == nil || err.Error() != "routing invalid configuration YAML or unknown field" || output.Len() != 0 {
+			t.Fatal("an explicit routing file must be validated before startup", command, err, output.String())
+		}
+	}
+}
+
+func TestCLIRejectsRoutingReferenceInBasicConfiguration(t *testing.T) {
+	t.Chdir(t.TempDir())
+	basic := `listeners:
+  application: 127.0.0.1:0
 routing:
-  file: routes.yaml
+  file: routes-sentinel.yaml
 `
 	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, command := range []string{"serve", "check"} {
 		var output bytes.Buffer
-		if err := run([]string{command}, &output); err == nil || err.Error() != "routing configuration unavailable" || output.Len() != 0 {
-			t.Fatal("command must load weir.yaml and its referenced routing file", command, err, output.String())
+		err := run([]string{command}, &output)
+		if err == nil || err.Error() != "basic invalid configuration YAML or unknown field" || output.Len() != 0 {
+			t.Fatal("removed basic routing field must fail before startup", command, err, output.String())
 		}
+	}
+}
+
+func TestCLIConfigurationPathsAreRelativeToWorkingDirectory(t *testing.T) {
+	directory := t.TempDir()
+	basicDirectory := filepath.Join(directory, "nodes")
+	routingDirectory := filepath.Join(directory, "routing")
+	for _, path := range []string{basicDirectory, routingDirectory} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	basic := `listeners:
+  application: 192.0.2.1:7447
+`
+	routing := `services:
+  - name: remote
+    remote:
+      endpoints:
+        - unresolved.invalid:7448
+      max_concurrency: 1
+routes:
+  - store: records
+    service: remote
+`
+	if err := os.WriteFile(filepath.Join(basicDirectory, "weir.yaml"), []byte(basic), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(routingDirectory, "routes.yaml"), []byte(routing), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(directory)
+	var output bytes.Buffer
+	err := run([]string{"check", "--config", "nodes/weir.yaml", "--routes", "routing/routes.yaml"}, &output)
+	if err != nil || output.String() != "configuration valid\n" {
+		t.Fatal("both CLI file paths must resolve independently from the working directory", err, output.String())
+	}
+
+	t.Chdir(basicDirectory)
+	output.Reset()
+	err = run([]string{"check", "--routes", "routing/routes.yaml"}, &output)
+	if err == nil || err.Error() != "routing configuration unavailable" || output.Len() != 0 {
+		t.Fatal("relative routes must follow the current working directory", err, output.String())
+	}
+
+	output.Reset()
+	err = run([]string{"check", "--routes", "../routing/routes.yaml"}, &output)
+	if err != nil || output.String() != "configuration valid\n" {
+		t.Fatal("relative routes outside the basic directory must be accepted", err, output.String())
 	}
 }
 
@@ -221,11 +302,9 @@ func TestCLIHasNoConfigurationFallback(t *testing.T) {
 			t.Chdir(t.TempDir())
 			basic := `listeners:
   application: 127.0.0.1:0
-routing:
-  file: routes.yaml
 `
 			if filename == "weir.json" {
-				basic = `{"listeners":{"application":"127.0.0.1:0"},"routing":{"file":"routes.yaml"}}`
+				basic = `{"listeners":{"application":"127.0.0.1:0"}}`
 			}
 			routing := `services:
   - name: remote
@@ -267,10 +346,14 @@ func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 		{"serve", "--config", ""}, {"check", "-c", ""},
 		{"serve", "extra"}, {"check", "extra"},
 		{"--config", missing}, {"--address", "127.0.0.1:1"},
+		{"--routes", missing},
 		{"version", "--config", missing}, {"version", "-c", missing},
+		{"version", "--routes", missing},
 		{"version", "--address", "127.0.0.1:1"},
 		{"serve", "--address", "127.0.0.1:1"}, {"check", "--address", "127.0.0.1:1"},
 		{"probe", "live", "--config", missing}, {"probe", "live", "-c", missing},
+		{"probe", "live", "--routes", missing},
+		{"serve", "-r", missing}, {"check", "-r", missing},
 		{"serve", "--config", missing, "--database", "unexpected"},
 		{"-version"}, {"-config", missing}, {"-check-config", missing}, {"-probe", "live"},
 		{"serve", "-config", missing}, {"check", "-check-config", missing},
@@ -292,8 +375,6 @@ func TestCLICommandStateIsFresh(t *testing.T) {
 	t.Chdir(directory)
 	basic := `listeners:
   application: 192.0.2.1:7447
-routing:
-  file: routes.yaml
 `
 	routing := `services:
   - name: remote
@@ -316,11 +397,18 @@ routes:
 	if err := run([]string{"check", "--config", "missing.yaml"}, &output); err == nil {
 		t.Fatal("explicit missing file accepted")
 	}
+	output.Reset()
+	if err := run([]string{"check", "--routes", "routes.yaml"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("routes.yaml", []byte("unknown: ignored-sentinel\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	for range 2 {
 		output.Reset()
 		if err := run([]string{"check"}, &output); err != nil || output.String() != "configuration valid\n" {
-			t.Fatal("configuration flag or command state leaked between executions", err, output.String())
+			t.Fatal("configuration or routing flag state leaked between executions", err, output.String())
 		}
 		output.Reset()
 		if err := run([]string{"version"}, &output); err != nil || !json.Valid(output.Bytes()) {

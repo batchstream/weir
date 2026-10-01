@@ -36,8 +36,8 @@ func (a *feedbackControl) Execute(ctx context.Context, plans []*execution.Plan) 
 	return results, feedback
 }
 
-func serveControl(ctx context.Context, config string, suppress bool) error {
-	cfg, err := app.Load(config)
+func serveControl(ctx context.Context, config, routes string, suppress bool) error {
+	cfg, err := app.Load(config, routes)
 	if err != nil {
 		return err
 	}

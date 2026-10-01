@@ -1,16 +1,21 @@
 # Weir routing configuration reference
 #
-# Loaded through routing.file in config/weir.yaml. All services/routes below
+# Loaded only with --routes config/routes.yaml. All services/routes below
 # are active YAML configuration. Set backend addresses, resource names,
 # credentials and CA paths for your environment before running weir serve.
 # Keep only the services and routes you need; every service must have a route.
-# weir check --config config/weir.yaml validates both YAML files, reads any
-# credential files, and checks the graph without backend, DNS or CA-file IO.
+# weir check --config config/weir.yaml --routes config/routes.yaml validates both
+# YAML files, reads credential files, and checks the graph without backend, DNS
+# or CA-file IO. Both CLI paths resolve from the process working directory.
+# --routes defaults to "": no routing file is loaded, and no backend is assembled.
+# A file containing {} or two empty lists is also valid. services/routes may be
+# omitted or null when both are empty; a partially populated graph is rejected.
 # Optional fields use their documented defaults when omitted. Strings are literal;
 # environment-variable substitution is not performed. Changes require a restart.
 
 # Named immutable services that execute locally or forward to another Weir.
-# Required: yes. Default: none. Allowed: list containing 1..16 services.
+# Required: when routes is nonempty. Default: [] (no services).
+# Allowed: list containing 0..16 services, or null when the graph is empty.
 services:
   # Service name used by routes.service.
   # Required: yes. Default: none. Allowed: unique lowercase resource name,
@@ -177,7 +182,8 @@ services:
       max_concurrency: 8
 
 # Map public Store names to declared services.
-# Required: yes. Default: none. Allowed: list of 1..16 routes.
+# Required: when services is nonempty. Default: [] (no routes).
+# Allowed: list containing 0..16 routes, or null when the graph is empty.
 # Each Store must be unique; every declared service must be referenced.
 routes:
   # Public resource authority, e.g. the "mongo" in weir://mongo/...
