@@ -1,20 +1,24 @@
 # Weir
 
-Weir is a synchronous gRPC data plane for MongoDB, Elasticsearch and OpenSearch.
-It provides record reads and mutations, duplex bulk operations, native backend
-requests, scans and static peer forwarding. Each Store owns bounded admission,
-micro-batching and adaptive database concurrency.
+Weir routes finite database batches through one bidirectional gRPC RPC, `Route`.
+Each RPC fixes one logical Store. Forwarding nodes relay bounded opaque envelopes
+to one downstream instance; the final node validates a versioned protobuf Call,
+admits it to one bounded scheduler and safely batches compatible database work
+across RPCs. Record reads/mutations, scans, native exchanges and atomic Lua
+transforms use that same execution boundary. Lua runs in the Weir process.
 
-All operations use the same Store scheduler. Every record read and mutation can
-join a bounded batch across RPCs; backend adapters merge compatible reads and
-writes while preserving individual results. Native exchanges and Scan fetches
-retain their own bounded stream state under that scheduler. Lua evaluation runs
-inside the Weir process; MongoDB program commits remain independent transactions.
+This is a breaking protocol change. The former Read, Mutate, Bulk, Native and Scan
+RPCs and their stream control frames are removed. The repository's
+[`routeclient`](routeclient/client.go) runs synchronous finite batches with bounded
+parallel sending and consumption; the [basic](examples/basic/main.go) and
+[native](examples/native/main.go) examples show incremental use. Connections are
+reused between batches. Client libraries and deployment configuration must use
+the new protocol and `transport.timeouts.route` setting.
 
-See the [architecture](https://github.com/batchstream/weir/blob/main/docs/architecture.md)
-for protocol semantics and guarantees.
-Use the [Go SDK](https://github.com/batchstream/weir-go) for clients and the
-[Helm chart](https://github.com/batchstream/weir-charts) for Kubernetes deployments.
+See [architecture](docs/architecture.md) for semantics and resource budgets,
+[test coverage](docs/route-test-coverage.md) for acceptance mapping and
+[Route verification](docs/route-validation.md) for current measured evidence.
+Historical load reports describe the protocol and commit tested at that time.
 
 ## Build and run
 
@@ -69,15 +73,12 @@ listeners:
   application: "127.0.0.1:7447"
 diagnostics:
   address: "127.0.0.1:7449"
-memory: "512MiB"
+memory: "1GiB"
 transport:
   max_connections: 16
-  max_sessions: 16
+  max_sessions: 4
   timeouts:
-    unary: "30s"
-    bulk: "15m"
-    scan: "5m"
-    native: "5m"
+    route: "15m"
     stall: "30s"
 forwarding:
   hop_limit: 4
@@ -106,9 +107,9 @@ Services contain `local` or `remote` settings in the routing file. MongoDB and
 Search credentials can be configured as `username`/`password`
 values or read from `username_file`/`password_file` paths. Each credential must
 use only one source; inline and file sources can be mixed across the pair.
-Each local service connects to one backend server. The resource URI selects the
-MongoDB database and collection (`weir://mongo/example/records/s:one`) or Search
-index (`weir://search/records/s:one`); these targets are not configuration fields.
+Each local service connects to one backend server. The Call resource selects the
+MongoDB database and collection (`example/records/s:one`) or Search
+index (`records/s:one`); these targets are not configuration fields.
 Weir identifies Elasticsearch or OpenSearch during startup, without a configured
 product profile or version allowlist. MongoDB connections also have no version
 allowlist. Required server and resource capabilities are checked before use.

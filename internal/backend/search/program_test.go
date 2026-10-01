@@ -74,13 +74,13 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:item", Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	operation := &pb.BulkOperation{Operation: variant}
-	work, failure := a.Prepare(operation)
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	operation := &pb.Operation{Operation: variant}
+	work, failure := a.prepareRecord(operation)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	results, _ := a.Execute(context.Background(), []*execution.Plan{work})
+	results, _ := a.executeRecords(context.Background(), []*execution.Plan{work})
 	if len(results) != 1 {
 		t.Fatalf("unexpected transform result: %#v", results)
 	}
@@ -98,8 +98,8 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:item", Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	operation := &pb.BulkOperation{Operation: variant}
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	operation := &pb.Operation{Operation: variant}
 	for name, pipeline := range map[string]string{"default": "index.default_pipeline", "final": "index.final_pipeline"} {
 		t.Run(name, func(t *testing.T) {
 			var documentReads atomic.Int32
@@ -120,11 +120,11 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 				client: server.Client(),
 				ctx:    context.Background(),
 			}
-			work, failure := a.Prepare(operation)
+			work, failure := a.prepareRecord(operation)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results, _ := a.Execute(context.Background(), []*execution.Plan{work})
+			results, _ := a.executeRecords(context.Background(), []*execution.Plan{work})
 			if len(results) != 1 || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatalf("pipeline was not rejected: %#v", results)
 			}

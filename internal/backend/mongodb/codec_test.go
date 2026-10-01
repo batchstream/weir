@@ -80,7 +80,7 @@ func TestCodecLimitsAndMalformed(t *testing.T) {
 	if _, err := Decode(raw); err == nil {
 		t.Fatal("node count")
 	}
-	large := bson.D{{Key: "x", Value: strings.Repeat("x", 300<<10)}}
+	large := bson.D{{Key: "x", Value: strings.Repeat("x", 3<<20)}}
 	raw, _ = bson.Marshal(large)
 	if _, err := Decode(raw); err == nil {
 		t.Fatal("large")

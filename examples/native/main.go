@@ -1,5 +1,5 @@
-// A bounded duplex Native call. Upload never waits for all response bytes, and
-// download never waits for upload half-close. Native errors remain native data.
+// A finite Route batch with a bounded native request and incremental response.
+// Native backend errors remain native response data, not normalized write outcomes.
 package main
 
 import (
@@ -14,9 +14,8 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/routeclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -37,7 +36,7 @@ func run() error {
 	var body []byte
 	switch *store {
 	case "mongo":
-		open.Resource = "weir://mongo/" + protocol.EncodeSegment(*database) + "/records"
+		open.Resource = protocol.EncodeSegment(*database) + "/records"
 		open.Descriptor_ = &pb.Document{MediaType: mongodb.NativeDescriptor}
 		open.BodyMediaType = "application/bson"
 		command := bson.D{{Key: "count", Value: "records"}}
@@ -47,7 +46,7 @@ func run() error {
 			return err
 		}
 	case "search":
-		open.Resource = "weir://search/" + protocol.EncodeSegment(*index)
+		open.Resource = protocol.EncodeSegment(*index)
 		descriptor := &spb.Request{Method: "GET", Path: "/_doc/example"}
 		raw, err := proto.Marshal(descriptor)
 		if err != nil {
@@ -58,12 +57,7 @@ func run() error {
 		return fmt.Errorf("unsupported store")
 	}
 
-	conn, err := grpc.NewClient(
-		*address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDisableRetry(),
-		grpc.WithDisableServiceConfig(),
-	)
+	conn, err := routeclient.Dial(*address)
 	if err != nil {
 		return err
 	}
@@ -71,103 +65,38 @@ func run() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	stream, err := pb.NewWeirClient(conn).Native(ctx)
-	if err != nil {
-		return err
-	}
-	sent := make(chan error, 1)
-	go func() {
-		sent <- upload(stream, open, body)
-	}()
-
-	// On every exit, wake and join the sender, including an early backend reply.
-	defer func() {
-		cancel()
-		<-sent
-	}()
-
-	var end *pb.NativeEnd
-	headSeen, bodySeen := false, false
+	client := pb.NewWeirClient(conn)
+	native := &pb.NativeCall{Open: open, Body: body}
+	variant := &pb.Call_Native{Native: native}
+	call := &pb.Call{Version: 1, Operation: variant}
+	produced := false
 	total := 0
-	for {
-		frame, err := stream.Recv()
-		if err == io.EOF {
-			// Final gRPC OK is necessary, but not sufficient.
-			break
+	var terminal *pb.NativeEnd
+	opts := routeclient.Options{Destination: *store}
+	opts.Produce = func(context.Context) (*pb.Call, error) {
+		if produced {
+			return nil, io.EOF
 		}
-		if err != nil {
-			return fmt.Errorf("Native response incomplete; effects unknown: %w", err)
-		}
-		if end != nil {
-			return fmt.Errorf("frame after Native End")
-		}
-		switch value := frame.Frame.(type) {
-		case *pb.NativeResponseFrame_Head:
-			if headSeen || bodySeen || value.Head == nil {
-				return fmt.Errorf("invalid Native Head order")
-			}
-			headSeen = true
-			if *store == "search" {
-				if value.Head.Metadata == nil || value.Head.Metadata.MediaType != search.NativeDescriptor {
-					return fmt.Errorf("missing HTTP metadata")
-				}
-				metadata := &spb.Response{}
-				if err := proto.Unmarshal(value.Head.Metadata.Data, metadata); err != nil {
-					return err
-				}
-				fmt.Println("Native HTTP status:", metadata.StatusCode)
-			} else if value.Head.BodyMediaType != "application/bson" {
-				return fmt.Errorf("unexpected Mongo body type")
-			}
-		case *pb.NativeResponseFrame_Chunk:
-			if len(value.Chunk) == 0 || len(value.Chunk) > protocol.NativeChunk {
-				return fmt.Errorf("invalid Native chunk")
-			}
-			bodySeen = true
-			total += len(value.Chunk)
-			// Process bytes incrementally here; this example does not retain the response.
-		case *pb.NativeResponseFrame_End:
-			end = value.End
-		default:
-			return fmt.Errorf("invalid Native frame")
-		}
+		produced = true
+		return call, nil
 	}
-	if end == nil {
-		return fmt.Errorf("missing Native End; effects unknown")
-	}
-
-	switch end.Completion {
-	case pb.NativeCompletion_RESPONSE_COMPLETE:
-		if end.Failure != nil || !headSeen {
-			return fmt.Errorf("invalid complete Native response")
+	opts.Consume = func(_ context.Context, _ uint64, event *pb.Event) error {
+		if head := event.GetHead(); head != nil {
+			fmt.Printf("metadata=%v media=%s\n", head.Metadata, head.BodyMediaType)
 		}
-		fmt.Printf("Native response complete: %d bytes; database success is determined by native status/body\n", total)
+		total += len(event.GetChunk())
+		if end := event.GetNativeEnd(); end != nil {
+			terminal = end
+		}
+		// Consume native bytes here without collecting the entire response.
 		return nil
-	case pb.NativeCompletion_NATIVE_NOT_STARTED, pb.NativeCompletion_RESPONSE_INCOMPLETE:
-		if end.Failure == nil {
-			return fmt.Errorf("invalid Native failure envelope")
-		}
-		return fmt.Errorf("Native %s: %s", end.Completion, end.Failure.Code)
-	default:
-		return fmt.Errorf("unspecified Native completion")
 	}
-}
-
-func upload(stream grpc.BidiStreamingClient[pb.NativeRequestFrame, pb.NativeResponseFrame], open *pb.NativeOpen, body []byte) error {
-	variant := &pb.NativeRequestFrame_Open{Open: open}
-	frame := &pb.NativeRequestFrame{Frame: variant}
-	if err := stream.Send(frame); err != nil {
-		return err
+	if err := routeclient.Run(ctx, client, opts); err != nil {
+		return fmt.Errorf("native response incomplete; effects indeterminate: %w", err)
 	}
-
-	for len(body) > 0 {
-		n := min(protocol.NativeChunk, len(body))
-		chunk := &pb.NativeRequestFrame_Chunk{Chunk: body[:n]}
-		frame := &pb.NativeRequestFrame{Frame: chunk}
-		if err := stream.Send(frame); err != nil {
-			return err
-		}
-		body = body[n:]
+	if terminal == nil || terminal.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+		return fmt.Errorf("native exchange: %v; effects indeterminate", terminal)
 	}
-	return stream.CloseSend()
+	fmt.Printf("complete native response: %d bytes\n", total)
+	return nil
 }

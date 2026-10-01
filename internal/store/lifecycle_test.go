@@ -13,19 +13,13 @@ import (
 
 type lifecycleAdapter struct{ closes atomic.Int32 }
 
-func (a *lifecycleAdapter) Prepare(*pb.BulkOperation) (*execution.Plan, *pb.Failure) { return nil, nil }
-func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	return nil, execution.Neutral
-}
-func (a *lifecycleAdapter) Close() error { a.closes.Add(1); return nil }
-func (a *lifecycleAdapter) PrepareScan(*pb.ScanRequest) (*execution.Plan, *pb.Failure) {
+func (a *lifecycleAdapter) PrepareCall(uint64, *pb.Call) (*execution.Plan, *pb.Failure) {
 	return nil, nil
 }
-func (a *lifecycleAdapter) FetchScan(context.Context, *execution.Plan) (*execution.ScanPage, execution.Feedback) {
-	return nil, execution.Neutral
+func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) execution.Feedback {
+	return execution.Neutral
 }
-func (a *lifecycleAdapter) CloseScan(context.Context, *execution.Plan) *pb.Failure { return nil }
-
+func (a *lifecycleAdapter) Close() error { a.closes.Add(1); return nil }
 func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 	for _, valid := range []bool{false, true} {
 		a := &lifecycleAdapter{}
@@ -60,9 +54,4 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 	}
 }
 
-func (a *lifecycleAdapter) PrepareNative(*pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	return nil, nil
-}
-func (a *lifecycleAdapter) ExecuteNative(context.Context, *execution.Plan, *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
-	return nil, execution.Neutral
-}
+func (*lifecycleAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }

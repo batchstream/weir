@@ -14,7 +14,7 @@ var errWireBound = errors.New("MongoDB reply exceeds qualified wire/envelope bou
 // The driver expands top-level error arrays before RunCommand.Raw can inspect
 // them. This fixed uncompressed OP_REPLY/OP_MSG profile checks that envelope
 // before exposing any header to the driver. It does not decode result documents,
-// interpret selectors, issue commands or retry. One buffer, at most 48 MiB, per
+// interpret selectors, issue commands or retry. One buffer, at most 8 MiB, per
 // socket; the driver may concurrently allocate its own equally bounded copy.
 type boundedConn struct {
 	net.Conn

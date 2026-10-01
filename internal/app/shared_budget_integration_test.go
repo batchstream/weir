@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"os"
 	"strings"
@@ -177,7 +179,8 @@ func budgetFreshRead(t *testing.T, e *mongoBudgetExecutor, id string) {
 	defer cancel()
 	request := &pb.ReadRequest{Resource: e.root + "/s:" + id}
 	for attempts := 1; ; attempts++ {
-		result, err := e.client.Read(ctx, request)
+		routedResult180, err := routeclient.Record(ctx, e.client, testutil.RecordCall(request))
+		result := routedResult180.GetRead()
 		if err == nil && result.GetFailure() == nil {
 			if attempts > 1 {
 				t.Logf("fresh independent read probes recovered PID=%d calls=%d", e.process.command.Process.Pid, attempts)
@@ -218,7 +221,8 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 			workers.Go(func() {
 				for ctx.Err() == nil {
 					request := &pb.ReadRequest{Resource: e.root + "/s:warm"}
-					result, err := e.client.Read(ctx, request)
+					routedResult221, err := routeclient.Record(ctx, e.client, testutil.RecordCall(request))
+					result := routedResult221.GetRead()
 					if err == nil && result.GetFailure() == nil {
 						reads.Add(1)
 					}
@@ -283,7 +287,7 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	testmongo.FailCommand(t, fixture.Admin, data, 1)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	faultRead := &pb.ReadRequest{Resource: peers[2].root + "/s:congestion"}
-	_, _ = peers[2].client.Read(callCtx, faultRead)
+	_, _ = routeclient.Record(callCtx, peers[2].client, testutil.RecordCall(faultRead))
 	stop()
 	if budgetWindow(t, peers[2].process) != 2 || budgetWindow(t, peers[1].process) != 2 {
 		t.Fatal("Mongo AIMD instances not independent")
@@ -388,7 +392,8 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	var workers sync.WaitGroup
 	// Three independent runtimes and a direct native writer compete on one key.
 	initial := budgetPut(peers[0].root, "counter")
-	result, err := peers[0].client.Mutate(ctx, initial)
+	routedResult391, err := routeclient.Record(ctx, peers[0].client, testutil.RecordCall(initial))
+	result := routedResult391.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
@@ -402,7 +407,8 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 				transform := &pb.Transform{Form: form}
 				action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 				request := &pb.MutateRequest{Resource: e.root + "/s:counter", Action: action}
-				result, err := e.client.Mutate(ctx, request)
+				routedResult405, err := routeclient.Record(ctx, e.client, testutil.RecordCall(request))
+				result := routedResult405.GetMutation()
 				if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Error("atomic increment", result, err)
 					return
@@ -431,22 +437,13 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	}
 	// A live Bulk uses the production framing/ledger; every result is consumed.
 	for _, e := range peers {
-		stream, err := e.client.Bulk(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		opening := &pb.BulkOpen{Store: "weir://records"}
-		variant := &pb.BulkRequestFrame_Open{Open: opening}
-		frame := &pb.BulkRequestFrame{Frame: variant}
-		if err := stream.Send(frame); err != nil {
-			t.Fatal(err)
-		}
+		stream := testutil.OpenEvents(ctx, e.client, "records")
 		for i := 0; i < 4; i++ {
 			request := budgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			mutation := &pb.BulkOperation_Mutate{Mutate: request}
-			op := &pb.BulkOperation{Index: uint64(i), Operation: mutation}
-			item := &pb.BulkRequestFrame_Operation{Operation: op}
-			frame := &pb.BulkRequestFrame{Frame: item}
+			mutation := &pb.Operation_Mutate{Mutate: request}
+			op := &pb.Operation{Index: uint64(i), Operation: mutation}
+			_, item := testutil.OperationCall(op)
+			frame := item
 			if err := stream.Send(frame); err != nil {
 				t.Fatal(err)
 			}
@@ -460,10 +457,6 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 				t.Fatal("Bulk", reply, err)
 			}
 		}
-		end, err := stream.Recv()
-		if err != nil || end.GetEnd().GetResultCount() != 4 {
-			t.Fatal("Bulk End", end, err)
-		}
 		if _, err := stream.Recv(); err != io.EOF {
 			t.Fatal("Bulk EOF", err)
 		}
@@ -472,8 +465,10 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	// them across executors while ordinary operations continue on all three.
 	workers.Go(func() { mongoBudgetNative(t, peers[0]) })
 	workers.Go(func() {
-		request := &pb.ScanRequest{Resource: peers[1].root, FetchItemsHint: 1}
-		scan, err := peers[1].client.Scan(ctx, request)
+		request := &pb.ScanRequest{Resource: peers[1].root}
+		scanVariant := &pb.Call_Scan{Scan: request}
+		scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+		scan, err := testutil.OneEvents(ctx, peers[1].client, scanCall)
 		if err != nil {
 			t.Error(err)
 			return
@@ -484,7 +479,7 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 				t.Error(err)
 				return
 			}
-			if end := frame.GetEnd(); end != nil {
+			if end := frame.GetScanEnd(); end != nil {
 				if end.Failure != nil {
 					t.Error(end)
 				}
@@ -516,8 +511,10 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 		}
 	}
 	scanCtx, stopScan := context.WithCancel(ctx)
-	request := &pb.ScanRequest{Resource: peers[1].root, FetchItemsHint: 1}
-	scan, err := peers[1].client.Scan(scanCtx, request)
+	request := &pb.ScanRequest{Resource: peers[1].root}
+	scanVariant := &pb.Call_Scan{Scan: request}
+	scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+	scan, err := testutil.OneEvents(scanCtx, peers[1].client, scanCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -544,26 +541,16 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	stream, err := e.client.Native(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
 	descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
 	open := &pb.NativeOpen{Resource: e.root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
-	variant := &pb.NativeRequestFrame_Open{Open: open}
-	frame := &pb.NativeRequestFrame{Frame: variant}
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
 	filter := bson.D{{Key: "_id", Value: "counter"}}
 	command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: filter}, {Key: "limit", Value: 1}}
 	raw, _ := bson.Marshal(command)
-	chunk := &pb.NativeRequestFrame_Chunk{Chunk: raw}
-	frame = &pb.NativeRequestFrame{Frame: chunk}
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	if err := stream.CloseSend(); err != nil {
+	nativeCall := &pb.NativeCall{Open: open, Body: raw}
+	nativeVariant := &pb.Call_Native{Native: nativeCall}
+	call := &pb.Call{Version: 1, Operation: nativeVariant}
+	stream, err := testutil.OneEvents(ctx, e.client, call)
+	if err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -571,7 +558,7 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if end := reply.GetEnd(); end != nil {
+		if end := reply.GetNativeEnd(); end != nil {
 			if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
 				t.Fatal(end)
 			}
@@ -639,7 +626,8 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	resultChannel := make(chan *pb.MutationResult, 1)
 	oldRequest := budgetPut(old.root, "lost-reply")
 	go func() {
-		result, err := old.client.Mutate(ctx, oldRequest)
+		routedResult642, err := routeclient.Record(ctx, old.client, testutil.RecordCall(oldRequest))
+		result := routedResult642.GetMutation()
 		if err != nil {
 			t.Error("expected conservative terminal response", err)
 		}
@@ -658,7 +646,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	go func() {
 		defer close(queuedDone)
 		request := budgetPut(old.root, "queued-cancel")
-		_, _ = old.client.Mutate(queuedCtx, request)
+		_, _ = routeclient.Record(queuedCtx, old.client, testutil.RecordCall(request))
 	}()
 	budgetWait(t, "old queued plus executed write", func() bool {
 		return testmetrics.Sum(testmetrics.Scrape(t, old.process.diagnostic), "weir_store_pending_entries") == 1
@@ -682,12 +670,15 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 		return n == 0
 	})
 	request := budgetPut(replacement.root, "new-independent")
-	result, err := replacement.client.Mutate(ctx, request)
+	routedResult685, err := routeclient.Record(ctx, replacement.client, testutil.RecordCall(request))
+	result = routedResult685.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replacement new mutation", result, err)
 	}
 	request = budgetPut(extra.root, "new-independent-extra")
-	result, err = replacement.client.Mutate(ctx, request)
+	var routedResult690 *pb.Result
+	routedResult690, err = routeclient.Record(ctx, replacement.client, testutil.RecordCall(request))
+	result = routedResult690.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("extra Local new mutation", result, err)
 	}
@@ -755,21 +746,12 @@ func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
 	client := endpointProcessClient(t, front.address)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Bulk(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://records"}
-	opening := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: opening}
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
+	stream := testutil.OpenEvents(ctx, client, "records")
 	for i := 0; i < 4; i++ {
-		mutation := &pb.BulkOperation_Mutate{Mutate: request}
-		op := &pb.BulkOperation{Index: uint64(i), Operation: mutation}
-		variant := &pb.BulkRequestFrame_Operation{Operation: op}
-		frame := &pb.BulkRequestFrame{Frame: variant}
+		mutation := &pb.Operation_Mutate{Mutate: request}
+		op := &pb.Operation{Index: uint64(i), Operation: mutation}
+		_, variant := testutil.OperationCall(op)
+		frame := variant
 		if err := stream.Send(frame); err != nil {
 			t.Fatal(err)
 		}
@@ -779,13 +761,9 @@ func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
 	}
 	for i := 0; i < 4; i++ {
 		frame, err := stream.Recv()
-		if err != nil || frame.GetResult().Index != uint64(i) || frame.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		if err != nil || frame.GetResult().Index != uint64(i+1) || frame.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("forwarded ordered Bulk", frame, err)
 		}
-	}
-	end, err := stream.Recv()
-	if err != nil || end.GetEnd().GetResultCount() != 4 {
-		t.Fatal("forwarded Bulk End", end, err)
 	}
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatal(err)
@@ -817,36 +795,26 @@ func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
 func budgetLoadCall(ctx context.Context, client pb.WeirClient, request *pb.MutateRequest, mode int) bool {
 	switch mode {
 	case 0:
-		result, err := client.Mutate(ctx, request)
+		routedResult820, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+		result := routedResult820.GetMutation()
 		return err == nil && result.GetFailure() == nil && result.GetOutcome() == pb.MutationOutcome_APPLIED
 	case 1:
 		read := &pb.ReadRequest{Resource: request.Resource}
-		result, err := client.Read(ctx, read)
+		routedResult824, err := routeclient.Record(ctx, client, testutil.RecordCall(read))
+		result := routedResult824.GetRead()
 		return err == nil && result.GetFailure() == nil
 	default:
-		stream, err := client.Bulk(ctx)
-		if err != nil {
-			return false
-		}
-		open := &pb.BulkOpen{Store: "weir://records"}
-		opening := &pb.BulkRequestFrame_Open{Open: open}
-		frame := &pb.BulkRequestFrame{Frame: opening}
-		if stream.Send(frame) != nil {
-			return false
-		}
-		variant := &pb.BulkOperation_Mutate{Mutate: request}
-		operation := &pb.BulkOperation{Operation: variant}
-		item := &pb.BulkRequestFrame_Operation{Operation: operation}
-		frame = &pb.BulkRequestFrame{Frame: item}
+		stream := testutil.OpenEvents(ctx, client, "records")
+		var frame *pb.Call
+		variant := &pb.Operation_Mutate{Mutate: request}
+		operation := &pb.Operation{Operation: variant}
+		_, item := testutil.OperationCall(operation)
+		frame = item
 		if stream.Send(frame) != nil || stream.CloseSend() != nil {
 			return false
 		}
 		reply, err := stream.Recv()
 		if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-			return false
-		}
-		end, err := stream.Recv()
-		if err != nil || end.GetEnd().GetResultCount() != 1 {
 			return false
 		}
 		_, err = stream.Recv()

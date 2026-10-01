@@ -39,7 +39,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	for i, work := range works {
 		work.Operation.Index = uint64(i)
 	}
-	results, _ := a.Execute(context.Background(), works)
+	results, _ := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) {
 		t.Fatal("mixed target cardinality", len(results))
 	}
@@ -71,7 +71,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		for i, work := range works {
 			work.Operation.Index = uint64(100 + phase*2 + i)
 		}
-		results, batchFeedback := a.Execute(context.Background(), works)
+		results, batchFeedback := a.executeRecords(context.Background(), works)
 		if len(results) != len(works) {
 			t.Fatal("cross-index mutation cardinality", actions, len(results))
 		}
@@ -100,8 +100,8 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				t.Logf("target=%s action=%s attempt=%d confirmed not applied; submitting one item after capacity rejection", indexes[i], works[i].Backend.(*plan).action, attempt)
 				time.Sleep(50 * time.Millisecond)
 				single := []*execution.Plan{works[i]}
-				var replies []*pb.BulkResult
-				replies, feedback = a.Execute(context.Background(), single)
+				var replies []*pb.Result
+				replies, feedback = a.executeRecords(context.Background(), single)
 				if len(replies) != 1 || replies[0].Index != works[i].Operation.Index {
 					t.Fatal("single target mutation result position", actions, replies)
 				}
@@ -115,7 +115,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		left := batchTestPlan(t, a, "read", searchResource(indexes[0], "same"))
 		right := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 		concurrent.Go(func() {
-			results, _ := a.Execute(context.Background(), []*execution.Plan{left, right})
+			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
 			if string(results[0].GetRead().GetDocument().GetData()) != `{"n":2}` || string(results[1].GetRead().GetDocument().GetData()) != `{"n":3}` {
 				t.Error("same service concurrent index isolation failed", results)
 			}
@@ -139,13 +139,13 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		if status != 200 {
 			t.Fatal("target refresh", status, string(raw))
 		}
-		work := scanWork(t, a, index, 2)
+		work := scanWork(t, a, index)
 		seenSame, seenNative := false, false
 		for step := 0; ; step++ {
 			if step > 10 {
 				t.Fatal("target Scan failed to exhaust")
 			}
-			page, _ := a.FetchScan(context.Background(), work)
+			page, _ := a.fetchScan(context.Background(), work)
 			if page.Failure != nil {
 				t.Fatal("target Scan", page.Failure)
 			}
@@ -170,7 +170,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				break
 			}
 		}
-		if failure := a.CloseScan(context.Background(), work); failure != nil || !seenSame || !seenNative {
+		if failure := a.closeScan(context.Background(), work); failure != nil || !seenSame || !seenNative {
 			t.Fatal("target PIT traversal/cleanup", failure, seenSame, seenNative)
 		}
 	}

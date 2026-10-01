@@ -17,7 +17,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 	a, b := setupSearch(t)
 	type sample struct {
 		works    []*execution.Plan
-		results  []*pb.BulkResult
+		results  []*pb.Result
 		feedback execution.Feedback
 	}
 	var samples []sample
@@ -35,7 +35,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 				<-start
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				results, feedback := a.Execute(ctx, works)
+				results, feedback := a.executeRecords(ctx, works)
 				sample := sample{works: works, results: results, feedback: feedback}
 				replies <- sample
 			})

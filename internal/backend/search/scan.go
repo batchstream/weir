@@ -13,12 +13,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const scanPageBudget = 16 << 20
+const scanPageBudget = 24 << 20
 const pitKeepAlive = "60s"
 
 const maxPITBytes = 16 << 10
 
 type scanPlan struct {
+	count                    uint64
 	index                    string
 	query                    json.RawMessage
 	items                    int
@@ -27,7 +28,7 @@ type scanPlan struct {
 	hasAfter, opened, closed bool
 }
 
-func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateScan(req, a.config.Store); f != nil {
 		return nil, f
 	}
@@ -40,7 +41,7 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	}
 	native := &scanPlan{
 		index: parts[0],
-		items: protocol.FetchItems(req.FetchItemsHint),
+		items: 1,
 		query: json.RawMessage(`{"match_all":{}}`),
 	}
 	if d := req.Selector; d != nil {
@@ -62,17 +63,17 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		}
 	}
 	p := &execution.Plan{
-		Scan:        true,
-		Key:         req.Resource,
-		Bytes:       proto.Size(req) + protocol.EntryOverhead + 4096,
-		ResultBytes: protocol.MaxDocument + protocol.ResultOverhead,
-		PageBytes:   scanPageBudget,
-		Backend:     native,
+		Singleton:    true,
+		Key:          req.Resource,
+		Bytes:        proto.Size(req) + protocol.EntryOverhead + 4096,
+		ResultBytes:  protocol.MaxDocument + protocol.ResultOverhead,
+		WorkingBytes: scanPageBudget,
+		Backend:      native,
 	}
 	return p, nil
 }
 
-func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
+func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
 	n := p.Backend.(*scanPlan)
 	page := &execution.ScanPage{}
 	if n.closed || ctx.Err() != nil {
@@ -330,7 +331,7 @@ func scanScore(raw json.RawMessage) bool {
 	return err == nil && !math.IsNaN(number) && !math.IsInf(number, 0)
 }
 
-func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure {
+func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure {
 	n := p.Backend.(*scanPlan)
 	if n.closed {
 		return nil

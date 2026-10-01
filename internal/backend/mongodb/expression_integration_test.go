@@ -22,7 +22,7 @@ func mongoExpression(t *testing.T, a *Adapter, database string, doc bson.D) *exe
 	t.Helper()
 	raw := expressionBSON(t, doc)
 	op := expressionOperation("weir://mongo/"+database+"/records/s:counter", raw)
-	p, f := a.Prepare(op)
+	p, f := a.prepareRecord(op)
 	if f != nil {
 		t.Fatal(f)
 	}
@@ -32,7 +32,7 @@ func executeMongoExpression(t *testing.T, a *Adapter, p *execution.Plan) *pb.Mut
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	results, _ := a.Execute(ctx, []*execution.Plan{p})
+	results, _ := a.executeRecords(ctx, []*execution.Plan{p})
 	return results[0].GetMutation()
 }
 

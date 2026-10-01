@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,7 +104,8 @@ func budgetOverlap(t *testing.T, targets []budgetReadTarget, o *budgetObservatio
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			req := &pb.ReadRequest{Resource: target.root + "/s:overlap"}
-			result, err := target.client.Read(ctx, req)
+			routedResult105, err := routeclient.Record(ctx, target.client, testutil.RecordCall(req))
+			result := routedResult105.GetRead()
 			if err != nil || result.GetFailure() != nil {
 				t.Error("overlap Read", err, result)
 			}
@@ -146,7 +149,7 @@ func budgetReplacementReads(t *testing.T, targets []budgetReadTarget) {
 			workers.Go(func() {
 				for n := 0; ctx.Err() == nil; n++ {
 					req := &pb.ReadRequest{Resource: target.root + fmt.Sprintf("/s:replacement%d", n)}
-					_, _ = target.client.Read(ctx, req)
+					_, _ = routeclient.Record(ctx, target.client, testutil.RecordCall(req))
 				}
 			})
 		}
@@ -157,7 +160,8 @@ func budgetReplacementReads(t *testing.T, targets []budgetReadTarget) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		req := &pb.ReadRequest{Resource: target.root + "/s:recovered"}
 		for {
-			result, err := target.client.Read(ctx, req)
+			routedResult160, err := routeclient.Record(ctx, target.client, testutil.RecordCall(req))
+			result := routedResult160.GetRead()
 			if err == nil && result.GetFailure() == nil {
 				break
 			}

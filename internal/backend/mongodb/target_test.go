@@ -21,18 +21,18 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			resource := "weir://mongo/" + database + "/" + collection
 			opts := batchOperationOptions{resource: resource + "/s:shared", action: "read"}
 			operation := batchOperation(t, opts)
-			work, failure := adapter.Prepare(operation)
+			work, failure := adapter.prepareRecord(operation)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			request := &pb.ScanRequest{Resource: resource}
-			scan, failure := adapter.PrepareScan(request)
+			scan, failure := adapter.prepareScan(request)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			descriptor := &pb.Document{MediaType: NativeDescriptor}
 			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyMediaType: "application/bson"}
-			native, failure := adapter.PrepareNative(open)
+			native, failure := adapter.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -54,16 +54,16 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 		t.Run(target, func(t *testing.T) {
 			resource := "weir://mongo/" + target
 			opts := batchOperationOptions{resource: resource + "/s:id", action: "read"}
-			if _, failure := adapter.Prepare(batchOperation(t, opts)); failure == nil {
+			if _, failure := adapter.prepareRecord(batchOperation(t, opts)); failure == nil {
 				t.Fatal("invalid record target accepted")
 			}
 			request := &pb.ScanRequest{Resource: resource}
-			if _, failure := adapter.PrepareScan(request); failure == nil {
+			if _, failure := adapter.prepareScan(request); failure == nil {
 				t.Fatal("invalid Scan target accepted")
 			}
 			descriptor := &pb.Document{MediaType: NativeDescriptor}
 			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyMediaType: "application/bson"}
-			if _, failure := adapter.PrepareNative(open); failure == nil {
+			if _, failure := adapter.prepareNative(open); failure == nil {
 				t.Fatal("invalid Native target accepted")
 			}
 		})
@@ -82,13 +82,13 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 	var plans []*execution.Plan
 	for i, target := range []string{"first/records", "second/other", "first/records"} {
 		opts := batchOperationOptions{resource: "weir://mongo/" + target + "/s:shared", action: "read", index: uint64(i + 8)}
-		work, failure := adapter.Prepare(batchOperation(t, opts))
+		work, failure := adapter.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, work)
 	}
-	replies, signal := adapter.Execute(context.Background(), plans)
+	replies, signal := adapter.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		want := int32(1)
 		if i == 1 {
@@ -109,14 +109,14 @@ func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	adapter := &Adapter{config: config}
 	descriptor := &pb.Document{MediaType: NativeDescriptor}
 	open := &pb.NativeOpen{Resource: "weir://mongo/db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
-	work, failure := adapter.PrepareNative(open)
+	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	command := bson.D{{Key: "count", Value: "other"}}
 	raw := expressionBSON(t, command)
 	exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: &nativeCapture{}}
-	end, signal := adapter.ExecuteNative(context.Background(), work, exchange)
+	end, signal := adapter.executeNative(context.Background(), work, exchange)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || signal != execution.Neutral {
 		t.Fatal(end, signal)
 	}
@@ -145,11 +145,11 @@ func TestMongoQualificationFailureDoesNotAttemptWrites(t *testing.T) {
 			adapter := batchMockAdapter(t, []bson.D{qualification}, monitor)
 			document := bson.D{{Key: "_id", Value: "id"}}
 			opts := batchOperationOptions{resource: "weir://mongo/db/records/s:id", action: "put", document: document}
-			work, failure := adapter.Prepare(batchOperation(t, opts))
+			work, failure := adapter.prepareRecord(batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results, _ := adapter.Execute(context.Background(), []*execution.Plan{work})
+			results, _ := adapter.executeRecords(context.Background(), []*execution.Plan{work})
 			if results[0].GetMutation().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutation().Failure == nil || len(commands) != 1 || commands[0] != "listCollections" {
 				t.Fatal("target rejection performed a write", results, commands)
 			}
@@ -173,12 +173,12 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			document := bson.D{{Key: "_id", Value: "id"}}
 			opts := batchOperationOptions{resource: "weir://mongo/db/records/s:id", action: action, document: document}
-			work, failure := adapter.Prepare(batchOperation(t, opts))
+			work, failure := adapter.prepareRecord(batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			work.Context = caller
-			results, signal := adapter.Execute(context.Background(), []*execution.Plan{work})
+			results, signal := adapter.executeRecords(context.Background(), []*execution.Plan{work})
 			code := results[0].GetRead().GetFailure().GetCode()
 			if action == "put" {
 				code = results[0].GetMutation().GetFailure().GetCode()
@@ -201,27 +201,27 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	for _, action := range []string{"read", "put", "program"} {
 		document := bson.D{{Key: "_id", Value: "same"}}
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:same", action: action, document: document, program: "return weir.keep()"}
-		work, failure := adapter.Prepare(batchOperation(t, opts))
+		work, failure := adapter.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		results, signal := adapter.Execute(ctx, []*execution.Plan{work})
+		results, signal := adapter.executeRecords(ctx, []*execution.Plan{work})
 		if signal != execution.Neutral || results[0] == nil {
 			t.Fatal(results, signal)
 		}
 	}
 	request := &pb.ScanRequest{Resource: "weir://mongo/db/records"}
-	scan, failure := adapter.PrepareScan(request)
+	scan, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	page, _ := adapter.FetchScan(ctx, scan)
+	page, _ := adapter.fetchScan(ctx, scan)
 	if page.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(page)
 	}
 	descriptor := &pb.Document{MediaType: NativeDescriptor}
 	open := &pb.NativeOpen{Resource: "weir://mongo/db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
-	native, failure := adapter.PrepareNative(open)
+	native, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -229,7 +229,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
 	exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
-	end, _ := adapter.ExecuteNative(ctx, native, exchange)
+	end, _ := adapter.executeNative(ctx, native, exchange)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(end)
 	}

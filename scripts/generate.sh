@@ -13,20 +13,12 @@ PATH="$PWD/.tools/bin:$PATH" .tools/protoc/bin/protoc --go_out=. --go_opt=module
 # Keep the repository's named-struct-literal convention reproducible, including generated code.
 awk '
  $0 == "\treturn &weirClient{cc}" { print "\tclient := &weirClient{cc}"; print "\treturn client"; count++; next }
- index($0,"\treturn srv.(WeirServer).Bulk(&grpc.GenericServerStream") == 1 {
-  print "\tserverStream := &grpc.GenericServerStream[BulkRequestFrame, BulkResponseFrame]{ServerStream: stream}"
-  print "\treturn srv.(WeirServer).Bulk(serverStream)"; count++; next
- }
- index($0,"\treturn srv.(WeirServer).Scan(m, &grpc.GenericServerStream") == 1 {
-  print "\tserverStream := &grpc.GenericServerStream[ScanRequest, ScanResponseFrame]{ServerStream: stream}"
-  print "\treturn srv.(WeirServer).Scan(m, serverStream)"; count++; next
- }
- index($0,"\treturn srv.(WeirServer).Native(&grpc.GenericServerStream") == 1 {
-  print "\tserverStream := &grpc.GenericServerStream[NativeRequestFrame, NativeResponseFrame]{ServerStream: stream}"
-  print "\treturn srv.(WeirServer).Native(serverStream)"; count++; next
+ index($0,"\treturn srv.(WeirServer).Route(&grpc.GenericServerStream") == 1 {
+  print "\tserverStream := &grpc.GenericServerStream[Request, Response]{ServerStream: stream}"
+  print "\treturn srv.(WeirServer).Route(serverStream)"; count++; next
  }
  { print }
- END { if (count != 4) exit 1 }
+ END { if (count != 2) exit 1 }
 ' api/weir/v1/weir_grpc.pb.go > .tools/weir_grpc.pb.go
 mv .tools/weir_grpc.pb.go api/weir/v1/weir_grpc.pb.go
 awk '

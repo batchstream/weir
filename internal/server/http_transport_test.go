@@ -104,7 +104,7 @@ func TestCompletedDeliveryNeverTouchesResponseWriter(t *testing.T) {
 	// A late completion must not touch a pooled/released HTTP response writer.
 	state := &delivery{}
 	state.finish()
-	state.beginResponse()
+	state.inputRead(true)
 	state.shorten(time.Now())
 	state.finishWrite(nil)
 	if err := state.armWrite(); !errors.Is(err, io.ErrClosedPipe) {

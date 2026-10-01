@@ -15,8 +15,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (a *Adapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	results := make([]*pb.BulkResult, len(plans))
+func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
+	results := make([]*pb.Result, len(plans))
 	bytes := 0
 	for _, p := range plans {
 		charge := max(p.Bytes, proto.Size(p.Operation))
@@ -111,7 +111,7 @@ func batchFeedback(current, next execution.Feedback) execution.Feedback {
 	return execution.Healthy
 }
 
-func unstarted(ctx context.Context, p *execution.Plan) *pb.BulkResult {
+func unstarted(ctx context.Context, p *execution.Plan) *pb.Result {
 	if p.Context != nil && p.Context.Err() != nil {
 		return protocol.ResultError(p.Operation, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(p.Context))
 	}
@@ -121,11 +121,11 @@ func unstarted(ctx context.Context, p *execution.Plan) *pb.BulkResult {
 	return nil
 }
 
-func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
 	if results, signal := a.qualifyRecordBatch(ctx, plans); results != nil {
 		return results, signal
 	}
-	results := make([]*pb.BulkResult, len(plans))
+	results := make([]*pb.Result, len(plans))
 	skipped := make([]bool, len(plans))
 	ids := make(bson.A, 0, len(plans))
 	positions := make(map[any][]int, len(plans))
@@ -214,9 +214,9 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 					d := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), raw...)}
 					reply = protocol.ReadDocument(d)
 				}
-				variant := &pb.BulkResult_Read{Read: reply}
+				variant := &pb.Result_Read{Read: reply}
 				for _, i := range matches {
-					results[i] = &pb.BulkResult{Index: plans[i].Operation.Index, Result: variant}
+					results[i] = &pb.Result{Index: plans[i].Operation.Index, Result: variant}
 				}
 				received++
 			}
@@ -260,8 +260,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 			}
 			reply = protocol.ReadFailure(failure)
 		}
-		variant := &pb.BulkResult_Read{Read: reply}
-		results[i] = &pb.BulkResult{Index: p.Operation.Index, Result: variant}
+		variant := &pb.Result_Read{Read: reply}
+		results[i] = &pb.Result{Index: p.Operation.Index, Result: variant}
 	}
 	signal := feedback(ctx, err)
 	if !valid && signal == execution.Healthy {
@@ -285,11 +285,11 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 	return nil, false
 }
 
-func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
 	if results, signal := a.qualifyRecordBatch(ctx, plans); results != nil {
 		return results, signal
 	}
-	results := make([]*pb.BulkResult, len(plans))
+	results := make([]*pb.Result, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
@@ -383,8 +383,8 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 		if reply == nil {
 			reply = protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledgement unavailable or incomplete"))
 		}
-		variant := &pb.BulkResult_Mutation{Mutation: reply}
-		results[positions[i]] = &pb.BulkResult{Index: p.Operation.Index, Result: variant}
+		variant := &pb.Result_Mutation{Mutation: reply}
+		results[positions[i]] = &pb.Result{Index: p.Operation.Index, Result: variant}
 	}
 	signal := feedback(ctx, err)
 	uncertain := false
@@ -412,7 +412,7 @@ func (a *Adapter) closeRecordCursor(state *scanPlan) {
 	work := &execution.Plan{Backend: state}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	_ = a.CloseScan(ctx, work)
+	_ = a.closeScan(ctx, work)
 }
 
 func (b *writeBatch) reply(raw bson.Raw, first bool) bool {

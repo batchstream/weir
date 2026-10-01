@@ -141,7 +141,7 @@ func (a *Adapter) Close() error {
 	return a.closeErr
 }
 
-func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure) {
 	if f := protocol.Validate(op, a.config.Store); f != nil {
 		return nil, f
 	}

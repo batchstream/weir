@@ -35,8 +35,8 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 	}
 }
 
-func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) ([]*pb.BulkResult, execution.Feedback) {
-	results := make([]*pb.BulkResult, len(works))
+func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) ([]*pb.Result, execution.Feedback) {
+	results := make([]*pb.Result, len(works))
 	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledgement unavailable or incomplete")
 	for i, work := range works {
 		results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)

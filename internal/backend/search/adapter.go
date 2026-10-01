@@ -215,7 +215,7 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 	return caps, nil, execution.Neutral
 }
 
-func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure) {
 	if failure := protocol.Validate(op, a.config.Store); failure != nil {
 		return nil, failure
 	}
@@ -318,7 +318,7 @@ type getReply struct {
 	Status int             `json:"status"`
 }
 
-func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.BulkResult {
+func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.Result {
 	var read *pb.ReadResult
 	switch {
 	case failure != nil:
@@ -329,7 +329,7 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 		document := &pb.Document{MediaType: "application/json", Data: reply.Source}
 		read = protocol.ReadDocument(document)
 	}
-	variant := &pb.BulkResult_Read{Read: read}
-	result := &pb.BulkResult{Index: work.Operation.Index, Result: variant}
+	variant := &pb.Result_Read{Read: read}
+	result := &pb.Result{Index: work.Operation.Index, Result: variant}
 	return result
 }

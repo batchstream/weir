@@ -13,8 +13,8 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/routeclient"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -50,14 +50,7 @@ func newClient(backend, target string, pool int) (*Client, error) {
 	c := &Client{HTTP: hc, Transport: transport, Backend: backend}
 	if target != "" {
 		for i := 0; i < 4; i++ {
-			conn, err := grpc.NewClient(
-				target,
-				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithNoProxy(),
-				grpc.WithDisableRetry(),
-				grpc.WithDisableServiceConfig(),
-				grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(16384), grpc.MaxCallSendMsgSize(16384)),
-			)
+			conn, err := routeclient.Dial(target)
 			if err != nil {
 				c.Close()
 				return nil, err
@@ -120,10 +113,14 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 		return c.direct(ctx, op)
 	}
 	client := c.RPC[op.Number%len(c.RPC)]
-	resource := "weir://records/records/s:" + op.ID
+	resource := "records/s:" + op.ID
 	if !op.Write {
 		req := &pb.ReadRequest{Resource: resource, ReadMediaType: "application/json"}
-		resp, err := client.Read(ctx, req)
+		variant := &pb.Call_Read{Read: req}
+		call := &pb.Call{Version: 1, Operation: variant}
+		opts := routeclient.RecordOptions{Destination: "records", Call: call}
+		result, err := routeclient.Record(ctx, client, opts)
+		resp := result.GetRead()
 		if err != nil {
 			return failure("transport_"+status.Code(err).String(), false)
 		}
@@ -139,7 +136,11 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 	doc := &pb.Document{MediaType: "application/json", Data: payload(op.ID)}
 	action := &pb.MutateRequest_Put{Put: doc}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	resp, err := client.Mutate(ctx, req)
+	variant := &pb.Call_Mutate{Mutate: req}
+	call := &pb.Call{Version: 1, Operation: variant}
+	opts := routeclient.RecordOptions{Destination: "records", Call: call}
+	result, err := routeclient.Record(ctx, client, opts)
+	resp := result.GetMutation()
 	if err != nil {
 		return failure("transport_"+status.Code(err).String(), true)
 	}

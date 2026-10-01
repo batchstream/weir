@@ -15,21 +15,16 @@ import (
 )
 
 type Limits struct {
-	Connections, Sessions              int
-	UnaryLifetime, BulkLifetime, Stall time.Duration
-	ScanLifetime                       time.Duration
-	NativeLifetime                     time.Duration
+	Connections, Sessions int
+	RouteLifetime, Stall  time.Duration
 }
 
 func DefaultLimits() Limits {
 	l := Limits{
-		Connections:    16,
-		Sessions:       16,
-		UnaryLifetime:  30 * time.Second,
-		BulkLifetime:   15 * time.Minute,
-		ScanLifetime:   5 * time.Minute,
-		NativeLifetime: 5 * time.Minute,
-		Stall:          30 * time.Second,
+		Connections:   16,
+		Sessions:      4,
+		RouteLifetime: 15 * time.Minute,
+		Stall:         30 * time.Second,
 	}
 	return l
 }
@@ -56,6 +51,7 @@ type Server struct {
 	draining        chan struct{}
 	once            sync.Once
 	connections     sync.Map
+	routeStats      routeCounters
 	metrics         transportMetrics
 	serving         chan struct{}
 }
@@ -63,11 +59,8 @@ type Server struct {
 func (l Limits) Validate() error {
 	if l.Connections < 1 || l.Connections > 64 ||
 		l.Sessions < 1 || l.Sessions > 64 ||
-		l.UnaryLifetime <= 0 || l.UnaryLifetime > 30*time.Second ||
-		l.BulkLifetime <= 0 || l.BulkLifetime > 15*time.Minute ||
-		l.ScanLifetime <= 0 || l.ScanLifetime > 5*time.Minute ||
-		l.Stall <= 0 || l.Stall > 30*time.Second ||
-		l.NativeLifetime <= 0 || l.NativeLifetime > 5*time.Minute {
+		l.RouteLifetime <= 0 || l.RouteLifetime > 15*time.Minute ||
+		l.Stall <= 0 || l.Stall > 30*time.Second {
 		return status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}
 	return nil
@@ -115,8 +108,7 @@ func New(cfg Config) (*Server, error) {
 	statistics := deliveryStats{}
 	s.grpc = grpc.NewServer(
 		grpc.MaxRecvMsgSize(protocol.MaxFrame),
-		grpc.MaxSendMsgSize(protocol.MaxFrame),
-		grpc.UnaryInterceptor(s.unary),
+		grpc.MaxSendMsgSize(protocol.MaxResponse),
 		grpc.StatsHandler(statistics),
 		grpc.WaitForHandlers(true),
 	)

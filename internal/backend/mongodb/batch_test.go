@@ -22,12 +22,12 @@ type batchOperationOptions struct {
 	program          string
 }
 
-func batchOperation(t testing.TB, opts batchOperationOptions) *pb.BulkOperation {
+func batchOperation(t testing.TB, opts batchOperationOptions) *pb.Operation {
 	t.Helper()
-	op := &pb.BulkOperation{Index: opts.index}
+	op := &pb.Operation{Index: opts.index}
 	if opts.action == "read" {
 		read := &pb.ReadRequest{Resource: opts.resource}
-		op.Operation = &pb.BulkOperation_Read{Read: read}
+		op.Operation = &pb.Operation_Read{Read: read}
 		return op
 	}
 	request := &pb.MutateRequest{Resource: opts.resource}
@@ -58,7 +58,7 @@ func batchOperation(t testing.TB, opts batchOperationOptions) *pb.BulkOperation 
 			t.Fatal("invalid test action", opts.action)
 		}
 	}
-	op.Operation = &pb.BulkOperation_Mutate{Mutate: request}
+	op.Operation = &pb.Operation_Mutate{Mutate: request}
 	return op
 }
 
@@ -106,13 +106,13 @@ func TestMongoPointReadRejectsMalformedCursorEvidence(t *testing.T) {
 			var plans []*execution.Plan
 			for _, name := range []string{"a", "b"} {
 				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + name, action: "read"}
-				p, failure := a.Prepare(batchOperation(t, opts))
+				p, failure := a.prepareRecord(batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
 				}
 				plans = append(plans, p)
 			}
-			replies, _ := a.Execute(context.Background(), plans)
+			replies, _ := a.executeRecords(context.Background(), plans)
 			for _, reply := range replies {
 				if reply.GetRead().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 					t.Fatal("malformed response justified a read or missing record", reply)
@@ -136,13 +136,13 @@ func TestMongoPointReadMatchesTypedIDsAcrossPages(t *testing.T) {
 	var plans []*execution.Plan
 	for i, name := range []string{"s:a", "oid:" + objectID.Hex(), "i:42", "s:missing"} {
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/" + name, action: "read", index: uint64(i + 9)}
-		p, failure := a.Prepare(batchOperation(t, opts))
+		p, failure := a.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, p)
 	}
-	replies, _ := a.Execute(context.Background(), plans)
+	replies, _ := a.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		if reply.Index != uint64(i+9) || i < 3 && reply.GetRead().GetDocument() == nil || i == 3 && reply.GetRead().GetMissing() == nil {
 			t.Fatal("result identity/order mismatch", replies)
@@ -259,13 +259,13 @@ func TestMongoVerboseWriteCursorKeepsItemIndexesAndSessionAcrossPages(t *testing
 	for i, id := range []string{"a", "b"} {
 		document := bson.D{{Key: "_id", Value: id}}
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "create", index: uint64(i + 8), document: document}
-		p, failure := a.Prepare(batchOperation(t, opts))
+		p, failure := a.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, p)
 	}
-	replies, signal := a.Execute(context.Background(), plans)
+	replies, signal := a.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		if reply.Index != uint64(i+8) || reply.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("verbose results lost item correspondence", replies)
@@ -294,14 +294,14 @@ func TestMongoReadContinuationStopsWhenItsCallersCancel(t *testing.T) {
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "read"}
-		p, failure := a.Prepare(batchOperation(t, opts))
+		p, failure := a.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		p.Context = caller
 		plans = append(plans, p)
 	}
-	replies, signal := a.Execute(context.Background(), plans)
+	replies, signal := a.executeRecords(context.Background(), plans)
 	if replies[0].GetRead().GetDocument() == nil || replies[1].GetRead().GetFailure().GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
 		t.Fatal("canceled reads consumed further cursor work", replies, signal)
 	}
@@ -314,10 +314,10 @@ func TestMongoCanceledProgramBatchHasNeutralFeedback(t *testing.T) {
 	caller, cancel := context.WithCancel(context.Background())
 	cancel()
 	native := &plan{action: "program"}
-	op := &pb.BulkOperation{}
+	op := &pb.Operation{}
 	p := &execution.Plan{Operation: op, Backend: native, Context: caller}
 	a := &Adapter{}
-	replies, signal := a.Execute(context.Background(), []*execution.Plan{p})
+	replies, signal := a.executeRecords(context.Background(), []*execution.Plan{p})
 	if replies[0].GetMutation().Outcome != pb.MutationOutcome_NOT_STARTED || signal != execution.Neutral {
 		t.Fatal("cancellation generated healthy feedback", replies, signal)
 	}
@@ -344,7 +344,7 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
 	opts := batchOperationOptions{resource: "weir://mongo/db/records/s:a", action: "read"}
-	p, failure := a.Prepare(batchOperation(t, opts))
+	p, failure := a.prepareRecord(batchOperation(t, opts))
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -356,7 +356,7 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 		if count == 1 {
 			p.Bytes = 8<<20 + 1
 		}
-		results, _ := a.Execute(context.Background(), plans)
+		results, _ := a.executeRecords(context.Background(), plans)
 		for _, result := range results {
 			if result.GetRead().GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal(result)

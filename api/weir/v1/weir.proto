@@ -2,12 +2,37 @@ syntax = "proto3";
 package weir.v1;
 option go_package = "github.com/batchstream/weir/api/weir/v1;weirv1";
 
+// One finite stream fixes its logical Store on the first valid request.
 service Weir {
-  rpc Read(ReadRequest) returns (ReadResult);
-  rpc Mutate(MutateRequest) returns (MutationResult);
-  rpc Bulk(stream BulkRequestFrame) returns (stream BulkResponseFrame);
-  rpc Native(stream NativeRequestFrame) returns (stream NativeResponseFrame);
-  rpc Scan(ScanRequest) returns (stream ScanResponseFrame);
+  rpc Route(stream Request) returns (stream Response);
+}
+// IDs are nonzero and strictly increasing within an RPC; gaps are allowed.
+// Payload is a versioned Call for the configured Store adapter.
+message Request { uint64 id = 1; string destination = 2; bytes payload = 3; }
+// Payload carries a length-delimited Event sequence, split at arbitrary byte
+// boundaries. A separate empty end frame completes one ID. RPC success also
+// requires the final gRPC OK status after the client half-closes.
+message Response { uint64 id = 1; bytes payload = 2; bool end = 3; }
+message Call {
+  uint32 version = 1;
+  oneof operation {
+    ReadRequest read = 10;
+    MutateRequest mutate = 11;
+    ScanRequest scan = 12;
+    NativeCall native = 13;
+  }
+}
+message NativeCall { NativeOpen open = 1; bytes body = 2; }
+message Event {
+  uint32 version = 1;
+  oneof value {
+    Result result = 10;
+    Document document = 11;
+    NativeHead head = 12;
+    bytes chunk = 13;
+    ScanEnd scan_end = 14;
+    NativeEnd native_end = 15;
+  }
 }
 message Empty {}
 message Document { string media_type = 1; bytes data = 2; }
@@ -52,24 +77,18 @@ message MutateRequest {
 message MutationResult { MutationOutcome outcome = 1; Failure failure = 2; }
 message Transform { oneof form { ProgramTransform program = 1; Document backend_expression = 2; } }
 message ProgramTransform { string runtime = 1; bytes source = 2; Document input = 3; }
-message BulkOpen { string store = 1; }
-message BulkOperation { uint64 index = 1; oneof operation { ReadRequest read = 10; MutateRequest mutate = 11; } }
-message BulkRequestFrame { oneof frame { BulkOpen open = 1; BulkOperation operation = 2; } }
-message BulkResult { uint64 index = 1; oneof result { ReadResult read = 10; MutationResult mutation = 11; } }
-message BulkEnd { uint64 received_count = 1; uint64 result_count = 2; }
-message BulkResponseFrame { oneof frame { BulkResult result = 1; BulkEnd end = 2; } }
+// Execution DTOs correlate adapter results inside the final node.
+message Operation { uint64 index = 1; oneof operation { ReadRequest read = 10; MutateRequest mutate = 11; } }
+message Result { uint64 index = 1; oneof result { ReadResult read = 10; MutationResult mutation = 11; } }
 message ScanRequest {
   string resource = 1;
   Document selector = 2;
   string read_media_type = 3;
-  uint32 fetch_items_hint = 4;
 }
-// Counts document frames whose server Send returned successfully. This is not an
-// acknowledgement of client receipt/processing. Success requires this End without
-// failure, matching client frame count, and final gRPC OK (EOF).
+// Counts document Events produced by the backend cursor. This is not a client
+// receipt acknowledgement. A scan requires this Event without failure, a matching
+// document Event count, the request end frame, and final gRPC OK (EOF).
 message ScanEnd { uint64 document_count = 1; Failure failure = 2; }
-message ScanResponseFrame { oneof frame { Document document = 1; ScanEnd end = 2; } }
-
 // Response transport evidence only; never a normalized mutation result.
 enum NativeCompletion {
   NATIVE_COMPLETION_UNSPECIFIED = 0;
@@ -78,7 +97,5 @@ enum NativeCompletion {
   RESPONSE_INCOMPLETE = 3;
 }
 message NativeOpen { string resource = 1; Document descriptor = 2; string body_media_type = 3; }
-message NativeRequestFrame { oneof frame { NativeOpen open = 1; bytes chunk = 2; } }
 message NativeHead { Document metadata = 1; string body_media_type = 2; }
 message NativeEnd { NativeCompletion completion = 1; Failure failure = 2; }
-message NativeResponseFrame { oneof frame { NativeHead head = 1; bytes chunk = 2; NativeEnd end = 3; } }

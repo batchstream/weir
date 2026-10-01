@@ -38,9 +38,9 @@ services:
       # MongoDB adapter; mutually exclusive with local.search.
       # Required: exactly one local adapter. Default: absent.
       # Allowed: uri and credential fields below. This service connects to one
-      # MongoDB server; resource URIs choose the database and collection.
-      # Records: weir://mongo/<database>/<collection>/<typed-id>.
-      # Scan/Native: weir://mongo/<database>/<collection>.
+      # MongoDB server; Store-relative resources choose the database and collection.
+      # Records: <database>/<collection>/<typed-id>.
+      # Scan/Native: <database>/<collection>.
       # IDs use s:<string>, i:<canonical-int64> or oid:<lowercase-ObjectID-hex>.
       # Database and collection names match ^[A-Za-z][A-Za-z0-9_]{0,62}$.
       # Targets must be pre-created, non-capped collections with
@@ -106,9 +106,9 @@ services:
       # Elasticsearch/OpenSearch adapter; mutually exclusive with mongodb.
       # Required: exactly one local adapter. Default: absent.
       # Allowed: url and optional connection mapping below. This service connects
-      # to one Search server; resource URIs choose the concrete index.
-      # Records: weir://search/<index>/s:<id> (exact string IDs only).
-      # Scan/Native: weir://search/<index>.
+      # to one Search server; Store-relative resources choose the concrete index.
+      # Records: <index>/s:<id> (exact string IDs only).
+      # Scan/Native: <index>.
       search:
         # One backend HTTP endpoint.
         # Required: yes. Default: none. Allowed: http://host:port or
@@ -180,7 +180,7 @@ services:
 # Allowed: list containing 0..16 routes, or null when the graph is empty.
 # Each Store must be unique; every declared service must be referenced.
 routes:
-  # Public resource authority, e.g. the "mongo" in weir://mongo/...
+  # Logical Route destination, e.g. "mongo"
   # Required: yes. Default: none. Allowed: unique resource name with the same
   # lowercase grammar/63-byte bound as services.name.
   - store: "mongo"

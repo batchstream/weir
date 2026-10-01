@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"net/http"
 	"os"
@@ -47,7 +49,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 			defer producers.Done()
 			for ctx.Err() == nil {
 				call, stop := context.WithTimeout(ctx, 40*time.Millisecond)
-				_, _ = client.Read(call, read)
+				_, _ = routeclient.Record(call, client, testutil.RecordCall(read))
 				stop()
 				time.Sleep(5 * time.Millisecond)
 			}
@@ -91,7 +93,8 @@ func TestDarwinMemoryApplication(t *testing.T) {
 		darwinMetrics(t, n.DiagnosticAddress())
 		if step.latched {
 			request := budgetPut("weir://records/"+fixture.DB+"/records", "refused")
-			result, err := client.Mutate(ctx, request)
+			routedResult94, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result := routedResult94.GetMutation()
 			if result != nil || status.Code(err) != codes.ResourceExhausted {
 				t.Fatal("unsafe overload admission", result, err)
 			}
@@ -152,7 +155,8 @@ func darwinUnknown(t *testing.T, client pb.WeirClient, fixture *testmongo.Secure
 	defer cancel()
 	request := budgetPut("weir://records/"+fixture.DB+"/records", "lost")
 	proxy.DropRemaining.Store(1)
-	result, err := client.Mutate(ctx, request)
+	routedResult155, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+	result := routedResult155.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("lost ACK", result, err)
 	}

@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	pb "github.com/batchstream/weir/api/weir/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/proto"
 	"io"
 	"net"
 	"runtime"
@@ -13,11 +18,8 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestEndpointCanonicalBounds(t *testing.T) {
@@ -100,191 +102,6 @@ func multipleRemote(t *testing.T, addresses []string) *RemoteWeir {
 	return r
 }
 
-func TestEndpointSelectionLocalityDistributionAndMembership(t *testing.T) {
-	var addresses []string
-	var adapters []*peerAdapter
-	var servers []*Server
-	for range 3 {
-		a, runtime := peerLocal(t, "records")
-		local := Service{LocalStore: runtime}
-		opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
-		srv, address := startPeerServer(t, opts)
-		addresses = append(addresses, address)
-		adapters = append(adapters, a)
-		servers = append(servers, srv)
-	}
-	r := multipleRemote(t, addresses)
-	reversed := slices.Clone(addresses)
-	slices.Reverse(reversed)
-	other := multipleRemote(t, reversed)
-	service := Service{RemoteWeir: r}
-	opts := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
-	_, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	pair := &RemoteWeir{endpoints: r.endpoints[:2]}
-	var moved int
-	for i := 0; i < 120; i++ {
-		req := testMutation("\x00opaque\xff")
-		req.Resource = fmt.Sprintf("weir://records/data/s:k%d", i)
-		selected, err := r.selectClient(ctx, req.Resource)
-		if err != nil {
-			t.Fatal(err)
-		}
-		selected2, err := other.selectClient(ctx, req.Resource)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for j, e := range r.endpoints {
-			if selected == e.client && selected2 != other.endpoints[j].client {
-				t.Fatal("config order changed affinity")
-			}
-		}
-		before, err := pair.selectClient(ctx, req.Resource)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if before != selected {
-			moved++
-			if selected != r.endpoints[2].client {
-				t.Fatal("adding member remapped existing winners")
-			}
-		}
-		result, err := client.Mutate(ctx, req)
-		if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-			t.Fatal(result, err)
-		}
-		read := &pb.ReadRequest{Resource: req.Resource}
-		got, err := client.Read(ctx, read)
-		if err != nil || !bytes.Equal(got.GetDocument().GetData(), req.GetPut().Data) {
-			t.Fatal("Read/Mutate locality or opaque data", got, err)
-		}
-	}
-	if moved < 15 || moved > 70 {
-		t.Fatal("unexpected membership distribution", moved)
-	}
-	for _, a := range adapters {
-		if a.commands.Load() < 15 {
-			t.Fatal("not distributed across three endpoints", a.commands.Load())
-		}
-	}
-	ctxStop, stop := context.WithTimeout(ctx, time.Second)
-	defer stop()
-	if err := servers[0].Shutdown(ctxStop); err != nil {
-		t.Fatal(err)
-	}
-	awaitEndpoint(t, func() bool {
-		for _, e := range r.endpoints {
-			if e.identity == addresses[0] {
-				return e.conn.GetState() != connectivity.Ready
-			}
-		}
-		return false
-	})
-	before := adapters[0].commands.Load()
-	for i := 0; i < 20; i++ {
-		req := testMutation("future")
-		req.Resource = fmt.Sprintf("weir://records/data/s:future%d", i)
-		result, err := client.Mutate(ctx, req)
-		if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-			t.Fatal(result, err)
-		}
-	}
-	if adapters[0].commands.Load() != before {
-		t.Fatal("new call selected unavailable peer")
-	}
-	t.Logf("three endpoints mutation counts=%d,%d,%d; membership moves=%d/120", adapters[0].commands.Load(), adapters[1].commands.Load(), adapters[2].commands.Load(), moved)
-}
-
-func TestEndpointBulkPinnedAndServiceCredits(t *testing.T) {
-	var addresses []string
-	var adapters []*peerAdapter
-	for range 3 {
-		a, rt := peerLocal(t, "records")
-		adapters = append(adapters, a)
-		local := Service{LocalStore: rt}
-		opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
-		_, address := startPeerServer(t, opts)
-		addresses = append(addresses, address)
-	}
-	r := multipleRemote(t, addresses)
-	service := Service{RemoteWeir: r}
-	opts := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
-	entry, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("weir-request-id", "bulk-pinned"))
-	bulk, err := client.Bulk(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://records"}
-	first := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: first}
-	if err := bulk.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 24; i++ {
-		mutation := testMutation("body")
-		mutation.Resource = fmt.Sprintf("weir://records/data/s:bulk%d", i)
-		variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-		op := &pb.BulkOperation{Index: uint64(i), Operation: variant}
-		of := &pb.BulkRequestFrame_Operation{Operation: op}
-		frame := &pb.BulkRequestFrame{Frame: of}
-		if err := bulk.Send(frame); err != nil {
-			t.Fatal(err)
-		}
-		result, err := bulk.Recv()
-		if err != nil || result.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-			t.Fatal(result, err)
-		}
-	}
-	if err := bulk.CloseSend(); err != nil {
-		t.Fatal(err)
-	}
-	end, err := bulk.Recv()
-	if err != nil || end.GetEnd().GetReceivedCount() != 24 || end.GetEnd().GetResultCount() != 24 {
-		t.Fatal(end, err)
-	}
-	if _, err := bulk.Recv(); err != io.EOF {
-		t.Fatal(err)
-	}
-	var recipients int
-	for _, a := range adapters {
-		if a.commands.Load() > 0 {
-			recipients++
-			if a.commands.Load() != 24 {
-				t.Fatal("Bulk moved endpoint")
-			}
-		}
-	}
-	if recipients != 1 {
-		t.Fatal("Bulk fanout", recipients)
-	}
-	waitPeerIdle(t, entry)
-	// The third reservation fails even with three READY endpoints.
-	var held []*delivery
-	for range 2 {
-		d := &delivery{}
-		if err := r.enter(d); err != nil {
-			t.Fatal(err)
-		}
-		held = append(held, d)
-	}
-	d := &delivery{}
-	if err := r.enter(d); err == nil {
-		t.Fatal("per-endpoint relay multiplication")
-	}
-	for range held {
-		<-r.slots
-	}
-	if cap(r.slots) != 2 || cap(r.sockets) != 6 {
-		t.Fatal("bounds")
-	}
-}
-
 func TestEndpointCloseColdAndMetrics(t *testing.T) {
 	// Own and close the ephemeral port before using it as an unavailable peer.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -313,7 +130,7 @@ func TestEndpointCloseColdAndMetrics(t *testing.T) {
 		t.Fatal("close leaked resources")
 	}
 	families := testmetrics.Gather(t, r)
-	if testmetrics.Series(families) != 34 || testmetrics.Sum(families, "weir_remote_connectivity") != 1 {
+	if testmetrics.Series(families) != 16 || testmetrics.Sum(families, "weir_remote_connectivity") != 1 {
 		t.Fatal("metric series/state count")
 	}
 }
@@ -353,7 +170,7 @@ func TestEndpointMaximumGraphConnectionsAndCleanup(t *testing.T) {
 		}
 	}
 	peak := runtime.NumGoroutine()
-	if sockets != 128 || series != 16*34 {
+	if sockets != 128 || series != 16*16 {
 		t.Fatal("unexpected channel/socket or series count", sockets, series)
 	}
 	var group sync.WaitGroup
@@ -377,144 +194,110 @@ func TestEndpointMaximumGraphConnectionsAndCleanup(t *testing.T) {
 	t.Logf("16 Services x 8 endpoints: channels=128 sockets=%d limit=256 remote series=%d; goroutines baseline=%d peak=%d after=%d (including 8 fixture servers)", sockets, series, baseline, peak, runtime.NumGoroutine())
 }
 
-func TestEndpointStreamsNeverMigrate(t *testing.T) {
-	for _, method := range []string{"Bulk", "Native", "Scan"} {
-		t.Run(method, func(t *testing.T) {
-			var addresses []string
-			var peers []*Server
-			var adapters []*peerAdapter
-			for range 2 {
-				a, rt := peerLocal(t, "records")
-				local := Service{LocalStore: rt}
-				opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
-				peer, address := startPeerServer(t, opts)
-				peers = append(peers, peer)
-				addresses = append(addresses, address)
-				adapters = append(adapters, a)
-			}
-			r := multipleRemote(t, addresses)
-			service := Service{RemoteWeir: r}
-			opts := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
-			entry, address := startPeerServer(t, opts)
-			_, client := peerClient(t, address)
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("weir-request-id", "pinned-stream"))
-			key := "weir://records/data"
-			if method == "Bulk" {
-				key = "pinned-stream"
-			}
-			chosen, err := r.selectClient(ctx, key)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var selected int
-			for _, e := range r.endpoints {
-				if e.client == chosen {
-					for i, a := range addresses {
-						if a == e.identity {
-							selected = i
-						}
-					}
-				}
-			}
-			var bulk grpc.BidiStreamingClient[pb.BulkRequestFrame, pb.BulkResponseFrame]
-			var native grpc.BidiStreamingClient[pb.NativeRequestFrame, pb.NativeResponseFrame]
-			var scan grpc.ServerStreamingClient[pb.ScanResponseFrame]
-			switch method {
-			case "Bulk":
-				bulk, err = client.Bulk(ctx)
-				if err != nil {
-					t.Fatal(err)
-				}
-				open := &pb.BulkOpen{Store: "weir://records"}
-				variant := &pb.BulkRequestFrame_Open{Open: open}
-				frame := &pb.BulkRequestFrame{Frame: variant}
-				if err := bulk.Send(frame); err != nil {
-					t.Fatal(err)
-				}
-				mv := &pb.BulkOperation_Mutate{Mutate: testMutation("already-applied")}
-				operation := &pb.BulkOperation{Operation: mv}
-				ov := &pb.BulkRequestFrame_Operation{Operation: operation}
-				frame = &pb.BulkRequestFrame{Frame: ov}
-				if err := bulk.Send(frame); err != nil {
-					t.Fatal(err)
-				}
-				result, err := bulk.Recv()
-				if err != nil || result.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-					t.Fatal(result, err)
-				}
-			case "Native":
-				native, err = client.Native(ctx)
-				if err != nil {
-					t.Fatal(err)
-				}
-				desc := &pb.Document{MediaType: "application/octet-stream"}
-				open := &pb.NativeOpen{Resource: key, Descriptor_: desc}
-				variant := &pb.NativeRequestFrame_Open{Open: open}
-				frame := &pb.NativeRequestFrame{Frame: variant}
-				if err := native.Send(frame); err != nil {
-					t.Fatal(err)
-				}
-				head, err := native.Recv()
-				if err != nil || head.GetHead() == nil {
-					t.Fatal(head, err)
-				}
-			case "Scan":
-				req := &pb.ScanRequest{Resource: key}
-				scan, err = client.Scan(ctx, req)
-				if err != nil {
-					t.Fatal(err)
-				}
-				first, err := scan.Recv()
-				if err != nil || first.GetDocument() == nil {
-					t.Fatal(first, err)
-				}
-			}
-			peers[selected].connections.Range(func(_, value any) bool { _ = value.(*limitedConn).Close(); return true })
-			var terminal bool
-			switch method {
-			case "Bulk":
-				_ = bulk.CloseSend()
-				for {
-					frame, recvErr := bulk.Recv()
-					err = recvErr
-					if err != nil {
-						break
-					}
-					terminal = terminal || frame.GetEnd() != nil
-				}
-			case "Native":
-				_ = native.CloseSend()
-				for {
-					frame, recvErr := native.Recv()
-					err = recvErr
-					if err != nil {
-						break
-					}
-					terminal = terminal || frame.GetEnd().GetCompletion() == pb.NativeCompletion_RESPONSE_COMPLETE
-				}
-			case "Scan":
-				for {
-					frame, recvErr := scan.Recv()
-					err = recvErr
-					if err != nil {
-						break
-					}
-					terminal = terminal || frame.GetEnd() != nil
-				}
-			}
-			if err == io.EOF || terminal {
-				t.Fatal("lost stream became complete", method, terminal, err)
-			}
-			waitPeerIdle(t, entry)
-			other := adapters[1-selected]
-			if other.commands.Load() != 0 || other.native.Load() != 0 || other.scans.Load() != 0 {
-				t.Fatal("in-flight stream migrated to available endpoint")
-			}
-			if method == "Bulk" && adapters[selected].commands.Load() != 1 || method == "Native" && adapters[selected].native.Load() != 1 {
-				t.Fatal("attempt restarted")
-			}
-		})
+func TestEndpointRoutePinnedAndNeverReplayedAfterDisconnect(t *testing.T) {
+	var addresses []string
+	var adapters []*peerAdapter
+	var peers []*Server
+	for range 3 {
+		adapter, rt := peerLocal(t, "records")
+		local := Service{LocalStore: rt}
+		options := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
+		peer, address := startPeerServer(t, options)
+		addresses = append(addresses, address)
+		adapters = append(adapters, adapter)
+		peers = append(peers, peer)
 	}
+	remote := multipleRemote(t, addresses)
+	service := Service{RemoteWeir: remote}
+	options := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
+	entry, address := startPeerServer(t, options)
+	_, client := peerClient(t, address)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("weir-request-id", "route-pinned"))
+	selected, err := remote.selectClient(ctx, "route-pinned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedIndex := -1
+	for _, endpoint := range remote.endpoints {
+		if endpoint.client == selected {
+			for i, address := range addresses {
+				if endpoint.identity == address {
+					selectedIndex = i
+				}
+			}
+		}
+	}
+	if selectedIndex < 0 {
+		t.Fatal("selected endpoint missing")
+	}
+	stream, err := client.Route(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id := uint64(1); id <= 24; id++ {
+		request := testMutation("body")
+		request.Resource = fmt.Sprintf("data%d/s:key", id)
+		value := &pb.Call_Mutate{Mutate: request}
+		call := &pb.Call{Version: 1, Operation: value}
+		result, err := roundTripRoute(stream, id, call)
+		if err != nil || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+			t.Fatal(result, err)
+		}
+	}
+	for i, adapter := range adapters {
+		want := int32(0)
+		if i == selectedIndex {
+			want = 24
+		}
+		if adapter.commands.Load() != want {
+			t.Fatal("stream moved downstream instance", i, adapter.commands.Load(), want)
+		}
+	}
+	peers[selectedIndex].connections.Range(func(_, value any) bool { _ = value.(*limitedConn).Close(); return true })
+	mutation := testMutation("after-disconnect")
+	value := &pb.Call_Mutate{Mutate: mutation}
+	call := &pb.Call{Version: 1, Operation: value}
+	_, err = roundTripRoute(stream, 25, call)
+	if err == nil {
+		t.Fatal("disconnected Route migrated or replayed")
+	}
+	cancel()
+	waitPeerIdle(t, entry)
+	for i, adapter := range adapters {
+		if i != selectedIndex && adapter.commands.Load() != 0 {
+			t.Fatal("lost write replayed to another endpoint", i)
+		}
+	}
+}
+
+func roundTripRoute(stream grpc.BidiStreamingClient[pb.Request, pb.Response], id uint64, call *pb.Call) (*pb.Result, error) {
+	payload, err := proto.Marshal(call)
+	if err != nil {
+		return nil, err
+	}
+	request := &pb.Request{Id: id, Destination: "records", Payload: payload}
+	if err := stream.Send(request); err != nil {
+		return nil, err
+	}
+	var encoded bytes.Buffer
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			return nil, err
+		}
+		if response.Id != id {
+			return nil, io.ErrUnexpectedEOF
+		}
+		if response.End {
+			break
+		}
+		_, _ = encoded.Write(response.Payload)
+	}
+	event := &pb.Event{}
+	if err := protodelim.UnmarshalFrom(&encoded, event); err != nil {
+		return nil, err
+	}
+	return event.GetResult(), nil
 }

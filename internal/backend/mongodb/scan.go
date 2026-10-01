@@ -19,10 +19,11 @@ import (
 // allocates/decodes its copy. RunCommand.Raw retains the driver buffer without
 // cursor batch decoding. Reserve both wire buffers plus bounded metadata/framing;
 // this is separate from the one output-frame credit, not a claim about RSS.
-const scanPageBudget = 128 << 20
-const scanNativeLimit = 48 << 20
+const scanPageBudget = 24 << 20
+const scanNativeLimit = 8 << 20
 
 type scanPlan struct {
+	count          uint64
 	target         namespace
 	options        bson.D
 	items          int
@@ -32,7 +33,7 @@ type scanPlan struct {
 	cursorKnown    bool
 }
 
-func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateScan(req, a.config.Store); f != nil {
 		return nil, f
 	}
@@ -44,7 +45,7 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native BSON")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, items: protocol.FetchItems(req.FetchItemsHint)}
+	native := &scanPlan{target: target, items: 1}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
@@ -73,17 +74,17 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		}
 	}
 	p := &execution.Plan{
-		Scan:        true,
-		Key:         req.Resource,
-		Bytes:       proto.Size(req) + protocol.EntryOverhead + 4096,
-		ResultBytes: protocol.MaxDocument + protocol.ResultOverhead,
-		PageBytes:   scanPageBudget,
-		Backend:     native,
+		Singleton:    true,
+		Key:          req.Resource,
+		Bytes:        proto.Size(req) + protocol.EntryOverhead + 4096,
+		ResultBytes:  protocol.MaxDocument + protocol.ResultOverhead,
+		WorkingBytes: scanPageBudget,
+		Backend:      native,
 	}
 	return p, nil
 }
 
-func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
+func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
 	n := p.Backend.(*scanPlan)
 	page := &execution.ScanPage{}
 	if n.closed || ctx.Err() != nil {
@@ -346,7 +347,7 @@ func scanFields(raw []byte) (map[string]bson.RawValue, error) {
 	return fields, nil
 }
 
-func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure {
+func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure {
 	n := p.Backend.(*scanPlan)
 	if n.closed {
 		return nil

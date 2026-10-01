@@ -192,13 +192,13 @@ func TestSearchNativeLaterInvalidAfterRealPrefixApplied(t *testing.T) {
 		sent <- err
 	}()
 	open := nativeOpen(t, backend.Index, "POST", "/_bulk")
-	p, f := a.PrepareNative(open)
+	p, f := a.prepareNative(open)
 	if f != nil {
 		t.Fatal(f)
 	}
 	capture := &nativeCapture{}
 	exchange := &execution.NativeExchange{Source: source, Sink: capture}
-	end, _ := a.ExecuteNative(ctx, p, exchange)
+	end, _ := a.executeNative(ctx, p, exchange)
 	if err := <-sent; err != nil {
 		t.Fatal(err)
 	}

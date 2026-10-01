@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/routeclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -313,21 +315,13 @@ func TestLinuxMemoryCLI(t *testing.T) {
 			close(gate)
 		}
 	}()
-	stream, err := client.Bulk(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://records"}
-	opening := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: opening}
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
+	stream := testutil.OpenEvents(ctx, client, "records")
+	var frame *pb.Call
 	admitted := budgetPut(root, "admitted")
-	mutation := &pb.BulkOperation_Mutate{Mutate: admitted}
-	op := &pb.BulkOperation{Index: 0, Operation: mutation}
-	variant := &pb.BulkRequestFrame_Operation{Operation: op}
-	frame = &pb.BulkRequestFrame{Frame: variant}
+	mutation := &pb.Operation_Mutate{Mutate: admitted}
+	op := &pb.Operation{Index: 0, Operation: mutation}
+	_, variant := testutil.OperationCall(op)
+	frame = variant
 	if err := stream.Send(frame); err != nil {
 		t.Fatal(err)
 	}
@@ -339,27 +333,27 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	memoryState(t, p, "high", true)
 	memoryState(t, front, "high-forward", true)
 	read := &pb.ReadRequest{Resource: request.Resource}
-	if _, err := client.Read(ctx, read); status.Code(err) != codes.ResourceExhausted {
+	if _, err := routeclient.Record(ctx, client, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("Read not rejected", err)
 	}
 	refused := budgetPut(root, "refused")
-	if result, err := client.Mutate(ctx, refused); status.Code(err) != codes.ResourceExhausted || result != nil {
+	if result, err := routeclient.Record(ctx, client, testutil.RecordCall(refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
 		t.Fatal("Mutate not safely rejected", result, err)
 	}
-	if _, err := frontClient.Read(ctx, read); status.Code(err) != codes.ResourceExhausted {
+	if _, err := routeclient.Record(ctx, frontClient, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("forward-only admission", err)
 	}
 	// A new operation on the existing Bulk must not discard its admitted result.
-	nextMutation := &pb.BulkOperation_Mutate{Mutate: refused}
-	next := &pb.BulkOperation{Index: 1, Operation: nextMutation}
-	nextVariant := &pb.BulkRequestFrame_Operation{Operation: next}
-	nextFrame := &pb.BulkRequestFrame{Frame: nextVariant}
+	nextMutation := &pb.Operation_Mutate{Mutate: refused}
+	next := &pb.Operation{Index: 1, Operation: nextMutation}
+	_, nextVariant := testutil.OperationCall(next)
+	nextFrame := nextVariant
 	_ = stream.Send(nextFrame)
 	close(gate)
 	released = true
 	observer.hold(nil, 0)
 	result, err := stream.Recv()
-	if err != nil || result.GetResult().GetIndex() != 0 || result.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+	if err != nil || result.GetResult().GetIndex() != 1 || result.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("admitted Bulk result lost under overload", result, err)
 	}
 	if _, err := stream.Recv(); status.Code(err) != codes.ResourceExhausted {

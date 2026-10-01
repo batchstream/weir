@@ -8,6 +8,7 @@ import (
 	"fmt"
 	spb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"time"
@@ -19,14 +20,10 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClie
 	if err != nil || code != 200 {
 		return errors.New("disable fixture refresh")
 	}
-	// This separate live unary upload keeps drain observable until the original
-	// default 30-second input-stall deadline. It sends no mutation body and is not replayed.
+	// This separate live Route input keeps drain observable until the original
+	// 30-second input-stall deadline. It sends no mutation body and is not replayed.
 	description := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	partial, err := connection.NewStream(ctx, description, pb.Weir_Read_FullMethodName)
-	if err != nil {
-		return err
-	}
-	stream, err := client.Native(ctx)
+	partial, err := connection.NewStream(ctx, description, pb.Weir_Route_FullMethodName)
 	if err != nil {
 		return err
 	}
@@ -37,17 +34,12 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClie
 	}
 	doc := &pb.Document{MediaType: "application/vnd.weir.search-http.v1+protobuf", Data: raw}
 	open := &pb.NativeOpen{Resource: "weir://records/records", Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
-	variant := &pb.NativeRequestFrame_Open{Open: open}
-	frame := &pb.NativeRequestFrame{Frame: variant}
-	if err := stream.Send(frame); err != nil {
-		return err
-	}
-	chunk := &pb.NativeRequestFrame_Chunk{Chunk: []byte(fmt.Sprintf("{\"index\":{\"_id\":%q}}\n{\"n\":1}\n", id))}
-	frame = &pb.NativeRequestFrame{Frame: chunk}
-	if err := stream.Send(frame); err != nil {
-		return err
-	}
-	if err := stream.CloseSend(); err != nil {
+	body := []byte(fmt.Sprintf("{\"index\":{\"_id\":%q}}\n{\"n\":1}\n", id))
+	native := &pb.NativeCall{Open: open, Body: body}
+	variant := &pb.Call_Native{Native: native}
+	call := &pb.Call{Version: 1, Operation: variant}
+	stream, err := testutil.OneEvents(ctx, client, call)
+	if err != nil {
 		return err
 	}
 	until := time.Now().Add(time.Second)
@@ -68,7 +60,7 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClie
 			fmt.Printf("Native missing result=%v effects=UNKNOWN no replay\n", err)
 			break
 		}
-		if end := reply.GetEnd(); end != nil {
+		if end := reply.GetNativeEnd(); end != nil {
 			fmt.Printf("Native completion=%s failure=%s effects=UNKNOWN no replay\n", end.Completion, end.GetFailure().GetCode())
 			if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE {
 				return errors.New("expected held reply to remain incomplete")
@@ -76,9 +68,9 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClie
 			break
 		}
 	}
-	var response pb.ReadResult
+	var response pb.Response
 	err = partial.RecvMsg(&response)
-	fmt.Printf("partial unary elapsed=%s ended=%v\n", time.Since(started), err)
+	fmt.Printf("partial Route elapsed=%s ended=%v\n", time.Since(started), err)
 	readback, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return persisted(readback, id)

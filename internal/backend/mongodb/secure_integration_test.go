@@ -36,18 +36,18 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	document := &pb.Document{MediaType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: "weir://mongo/" + fixture.DB + "/records/s:secure", Action: put}
-	mutation := &pb.BulkOperation_Mutate{Mutate: request}
-	op := &pb.BulkOperation{Operation: mutation}
-	plan, failure := adapter.Prepare(op)
+	mutation := &pb.Operation_Mutate{Mutate: request}
+	op := &pb.Operation{Operation: mutation}
+	plan, failure := adapter.prepareRecord(op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	result, _ := adapter.Execute(ctx, []*execution.Plan{plan})
+	result, _ := adapter.executeRecords(ctx, []*execution.Plan{plan})
 	if result[0].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result)
 	}
 	read := prepareCounter(t, adapter, "weir://mongo/"+fixture.DB+"/records/s:secure")
-	result, _ = adapter.Execute(ctx, []*execution.Plan{read})
+	result, _ = adapter.executeRecords(ctx, []*execution.Plan{read})
 	if result[0].GetRead().GetDocument() == nil {
 		t.Fatal(result)
 	}
@@ -62,7 +62,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 					t.Fatal("server qualification must not require target privileges", err)
 				}
 				work := prepareCounter(t, bad, "weir://mongo/"+fixture.DB+"/records/s:secure")
-				replies, _ := bad.Execute(ctx, []*execution.Plan{work})
+				replies, _ := bad.executeRecords(ctx, []*execution.Plan{work})
 				if replies[0].GetRead().GetFailure() == nil || replies[0].GetRead().GetDocument() != nil {
 					t.Fatal("request bypassed target privilege check", replies)
 				}
@@ -162,10 +162,10 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				doc := &pb.Document{MediaType: "application/bson", Data: raw}
 				put := &pb.MutateRequest_Put{Put: doc}
 				request := &pb.MutateRequest{Resource: "weir://mongo/" + db + "/records/s:counter", Action: put}
-				variant := &pb.BulkOperation_Mutate{Mutate: request}
-				operation := &pb.BulkOperation{Operation: variant}
+				variant := &pb.Operation_Mutate{Mutate: request}
+				operation := &pb.Operation{Operation: variant}
 				var failure *pb.Failure
-				work, failure = adapter.Prepare(operation)
+				work, failure = adapter.prepareRecord(operation)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -178,7 +178,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "errorCode", Value: int32(391)}, {Key: "appName", Value: "weir:mongo"}}
 				testmongo.FailCommand(t, native, data, 1)
 			}
-			results, _ := adapter.Execute(ctx, []*execution.Plan{work})
+			results, _ := adapter.executeRecords(ctx, []*execution.Plan{work})
 			if results[0].GetMutation().Outcome == pb.MutationOutcome_APPLIED || results[0].GetMutation().Outcome == pb.MutationOutcome_NOT_STARTED {
 				t.Fatal("391 produced unjustified outcome", results)
 			}
@@ -206,7 +206,7 @@ func verifyReconnectRead(t *testing.T, adapter *Adapter, proxy *testmongo.Proxy,
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	plan := prepareCounter(t, adapter, resource)
-	results, _ := adapter.Execute(ctx, []*execution.Plan{plan})
+	results, _ := adapter.executeRecords(ctx, []*execution.Plan{plan})
 	if results[0].GetRead().GetDocument() == nil {
 		t.Fatal("new connection did not recover after lost reply", results)
 	}

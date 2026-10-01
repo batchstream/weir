@@ -83,7 +83,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("int64 source changed")
 		}
 		works := []*execution.Plan{searchPlan(t, a, "put", searchResource(b.Index, "bulk-a")), searchPlan(t, a, "put", searchResource(b.Index, "bulk-b"))}
-		replies, _ := a.Execute(context.Background(), works)
+		replies, _ := a.executeRecords(context.Background(), works)
 		if len(replies) != 2 {
 			t.Fatal("bulk association")
 		}
@@ -103,11 +103,11 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("native bulk", end, capture.body.String())
 		}
 		fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-		scan := scanWork(t, a, b.Index, 2)
+		scan := scanWork(t, a, b.Index)
 		count := 0
 		exhausted := false
 		for step := 0; step < 12; step++ {
-			page, _ := a.FetchScan(context.Background(), scan)
+			page, _ := a.fetchScan(context.Background(), scan)
 			if page.Failure != nil {
 				t.Fatal("secure PIT", page.Failure)
 			}
@@ -120,7 +120,7 @@ func TestSecureSearchQualification(t *testing.T) {
 		if !exhausted || count != 5 {
 			t.Fatal("PIT completeness", count, exhausted)
 		}
-		if failure := a.CloseScan(context.Background(), scan); failure != nil {
+		if failure := a.closeScan(context.Background(), scan); failure != nil {
 			t.Fatal(failure)
 		}
 		t.Log("direct native TLS application account: Read CRUD/conflict Bulk PIT/Scan Native BackendExpression correctness passed")
@@ -257,7 +257,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		if operation == "bulk" {
 			works = append(works, searchPlan(t, a, "put", searchResource(b.Index, id+"-second")))
 		}
-		var replies []*pb.BulkResult
+		var replies []*pb.Result
 		if fault == "drain" {
 			limits := store.DefaultLimits()
 			owner, err := store.New(a, limits)
@@ -286,14 +286,14 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 				t.Fatal(waitErr)
 			}
 			ticket.Ack()
-			replies = []*pb.BulkResult{reply}
+			replies = []*pb.Result{reply}
 			snap = owner.Snapshot()
 			if snap.Active != 0 || snap.Retained != 0 || snap.Pending != 0 || len(a.dialer.slots) != 0 || time.Since(start) > time.Second {
 				t.Fatal("drain leaked ledger/socket", snap)
 			}
 			t.Logf("confirmed commit then drain=%s; all ledger/socket counts zero", time.Since(start))
 		} else {
-			replies, _ = a.Execute(context.Background(), works)
+			replies, _ = a.executeRecords(context.Background(), works)
 		}
 		for _, reply := range replies {
 			if fault == "stale" {
@@ -304,7 +304,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		}
 	case "expression":
 		op := expressionOperation("weir://search/"+b.Index+"/s:"+id, `{"doc":{"n":2}}`)
-		p, f := a.Prepare(op)
+		p, f := a.prepareRecord(op)
 		if f != nil {
 			t.Fatal(f)
 		}

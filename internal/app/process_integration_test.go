@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"net/http"
 	"os/exec"
@@ -170,35 +171,29 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	document := processDocument(t, opts.store, "example", 1)
 	put := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: resource, Action: put}
-	result, err := opts.client.Mutate(ctx, mutation)
+	routedResult173, err := routeclient.Record(ctx, opts.client, testutil.RecordCall(mutation))
+	result := routedResult173.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
 		t.Fatal("three-hop mutation", result, err)
 	}
 	read := &pb.ReadRequest{Resource: resource}
-	found, err := opts.client.Read(ctx, read)
+	routedResult178, err := routeclient.Record(ctx, opts.client, testutil.RecordCall(read))
+	found := routedResult178.GetRead()
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
 		t.Fatal("three-hop read", found, err)
 	}
-	bulk, err := opts.client.Bulk(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://" + opts.store}
-	opening := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: opening}
-	if err := bulk.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	readVariant := &pb.BulkOperation_Read{Read: read}
-	readOperation := &pb.BulkOperation{Index: 0, Operation: readVariant}
+	bulk := testutil.OpenEvents(ctx, opts.client, opts.store)
+	var frame *pb.Call
+	readVariant := &pb.Operation_Read{Read: read}
+	readOperation := &pb.Operation{Index: 0, Operation: readVariant}
 	document = processDocument(t, opts.store, "bulk-example", 2)
 	create := &pb.MutateRequest_Create{Create: document}
 	mutation = &pb.MutateRequest{Resource: opts.root + "/s:bulk-example", Action: create}
-	mutationVariant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	mutationOperation := &pb.BulkOperation{Index: 1, Operation: mutationVariant}
-	for _, operation := range []*pb.BulkOperation{readOperation, mutationOperation} {
-		item := &pb.BulkRequestFrame_Operation{Operation: operation}
-		frame = &pb.BulkRequestFrame{Frame: item}
+	mutationVariant := &pb.Operation_Mutate{Mutate: mutation}
+	mutationOperation := &pb.Operation{Index: 1, Operation: mutationVariant}
+	for _, operation := range []*pb.Operation{readOperation, mutationOperation} {
+		_, item := testutil.OperationCall(operation)
+		frame = item
 		if err := bulk.Send(frame); err != nil {
 			t.Fatal(err)
 		}
@@ -209,14 +204,14 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	seen := make(map[uint64]bool)
 	for {
 		frame, err := bulk.Recv()
-		if err != nil {
-			t.Fatal("three-hop Bulk response", err)
-		}
-		if end := frame.GetEnd(); end != nil {
-			if end.ReceivedCount != 2 || end.ResultCount != 2 || len(seen) != 2 {
-				t.Fatal("Bulk terminal accounting", end, seen)
+		if err == io.EOF {
+			if len(seen) != 2 {
+				t.Fatal("Route terminal accounting", seen)
 			}
 			break
+		}
+		if err != nil {
+			t.Fatal("three-hop Route response", err)
 		}
 		result := frame.GetResult()
 		if result == nil || seen[result.Index] {
@@ -224,11 +219,11 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		}
 		seen[result.Index] = true
 		switch result.Index {
-		case 0:
+		case 1:
 			if processRecordNumber(t, result.GetRead().GetDocument()) != 1 {
 				t.Fatal("Bulk read changed record", result)
 			}
-		case 1:
+		case 2:
 			if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
 				t.Fatal("Bulk create", result)
 			}
@@ -247,15 +242,12 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		}
 	}
 	processScanSmoke(t, ctx, opts)
-	t.Logf("three independent Weir processes, %s: Read, Mutate, mixed Bulk, Native and Scan completed", opts.store)
+	t.Logf("three independent Weir processes, %s: Route reads, mutations, mixed records, Native and Scan completed", opts.store)
 }
 
 func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
 	t.Helper()
-	stream, err := opts.client.Native(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	var err error
 	descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
 	open := &pb.NativeOpen{Resource: opts.root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
 	var body []byte
@@ -272,19 +264,13 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening := &pb.NativeRequestFrame_Open{Open: open}
-	frame := &pb.NativeRequestFrame{Frame: opening}
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
 	if len(body) != 0 {
-		chunk := &pb.NativeRequestFrame_Chunk{Chunk: body}
-		frame = &pb.NativeRequestFrame{Frame: chunk}
-		if err := stream.Send(frame); err != nil {
-			t.Fatal(err)
-		}
 	}
-	if err := stream.CloseSend(); err != nil {
+	nativeCall := &pb.NativeCall{Open: open, Body: body}
+	nativeVariant := &pb.Call_Native{Native: nativeCall}
+	call := &pb.Call{Version: 1, Operation: nativeVariant}
+	stream, err := testutil.OneEvents(ctx, opts.client, call)
+	if err != nil {
 		t.Fatal(err)
 	}
 	var response []byte
@@ -312,7 +298,7 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 			}
 			response = append(response, chunk...)
 		}
-		if end := frame.GetEnd(); end != nil {
+		if end := frame.GetNativeEnd(); end != nil {
 			if !headSeen || end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
 				t.Fatal("Native terminal evidence", end)
 			}
@@ -341,8 +327,10 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 
 func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
 	t.Helper()
-	request := &pb.ScanRequest{Resource: opts.root, FetchItemsHint: 1}
-	stream, err := opts.client.Scan(ctx, request)
+	request := &pb.ScanRequest{Resource: opts.root}
+	scanVariant := &pb.Call_Scan{Scan: request}
+	scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+	stream, err := testutil.OneEvents(ctx, opts.client, scanCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +340,7 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 		if err != nil {
 			t.Fatal("Scan response", err)
 		}
-		if end := frame.GetEnd(); end != nil {
+		if end := frame.GetScanEnd(); end != nil {
 			if end.Failure != nil || end.DocumentCount != 2 || len(seen) != 2 {
 				t.Fatal("Scan terminal evidence", end, seen)
 			}
@@ -466,32 +454,22 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			if testmetrics.Sum(families, "weir_store_records_total") != 8 {
 				t.Fatal("process local records count", testmetrics.Sum(families, "weir_store_records_total"))
 			}
-			if testmetrics.Sum(families, "weir_store_native_completions_total") != 2 || testmetrics.Sum(families, "weir_store_scan_terminations_total") != 2 {
-				t.Fatal("process local stream accounting")
-			}
-			for _, store := range []string{"mongo", "search"} {
-				labels := map[string]string{"store": store, "completion": "response_complete"}
-				native := testmetrics.Sample(families, "weir_store_native_completions_total", labels).GetCounter().GetValue()
-				labels = map[string]string{"store": store, "result": "exhausted"}
-				scan := testmetrics.Sample(families, "weir_store_scan_terminations_total", labels).GetCounter().GetValue()
-				if native != 1 || scan != 1 {
-					t.Fatal("process stream duplicated or incomplete", store, native, scan)
-				}
+			labels := map[string]string{"method": "Route", "status": "ok"}
+			if testmetrics.Sample(families, "weir_rpc_completions_total", labels).GetCounter().GetValue() != 10 {
+				t.Fatal("executor Route duplicated or incomplete")
 			}
 		} else if families["weir_store_executions_total"] != nil || testmetrics.Sum(families, "weir_relay_terminations_total") != 10 {
 			t.Fatal("forward process execution duplication")
 		} else {
 			for _, store := range []string{"mongo", "search"} {
-				for _, method := range []string{"Read", "Mutate", "Bulk", "Native", "Scan"} {
-					labels := map[string]string{"service": store, "method": method, "status": "ok"}
-					if testmetrics.Sample(families, "weir_relay_terminations_total", labels).GetCounter().GetValue() != 1 {
-						t.Fatal("forward process method duplicated or incomplete", store, method)
-					}
+				labels := map[string]string{"service": store, "method": "Route", "status": "ok"}
+				if testmetrics.Sample(families, "weir_relay_terminations_total", labels).GetCounter().GetValue() != 5 {
+					t.Fatal("forward process Route duplicated or incomplete", store)
 				}
 			}
 		}
 	}
-	t.Log("real process HTTP scrapes: C logical records=8, Native complete=2, Scan exhausted=2; A/B relays=10 each, A/B have no local executions")
+	t.Log("real process HTTP scrapes: C logical records=8, completed Route=10; A/B relays=10 each, A/B have no local executions")
 	t.Log(fmt.Sprintf(
 		"process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets",
 		first.command.Process.Pid,
@@ -513,7 +491,8 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			until := time.Now().Add(5 * time.Second)
 			for {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				result, err := client.Read(ctx, request)
+				routedResult516, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+				result := routedResult516.GetRead()
 				cancel()
 				if err == nil && result.GetDocument() != nil && processRecordNumber(t, result.GetDocument()) == 1 {
 					break
@@ -552,7 +531,7 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	_, err = conn.NewStream(ctx, desc, pb.Weir_Read_FullMethodName)
+	_, err = conn.NewStream(ctx, desc, pb.Weir_Route_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}

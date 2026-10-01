@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -19,7 +20,7 @@ const NativeCommandLimit = 4 << 20
 
 const NativeResponseLimit = 4 << 20
 
-func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
 		return nil, f
 	}
@@ -32,12 +33,12 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
 	p := &execution.Plan{
-		Backend:     target,
-		Native:      true,
-		Key:         open.Resource,
-		Bytes:       proto.Size(open) + protocol.EntryOverhead,
-		ResultBytes: protocol.NativeChunk + protocol.ResultOverhead,
-		PageBytes:   scanPageBudget,
+		Backend:      target,
+		Singleton:    true,
+		Key:          open.Resource,
+		Bytes:        proto.Size(open) + protocol.EntryOverhead,
+		ResultBytes:  protocol.NativeChunk + protocol.ResultOverhead,
+		WorkingBytes: scanPageBudget,
 	}
 	return p, nil
 }
@@ -96,7 +97,7 @@ func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) ExecuteNative(ctx context.Context, work *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
 	raw, err := io.ReadAll(io.LimitReader(exchange.Source, NativeCommandLimit+1))
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "incomplete Native BSON input")), execution.Neutral
@@ -108,11 +109,22 @@ func (a *Adapter) ExecuteNative(ctx context.Context, work *execution.Plan, excha
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx)), execution.Neutral
 	}
-	if failure, signal := a.qualifyTarget(ctx, target); failure != nil {
+	timeout := work.BackendTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	backendContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if failure, signal := a.qualifyTarget(backendContext, target); failure != nil {
 		return protocol.NativeFailure(false, failure), signal
 	}
 	command := bson.Raw(raw)
-	reply, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
+	reply, err := a.client.Database(target.database).RunCommand(backendContext, command).Raw()
+	failure := backendFailure(backendContext, err)
+	signal := feedback(backendContext, err)
+	// MongoDB retains one bounded raw reply. Once it is available, delivery uses
+	// the caller's lifetime rather than charging output stalls to backend I/O.
+	cancel()
 	if err != nil && len(reply) == 0 {
 		var native mongo.CommandError
 		if errors.As(err, &native) {
@@ -122,7 +134,7 @@ func (a *Adapter) ExecuteNative(ctx context.Context, work *execution.Plan, excha
 	// Raw is the actual driver-retained wire response, including ok:0 and write
 	// errors. Never reconstruct BSON from the Go error or normalize write effects.
 	if len(reply) == 0 {
-		return protocol.NativeFailure(true, backendFailure(ctx, err)), execution.Neutral
+		return protocol.NativeFailure(true, failure), execution.Neutral
 	}
 	nodes := 65536
 	fields, framingErr := scanFields(reply)
@@ -154,12 +166,12 @@ func (a *Adapter) ExecuteNative(ctx context.Context, work *execution.Plan, excha
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
 	// Reuse known command-error congestion without interpreting native write effects.
-	signal := execution.Neutral
+	resultFeedback := execution.Neutral
 	var commandFailure mongo.CommandError
-	if errors.As(err, &commandFailure) && feedback(ctx, err) == execution.Congested {
-		signal = execution.Congested
+	if errors.As(err, &commandFailure) && signal == execution.Congested {
+		resultFeedback = execution.Congested
 	}
-	return end, signal
+	return end, resultFeedback
 }
 
 // Walk already validated bounded bytes, without materializing a query tree.

@@ -84,7 +84,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			a := &Adapter{client: client, config: cfg}
 			descriptor := &pb.Document{MediaType: NativeDescriptor}
 			open := &pb.NativeOpen{Resource: "weir://mongo/db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
-			plan, failure := a.PrepareNative(open)
+			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -103,7 +103,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			source := io.NopCloser(bytes.NewReader(raw))
 			defer source.Close()
 			exchange := &execution.NativeExchange{Source: source, Sink: capture}
-			end, feedback := a.ExecuteNative(context.Background(), plan, exchange)
+			end, feedback := a.executeNative(context.Background(), plan, exchange)
 			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
 				t.Fatal(end, feedback, calls)
 			}

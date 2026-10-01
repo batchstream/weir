@@ -188,13 +188,13 @@ type recordBatchAdapter struct {
 	gate    <-chan struct{}
 }
 
-func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
 	a.started <- plans
 	select {
 	case <-a.gate:
 	case <-ctx.Done():
 	}
-	results := make([]*pb.BulkResult, len(plans))
+	results := make([]*pb.Result, len(plans))
 	for i, p := range plans {
 		outcome := pb.MutationOutcome_APPLIED
 		var failure *pb.Failure
@@ -206,7 +206,10 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 		}
 		results[i] = protocol.ResultError(p.Operation, outcome, failure)
 	}
-	return results, execution.Healthy
+	for i, result := range results {
+		_ = emit(plans[i], resultEvent(result))
+	}
+	return execution.Healthy
 }
 
 func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {

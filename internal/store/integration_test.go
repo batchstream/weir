@@ -62,10 +62,10 @@ func setup(t *testing.T) fixture {
 }
 func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
-	req := &pb.ReadRequest{Resource: "weir://mongo/" + f.db + "/records/s:" + key}
-	v := &pb.BulkOperation_Read{Read: req}
-	op := &pb.BulkOperation{Operation: v}
-	p, err := f.runtime.Prepare(op)
+	req := &pb.ReadRequest{Resource: f.db + "/records/s:" + key}
+	v := &pb.Call_Read{Read: req}
+	call := &pb.Call{Version: 1, Operation: v}
+	p, err := f.runtime.PrepareCall(1, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,10 +77,10 @@ func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	raw, _ := bson.Marshal(doc)
 	d := &pb.Document{MediaType: "application/bson", Data: raw}
 	v := &pb.MutateRequest_Create{Create: d}
-	m := &pb.MutateRequest{Resource: "weir://mongo/" + f.db + "/records/s:" + key, Action: v}
-	mv := &pb.BulkOperation_Mutate{Mutate: m}
-	op := &pb.BulkOperation{Operation: mv}
-	p, err := f.runtime.Prepare(op)
+	m := &pb.MutateRequest{Resource: f.db + "/records/s:" + key, Action: v}
+	mv := &pb.Call_Mutate{Mutate: m}
+	call := &pb.Call{Version: 1, Operation: mv}
+	p, err := f.runtime.PrepareCall(1, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,21 +92,23 @@ func warm(t *testing.T, f fixture) {
 	defer cancel()
 	// Same-key requests stay in distinct physical batches but may overlap across
 	// independent callers. Their backlog gives the controller saturated demand.
-	var tickets []*Ticket
 	p := readPlan(t, f, "warm")
-	for i := 0; i < 24; i++ {
-		ticket, e, _ := f.runtime.Submit(ctx, p, nil)
-		if e != nil {
-			t.Fatal(e)
+	for round := 0; round < 3; round++ {
+		var tickets []*Ticket
+		for i := 0; i < 8; i++ {
+			ticket, failure, _ := f.runtime.Submit(ctx, p, nil)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			tickets = append(tickets, ticket)
 		}
-		tickets = append(tickets, ticket)
-	}
-	for _, ticket := range tickets {
-		result, err := ticket.Wait(ctx)
-		if err != nil || result.GetRead().GetFailure() != nil {
-			t.Fatal("warm point read failed", err, result)
+		for _, ticket := range tickets {
+			result, err := ticket.Wait(ctx)
+			if err != nil || result.GetRead().GetFailure() != nil {
+				t.Fatal("warm point read failed", err, result)
+			}
+			ticket.Ack()
 		}
-		ticket.Ack()
 	}
 	if f.runtime.Snapshot().Window < 2 {
 		t.Fatal("AIMD did not grow on saturated demand", f.runtime.Snapshot())
@@ -221,6 +223,10 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 }
 func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	f := setup(t)
+	f.runtime.mu.Lock()
+	f.runtime.controller.window = 1
+	f.runtime.limits.Concurrency = 1
+	f.runtime.mu.Unlock()
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -324,25 +330,208 @@ func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
 	defer cancel()
 	s := f.runtime.NewSession()
 	defer s.Close()
-	var tickets []*Ticket
+	consumed := make(chan error, 1)
+	go func() {
+		results := make(map[*Ticket]int)
+		var failure error
+		for ends := 0; ends < 6; {
+			select {
+			case emission := <-s.Events:
+				if emission.End {
+					if results[emission.Ticket] != 1 && failure == nil {
+						failure = fmt.Errorf("request ended with %d results", results[emission.Ticket])
+					}
+					ends++
+					emission.Release()
+					emission.Ticket.Ack()
+					continue
+				}
+				result := emission.Event.GetResult()
+				results[emission.Ticket]++
+				if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED && failure == nil {
+					failure = fmt.Errorf("accepted mutation did not apply: %v", result)
+				}
+				emission.Release()
+			case <-ctx.Done():
+				consumed <- ctx.Err()
+				return
+			}
+		}
+		if len(results) != 6 && failure == nil {
+			failure = fmt.Errorf("drain completed %d distinct requests", len(results))
+		}
+		consumed <- failure
+	}()
 	for i := 0; i < 6; i++ {
 		p := createPlan(t, f, fmt.Sprintf("drain_%d", i))
-		ticket, e, _ := f.runtime.Submit(ctx, p, s)
+		_, e, _ := f.runtime.Submit(ctx, p, s)
 		if e != nil {
 			t.Fatal(e)
 		}
-		tickets = append(tickets, ticket)
 	}
 	if err := f.runtime.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, ticket := range tickets {
-		if ticket.Result().GetMutation().Outcome != pb.MutationOutcome_APPLIED {
-			t.Fatal(ticket.Result())
-		}
-		ticket.Ack()
+	if err := <-consumed; err != nil {
+		t.Fatal(err)
 	}
 	if s.Outstanding() != 0 {
 		t.Fatal("credits retained after drain")
+	}
+	snapshot := f.runtime.Snapshot()
+	if snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.Publishers != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
+		t.Fatal("drain retained tasks or buffers", snapshot)
+	}
+	filter := bson.D{}
+	count, err := f.native.Database(f.db).Collection("records").CountDocuments(ctx, filter)
+	if err != nil || count != 6 {
+		t.Fatal("accepted writes missing after drain", count, err)
+	}
+}
+
+func TestRouteNativeBackendIODeadline(t *testing.T) {
+	for _, test := range []struct {
+		name, command string
+		timeout       time.Duration
+		block         int32
+		completion    pb.NativeCompletion
+	}{
+		{name: "configured_command", command: "count", timeout: 100 * time.Millisecond, block: 500, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "configured_qualification", command: "listCollections", timeout: 100 * time.Millisecond, block: 500, completion: pb.NativeCompletion_NATIVE_NOT_STARTED},
+		{name: "default_command", command: "count", timeout: 2 * time.Second, block: 3000, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := setup(t)
+			f.runtime.mu.Lock()
+			f.runtime.limits.BackendTimeout = test.timeout
+			f.runtime.mu.Unlock()
+			data := bson.D{{Key: "failCommands", Value: bson.A{test.command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: test.block}}
+			testmongo.FailCommand(t, f.native, data, 1)
+			command := bson.D{{Key: "count", Value: "records"}}
+			raw, err := bson.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
+			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			native := &pb.NativeCall{Open: open, Body: raw}
+			variant := &pb.Call_Native{Native: native}
+			call := &pb.Call{Version: 1, Operation: variant}
+			work, failure := f.runtime.PrepareCall(1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			session := f.runtime.NewSession()
+			defer session.Close()
+			started := time.Now()
+			ticket, failure, _ := f.runtime.Submit(ctx, work, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			var end *pb.NativeEnd
+			for {
+				select {
+				case emission := <-session.Events:
+					if emission.Event.GetNativeEnd() != nil {
+						if end != nil {
+							t.Fatal("multiple native completion events")
+						}
+						end = emission.Event.GetNativeEnd()
+					}
+					emission.Release()
+					if emission.End {
+						ticket.Ack()
+						goto completed
+					}
+				case <-ctx.Done():
+					t.Fatal("backend deadline failed to release request", ctx.Err())
+				}
+			}
+		completed:
+			elapsed := time.Since(started)
+			if end.GetCompletion() != test.completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > test.timeout+500*time.Millisecond {
+				t.Fatal("native backend I/O escaped configured cap", end, elapsed, test.timeout)
+			}
+			waitReleased(t, f.runtime)
+			filter := bson.D{}
+			count, err := f.native.Database(f.db).Collection("records").CountDocuments(ctx, filter)
+			if err != nil || count != 0 {
+				t.Fatal("deadline affected independent backend connection", count, err)
+			}
+			t.Logf("blocked %s: configured=%s elapsed=%s completion=%s", test.command, test.timeout, elapsed, end.Completion)
+		})
+	}
+}
+
+func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
+	for _, command := range []string{"find", "commitTransaction"} {
+		t.Run(command, func(t *testing.T) {
+			f := setup(t)
+			timeout := 100 * time.Millisecond
+			f.runtime.mu.Lock()
+			f.runtime.limits.BackendTimeout = timeout
+			f.runtime.mu.Unlock()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			document := bson.D{{Key: "_id", Value: "lua-timeout"}, {Key: "n", Value: int32(1)}}
+			collection := f.native.Database(f.db).Collection("records")
+			if _, err := collection.InsertOne(ctx, document); err != nil {
+				t.Fatal(err)
+			}
+			data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
+			testmongo.FailCommand(t, f.native, data, 1)
+			program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
+			form := &pb.Transform_Program{Program: program}
+			transform := &pb.Transform{Form: form}
+			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
+			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}
+			variant := &pb.Call_Mutate{Mutate: mutation}
+			call := &pb.Call{Version: 1, Operation: variant}
+			work, failure := f.runtime.PrepareCall(1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			started := time.Now()
+			ticket, failure, _ := f.runtime.Submit(ctx, work, nil)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			result, err := ticket.Wait(ctx)
+			elapsed := time.Since(started)
+			expected := pb.MutationOutcome_NOT_APPLIED
+			if command == "commitTransaction" {
+				expected = pb.MutationOutcome_UNKNOWN
+			}
+			if err != nil || result.GetMutation().GetOutcome() != expected || result.GetMutation().GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
+				t.Fatal("Lua database I/O escaped deadline or lost uncertainty", err, result, elapsed)
+			}
+			ticket.Ack()
+			waitReleased(t, f.runtime)
+			filter := bson.D{{Key: "_id", Value: "lua-timeout"}}
+			deadline := time.Now().Add(time.Second)
+			for {
+				raw, err := collection.FindOne(ctx, filter).Raw()
+				if err != nil {
+					t.Fatal(err)
+				}
+				value := raw.Lookup("n").Int32()
+				if command == "find" {
+					if value != 1 {
+						t.Fatal("aborted transaction changed the record", value)
+					}
+					break
+				}
+				if value == 2 {
+					break
+				}
+				if value != 1 || time.Now().After(deadline) {
+					t.Fatal("uncertain commit was missing or Lua replayed", value)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			t.Logf("blocked %s: cap=%s elapsed=%s outcome=%s", command, timeout, elapsed, expected)
+		})
 	}
 }

@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strconv"
 
-	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -80,10 +78,4 @@ func forwardContext(ctx context.Context) (context.Context, error) {
 	md.Set(HopMetadata, strconv.Itoa(state.hops-1))
 	// Replace, never append to inherited metadata; only bounded diagnostics and the hop budget cross peers.
 	return metadata.NewOutgoingContext(ctx, md), nil
-}
-func checkOperation(name string, op *pb.BulkOperation) (*pb.Failure, error) {
-	if op.GetRead() == nil && op.GetMutate() == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing operation family")
-	}
-	return protocol.Validate(op, name), nil
 }

@@ -48,8 +48,8 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	old := ownerMutation(t, a, f.DB, "remote-tail")
 	next := ownerMutation(t, a, f.DB, "independent")
 	callCtx, stop := context.WithCancel(ctx)
-	result := make(chan []*pb.BulkResult, 1)
-	go func() { r, _ := a.Execute(callCtx, []*execution.Plan{old}); result <- r }()
+	result := make(chan []*pb.Result, 1)
+	go func() { r, _ := a.executeRecords(callCtx, []*execution.Plan{old}); result <- r }()
 	select {
 	case <-entered:
 	case <-ctx.Done():
@@ -61,13 +61,29 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	if r[0].GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("cancellation lost uncertainty", r)
 	}
-	ownerWait(t, func() bool { return a.dialer.snapshot().Owned == 1 })
+	// A lost bulkWrite reply also leaves its cursor unknown. Session cleanup
+	// opens a replacement connection after cancellation closes the original raw
+	// socket; the replacement must stay within the same ownership budget.
+	t.Logf("cancelled operation and cursor cleanup: %+v", a.dialer.snapshot())
+	ownerWait(t, func() bool {
+		snapshot := a.dialer.snapshot()
+		return snapshot.Owned == 2 && snapshot.Acquired == 3 && snapshot.Released == 1
+	})
 	current, peak := proxy.Sockets()
-	if current != 2 {
+	if current != 3 || peak != 3 {
 		t.Fatal("observer did not retain cancelled request", current)
 	}
+	cleanups := 0
+	for _, observed := range proxy.Events() {
+		if observed.Command == "killSessions" && observed.Acknowledged {
+			cleanups++
+		}
+	}
+	if cleanups != 1 {
+		t.Fatal("lost reply session was not cleaned exactly once", cleanups)
+	}
 	t.Logf("%s driver operation returned UNKNOWN, local raw closed: owner=%+v proxy=%d/%d", time.Now().UTC().Format(time.RFC3339Nano), a.dialer.snapshot(), current, peak)
-	r, _ = a.Execute(ctx, []*execution.Plan{next})
+	r, _ = a.executeRecords(ctx, []*execution.Plan{next})
 	if r[0].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("new independent mutation failed", r)
 	}
@@ -113,9 +129,9 @@ func ownerMutation(t *testing.T, a *Adapter, database, id string) *execution.Pla
 	body := &pb.Document{MediaType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: body}
 	req := &pb.MutateRequest{Resource: "weir://mongo/" + database + "/records/s:" + id, Action: put}
-	mutation := &pb.BulkOperation_Mutate{Mutate: req}
-	op := &pb.BulkOperation{Operation: mutation}
-	plan, failure := a.Prepare(op)
+	mutation := &pb.Operation_Mutate{Mutate: req}
+	op := &pb.Operation{Operation: mutation}
+	plan, failure := a.prepareRecord(op)
 	if failure != nil {
 		t.Fatal(failure)
 	}

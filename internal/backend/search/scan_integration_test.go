@@ -19,10 +19,10 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
-func scanWork(t *testing.T, a *Adapter, index string, hint uint32) *execution.Plan {
+func scanWork(t *testing.T, a *Adapter, index string) *execution.Plan {
 	t.Helper()
-	req := &pb.ScanRequest{Resource: "weir://search/" + index, FetchItemsHint: hint}
-	p, f := a.PrepareScan(req)
+	req := &pb.ScanRequest{Resource: "weir://search/" + index}
+	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)
 	}
@@ -39,18 +39,21 @@ func TestSearchScanTraversal(t *testing.T) {
 				}
 			}
 			b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-			p := scanWork(t, a, b.Index, 8)
+			p := scanWork(t, a, b.Index)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			defer a.CloseScan(ctx, p)
+			defer a.closeScan(ctx, p)
 			seen := map[string]bool{}
 			for calls := 0; ; calls++ {
-				if calls > 20 {
+				if calls > size+1 {
 					t.Fatal("did not exhaust")
 				}
-				page, _ := a.FetchScan(ctx, p)
+				page, _ := a.fetchScan(ctx, p)
 				if page.Failure != nil {
 					t.Fatalf("fetch %d: %v", calls, page.Failure)
+				}
+				if len(page.Documents) > 1 {
+					t.Fatal("scan exceeded one-document page bound", len(page.Documents))
 				}
 				for _, doc := range page.Documents {
 					var hit struct {
@@ -71,10 +74,10 @@ func TestSearchScanTraversal(t *testing.T) {
 			if len(seen) != size {
 				t.Fatal("omissions", len(seen), size)
 			}
-			if f := a.CloseScan(ctx, p); f != nil {
+			if f := a.closeScan(ctx, p); f != nil {
 				t.Fatal(f)
 			}
-			if f := a.CloseScan(ctx, p); f != nil {
+			if f := a.closeScan(ctx, p); f != nil {
 				t.Fatal(f)
 			}
 			t.Logf("%s: complete native hit traversal %d records", b.Product, size)
@@ -192,12 +195,12 @@ func TestSearchScanFaultPages(t *testing.T) {
 						t.Fatal(err)
 					}
 					defer a.Close()
-					p := scanWork(t, a, b.Index, 1)
-					defer a.CloseScan(ctx, p)
+					p := scanWork(t, a, b.Index)
+					defer a.closeScan(ctx, p)
 					count := 0
 					failed := false
 					for i := 0; i < 4; i++ {
-						page, _ := a.FetchScan(ctx, p)
+						page, _ := a.fetchScan(ctx, p)
 						if page.Failure != nil {
 							if len(page.Documents) != 0 || page.Exhausted {
 								t.Fatal("failed page leaked hits", page)
@@ -214,7 +217,7 @@ func TestSearchScanFaultPages(t *testing.T) {
 					if !failed || count != want || calls.Load() != at {
 						t.Fatal("fault/retry contract", failed, count, want, calls.Load())
 					}
-					_ = a.CloseScan(ctx, p)
+					_ = a.closeScan(ctx, p)
 					// An open reply loss can hide the new ID; its finite keep_alive is the
 					// remote fallback. This test does not assert zero remote residue.
 				})
@@ -230,9 +233,9 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p := scanWork(t, a, b.Index, 1)
-	defer a.CloseScan(ctx, p)
-	page, _ := a.FetchScan(ctx, p)
+	p := scanWork(t, a, b.Index)
+	defer a.closeScan(ctx, p)
+	page, _ := a.fetchScan(ctx, p)
 	if page.Failure != nil {
 		t.Fatal(page)
 	}
@@ -248,26 +251,26 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	if status != 200 {
 		t.Fatal("native PIT invalidation", status)
 	}
-	page, _ = a.FetchScan(ctx, p)
+	page, _ = a.fetchScan(ctx, p)
 	if page.Failure == nil || len(page.Documents) != 0 {
 		t.Fatal("expired PIT silently restarted", page)
 	}
-	_ = a.CloseScan(ctx, p)
+	_ = a.closeScan(ctx, p)
 	for _, stage := range []string{"open", "fetch"} {
-		p := scanWork(t, a, b.Index, 1)
+		p := scanWork(t, a, b.Index)
 		if stage == "fetch" {
-			page, _ := a.FetchScan(ctx, p)
+			page, _ := a.fetchScan(ctx, p)
 			if page.Failure != nil {
 				t.Fatal(page)
 			}
 		}
 		stopped, stop := context.WithCancel(ctx)
 		stop()
-		page, _ := a.FetchScan(stopped, p)
+		page, _ := a.fetchScan(stopped, p)
 		if page.Failure == nil || len(page.Documents) != 0 {
 			t.Fatal("cancel ignored")
 		}
-		_ = a.CloseScan(ctx, p)
+		_ = a.closeScan(ctx, p)
 	}
 }
 
@@ -289,20 +292,20 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 	}
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
 	selector := &pb.Document{MediaType: "application/json", Data: []byte(`{"query":{"range":{"n":{"gte":1}}}}`)}
-	req := &pb.ScanRequest{Resource: "weir://search/" + b.Index, Selector: selector, FetchItemsHint: 1}
-	p, f := a.PrepareScan(req)
+	req := &pb.ScanRequest{Resource: "weir://search/" + b.Index, Selector: selector}
+	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	defer a.CloseScan(ctx, p)
+	defer a.closeScan(ctx, p)
 	count := 0
 	for step := 0; ; step++ {
 		if step > 5 {
 			t.Fatal("did not exhaust")
 		}
-		page, _ := a.FetchScan(ctx, p)
+		page, _ := a.fetchScan(ctx, p)
 		if page.Failure != nil {
 			t.Fatal(page.Failure)
 		}
@@ -319,7 +322,7 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 	if count != 2 {
 		t.Fatal("native query semantics", count)
 	}
-	if f := a.CloseScan(ctx, p); f != nil {
+	if f := a.closeScan(ctx, p); f != nil {
 		t.Fatal(f)
 	}
 }
@@ -337,10 +340,10 @@ func TestSearchScanCancelInFlight(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer a.Close()
-			p := scanWork(t, a, b.Index, 1)
+			p := scanWork(t, a, b.Index)
 			if target == "fetch" {
 				ctx, stop := context.WithTimeout(context.Background(), time.Second)
-				page, _ := a.FetchScan(ctx, p)
+				page, _ := a.fetchScan(ctx, p)
 				stop()
 				if page.Failure != nil {
 					t.Fatal(page)
@@ -348,7 +351,7 @@ func TestSearchScanCancelInFlight(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			ended := make(chan *execution.ScanPage, 1)
-			go func() { page, _ := a.FetchScan(ctx, p); ended <- page }()
+			go func() { page, _ := a.fetchScan(ctx, p); ended <- page }()
 			until := time.Now().Add(700 * time.Millisecond)
 			for calls.Load() == 0 && time.Now().Before(until) {
 				time.Sleep(time.Millisecond)
@@ -370,7 +373,7 @@ func TestSearchScanCancelInFlight(t *testing.T) {
 			}
 			cleanup, stop := context.WithTimeout(context.Background(), time.Second)
 			defer stop()
-			failure := a.CloseScan(cleanup, p)
+			failure := a.closeScan(cleanup, p)
 			if target == "open" && failure == nil {
 				t.Fatal("lost allocation ID was reported as confirmed cleanup")
 			}

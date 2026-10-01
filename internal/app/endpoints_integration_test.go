@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/batchstream/weir/routeclient"
 	"net"
 	"net/netip"
 	"os"
@@ -109,7 +110,8 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 		for _, kind := range []string{"mongo", "search"} {
 			root := roots[kind]
 			req := &pb.ReadRequest{Resource: fmt.Sprintf("%s/s:process%d", root, i)}
-			result, err := client.Read(ctx, req)
+			routedResult112, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
+			result := routedResult112.GetRead()
 			if err != nil || result.GetMissing() == nil {
 				t.Fatal(result, err)
 			}
@@ -130,7 +132,8 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	peers[0].stop(t)
 	req := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
 	for range 20 {
-		result, err := client.Read(ctx, req)
+		routedResult133, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
+		result := routedResult133.GetRead()
 		if err != nil || result.GetMissing() == nil {
 			t.Fatal("healthy endpoints unavailable after peer SIGTERM", result, err)
 		}
@@ -140,7 +143,8 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	until := time.Now().Add(5 * time.Second)
 	for i := 0; ; i++ {
 		req.Resource = fmt.Sprintf("%s/s:replacement%d", roots["mongo"], i)
-		result, err := client.Read(ctx, req)
+		routedResult143, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
+		result := routedResult143.GetRead()
 		if err != nil || result.GetMissing() == nil {
 			t.Fatal(result, err)
 		}
@@ -243,7 +247,7 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req := &pb.ReadRequest{Resource: roots["mongo"] + "/s:dns"}
-	if result, err := client.Read(ctx, req); err != nil || result.GetMissing() == nil {
+	if result, err := routeclient.Record(ctx, client, testutil.RecordCall(req)); err != nil || result.GetRead().GetMissing() == nil {
 		t.Fatal(result, err)
 	}
 	answer.Addresses = []netip.Addr{netip.MustParseAddr("::1")}
@@ -252,7 +256,8 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	var calls int
 	for {
 		calls++
-		result, err := client.Read(ctx, req)
+		routedResult255, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
+		result := routedResult255.GetRead()
 		if err == nil && result.GetMissing() != nil {
 			break
 		}
