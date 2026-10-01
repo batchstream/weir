@@ -20,6 +20,8 @@ import time
 import urllib.request
 import uuid
 
+import config_yaml
+
 REPO = Path(__file__).resolve().parent.parent
 LABEL = "weir.load-comparison.owner"
 
@@ -388,7 +390,7 @@ class Fixture:
             "diagnostics": {"address": "0.0.0.0:7449", "allow_intranet": True},
             "memory": "768MiB",
             "transport": {"max_connections": 16, "max_sessions": 64},
-            "routing": {"file": "routes.json"},
+            "routing": {"file": "routes.yaml"},
         }
         routes = {
             "services": [
@@ -407,8 +409,8 @@ class Fixture:
             ],
             "routes": [{"store": "records", "service": "database"}],
         }
-        self.save("node.json", config)
-        self.save("routes.json", routes)
+        self.save("node.yaml", config_yaml.dumps(config))
+        self.save("routes.yaml", config_yaml.dumps(routes))
         # Qualifying a fresh node requires the index to exist before startup.
         run(
             [
@@ -443,19 +445,19 @@ class Fixture:
             "-p",
             "127.0.0.1::7449",
             "--mount",
-            "type=bind,source=" + str(self.root / "node.json") + ",target=/node.json,readonly",
+            "type=bind,source=" + str(self.root / "node.yaml") + ",target=/node.yaml,readonly",
             "--mount",
-            "type=bind,source=" + str(self.root / "routes.json") + ",target=/routes.json,readonly",
+            "type=bind,source=" + str(self.root / "routes.yaml") + ",target=/routes.yaml,readonly",
             "--entrypoint",
             entrypoint,
         ]
-        command = ["serve", "--config", "/node.json"]
+        command = ["serve", "--config", "/node.yaml"]
         if mode == "control":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
-            command = ["-config", "/node.json", "-mode", "serve-control", "-suppress-congestion"]
+            command = ["-config", "/node.yaml", "-mode", "serve-control", "-suppress-congestion"]
         elif mode == "adaptive":
             options += ["-e", "WEIR_CAPACITY_INTEGRATION=1"]
-            command = ["-config", "/node.json", "-mode", "serve-control"]
+            command = ["-config", "/node.yaml", "-mode", "serve-control"]
         self.weir = self.create(mode, options, command)
         port = run(["docker", "port", self.weir, "7449/tcp"]).stdout.strip().split(":")[-1]
         self.weir_url = "http://127.0.0.1:" + port

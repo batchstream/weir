@@ -1,0 +1,258 @@
+# Weir configuration reference
+#
+# Copy this file to weir.yaml and copy routes.example.yaml into the same directory.
+# Edit the routing file for your backend, then run:
+#   weir check --config weir.yaml
+#   weir serve --config weir.yaml
+# The default CLI path is ./weir.yaml. Configuration changes require a restart.
+#
+# This file is the basic configuration. routing.file selects a separate routing
+# file. The complete routing-field reference is included as commented YAML below,
+# so this one reference documents both files. A runnable minimal routing example
+# is provided in routes.example.yaml.
+#
+# Syntax: one YAML mapping per file; keys are exact lowercase names shown here.
+# Unknown/duplicate keys, multiple documents, anchors, aliases, merge keys and
+# explicit tags are rejected. Each file is limited to 128 KiB and 12 nested levels.
+# Use true/false for booleans, integers for counts, and strings for text and units.
+# Omit optional fields to use defaults; an empty value is YAML null, not omission.
+# Basic fields must not be null. Optional routing adapter/connection blocks may
+# be null; required fields still have to satisfy the rules below.
+# Strings are literal: environment-variable substitution is not performed.
+
+# Application and peer gRPC listeners.
+# Required: yes, at least one child address must be nonempty. Default: both disabled.
+# Allowed: a mapping with application and/or peer.
+listeners:
+  # Address for SDK/application traffic; ingress receives forwarding.hop_limit.
+  # Required: one of application/peer. Default: "" (disabled).
+  # Allowed: explicit IPv4:port or [IPv6]:port, port 0..65535; no DNS/URL syntax.
+  # Port 0 requests a random port. Use a fixed port for normal deployments.
+  application: "127.0.0.1:7447"
+
+  # Address for requests forwarded by another Weir node.
+  # Required: one of application/peer. Default: "" (disabled).
+  # Allowed: the same IP:port format as application. Nonzero listener addresses
+  # must not overlap, including an unspecified address and a specific IP.
+  peer: ""
+
+# Independent HTTP diagnostics: /livez, /readyz and /metrics.
+# Required: no. Default: disabled. Allowed: the address/allow_intranet mapping below.
+diagnostics:
+  # Diagnostic listener address.
+  # Required: no. Default: "" (disabled).
+  # Allowed: explicit IP:port, port 0..65535. Loopback is required unless
+  # allow_intranet is true. Readiness describes node lifecycle, not backend health.
+  address: "127.0.0.1:7449"
+
+  # Permit a diagnostic listener on a non-loopback interface.
+  # Required: no. Default: false. Allowed: true | false.
+  # true requires a nonempty address. Exec probes still target a loopback address.
+  allow_intranet: false
+
+# Process admission/overload budget, not an OS-enforced memory limit.
+# Required: no. Default: "512MiB".
+# Allowed: integer + B | KiB | MiB | GiB, from 64MiB through 64GiB inclusive.
+# Examples: "67108864B", "512MiB", "1GiB". Fractional sizes are not accepted.
+# Set the deployment/container memory limit separately.
+memory: "512MiB"
+
+# Shared ingress connection/session admission and RPC deadlines.
+# Required: no. Default: all child defaults below. Allowed: this mapping.
+transport:
+  # Maximum accepted data-plane connections shared by application and peer.
+  # Required: no. Default: 16. Allowed: integer 1..64.
+  max_connections: 16
+
+  # Maximum concurrent data-plane sessions shared by application and peer.
+  # Required: no. Default: 16. Allowed: integer 1..64.
+  max_sessions: 16
+
+  # Total RPC lifetimes and stream-progress timeout.
+  # Required: no. Default: all child defaults below. Allowed: this mapping.
+  # Each value is a duration string, e.g. "500ms", "1.5s", "30s", "5m".
+  # Supported units: ns, us/µs/μs, ms, s, m, h; combined forms such as "1m30s"
+  # are accepted. Values must be positive and within each field's upper bound.
+  timeouts:
+    # Maximum unary RPC lifetime.
+    # Required: no. Default: "30s". Allowed: duration > 0 and <= 30s.
+    unary: "30s"
+
+    # Maximum whole Bulk stream lifetime.
+    # Required: no. Default: "15m". Allowed: duration > 0 and <= 15m.
+    bulk: "15m"
+
+    # Maximum whole Scan stream lifetime.
+    # Required: no. Default: "5m". Allowed: duration > 0 and <= 5m.
+    scan: "5m"
+
+    # Maximum whole Native stream lifetime.
+    # Required: no. Default: "5m". Allowed: duration > 0 and <= 5m.
+    native: "5m"
+
+    # Maximum wait for transport/stream progress.
+    # Required: no. Default: "30s". Allowed: duration > 0 and <= 30s.
+    stall: "30s"
+
+# Forwarding budget for requests arriving through the application listener.
+# Required: no. Default: the child default below. Allowed: this mapping.
+forwarding:
+  # Initial remaining hop count; each peer forward consumes one hop.
+  # Required: no. Default: 4. Allowed: integer 0..8.
+  # 0 prevents forwarding; peer ingress uses the request's existing hop budget.
+  hop_limit: 4
+
+# Source of the static service/Store graph.
+# Required: yes. Default: none. Allowed: the file mapping below.
+routing:
+  # Routing YAML file, loaded and validated before listeners/backends are opened.
+  # Required: yes. Default: none. Allowed: a nonempty filesystem path.
+  # Relative paths resolve from this basic file's directory; absolute paths work.
+  file: "routes.example.yaml"
+
+# Routing file reference
+#
+# The following block belongs in the separate routing file, not under routing
+# in the basic file. Remove ONE leading "# " from each line between the markers
+# to obtain a complete routing example. All three services have distinct routes.
+# You can keep only the services/routes you need; every service must be used.
+#
+# routing-reference-begin
+# # Named immutable services that execute locally or forward to another Weir.
+# # Required: yes. Default: none. Allowed: list containing 1..16 services.
+# services:
+#   # Service name used by routes.service.
+#   # Required: yes. Default: none. Allowed: unique lowercase resource name,
+#   # <= 63 bytes, matching ^[a-z](?:[a-z0-9]|-[a-z0-9]){0,62}$.
+#   - name: "database"
+#
+#     # Local backend and scheduler settings.
+#     # Required: exactly one of local/remote. Default: absent.
+#     # Allowed: exactly one of mongodb/search plus the scheduler fields below.
+#     # A local service must have exactly one route; local aliases are rejected.
+#     local:
+#       # Upper bound on adaptive concurrent backend execution.
+#       # Required: no. Default: 4. Allowed: 0 (use default) or integer 1..32.
+#       max_concurrency: 4
+#
+#       # Maximum number of operations collected into one physical batch.
+#       # Required: no. Default: 16. Allowed: 0 (use default) or integer 1..128.
+#       max_batch_operations: 16
+#
+#       # MongoDB adapter; mutually exclusive with local.search.
+#       # Required: exactly one local adapter. Default: absent.
+#       # Allowed: uri/database/collection mapping below.
+#       mongodb:
+#         # Explicit single-endpoint MongoDB connection URI.
+#         # Required: yes. Default: none. Allowed: mongodb://host:port/ URI
+#         # <= 4096 bytes; one DNS/IP host, explicit port 1..65535, no db path.
+#         # mongodb+srv, multiple hosts and replicaSet discovery are unsupported.
+#         # Allowed query options ONLY:
+#         #   directConnection=true (default forced true),
+#         #   serverMonitoringMode=poll (default forced poll),
+#         #   authSource, authMechanism=SCRAM-SHA-256, tls=true, tlsCAFile.
+#         # Without credentials, authentication/TLS options must be absent.
+#         # With credentials, username/password, authSource, authMechanism and
+#         # tls=true are all required. Percent-encode URI credentials.
+#         # Username: nonempty, <= 128 decoded bytes; password: nonempty,
+#         # <= 256 decoded bytes. authSource must match the database-name
+#         # grammar below. authMechanism allows only SCRAM-SHA-256.
+#         # tlsCAFile is optional: default system roots; a relative CA path
+#         # resolves from the process working directory, not the routing file.
+#         # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
+#         # Auth example:
+#         # mongodb://user:change-me@db.example.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
+#         uri: "mongodb://127.0.0.1:27017/?directConnection=true"
+#
+#         # Pre-created database used by this local Store.
+#         # Required: yes. Default: none.
+#         # Allowed: ^[A-Za-z][A-Za-z0-9_]{0,62}$.
+#         database: "example"
+#
+#         # Pre-created collection; program transforms require a replica set
+#         # supporting transactions.
+#         # Required: yes. Default: none.
+#         # Allowed: ^[A-Za-z][A-Za-z0-9_]{0,62}$.
+#         collection: "records"
+#
+#   - name: "search"
+#     local:
+#       # These local scheduler fields use the same defaults/bounds as above.
+#       max_concurrency: 4
+#       max_batch_operations: 16
+#
+#       # Elasticsearch/OpenSearch adapter; mutually exclusive with mongodb.
+#       # Required: exactly one local adapter. Default: absent.
+#       # Allowed: url/index/profile and optional connection mapping below.
+#       search:
+#         # One backend HTTP endpoint.
+#         # Required: yes. Default: none. Allowed: http://host:port or
+#         # https://host:port, <= 1024 bytes, port 1..65535.
+#         # No userinfo, path, query, fragment, zones or unspecified/multicast IP.
+#         url: "http://127.0.0.1:9200"
+#
+#         # Pre-created concrete index with one primary shard and default routing.
+#         # Required: yes. Default: none.
+#         # Allowed: ^[a-z][a-z0-9_-]{0,62}$; aliases/data streams are unsupported.
+#         # Backend action.auto_create_index must be false.
+#         index: "records"
+#
+#         # Exact audited backend distribution/version.
+#         # Required: yes. Default: none.
+#         # Allowed: "elasticsearch-8.19.22" | "opensearch-2.19.6".
+#         profile: "elasticsearch-8.19.22"
+#
+#         # HTTPS authentication/trust options. Omit this block for HTTP.
+#         # Required: no. Default: absent (system roots; no Basic credentials).
+#         # Allowed: nonempty mapping below, only when url starts with https://.
+#         # To use it, change url to https://host:port and uncomment the block.
+#         # connection:
+#         #   # HTTP Basic username; must be paired with password.
+#         #   # Required: if password is set. Default: "" (no Basic auth).
+#         #   # Allowed: nonempty UTF-8 text <= 128 bytes, no colon/control chars.
+#         #   username: "weir"
+#         #
+#         #   # HTTP Basic password; must be paired with username.
+#         #   # Required: if username is set. Default: "".
+#         #   # Allowed: nonempty UTF-8 text <= 256 bytes, no control characters.
+#         #   password: "change-me"
+#         #
+#         #   # PEM trust bundle read once at startup.
+#         #   # Required: no. Default: "" (system trust roots).
+#         #   # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
+#         #   # Relative paths resolve from the process working directory.
+#         #   ca_file: "/etc/weir/ca.pem"
+#
+#   - name: "upstream"
+#     # Remote service: forward requests to peer listeners.
+#     # Required: exactly one of local/remote. Default: absent.
+#     # Allowed: endpoints/max_concurrency mapping below.
+#     remote:
+#       # Alternate peer listener endpoints for the same logical service.
+#       # Required: yes. Default: none. Allowed: list of 1..8 distinct DNS/IP
+#       # host:port strings, <= 260 bytes each, port 1..65535; no URL syntax.
+#       # Canonically equivalent endpoints are duplicates. List order is not a
+#       # priority setting; use endpoints backed by the same intended service.
+#       endpoints:
+#         - "127.0.0.1:7448"
+#
+#       # Maximum concurrent forwarding operations for this remote service.
+#       # Required: yes. Default: none. Allowed: integer 1..16.
+#       max_concurrency: 8
+#
+# # Map public Store names to declared services.
+# # Required: yes. Default: none. Allowed: list of 1..16 routes.
+# # Each Store must be unique; every declared service must be referenced.
+# routes:
+#   # Public resource authority, e.g. the "mongo" in weir://mongo/...
+#   # Required: yes. Default: none. Allowed: unique resource name with the same
+#   # lowercase grammar/63-byte bound as services.name.
+#   - store: "mongo"
+#     # Target services.name, not a URL or backend address.
+#     # Required: yes. Default: none. Allowed: an existing service name.
+#     service: "database"
+#   - store: "search"
+#     service: "search"
+#   - store: "remote"
+#     service: "upstream"
+# routing-reference-end

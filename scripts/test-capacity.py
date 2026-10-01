@@ -15,6 +15,7 @@ import tarfile
 import time
 
 import package as packaging
+import config_yaml
 from capacity_fixture import Fixture, FixtureInterrupted, REPO, LABEL, inventory_diff, sha, Observer
 from capacity_artifact import docker_archive
 from capacity_report import (
@@ -119,16 +120,35 @@ def prepare(f, plan, artifact):
             options=run_options,
         )
 
-    cfg = json.loads((REPO / "deploy/kubernetes/node.example.json").read_text())
-    routes = json.loads((REPO / "deploy/kubernetes/routes.example.json").read_text())
-    cfg["routing"]["file"] = "routes.json"
-    routes["services"][0]["local"].update(max_concurrency=4, max_batch_operations=16)
-    f.save("node.json", cfg)
-    f.save("routes.json", routes)
+    cfg = {
+        "listeners": {"application": "0.0.0.0:7447"},
+        "diagnostics": {"address": "127.0.0.1:7449"},
+        "memory": "768MiB",
+        "routing": {"file": "routes.yaml"},
+    }
+    routes = {
+        "services": [
+            {
+                "name": "database",
+                "local": {
+                    "max_concurrency": 4,
+                    "max_batch_operations": 16,
+                    "search": {
+                        "url": "http://elasticsearch:9200",
+                        "index": "records",
+                        "profile": "elasticsearch-8.19.22",
+                    },
+                },
+            }
+        ],
+        "routes": [{"store": "records", "service": "database"}],
+    }
+    f.save("node.yaml", config_yaml.dumps(cfg))
+    f.save("routes.yaml", config_yaml.dumps(routes))
     run_options = dict(env=env)
     effective = json.loads(
         f.run(
-            [str(f.root / "client-host"), "-mode", "config", "-config", str(f.root / "node.json")],
+            [str(f.root / "client-host"), "-mode", "config", "-config", str(f.root / "node.yaml")],
             options=run_options,
         ).stdout
     )
@@ -161,6 +181,7 @@ def prepare(f, plan, artifact):
                 REPO / "scripts/capacity_contract.py",
                 REPO / "scripts/capacity_pacing.py",
                 REPO / "scripts/package.py",
+                REPO / "scripts/config_yaml.py",
                 REPO / "scripts/observer_completion.py",
                 REPO / "scripts/resource_report.py",
                 PLAN_PATH,
@@ -331,11 +352,11 @@ def start(f, plan, budget):
             "--mount",
             f"type=bind,source={f.root / 'client'},target=/qualification-client,readonly",
             "--mount",
-            f"type=bind,source={f.root / 'node.json'},target=/node.json,readonly",
+            f"type=bind,source={f.root / 'node.yaml'},target=/node.yaml,readonly",
             "--mount",
-            f"type=bind,source={f.root / 'routes.json'},target=/routes.json,readonly",
+            f"type=bind,source={f.root / 'routes.yaml'},target=/routes.yaml,readonly",
         ],
-        "command": ["serve", "--config", "/node.json"],
+        "command": ["serve", "--config", "/node.yaml"],
     }
     f.create("weir", weir_spec)
     f.observers = {}

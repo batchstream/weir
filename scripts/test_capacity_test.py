@@ -128,7 +128,7 @@ class ArtifactSafety(unittest.TestCase):
         entry=importlib.util.module_from_spec(spec)
         spec.loader.exec_module(entry)
         source="a"*40
-        expected={"go.mod":"fixture", "deploy/docker/node.example.json":"fixture", "deploy/docker/routes.example.json":"fixture"}
+        expected={"go.mod":"fixture", "deploy/docker/node.example.yaml":"fixture", "deploy/docker/routes.example.yaml":"fixture"}
         with tempfile.TemporaryDirectory() as base:
             artifact=Path(base)
             for inputs in ({name:digest for name,digest in expected.items() if "routes.example" not in name}, dict(expected, extra="fixture")):

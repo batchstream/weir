@@ -139,7 +139,7 @@ func TestPackagedArtifacts(t *testing.T) {
 				}
 				packagedFiles(t, directory, uri, fixture.DB)
 				if negative == "hostname" {
-					filename := filepath.Join(directory, "node-routing.json")
+					filename := filepath.Join(directory, "node-routing.yaml")
 					raw, err := os.ReadFile(filename)
 					if err != nil {
 						t.Fatal(err)
@@ -265,7 +265,7 @@ func packagedFiles(t *testing.T, directory, uri, database string) {
 	config := packagedConfig(parsed.String(), database)
 	config.Basic.Listeners.Application = "0.0.0.0:7447"
 	config.Basic.Diagnostics.Address = "127.0.0.1:7449"
-	writeConfigFiles(t, filepath.Join(directory, "node.json"), config, 0644)
+	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), config, 0644)
 }
 
 type packagedContainerOptions struct {
@@ -317,7 +317,7 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 	args := []string{"create", "--name", opts.name, "--label", "weir.owner=" + opts.owner, "--platform=linux/arm64",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=512m", "--memory-swap=512m", "--cpus=2", "--pids-limit=96",
 		"--add-host=m15-wrong:host-gateway", "--publish", "127.0.0.1::7447", "--mount", "type=bind,src=" + opts.directory + ",dst=/fixture,readonly",
-		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.json"}
+		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.yaml"}
 	packagedDocker(t, args...)
 	packagedDocker(t, "start", opts.name)
 	if opts.negative {

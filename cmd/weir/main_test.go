@@ -33,15 +33,29 @@ func TestVersionWithoutConfiguration(t *testing.T) {
 
 func TestCheckConfigWithoutBackendOrCAAccess(t *testing.T) {
 	directory := t.TempDir()
-	file := filepath.Join(directory, "node.json")
+	file := filepath.Join(directory, "node.yaml")
 	routingDirectory := filepath.Join(directory, "routing")
 	if err := os.Mkdir(routingDirectory, 0700); err != nil {
 		t.Fatal(err)
 	}
 
-	routingFile := filepath.Join(routingDirectory, "routes.json")
-	basic := `{"listeners":{"application":"192.0.2.1:7447"},"routing":{"file":"routing/routes.json"}}`
-	routing := `{"services":[{"name":"database","local":{"mongodb":{"uri":"mongodb://user:password-sentinel@unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem","database":"catalog","collection":"records"}}}],"routes":[{"store":"mongo","service":"database"}]}`
+	routingFile := filepath.Join(routingDirectory, "routes.yaml")
+	basic := `listeners:
+  application: 192.0.2.1:7447
+routing:
+  file: routing/routes.yaml
+`
+	routing := `services:
+  - name: database
+    local:
+      mongodb:
+        uri: "mongodb://user:password-sentinel@unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
+        database: catalog
+        collection: records
+routes:
+  - store: mongo
+    service: database
+`
 	if err := os.WriteFile(file, []byte(basic), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +77,7 @@ func TestCheckConfigWithoutBackendOrCAAccess(t *testing.T) {
 		}
 	}
 
-	invalid := strings.Replace(routing, `"collection":"records"`, `"collection":"invalid name"`, 1)
+	invalid := strings.Replace(routing, "collection: records", "collection: invalid name", 1)
 	if err := os.WriteFile(routingFile, []byte(invalid), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +146,8 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 	output.Reset()
 	if err := run([]string{"serve", "--help"}, &output); err != nil ||
 		!strings.Contains(output.String(), `-c, --config string`) ||
-		!strings.Contains(output.String(), `(default "weir.json")`) {
+		!strings.Contains(output.String(), `(default "weir.yaml")`) ||
+		!strings.Contains(output.String(), "basic YAML configuration") {
 		t.Fatal("serve help must document the local configuration flag", err, output.String())
 	}
 }
@@ -142,25 +157,45 @@ func TestCLIRequiresBasicAndRoutingFiles(t *testing.T) {
 	for _, command := range []string{"serve", "check"} {
 		var output bytes.Buffer
 		if err := run([]string{command}, &output); err == nil || err.Error() != "basic configuration unavailable" || output.Len() != 0 {
-			t.Fatal("command must require default weir.json before opening a backend", command, err, output.String())
+			t.Fatal("command must require default weir.yaml before opening a backend", command, err, output.String())
 		}
 	}
 
-	basic := `{"listeners":{"application":"127.0.0.1:0"},"routing":{"file":"routes.json"}}`
-	if err := os.WriteFile("weir.json", []byte(basic), 0600); err != nil {
+	basic := `listeners:
+  application: 127.0.0.1:0
+routing:
+  file: routes.yaml
+`
+	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, command := range []string{"serve", "check"} {
 		var output bytes.Buffer
 		if err := run([]string{command}, &output); err == nil || err.Error() != "routing configuration unavailable" || output.Len() != 0 {
-			t.Fatal("command must load weir.json and its referenced routing file", command, err, output.String())
+			t.Fatal("command must load weir.yaml and its referenced routing file", command, err, output.String())
+		}
+	}
+}
+
+func TestCLIHasNoJSONConfigurationFallback(t *testing.T) {
+	t.Chdir(t.TempDir())
+	legacy := `{"listeners":{"application":"127.0.0.1:0"},"routing":{"file":"routes.json"}}`
+	if err := os.WriteFile("weir.json", []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, command := range []string{"serve", "check"} {
+		var output bytes.Buffer
+		err := run([]string{command}, &output)
+		if err == nil || err.Error() != "basic configuration unavailable" || output.Len() != 0 {
+			t.Fatal("default configuration must not fall back to weir.json", command, err, output.String())
 		}
 	}
 }
 
 func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 	t.Chdir(t.TempDir())
-	missing := filepath.Join(t.TempDir(), "missing.json")
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	cases := [][]string{
 		{"unknown"}, {"completion"}, {"extra"}, {"version", "extra"},
 		{"serve", "--config", ""}, {"check", "-c", ""},
@@ -189,17 +224,30 @@ func TestCLIRejectsArgumentsBeforeConfiguration(t *testing.T) {
 func TestCLICommandStateIsFresh(t *testing.T) {
 	directory := t.TempDir()
 	t.Chdir(directory)
-	basic := `{"listeners":{"application":"192.0.2.1:7447"},"routing":{"file":"routes.json"}}`
-	routing := `{"services":[{"name":"remote","remote":{"endpoints":["unresolved.invalid:7448"],"max_concurrency":1}}],"routes":[{"store":"records","service":"remote"}]}`
-	if err := os.WriteFile("weir.json", []byte(basic), 0600); err != nil {
+	basic := `listeners:
+  application: 192.0.2.1:7447
+routing:
+  file: routes.yaml
+`
+	routing := `services:
+  - name: remote
+    remote:
+      endpoints:
+        - unresolved.invalid:7448
+      max_concurrency: 1
+routes:
+  - store: records
+    service: remote
+`
+	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile("routes.json", []byte(routing), 0600); err != nil {
+	if err := os.WriteFile("routes.yaml", []byte(routing), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	var output bytes.Buffer
-	if err := run([]string{"check", "--config", "missing.json"}, &output); err == nil {
+	if err := run([]string{"check", "--config", "missing.yaml"}, &output); err == nil {
 		t.Fatal("explicit missing file accepted")
 	}
 

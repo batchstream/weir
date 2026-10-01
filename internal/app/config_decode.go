@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const maxConfigBytes = 128 << 10
@@ -17,7 +18,7 @@ const maxConfigBytes = 128 << 10
 // DecodeBasic reads process settings without opening the routing document.
 func DecodeBasic(input io.Reader) (BasicConfig, error) {
 	cfg := DefaultConfig().Basic
-	if err := decodeConfigJSON(input, &cfg, false); err != nil {
+	if err := decodeConfigYAML(input, &cfg, false); err != nil {
 		return cfg, fmt.Errorf("basic %w", err)
 	}
 	if strings.TrimSpace(cfg.Routing.File) == "" {
@@ -29,7 +30,7 @@ func DecodeBasic(input io.Reader) (BasicConfig, error) {
 // DecodeRouting validates the service graph without accessing any backend.
 func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 	cfg := RoutingConfig{}
-	if err := decodeConfigJSON(input, &cfg, true); err != nil {
+	if err := decodeConfigYAML(input, &cfg, true); err != nil {
 		return cfg, fmt.Errorf("routing %w", err)
 	}
 	return cfg, cfg.Validate()
@@ -71,7 +72,7 @@ func Load(filename string) (Config, error) {
 	return cfg, cfg.Validate()
 }
 
-func decodeConfigJSON(input io.Reader, target any, allowNull bool) error {
+func decodeConfigYAML(input io.Reader, target any, allowNull bool) error {
 	raw, err := io.ReadAll(io.LimitReader(input, maxConfigBytes+1))
 	if err != nil {
 		return errors.New("configuration unavailable")
@@ -79,53 +80,68 @@ func decodeConfigJSON(input io.Reader, target any, allowNull bool) error {
 	if len(raw) > maxConfigBytes {
 		return errors.New("configuration exceeds bound")
 	}
-	// encoding/json accepts duplicate keys and case-insensitive field matches.
-	// Check the complete document before decoding so neither can overwrite data.
-	tokens := json.NewDecoder(bytes.NewReader(raw))
-	if err := uniqueJSON(tokens, 0, allowNull); err != nil {
+
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	var document yaml.Node
+	if err := decoder.Decode(&document); err != nil {
+		return errors.New("invalid configuration YAML")
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return errors.New("configuration must be a mapping")
+	}
+	err = validateConfigYAML(document.Content[0], 0, allowNull, "")
+	if err != nil {
 		return err
 	}
-	if _, err := tokens.Token(); err != io.EOF {
-		return errors.New("trailing configuration data")
+	var trailing yaml.Node
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return errors.New("trailing configuration document or data")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
+
+	// Node.Decode does not support KnownFields. Decode the checked document
+	// into its defaults with strict field matching, using the same YAML parser.
+	decoder = yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
 	if err := decoder.Decode(target); err != nil {
-		// Decoder errors can include unknown field names or invalid input values.
-		return errors.New("invalid configuration JSON or unknown field")
+		// Parser errors may contain field names, input values or sensitive paths.
+		return errors.New("invalid configuration YAML or unknown field")
 	}
 	return nil
 }
 
-func uniqueJSON(d *json.Decoder, depth int, allowNull bool) error {
+func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string) error {
 	if depth > 12 {
 		return errors.New("configuration nesting limit")
 	}
-	token, err := d.Token()
-	if err != nil {
-		return errors.New("invalid configuration JSON")
+	if node.Anchor != "" || node.Kind == yaml.AliasNode {
+		return errors.New("configuration anchors and aliases are unsupported")
 	}
-	delimiter, delimited := token.(json.Delim)
-	if depth == 0 && (!delimited || delimiter != '{') {
-		return errors.New("configuration must be an object")
+	if node.Style&yaml.TaggedStyle != 0 {
+		return errors.New("configuration explicit tags are unsupported")
 	}
-	if !delimited {
-		if token == nil && !allowNull {
-			return errors.New("configuration field cannot be null")
-		}
-		return nil
-	}
-	switch delimiter {
-	case '{':
-		seen := make(map[string]bool)
-		for d.More() {
-			key, err := d.Token()
-			if err != nil {
-				return errors.New("invalid configuration JSON")
+	if node.Tag == "!!null" {
+		if allowNull {
+			switch field {
+			case "local", "remote", "mongodb", "search", "connection", "services", "routes", "endpoints":
+				return nil
 			}
-			text, ok := key.(string)
+		}
+		return errors.New("configuration field cannot be null")
+	}
+
+	switch node.Kind {
+	case yaml.MappingNode:
+		seen := make(map[string]bool)
+		for i := 0; i < len(node.Content); i += 2 {
+			key := node.Content[i]
+			if key.Kind != yaml.ScalarNode ||
+				key.Tag != "!!str" ||
+				key.Anchor != "" ||
+				key.Style&yaml.TaggedStyle != 0 ||
+				key.Value == "<<" {
+				return errors.New("configuration requires plain string fields without merge keys")
+			}
 			keyName := strings.Map(func(char rune) rune {
-				// Use the same Unicode folding as encoding/json field lookup.
 				for {
 					next := unicode.SimpleFold(char)
 					if next <= char {
@@ -133,26 +149,36 @@ func uniqueJSON(d *json.Decoder, depth int, allowNull bool) error {
 					}
 					char = next
 				}
-			}, text)
-			if !ok || seen[keyName] {
+			}, key.Value)
+			if seen[keyName] {
 				return errors.New("duplicate configuration field")
 			}
 			seen[keyName] = true
-			if err := uniqueJSON(d, depth+1, allowNull); err != nil {
+			err := validateConfigYAML(node.Content[i+1], depth+1, allowNull, key.Value)
+			if err != nil {
 				return err
 			}
 		}
-	case '[':
-		for d.More() {
-			if err := uniqueJSON(d, depth+1, allowNull); err != nil {
+	case yaml.SequenceNode:
+		for _, child := range node.Content {
+			err := validateConfigYAML(child, depth+1, allowNull, field)
+			if err != nil {
 				return err
 			}
+		}
+	case yaml.ScalarNode:
+		expectedTag := "!!str"
+		switch field {
+		case "max_connections", "max_sessions", "hop_limit", "max_concurrency", "max_batch_operations":
+			expectedTag = "!!int"
+		case "allow_intranet":
+			expectedTag = "!!bool"
+		}
+		if node.Tag != expectedTag {
+			return errors.New("invalid configuration scalar type")
 		}
 	default:
 		return errors.New("invalid configuration structure")
-	}
-	if _, err := d.Token(); err != nil {
-		return errors.New("invalid configuration JSON")
 	}
 	return nil
 }

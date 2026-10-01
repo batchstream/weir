@@ -14,6 +14,7 @@ import subprocess
 import tarfile
 import time
 
+import config_yaml
 from kubernetes_fixture import Fixture, REPO
 
 IMAGE_ID = "sha256:caa699e6ca172cbfa24ed4d311f4cb346817a354b05df52601abd954edcb4dab"
@@ -77,16 +78,33 @@ def prepare(f, artifact, profile):
         assert result.returncode == 0
 
     for concurrency in (1, 2):
-        cfg = json.loads((REPO / "deploy/kubernetes/node.example.json").read_text())
-        routes = json.loads((REPO / "deploy/kubernetes/routes.example.json").read_text())
-        cfg["memory"] = "256MiB"
-        cfg["routing"]["file"] = "routes.json"
-        routes["services"][0]["local"]["max_concurrency"] = concurrency
+        cfg = {
+            "listeners": {"application": "0.0.0.0:7447"},
+            "diagnostics": {"address": "127.0.0.1:7449"},
+            "memory": "256MiB",
+            "routing": {"file": "routes.yaml"},
+        }
+        routes = {
+            "services": [
+                {
+                    "name": "database",
+                    "local": {
+                        "max_concurrency": concurrency,
+                        "search": {
+                            "url": "http://elasticsearch:9200",
+                            "index": "records",
+                            "profile": "elasticsearch-8.19.22",
+                        },
+                    },
+                }
+            ],
+            "routes": [{"store": "records", "service": "database"}],
+        }
         directory = f.root / f"c{concurrency}"
         directory.mkdir()
-        filename = directory / "node.json"
-        f.save(f"c{concurrency}/node.json", cfg)
-        f.save(f"c{concurrency}/routes.json", routes)
+        filename = directory / "node.yaml"
+        f.save(f"c{concurrency}/node.yaml", config_yaml.dumps(cfg))
+        f.save(f"c{concurrency}/routes.yaml", config_yaml.dumps(routes))
         result = subprocess.run(
             [str(f.root / "client-host"), "-validate", str(filename)],
             env=env,
@@ -647,8 +665,8 @@ def workloads(f, images, artifact, profile):
                 "secret",
                 "generic",
                 name,
-                "--from-file=node.json=" + str(f.root / f"c{c}/node.json"),
-                "--from-file=routes.json=" + str(f.root / f"c{c}/routes.json"),
+                "--from-file=node.yaml=" + str(f.root / f"c{c}/node.yaml"),
+                "--from-file=routes.yaml=" + str(f.root / f"c{c}/routes.yaml"),
             )
         )
         f.run(f.kube("patch", "secret", name, "--type=merge", "-p", '{"immutable":true}'))

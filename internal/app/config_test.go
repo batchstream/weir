@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/testutil"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -211,22 +211,22 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 
 func TestRemovedAuthenticationFieldsAreUnknown(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.json"
-	basic, err := json.Marshal(cfg.Basic)
+	cfg.Basic.Routing.File = "routing.yaml"
+	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"identity", "allow", "lua_worker"} {
-		input := `{"` + field + `":null,` + string(basic[1:])
+		input := field + ": unknown\n" + string(basic)
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 			t.Fatal("legacy field accepted", field)
 		}
 	}
-	routing, err := json.Marshal(cfg.Routing)
+	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := strings.Replace(string(routing), `"remote":{`, `"remote":{"server_name":"obsolete",`, 1)
+	input := strings.Replace(string(routing), "remote:\n", "remote:\n            server_name: obsolete\n", 1)
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("legacy remote identity accepted")
 	}
@@ -276,7 +276,7 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 }
 
 func TestCurrentPeerExamples(t *testing.T) {
-	for _, name := range []string{"peer-a.json", "peer-b.json"} {
+	for _, name := range []string{"peer-a.yaml", "peer-b.yaml"} {
 		filename := filepath.Join(testutil.Root(t), "examples", name)
 		if _, err := Load(filename); err != nil {
 			t.Fatal(name, err)
@@ -286,11 +286,15 @@ func TestCurrentPeerExamples(t *testing.T) {
 
 func TestRemoteEndpointListConfiguration(t *testing.T) {
 	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input := strings.Replace(string(raw), `"endpoints":["127.0.0.1:1"]`, `"endpoint":"127.0.0.1:1"`, 1)
+	input := `services:
+  - name: remote
+    remote:
+      endpoint: 127.0.0.1:1
+      max_concurrency: 2
+routes:
+  - store: records
+    service: remote
+`
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("legacy endpoint accepted", err)
 	}

@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/backend/search"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestSearchConnectionFullGraphPreflight(t *testing.T) {
@@ -34,7 +34,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
 	cfg.Routing.Services = []Service{definition}
 	cfg.Routing.Routes = []Route{route}
-	raw, err := json.Marshal(cfg.Routing)
+	raw, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,12 +71,12 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal("HTTP credentials accepted/leaked")
 	}
 	backend.URL = "https://search.test:443"
-	raw, err = json.Marshal(cfg.Routing)
+	raw, err = yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
-		input := strings.Replace(string(raw), `"connection":{`, `"connection":{"`+field+`":true,`, 1)
+		input := strings.Replace(string(raw), "connection:\n", "connection:\n                    "+field+": unknown\n", 1)
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 			t.Fatal("unknown connection/identity option accepted", field)
 		}

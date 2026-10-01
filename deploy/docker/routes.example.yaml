@@ -1,0 +1,12 @@
+services:
+  - name: "database"
+    local:
+      mongodb:
+        uri: "mongodb://db.example.invalid:27017/?directConnection=true"
+        database: "example"
+        collection: "records"
+      max_concurrency: 2
+
+routes:
+  - store: "records"
+    service: "database"

@@ -1,0 +1,26 @@
+# Runnable minimal routing example for config.example.yaml.
+# Full field documentation and MongoDB/Search/remote alternatives are in
+# config.example.yaml, in the commented routing reference.
+#
+# Required: 1..16 services; every service must be referenced by a route.
+services:
+  # Required unique resource name; <= 63 bytes.
+  - name: "database"
+    # Exactly one of local/remote; local requires exactly one adapter.
+    local:
+      # Optional. Default 4; allowed 0 (default) or 1..32.
+      max_concurrency: 4
+      # Optional. Default 16; allowed 0 (default) or 1..128.
+      max_batch_operations: 16
+      # Exactly one of mongodb/search; fields below are required.
+      mongodb:
+        # One explicit host:port; replace with your own endpoint.
+        uri: "mongodb://127.0.0.1:27017/?directConnection=true"
+        # Pre-created names; ^[A-Za-z][A-Za-z0-9_]{0,62}$.
+        database: "example"
+        collection: "records"
+
+# Required: 1..16 routes. Store names are unique; local services have one route.
+routes:
+  - store: "mongo"
+    service: "database"

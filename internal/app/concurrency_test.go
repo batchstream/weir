@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/batchstream/weir/internal/backend/search"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestLocalConcurrencyConfiguration(t *testing.T) {
@@ -30,7 +30,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 			cfg := DefaultConfig()
 			cfg.Basic.Listeners.Application = "127.0.0.1:0"
 			cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
-			raw, err := json.Marshal(cfg.Routing)
+			raw, err := yaml.Marshal(cfg.Routing)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,7 +53,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 				t.Fatal("different validation/assembly limits")
 			}
 			if c == 0 {
-				omitted := strings.Replace(string(raw), `"max_concurrency":0,`, "", 1)
+				omitted := strings.Replace(string(raw), "        max_concurrency: 0\n", "", 1)
 				decoded, err = DecodeRouting(strings.NewReader(omitted))
 				if err != nil || decoded.Services[0].Local.runtimeLimits().Concurrency != 4 {
 					t.Fatal("omitted default", err)

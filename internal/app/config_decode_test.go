@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -14,10 +13,11 @@ import (
 	"testing"
 
 	"github.com/batchstream/weir/internal/backend/search"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
-	input := `{"listeners":{"application":"127.0.0.1:0"},"routing":{"file":"routing.json"}}`
+	input := "listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: routing.yaml\n"
 	cfg, err := DecodeBasic(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
@@ -28,17 +28,17 @@ func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
 	}
 	for _, field := range []string{
 		"",
-		`,"routing":{}`,
-		`,"routing":{"file":""}`,
-		`,"routing":{"file":" \t\r\n"}`,
-		`,"routing":{"file":null}`,
+		"routing: {}\n",
+		"routing:\n  file: \"\"\n",
+		"routing:\n  file: '   '\n",
+		"routing:\n  file: null\n",
 	} {
-		input := `{"listeners":{"application":"127.0.0.1:0"}` + field + `}`
+		input := "listeners:\n  application: 127.0.0.1:0\n" + field
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 			t.Fatal("missing or empty routing.file accepted")
 		}
 	}
-	input = `{"routing":{"file":"routing.json"}}`
+	input = "routing:\n  file: routing.yaml\n"
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 		t.Fatal("missing listeners accepted")
 	}
@@ -50,26 +50,26 @@ func TestDecodeBasicDefaultsAndRequiredRoutingFile(t *testing.T) {
 
 func TestStrictConfigurationDocuments(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.json"
-	basic, err := json.Marshal(cfg.Basic)
+	cfg.Basic.Routing.File = "routing.yaml"
+	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	routing, err := json.Marshal(cfg.Routing)
+	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, document := range []string{"basic", "routing"} {
 		t.Run(document, func(t *testing.T) {
 			raw := string(basic)
-			duplicate := `"MEMORY":"512MiB",`
-			crossField := `"services":[],`
-			nestedDuplicate := strings.Replace(raw, `"max_connections":16`, `"max_connections":16,"MAX_CONNECTIONS":16`, 1)
+			duplicate := "MEMORY: 512MiB\n"
+			crossField := "services: []\n"
+			nestedDuplicate := strings.Replace(raw, "max_connections: 16", "max_connections: 16\n    MAX_CONNECTIONS: 16", 1)
 			if document == "routing" {
 				raw = string(routing)
-				duplicate = `"SERVICES":[],`
-				crossField = `"application":"127.0.0.1:0",`
-				nestedDuplicate = strings.Replace(raw, `"max_concurrency":2`, `"max_concurrency":2,"MAX_CONCURRENCY":2`, 1)
+				duplicate = "SERVICES: []\n"
+				crossField = "listeners: {}\n"
+				nestedDuplicate = strings.Replace(raw, "max_concurrency: 2", "max_concurrency: 2\n            MAX_CONCURRENCY: 2", 1)
 			}
 			var decodeErr error
 			if document == "basic" {
@@ -81,13 +81,26 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 				t.Fatal("valid document rejected", decodeErr)
 			}
 			inputs := []string{
-				"", "null", "[]", "true", "2", `"secret-sentinel"`, "{", "{]",
-				`{"unknown-secret-sentinel":1,` + raw[1:],
-				"{" + duplicate + raw[1:],
-				`{"ſervices":[],` + string(routing[1:]),
-				"{" + crossField + raw[1:],
-				nestedDuplicate, raw + " {}", raw + " null", raw + " garbage",
-				`{"unexpected":` + strings.Repeat("[", 12) + "0" + strings.Repeat("]", 12) + "," + raw[1:],
+				"", "null", "[]", "true", "2", "secret-sentinel", "{", "{]",
+				"unknown-secret-sentinel: value\n" + raw,
+				duplicate + raw,
+				"ſervices: []\n" + string(routing),
+				crossField + raw,
+				nestedDuplicate,
+				raw + "---\n{}\n",
+				raw + "---\nnull\n",
+				raw + "---\n",
+				raw + "garbage\n",
+				"unexpected: " + strings.Repeat("[", 12) + "0" + strings.Repeat("]", 12) + "\n" + raw,
+				"1: value\n" + raw,
+				"? [a, b]\n: value\n" + raw,
+				"<<: {}\n" + raw,
+				"'<<': {}\n" + raw,
+				"unexpected: &secret-sentinel value\n" + raw,
+				"unexpected: &a [*a]\n" + raw,
+				"unexpected: !secret-sentinel value\n" + raw,
+				"unexpected: !!str secret-sentinel\n" + raw,
+				"!!map\n" + raw,
 			}
 			for i, input := range inputs {
 				if document == "basic" {
@@ -122,9 +135,12 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 
 func TestConfigurationNestingBound(t *testing.T) {
 	for _, depth := range []int{11, 12} {
-		input := `{"unexpected":` + strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth) + "}"
-		decoder := json.NewDecoder(strings.NewReader(input))
-		err := uniqueJSON(decoder, 0, true)
+		input := "unexpected: " + strings.Repeat("[", depth) + "value" + strings.Repeat("]", depth) + "\n"
+		var document yaml.Node
+		if err := yaml.Unmarshal([]byte(input), &document); err != nil {
+			t.Fatal(err)
+		}
+		err := validateConfigYAML(document.Content[0], 0, true, "")
 		if depth == 11 && err != nil {
 			t.Fatal("exact nesting bound rejected", err)
 		}
@@ -143,20 +159,20 @@ func TestConfigurationNestingBound(t *testing.T) {
 
 func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.json"
-	routing, err := json.Marshal(cfg.Routing)
+	cfg.Basic.Routing.File = "routing.yaml"
+	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := `{"ſervices":[],` + string(routing[1:])
+	input := "ſervices: []\n" + string(routing)
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote routing field", err)
 	}
-	basic, err := json.Marshal(cfg.Basic)
+	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input = strings.Replace(string(basic), `"max_sessions":16`, `"max_sessions":16,"max_ſessions":16`, 1)
+	input = strings.Replace(string(basic), "max_sessions: 16", "max_sessions: 16\n    max_ſessions: 16", 1)
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote basic field", err)
 	}
@@ -164,22 +180,22 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 
 func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.json"
-	raw, err := json.Marshal(cfg.Basic)
+	cfg.Basic.Routing.File = "routing.yaml"
+	raw, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, fragment := range []string{
-		`"diagnostics":null,`,
-		`"listeners":null,`,
-		`"memory":null,`,
-		`"transport":null,`,
-		`"transport":{"max_connections":null},`,
-		`"transport":{"timeouts":{"unary":null}},`,
-		`"forwarding":null,`,
-		`"routing":null,`,
+		"diagnostics: null\n",
+		"listeners: ~\n",
+		"memory:\n",
+		"transport: null\n",
+		"transport:\n  max_connections: null\n",
+		"transport:\n  timeouts:\n    unary: null\n",
+		"forwarding: null\n",
+		"routing: null\n",
 	} {
-		input := "{" + fragment + string(raw[1:])
+		input := fragment + string(raw)
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be null") {
 			t.Fatal("null basic field accepted", err)
 		}
@@ -208,21 +224,21 @@ func TestLoadRoutingPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := remoteConfig(t)
-	routing, err := json.Marshal(cfg.Routing)
+	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	routingFilename := filepath.Join(root, "routing.json")
+	routingFilename := filepath.Join(root, "routing.yaml")
 	if err := os.WriteFile(routingFilename, routing, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"../routing.json", routingFilename} {
+	for _, path := range []string{"../routing.yaml", routingFilename} {
 		cfg.Basic.Routing.File = path
-		basic, err := json.Marshal(cfg.Basic)
+		basic, err := yaml.Marshal(cfg.Basic)
 		if err != nil {
 			t.Fatal(err)
 		}
-		filename := filepath.Join(directory, "node.json")
+		filename := filepath.Join(directory, "node.yaml")
 		if err := os.WriteFile(filename, basic, 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -239,17 +255,17 @@ func TestLoadRoutingPaths(t *testing.T) {
 
 func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	root := t.TempDir()
-	filename := filepath.Join(root, "missing-basic-secret-sentinel.json")
+	filename := filepath.Join(root, "missing-basic-secret-sentinel.yaml")
 	if _, err := Load(filename); err == nil || err.Error() != "basic configuration unavailable" {
 		t.Fatal("missing basic error leaked path", err)
 	}
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "missing-routing-secret-sentinel.json"
-	basic, err := json.Marshal(cfg.Basic)
+	cfg.Basic.Routing.File = "missing-routing-secret-sentinel.yaml"
+	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filename = filepath.Join(root, "node.json")
+	filename = filepath.Join(root, "node.yaml")
 	if err := os.WriteFile(filename, basic, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +273,7 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 		t.Fatal("missing routing error leaked path", err)
 	}
 	cfg.Basic.Listeners.Application = "invalid-listener-secret-sentinel"
-	basic, err = json.Marshal(cfg.Basic)
+	basic, err = yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +304,7 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = listener.Addr().String()
 	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
-	filename := filepath.Join(t.TempDir(), "node.json")
+	filename := filepath.Join(t.TempDir(), "node.yaml")
 	writeConfigFiles(t, filename, cfg, 0600)
 	if _, err := Load(filename); err != nil {
 		t.Fatal("Load accessed CA, DNS, backend or occupied listener", err)
@@ -308,7 +324,7 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
 	cfg.Routing.Services, cfg.Routing.Routes = []Service{service, invalidService}, []Route{route}
-	filename := filepath.Join(t.TempDir(), "node.json")
+	filename := filepath.Join(t.TempDir(), "node.yaml")
 	writeConfigFiles(t, filename, cfg, 0600)
 	if _, err := Load(filename); err == nil || contacts.Load() != 0 {
 		t.Fatal("invalid later service reached startup", err, contacts.Load())
@@ -317,7 +333,7 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 
 func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg.Routing)
+	raw, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +341,129 @@ func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 	if err != nil || decoded.Services[0].Local != nil || decoded.Services[0].Remote == nil {
 		t.Fatal("optional null Local adapter rejected", err)
 	}
-	if _, err := DecodeRouting(io.LimitReader(strings.NewReader(string(raw)), int64(len(raw)-1))); err == nil {
+	if _, err := DecodeRouting(io.LimitReader(strings.NewReader(string(raw)), int64(len(raw)/2))); err == nil {
 		t.Fatal("truncated routing document accepted")
+	}
+}
+
+func TestConfigurationScalarTypes(t *testing.T) {
+	basic := "listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: routing.yaml\n"
+	for _, fragment := range []string{
+		"listeners:\n  application: 127001\nrouting:\n  file: routing.yaml\n",
+		"listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: true\n",
+		basic + "diagnostics:\n  allow_intranet: yes\n",
+		basic + "diagnostics:\n  allow_intranet: 'true'\n",
+		basic + "transport:\n  max_connections: '16'\n",
+		basic + "transport:\n  max_sessions: 16.0\n",
+		basic + "forwarding:\n  hop_limit: false\n",
+	} {
+		_, err := DecodeBasic(strings.NewReader(fragment))
+		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
+			t.Fatal("basic field accepted implicit type coercion", fragment, err)
+		}
+	}
+
+	routing := `services:
+  - name: remote
+    remote:
+      endpoints: [127.0.0.1:1]
+      max_concurrency: 2
+routes:
+  - store: records
+    service: remote
+`
+	for _, replacement := range [][2]string{
+		{"name: remote", "name: true"},
+		{"endpoints: [127.0.0.1:1]", "endpoints: [123]"},
+		{"max_concurrency: 2", "max_concurrency: '2'"},
+		{"store: records", "store: 123"},
+		{"service: remote", "service: false"},
+	} {
+		input := strings.Replace(routing, replacement[0], replacement[1], 1)
+		_, err := DecodeRouting(strings.NewReader(input))
+		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
+			t.Fatal("routing field accepted implicit type coercion", replacement, err)
+		}
+	}
+}
+
+func TestRoutingNullFields(t *testing.T) {
+	input := `services:
+  - name: database
+    remote: null
+    local:
+      search: null
+      mongodb:
+        uri: mongodb://127.0.0.1:27017
+        database: example
+        collection: records
+routes:
+  - store: records
+    service: database
+`
+	cfg, err := DecodeRouting(strings.NewReader(input))
+	if err != nil || cfg.Services[0].Remote != nil || cfg.Services[0].Local.Search != nil {
+		t.Fatal("unused adapter blocks may be explicitly null", err)
+	}
+	for _, field := range []string{"uri", "database", "collection"} {
+		lines := strings.Split(input, "\n")
+		for i, line := range lines {
+			prefix := "        " + field + ":"
+			if strings.HasPrefix(line, prefix) {
+				lines[i] = prefix + " null"
+			}
+		}
+		_, err := DecodeRouting(strings.NewReader(strings.Join(lines, "\n")))
+		if err == nil || !strings.Contains(err.Error(), "cannot be null") {
+			t.Fatal("required adapter scalar may not be null", field, err)
+		}
+	}
+	for _, document := range []string{
+		"services: null\nroutes: null\n",
+		"services: [null]\nroutes: [null]\n",
+		"services:\n  - name: remote\n    remote:\n      endpoints: null\n      max_concurrency: 2\nroutes:\n  - store: records\n    service: remote\n",
+	} {
+		if _, err := DecodeRouting(strings.NewReader(document)); err == nil {
+			t.Fatal("null required graph or endpoint collection accepted")
+		}
+	}
+}
+
+func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
+	input := `services:
+  - name: search
+    local:
+      search:
+        url: https://127.0.0.1:9200
+        index: records
+        profile: elasticsearch-8.19.22
+        connection:
+          username: user-secret-sentinel
+          password: password-secret-sentinel
+          ca_file: /missing/ca-secret-sentinel.pem
+routes:
+  - store: records
+    service: search
+`
+	if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
+		t.Fatal("valid secret-bearing fields should pass pure validation", err)
+	}
+	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
+		unknown := strings.Replace(input, "        connection:\n", "        connection:\n          "+field+": field-secret-sentinel\n", 1)
+		_, err := DecodeRouting(strings.NewReader(unknown))
+		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
+			t.Fatal("unknown nested option must be rejected without exposing credentials or parser details", field, err)
+		}
+	}
+	for _, mutation := range [][2]string{
+		{"password-secret-sentinel", "null"},
+		{"username: user-secret-sentinel", "username: bad:user-secret-sentinel"},
+		{"profile: elasticsearch-8.19.22", "profile: profile-secret-sentinel"},
+	} {
+		invalid := strings.Replace(input, mutation[0], mutation[1], 1)
+		_, err := DecodeRouting(strings.NewReader(invalid))
+		if err == nil || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "/missing/") {
+			t.Fatal("invalid nested input accepted or leaked a sensitive value", mutation, err)
+		}
 	}
 }

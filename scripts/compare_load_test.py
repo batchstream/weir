@@ -148,17 +148,17 @@ class PairedComparison(unittest.TestCase):
                 patch.object(entry, "http", return_value="metrics"), \
                 patch.object(fixture, "stop_weir"), patch.object(fixture, "create", side_effect=create):
             fixture.start_weir("baseline")
-            baseline_config = json.loads((fixture.root / "node.json").read_text())
-            baseline_routes = json.loads((fixture.root / "routes.json").read_text())
+            baseline_config = (fixture.root / "node.yaml").read_text()
+            baseline_routes = (fixture.root / "routes.yaml").read_text()
             fixture.start_weir("weir")
-            current_config = json.loads((fixture.root / "node.json").read_text())
-            current_routes = json.loads((fixture.root / "routes.json").read_text())
-        self.assertEqual(current_config["routing"]["file"], "routes.json")
-        self.assertNotIn("services", current_config)
-        self.assertNotIn("routes", current_config)
+            current_config = (fixture.root / "node.yaml").read_text()
+            current_routes = (fixture.root / "routes.yaml").read_text()
+        self.assertIn('"routing":\n  "file": "routes.yaml"\n', current_config)
+        self.assertNotIn('"services":', current_config)
+        self.assertNotIn('"routes":', current_config)
         self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
-        self.assertEqual(commands[0][2], ["serve", "--config", "/node.json"])
+        self.assertEqual(commands[0][2], ["serve", "--config", "/node.yaml"])
         self.assertEqual(commands[1][2], commands[0][2])
         baseline_options = commands[0][1]
         current_options = commands[1][1]
@@ -170,7 +170,7 @@ class PairedComparison(unittest.TestCase):
             self.assertEqual(options[options.index("--cpuset-cpus") + 1], "3,4")
             self.assertEqual(options[options.index("--memory") + 1], "768m")
             self.assertNotIn("WEIR_CAPACITY_INTEGRATION=1", options)
-            for filename in ("node.json", "routes.json"):
+            for filename in ("node.yaml", "routes.yaml"):
                 self.assertIn("type=bind,source=" + str(fixture.root / filename) + ",target=/" + filename + ",readonly", options)
 
     def test_shared_prewarm_covers_both_production_paths_and_restores_cpu(self):

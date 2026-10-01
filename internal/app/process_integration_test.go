@@ -61,7 +61,7 @@ func (p *process) stop(t *testing.T) {
 
 func startProcess(t *testing.T, binary string, cfg Config) *process {
 	t.Helper()
-	name := filepath.Join(t.TempDir(), "node.json")
+	name := filepath.Join(t.TempDir(), "node.yaml")
 	writeConfigFiles(t, name, cfg, 0600)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)

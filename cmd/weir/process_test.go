@@ -5,7 +5,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +26,7 @@ import (
 	"github.com/batchstream/weir/internal/app"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -216,16 +216,16 @@ type cliProcess struct {
 func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	t.Helper()
 	t.Logf("native test runtime=%s/%s go=%s euid=%d", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Geteuid())
-	cfg.Basic.Routing.File = "routes.json"
-	raw, err := json.Marshal(cfg.Basic)
+	cfg.Basic.Routing.File = "routes.yaml"
+	raw, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := filepath.Join(t.TempDir(), "node.json")
+	config := filepath.Join(t.TempDir(), "node.yaml")
 	if err := os.WriteFile(config, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	routing, err := json.Marshal(cfg.Routing)
+	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}

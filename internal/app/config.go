@@ -17,92 +17,92 @@ import (
 
 // Config contains the separately loaded process and routing settings.
 type Config struct {
-	Basic   BasicConfig   `json:"basic"`
-	Routing RoutingConfig `json:"routing"`
+	Basic   BasicConfig   `json:"basic" yaml:"basic"`
+	Routing RoutingConfig `json:"routing" yaml:"routing"`
 }
 
 // BasicConfig groups settings by their process responsibility.
 type BasicConfig struct {
-	Listeners   ListenerConfig    `json:"listeners"`
-	Diagnostics DiagnosticsConfig `json:"diagnostics"`
-	Memory      ByteSize          `json:"memory"`
-	Transport   TransportConfig   `json:"transport"`
-	Forwarding  ForwardingConfig  `json:"forwarding"`
-	Routing     RoutingSource     `json:"routing"`
+	Listeners   ListenerConfig    `json:"listeners" yaml:"listeners"`
+	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
+	Memory      ByteSize          `json:"memory" yaml:"memory"`
+	Transport   TransportConfig   `json:"transport" yaml:"transport"`
+	Forwarding  ForwardingConfig  `json:"forwarding" yaml:"forwarding"`
+	Routing     RoutingSource     `json:"routing" yaml:"routing"`
 }
 
 type ListenerConfig struct {
-	Application string `json:"application"`
-	Peer        string `json:"peer"`
+	Application string `json:"application" yaml:"application"`
+	Peer        string `json:"peer" yaml:"peer"`
 }
 
 type DiagnosticsConfig struct {
-	Address       string `json:"address"`
-	AllowIntranet bool   `json:"allow_intranet"`
+	Address       string `json:"address" yaml:"address"`
+	AllowIntranet bool   `json:"allow_intranet" yaml:"allow_intranet"`
 }
 
 type ForwardingConfig struct {
-	HopLimit int `json:"hop_limit"`
+	HopLimit int `json:"hop_limit" yaml:"hop_limit"`
 }
 
 type RoutingSource struct {
-	File string `json:"file"`
+	File string `json:"file" yaml:"file"`
 }
 
 // RoutingConfig defines the complete, static service and Store graph.
 type RoutingConfig struct {
-	Services []Service `json:"services"`
-	Routes   []Route   `json:"routes"`
+	Services []Service `json:"services" yaml:"services"`
+	Routes   []Route   `json:"routes" yaml:"routes"`
 }
 
 type Route struct {
-	Store   string `json:"store"`
-	Service string `json:"service"`
+	Store   string `json:"store" yaml:"store"`
+	Service string `json:"service" yaml:"service"`
 }
 
 type Service struct {
-	Name   string  `json:"name"`
-	Local  *Local  `json:"local"`
-	Remote *Remote `json:"remote"`
+	Name   string  `json:"name" yaml:"name"`
+	Local  *Local  `json:"local" yaml:"local"`
+	Remote *Remote `json:"remote" yaml:"remote"`
 }
 
 type Local struct {
-	MongoDB            *Mongo  `json:"mongodb"`
-	Search             *Search `json:"search"`
-	MaxConcurrency     int     `json:"max_concurrency"`
-	MaxBatchOperations int     `json:"max_batch_operations"`
+	MongoDB            *Mongo  `json:"mongodb" yaml:"mongodb"`
+	Search             *Search `json:"search" yaml:"search"`
+	MaxConcurrency     int     `json:"max_concurrency" yaml:"max_concurrency"`
+	MaxBatchOperations int     `json:"max_batch_operations" yaml:"max_batch_operations"`
 }
 
 type Mongo struct {
-	URI        string `json:"uri"`
-	Database   string `json:"database"`
-	Collection string `json:"collection"`
+	URI        string `json:"uri" yaml:"uri"`
+	Database   string `json:"database" yaml:"database"`
+	Collection string `json:"collection" yaml:"collection"`
 }
 
 type Search struct {
-	Connection *search.Connection `json:"connection"`
-	URL        string             `json:"url"`
-	Index      string             `json:"index"`
-	Profile    string             `json:"profile"`
+	Connection *search.Connection `json:"connection" yaml:"connection"`
+	URL        string             `json:"url" yaml:"url"`
+	Index      string             `json:"index" yaml:"index"`
+	Profile    string             `json:"profile" yaml:"profile"`
 }
 
 type Remote struct {
-	Endpoints      []string `json:"endpoints"`
-	MaxConcurrency int      `json:"max_concurrency"`
+	Endpoints      []string `json:"endpoints" yaml:"endpoints"`
+	MaxConcurrency int      `json:"max_concurrency" yaml:"max_concurrency"`
 }
 
 type TransportConfig struct {
-	MaxConnections int               `json:"max_connections"`
-	MaxSessions    int               `json:"max_sessions"`
-	Timeouts       TransportTimeouts `json:"timeouts"`
+	MaxConnections int               `json:"max_connections" yaml:"max_connections"`
+	MaxSessions    int               `json:"max_sessions" yaml:"max_sessions"`
+	Timeouts       TransportTimeouts `json:"timeouts" yaml:"timeouts"`
 }
 
 type TransportTimeouts struct {
-	Unary  Duration `json:"unary"`
-	Bulk   Duration `json:"bulk"`
-	Scan   Duration `json:"scan"`
-	Native Duration `json:"native"`
-	Stall  Duration `json:"stall"`
+	Unary  Duration `json:"unary" yaml:"unary"`
+	Bulk   Duration `json:"bulk" yaml:"bulk"`
+	Scan   Duration `json:"scan" yaml:"scan"`
+	Native Duration `json:"native" yaml:"native"`
+	Stall  Duration `json:"stall" yaml:"stall"`
 }
 
 func DefaultConfig() Config {
