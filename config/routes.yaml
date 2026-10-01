@@ -1,0 +1,147 @@
+# Weir routing configuration reference
+#
+# Loaded through routing.file in config/weir.yaml. All services/routes below
+# are active YAML configuration. Set backend addresses, resource names, credentials and CA
+# paths for your environment before running weir serve. Keep only the services
+# and routes you need; every service must be referenced by a route.
+# weir check validates both files and the graph without backend, DNS or CA-file IO.
+# Optional fields use their documented defaults when omitted. Strings are literal;
+# environment-variable substitution is not performed. Changes require a restart.
+
+# Named immutable services that execute locally or forward to another Weir.
+# Required: yes. Default: none. Allowed: list containing 1..16 services.
+services:
+  # Service name used by routes.service.
+  # Required: yes. Default: none. Allowed: unique lowercase resource name,
+  # <= 63 bytes, matching ^[a-z](?:[a-z0-9]|-[a-z0-9]){0,62}$.
+  - name: "database"
+
+    # Local backend and scheduler settings.
+    # Required: exactly one of local/remote. Default: absent.
+    # Allowed: exactly one of mongodb/search plus the scheduler fields below.
+    # A local service must have exactly one route; local aliases are rejected.
+    local:
+      # Upper bound on adaptive concurrent backend execution.
+      # Required: no. Default: 4. Allowed: 0 (use default) or integer 1..32.
+      max_concurrency: 4
+
+      # Maximum number of operations collected into one physical batch.
+      # Required: no. Default: 16. Allowed: 0 (use default) or integer 1..128.
+      max_batch_operations: 16
+
+      # MongoDB adapter; mutually exclusive with local.search.
+      # Required: exactly one local adapter. Default: absent.
+      # Allowed: uri/database/collection mapping below.
+      mongodb:
+        # Explicit single-endpoint MongoDB connection URI.
+        # Required: yes. Default: none. Allowed: mongodb://host:port/ URI
+        # <= 4096 bytes; one DNS/IP host, explicit port 1..65535, no db path.
+        # mongodb+srv, multiple hosts and replicaSet discovery are unsupported.
+        # Allowed query options ONLY:
+        #   directConnection=true (default forced true),
+        #   serverMonitoringMode=poll (default forced poll),
+        #   authSource, authMechanism=SCRAM-SHA-256, tls=true, tlsCAFile.
+        # Without credentials, authentication/TLS options must be absent.
+        # With credentials, username/password, authSource, authMechanism and
+        # tls=true are all required. Percent-encode URI credentials.
+        # Username: nonempty, <= 128 decoded bytes; password: nonempty,
+        # <= 256 decoded bytes. authSource must match the database-name
+        # grammar below. authMechanism allows only SCRAM-SHA-256.
+        # tlsCAFile is optional: default system roots; a relative CA path
+        # resolves from the process working directory, not the routing file.
+        # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
+        # Auth example:
+        # mongodb://user:change-me@db.example.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
+        uri: "mongodb://127.0.0.1:27017/?directConnection=true"
+
+        # Pre-created database used by this local Store.
+        # Required: yes. Default: none.
+        # Allowed: ^[A-Za-z][A-Za-z0-9_]{0,62}$.
+        database: "example"
+
+        # Pre-created collection; program transforms require a replica set
+        # supporting transactions.
+        # Required: yes. Default: none.
+        # Allowed: ^[A-Za-z][A-Za-z0-9_]{0,62}$.
+        collection: "records"
+
+  - name: "search"
+    local:
+      # These local scheduler fields use the same defaults/bounds as above.
+      max_concurrency: 4
+      max_batch_operations: 16
+
+      # Elasticsearch/OpenSearch adapter; mutually exclusive with mongodb.
+      # Required: exactly one local adapter. Default: absent.
+      # Allowed: url/index/profile and optional connection mapping below.
+      search:
+        # One backend HTTP endpoint.
+        # Required: yes. Default: none. Allowed: http://host:port or
+        # https://host:port, <= 1024 bytes, port 1..65535.
+        # No userinfo, path, query, fragment, zones or unspecified/multicast IP.
+        url: "https://127.0.0.1:9200"
+
+        # Pre-created concrete index with one primary shard and default routing.
+        # Required: yes. Default: none.
+        # Allowed: ^[a-z][a-z0-9_-]{0,62}$; aliases/data streams are unsupported.
+        # Backend action.auto_create_index must be false.
+        index: "records"
+
+        # Exact audited backend distribution/version.
+        # Required: yes. Default: none.
+        # Allowed: "elasticsearch-8.19.22" | "opensearch-2.19.6".
+        profile: "elasticsearch-8.19.22"
+
+        # HTTPS authentication/trust options. Omit this block for HTTP.
+        # Required: no. Default: absent (system roots; no Basic credentials).
+        # Allowed: nonempty mapping below, only when url starts with https://.
+        # Set credentials and the CA path for your own backend before startup.
+        connection:
+          # HTTP Basic username; must be paired with password.
+          # Required: if password is set. Default: "" (no Basic auth).
+          # Allowed: nonempty UTF-8 text <= 128 bytes, no colon/control chars.
+          username: "weir"
+
+          # HTTP Basic password; must be paired with username.
+          # Required: if username is set. Default: "".
+          # Allowed: nonempty UTF-8 text <= 256 bytes, no control characters.
+          password: "change-me"
+
+          # PEM trust bundle read once at startup.
+          # Required: no. Default: "" (system trust roots).
+          # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
+          # Relative paths resolve from the process working directory.
+          ca_file: "/etc/weir/ca.pem"
+
+  - name: "upstream"
+    # Remote service: forward requests to peer listeners.
+    # Required: exactly one of local/remote. Default: absent.
+    # Allowed: endpoints/max_concurrency mapping below.
+    remote:
+      # Alternate peer listener endpoints for the same logical service.
+      # Required: yes. Default: none. Allowed: list of 1..8 distinct DNS/IP
+      # host:port strings, <= 260 bytes each, port 1..65535; no URL syntax.
+      # Canonically equivalent endpoints are duplicates. List order is not a
+      # priority setting; use endpoints backed by the same intended service.
+      endpoints:
+        - "127.0.0.1:7448"
+
+      # Maximum concurrent forwarding operations for this remote service.
+      # Required: yes. Default: none. Allowed: integer 1..16.
+      max_concurrency: 8
+
+# Map public Store names to declared services.
+# Required: yes. Default: none. Allowed: list of 1..16 routes.
+# Each Store must be unique; every declared service must be referenced.
+routes:
+  # Public resource authority, e.g. the "mongo" in weir://mongo/...
+  # Required: yes. Default: none. Allowed: unique resource name with the same
+  # lowercase grammar/63-byte bound as services.name.
+  - store: "mongo"
+    # Target services.name, not a URL or backend address.
+    # Required: yes. Default: none. Allowed: an existing service name.
+    service: "database"
+  - store: "search"
+    service: "search"
+  - store: "remote"
+    service: "upstream"

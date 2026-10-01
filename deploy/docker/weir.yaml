@@ -4,4 +4,4 @@ listeners:
 memory: "512MiB"
 
 routing:
-  file: "routes.example.yaml"
+  file: "routes.yaml"

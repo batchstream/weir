@@ -185,15 +185,18 @@ timeouts under `transport`, and the hop budget under `forwarding.hop_limit`.
 strings such as `"30s"` or `"5m"`. A required `routing.file` selects the separate
 routing YAML file, containing Services and Routes, including backend connection
 and local scheduler settings. Relative routing paths resolve from the basic file's
-directory. Both documents require one YAML mapping with exact field names and reject unknown fields,
+directory. Both documents require one YAML mapping with exact field names and
+reject unknown fields,
 duplicate keys, anchors, aliases, merge keys, explicit tags, trailing documents and
-inputs over 128 KiB. The complete `config.example.yaml` reference documents every
-field's purpose, required status, default and allowed values. Parsing and complete
-validation have no backend, DNS or CA-file side effects. Configuration is immutable
-after startup; changing either file requires
-a restart. Cobra commands separate server startup, validation, build identity and
-health checks. `weir serve --config <file>` selects a basic file (default `weir.yaml`
-in the working directory); `weir check --config <file>` validates both files without assembly.
+inputs over 128 KiB. The `config/weir.yaml` basic reference and
+`config/routes.yaml` routing reference document every field's purpose, required
+status, default and allowed values beside actual YAML settings. Parsing and
+complete validation have no backend, DNS or CA-file side effects. Configuration
+is immutable after startup; changing either file requires a restart. Cobra
+commands separate server startup, validation, build identity and
+health checks. `weir serve --config <file>` selects a basic file (default
+`config/weir.yaml` from the working directory); `weir check --config <file>`
+validates both files without assembly.
 
 Deployment topology examples:
 

@@ -24,14 +24,16 @@ indices. MongoDB program transforms require transactions on a replica set.
 ```sh
 go build -o bin/weir ./cmd/weir
 bin/weir version
-bin/weir check --config config.example.yaml
+bin/weir check
 ```
 
-Copy the [complete configuration reference](https://github.com/batchstream/weir/blob/main/config.example.yaml)
-and its [routing example](https://github.com/batchstream/weir/blob/main/routes.example.yaml)
-into the same directory. Set the backend address and resource names in the routing
-file. Start with `bin/weir serve --config /path/to/weir.yaml`;
-`bin/weir serve` loads `weir.yaml` in the current directory.
+Keep the [basic configuration](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
+and [routing configuration](https://github.com/batchstream/weir/blob/main/config/routes.yaml)
+together in the `config/` directory. Set backend addresses, resource names,
+credentials and CA paths in the routing file, and remove services/routes you do
+not need.
+Start with `bin/weir serve --config /path/to/config/weir.yaml`;
+`bin/weir serve` loads `config/weir.yaml` from the current directory.
 Lua program transforms run inside the Weir process; no additional executable or
 runtime path configuration is required.
 The application listener uses plaintext gRPC; deploy it on an isolated network.
@@ -49,13 +51,15 @@ HTTP settings under `diagnostics`, connection/session limits and readable timeou
 under `transport`, and the hop budget under `forwarding`. Its required
 `routing.file` selects a separate file containing `services` and `routes`.
 
-The [configuration reference](https://github.com/batchstream/weir/blob/main/config.example.yaml)
-documents every basic and routing field, including its purpose, required status,
-default, allowed values and conditional relationships. Its basic configuration
-can be copied directly; the routing section includes commented MongoDB, Search,
-HTTPS authentication and peer-forwarding examples.
+The [config/weir.yaml reference](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
+documents every basic field. The separate
+[config/routes.yaml reference](https://github.com/batchstream/weir/blob/main/config/routes.yaml)
+documents every routing field, including MongoDB, Search, HTTPS authentication
+and peer forwarding. Both files contain actual YAML settings with comments for
+each field's purpose, required status, default, allowed values and relationships.
+All declared services and routes are active configuration.
 
-For example, `weir.yaml`:
+For example, `config/weir.yaml`:
 
 ```yaml
 listeners:
@@ -78,7 +82,7 @@ routing:
   file: "routes.yaml"
 ```
 
-And `routes.yaml`:
+And `config/routes.yaml`:
 
 ```yaml
 services:
@@ -114,8 +118,8 @@ The CLI uses Cobra commands:
 
 | Command | Purpose |
 | --- | --- |
-| `weir serve --config weir.yaml` | Load both files and start the server. |
-| `weir check --config weir.yaml` | Validate both files without backend or listener access. |
+| `weir serve --config config/weir.yaml` | Load both files and start the server. |
+| `weir check --config config/weir.yaml` | Validate both files without backend or listener access. |
 | `weir version` | Print build identity. |
 | `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
 | `weir --help` | Show commands; each command also accepts `--help`. |

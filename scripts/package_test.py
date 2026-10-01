@@ -39,11 +39,11 @@ class PackageTests(unittest.TestCase):
         self.assertFalse(package.allowed('cmd/weir-lua-worker/main.go'))
         included = (
             'README.md',
-            'config.example.yaml',
-            'routes.example.yaml',
+            'config/weir.yaml',
+            'config/routes.yaml',
             'deploy/docker/Dockerfile',
-            'deploy/docker/node.example.yaml',
-            'deploy/docker/routes.example.yaml',
+            'deploy/docker/weir.yaml',
+            'deploy/docker/routes.yaml',
             'deploy/docker/licenses/purego-NOTICE.txt',
         )
         for name in included:
@@ -127,10 +127,10 @@ class PackageTests(unittest.TestCase):
                     'deploy/docker/Dockerfile': b'product Dockerfile',
                     'scripts/qualification.Dockerfile': b'qualification Dockerfile',
                     'README.md': b'fixture docs',
-                    'config.example.yaml': b'listeners:\n  application: 127.0.0.1:7447\nrouting:\n  file: routes.example.yaml\n',
-                    'routes.example.yaml': b'services: []\nroutes: []\n',
-                    'deploy/docker/node.example.yaml': b'listeners:\n  application: 127.0.0.1:7447\nrouting:\n  file: routes.example.yaml\n',
-                    'deploy/docker/routes.example.yaml': b'services: []\nroutes: []\n',
+                    'config/weir.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\nrouting:\n  file: routes.yaml\n',
+                    'config/routes.yaml': b'# Complete routing reference\nservices: []\nroutes: []\n',
+                    'deploy/docker/weir.yaml': b'listeners:\n  application: 127.0.0.1:7447\nrouting:\n  file: routes.yaml\n',
+                    'deploy/docker/routes.yaml': b'services: []\nroutes: []\n',
                 }
 
                 def run(args, *, cwd=None, env=None):
@@ -173,11 +173,11 @@ class PackageTests(unittest.TestCase):
                     archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
                     with tarfile.open(archive_path) as archive:
                         configurations = {
-                            'node.example.yaml': 'deploy/docker/node.example.yaml',
-                            'routes.example.yaml': 'deploy/docker/routes.example.yaml',
-                            'reference/config.example.yaml': 'config.example.yaml',
-                            'reference/routes.example.yaml': 'routes.example.yaml',
+                            'config/weir.yaml': 'config/weir.yaml',
+                            'config/routes.yaml': 'config/routes.yaml',
                         }
+                        yaml_files = {name for name in archive.getnames() if name.endswith('.yaml')}
+                        self.assertEqual(yaml_files, set(configurations))
                         for filename, source_path in configurations.items():
                             self.assertEqual(archive.extractfile(filename).read(), inputs[source_path])
                 receipt.assert_called_once()

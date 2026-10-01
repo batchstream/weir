@@ -7,4 +7,4 @@ diagnostics:
 memory: "768MiB"
 
 routing:
-  file: "routes.example.yaml"
+  file: "routes.yaml"

@@ -42,7 +42,7 @@ def secret_path(name):
 
 def allowed(name):
     return (
-        name in ('go.mod', 'go.sum', 'README.md', 'config.example.yaml', 'routes.example.yaml')
+        name in ('go.mod', 'go.sum', 'README.md', 'config/weir.yaml', 'config/routes.yaml')
         or name.startswith('deploy/docker/')
         or (
             name.endswith('.go')
@@ -275,10 +275,8 @@ def build_once(opts):
         members = {
             binary.name: (binary.read_bytes(), 0o755),
             'README.md': ((source / 'README.md').read_bytes(), 0o644),
-            'node.example.yaml': ((source / 'deploy/docker/node.example.yaml').read_bytes(), 0o644),
-            'routes.example.yaml': ((source / 'deploy/docker/routes.example.yaml').read_bytes(), 0o644),
-            'reference/config.example.yaml': ((source / 'config.example.yaml').read_bytes(), 0o644),
-            'reference/routes.example.yaml': ((source / 'routes.example.yaml').read_bytes(), 0o644),
+            'config/weir.yaml': ((source / 'config/weir.yaml').read_bytes(), 0o644),
+            'config/routes.yaml': ((source / 'config/routes.yaml').read_bytes(), 0o644),
         }
         if system == 'darwin':
             for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
