@@ -6,18 +6,41 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/batchstream/weir/internal/protocol"
 )
 
 const maxMongoURIBytes = 4096
 
-// ValidateURI accepts only the two audited single-endpoint connection profiles.
-func ValidateURI(raw string) error {
+// ValidateConfig is pure and accepts only the audited single-endpoint profiles.
+// Credentials are supplied separately; the URI never carries user information.
+func ValidateConfig(cfg Config) error {
+	if cfg.Pool < 1 || cfg.Pool > 32 ||
+		!namespacePattern.MatchString(cfg.Database) ||
+		!namespacePattern.MatchString(cfg.Collection) {
+		return errors.New("invalid MongoDB configuration")
+	}
+	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
+	if err != nil || name != cfg.Store || len(segments) != 0 {
+		return errors.New("invalid MongoDB Store")
+	}
+	if (cfg.Username == "") != (cfg.Password == "") ||
+		!validCredential(cfg.Username, 128) || !validCredential(cfg.Password, 256) {
+		return errors.New("invalid MongoDB credential pair")
+	}
+
+	raw := cfg.URI
 	if len(raw) == 0 || len(raw) > maxMongoURIBytes || strings.TrimSpace(raw) != raw {
 		return errors.New("invalid MongoDB URI length or whitespace")
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "mongodb" || parsed.Opaque != "" || parsed.Fragment != "" || parsed.RawFragment != "" {
 		return errors.New("MongoDB URI must use the standard mongodb scheme")
+	}
+	if parsed.User != nil {
+		return errors.New("MongoDB URI userinfo is unsupported; configure credentials separately")
 	}
 	if parsed.Path != "" && parsed.Path != "/" || parsed.RawPath != "" {
 		return errors.New("MongoDB URI path is unsupported; configure the database separately")
@@ -58,22 +81,12 @@ func ValidateURI(raw string) error {
 		return errors.New("MongoDB URI cannot override bounded server monitoring")
 	}
 
-	username := ""
-	password := ""
-	hasPassword := false
-	if parsed.User != nil {
-		username = parsed.User.Username()
-		password, hasPassword = parsed.User.Password()
-		if username == "" || len(username) > 128 || !hasPassword || password == "" || len(password) > 256 {
-			return errors.New("MongoDB credentials require a bounded username and non-empty password")
-		}
-	}
-	if username == "" {
+	if cfg.Username == "" {
 		_, hasAuthSource := options["authsource"]
 		_, hasAuthMechanism := options["authmechanism"]
 		_, hasTLS := options["tls"]
 		_, hasTLSCAFile := options["tlscafile"]
-		if hasPassword || hasAuthSource || hasAuthMechanism || hasTLS || hasTLSCAFile {
+		if hasAuthSource || hasAuthMechanism || hasTLS || hasTLSCAFile {
 			return errors.New("MongoDB authentication and TLS options require SCRAM credentials")
 		}
 		return nil
@@ -85,6 +98,18 @@ func ValidateURI(raw string) error {
 		return errors.New("invalid MongoDB CA file option")
 	}
 	return nil
+}
+
+func validCredential(value string, limit int) bool {
+	if len(value) > limit || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func validMongoHost(host string) bool {

@@ -80,7 +80,7 @@ func TestPackagedArtifacts(t *testing.T) {
 		for round := 0; round < rounds; round++ {
 			t.Run(fmt.Sprintf("%s-%d", platform, round), func(t *testing.T) {
 				fixture := testmongo.OpenSecure(t)
-				config := packagedConfig(fixture.URI, fixture.DB)
+				config := packagedConfig(t, fixture.URI, fixture.DB)
 				address := ""
 				var process *process
 				container := ""
@@ -227,8 +227,8 @@ func TestPackagedArtifacts(t *testing.T) {
 	})
 }
 
-func packagedConfig(uri, database string) Config {
-	backend := &Mongo{URI: uri, Database: database, Collection: "records"}
+func packagedConfig(t *testing.T, uri, database string) Config {
+	backend := mongoFixtureConfig(t, uri, database)
 	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}
@@ -262,7 +262,7 @@ func packagedFiles(t *testing.T, directory, uri, database string) {
 	parsed.Host = net.JoinHostPort("host.docker.internal", port)
 	query.Set("tlsCAFile", "/fixture/ca.crt")
 	parsed.RawQuery = query.Encode()
-	config := packagedConfig(parsed.String(), database)
+	config := packagedConfig(t, parsed.String(), database)
 	config.Basic.Listeners.Application = "0.0.0.0:7447"
 	config.Basic.Diagnostics.Address = "127.0.0.1:7449"
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), config, 0644)

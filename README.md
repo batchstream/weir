@@ -101,46 +101,52 @@ routes:
 ```
 
 Relative routing paths resolve from the basic file's directory; absolute paths
-are also supported. A service can contain inline `local` or `remote` settings,
-or a nonempty `file` path to load those settings from a separate YAML file.
-For example, a routing file can refer to a file mounted into the container:
+are also supported. Services contain `local` or `remote` settings in the routing
+file. MongoDB and Search credentials can be configured as `username`/`password`
+values or read from `username_file`/`password_file` paths. Each credential must
+use only one source; inline and file sources can be mixed across the pair.
+For example, a MongoDB service can use an inline username and a mounted password:
 
 ```yaml
 services:
   - name: "database"
-    file: "/etc/weir/services/database.yaml"
+    local:
+      mongodb:
+        uri: "mongodb://mongo.example.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
+        username: "weir"
+        password_file: "/run/secrets/mongo-password"
+        database: "example"
+        collection: "records"
 routes:
   - store: "mongo"
     service: "database"
 ```
 
-The referenced `database.yaml` contains the service body:
+Search supports the same credential sources inside `connection`:
 
 ```yaml
-local:
-  max_concurrency: 4
-  max_batch_operations: 16
-  mongodb:
-    uri: "mongodb://127.0.0.1:27017/?directConnection=true"
-    database: "example"
-    collection: "records"
+connection:
+  username_file: "/run/secrets/search-username"
+  password_file: "/run/secrets/search-password"
 ```
 
-Service file paths resolve from the routing file's directory, or can be absolute.
-Each file contains exactly one `local` or `remote` block, using the same fields
-and defaults documented in `config/routes.yaml`. The service name and its routes
-stay in the routing file. A nonempty `file` cannot be combined with inline
-`local` or `remote`; referenced files cannot contain `name` or another `file`.
-Weir reads ordinary files and follows symbolic links, so files mounted from
+Credential files contain plain UTF-8 text. One final LF or CRLF is removed;
+spaces are preserved. Usernames are limited to 128 bytes and passwords to 256
+bytes after that removal; empty values and control characters are rejected.
+File paths resolve from the routing file's directory, or can be absolute.
+Weir reads ordinary files and follows symbolic links, so credentials mounted from
 [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod)
-can use this mechanism. Configuration is read at startup; restart Weir after
-changing a service file.
+can use this mechanism. Credentials are read by `check` and at startup; restart
+Weir after changing a credential file. MongoDB URIs contain the endpoint and
+connection options; configure credentials in the separate fields rather than URI
+userinfo. Credentials are passed directly to the database client.
 
-Configure at least one application or peer listener. All configuration files
+Configure at least one application or peer listener. Both YAML configuration files
 are strict single-document YAML mappings with exact lowercase field names.
 Unknown fields, duplicate keys, anchors, aliases, merge keys, explicit tags,
-trailing documents and files over 128 KiB are rejected. Weir validates all files
-and the complete route graph before opening listeners or backend connections.
+trailing documents and YAML files over 128 KiB are rejected. Weir validates both
+YAML files, credential sources and the complete route graph before opening
+listeners or backend connections.
 Changes take effect after a restart.
 
 Memory is a string containing an integer and `B`, `KiB`, `MiB` or `GiB`, such as

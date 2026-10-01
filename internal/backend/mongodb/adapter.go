@@ -25,8 +25,13 @@ import (
 )
 
 type Config struct {
-	URI, Store, Database, Collection string
-	Pool                             uint64
+	URI        string
+	Store      string
+	Database   string
+	Collection string
+	Username   string
+	Password   string
+	Pool       uint64
 }
 
 type Adapter struct {
@@ -48,15 +53,8 @@ type plan struct {
 var namespacePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
-	if cfg.Pool < 1 || cfg.Pool > 32 || !namespacePattern.MatchString(cfg.Database) || !namespacePattern.MatchString(cfg.Collection) {
-		return nil, fmt.Errorf("invalid MongoDB configuration")
-	}
-	if err := ValidateURI(cfg.URI); err != nil {
+	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
-	}
-	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
-	if err != nil || name != cfg.Store || len(segments) != 0 {
-		return nil, fmt.Errorf("invalid store")
 	}
 	dialer := newBoundedDialer(int(cfg.Pool)+1, mongoMaxConnecting+1)
 	complete := false
@@ -65,7 +63,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 			dialer.close()
 		}
 	}()
-	opts, err := connectionOptions(cfg.URI, dialer)
+	opts, err := connectionOptions(cfg, dialer)
 	if err != nil {
 		return nil, err
 	}

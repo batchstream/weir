@@ -30,7 +30,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	cfg.Routing.Routes = nil
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
-		mongo := &Mongo{URI: backend.URI, Database: database, Collection: "records"}
+		mongo := mongoFixtureConfig(t, backend.URI, database)
 		local := &Local{MongoDB: mongo}
 		service := Service{Name: name, Local: local}
 		cfg.Routing.Services = append(cfg.Routing.Services, service)

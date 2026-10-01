@@ -291,7 +291,7 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	connection := &search.Connection{Username: "user", Password: "secret-sentinel", CAFile: "/missing/ca-secret-sentinel.pem"}
+	connection := &SearchConnection{Username: "user", Password: "secret-sentinel", CAFile: "/missing/ca-secret-sentinel.pem"}
 	backend := &Search{
 		URL:        "https://unresolved.invalid:443",
 		Index:      "records",

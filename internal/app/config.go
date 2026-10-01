@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -62,7 +61,6 @@ type Route struct {
 
 type Service struct {
 	Name   string  `json:"name" yaml:"name"`
-	File   string  `json:"file,omitempty" yaml:"file,omitempty"`
 	Local  *Local  `json:"local" yaml:"local"`
 	Remote *Remote `json:"remote" yaml:"remote"`
 }
@@ -75,16 +73,28 @@ type Local struct {
 }
 
 type Mongo struct {
-	URI        string `json:"uri" yaml:"uri"`
-	Database   string `json:"database" yaml:"database"`
-	Collection string `json:"collection" yaml:"collection"`
+	URI          string `json:"uri" yaml:"uri"`
+	Username     string `json:"username" yaml:"username"`
+	Password     string `json:"password" yaml:"password"`
+	UsernameFile string `json:"username_file" yaml:"username_file"`
+	PasswordFile string `json:"password_file" yaml:"password_file"`
+	Database     string `json:"database" yaml:"database"`
+	Collection   string `json:"collection" yaml:"collection"`
 }
 
 type Search struct {
-	Connection *search.Connection `json:"connection" yaml:"connection"`
-	URL        string             `json:"url" yaml:"url"`
-	Index      string             `json:"index" yaml:"index"`
-	Profile    string             `json:"profile" yaml:"profile"`
+	Connection *SearchConnection `json:"connection" yaml:"connection"`
+	URL        string            `json:"url" yaml:"url"`
+	Index      string            `json:"index" yaml:"index"`
+	Profile    string            `json:"profile" yaml:"profile"`
+}
+
+type SearchConnection struct {
+	Username     string `json:"username" yaml:"username"`
+	Password     string `json:"password" yaml:"password"`
+	UsernameFile string `json:"username_file" yaml:"username_file"`
+	PasswordFile string `json:"password_file" yaml:"password_file"`
+	CAFile       string `json:"ca_file" yaml:"ca_file"`
 }
 
 type Remote struct {
@@ -145,8 +155,6 @@ func (cfg TransportConfig) serverLimits() server.Limits {
 	return limits
 }
 
-var mongoName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
-
 func address(value string, loopback bool) bool {
 	host, port, err := net.SplitHostPort(value)
 	ip := net.ParseIP(host)
@@ -165,11 +173,6 @@ func validName(name string) bool {
 func (cfg Config) Validate() error {
 	if err := cfg.Basic.Validate(); err != nil {
 		return err
-	}
-	for _, service := range cfg.Routing.Services {
-		if service.File != "" {
-			return errors.New("unresolved Service configuration")
-		}
 	}
 	return cfg.Routing.Validate()
 }
@@ -220,30 +223,13 @@ func (cfg BasicConfig) Validate() error {
 }
 
 func (cfg RoutingConfig) Validate() error {
-	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 {
-		return errors.New("invalid static graph bounds")
+	if err := cfg.validateGraph(); err != nil {
+		return err
 	}
-
-	services := make(map[string]Service)
+	if err := cfg.validateCredentialSources(); err != nil {
+		return err
+	}
 	for _, service := range cfg.Services {
-		sources := 0
-		if service.Local != nil {
-			sources++
-		}
-		if service.Remote != nil {
-			sources++
-		}
-		if service.File != "" {
-			sources++
-			if strings.TrimSpace(service.File) == "" {
-				return errors.New("invalid Service configuration file")
-			}
-		}
-		if !validName(service.Name) || services[service.Name].Name != "" || sources != 1 {
-			return errors.New("invalid or duplicate Service")
-		}
-		services[service.Name] = service
-
 		if r := service.Remote; r != nil {
 			_, endpointErr := server.CanonicalEndpoints(r.Endpoints)
 			if endpointErr != nil || r.MaxConcurrency < 1 || r.MaxConcurrency > 16 {
@@ -252,31 +238,48 @@ func (cfg RoutingConfig) Validate() error {
 		}
 
 		if l := service.Local; l != nil {
-			if (l.MongoDB == nil) == (l.Search == nil) {
-				return errors.New("LocalStore requires exactly one adapter")
-			}
-
 			limits := l.runtimeLimits()
 			if err := limits.Validate(); err != nil {
 				return err
 			}
 
 			if m := l.MongoDB; m != nil {
-				if !mongoName.MatchString(m.Database) || !mongoName.MatchString(m.Collection) || m.URI == "" {
-					return errors.New("invalid MongoDB configuration")
+				if m.UsernameFile != "" || m.PasswordFile != "" {
+					return errors.New("unresolved credential file")
 				}
-				if err := mongodb.ValidateURI(m.URI); err != nil {
+				config := l.mongoConfig(service.Name)
+				if err := mongodb.ValidateConfig(config); err != nil {
 					return err
 				}
 			}
 
 			if l.Search != nil {
+				if c := l.Search.Connection; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
+					return errors.New("unresolved credential file")
+				}
 				config := l.searchConfig(service.Name)
 				if err := search.ValidateConfig(config); err != nil {
 					return err
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func (cfg RoutingConfig) validateGraph() error {
+	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 {
+		return errors.New("invalid static graph bounds")
+	}
+	services := make(map[string]Service)
+	for _, service := range cfg.Services {
+		if !validName(service.Name) || services[service.Name].Name != "" || (service.Local == nil) == (service.Remote == nil) {
+			return errors.New("invalid or duplicate Service")
+		}
+		if l := service.Local; l != nil && (l.MongoDB == nil) == (l.Search == nil) {
+			return errors.New("LocalStore requires exactly one adapter")
+		}
+		services[service.Name] = service
 	}
 
 	stores := make(map[string]bool)
@@ -311,13 +314,35 @@ func (l *Local) runtimeLimits() store.Limits {
 }
 
 func (l *Local) searchConfig(name string) search.Config {
+	var connection *search.Connection
+	if c := l.Search.Connection; c != nil {
+		connection = &search.Connection{
+			Username: c.Username,
+			Password: c.Password,
+			CAFile:   c.CAFile,
+		}
+	}
 	cfg := search.Config{
 		Store:      name,
 		URL:        l.Search.URL,
 		Index:      l.Search.Index,
 		Profile:    l.Search.Profile,
 		Pool:       l.runtimeLimits().Concurrency,
-		Connection: l.Search.Connection,
+		Connection: connection,
+	}
+	return cfg
+}
+
+func (l *Local) mongoConfig(name string) mongodb.Config {
+	m := l.MongoDB
+	cfg := mongodb.Config{
+		URI:        m.URI,
+		Username:   m.Username,
+		Password:   m.Password,
+		Store:      name,
+		Database:   m.Database,
+		Collection: m.Collection,
+		Pool:       uint64(l.runtimeLimits().Concurrency),
 	}
 	return cfg
 }

@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -26,6 +27,17 @@ func setup(t *testing.T) fixture {
 	backend := testmongo.Open(t)
 	native, db := backend.Admin, backend.DB
 	cfg := mongodb.Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records"}
+	parsed, err := url.Parse(cfg.URI)
+	if err != nil {
+		t.Fatal("invalid owned MongoDB fixture URI")
+	}
+	if parsed.User != nil {
+		cfg.Username = parsed.User.Username()
+		cfg.Password, _ = parsed.User.Password()
+		parsed.User = nil
+	}
+	cfg.URI = parsed.String()
+
 	l := DefaultLimits()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

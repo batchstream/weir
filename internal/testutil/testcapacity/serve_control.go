@@ -57,13 +57,21 @@ func serveControl(ctx context.Context, config string, suppress bool) error {
 		limits.BatchOperations = local.MaxBatchOperations
 	}
 	backend := local.Search
+	var connection *search.Connection
+	if configured := backend.Connection; configured != nil {
+		connection = &search.Connection{
+			Username: configured.Username,
+			Password: configured.Password,
+			CAFile:   configured.CAFile,
+		}
+	}
 	options := search.Config{
 		Store:      "records",
 		URL:        backend.URL,
 		Index:      backend.Index,
 		Profile:    backend.Profile,
 		Pool:       limits.Concurrency,
-		Connection: backend.Connection,
+		Connection: connection,
 	}
 	a, err := search.Open(ctx, options)
 	if err != nil {

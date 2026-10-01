@@ -10,14 +10,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/batchstream/weir/internal/backend/search"
 	"go.yaml.in/yaml/v3"
 )
 
 func TestLocalConcurrencyConfiguration(t *testing.T) {
 	for _, c := range []int{0, 1, 2, 4, 32, -1, 33} {
 		t.Run(fmt.Sprint(c), func(t *testing.T) {
-			connection := &search.Connection{CAFile: "/missing/concurrency-ca.pem"}
+			connection := &SearchConnection{CAFile: "/missing/concurrency-ca.pem"}
 			backend := &Search{
 				URL:        "https://unresolved.invalid:443",
 				Index:      "records",

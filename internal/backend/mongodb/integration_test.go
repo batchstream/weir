@@ -192,6 +192,7 @@ func TestPartialInitializationAndClose(t *testing.T) {
 	defer cancel()
 	before := connectionCount(t, native)
 	cfg := Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "not_created", Pool: 1}
+	cfg = mongoFixtureConfig(t, cfg)
 	for i := 0; i < 5; i++ {
 		if a, err := Open(ctx, cfg); err == nil || a != nil {
 			t.Fatal("must unwind failed qualification")

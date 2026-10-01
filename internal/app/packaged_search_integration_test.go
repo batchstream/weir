@@ -190,7 +190,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 }
 
 func packagedSearchConfig(b *testsearch.Backend) Config {
-	connection := &search.Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
+	connection := &SearchConnection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
 	backend := &Search{URL: b.URL, Index: b.Index, Profile: b.Profile, Connection: connection}
 	local := &Local{Search: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}

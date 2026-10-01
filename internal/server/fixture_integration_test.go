@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"net"
+	"net/url"
 	"testing"
 	"time"
 
@@ -26,6 +27,22 @@ type fixture struct {
 	address string
 }
 
+// Split the owned backend fixture's standard URI into explicit driver credentials.
+func mongoFixtureConfig(t *testing.T, cfg mongodb.Config) mongodb.Config {
+	t.Helper()
+	parsed, err := url.Parse(cfg.URI)
+	if err != nil {
+		t.Fatal("invalid owned MongoDB fixture URI")
+	}
+	if parsed.User != nil {
+		cfg.Username = parsed.User.Username()
+		cfg.Password, _ = parsed.User.Password()
+		parsed.User = nil
+	}
+	cfg.URI = parsed.String()
+	return cfg
+}
+
 func setup(t *testing.T, batch bool) fixture {
 	sl := DefaultLimits()
 	sl.Stall = 300 * time.Millisecond
@@ -38,6 +55,7 @@ func setupWithLimits(t *testing.T, batch bool, sl Limits) fixture {
 	backend := testmongo.Open(t)
 	db := backend.DB
 	cfg := mongodb.Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records"}
+	cfg = mongoFixtureConfig(t, cfg)
 	l := store.DefaultLimits()
 	if !batch {
 		l.BatchOperations = 1

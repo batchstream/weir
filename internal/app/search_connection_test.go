@@ -20,7 +20,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { contacts.Add(1) })
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
-	c := &search.Connection{Username: "app", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
+	c := &SearchConnection{Username: "app", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
 	backend := &Search{
 		URL:        "https://unresolved.invalid:443",
 		Index:      "records",
@@ -84,7 +84,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 }
 
 func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
-	connection := &search.Connection{
+	connection := &SearchConnection{
 		Username: "user-sentinel",
 		Password: "password-sentinel",
 		CAFile:   "/missing/ca-sentinel.pem",

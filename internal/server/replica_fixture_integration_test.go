@@ -27,6 +27,7 @@ func replicaRuntime(t *testing.T, f scanFixture, endpoint string) *store.Runtime
 			endpoint = f.mongo.URI
 		}
 		cfg := mongodb.Config{URI: endpoint, Store: "mongo", Database: f.mongo.DB, Collection: "records", Pool: 1}
+		cfg = mongoFixtureConfig(t, cfg)
 		adapter, err = mongodb.Open(ctx, cfg)
 	} else {
 		if endpoint == "" {

@@ -40,6 +40,7 @@ func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 	backend := testmongo.Open(t)
 	client, db := backend.Admin, backend.DB
 	cfg := Config{Store: "mongo", Database: db, Collection: "records", URI: backend.URI, Pool: 4}
+	cfg = mongoFixtureConfig(t, cfg)
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

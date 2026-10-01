@@ -38,6 +38,7 @@ func dualServer(t *testing.T, backend *testsearch.Backend, endpoint string, limi
 	mongoFixture := testmongo.Open(t)
 	db := mongoFixture.DB
 	mongo := mongodb.Config{URI: mongoFixture.URI, Store: "mongo", Database: db, Collection: "records"}
+	mongo = mongoFixtureConfig(t, mongo)
 	searchConfig := &search.Config{URL: endpoint, Profile: backend.Profile, Store: "search", Index: backend.Index}
 	limitsStore := store.DefaultLimits()
 	mongo.Pool = uint64(limitsStore.Concurrency)

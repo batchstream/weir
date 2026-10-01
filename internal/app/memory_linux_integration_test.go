@@ -273,7 +273,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	observer := &budgetObservation{}
 	monitor := &event.CommandMonitor{Started: observer.start, Succeeded: observer.finish}
 	proxy.Monitor = monitor
-	backend := &Mongo{URI: proxy.URI(), Database: db, Collection: "records"}
+	backend := mongoFixtureConfig(t, proxy.URI(), db)
 	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}

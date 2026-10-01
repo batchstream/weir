@@ -429,6 +429,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 			proxy.DropRemaining.Store(1)
 		}
 		cfg := mongodb.Config{Store: kind, URI: proxy.URI(), Database: f.mongo.DB, Collection: "records", Pool: 1}
+		cfg = mongoFixtureConfig(t, cfg)
 		adapter, err = mongodb.Open(context.Background(), cfg)
 		f.root = "weir://mongo/" + f.mongo.DB + "/records"
 	} else {
