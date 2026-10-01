@@ -1,10 +1,10 @@
-// Package search implements the qualified direct-record Search profiles.
+// Package search implements direct-record operations for Elasticsearch and OpenSearch.
 package search
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net"
 	"net/http"
 	"regexp"
@@ -19,12 +19,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Only these exact versions are accepted; other patches require requalification.
-const ElasticsearchVersion = "8.19.22"
-const OpenSearchVersion = "2.19.6"
-
-const ElasticsearchProfile = "elasticsearch-" + ElasticsearchVersion
-const OpenSearchProfile = "opensearch-" + OpenSearchVersion
+const ElasticsearchProduct = "elasticsearch"
+const OpenSearchProduct = "opensearch"
 
 type Config struct {
 	Store      string
@@ -130,26 +126,26 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	status, raw, err := a.request(ctx, call)
 	var info struct {
 		Version struct {
-			Number, Distribution string
-			BuildFlavor          string `json:"build_flavor"`
+			Distribution string
+			BuildFlavor  string `json:"build_flavor"`
 		}
 	}
 	if err != nil || status != 200 || json.Unmarshal(raw, &info) != nil {
-		return fmt.Errorf("search version qualification failed")
+		return errors.New("search product identification failed")
 	}
 	switch {
-	case info.Version.Number == ElasticsearchVersion && info.Version.BuildFlavor == "default" && info.Version.Distribution == "":
-		a.dialect = ElasticsearchProfile
-	case info.Version.Number == OpenSearchVersion && info.Version.Distribution == "opensearch":
-		a.dialect = OpenSearchProfile
+	case info.Version.BuildFlavor == "default" && info.Version.Distribution == "":
+		a.dialect = ElasticsearchProduct
+	case info.Version.Distribution == "opensearch":
+		a.dialect = OpenSearchProduct
 	default:
-		return fmt.Errorf("unsupported Search server version or distribution")
+		return errors.New("unsupported Search server product")
 	}
 	call.path = "/_cluster/settings?include_defaults=true&flat_settings=true"
 	status, raw, err = a.request(ctx, call)
 	var settings struct{ Defaults, Persistent, Transient map[string]json.RawMessage }
 	if err != nil || status != 200 || json.Unmarshal(raw, &settings) != nil {
-		return fmt.Errorf("cannot verify search automatic index creation policy")
+		return errors.New("cannot verify search automatic index creation policy")
 	}
 	auto := settings.Defaults["action.auto_create_index"]
 	if value, ok := settings.Persistent["action.auto_create_index"]; ok {
@@ -159,7 +155,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		auto = value
 	}
 	if string(auto) != `"false"` && string(auto) != "false" {
-		return fmt.Errorf("search profile requires action.auto_create_index=false; Weir never modifies settings")
+		return errors.New("search requires action.auto_create_index=false; Weir never modifies settings")
 	}
 	return nil
 }

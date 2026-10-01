@@ -76,7 +76,7 @@ func nativeDescriptor(d *spb.Request, media string) *pb.Failure {
 	case d.Method == "GET" && strings.HasPrefix(d.Path, "/_doc/"):
 		id := strings.TrimPrefix(d.Path, "/_doc/")
 		// Deliberately allow only unreserved IDs. No double decoding, encoded slash,
-		// dot traversal or aliases; callers use another supported profile for more.
+		// dot traversal or aliases. Record operations support more general IDs.
 		if len(id) == 0 || len(id) > 512 || id == "." || id == ".." || media != "" {
 			return unsupported
 		}

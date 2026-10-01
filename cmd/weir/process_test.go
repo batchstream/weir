@@ -24,7 +24,6 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/app"
-	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
@@ -102,11 +101,11 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch r.URL.Path {
 	case "/":
-		if b.hold == "invalid-version" {
+		if b.hold == "invalid-product" {
 			http.Error(w, "backend-error-sentinel", http.StatusBadGateway)
 			return
 		}
-		fmt.Fprintf(w, `{"version":{"number":%q,"build_flavor":"default"}}`, search.ElasticsearchVersion)
+		fmt.Fprintf(w, `{"version":{"number":%q,"build_flavor":"default"}}`, "8.19.22")
 	case "/_cluster/settings":
 		io.WriteString(w, `{"defaults":{"action.auto_create_index":"false"}}`)
 	case "/records":
@@ -406,9 +405,9 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 			p.terminate(t, "backend received /; response withheld")
 			event(t, held.canceled)
 			p.wait(t, 1)
-			expected := "local Store \"records\" startup qualification failed: search version qualification failed\n"
+			expected := "local Store \"records\" startup qualification failed: search product identification failed\n"
 			if partial {
-				expected = "local Store \"second\" startup qualification failed: search version qualification failed\n"
+				expected = "local Store \"second\" startup qualification failed: search product identification failed\n"
 			}
 			if p.stdout.text() != "" ||
 				!strings.HasSuffix(p.stderr.text(), expected) ||
@@ -544,12 +543,12 @@ func beforeStartChild(config, routes string) error {
 }
 
 func TestCLIStartupFailure(t *testing.T) {
-	b := newStartupBackend(t, "invalid-version")
+	b := newStartupBackend(t, "invalid-product")
 	cfg := b.config()
 	p := startCLI(t, cfg, "cli")
 	p.wait(t, 1)
 	if p.stdout.text() != "" ||
-		!strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search version qualification failed\n") ||
+		!strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search product identification failed\n") ||
 		strings.Contains(p.stderr.text(), "sentinel") ||
 		strings.Contains(p.stderr.text(), b.server.URL) {
 		t.Fatal("startup error leaked or announced readiness", p.stdout.text(), p.stderr.text())
@@ -670,7 +669,7 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	event(t, done)
 	if node != nil ||
 		err == nil ||
-		err.Error() != "local Store \"second\" startup qualification failed: search version qualification failed" ||
+		err.Error() != "local Store \"second\" startup qualification failed: search product identification failed" ||
 		time.Since(started) > 2*time.Second {
 		t.Fatal("partial Open cancellation", node, err, time.Since(started))
 	}

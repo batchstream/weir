@@ -133,19 +133,12 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 		handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 		unrelated := httptest.NewTLSServer(handler)
 		defer unrelated.Close()
-		for _, negative := range []string{"ca", "hostname", "credentials", "unsupported-version", "unsupported-distribution"} {
+		for _, negative := range []string{"ca", "hostname", "credentials", "unsupported-product"} {
 			t.Run(negative, func(t *testing.T) {
 				cfg := packagedSearchConfig(fixture.Backend)
 				var identityContacts atomic.Int32
-				if negative == "unsupported-version" || negative == "unsupported-distribution" {
-					version, distribution := "8.17.0", ""
-					if fixture.Backend.Profile == search.OpenSearchProfile {
-						version, distribution = "2.19.0", "opensearch"
-					}
-					if negative == "unsupported-distribution" {
-						version, distribution = "8.19.22", "unsupported-product"
-					}
-					identity := fmt.Sprintf(`{"version":{"number":%q,"distribution":%q,"build_flavor":"default"},"secret":"response-sentinel"}`, version, distribution)
+				if negative == "unsupported-product" {
+					identity := `{"version":{"number":"99.1.2","distribution":"unsupported-product"},"secret":"response-sentinel"}`
 					handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						identityContacts.Add(1)
 						if r.URL.Path != "/" {
@@ -207,10 +200,10 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				if strings.Contains(logs, "Weir listening") || strings.Contains(logs, fixture.Backend.Password) || strings.Contains(logs, "sentinel") {
 					t.Fatal("invalid startup served or disclosed credentials")
 				}
-				if (negative == "unsupported-version" || negative == "unsupported-distribution") && identityContacts.Load() == 0 {
+				if negative == "unsupported-product" && identityContacts.Load() == 0 {
 					t.Fatal("server identity rejection did not reach the owned identity response")
 				}
-				if (negative == "unsupported-version" || negative == "unsupported-distribution") && !strings.Contains(logs, "unsupported Search server version or distribution") {
+				if negative == "unsupported-product" && !strings.Contains(logs, "unsupported Search server product") {
 					t.Fatal("unsupported server identity must preserve its redacted rejection reason", logs)
 				}
 				t.Log("exact image rejected", negative, "before serving")

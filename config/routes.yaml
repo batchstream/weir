@@ -46,6 +46,7 @@ services:
       # Targets must be pre-created, non-capped collections with
       # simple collation. Program transforms require a replica set supporting
       # transactions. Weir never creates collections or changes their layout.
+      # MongoDB versions are not restricted; required capabilities still apply.
       mongodb:
         # Explicit single-endpoint MongoDB connection URI.
         # Required: yes. Default: none. Allowed: mongodb://host:port/ URI
@@ -116,8 +117,8 @@ services:
         # No userinfo, path, query, fragment, zones or unspecified/multicast IP.
         url: "https://127.0.0.1:9200"
 
-        # Weir identifies the server product/version during startup: supported
-        # versions are Elasticsearch 8.19.22 and OpenSearch 2.19.6.
+        # Weir automatically identifies Elasticsearch or OpenSearch at startup.
+        # Version numbers are not restricted; capability checks still apply.
         # Backend action.auto_create_index must be false. Record APIs require a
         # pre-created concrete index, one primary shard and default routing;
         # aliases/data streams are unsupported. The URI index must match

@@ -18,8 +18,8 @@ import (
 
 func TestSearchMultipleRequestTargets(t *testing.T) {
 	a, backend := setupSearch(t)
-	if a.dialect != backend.Profile {
-		t.Fatal("backend product was not detected automatically", a.dialect, backend.Profile)
+	if a.dialect != backend.Product {
+		t.Fatal("backend product was not detected automatically", a.dialect, backend.Product)
 	}
 	other := backend.Index + "_other"
 	backend.Create(t, other, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)

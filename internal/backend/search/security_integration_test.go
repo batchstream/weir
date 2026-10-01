@@ -12,7 +12,7 @@ import (
 // Safe validation probes on a newly owned backend, not a CVE exploit reproduction.
 func TestSearchSecurityInputBoundary(t *testing.T) {
 	b := testsearch.Open(t)
-	if b.Profile == ElasticsearchProfile {
+	if b.Product == ElasticsearchProduct {
 		body := `{"text":"small fixture input","tokenizer":"standard","filter":[{"type":"min_hash","hash_count":10001,"bucket_count":1,"hash_set_size":1}]}`
 		status, raw := b.Do(t, "POST", "/"+b.Index+"/_analyze", body)
 		if status != 400 || !strings.Contains(string(raw), "must not exceed [10000]") {

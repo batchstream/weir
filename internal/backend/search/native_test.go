@@ -189,7 +189,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{Store: "search", URL: backend.URL}
-			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, nativeClient: client, ctx: context.Background()}
+			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			open := nativeOpen(t, "records", "GET", "/_doc/x")
 			end, capture := runNative(t, a, open, io.NopCloser(strings.NewReader("")))
 			complete := mode == "empty" || mode == "headers" || mode == "redirect" || mode == "multiframe" || mode == "boundary"
@@ -271,7 +271,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{Store: "search", URL: backend.URL}
-			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, nativeClient: client, ctx: context.Background()}
+			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			open := nativeOpen(t, "records", "GET", "/_doc/x")
 			plan, failure := a.PrepareNative(open)
 			if failure != nil {
@@ -324,7 +324,7 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			cfg := Config{Store: "search", URL: backend.URL}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, client: client, nativeClient: client, ctx: ctx}
+			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx}
 			open := nativeOpen(t, "records", "POST", "/_bulk")
 			plan, failure := a.PrepareNative(open)
 			if failure != nil {

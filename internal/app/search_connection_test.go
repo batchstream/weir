@@ -125,3 +125,80 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 		t.Fatal("startup must identify the rejected backend policy without its response", err)
 	}
 }
+
+func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T) {
+	cases := []struct {
+		name, identity, rejection string
+	}{
+		{"elasticsearch-older", `{"version":{"number":"1.2.3","build_flavor":"default"}}`, ""},
+		{"elasticsearch-newer", `{"version":{"number":"99.10.20-next+fixture","build_flavor":"default"}}`, ""},
+		{"elasticsearch-without-number", `{"version":{"build_flavor":"default"}}`, ""},
+		{"opensearch-older", `{"version":{"number":"1.2.3","distribution":"opensearch"}}`, ""},
+		{"opensearch-newer", `{"version":{"number":"99.10.20-next+fixture","distribution":"opensearch"}}`, ""},
+		{"opensearch-without-number", `{"version":{"distribution":"opensearch"}}`, ""},
+		{"unknown-product", `{"version":{"number":"8.19.22","distribution":"unknown-product"},"secret":"response-sentinel"}`, "unsupported Search server product"},
+		{"malformed-product", `{"version":{"distribution":123},"secret":"response-sentinel"}`, "search product identification failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var roots, settings atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/":
+					roots.Add(1)
+					_, _ = w.Write([]byte(tc.identity))
+				case "/_cluster/settings":
+					settings.Add(1)
+					_, _ = w.Write([]byte(`{"defaults":{"action.auto_create_index":"false"}}`))
+				default:
+					t.Error("startup must identify the server without requesting resource targets")
+					http.Error(w, "unexpected fixture request", http.StatusNotFound)
+				}
+			})
+			endpoint := httptest.NewServer(handler)
+			defer endpoint.Close()
+
+			backend := &Search{URL: endpoint.URL}
+			local := &Local{Search: backend}
+			service := Service{Name: "server", Local: local}
+			route := Route{Store: "records", Service: service.Name}
+			cfg := DefaultConfig()
+			cfg.Basic.Listeners.Application = "127.0.0.1:0"
+			cfg.Routing.Services = []Service{service}
+			cfg.Routing.Routes = []Route{route}
+			if tc.rejection != "" {
+				// An occupied listener catches any assembly attempted after rejection.
+				cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			node, err := Open(ctx, cfg)
+			if tc.rejection != "" {
+				if node != nil {
+					_ = node.Close(context.Background())
+					t.Fatal("unsupported product reached assembly")
+				}
+				if err == nil || err.Error() != `local Store "records" startup qualification failed: `+tc.rejection || roots.Load() != 1 || settings.Load() != 0 {
+					t.Fatal("product rejection must precede policy checks and listeners, preserving its safe reason", err, roots.Load(), settings.Load())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("identified products must start regardless of version number", err)
+			}
+			t.Cleanup(func() {
+				drain, stop := context.WithTimeout(context.Background(), time.Second)
+				defer stop()
+				if err := node.Close(drain); err != nil {
+					t.Error(err)
+				}
+			})
+			if err := node.Start(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if roots.Load() != 1 || settings.Load() != 1 {
+				t.Fatal("startup must retain the server policy check", roots.Load(), settings.Load())
+			}
+		})
+	}
+}

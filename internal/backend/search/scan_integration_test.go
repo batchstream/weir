@@ -77,7 +77,7 @@ func TestSearchScanTraversal(t *testing.T) {
 			if f := a.CloseScan(ctx, p); f != nil {
 				t.Fatal(f)
 			}
-			t.Logf("%s: complete native hit traversal %d records", b.Profile, size)
+			t.Logf("%s: complete native hit traversal %d records", b.Product, size)
 		})
 	}
 }
@@ -239,7 +239,7 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	n := p.Backend.(*scanPlan)
 	endpoint := "/_pit"
 	body := map[string]any{"id": n.pit}
-	if b.Profile == OpenSearchProfile {
+	if b.Product == OpenSearchProduct {
 		endpoint = "/_search/point_in_time"
 		body = map[string]any{"pit_id": []string{n.pit}}
 	}

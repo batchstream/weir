@@ -19,7 +19,9 @@ import (
 var sequence atomic.Uint64
 
 type Backend struct {
-	URL, Profile, Index        string
+	URL, Product, Index string
+	// Profile records the fixed fixture version, never runtime admission policy.
+	Profile                    string
 	Username, Password, CAFile string
 	Client                     *http.Client
 }
@@ -27,7 +29,8 @@ type Backend struct {
 func Open(t *testing.T) *Backend {
 	t.Helper()
 	var endpoint, profile string
-	switch os.Getenv("WEIR_SEARCH_INTEGRATION") {
+	product := os.Getenv("WEIR_SEARCH_INTEGRATION")
+	switch product {
 	case "elasticsearch":
 		endpoint, profile = "http://127.0.0.1:19200", "elasticsearch-8.19.22"
 	case "opensearch":
@@ -44,12 +47,18 @@ func Open(t *testing.T) *Backend {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	index := fmt.Sprintf("weir_m2_%d_%d", os.Getpid(), sequence.Add(1))
-	b := &Backend{URL: endpoint, Profile: profile, Index: index, Client: client}
+	b := &Backend{
+		URL:     endpoint,
+		Product: product,
+		Profile: profile,
+		Index:   index,
+		Client:  client,
+	}
 	status, raw := b.Do(t, "GET", "/", "")
 	if status != 200 {
 		t.Fatal("wrong isolated backend", status)
 	}
-	verifyVersion(t, raw, profile, "weir-m17-"+os.Getenv("WEIR_SEARCH_INTEGRATION"))
+	verifyVersion(t, raw, profile, "weir-m17-"+product)
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b

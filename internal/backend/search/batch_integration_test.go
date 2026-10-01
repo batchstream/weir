@@ -133,7 +133,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 			t.Fatal(id, status, string(raw))
 		}
 	}
-	t.Log(fmt.Sprintf("%s ten mixed operations -> one qualification, one realtime _mget, one mixed _bulk; persisted Lua/Replace/update/noop and isolated missing update verified", backend.Profile))
+	t.Log(fmt.Sprintf("%s ten mixed operations -> one qualification, one realtime _mget, one mixed _bulk; persisted Lua/Replace/update/noop and isolated missing update verified", backend.Product))
 }
 
 func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
@@ -205,5 +205,5 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	if status != 200 || !strings.Contains(string(raw), `"_version":1`) {
 		t.Fatal("independent acknowledged write replayed", status, string(raw))
 	}
-	t.Logf("%s Lua OCC conflict -> only Lua reread and rewritten, peer Put remained version 1", backend.Profile)
+	t.Logf("%s Lua OCC conflict -> only Lua reread and rewritten, peer Put remained version 1", backend.Product)
 }
