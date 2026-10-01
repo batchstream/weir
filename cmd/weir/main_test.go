@@ -33,28 +33,36 @@ func TestVersionWithoutConfiguration(t *testing.T) {
 
 func TestCheckConfigWithoutBackendOrCAAccess(t *testing.T) {
 	directory := t.TempDir()
-	file := filepath.Join(directory, "node.yaml")
-	routingDirectory := filepath.Join(directory, "routing")
-	if err := os.Mkdir(routingDirectory, 0700); err != nil {
+	file := filepath.Join(directory, "weir.yaml")
+	routingDirectory := filepath.Join(directory, "nested")
+	serviceDirectory := filepath.Join(routingDirectory, "services")
+	if err := os.MkdirAll(serviceDirectory, 0700); err != nil {
 		t.Fatal(err)
 	}
 
 	routingFile := filepath.Join(routingDirectory, "routes.yaml")
+	serviceFile := filepath.Join(serviceDirectory, "search.yaml")
 	basic := `listeners:
   application: 192.0.2.1:7447
 routing:
-  file: routing/routes.yaml
+  file: nested/routes.yaml
 `
 	routing := `services:
-  - name: database
-    local:
-      mongodb:
-        uri: "mongodb://user:password-sentinel@unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
-        database: catalog
-        collection: records
+  - name: search
+    file: services/search.yaml
 routes:
-  - store: mongo
-    service: database
+  - store: records
+    service: search
+`
+	service := `local:
+  search:
+    url: https://unresolved.invalid:443
+    index: records
+    profile: elasticsearch-8.19.22
+    connection:
+      username: user
+      password: password-sentinel
+      ca_file: /missing/ca-sentinel.pem
 `
 	if err := os.WriteFile(file, []byte(basic), 0600); err != nil {
 		t.Fatal(err)
@@ -62,11 +70,19 @@ routes:
 	if err := os.WriteFile(routingFile, []byte(routing), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(serviceFile, []byte(service), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(directory)
+	var output bytes.Buffer
+	if err := run([]string{"check"}, &output); err != nil || output.String() != "configuration valid\n" {
+		t.Fatal("default basic file must resolve nested routes and service without startup IO", err, output.String())
+	}
 
 	// Routing paths belong to the basic file, even from a different working directory.
 	t.Chdir(t.TempDir())
 
-	var output bytes.Buffer
 	for _, flag := range []string{"--config", "-c"} {
 		output.Reset()
 		if err := run([]string{"check", flag, file}, &output); err != nil {
@@ -77,15 +93,21 @@ routes:
 		}
 	}
 
-	invalid := strings.Replace(routing, "collection: records", "collection: invalid name", 1)
-	if err := os.WriteFile(routingFile, []byte(invalid), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, command := range []string{"check", "serve"} {
-		output.Reset()
-		err := run([]string{command, "--config", file}, &output)
-		if err == nil || strings.Contains(err.Error(), "password-sentinel") || output.Len() != 0 {
-			t.Fatal("invalid routing configuration must fail without exposing values", command, err)
+	t.Chdir(directory)
+	for _, invalid := range []string{
+		"local:\n  search: [password-sentinel\n",
+		service + "unknown-secret-sentinel: password-sentinel\n",
+	} {
+		if err := os.WriteFile(serviceFile, []byte(invalid), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, command := range []string{"check", "serve"} {
+			output.Reset()
+			err := run([]string{command}, &output)
+			if err == nil || !strings.HasPrefix(err.Error(), "service invalid configuration YAML") ||
+				strings.Contains(err.Error(), "sentinel") || output.Len() != 0 {
+				t.Fatal("invalid service file must fail before startup without exposing values", command, err, output.String())
+			}
 		}
 	}
 }

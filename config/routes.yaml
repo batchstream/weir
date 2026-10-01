@@ -1,10 +1,11 @@
 # Weir routing configuration reference
 #
 # Loaded through routing.file in config/weir.yaml. All services/routes below
-# are active YAML configuration. Set backend addresses, resource names, credentials and CA
-# paths for your environment before running weir serve. Keep only the services
-# and routes you need; every service must be referenced by a route.
-# weir check validates both files and the graph without backend, DNS or CA-file IO.
+# are active YAML configuration. Set backend addresses, resource names,
+# credentials and CA paths for your environment before running weir serve.
+# Keep only the services and routes you need; every service must have a route.
+# weir check --config config/weir.yaml validates all referenced configuration
+# files and the graph without backend, DNS or CA-file IO.
 # Optional fields use their documented defaults when omitted. Strings are literal;
 # environment-variable substitution is not performed. Changes require a restart.
 
@@ -16,8 +17,21 @@ services:
   # <= 63 bytes, matching ^[a-z](?:[a-z0-9]|-[a-z0-9]){0,62}$.
   - name: "database"
 
+    # Load this service's backend and scheduler settings from a YAML file.
+    # Required: no. Default: "" (use inline local/remote settings).
+    # Allowed: "" or a path to a regular file; symbolic links are followed.
+    # Relative paths resolve from this routing file's directory; absolute paths
+    # can point to mounted files, e.g. /etc/weir/services/database.yaml.
+    # A nonempty file replaces local/remote: remove both inline blocks when set.
+    # The file must contain exactly one local or remote block, with the same
+    # fields/defaults/bounds documented below. name, file and other root fields
+    # are forbidden in the referenced file. Each file is limited to 128 KiB,
+    # uses the same strict YAML rules, and is read once at startup or check.
+    # Changes require a restart; settings are not merged with inline values.
+    file: ""
+
     # Local backend and scheduler settings.
-    # Required: exactly one of local/remote. Default: absent.
+    # Required: exactly one of local/remote/nonempty file. Default: absent.
     # Allowed: exactly one of mongodb/search plus the scheduler fields below.
     # A local service must have exactly one route; local aliases are rejected.
     local:
@@ -115,7 +129,7 @@ services:
 
   - name: "upstream"
     # Remote service: forward requests to peer listeners.
-    # Required: exactly one of local/remote. Default: absent.
+    # Required: exactly one of local/remote/nonempty file. Default: absent.
     # Allowed: endpoints/max_concurrency mapping below.
     remote:
       # Alternate peer listener endpoints for the same logical service.

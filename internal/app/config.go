@@ -62,6 +62,7 @@ type Route struct {
 
 type Service struct {
 	Name   string  `json:"name" yaml:"name"`
+	File   string  `json:"file,omitempty" yaml:"file,omitempty"`
 	Local  *Local  `json:"local" yaml:"local"`
 	Remote *Remote `json:"remote" yaml:"remote"`
 }
@@ -165,6 +166,11 @@ func (cfg Config) Validate() error {
 	if err := cfg.Basic.Validate(); err != nil {
 		return err
 	}
+	for _, service := range cfg.Routing.Services {
+		if service.File != "" {
+			return errors.New("unresolved Service configuration")
+		}
+	}
 	return cfg.Routing.Validate()
 }
 
@@ -220,7 +226,20 @@ func (cfg RoutingConfig) Validate() error {
 
 	services := make(map[string]Service)
 	for _, service := range cfg.Services {
-		if !validName(service.Name) || services[service.Name].Name != "" || (service.Local == nil) == (service.Remote == nil) {
+		sources := 0
+		if service.Local != nil {
+			sources++
+		}
+		if service.Remote != nil {
+			sources++
+		}
+		if service.File != "" {
+			sources++
+			if strings.TrimSpace(service.File) == "" {
+				return errors.New("invalid Service configuration file")
+			}
+		}
+		if !validName(service.Name) || services[service.Name].Name != "" || sources != 1 {
 			return errors.New("invalid or duplicate Service")
 		}
 		services[service.Name] = service

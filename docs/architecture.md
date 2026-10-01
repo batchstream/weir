@@ -185,18 +185,23 @@ timeouts under `transport`, and the hop budget under `forwarding.hop_limit`.
 strings such as `"30s"` or `"5m"`. A required `routing.file` selects the separate
 routing YAML file, containing Services and Routes, including backend connection
 and local scheduler settings. Relative routing paths resolve from the basic file's
-directory. Both documents require one YAML mapping with exact field names and
-reject unknown fields,
-duplicate keys, anchors, aliases, merge keys, explicit tags, trailing documents and
-inputs over 128 KiB. The `config/weir.yaml` basic reference and
+directory. Each service selects inline `local`, inline `remote`, or a nonempty
+`file` path. Service file paths resolve from the routing document's directory;
+absolute paths and symbolic links are supported. Referenced service files contain
+exactly one `local` or `remote` block, with the same adapter and scheduler fields.
+Names and routes remain in the routing document; file references cannot recurse
+or merge with inline settings. All documents require one YAML mapping with exact
+field names and reject unknown fields, duplicate keys, anchors, aliases, merge
+keys, explicit tags, trailing documents and inputs over 128 KiB. The
+`config/weir.yaml` basic reference and
 `config/routes.yaml` routing reference document every field's purpose, required
 status, default and allowed values beside actual YAML settings. Parsing and
 complete validation have no backend, DNS or CA-file side effects. Configuration
-is immutable after startup; changing either file requires a restart. Cobra
-commands separate server startup, validation, build identity and
-health checks. `weir serve --config <file>` selects a basic file (default
-`config/weir.yaml` from the working directory); `weir check --config <file>`
-validates both files without assembly.
+is immutable after startup; changing any configuration file requires a restart.
+Cobra commands separate server startup, validation, build identity and health
+checks. `weir serve --config <file>` selects a basic file (default
+`weir.yaml` from the working directory); `weir check --config <file>`
+loads and validates all referenced configuration files without assembly.
 
 Deployment topology examples:
 
