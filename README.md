@@ -24,7 +24,7 @@ indices. MongoDB program transforms require transactions on a replica set.
 ```sh
 go build -o bin/weir ./cmd/weir
 bin/weir version
-bin/weir check
+bin/weir check --config config/weir.yaml
 ```
 
 Keep the [basic configuration](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
@@ -33,7 +33,8 @@ together in the `config/` directory. Set backend addresses, resource names,
 credentials and CA paths in the routing file, and remove services/routes you do
 not need.
 Start with `bin/weir serve --config /path/to/config/weir.yaml`;
-`bin/weir serve` loads `config/weir.yaml` from the current directory.
+`bin/weir serve` and `bin/weir check` default to `./weir.yaml` in the current
+directory. Pass `--config config/weir.yaml` to use the reference directory.
 Lua program transforms run inside the Weir process; no additional executable or
 runtime path configuration is required.
 The application listener uses plaintext gRPC; deploy it on an isolated network.

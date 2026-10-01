@@ -147,7 +147,7 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 		output.Reset()
 		if err := run([]string{command, "--help"}, &output); err != nil ||
 			!strings.Contains(output.String(), `-c, --config string`) ||
-			!strings.Contains(output.String(), `(default "config/weir.yaml")`) ||
+			!strings.Contains(output.String(), `(default "weir.yaml")`) ||
 			!strings.Contains(output.String(), "basic YAML configuration") {
 			t.Fatal("command help must document the local configuration flag", command, err, output.String())
 		}
@@ -159,7 +159,7 @@ func TestCLIRequiresBasicAndRoutingFiles(t *testing.T) {
 	for _, command := range []string{"serve", "check"} {
 		var output bytes.Buffer
 		if err := run([]string{command}, &output); err == nil || err.Error() != "basic configuration unavailable" || output.Len() != 0 {
-			t.Fatal("command must require default config/weir.yaml before opening a backend", command, err, output.String())
+			t.Fatal("command must require default weir.yaml before opening a backend", command, err, output.String())
 		}
 	}
 
@@ -168,22 +168,19 @@ func TestCLIRequiresBasicAndRoutingFiles(t *testing.T) {
 routing:
   file: routes.yaml
 `
-	if err := os.Mkdir("config", 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join("config", "weir.yaml"), []byte(basic), 0600); err != nil {
+	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, command := range []string{"serve", "check"} {
 		var output bytes.Buffer
 		if err := run([]string{command}, &output); err == nil || err.Error() != "routing configuration unavailable" || output.Len() != 0 {
-			t.Fatal("command must load config/weir.yaml and its referenced routing file", command, err, output.String())
+			t.Fatal("command must load weir.yaml and its referenced routing file", command, err, output.String())
 		}
 	}
 }
 
 func TestCLIHasNoConfigurationFallback(t *testing.T) {
-	for _, filename := range []string{"weir.yaml", "weir.json"} {
+	for _, filename := range []string{filepath.Join("config", "weir.yaml"), "weir.json"} {
 		t.Run(filename, func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			basic := `listeners:
@@ -191,6 +188,9 @@ func TestCLIHasNoConfigurationFallback(t *testing.T) {
 routing:
   file: routes.yaml
 `
+			if filename == "weir.json" {
+				basic = `{"listeners":{"application":"127.0.0.1:0"},"routing":{"file":"routes.yaml"}}`
+			}
 			routing := `services:
   - name: remote
     remote:
@@ -201,10 +201,14 @@ routes:
   - store: records
     service: remote
 `
+			if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.WriteFile(filename, []byte(basic), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile("routes.yaml", []byte(routing), 0600); err != nil {
+			routingFile := filepath.Join(filepath.Dir(filename), "routes.yaml")
+			if err := os.WriteFile(routingFile, []byte(routing), 0600); err != nil {
 				t.Fatal(err)
 			}
 
@@ -212,7 +216,7 @@ routes:
 				var output bytes.Buffer
 				err := run([]string{command}, &output)
 				if err == nil || err.Error() != "basic configuration unavailable" || output.Len() != 0 {
-					t.Fatal("default configuration must not discover files outside config/weir.yaml", command, filename, err, output.String())
+					t.Fatal("default configuration must not discover files other than ./weir.yaml", command, filename, err, output.String())
 				}
 			}
 		})
@@ -265,13 +269,10 @@ routes:
   - store: records
     service: remote
 `
-	if err := os.Mkdir("config", 0700); err != nil {
+	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join("config", "weir.yaml"), []byte(basic), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join("config", "routes.yaml"), []byte(routing), 0600); err != nil {
+	if err := os.WriteFile("routes.yaml", []byte(routing), 0600); err != nil {
 		t.Fatal(err)
 	}
 
