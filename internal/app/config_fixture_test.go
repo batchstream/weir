@@ -29,11 +29,10 @@ func mongoFixtureConfig(t *testing.T, uri, database string) *Mongo {
 }
 
 // Write only test-owned basic and routing documents, including container mounts.
-func writeConfigFiles(t *testing.T, filename string, cfg Config, mode os.FileMode) {
+func writeConfigFiles(t *testing.T, filename string, cfg Config, mode os.FileMode) string {
 	t.Helper()
 	base := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
 	routingFilename := filepath.Join(filepath.Dir(filename), base+"-routing.yaml")
-	cfg.Basic.Routing.File = filepath.Base(routingFilename)
 	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
@@ -48,4 +47,5 @@ func writeConfigFiles(t *testing.T, filename string, cfg Config, mode os.FileMod
 	if err := os.WriteFile(filename, basic, mode); err != nil {
 		t.Fatal(err)
 	}
+	return routingFilename
 }

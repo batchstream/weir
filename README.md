@@ -18,23 +18,25 @@ Use the [Go SDK](https://github.com/batchstream/weir-go) for clients and the
 
 ## Build and run
 
-Requires Go **1.27.1** and a configured backend with pre-created collections or
+Requires Go **1.27.1**. Local backend routes require pre-created collections or
 indices. MongoDB program transforms require transactions on a replica set.
 
 ```sh
 go build -o bin/weir ./cmd/weir
 bin/weir version
-bin/weir check --config config/weir.yaml
+bin/weir check --config config/weir.yaml --routes config/routes.yaml
 ```
 
 Keep the [basic configuration](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
 and [routing configuration](https://github.com/batchstream/weir/blob/main/config/routes.yaml)
-together in the `config/` directory. Set backend addresses, resource names,
+in the `config/` directory. Set backend addresses, resource names,
 credentials and CA paths in the routing file, and remove services/routes you do
 not need.
-Start with `bin/weir serve --config /path/to/config/weir.yaml`;
+Start with `bin/weir serve --config config/weir.yaml --routes config/routes.yaml`;
 `bin/weir serve` and `bin/weir check` default to `./weir.yaml` in the current
-directory. Pass `--config config/weir.yaml` to use the reference directory.
+directory. `--routes` defaults to empty: no routing file is loaded and no backend
+is assembled. Pass `--routes` to enable your routes. Both CLI paths resolve from
+the working directory; neither file is automatically discovered elsewhere.
 Lua program transforms run inside the Weir process; no additional executable or
 runtime path configuration is required.
 The application listener uses plaintext gRPC; deploy it on an isolated network.
@@ -49,8 +51,8 @@ Configuration follows the separation between startup settings and routing used b
 [Traefik](https://doc.traefik.io/traefik/getting-started/configuration-overview/).
 The basic file groups application and peer addresses under `listeners`, diagnostic
 HTTP settings under `diagnostics`, connection/session limits and readable timeouts
-under `transport`, and the hop budget under `forwarding`. Its required
-`routing.file` selects a separate file containing `services` and `routes`.
+under `transport`, and the hop budget under `forwarding`. The optional `--routes`
+argument selects a separate file containing `services` and `routes`.
 
 The [config/weir.yaml reference](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
 documents every basic field. The separate
@@ -79,8 +81,6 @@ transport:
     stall: "30s"
 forwarding:
   hop_limit: 4
-routing:
-  file: "routes.yaml"
 ```
 
 And `config/routes.yaml`:
@@ -100,9 +100,12 @@ routes:
     service: "database"
 ```
 
-Relative routing paths resolve from the basic file's directory; absolute paths
-are also supported. Services contain `local` or `remote` settings in the routing
-file. MongoDB and Search credentials can be configured as `username`/`password`
+Both `--config` and `--routes` resolve relative paths from the working directory;
+absolute paths are also supported. An omitted `--routes`, an empty routing mapping
+(`{}`), or two empty `services`/`routes` lists produces an empty graph. Both lists
+can be omitted or null when empty. A partially populated graph is rejected.
+Services contain `local` or `remote` settings in the routing file. MongoDB and
+Search credentials can be configured as `username`/`password`
 values or read from `username_file`/`password_file` paths. Each credential must
 use only one source; inline and file sources can be mixed across the pair.
 For example, a MongoDB service can use an inline username and a mounted password:
@@ -160,16 +163,24 @@ The CLI uses Cobra commands:
 
 | Command | Purpose |
 | --- | --- |
-| `weir serve --config config/weir.yaml` | Load the configuration and start the server. |
-| `weir check --config config/weir.yaml` | Validate all referenced files without backend or listener access. |
+| `weir serve --config config/weir.yaml --routes config/routes.yaml` | Load process settings and routes, then start the server. |
+| `weir check --config config/weir.yaml --routes config/routes.yaml` | Validate settings, routes and credential files without backend or listener access. |
 | `weir version` | Print build identity. |
 | `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
 | `weir --help` | Show commands; each command also accepts `--help`. |
 
-`serve` and `check` accept `-c` as the short form of `--config`; `probe` accepts
-`--address` for a custom loopback diagnostic address. Backend, batching, listener
-and memory settings belong in the configuration files. Every compared binary in
+`serve` and `check` accept `-c` as the short form of `--config` and optional
+`--routes` (default empty); `probe` accepts `--address` for a custom loopback
+diagnostic address. Backend, batching, listener and memory settings belong in
+the configuration files. Every compared binary in
 the load-comparison tool uses this same configuration layout.
+
+The peer examples require their routing files explicitly:
+
+```sh
+weir serve --config examples/peer-a.yaml --routes examples/peer-a.routes.yaml
+weir serve --config examples/peer-b.yaml --routes examples/peer-b.routes.yaml
+```
 
 ## Development
 

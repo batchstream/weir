@@ -3,6 +3,3 @@ listeners:
 
 forwarding:
   hop_limit: 4
-
-routing:
-  file: "peer-a.routes.yaml"

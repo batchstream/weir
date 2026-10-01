@@ -21,9 +21,6 @@ func DecodeBasic(input io.Reader) (BasicConfig, error) {
 	if err := decodeConfigYAML(input, &cfg, false); err != nil {
 		return cfg, fmt.Errorf("basic %w", err)
 	}
-	if strings.TrimSpace(cfg.Routing.File) == "" {
-		return cfg, errors.New("basic configuration requires routing.file")
-	}
 	return cfg, cfg.Validate()
 }
 
@@ -37,11 +34,12 @@ func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 }
 
 // Load resolves every configuration file and validates the graph before startup.
-// Relative routing paths are resolved from the basic document's directory.
+// Basic and routing paths are interpreted from the process working directory.
 // Relative credential paths are resolved from the routing document's directory.
-func Load(filename string) (Config, error) {
+// An empty routing path selects a node without services or routes.
+func Load(basicFilename, routingFilename string) (Config, error) {
 	cfg := Config{}
-	file, err := os.Open(filename)
+	file, err := os.Open(basicFilename)
 	if err != nil {
 		return cfg, errors.New("basic configuration unavailable")
 	}
@@ -53,9 +51,9 @@ func Load(filename string) (Config, error) {
 	if closeErr != nil {
 		return cfg, errors.New("basic configuration unavailable")
 	}
-	routingFilename := basic.Routing.File
-	if !filepath.IsAbs(routingFilename) {
-		routingFilename = filepath.Join(filepath.Dir(filename), routingFilename)
+	if routingFilename == "" {
+		cfg.Basic = basic
+		return cfg, cfg.Validate()
 	}
 	file, err = os.Open(routingFilename)
 	if err != nil {
@@ -166,6 +164,9 @@ func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string
 		}
 	case yaml.SequenceNode:
 		for _, child := range node.Content {
+			if child.Tag == "!!null" {
+				return errors.New("configuration sequence item cannot be null")
+			}
 			err := validateConfigYAML(child, depth+1, allowNull, field)
 			if err != nil {
 				return err

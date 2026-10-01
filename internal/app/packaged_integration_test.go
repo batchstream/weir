@@ -317,7 +317,7 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 	args := []string{"create", "--name", opts.name, "--label", "weir.owner=" + opts.owner, "--platform=linux/arm64",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=512m", "--memory-swap=512m", "--cpus=2", "--pids-limit=96",
 		"--add-host=m15-wrong:host-gateway", "--publish", "127.0.0.1::7447", "--mount", "type=bind,src=" + opts.directory + ",dst=/fixture,readonly",
-		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.yaml"}
+		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.yaml", "--routes", "/fixture/node-routing.yaml"}
 	packagedDocker(t, args...)
 	packagedDocker(t, "start", opts.name)
 	if opts.negative {

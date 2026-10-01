@@ -83,7 +83,6 @@ func writeCredentialTestDocuments(t *testing.T, cfg Config) (string, string) {
 			t.Fatal(err)
 		}
 	}
-	cfg.Basic.Routing.File = "../routing/routes.yaml"
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +153,7 @@ func TestLoadCredentialSources(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					loaded, err := Load(basicFilename)
+					loaded, err := Load(basicFilename, routingFilename)
 					if err != nil {
 						t.Fatal("all inline/file combinations must load without backend, DNS or CA-file IO", err)
 					}
@@ -305,8 +304,8 @@ func TestLoadValidatesAllCredentialSourcesBeforeIO(t *testing.T) {
 	*second.passwordFile = "conflicting-secret-sentinel.txt"
 	cfg.Routing.Services = append(cfg.Routing.Services, other.Routing.Services[0])
 	cfg.Routing.Routes = append(cfg.Routing.Routes, other.Routing.Routes[0])
-	basicFilename, _ := writeCredentialTestDocuments(t, cfg)
-	if _, err := Load(basicFilename); err == nil || err.Error() != "credential value and file are mutually exclusive" {
+	basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
+	if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != "credential value and file are mutually exclusive" {
 		t.Fatal("all source conflicts must be rejected before opening the earlier missing credential file", err)
 	}
 }
@@ -331,8 +330,8 @@ func TestLoadValidatesGraphBeforeCredentialIO(t *testing.T) {
 				}
 				want = "invalid static graph bounds"
 			}
-			basicFilename, _ := writeCredentialTestDocuments(t, cfg)
-			if _, err := Load(basicFilename); err == nil || err.Error() != want {
+			basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
+			if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != want {
 				t.Fatal("static graph failures must precede credential file IO", err)
 			}
 		})
@@ -398,7 +397,7 @@ func TestLoadLaterInvalidCredentialBeforeStartup(t *testing.T) {
 	if err := os.WriteFile(filename, []byte("bad\x00secret-sentinel"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(basicFilename); err == nil || err.Error() != "invalid credential file content" {
+	if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != "invalid credential file content" {
 		t.Fatal("later invalid secret must fail before opening the first Search backend or missing CA", err)
 	}
 }
@@ -482,7 +481,7 @@ func TestCredentialPathsUseRoutingSymlinkDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(targetDirectory, "username.txt"), []byte("invalid\x00"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := Load(basicFilename)
+	loaded, err := Load(basicFilename, routingFilename)
 	if err != nil {
 		t.Fatal("credential paths must use the routing filename's directory, rather than its symlink target", err)
 	}

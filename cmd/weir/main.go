@@ -36,16 +36,17 @@ func run(args []string, output io.Writer) error {
 	}
 
 	serveConfig := "weir.yaml"
+	serveRoutes := ""
 	serveCommand := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the node using basic and routing configuration",
+		Short: "Start the node using basic configuration and optional routes",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if serveConfig == "" {
 				return errors.New("--config requires a file")
 			}
 
-			cfg, err := app.Load(serveConfig)
+			cfg, err := app.Load(serveConfig, serveRoutes)
 			if err != nil {
 				return err
 			}
@@ -58,10 +59,17 @@ func run(args []string, output io.Writer) error {
 		"config",
 		"c",
 		"weir.yaml",
-		"basic YAML configuration referencing a routing file",
+		"basic YAML configuration file",
+	)
+	serveCommand.Flags().StringVar(
+		&serveRoutes,
+		"routes",
+		"",
+		"optional routing YAML configuration file",
 	)
 
 	checkConfig := "weir.yaml"
+	checkRoutes := ""
 	checkCommand := &cobra.Command{
 		Use:   "check",
 		Short: "Validate configuration without listeners, DNS or backend connections",
@@ -71,7 +79,7 @@ func run(args []string, output io.Writer) error {
 				return errors.New("--config requires a file")
 			}
 
-			if _, err := app.Load(checkConfig); err != nil {
+			if _, err := app.Load(checkConfig, checkRoutes); err != nil {
 				return err
 			}
 
@@ -84,7 +92,13 @@ func run(args []string, output io.Writer) error {
 		"config",
 		"c",
 		"weir.yaml",
-		"basic YAML configuration referencing a routing file",
+		"basic YAML configuration file",
+	)
+	checkCommand.Flags().StringVar(
+		&checkRoutes,
+		"routes",
+		"",
+		"optional routing YAML configuration file",
 	)
 
 	versionCommand := &cobra.Command{

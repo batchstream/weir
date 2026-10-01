@@ -124,7 +124,6 @@ def prepare(f, plan, artifact):
         "listeners": {"application": "0.0.0.0:7447"},
         "diagnostics": {"address": "127.0.0.1:7449"},
         "memory": "768MiB",
-        "routing": {"file": "routes.yaml"},
     }
     routes = {
         "services": [
@@ -148,7 +147,12 @@ def prepare(f, plan, artifact):
     run_options = dict(env=env)
     effective = json.loads(
         f.run(
-            [str(f.root / "client-host"), "-mode", "config", "-config", str(f.root / "node.yaml")],
+            [
+                str(f.root / "client-host"),
+                "-mode", "config",
+                "-config", str(f.root / "node.yaml"),
+                "-routes", str(f.root / "routes.yaml"),
+            ],
             options=run_options,
         ).stdout
     )
@@ -356,7 +360,7 @@ def start(f, plan, budget):
             "--mount",
             f"type=bind,source={f.root / 'routes.yaml'},target=/routes.yaml,readonly",
         ],
-        "command": ["serve", "--config", "/node.yaml"],
+        "command": ["serve", "--config", "/node.yaml", "--routes", "/routes.yaml"],
     }
     f.create("weir", weir_spec)
     f.observers = {}

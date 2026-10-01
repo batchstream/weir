@@ -82,7 +82,6 @@ def prepare(f, artifact, profile):
             "listeners": {"application": "0.0.0.0:7447"},
             "diagnostics": {"address": "127.0.0.1:7449"},
             "memory": "256MiB",
-            "routing": {"file": "routes.yaml"},
         }
         routes = {
             "services": [
@@ -106,7 +105,11 @@ def prepare(f, artifact, profile):
         f.save(f"c{concurrency}/node.yaml", config_yaml.dumps(cfg))
         f.save(f"c{concurrency}/routes.yaml", config_yaml.dumps(routes))
         result = subprocess.run(
-            [str(f.root / "client-host"), "-validate", str(filename)],
+            [
+                str(f.root / "client-host"),
+                "-validate", str(filename),
+                "-routes", str(directory / "routes.yaml"),
+            ],
             env=env,
             capture_output=True,
             text=True,

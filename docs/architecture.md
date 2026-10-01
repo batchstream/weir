@@ -182,10 +182,13 @@ The basic YAML file groups application and peer addresses under `listeners`,
 diagnostic HTTP settings under `diagnostics`, connection/session limits and
 timeouts under `transport`, and the hop budget under `forwarding.hop_limit`.
 `memory` is an explicitly sized string such as `"512MiB"`; timeouts are duration
-strings such as `"30s"` or `"5m"`. A required `routing.file` selects the separate
-routing YAML file, containing Services and Routes, including backend connection
-and local scheduler settings. Relative routing paths resolve from the basic file's
-directory. Services select `local` or `remote` settings in that routing document.
+strings such as `"30s"` or `"5m"`. The optional `--routes` argument selects a
+separate routing YAML file containing Services and Routes, including backend
+connection and local scheduler settings. Both CLI paths resolve from the working
+directory. An empty `--routes` loads no routing file and assembles no backend.
+An empty mapping or two empty Services/Routes lists is also valid; both lists may
+be omitted or null when empty. A partially populated graph is rejected. Services
+select `local` or `remote` settings in the routing document.
 MongoDB credentials and Search `connection` credentials each select direct
 `username`/`password` strings or `username_file`/`password_file` text paths.
 Sources are mutually exclusive per credential and must form a complete pair;
@@ -203,9 +206,10 @@ status, default and allowed values beside actual YAML settings. Parsing and
 complete validation have no backend, DNS or CA-file side effects. Configuration
 is immutable after startup; changing any configuration file requires a restart.
 Cobra commands separate server startup, validation, build identity and health
-checks. `weir serve --config <file>` selects a basic file (default
-`weir.yaml` from the working directory); `weir check --config <file>`
-loads and validates all referenced configuration files without assembly.
+checks. `weir serve --config <file> --routes <file>` selects process settings and
+routes (defaults: `weir.yaml` and no routing file). `weir check` accepts the same
+flags and validates configuration and credential files without assembly. Neither
+configuration path has automatic discovery or a fallback.
 
 Deployment topology examples:
 

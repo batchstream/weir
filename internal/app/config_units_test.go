@@ -160,8 +160,6 @@ func TestByteSizeYAML(t *testing.T) {
 func TestGroupedConfigurationDefaultsAndConversion(t *testing.T) {
 	input := `listeners:
   application: 127.0.0.1:0
-routing:
-  file: routing.yaml
 memory: 1GiB
 transport:
   max_sessions: 1
@@ -201,7 +199,7 @@ forwarding:
 }
 
 func TestGroupedConfigurationBounds(t *testing.T) {
-	prefix := "listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: routing.yaml\n"
+	prefix := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
 		"memory: 64MiB\n", "memory: 64GiB\n",
 		`transport:
@@ -237,7 +235,7 @@ func TestGroupedConfigurationBounds(t *testing.T) {
 }
 
 func TestGroupedConfigurationRejectsOldFieldsAndNumbers(t *testing.T) {
-	prefix := "listeners:\n  application: 127.0.0.1:0\nrouting:\n  file: routing.yaml\n"
+	prefix := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
 		"application: 127.0.0.1:0\n", "peer: 127.0.0.1:0\n", "diagnostics: 127.0.0.1:0\n", "diagnostics_allow_intranet: true\n",
 		"memory_mib: 512\n", "initial_forwards: 4\n", "limits: {}\n", "routing_file: routing.yaml\n",

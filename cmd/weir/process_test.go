@@ -216,7 +216,6 @@ type cliProcess struct {
 func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	t.Helper()
 	t.Logf("native test runtime=%s/%s go=%s euid=%d", runtime.GOOS, runtime.GOARCH, runtime.Version(), os.Geteuid())
-	cfg.Basic.Routing.File = "routes.yaml"
 	raw, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -225,16 +224,23 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 	if err := os.WriteFile(config, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	routing, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(config), cfg.Basic.Routing.File), routing, 0600); err != nil {
-		t.Fatal(err)
+	routes := ""
+	if len(cfg.Routing.Services) != 0 || len(cfg.Routing.Routes) != 0 {
+		routing, err := yaml.Marshal(cfg.Routing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		routes = filepath.Join(filepath.Dir(config), "routes.yaml")
+		if err := os.WriteFile(routes, routing, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	binary := os.Getenv("WEIR_CLI_BINARY")
 	args := []string{"serve", "--config", config}
+	if routes != "" {
+		args = append(args, "--routes", routes)
+	}
 	if binary == "" || mode != "cli" {
 		binary, err = os.Executable()
 		if err != nil {
@@ -248,7 +254,12 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.WaitDelay = time.Second
-	cmd.Env = append(os.Environ(), "WEIR_PROCESS_CHILD="+mode, "WEIR_PROCESS_CONFIG="+config)
+	cmd.Env = append(
+		os.Environ(),
+		"WEIR_PROCESS_CHILD="+mode,
+		"WEIR_PROCESS_CONFIG="+config,
+		"WEIR_PROCESS_ROUTES="+routes,
+	)
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -425,6 +436,34 @@ func TestCLISignalAtFirstListener(t *testing.T) {
 	b.idle(t)
 }
 
+func TestCLIBasicOnlyServe(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("routes.yaml", []byte("unknown: ignored-sentinel\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := app.DefaultConfig()
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
+	p := startCLI(t, cfg, "cli")
+	addresses := listenerAddresses(t, p.line(t))
+	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for _, mode := range []string{"live", "ready"} {
+		if err := runProbe(ctx, mode, diagnostic); err != nil {
+			t.Fatal("a node without routes must start and report health", mode, err)
+		}
+	}
+
+	p.terminate(t, "basic-only node reached readiness without reading default routes.yaml")
+	p.wait(t, 0)
+	if p.stderr.text() != "" {
+		t.Fatal("basic-only shutdown output", p.stderr.text())
+	}
+	closedAddresses(t, append(addresses, diagnostic))
+}
+
 func TestCLISignalBeforeStart(t *testing.T) {
 	b := newStartupBackend(t, "")
 	p := startCLI(t, b.config(), "before-start")
@@ -451,14 +490,20 @@ func TestCLIProcessChild(t *testing.T) {
 		return
 	}
 	config := os.Getenv("WEIR_PROCESS_CONFIG")
+	routes := os.Getenv("WEIR_PROCESS_ROUTES")
+	args := []string{"serve", "--config", config}
+	if routes != "" {
+		args = append(args, "--routes", routes)
+	}
+
 	var err error
 	if mode == "before-start" {
-		err = beforeStartChild(config)
+		err = beforeStartChild(config, routes)
 	} else if mode == "writer-error" {
 		writer := &failedOutput{}
-		err = run([]string{"serve", "--config", config}, writer)
+		err = run(args, writer)
 	} else {
-		err = run([]string{"serve", "--config", config}, os.Stdout)
+		err = run(args, os.Stdout)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -467,8 +512,8 @@ func TestCLIProcessChild(t *testing.T) {
 	os.Exit(0)
 }
 
-func beforeStartChild(config string) error {
-	cfg, err := app.Load(config)
+func beforeStartChild(config, routes string) error {
+	cfg, err := app.Load(config, routes)
 	if err != nil {
 		return err
 	}

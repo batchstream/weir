@@ -22,8 +22,8 @@ import (
 func secureNode(t *testing.T, cfg Config) *Node {
 	t.Helper()
 	filename := filepath.Join(t.TempDir(), "node.yaml")
-	writeConfigFiles(t, filename, cfg, 0600)
-	cfg, err := Load(filename)
+	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
+	cfg, err := Load(filename, routingFilename)
 	if err != nil {
 		t.Fatal("owned config load failed")
 	}

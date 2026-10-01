@@ -134,7 +134,7 @@ class PairedComparison(unittest.TestCase):
             current_hash = hashlib.sha256(fixture.binaries[name].read_bytes()).hexdigest()
             self.assertNotEqual(expected_hashes[name], current_hash)
 
-    def test_production_entrypoints_share_config_and_resource_limits(self):
+    def test_entrypoints_share_config_routes_and_resource_limits(self):
         fixture = entry.Fixture(self.args)
         fixture.client = "client-id"
         commands = []
@@ -153,25 +153,35 @@ class PairedComparison(unittest.TestCase):
             fixture.start_weir("weir")
             current_config = (fixture.root / "node.yaml").read_text()
             current_routes = (fixture.root / "routes.yaml").read_text()
-        self.assertIn('"routing":\n  "file": "routes.yaml"\n', current_config)
+            for mode in ("control", "adaptive"):
+                fixture.start_weir(mode)
+                self.assertEqual((fixture.root / "node.yaml").read_text(), current_config)
+                self.assertEqual((fixture.root / "routes.yaml").read_text(), current_routes)
+        self.assertNotIn('"routing":', current_config)
         self.assertNotIn('"services":', current_config)
         self.assertNotIn('"routes":', current_config)
         self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
-        self.assertEqual(commands[0][2], ["serve", "--config", "/node.yaml"])
+        self.assertEqual(commands[0][2], ["serve", "--config", "/node.yaml", "--routes", "/routes.yaml"])
         self.assertEqual(commands[1][2], commands[0][2])
+        for mode, options, command in commands[2:]:
+            self.assertEqual(command[command.index("-config") + 1], "/node.yaml")
+            self.assertEqual(command[command.index("-routes") + 1], "/routes.yaml")
+            self.assertIn("WEIR_CAPACITY_INTEGRATION=1", options)
+            self.assertEqual("-suppress-congestion" in command, mode == "control")
         baseline_options = commands[0][1]
         current_options = commands[1][1]
         self.assertEqual(baseline_options[:-1], current_options[:-1])
         self.assertEqual(baseline_options[-1], "/baseline")
         self.assertEqual(current_options[-1], "/weir")
-        for options in (baseline_options, current_options):
+        for _, options, _ in commands:
             self.assertEqual(options[options.index("--cpus") + 1], "2")
             self.assertEqual(options[options.index("--cpuset-cpus") + 1], "3,4")
             self.assertEqual(options[options.index("--memory") + 1], "768m")
-            self.assertNotIn("WEIR_CAPACITY_INTEGRATION=1", options)
             for filename in ("node.yaml", "routes.yaml"):
                 self.assertIn("type=bind,source=" + str(fixture.root / filename) + ",target=/" + filename + ",readonly", options)
+        for options in (baseline_options, current_options):
+            self.assertNotIn("WEIR_CAPACITY_INTEGRATION=1", options)
 
     def test_shared_prewarm_covers_both_production_paths_and_restores_cpu(self):
         fixture = entry.Fixture(self.args)

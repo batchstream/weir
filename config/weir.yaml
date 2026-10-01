@@ -1,12 +1,14 @@
 # Weir basic configuration reference
 #
 # Program startup settings are configured here. Services, backend connections and
-# routes are configured in the separate routes.yaml selected by routing.file.
-# Both files contain real YAML configuration with field documentation.
+# routes are configured in a separate file selected with --routes.
+# Both reference files contain real YAML with field documentation.
 # Validate before starting:
-#   weir check --config config/weir.yaml
-#   weir serve --config config/weir.yaml
+#   weir check --config config/weir.yaml --routes config/routes.yaml
+#   weir serve --config config/weir.yaml --routes config/routes.yaml
 # The default CLI path is ./weir.yaml. Changes require a restart.
+# --routes defaults to "": no routing file is read and no backend is assembled.
+# Both CLI paths resolve from the working directory; files are not auto-discovered.
 
 # Syntax: one YAML mapping per file; keys are exact lowercase names shown here.
 # Unknown/duplicate keys, multiple documents, anchors, aliases, merge keys and
@@ -98,11 +100,3 @@ forwarding:
   # Required: no. Default: 4. Allowed: integer 0..8.
   # 0 prevents forwarding; peer ingress uses the request's existing hop budget.
   hop_limit: 4
-
-# Source of the static service/Store graph.
-# Required: yes. Default: none. Allowed: the file mapping below.
-routing:
-  # Routing YAML file, loaded and validated before listeners/backends are opened.
-  # Required: yes. Default: none. Allowed: a nonempty filesystem path.
-  # Relative paths resolve from this basic file's directory; absolute paths work.
-  file: "routes.yaml"
