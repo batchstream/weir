@@ -190,7 +190,7 @@ func TestDNSRealAddressReplacementNewCallsAndClose(t *testing.T) {
 	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err := client.Mutate(ctx, testMutation("first"))
+	result, err := routeMutate(client, ctx, testMutation("first"))
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
@@ -215,7 +215,7 @@ func TestDNSRealAddressReplacementNewCallsAndClose(t *testing.T) {
 	e.conn.Connect()
 	awaitEndpoint(t, func() bool { e.mu.Lock(); defer e.mu.Unlock(); return e.addresses[addresses[1]] })
 	readyRemote(t, r)
-	result, err = client.Mutate(ctx, testMutation("second"))
+	result, err = routeMutate(client, ctx, testMutation("second"))
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
@@ -359,103 +359,4 @@ func TestDNSPickFirstMultipleAddressesAndOriginalDeadline(t *testing.T) {
 	if len(r.sockets) != 0 {
 		t.Fatal("pending/connected sockets leaked")
 	}
-}
-
-func TestDNSPeriodicRefreshPinsBulkAndClosesDrainingSocket(t *testing.T) {
-	dns := testdns.Start(t)
-	var addresses []string
-	var adapters []*peerAdapter
-	for _, ip := range []string{"127.0.0.1", "::1"} {
-		port := "0"
-		if len(addresses) > 0 {
-			_, port, _ = net.SplitHostPort(addresses[0])
-		}
-		listener, err := net.Listen("tcp", net.JoinHostPort(ip, port))
-		if err != nil {
-			t.Fatal(err)
-		}
-		a, rt := peerLocal(t, "records")
-		adapters = append(adapters, a)
-		local := Service{LocalStore: rt}
-		opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: true, listener: listener, limits: DefaultLimits()}
-		_, address := startPeerServer(t, opts)
-		addresses = append(addresses, address)
-	}
-	_, port, _ := net.SplitHostPort(addresses[0])
-	answer := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
-	dns.Set("periodic.weir.test", answer)
-	cfg := RemoteConfig{Endpoints: []string{"periodic.weir.test:" + port}, Relays: 2, Resolver: dns.Resolver()}
-	r, err := NewRemote(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = r.Close() })
-	readyRemote(t, r)
-	service := Service{RemoteWeir: r}
-	opts := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4, limits: DefaultLimits()}
-	entry, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-	defer cancel()
-	bulk, err := client.Bulk(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://records"}
-	first := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: first}
-	if err := bulk.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	answer.Addresses = []netip.Addr{netip.MustParseAddr("::1")}
-	dns.Set("periodic.weir.test", answer)
-	var count uint64
-	started := time.Now()
-	for {
-		mv := &pb.BulkOperation_Mutate{Mutate: testMutation("old-stream")}
-		op := &pb.BulkOperation{Index: count, Operation: mv}
-		ov := &pb.BulkRequestFrame_Operation{Operation: op}
-		frame := &pb.BulkRequestFrame{Frame: ov}
-		if err := bulk.Send(frame); err != nil {
-			t.Fatal(err)
-		}
-		result, err := bulk.Recv()
-		if err != nil || result.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-			t.Fatal(result, err)
-		}
-		count++
-		e := r.endpoints[0]
-		e.mu.Lock()
-		replaced := e.addresses[addresses[1]]
-		e.mu.Unlock()
-		if replaced {
-			break
-		}
-		if time.Since(started) > 35*time.Second {
-			t.Fatal("periodic DNS refresh missing")
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	readyRemote(t, r)
-	awaitEndpoint(t, func() bool { return len(r.sockets) == 2 })
-	result, err := client.Mutate(ctx, testMutation("new-call"))
-	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatal(result, err)
-	}
-	if adapters[0].commands.Load() != int32(count) || adapters[1].commands.Load() != 1 {
-		t.Fatal("DNS refresh moved/replayed old Bulk or failed to move new call", count, adapters[0].commands.Load(), adapters[1].commands.Load())
-	}
-	closeStarted := time.Now()
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if time.Since(closeStarted) > time.Second || len(r.sockets) != 0 {
-		t.Fatal("draining socket escaped ClientConn close")
-	}
-	_ = bulk.CloseSend()
-	if frame, err := bulk.Recv(); err == nil {
-		t.Fatal("closed active Bulk reported completion", frame)
-	}
-	waitPeerIdle(t, entry)
-	t.Logf("real periodic DNS refresh=%v; old Bulk acknowledgements=%d stayed on IPv4, new call=1 on IPv6, old+new sockets=2, Close reclaimed both", time.Since(started), count)
 }

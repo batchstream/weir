@@ -66,7 +66,7 @@ func TestSearchMixedBulk(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	results, feedback := a.Execute(ctx, works)
+	results, feedback := a.executeRecords(ctx, works)
 	if feedback != execution.Neutral {
 		t.Fatal("business conflict classified as congestion", feedback)
 	}

@@ -164,7 +164,7 @@ memory: 1GiB
 transport:
   max_sessions: 1
   timeouts:
-    unary: 1.5s
+    route: 1.5s
 forwarding:
   hop_limit: 0
 `
@@ -174,7 +174,7 @@ forwarding:
 	}
 	expected := server.DefaultLimits()
 	expected.Sessions = 1
-	expected.UnaryLifetime = 1500 * time.Millisecond
+	expected.RouteLifetime = 1500 * time.Millisecond
 	if basic.Transport.serverLimits() != expected || basic.Memory != 1<<30 || basic.Forwarding.HopLimit != 0 {
 		t.Fatal("partial nested settings discarded defaults or changed units")
 	}
@@ -206,10 +206,7 @@ func TestGroupedConfigurationBounds(t *testing.T) {
   max_connections: 1
   max_sessions: 64
   timeouts:
-    unary: 1ns
-    bulk: 15m
-    scan: 5m
-    native: 5m
+    route: 1ns
     stall: 30s
 `,
 		"forwarding:\n  hop_limit: 8\n",
@@ -222,10 +219,10 @@ func TestGroupedConfigurationBounds(t *testing.T) {
 		"memory: 67108863B\n", "memory: 68719476737B\n",
 		"transport:\n  max_connections: 0\n", "transport:\n  max_connections: 65\n",
 		"transport:\n  max_sessions: 0\n", "transport:\n  max_sessions: 65\n",
-		"transport:\n  timeouts:\n    unary: 0s\n", "transport:\n  timeouts:\n    unary: -1s\n",
-		"transport:\n  timeouts:\n    unary: 30.000000001s\n",
-		"transport:\n  timeouts:\n    bulk: 15m0.000000001s\n", "transport:\n  timeouts:\n    scan: 5m0.000000001s\n",
-		"transport:\n  timeouts:\n    native: 5m0.000000001s\n", "transport:\n  timeouts:\n    stall: 30.000000001s\n",
+		"transport:\n  timeouts:\n    route: 0s\n", "transport:\n  timeouts:\n    route: -1s\n",
+		"transport:\n  timeouts:\n    route: 15m0.000000001s\n",
+
+		"transport:\n  timeouts:\n    stall: 30.000000001s\n",
 		"forwarding:\n  hop_limit: -1\n", "forwarding:\n  hop_limit: 9\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {
@@ -239,7 +236,7 @@ func TestGroupedConfigurationRejectsOldFieldsAndNumbers(t *testing.T) {
 	for _, fragment := range []string{
 		"application: 127.0.0.1:0\n", "peer: 127.0.0.1:0\n", "diagnostics: 127.0.0.1:0\n", "diagnostics_allow_intranet: true\n",
 		"memory_mib: 512\n", "initial_forwards: 4\n", "limits: {}\n", "routing_file: routing.yaml\n",
-		"memory: 512\n", "memory: null\n", "transport:\n  timeouts:\n    unary: 30000\n", "transport:\n  timeouts:\n    unary: null\n",
+		"memory: 512\n", "memory: null\n", "transport:\n  timeouts:\n    route: 30000\n", "transport:\n  timeouts:\n    route: null\n",
 		"transport:\n  connections: 16\n", "transport:\n  sessions: 16\n", "transport:\n  unary_ms: 30000\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {

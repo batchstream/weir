@@ -60,7 +60,7 @@ func nativeOpen(t *testing.T, index, method, path string) *pb.NativeOpen {
 }
 func runNative(t *testing.T, a *Adapter, open *pb.NativeOpen, body io.ReadCloser) (*pb.NativeEnd, *nativeCapture) {
 	t.Helper()
-	p, f := a.PrepareNative(open)
+	p, f := a.prepareNative(open)
 	if f != nil {
 		t.Fatal(f)
 	}
@@ -68,7 +68,7 @@ func runNative(t *testing.T, a *Adapter, open *pb.NativeOpen, body io.ReadCloser
 	exchange := &execution.NativeExchange{Source: body, Sink: capture}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end, _ := a.ExecuteNative(ctx, p, exchange)
+	end, _ := a.executeNative(ctx, p, exchange)
 	return end, capture
 }
 func TestNativeHTTPDescriptorScope(t *testing.T) {
@@ -273,7 +273,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			cfg := Config{Store: "search", URL: backend.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			open := nativeOpen(t, "records", "GET", "/_doc/x")
-			plan, failure := a.PrepareNative(open)
+			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -287,7 +287,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			exchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: capture}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			end, feedback := a.ExecuteNative(ctx, plan, exchange)
+			end, feedback := a.executeNative(ctx, plan, exchange)
 			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
 				t.Fatal(end, feedback, calls.Load())
 			}
@@ -326,7 +326,7 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			defer cancel()
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx}
 			open := nativeOpen(t, "records", "POST", "/_bulk")
-			plan, failure := a.PrepareNative(open)
+			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -334,7 +334,7 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			body := io.NopCloser(strings.NewReader("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
 			defer body.Close()
 			exchange := &execution.NativeExchange{Source: body, Sink: capture}
-			end, feedback := a.ExecuteNative(ctx, plan, exchange)
+			end, feedback := a.executeNative(ctx, plan, exchange)
 			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || feedback != execution.Congested || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
 				t.Fatal(end, feedback, calls.Load(), capture)
 			}

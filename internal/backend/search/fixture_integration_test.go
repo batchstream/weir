@@ -32,10 +32,10 @@ func searchResource(index, id string) string {
 
 func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	op := &pb.BulkOperation{}
+	op := &pb.Operation{}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
-		op.Operation = &pb.BulkOperation_Read{Read: read}
+		op.Operation = &pb.Operation_Read{Read: read}
 	} else {
 		document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9223372036854775807,"keep":"source"}`)}
 		mutation := &pb.MutateRequest{Resource: resource}
@@ -50,25 +50,25 @@ func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Pl
 			empty := &pb.Empty{}
 			mutation.Action = &pb.MutateRequest_Delete{Delete: empty}
 		}
-		op.Operation = &pb.BulkOperation_Mutate{Mutate: mutation}
+		op.Operation = &pb.Operation_Mutate{Mutate: mutation}
 	}
-	work, failure := a.Prepare(op)
+	work, failure := a.prepareRecord(op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	return work
 }
-func runSearch(t *testing.T, a *Adapter, work *execution.Plan) *pb.BulkResult {
+func runSearch(t *testing.T, a *Adapter, work *execution.Plan) *pb.Result {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	results, _ := a.Execute(ctx, []*execution.Plan{work})
+	results, _ := a.executeRecords(ctx, []*execution.Plan{work})
 	if len(results) != 1 {
 		t.Fatal("result cardinality")
 	}
 	return results[0]
 }
-func assertOutcome(t *testing.T, result *pb.BulkResult, want pb.MutationOutcome, code pb.FailureCode) {
+func assertOutcome(t *testing.T, result *pb.Result, want pb.MutationOutcome, code pb.FailureCode) {
 	t.Helper()
 	got := result.GetMutation()
 	if got == nil || got.Outcome != want || got.GetFailure().GetCode() != code {

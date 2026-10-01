@@ -33,18 +33,18 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	for _, resource := range []string{"weir://other/records/s:a", "weir://search/records/i:1", "weir://search/records/s:", "weir://search/Records/s:a", "weir://search/records/s:a?routing=x"} {
 		read := &pb.ReadRequest{Resource: resource}
-		variant := &pb.BulkOperation_Read{Read: read}
-		op := &pb.BulkOperation{Operation: variant}
-		if _, failure := a.Prepare(op); failure == nil {
+		variant := &pb.Operation_Read{Read: read}
+		op := &pb.Operation{Operation: variant}
+		if _, failure := a.prepareRecord(op); failure == nil {
 			t.Fatal("unsupported URI accepted", resource)
 		}
 	}
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9223372036854775807}`)}
 	action := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	op := &pb.BulkOperation{Operation: variant}
-	work, failure := a.Prepare(op)
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	op := &pb.Operation{Operation: variant}
+	work, failure := a.prepareRecord(op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -53,7 +53,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	}
 	options := &pb.Document{MediaType: "application/json", Data: []byte(`{"routing":"x"}`)}
 	mutation.AdapterOptions = options
-	if _, failure := a.Prepare(op); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
+	if _, failure := a.prepareRecord(op); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("options accepted")
 	}
 	mutation.AdapterOptions = nil
@@ -61,7 +61,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	programForm := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: programForm}
 	mutation.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	if _, failure := a.Prepare(op); failure != nil {
+	if _, failure := a.prepareRecord(op); failure != nil {
 		t.Fatal("built-in Lua program transform rejected", failure)
 	}
 }
@@ -106,9 +106,9 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	op := &pb.BulkOperation{Operation: variant}
-	work, failure := a.Prepare(op)
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	op := &pb.Operation{Operation: variant}
+	work, failure := a.prepareRecord(op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -134,8 +134,8 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	op := &pb.BulkOperation{Operation: variant}
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	op := &pb.Operation{Operation: variant}
 	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{Operation: op, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)

@@ -1,9 +1,9 @@
 package server
 
 import (
-	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Service is a closed choice between the two static execution destinations.
@@ -13,17 +13,12 @@ type Service struct {
 	RemoteWeir *RemoteWeir
 }
 
-func (s *Server) resolve(resource string, root bool) (Service, string, *pb.Failure) {
-	empty := Service{}
-	name, segments, err := protocol.ParseResource(resource)
-	if err != nil || root && len(segments) != 0 {
-		s.admission.rejections.WithLabelValues("route").Inc()
-		return empty, "", protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid resource")
-	}
-	service, ok := s.routes[name]
+func (s *Server) resolve(destination string) (Service, error) {
+	service, ok := s.routes[destination]
 	if !ok {
 		s.admission.rejections.WithLabelValues("route").Inc()
-		return empty, name, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unknown store")
+		empty := Service{}
+		return empty, status.Error(codes.InvalidArgument, "unknown destination")
 	}
-	return service, name, nil
+	return service, nil
 }

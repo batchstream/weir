@@ -19,10 +19,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func scanWork(t *testing.T, a *Adapter, database string, hint uint32) *execution.Plan {
+func scanWork(t *testing.T, a *Adapter, database string) *execution.Plan {
 	t.Helper()
-	req := &pb.ScanRequest{Resource: "weir://mongo/" + database + "/records", FetchItemsHint: hint}
-	p, f := a.PrepareScan(req)
+	req := &pb.ScanRequest{Resource: "weir://mongo/" + database + "/records"}
+	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)
 	}
@@ -55,16 +55,19 @@ func TestMongoScanTraversal(t *testing.T) {
 				}
 				expected[int32(i)] = raw
 			}
-			p := scanWork(t, a, db, 8)
-			defer a.CloseScan(ctx, p)
+			p := scanWork(t, a, db)
+			defer a.closeScan(ctx, p)
 			seen := map[int32]bool{}
 			for calls := 0; ; calls++ {
-				if calls > 20 {
+				if calls > size+1 {
 					t.Fatal("did not exhaust")
 				}
-				page, _ := a.FetchScan(ctx, p)
+				page, _ := a.fetchScan(ctx, p)
 				if page.Failure != nil {
 					t.Fatalf("fetch %d: %v", calls, page.Failure)
+				}
+				if len(page.Documents) > 1 {
+					t.Fatal("scan exceeded one-document page bound", len(page.Documents))
 				}
 				for _, doc := range page.Documents {
 					id := bson.Raw(doc.Data).Lookup("_id").Int32()
@@ -80,7 +83,7 @@ func TestMongoScanTraversal(t *testing.T) {
 			if len(seen) != size {
 				t.Fatal("omissions", len(seen), size)
 			}
-			if f := a.CloseScan(ctx, p); f != nil {
+			if f := a.closeScan(ctx, p); f != nil {
 				t.Fatal(f)
 			}
 		})
@@ -117,19 +120,19 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer a.Close()
-				p := scanWork(t, a, db, 1)
-				defer a.CloseScan(ctx, p)
+				p := scanWork(t, a, db)
+				defer a.closeScan(ctx, p)
 				if command == "getMore" {
-					page, _ := a.FetchScan(ctx, p)
+					page, _ := a.fetchScan(ctx, p)
 					if page.Failure != nil || len(page.Documents) != 1 {
 						t.Fatal(page)
 					}
 				}
-				page, _ := a.FetchScan(ctx, p)
+				page, _ := a.fetchScan(ctx, p)
 				if page.Failure == nil || len(page.Documents) != 0 || page.Exhausted {
 					t.Fatal("failed page exposed documents", page)
 				}
-				_ = a.CloseScan(ctx, p)
+				_ = a.closeScan(ctx, p)
 				finds, gets := 0, 0
 				for _, event := range proxy.Events() {
 					if event.Command == "find" {
@@ -166,10 +169,10 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			p := scanWork(t, a, db, 1)
-			defer a.CloseScan(ctx, p)
+			p := scanWork(t, a, db)
+			defer a.closeScan(ctx, p)
 			if mode != "cancel_find" {
-				page, _ := a.FetchScan(ctx, p)
+				page, _ := a.fetchScan(ctx, p)
 				if page.Failure != nil || len(page.Documents) != 1 {
 					t.Fatal(page)
 				}
@@ -192,60 +195,94 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 				defer stop()
 			}
 			start := time.Now()
-			page, _ := a.FetchScan(ctx, p)
+			page, _ := a.fetchScan(ctx, p)
 			if page.Failure == nil || len(page.Documents) != 0 || time.Since(start) > 500*time.Millisecond {
 				t.Fatal("cursor fault/cancel", page, time.Since(start))
 			}
 			cleanup, stop := context.WithTimeout(context.Background(), time.Second)
 			defer stop()
-			_ = a.CloseScan(cleanup, p)
+			_ = a.closeScan(cleanup, p)
 		})
 	}
 }
 
 func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
-	for _, mode := range []string{"boundary", "large_native_batch"} {
+	for _, mode := range []string{"boundary", "large_total_scan"} {
 		t.Run(mode, func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			doc := bson.D{{Key: "_id", Value: int32(0)}, {Key: "pad", Value: ""}}
-			raw, _ := bson.Marshal(doc)
-			pad := protocol.MaxDocument - len(raw)
-			count := 1
-			if mode == "large_native_batch" {
+			document := bson.D{{Key: "_id", Value: int32(0)}, {Key: "pad", Value: ""}}
+			raw, _ := bson.Marshal(document)
+			pad, count := protocol.MaxDocument-len(raw), 1
+			if mode == "large_total_scan" {
 				pad = 300 << 10
 				count = 32
 			}
+			expected := make(map[int32][]byte, count)
 			for i := 0; i < count; i++ {
-				doc[0].Value = int32(i)
-				doc[1].Value = strings.Repeat("x", pad)
-				if _, err := native.Database(db).Collection("records").InsertOne(ctx, doc); err != nil {
+				document[0].Value = int32(i)
+				document[1].Value = strings.Repeat("x", pad)
+				raw, err := bson.Marshal(document)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected[int32(i)] = raw
+				if _, err := native.Database(db).Collection("records").InsertOne(ctx, document); err != nil {
 					t.Fatal(err)
 				}
 			}
 			var largest atomic.Int64
-			monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
-				if e.CommandName == "find" {
-					largest.Store(int64(len(e.Reply)))
+			monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, event *event.CommandSucceededEvent) {
+				if event.CommandName == "find" || event.CommandName == "getMore" {
+					size := int64(len(event.Reply))
+					for previous := largest.Load(); size > previous; previous = largest.Load() {
+						if largest.CompareAndSwap(previous, size) {
+							break
+						}
+					}
 				}
 			}}
 			options := adapterTestOptions{fixture: backend, monitor: monitor}
-			a := testAdapter(t, options)
-			p := scanWork(t, a, db, 32)
-			defer a.CloseScan(ctx, p)
-			page, _ := a.FetchScan(ctx, p)
-			if mode == "boundary" {
-				if page.Failure != nil || len(page.Documents) != 1 || len(page.Documents[0].Data) != protocol.MaxDocument {
-					t.Fatal("exact byte boundary", page.Failure)
+			adapter := testAdapter(t, options)
+			work := scanWork(t, adapter, db)
+			defer adapter.closeScan(ctx, work)
+			seen := make(map[int32]bool, count)
+			totalBytes := 0
+			for fetch := 0; ; fetch++ {
+				if fetch > count {
+					t.Fatal("bounded scan did not produce exhaustion evidence")
 				}
-			} else {
-				if page.Failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || len(page.Documents) != 0 || largest.Load() < 8<<20 || largest.Load() > scanNativeLimit {
-					t.Fatal("native working-set evidence", page.Failure, largest.Load())
+				page, _ := adapter.fetchScan(ctx, work)
+				if page.Failure != nil || len(page.Documents) > 1 {
+					t.Fatal("bounded page failed", page.Failure, len(page.Documents))
 				}
-				t.Logf("native driver batch=%d bytes, public document cap=%d, reserved native/decoder allowance=%d", largest.Load(), protocol.MaxDocument, p.PageBytes)
+				for _, document := range page.Documents {
+					id := bson.Raw(document.Data).Lookup("_id").Int32()
+					if seen[id] || !bytes.Equal(document.Data, expected[id]) {
+						t.Fatal("scan lost BSON fidelity or duplicated a record", id)
+					}
+					seen[id] = true
+					totalBytes += len(document.Data)
+				}
+				if page.Exhausted {
+					break
+				}
 			}
+			if len(seen) != count || largest.Load() <= 0 || largest.Load() > scanNativeLimit {
+				t.Fatal("scan omitted data or exceeded native response bound", len(seen), count, largest.Load())
+			}
+			if mode == "boundary" && totalBytes != protocol.MaxDocument {
+				t.Fatal("exact legal record boundary was not read", totalBytes)
+			}
+			if mode == "large_total_scan" && (totalBytes <= 8<<20 || largest.Load() > 400<<10) {
+				t.Fatal("total scan was retained in a native page", totalBytes, largest.Load())
+			}
+			if failure := adapter.closeScan(ctx, work); failure != nil {
+				t.Fatal("cursor cleanup failed", failure)
+			}
+			t.Logf("complete scan records=%d outputBytes=%d largestNativeReply=%d wireLimit=%d reservedWorking=%d", len(seen), totalBytes, largest.Load(), scanNativeLimit, work.WorkingBytes)
 		})
 	}
 }

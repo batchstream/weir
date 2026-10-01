@@ -12,17 +12,17 @@ import (
 )
 
 func plan(index uint64, key string, read bool) *execution.Plan {
-	op := &pb.BulkOperation{Index: index}
+	op := &pb.Operation{Index: index}
 	bytes := protocol.ResultOverhead
 	if read {
 		r := &pb.ReadRequest{Resource: key}
-		op.Operation = &pb.BulkOperation_Read{Read: r}
+		op.Operation = &pb.Operation_Read{Read: r}
 		bytes += protocol.MaxDocument
 	} else {
 		e := &pb.Empty{}
 		a := &pb.MutateRequest_Delete{Delete: e}
 		m := &pb.MutateRequest{Resource: key, Action: a}
-		op.Operation = &pb.BulkOperation_Mutate{Mutate: m}
+		op.Operation = &pb.Operation_Mutate{Mutate: m}
 	}
 	p := &execution.Plan{Operation: op, Key: key, Bytes: 1024, ResultBytes: bytes}
 	return p
@@ -30,6 +30,7 @@ func plan(index uint64, key string, read bool) *execution.Plan {
 func finish(r *Runtime, b *batch) {
 	b.cancel()
 	r.active--
+	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	for _, t := range b.items {
 		result := protocol.ResultError(t.plan.Operation, pb.MutationOutcome_APPLIED, nil)
@@ -258,5 +259,45 @@ func TestAIMDEpochAndFloor(t *testing.T) {
 	}
 	if c.window != 2 {
 		t.Fatal("no healthy growth", c)
+	}
+}
+
+func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
+	limits := DefaultLimits()
+	adapter := &lifecycleAdapter{}
+	runtime, err := New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := plan(1, "record", false)
+	ticket, failure, _ := runtime.Submit(context.Background(), work, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.Snapshot().Ready == 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if runtime.Snapshot().Ready != 1 {
+		t.Fatal("backend did not complete")
+	}
+	closeContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := runtime.Close(closeContext); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ticket.Wait(context.Background())
+	if err != nil || result == nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+		t.Fatal("shutdown discarded write evidence", result, err)
+	}
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
+		t.Fatal("consumer result was not separately retained", snapshot)
+	}
+	ticket.Ack()
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 {
+		t.Fatal("synchronous consumer acknowledgment did not free result", snapshot)
 	}
 }

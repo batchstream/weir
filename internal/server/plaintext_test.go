@@ -48,7 +48,7 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					}
 					var block, encoded bytes.Buffer
 					encoder := hpack.NewEncoder(&block)
-					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.Weir_Read_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
+					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.Weir_Route_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
 					hop := hpack.HeaderField{Name: HopMetadata, Value: "0"}
 					if peer {
 						fields = append(fields, hop)

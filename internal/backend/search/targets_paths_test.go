@@ -131,19 +131,19 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 			defer a.Close()
 			var scans sync.WaitGroup
 			for _, index := range []string{"left", "right"} {
-				request := &pb.ScanRequest{Resource: "weir://search/" + index, FetchItemsHint: 1}
-				work, failure := a.PrepareScan(request)
+				request := &pb.ScanRequest{Resource: "weir://search/" + index}
+				work, failure := a.prepareScan(request)
 				if failure != nil {
 					t.Fatal(failure)
 				}
 				scans.Go(func() {
 					defer func() {
-						if failure := a.CloseScan(context.Background(), work); failure != nil {
+						if failure := a.closeScan(context.Background(), work); failure != nil {
 							t.Error(failure)
 						}
 					}()
 					for step := range 3 {
-						page, _ := a.FetchScan(context.Background(), work)
+						page, _ := a.fetchScan(context.Background(), work)
 						if page.Failure != nil || page.Exhausted != (step == 2) {
 							t.Error("Scan target/PIT failure", index, step, page)
 							return

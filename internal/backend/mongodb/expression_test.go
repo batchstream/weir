@@ -12,14 +12,14 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func expressionOperation(resource string, raw []byte) *pb.BulkOperation {
+func expressionOperation(resource string, raw []byte) *pb.Operation {
 	doc := &pb.Document{MediaType: ExpressionMedia, Data: raw}
 	form := &pb.Transform_BackendExpression{BackendExpression: doc}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: req}
-	op := &pb.BulkOperation{Operation: variant}
+	variant := &pb.Operation_Mutate{Mutate: req}
+	op := &pb.Operation{Operation: variant}
 	return op
 }
 
@@ -64,7 +64,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := expressionBSON(t, tc.doc)
 			op := expressionOperation("weir://mongo/db/records/s:a", raw)
-			p, f := a.Prepare(op)
+			p, f := a.prepareRecord(op)
 			if (f == nil) != tc.valid {
 				t.Fatal(f)
 			}
@@ -85,18 +85,18 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	doc := bson.D{{Key: "$set", Value: nested}}
 	op := expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, doc))
-	if _, f := a.Prepare(op); f == nil {
+	if _, f := a.prepareRecord(op); f == nil {
 		t.Fatal("depth")
 	}
 	doc = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: strings.Repeat("x", protocol.MaxExpression)}}}}
 	op = expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, doc))
-	if _, f := a.Prepare(op); f == nil {
+	if _, f := a.prepareRecord(op); f == nil {
 		t.Fatal("bytes")
 	}
 	doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
 	op = expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, doc))
 	op.GetMutate().GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
-	if _, f := a.Prepare(op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
+	if _, f := a.prepareRecord(op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("unknown profile", f)
 	}
 	op.GetMutate().GetAtomicTransform().GetBackendExpression().MediaType = ExpressionMedia
@@ -105,7 +105,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 		many[i] = bson.E{Key: fmt.Sprintf("field%d", i), Value: 1}
 	}
 	excessive := bson.D{{Key: "$set", Value: many}}
-	if _, f := a.Prepare(expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, excessive))); f == nil {
+	if _, f := a.prepareRecord(expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, excessive))); f == nil {
 		t.Fatal("path count")
 	}
 	nodes := make(bson.A, 4096)

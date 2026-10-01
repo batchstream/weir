@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"net"
 	"net/http"
@@ -265,15 +266,12 @@ func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.Secu
 		proxy.dropNext.Store(true)
 		if mode == "ordinary" {
 			request := searchBudgetPut(root, id)
-			result, err := client.Mutate(ctx, request)
+			routedResult268, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result := routedResult268.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)
 			}
 		} else {
-			stream, err := client.Native(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
 			descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
 			encoded, err := proto.Marshal(descriptor)
 			if err != nil {
@@ -281,17 +279,11 @@ func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.Secu
 			}
 			doc := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
 			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
-			variant := &pb.NativeRequestFrame_Open{Open: open}
-			frame := &pb.NativeRequestFrame{Frame: variant}
-			if err := stream.Send(frame); err != nil {
-				t.Fatal(err)
-			}
-			chunk := &pb.NativeRequestFrame_Chunk{Chunk: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
-			frame = &pb.NativeRequestFrame{Frame: chunk}
-			if err := stream.Send(frame); err != nil {
-				t.Fatal(err)
-			}
-			if err := stream.CloseSend(); err != nil {
+			nativeCall := &pb.NativeCall{Open: open, Body: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
+			nativeVariant := &pb.Call_Native{Native: nativeCall}
+			call := &pb.Call{Version: 1, Operation: nativeVariant}
+			stream, err := testutil.OneEvents(ctx, client, call)
+			if err != nil {
 				t.Fatal(err)
 			}
 			for {
@@ -299,7 +291,7 @@ func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.Secu
 				if err != nil {
 					t.Fatal("missing Native terminal", err)
 				}
-				if end := reply.GetEnd(); end != nil {
+				if end := reply.GetNativeEnd(); end != nil {
 					if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.Failure == nil {
 						t.Fatal("lost native reply reported complete", end)
 					}
@@ -324,16 +316,7 @@ func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.Secu
 		t.Log(mode, "dispatch=1 acknowledged=1 dropped=1 backend version=1; no replay")
 	}
 	cancelled, stop := context.WithCancel(ctx)
-	stream, err := client.Bulk(cancelled)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://search"}
-	variant := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: variant}
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
+	stream := testutil.OpenEvents(cancelled, client, "search")
 	stop()
 	if _, err := stream.Recv(); status.Code(err) != codes.Canceled && err != io.EOF {
 		t.Fatal("packaged Bulk cancellation", err)

@@ -98,7 +98,7 @@ func TestMongoScanSelectorControls(t *testing.T) {
 		raw, _ := bson.Marshal(selector)
 		doc := &pb.Document{MediaType: "application/bson", Data: raw}
 		req := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: doc}
-		if _, f := a.PrepareScan(req); f == nil {
+		if _, f := a.prepareScan(req); f == nil {
 			t.Fatal("allowed unsafe option", name)
 		}
 	}
@@ -106,7 +106,7 @@ func TestMongoScanSelectorControls(t *testing.T) {
 	binary.LittleEndian.PutUint32(raw, uint32(len(raw)))
 	doc := &pb.Document{MediaType: "application/bson", Data: raw}
 	req := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: doc}
-	if _, f := a.PrepareScan(req); f == nil {
+	if _, f := a.prepareScan(req); f == nil {
 		t.Fatal("oversized selector")
 	}
 }

@@ -11,21 +11,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var metricMethods = []string{"Read", "Mutate", "Bulk", "Scan", "Native", "other"}
+var metricMethods = []string{"Route", "other"}
 var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
 
 func methodLabel(method string) string {
 	switch method {
-	case pb.Weir_Read_FullMethodName:
-		return "Read"
-	case pb.Weir_Mutate_FullMethodName:
-		return "Mutate"
-	case pb.Weir_Bulk_FullMethodName:
-		return "Bulk"
-	case pb.Weir_Scan_FullMethodName:
-		return "Scan"
-	case pb.Weir_Native_FullMethodName:
-		return "Native"
+	case pb.Weir_Route_FullMethodName:
+		return "Route"
 	default:
 		return "other"
 	}
@@ -59,7 +51,7 @@ func newTransportMetrics() transportMetrics {
 	}
 	watchOpts := prometheus.CounterOpts{
 		Name: "weir_watchdog_expirations_total",
-		Help: "Explicit Bulk watchdog expiry; input_or_result does not attribute blame to the client or backend.",
+		Help: "Explicit Route watchdog expiry; input_or_result does not attribute blame to the client or backend.",
 	}
 	forcedOpts := prometheus.CounterOpts{
 		Name: "weir_transport_forced_closes_total",

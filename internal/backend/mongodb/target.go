@@ -55,7 +55,7 @@ func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) (*pb.Fail
 
 // A cancelled group never contacts MongoDB. Recheck each caller after this
 // qualification in the command builder, because metadata I/O can outlive it.
-func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
 	var failure *pb.Failure
 	signal := execution.Neutral
 	for _, work := range plans {
@@ -67,7 +67,7 @@ func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Pla
 			break
 		}
 	}
-	results := make([]*pb.BulkResult, len(plans))
+	results := make([]*pb.Result, len(plans))
 	for i, work := range plans {
 		result := unstarted(ctx, work)
 		if result == nil {

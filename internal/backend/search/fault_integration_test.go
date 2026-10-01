@@ -110,7 +110,7 @@ func TestSearchCommittedReplyLossAndIncompleteBulk(t *testing.T) {
 			works := []*execution.Plan{first, second}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			results, _ := a.Execute(ctx, works)
+			results, _ := a.executeRecords(ctx, works)
 			for _, result := range results {
 				assertOutcome(t, result, pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE)
 			}
@@ -243,7 +243,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	put := searchPlan(t, a, "put", searchResource(b.Index, "other"))
 	put.Operation.Index = 1
 	works := []*execution.Plan{create, put}
-	results, _ := a.Execute(ctx, works)
+	results, _ := a.executeRecords(ctx, works)
 	for _, result := range results {
 		assertOutcome(t, result, pb.MutationOutcome_APPLIED, 0)
 	}

@@ -23,7 +23,7 @@ import (
 func searchExpression(t *testing.T, a *Adapter, index, raw string) *execution.Plan {
 	t.Helper()
 	op := expressionOperation(searchResource(index, "counter"), raw)
-	p, f := a.Prepare(op)
+	p, f := a.prepareRecord(op)
 	if f != nil {
 		t.Fatal(f)
 	}
@@ -254,7 +254,7 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 				<-start
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				rs, sample := a.Execute(ctx, []*execution.Plan{p})
+				rs, sample := a.executeRecords(ctx, []*execution.Plan{p})
 				r := rs[0].GetMutation()
 				switch {
 				case r.Outcome == pb.MutationOutcome_APPLIED:

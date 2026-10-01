@@ -36,7 +36,7 @@ type nativePlan struct {
 	request *spb.Request
 }
 
-func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
 		return nil, f
 	}
@@ -56,12 +56,12 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	}
 	native := &nativePlan{index: parts[0], request: descriptor}
 	p := &execution.Plan{
-		Native:      true,
-		Key:         open.Resource,
-		Bytes:       proto.Size(open) + protocol.EntryOverhead,
-		ResultBytes: protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead,
-		PageBytes:   nativeBudget,
-		Backend:     native,
+		Singleton:    true,
+		Key:          open.Resource,
+		Bytes:        proto.Size(open) + protocol.EntryOverhead,
+		ResultBytes:  protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead,
+		WorkingBytes: nativeBudget,
+		Backend:      native,
 	}
 	return p, nil
 }
@@ -230,7 +230,7 @@ func (r *nativeBulkReader) Read(dst []byte) (int, error) {
 	return n, nil
 }
 
-func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if a.ctx != nil {
@@ -298,7 +298,7 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 	if body != nil && request.Header.Get("Content-Type") == "" {
 		request.Header.Set("Content-Type", "application/x-ndjson")
 	}
-	// Closing this body must interrupt an upload blocked in gRPC Recv. net/http
+	// Closing the body terminates this bounded exchange on cancellation. net/http
 	// has at most one writer/read loop for this one non-reused HTTP/1 connection.
 	if body != nil {
 		request.Body = &nativeHTTPBody{Reader: body, source: exchange.Source}

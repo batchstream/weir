@@ -2,6 +2,10 @@ package app
 
 import (
 	"context"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"net"
 	"os"
 	"path/filepath"
@@ -136,10 +140,11 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 		if i == 1 {
 			requestContext = metadata.NewOutgoingContext(ctx, metadata.Pairs(server.HopMetadata, "0"))
 		}
-		result, readErr := client.Read(requestContext, request)
+		routedResult139, readErr := routeclient.Record(requestContext, client, testutil.RecordCall(request))
+		result := routedResult139.GetRead()
 		closeErr := connection.Close()
-		if readErr != nil || closeErr != nil || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
-			t.Fatal("an unknown Store must return a normal argument failure on either listener", readErr, closeErr)
+		if status.Code(readErr) != codes.InvalidArgument || closeErr != nil || result != nil {
+			t.Fatal("an unknown Store must return a routing status on either listener", readErr, closeErr)
 		}
 	}
 	if len(node.runtimes) != 0 || len(node.remotes) != 0 || health(t, node, "/readyz") != 200 {

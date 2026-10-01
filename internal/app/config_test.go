@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/batchstream/weir/routeclient"
 	"net"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ func TestConfigurationValidation(t *testing.T) {
 			case "duplicate-service":
 				cfg.Routing.Services = append(cfg.Routing.Services, cfg.Routing.Services[0])
 			case "overflow":
-				cfg.Basic.Transport.Timeouts.Unary = Duration(1<<63 - 1)
+				cfg.Basic.Transport.Timeouts.Route = Duration(1<<63 - 1)
 			case "zero-session":
 				cfg.Basic.Transport.MaxSessions = 0
 			}
@@ -262,21 +263,24 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 		}
 		defer conn.Close()
 		client := pb.NewWeirClient(conn)
-		result, err := client.Read(ctx, request)
+		routedResult265, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+		result := routedResult265.GetRead()
 		if i == 0 {
-			if err != nil || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			if status.Code(err) != codes.InvalidArgument || result != nil {
 				t.Fatal("application requires no peer metadata", result, err)
 			}
 		} else if status.Code(err) != codes.InvalidArgument {
 			t.Fatal("peer accepted missing hop", result, err)
 		}
 		peerCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(server.HopMetadata, "0"))
-		result, err = client.Read(peerCtx, request)
+		var routedResult274 *pb.Result
+		routedResult274, err = routeclient.Record(peerCtx, client, testutil.RecordCall(request))
+		result = routedResult274.GetRead()
 		if i == 0 {
 			if status.Code(err) != codes.InvalidArgument {
 				t.Fatal("application accepted client hop", result, err)
 			}
-		} else if err != nil || result.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+		} else if status.Code(err) != codes.InvalidArgument || result != nil {
 			t.Fatal("peer accepted unknown Store or rejected canonical hop", result, err)
 		}
 	}

@@ -80,7 +80,7 @@ func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson
 	t.Helper()
 	descriptor := &pb.Document{MediaType: NativeDescriptor}
 	open := &pb.NativeOpen{Resource: targetResource(target), Descriptor_: descriptor, BodyMediaType: "application/bson"}
-	work, failure := adapter.PrepareNative(open)
+	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -89,7 +89,7 @@ func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson
 	exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end, _ := adapter.ExecuteNative(ctx, work, exchange)
+	end, _ := adapter.executeNative(ctx, work, exchange)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil {
 		t.Fatal(end)
 	}
@@ -105,13 +105,13 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 	for i, target := range fixture.targets {
 		document := bson.D{{Key: "_id", Value: "shared"}, {Key: "n", Value: int32(i + 1)}}
 		opts := batchOperationOptions{resource: targetResource(target) + "/s:shared", action: "create", index: uint64(i + 12), document: document}
-		work, failure := adapter.Prepare(batchOperation(t, opts))
+		work, failure := adapter.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, work)
 	}
-	results, _ := adapter.Execute(ctx, plans)
+	results, _ := adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		if result.Index != uint64(i+12) || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target create failed", i, result)
@@ -123,7 +123,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		work.Operation.Index = uint64(30 + i)
 		plans = append(plans, work)
 	}
-	results, _ = adapter.Execute(ctx, plans)
+	results, _ = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		document := result.GetRead().GetDocument()
 		if document == nil || result.Index != uint64(30+i) || bson.Raw(document.Data).Lookup("n").Int32() != int32(i+1) {
@@ -135,14 +135,14 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		for j, action := range []string{"read", "create"} {
 			document := bson.D{{Key: "_id", Value: "shared"}, {Key: "n", Value: int32(999)}}
 			opts := batchOperationOptions{resource: targetResource(target) + "/s:shared", action: action, index: uint64(70 + i*2 + j), document: document}
-			work, failure := adapter.Prepare(batchOperation(t, opts))
+			work, failure := adapter.prepareRecord(batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			plans = append(plans, work)
 		}
 	}
-	results, _ = adapter.Execute(ctx, plans)
+	results, _ = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		if result.Index != uint64(70+i) {
 			t.Fatal("mixed target result index changed", result)
@@ -164,13 +164,13 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			index:    uint64(50 + i),
 			program:  `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("10"))))`,
 		}
-		work, failure := adapter.Prepare(batchOperation(t, opts))
+		work, failure := adapter.prepareRecord(batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, work)
 	}
-	results, _ = adapter.Execute(ctx, plans)
+	results, _ = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		if result.Index != uint64(50+i) || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target Lua failed", i, result)
@@ -184,14 +184,14 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		request := &pb.ScanRequest{Resource: targetResource(target), FetchItemsHint: 1}
-		work, failure := adapter.PrepareScan(request)
+		request := &pb.ScanRequest{Resource: targetResource(target)}
+		work, failure := adapter.prepareScan(request)
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		seen := make(map[string]bool)
 		for pageNumber := 0; pageNumber < 5; pageNumber++ {
-			page, _ := adapter.FetchScan(ctx, work)
+			page, _ := adapter.fetchScan(ctx, work)
 			if page.Failure != nil {
 				t.Fatal(target, page.Failure)
 			}
@@ -207,7 +207,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 				break
 			}
 		}
-		if failure := adapter.CloseScan(ctx, work); failure != nil || len(seen) != 3 {
+		if failure := adapter.closeScan(ctx, work); failure != nil || len(seen) != 3 {
 			t.Fatal("Scan did not traverse target", target, failure, seen)
 		}
 		command := bson.D{{Key: "count", Value: target.collection}}
@@ -243,18 +243,18 @@ func TestMongoResourceTargetsConcurrent(t *testing.T) {
 			for i := 0; i < 8; i++ {
 				document := bson.D{{Key: "_id", Value: "same"}, {Key: "n", Value: int32(i)}}
 				opts := batchOperationOptions{resource: targetResource(target) + "/s:same", action: "put", document: document}
-				work, failure := fixture.adapter.Prepare(batchOperation(t, opts))
+				work, failure := fixture.adapter.prepareRecord(batchOperation(t, opts))
 				if failure != nil {
 					t.Error(failure)
 					return
 				}
-				results, _ := fixture.adapter.Execute(ctx, []*execution.Plan{work})
+				results, _ := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
 				if results[0].GetMutation().Outcome != pb.MutationOutcome_APPLIED {
 					t.Error(target, results)
 					return
 				}
 				read := prepareCounter(t, fixture.adapter, targetResource(target)+"/s:same")
-				results, _ = fixture.adapter.Execute(ctx, []*execution.Plan{read})
+				results, _ = fixture.adapter.executeRecords(ctx, []*execution.Plan{read})
 				readDocument := results[0].GetRead().GetDocument()
 				if readDocument == nil || bson.Raw(readDocument.Data).Lookup("n").Int32() != int32(i) {
 					t.Error("concurrent target state crossed namespace", target, results)
@@ -298,21 +298,21 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 				switch action {
 				case "scan":
 					request := &pb.ScanRequest{Resource: resource}
-					work, failure := fixture.adapter.PrepareScan(request)
+					work, failure := fixture.adapter.prepareScan(request)
 					if failure != nil {
 						t.Fatal(failure)
 					}
-					page, _ := fixture.adapter.FetchScan(ctx, work)
+					page, _ := fixture.adapter.fetchScan(ctx, work)
 					if page.Failure == nil || len(page.Documents) != 0 || page.Exhausted {
 						t.Fatal("unqualified Scan target accepted", page)
 					}
-					if failure = fixture.adapter.CloseScan(ctx, work); failure != nil {
+					if failure = fixture.adapter.closeScan(ctx, work); failure != nil {
 						t.Fatal(failure)
 					}
 				case "native":
 					descriptor := &pb.Document{MediaType: NativeDescriptor}
 					open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyMediaType: "application/bson"}
-					work, failure := fixture.adapter.PrepareNative(open)
+					work, failure := fixture.adapter.prepareNative(open)
 					if failure != nil {
 						t.Fatal(failure)
 					}
@@ -322,7 +322,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					raw := expressionBSON(t, command)
 					capture := &nativeCapture{}
 					exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
-					end, _ := fixture.adapter.ExecuteNative(ctx, work, exchange)
+					end, _ := fixture.adapter.executeNative(ctx, work, exchange)
 					if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || capture.head != nil {
 						t.Fatal("unqualified Native target accepted", end)
 					}
@@ -334,11 +334,11 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 						document: document,
 						program:  `return weir.replace(weir.object("n", weir.i32("1")))`,
 					}
-					work, failure := fixture.adapter.Prepare(batchOperation(t, opts))
+					work, failure := fixture.adapter.prepareRecord(batchOperation(t, opts))
 					if failure != nil {
 						t.Fatal(failure)
 					}
-					results, _ := fixture.adapter.Execute(ctx, []*execution.Plan{work})
+					results, _ := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
 					if action == "read" {
 						if results[0].GetRead().GetFailure() == nil || results[0].GetRead().GetMissing() != nil {
 							t.Fatal("unqualified point read target accepted", results)

@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"strings"
 	"testing"
@@ -95,12 +97,14 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9007199254740993,"keep":"opaque"}`)}
 	put := &pb.MutateRequest_Put{Put: doc}
 	mutation := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-	result, err := client.Mutate(ctx, mutation)
+	routedResult98, err := routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	result := routedResult98.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("Put", result, err)
 	}
 	read := &pb.ReadRequest{Resource: mutation.Resource}
-	found, err := client.Read(ctx, read)
+	routedResult103, err := routeclient.Record(ctx, client, testutil.RecordCall(read))
+	found := routedResult103.GetRead()
 	if err != nil || !bytes.Equal(found.GetDocument().GetData(), doc.Data) {
 		failure := found.GetFailure()
 		t.Fatalf(
@@ -115,29 +119,39 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	}
 	create := &pb.MutateRequest_Create{Create: doc}
 	mutation.Action = create
-	result, err = client.Mutate(ctx, mutation)
+	var routedResult118 *pb.Result
+	routedResult118, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	result = routedResult118.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("duplicate create", result, err)
 	}
 	empty := &pb.Empty{}
 	remove := &pb.MutateRequest_Delete{Delete: empty}
 	mutation.Action = remove
-	result, err = client.Mutate(ctx, mutation)
+	var routedResult125 *pb.Result
+	routedResult125, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	result = routedResult125.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("delete", result, err)
 	}
-	found, err = client.Read(ctx, read)
+	var routedResult129 *pb.Result
+	routedResult129, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+	found = routedResult129.GetRead()
 	if err != nil || found.GetMissing() == nil {
 		t.Fatal("missing", found, err)
 	}
 	mutation.Action = create
-	result, err = client.Mutate(ctx, mutation)
+	var routedResult134 *pb.Result
+	routedResult134, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	result = routedResult134.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("create", result, err)
 	}
 	replace := &pb.MutateRequest_Replace{Replace: doc}
 	mutation.Action = replace
-	result, err = client.Mutate(ctx, mutation)
+	var routedResult140 *pb.Result
+	routedResult140, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	result = routedResult140.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replace", result, err)
 	}
@@ -146,24 +160,18 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation.Action = action
-	result, err = client.Mutate(ctx, mutation)
+	var routedResult149 *pb.Result
+	routedResult149, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	result = routedResult149.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("expression", result, err)
 	}
-	bulk, err := client.Bulk(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := &pb.BulkOpen{Store: "weir://search"}
-	opening := &pb.BulkRequestFrame_Open{Open: open}
-	frame := &pb.BulkRequestFrame{Frame: opening}
-	if err := bulk.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	operation := &pb.BulkOperation{Operation: variant}
-	item := &pb.BulkRequestFrame_Operation{Operation: operation}
-	frame = &pb.BulkRequestFrame{Frame: item}
+	bulk := testutil.OpenEvents(ctx, client, "search")
+	var frame *pb.Call
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	operation := &pb.Operation{Operation: variant}
+	_, item := testutil.OperationCall(operation)
+	frame = item
 	if err := bulk.Send(frame); err != nil {
 		t.Fatal(err)
 	}
@@ -174,20 +182,20 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("Bulk result", reply, err)
 	}
-	reply, err = bulk.Recv()
-	if err != nil || reply.GetEnd().GetReceivedCount() != 1 || reply.GetEnd().GetResultCount() != 1 {
-		t.Fatal("Bulk End", reply, err)
-	}
 	if _, err := bulk.Recv(); err != io.EOF {
 		t.Fatal("Bulk EOF", err)
 	}
-	found, err = client.Read(ctx, read)
+	var routedResult184 *pb.Result
+	routedResult184, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+	found = routedResult184.GetRead()
 	if err != nil || !strings.Contains(string(found.GetDocument().GetData()), "9007199254740995") {
 		t.Fatal("expression int64", err)
 	}
 	fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-	scanRequest := &pb.ScanRequest{Resource: root, FetchItemsHint: 1}
-	scan, err := client.Scan(ctx, scanRequest)
+	scanRequest := &pb.ScanRequest{Resource: root}
+	scanVariant := &pb.Call_Scan{Scan: scanRequest}
+	scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+	scan, err := testutil.OneEvents(ctx, client, scanCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +205,7 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 		if err != nil {
 			t.Fatal(err)
 		}
-		if end := frame.GetEnd(); end != nil {
+		if end := frame.GetScanEnd(); end != nil {
 			if end.Failure != nil || end.DocumentCount != count || count < 1 {
 				t.Fatal("Scan End", end)
 			}
@@ -208,10 +216,6 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	if _, err := scan.Recv(); err != io.EOF {
 		t.Fatal("Scan EOF", err)
 	}
-	native, err := client.Native(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
 	descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
 	encoded, err := proto.Marshal(descriptor)
 	if err != nil {
@@ -219,18 +223,12 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	}
 	document := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
 	nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: document, BodyMediaType: "application/x-ndjson"}
-	nativeVariant := &pb.NativeRequestFrame_Open{Open: nativeOpen}
-	nativeFrame := &pb.NativeRequestFrame{Frame: nativeVariant}
-	if err := native.Send(nativeFrame); err != nil {
-		t.Fatal(err)
-	}
 	body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
-	chunk := &pb.NativeRequestFrame_Chunk{Chunk: body}
-	nativeFrame = &pb.NativeRequestFrame{Frame: chunk}
-	if err := native.Send(nativeFrame); err != nil {
-		t.Fatal(err)
-	}
-	if err := native.CloseSend(); err != nil {
+	nativeCall := &pb.NativeCall{Open: nativeOpen, Body: body}
+	nativeVariant := &pb.Call_Native{Native: nativeCall}
+	call := &pb.Call{Version: 1, Operation: nativeVariant}
+	native, err := testutil.OneEvents(ctx, client, call)
+	if err != nil {
 		t.Fatal(err)
 	}
 	var response []byte
@@ -240,7 +238,7 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 			t.Fatal(err)
 		}
 		response = append(response, frame.GetChunk()...)
-		if end := frame.GetEnd(); end != nil {
+		if end := frame.GetNativeEnd(); end != nil {
 			if end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
 				t.Fatal(end)
 			}

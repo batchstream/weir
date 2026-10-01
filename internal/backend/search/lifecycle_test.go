@@ -14,7 +14,6 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testdns"
 )
 
@@ -89,16 +88,6 @@ func TestSearchTLSNativeSlowConsumerAndUploadLedger(t *testing.T) {
 			})
 			endpoint, c := tlsEndpoint(t, handler, false)
 			a := openTestTLS(t, endpoint.URL, c)
-			limits := store.DefaultLimits()
-			owner, err := store.New(a, limits)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				defer cancel()
-				_ = owner.Close(ctx)
-			}()
 			sink := &stalledNativeSink{started: make(chan struct{}), stop: make(chan struct{})}
 			var source io.ReadCloser = io.NopCloser(strings.NewReader(""))
 			method, path := "GET", "/_doc/x"
@@ -113,10 +102,12 @@ func TestSearchTLSNativeSlowConsumerAndUploadLedger(t *testing.T) {
 			exchange := &execution.NativeExchange{Source: source, Sink: sink}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			ticket, failure := owner.StartNative(ctx, open, exchange)
+			work, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
+			done := make(chan *pb.NativeEnd, 1)
+			go func() { end, _ := a.executeNative(ctx, work, exchange); done <- end }()
 			if mode == "consumer" {
 				select {
 				case <-sink.started:
@@ -126,17 +117,8 @@ func TestSearchTLSNativeSlowConsumerAndUploadLedger(t *testing.T) {
 			} else {
 				time.Sleep(30 * time.Millisecond)
 			}
-			snapshot := owner.Snapshot()
-			if snapshot.LiveSessions != 1 || snapshot.NativeSessions != 1 || snapshot.Active != 1 || snapshot.NativeBytes != nativeBudget || snapshot.ResultBytes > limits.ResultBytes {
-				t.Fatal("Native ledger", snapshot)
-			}
-			if other, failure := owner.StartNative(ctx, open, exchange); other != nil || failure == nil {
-				t.Fatal("second Native session admitted")
-			}
 			start := time.Now()
 			_ = a.Close()
-			done := make(chan *pb.NativeEnd, 1)
-			go func() { done <- ticket.WaitNative() }()
 			select {
 			case end := <-done:
 				if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE {
@@ -145,12 +127,10 @@ func TestSearchTLSNativeSlowConsumerAndUploadLedger(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("Close did not interrupt Native I/O")
 			}
-			ticket.Ack()
-			snapshot = owner.Snapshot()
-			if snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.LiveSessions != 0 || snapshot.NativeBytes != 0 || len(a.dialer.slots) != 0 {
-				t.Fatal("Native cleanup ledger", snapshot)
+			if len(a.dialer.slots) != 0 {
+				t.Fatal("Native retained sockets")
 			}
-			t.Logf("%s: one live session, 4MiB charged; Close+join=%s; ledger/socket retained=0", mode, time.Since(start))
+			t.Logf("%s: Close+join=%s; retained sockets=0", mode, time.Since(start))
 		})
 	}
 }
@@ -266,7 +246,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	}
 	defer a.Close()
 	open := nativeOpen(t, "records", "GET", "/_doc/x")
-	plan, failure := a.PrepareNative(open)
+	plan, failure := a.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -275,7 +255,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan *pb.NativeEnd, 1)
-	go func() { end, _ := a.ExecuteNative(ctx, plan, nativeExchange); done <- end }()
+	go func() { end, _ := a.executeNative(ctx, plan, nativeExchange); done <- end }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):

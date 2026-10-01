@@ -100,21 +100,15 @@ type TransportConfig struct {
 }
 
 type TransportTimeouts struct {
-	Unary  Duration `json:"unary" yaml:"unary"`
-	Bulk   Duration `json:"bulk" yaml:"bulk"`
-	Scan   Duration `json:"scan" yaml:"scan"`
-	Native Duration `json:"native" yaml:"native"`
-	Stall  Duration `json:"stall" yaml:"stall"`
+	Route Duration `json:"route" yaml:"route"`
+	Stall Duration `json:"stall" yaml:"stall"`
 }
 
 func DefaultConfig() Config {
 	defaults := server.DefaultLimits()
 	timeouts := TransportTimeouts{
-		Unary:  Duration(defaults.UnaryLifetime),
-		Bulk:   Duration(defaults.BulkLifetime),
-		Scan:   Duration(defaults.ScanLifetime),
-		Native: Duration(defaults.NativeLifetime),
-		Stall:  Duration(defaults.Stall),
+		Route: Duration(defaults.RouteLifetime),
+		Stall: Duration(defaults.Stall),
 	}
 	transport := TransportConfig{
 		MaxConnections: defaults.Connections,
@@ -123,7 +117,7 @@ func DefaultConfig() Config {
 	}
 	forwarding := ForwardingConfig{HopLimit: 4}
 	basic := BasicConfig{
-		Memory:     512 << 20,
+		Memory:     1 << 30,
 		Transport:  transport,
 		Forwarding: forwarding,
 	}
@@ -135,13 +129,10 @@ func DefaultConfig() Config {
 func (cfg TransportConfig) serverLimits() server.Limits {
 	timeouts := cfg.Timeouts
 	limits := server.Limits{
-		Connections:    cfg.MaxConnections,
-		Sessions:       cfg.MaxSessions,
-		UnaryLifetime:  time.Duration(timeouts.Unary),
-		BulkLifetime:   time.Duration(timeouts.Bulk),
-		ScanLifetime:   time.Duration(timeouts.Scan),
-		NativeLifetime: time.Duration(timeouts.Native),
-		Stall:          time.Duration(timeouts.Stall),
+		Connections:   cfg.MaxConnections,
+		Sessions:      cfg.MaxSessions,
+		RouteLifetime: time.Duration(timeouts.Route),
+		Stall:         time.Duration(timeouts.Stall),
 	}
 	return limits
 }
@@ -165,7 +156,30 @@ func (cfg Config) Validate() error {
 	if err := cfg.Basic.Validate(); err != nil {
 		return err
 	}
-	return cfg.Routing.Validate()
+	if err := cfg.Routing.Validate(); err != nil {
+		return err
+	}
+	if uint64(cfg.Basic.Memory) < cfg.ReservedMemory() {
+		return errors.New("process memory budget cannot cover declared Route and Store bounds")
+	}
+	return nil
+}
+
+// ReservedMemory is a conservative application/transport working-set envelope.
+// Runtime heap and RSS additionally include GC slack, stacks and driver/native
+// allocations; the overload guard enforces the configured process threshold.
+func (cfg Config) ReservedMemory() uint64 {
+	budget := uint64(32<<20) + uint64(cfg.Basic.Transport.MaxSessions)*(64<<20) + uint64(cfg.Basic.Transport.MaxConnections)*(256<<10)
+	for _, service := range cfg.Routing.Services {
+		if service.Local != nil {
+			limits := service.Local.runtimeLimits()
+			budget += uint64(limits.PendingBytes + limits.ResultBytes + limits.WorkingBytes)
+			budget += uint64(limits.Concurrency) * (2 << 20)
+		} else if service.Remote != nil {
+			budget += uint64(len(service.Remote.Endpoints)) * (1 << 20)
+		}
+	}
+	return budget
 }
 
 func (cfg BasicConfig) Validate() error {

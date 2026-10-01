@@ -13,8 +13,8 @@ import (
 
 type metricAdapter struct{ scanTestAdapter }
 
-func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	results := make([]*pb.BulkResult, len(plans))
+func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+	results := make([]*pb.Result, len(plans))
 	outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_UNKNOWN}
 	for i, p := range plans {
 		var failure *pb.Failure
@@ -23,7 +23,10 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan) ([]*
 		}
 		results[i] = protocol.ResultError(p.Operation, outcomes[i], failure)
 	}
-	return results, execution.Congested
+	for i, result := range results {
+		_ = emit(plans[i], resultEvent(result))
+	}
+	return execution.Congested
 }
 func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 	limits := DefaultLimits()
@@ -81,7 +84,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 		if testmetrics.Sum(families, "weir_store_executions_total") != 1 || testmetrics.Sum(families, "weir_store_rejections_total") != 1 {
 			t.Fatal("physical/rejection counts")
 		}
-		h := testmetrics.Sample(families, "weir_store_record_batch_operations", nil).GetHistogram()
+		h := testmetrics.Sample(families, "weir_store_batch_operations", nil).GetHistogram()
 		if h.GetSampleCount() != 1 || h.GetSampleSum() != 3 {
 			t.Fatal("batch count/size", h)
 		}
@@ -109,7 +112,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 	if testmetrics.Sample(families, "weir_store_window_changes_total", map[string]string{"direction": "increase"}).GetCounter().GetValue() != 1 {
 		t.Fatal("growth count")
 	}
-	if testmetrics.Series(families) != 113 {
+	if testmetrics.Series(families) != 67 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

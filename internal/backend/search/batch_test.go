@@ -20,10 +20,10 @@ const testIndexReply = `{"records":{"settings":{"index.uuid":"test","index.numbe
 
 func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	op := &pb.BulkOperation{}
+	op := &pb.Operation{}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
-		op.Operation = &pb.BulkOperation_Read{Read: read}
+		op.Operation = &pb.Operation_Read{Read: read}
 	} else {
 		document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":2}`)}
 		mutation := &pb.MutateRequest{Resource: resource}
@@ -48,10 +48,10 @@ func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution
 			t.Fatal(action)
 		}
 		if action != "expression" {
-			op.Operation = &pb.BulkOperation_Mutate{Mutate: mutation}
+			op.Operation = &pb.Operation_Mutate{Mutate: mutation}
 		}
 	}
-	work, failure := a.Prepare(op)
+	work, failure := a.prepareRecord(op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -70,10 +70,14 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 			var request struct {
 				IDs []string `json:"ids"`
 			}
-			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "read,missing,replace,program" {
+			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || (strings.Join(request.IDs, ",") != "read,missing,replace" && strings.Join(request.IDs, ",") != "program") {
 				t.Errorf("unexpected merged read: method=%s ids=%v", r.Method, request.IDs)
 			}
-			_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false},{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}},{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
+			if strings.Join(request.IDs, ",") == "program" {
+				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
+			} else {
+				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false},{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}}]}`)
+			}
 		case "/_bulk":
 			writes.Add(1)
 			raw, _ := io.ReadAll(r.Body)
@@ -103,8 +107,8 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 			}
 		}
 	}
-	results, feedback := a.Execute(context.Background(), works)
-	if feedback != execution.Healthy || len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {
+	results, feedback := a.executeRecords(context.Background(), works)
+	if feedback != execution.Healthy || len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 2 || writes.Load() != 1 {
 		t.Fatalf("batch counts/results: feedback=%v qualification=%d reads=%d writes=%d results=%v", feedback, qualifications.Load(), reads.Load(), writes.Load(), results)
 	}
 	if string(results[0].GetRead().GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].GetRead().GetMissing() == nil {
@@ -150,7 +154,7 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "read", "weir://search/records/s:first"), batchTestPlan(t, a, "read", "weir://search/records/s:second")}
-			results, signal := a.Execute(context.Background(), works)
+			results, signal := a.executeRecords(context.Background(), works)
 			if signal != execution.Neutral || len(results) != 2 || results[1].GetRead().GetFailure() == nil {
 				t.Fatal("incomplete/error evidence", results, signal)
 			}
@@ -207,7 +211,7 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "program", "weir://search/records/s:program"), batchTestPlan(t, a, "put", "weir://search/records/s:put")}
-			results, signal := a.Execute(context.Background(), works)
+			results, signal := a.executeRecords(context.Background(), works)
 			wantCalls, wantOutcome := int32(2), pb.MutationOutcome_APPLIED
 			if mode == "unknown" {
 				wantCalls, wantOutcome = 1, pb.MutationOutcome_UNKNOWN
@@ -261,7 +265,7 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	replace := batchTestPlan(t, a, "replace", "weir://search/records/s:replace")
 	replace.Context = caller
 	put := batchTestPlan(t, a, "put", "weir://search/records/s:put")
-	results, _ := a.Execute(context.Background(), []*execution.Plan{replace, put})
+	results, _ := a.executeRecords(context.Background(), []*execution.Plan{replace, put})
 	if writes.Load() != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller isolation", results, writes.Load())
 	}
@@ -311,7 +315,7 @@ func TestMgetGroupsBoundDocumentsAndRecheckLaterCallers(t *testing.T) {
 		works[i] = batchTestPlan(t, a, "read", "weir://search/records/s:"+fmt.Sprint(i))
 	}
 	works[getBatchItems].Context = caller
-	results, feedback := a.Execute(context.Background(), works)
+	results, feedback := a.executeRecords(context.Background(), works)
 	if calls.Load() != 2 || feedback != execution.Neutral || results[getBatchItems].GetRead().GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal("bounded subgroup cancellation", calls.Load(), feedback, results[getBatchItems])
 	}

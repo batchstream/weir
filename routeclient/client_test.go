@@ -1,0 +1,318 @@
+package routeclient
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	pb "github.com/batchstream/weir/api/weir/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protodelim"
+)
+
+type clientTestPeer struct {
+	pb.UnimplementedWeirServer
+	mode      string
+	completed atomic.Int64
+	canceled  chan struct{}
+}
+
+func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
+	if p.mode == "early_eof" {
+		return nil
+	}
+	if p.mode == "blocked_receive" {
+		<-stream.Context().Done()
+		close(p.canceled)
+		return stream.Context().Err()
+	}
+	for {
+		request, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			if p.canceled != nil {
+				close(p.canceled)
+			}
+			return err
+		}
+		document := &pb.Document{MediaType: "application/octet-stream", Data: bytes.Repeat([]byte{37}, 257<<10)}
+		readValue := &pb.ReadResult_Document{Document: document}
+		read := &pb.ReadResult{Result: readValue}
+		resultValue := &pb.Result_Read{Read: read}
+		result := &pb.Result{Index: request.Id, Result: resultValue}
+		value := &pb.Event_Result{Result: result}
+		event := &pb.Event{Version: 1, Value: value}
+		if p.mode == "invalid_event" {
+			event.Version = 2
+		}
+		var encoded bytes.Buffer
+		if _, err := protodelim.MarshalTo(&encoded, event); err != nil {
+			return err
+		}
+		raw := encoded.Bytes()
+		if p.mode == "incomplete_event" {
+			raw = raw[:3]
+		}
+		id := request.Id
+		if p.mode == "unknown_id" {
+			id++
+		}
+		for len(raw) > 0 {
+			size := min(len(raw), 19<<10)
+			response := &pb.Response{Id: id, Payload: raw[:size]}
+			if err := stream.Send(response); err != nil {
+				return err
+			}
+			raw = raw[size:]
+		}
+		if p.mode == "missing_end" {
+			return nil
+		}
+		end := &pb.Response{Id: id, End: true}
+		if err := stream.Send(end); err != nil {
+			return err
+		}
+		p.completed.Add(1)
+		if p.mode == "non_ok_after_end" {
+			return status.Error(codes.Unavailable, "fixture failure after business completion")
+		}
+		if p.mode == "early_eof_after_result" {
+			return nil
+		}
+	}
+}
+
+func clientTestConnection(t *testing.T, peer *clientTestPeer) pb.WeirClient {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(10 << 20))
+	pb.RegisterWeirServer(server, peer)
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close(); <-done })
+	options := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
+		grpc.WithStaticConnWindowSize(65535), grpc.WithStaticStreamWindowSize(65535),
+	}
+	connection, err := grpc.NewClient("passthrough:///"+listener.Addr().String(), options...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	return pb.NewWeirClient(connection)
+}
+
+func clientTestRead() *pb.Call {
+	read := &pb.ReadRequest{Resource: "records/s:key"}
+	value := &pb.Call_Read{Read: read}
+	call := &pb.Call{Version: 1, Operation: value}
+	return call
+}
+
+func TestRunConsumesFragmentedFiniteBatch(t *testing.T) {
+	peer := &clientTestPeer{mode: "normal"}
+	client := clientTestConnection(t, peer)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	produced, consumed := 0, 0
+	opts := Options{Destination: "records"}
+	opts.Produce = func(context.Context) (*pb.Call, error) {
+		if produced == 25 {
+			return nil, io.EOF
+		}
+		produced++
+		return clientTestRead(), nil
+	}
+	opts.Consume = func(_ context.Context, id uint64, event *pb.Event) error {
+		data := event.GetResult().GetRead().GetDocument().GetData()
+		if id != uint64(consumed+1) || len(data) != 257<<10 || !bytes.Equal(data, bytes.Repeat([]byte{37}, len(data))) {
+			return errors.New("fragmented result corrupt, truncated or miscorrelated")
+		}
+		consumed++
+		return nil
+	}
+	if err := Run(ctx, client, opts); err != nil {
+		t.Fatal(err)
+	}
+	if produced != 25 || consumed != 25 || peer.completed.Load() != 25 {
+		t.Fatal("finite Run failed to half-close and drain", produced, consumed, peer.completed.Load())
+	}
+}
+
+func TestRecordRejectsIncompleteAndInvalidResponses(t *testing.T) {
+	for _, mode := range []string{"unknown_id", "invalid_event", "incomplete_event", "missing_end", "non_ok_after_end"} {
+		t.Run(mode, func(t *testing.T) {
+			peer := &clientTestPeer{mode: mode}
+			client := clientTestConnection(t, peer)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			opts := RecordOptions{Destination: "records", Call: clientTestRead()}
+			result, err := Record(ctx, client, opts)
+			if err == nil || result != nil {
+				t.Fatal("invalid or incomplete RPC leaked a collected successful result", mode, "result nil:", result == nil, "document bytes:", len(result.GetRead().GetDocument().GetData()), err)
+			}
+			if mode == "non_ok_after_end" && !strings.Contains(err.Error(), "indeterminate") {
+				t.Fatal("non-OK transport terminal lost uncertainty semantics", err)
+			}
+		})
+	}
+}
+
+func TestRunProducerErrorCancelsAndJoins(t *testing.T) {
+	peer := &clientTestPeer{mode: "normal", canceled: make(chan struct{})}
+	client := clientTestConnection(t, peer)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	failure := errors.New("producer source failed")
+	opts := Options{Destination: "records"}
+	opts.Produce = func(context.Context) (*pb.Call, error) { return nil, failure }
+	opts.Consume = func(context.Context, uint64, *pb.Event) error { return nil }
+	if err := Run(ctx, client, opts); !errors.Is(err, failure) {
+		t.Fatal("producer failure was masked", err)
+	}
+}
+
+func TestRunConsumerErrorJoinsBlockedProducer(t *testing.T) {
+	peer := &clientTestPeer{mode: "normal"}
+	client := clientTestConnection(t, peer)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	failure := errors.New("consumer failed")
+	produced := false
+	joined := make(chan struct{})
+	opts := Options{Destination: "records"}
+	opts.Produce = func(ctx context.Context) (*pb.Call, error) {
+		if !produced {
+			produced = true
+			return clientTestRead(), nil
+		}
+		<-ctx.Done()
+		close(joined)
+		return nil, ctx.Err()
+	}
+	opts.Consume = func(context.Context, uint64, *pb.Event) error { return failure }
+	if err := Run(ctx, client, opts); !errors.Is(err, failure) {
+		t.Fatal("consumer failure was masked", err)
+	}
+	select {
+	case <-joined:
+	default:
+		t.Fatal("Run returned before its canceled producer exited")
+	}
+}
+
+func TestRunCanceledBlockedSendReleasesProducer(t *testing.T) {
+	peer := &clientTestPeer{mode: "blocked_receive", canceled: make(chan struct{})}
+	client := clientTestConnection(t, peer)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	document := &pb.Document{MediaType: "application/octet-stream", Data: make([]byte, 2<<20)}
+	action := &pb.MutateRequest_Put{Put: document}
+	mutation := &pb.MutateRequest{Resource: "records/s:key", Action: action}
+	value := &pb.Call_Mutate{Mutate: mutation}
+	call := &pb.Call{Version: 1, Operation: value}
+	var active atomic.Int64
+	opts := Options{Destination: "records"}
+	opts.Produce = func(context.Context) (*pb.Call, error) {
+		active.Add(1)
+		defer active.Add(-1)
+		return call, nil
+	}
+	opts.Consume = func(context.Context, uint64, *pb.Event) error { return nil }
+	started := time.Now()
+	if err := Run(ctx, client, opts); err == nil {
+		t.Fatal("blocked transport completed after cancellation")
+	}
+	if active.Load() != 0 || time.Since(started) > time.Second {
+		t.Fatal("canceled blocked send left active producer", active.Load(), time.Since(started))
+	}
+}
+
+func TestRunEarlyEOFJoinsWithoutWaitingForCallerDeadline(t *testing.T) {
+	for _, mode := range []string{"early_eof", "early_eof_after_result"} {
+		t.Run(mode, func(t *testing.T) {
+			peer := &clientTestPeer{mode: mode}
+			client := clientTestConnection(t, peer)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			produced := false
+			joined := make(chan struct{})
+			opts := Options{Destination: "records"}
+			opts.Produce = func(ctx context.Context) (*pb.Call, error) {
+				if mode == "early_eof_after_result" && !produced {
+					produced = true
+					return clientTestRead(), nil
+				}
+				<-ctx.Done()
+				close(joined)
+				return nil, ctx.Err()
+			}
+			opts.Consume = func(context.Context, uint64, *pb.Event) error { return nil }
+			started := time.Now()
+			if err := Run(ctx, client, opts); err == nil {
+				t.Fatal("downstream early EOF was reported as finite batch success")
+			}
+			if time.Since(started) > 500*time.Millisecond {
+				t.Fatal("early EOF stalled while joining an uncanceled producer", time.Since(started))
+			}
+			select {
+			case <-joined:
+			default:
+				t.Fatal("early EOF did not join producer")
+			}
+		})
+	}
+}
+
+func TestRunCompleteRequiresEmptyTransportEnd(t *testing.T) {
+	for _, mode := range []string{"normal", "missing_end", "non_ok_after_end"} {
+		t.Run(mode, func(t *testing.T) {
+			peer := &clientTestPeer{mode: mode}
+			client := clientTestConnection(t, peer)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			produced, consumed, completed := false, 0, 0
+			opts := Options{Destination: "records"}
+			opts.Produce = func(context.Context) (*pb.Call, error) {
+				if produced {
+					return nil, io.EOF
+				}
+				produced = true
+				return clientTestRead(), nil
+			}
+			opts.Consume = func(context.Context, uint64, *pb.Event) error { consumed++; return nil }
+			opts.Complete = func(_ context.Context, id uint64) error {
+				if consumed != 1 || id != 1 {
+					return errors.New("Complete fired before validated business result")
+				}
+				completed++
+				return nil
+			}
+			err := Run(ctx, client, opts)
+			if mode == "normal" && err != nil || mode != "normal" && err == nil {
+				t.Fatal("unexpected finite RPC status", mode, err)
+			}
+			wantCompleted := 1
+			if mode == "missing_end" {
+				wantCompleted = 0
+			}
+			if consumed != 1 || completed != wantCompleted {
+				t.Fatal("business and transport completion were conflated", mode, consumed, completed)
+			}
+		})
+	}
+}

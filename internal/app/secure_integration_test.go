@@ -5,6 +5,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"os"
 	"path/filepath"
@@ -94,40 +96,52 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			doc := &pb.Document{MediaType: "application/bson", Data: raw}
 			put := &pb.MutateRequest_Put{Put: doc}
 			request := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-			result, err := client.Mutate(ctx, request)
+			routedResult97, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result := routedResult97.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
 			read := &pb.ReadRequest{Resource: request.Resource}
-			found, err := client.Read(ctx, read)
+			routedResult102, err := routeclient.Record(ctx, client, testutil.RecordCall(read))
+			found := routedResult102.GetRead()
 			if err != nil || !bytes.Equal(found.GetDocument().GetData(), raw) {
 				t.Fatal("opaque BSON changed", err)
 			}
 			create := &pb.MutateRequest_Create{Create: doc}
 			request.Action = create
-			result, err = client.Mutate(ctx, request)
+			var routedResult108 *pb.Result
+			routedResult108, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result = routedResult108.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 				t.Fatal("duplicate not definite", result, err)
 			}
 			empty := &pb.Empty{}
 			remove := &pb.MutateRequest_Delete{Delete: empty}
 			request.Action = remove
-			result, err = client.Mutate(ctx, request)
+			var routedResult115 *pb.Result
+			routedResult115, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result = routedResult115.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
-			found, err = client.Read(ctx, read)
+			var routedResult119 *pb.Result
+			routedResult119, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+			found = routedResult119.GetRead()
 			if err != nil || found.GetMissing() == nil {
 				t.Fatal("missing contract", err)
 			}
 			request.Action = create
-			result, err = client.Mutate(ctx, request)
+			var routedResult124 *pb.Result
+			routedResult124, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result = routedResult124.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
 			replace := &pb.MutateRequest_Replace{Replace: doc}
 			request.Action = replace
-			result, err = client.Mutate(ctx, request)
+			var routedResult130 *pb.Result
+			routedResult130, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result = routedResult130.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
@@ -138,24 +152,18 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			request.Action = action
-			result, err = client.Mutate(ctx, request)
+			var routedResult141 *pb.Result
+			routedResult141, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			result = routedResult141.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
-			bulk, err := client.Bulk(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			open := &pb.BulkOpen{Store: "weir://mongo"}
-			opening := &pb.BulkRequestFrame_Open{Open: open}
-			frame := &pb.BulkRequestFrame{Frame: opening}
-			if err := bulk.Send(frame); err != nil {
-				t.Fatal(err)
-			}
-			mutation := &pb.BulkOperation_Mutate{Mutate: request}
-			operation := &pb.BulkOperation{Operation: mutation}
-			item := &pb.BulkRequestFrame_Operation{Operation: operation}
-			frame = &pb.BulkRequestFrame{Frame: item}
+			bulk := testutil.OpenEvents(ctx, client, "mongo")
+			var frame *pb.Call
+			mutation := &pb.Operation_Mutate{Mutate: request}
+			operation := &pb.Operation{Operation: mutation}
+			_, item := testutil.OperationCall(operation)
+			frame = item
 			if err := bulk.Send(frame); err != nil {
 				t.Fatal(err)
 			}
@@ -166,19 +174,19 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(reply, err)
 			}
-			reply, err = bulk.Recv()
-			if err != nil || reply.GetEnd().GetReceivedCount() != 1 || reply.GetEnd().GetResultCount() != 1 {
-				t.Fatal(reply, err)
-			}
 			if _, err := bulk.Recv(); err != io.EOF {
 				t.Fatal(err)
 			}
-			found, err = client.Read(ctx, read)
+			var routedResult176 *pb.Result
+			routedResult176, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+			found = routedResult176.GetRead()
 			if err != nil || bson.Raw(found.GetDocument().GetData()).Lookup("n").AsInt64() != 9007199254740995 {
 				t.Fatal("expression replay/type change", err)
 			}
-			scanRequest := &pb.ScanRequest{Resource: root, FetchItemsHint: 1}
-			scan, err := client.Scan(ctx, scanRequest)
+			scanRequest := &pb.ScanRequest{Resource: root}
+			scanVariant := &pb.Call_Scan{Scan: scanRequest}
+			scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+			scan, err := testutil.OneEvents(ctx, client, scanCall)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -188,7 +196,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if end := frame.GetEnd(); end != nil {
+				if end := frame.GetScanEnd(); end != nil {
 					if end.Failure != nil || end.DocumentCount != count || count < 1 {
 						t.Fatal(end)
 					}
@@ -199,25 +207,15 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if _, err := scan.Recv(); err != io.EOF {
 				t.Fatal(err)
 			}
-			stream, err := client.Native(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
 			descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
 			nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
-			nativeVariant := &pb.NativeRequestFrame_Open{Open: nativeOpen}
-			nativeFrame := &pb.NativeRequestFrame{Frame: nativeVariant}
-			if err := stream.Send(nativeFrame); err != nil {
-				t.Fatal(err)
-			}
 			command := bson.D{{Key: "count", Value: "records"}}
 			body, _ := bson.Marshal(command)
-			chunk := &pb.NativeRequestFrame_Chunk{Chunk: body}
-			nativeFrame = &pb.NativeRequestFrame{Frame: chunk}
-			if err := stream.Send(nativeFrame); err != nil {
-				t.Fatal(err)
-			}
-			if err := stream.CloseSend(); err != nil {
+			nativeCall := &pb.NativeCall{Open: nativeOpen, Body: body}
+			nativeVariant := &pb.Call_Native{Native: nativeCall}
+			call := &pb.Call{Version: 1, Operation: nativeVariant}
+			stream, err := testutil.OneEvents(ctx, client, call)
+			if err != nil {
 				t.Fatal(err)
 			}
 			var response []byte
@@ -227,7 +225,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 					t.Fatal(err)
 				}
 				response = append(response, frame.GetChunk()...)
-				if end := frame.GetEnd(); end != nil {
+				if end := frame.GetNativeEnd(); end != nil {
 					if end.Failure != nil || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
 						t.Fatal(end)
 					}

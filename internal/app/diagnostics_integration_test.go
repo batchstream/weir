@@ -36,6 +36,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 		route := Route{Store: name, Service: name}
 		cfg.Routing.Routes = append(cfg.Routing.Routes, route)
 	}
+	cfg.Basic.Memory = ByteSize(cfg.ReservedMemory())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	n, err := Open(ctx, cfg)
@@ -52,8 +53,8 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// M14 adds 7 unlabelled gauges, 4 profile states and 3 selected scopes.
-	const maximumSeries = 2043 + 7 + 4 + 3 + 1
+	// One Route vocabulary and one scheduler keep the maximum graph fixed.
+	const maximumSeries = 1274
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}

@@ -16,9 +16,9 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "weir://mongo/db/records/s:item", Action: action}
-	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
-	operation := &pb.BulkOperation{Operation: variant}
-	work, failure := a.Prepare(operation)
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	operation := &pb.Operation{Operation: variant}
+	work, failure := a.prepareRecord(operation)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -27,7 +27,7 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	}
 
 	program.Input = &pb.Document{MediaType: "application/json", Data: []byte(`{"step":1}`)}
-	if _, failure := a.Prepare(operation); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
+	if _, failure := a.prepareRecord(operation); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("JSON input accepted by MongoDB adapter", failure)
 	}
 

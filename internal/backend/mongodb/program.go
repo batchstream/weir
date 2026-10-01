@@ -24,7 +24,7 @@ const programLifetime = 5 * time.Second
 
 const programCleanup = 200 * time.Millisecond
 
-func (a *Adapter) executeProgram(parent context.Context, work *execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+func (a *Adapter) executeProgram(parent context.Context, work *execution.Plan) ([]*pb.Result, execution.Feedback) {
 	// A program owns its transaction and wire calls, so its caller can cancel
 	// this child context without affecting other operations in the batch.
 	if work.Context != nil {
@@ -46,9 +46,9 @@ func (a *Adapter) executeProgram(parent context.Context, work *execution.Plan) (
 		(result.Failure.Code == pb.FailureCode_CANCELLED || result.Failure.Code == pb.FailureCode_DEADLINE_EXCEEDED) {
 		result.Failure = protocol.ContextFailure(work.Context)
 	}
-	variant := &pb.BulkResult_Mutation{Mutation: result}
-	reply := &pb.BulkResult{Index: work.Operation.Index, Result: variant}
-	return []*pb.BulkResult{reply}, signal
+	variant := &pb.Result_Mutation{Mutation: result}
+	reply := &pb.Result{Index: work.Operation.Index, Result: variant}
+	return []*pb.Result{reply}, signal
 }
 
 func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.MutationResult, execution.Feedback) {

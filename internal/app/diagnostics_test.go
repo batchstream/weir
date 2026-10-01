@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -74,12 +76,12 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	read := &pb.ReadRequest{Resource: "weir://records/db/records/s:missing"}
-	_, _ = client.Read(ctx, read) // observed failed dial, no synthetic backend work
+	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read)) // observed failed dial, no synthetic backend work
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("remote failure changed readiness")
 	}
 	n.admission.SetOverloaded(true)
-	_, _ = client.Read(ctx, read)
+	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("overload changed readiness")
 	}
@@ -104,7 +106,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	// Hold one real decoded-input slot while drain starts; diagnostics retain
 	// their own slots and must remain available after data readiness falls.
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	blocked, err := conn.NewStream(ctx, desc, pb.Weir_Read_FullMethodName)
+	blocked, err := conn.NewStream(ctx, desc, pb.Weir_Route_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +118,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	_, _ = client.Read(ctx, read)
+	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("session capacity changed readiness")
 	}
@@ -166,7 +168,7 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, "weir-request-id", "secret-request-"+nonce)
 		req := &pb.ReadRequest{Resource: "weir://unknown" + nonce + "/private/s:document-secret"}
-		_, _ = client.Read(ctx, req)
+		_, _ = routeclient.Record(ctx, client, testutil.RecordCall(req))
 		var output pb.ReadResult
 		_ = conn.Invoke(ctx, "/unknown"+nonce+"/Method", req, &output)
 		cancel()

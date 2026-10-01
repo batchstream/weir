@@ -132,12 +132,12 @@ func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
 	r.terminations = prometheus.NewCounterVec(termOpts, []string{"method", "status"})
 	r.incompletes = prometheus.NewCounterVec(incOpts, []string{"method"})
 	r.rejections = prometheus.NewCounterVec(rejOpts, []string{"reason"})
-	for _, method := range metricMethods[:5] {
+	for _, method := range metricMethods[:1] {
 		for _, label := range metricStatuses {
 			r.terminations.WithLabelValues(method, label)
 		}
 	}
-	for _, method := range []string{"Bulk", "Scan", "Native"} {
+	for _, method := range []string{"Route"} {
 		r.incompletes.WithLabelValues(method)
 	}
 	for _, reason := range []string{"relay", "socket"} {

@@ -62,13 +62,13 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 			document = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
 		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + operation.id, action: operation.action, index: uint64(i + 3), document: document, program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
-		work, failure := a.Prepare(batchOperation(t, options))
+		work, failure := a.prepareRecord(batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, work)
 	}
-	replies, _ := a.Execute(context.Background(), plans)
+	replies, _ := a.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		operation := operations[i]
 		if reply.Index != uint64(i+3) {
@@ -116,7 +116,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		id := []string{"read-missing", "canceled-write", "peer-write", "canceled-program"}[i]
 		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(1)}}
 		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: document, program: "return weir.keep()"}
-		p, failure := a.Prepare(batchOperation(t, options))
+		p, failure := a.prepareRecord(batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -125,7 +125,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		}
 		plans = append(plans, p)
 	}
-	replies, _ := a.Execute(context.Background(), plans)
+	replies, _ := a.executeRecords(context.Background(), plans)
 	if replies[0].GetRead().GetMissing() == nil || replies[1].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal(replies)
 	}
@@ -159,13 +159,13 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 			doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
 		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: doc}
-		work, failure := a.Prepare(batchOperation(t, options))
+		work, failure := a.prepareRecord(batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		plans = append(plans, work)
 	}
-	replies, _ := a.Execute(context.Background(), plans)
+	replies, _ := a.executeRecords(context.Background(), plans)
 	for _, reply := range replies {
 		if reply.GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("lost mixed-write acknowledgement became definite", replies)

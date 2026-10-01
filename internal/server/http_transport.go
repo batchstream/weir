@@ -10,7 +10,6 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
@@ -27,19 +26,16 @@ type delivery struct {
 	controller                *http.ResponseController
 	deadline                  time.Time
 	readDeadline              time.Time
-	inputDecoded              bool
-	nativeWaiting             bool
-	nativePump                <-chan struct{}
+	inputWaiting              bool
+	inputStopped              bool
+	inputPump                 <-chan struct{}
 	stall                     time.Duration
-	unary                     bool
-	singleInput               bool
 	finished                  bool
 	rpcStarted                bool
 	rpcEnded                  bool
 	released                  bool
 	slots                     chan struct{}
 	remoteSlots               chan struct{}
-	ticket                    *store.Ticket
 	input                     *creditedBody
 	metrics                   *transportMetrics
 	method                    string
@@ -47,18 +43,7 @@ type delivery struct {
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
-	lifetime := s.limits.UnaryLifetime
-	bulk := request.RequestURI == pb.Weir_Bulk_FullMethodName
-	scan := request.RequestURI == pb.Weir_Scan_FullMethodName
-	native := request.RequestURI == pb.Weir_Native_FullMethodName
-	unary := !bulk && !scan && !native
-	if bulk {
-		lifetime = s.limits.BulkLifetime
-	} else if native {
-		lifetime = s.limits.NativeLifetime
-	} else if scan {
-		lifetime = s.limits.ScanLifetime
-	}
+	lifetime := s.limits.RouteLifetime
 	ingress, err := s.ingress(request)
 	if err != nil {
 		s.admission.rejections.WithLabelValues("ingress").Inc()
@@ -81,7 +66,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	// A ServeHTTP transport dispatches exactly one RPC. Keep that lifecycle
 	// contract explicit, including malformed/unregistered method paths.
 	switch request.RequestURI {
-	case pb.Weir_Read_FullMethodName, pb.Weir_Mutate_FullMethodName, pb.Weir_Bulk_FullMethodName, pb.Weir_Scan_FullMethodName, pb.Weir_Native_FullMethodName:
+	case pb.Weir_Route_FullMethodName:
 	default:
 		s.admission.rejections.WithLabelValues("method").Inc()
 		w.Header().Set("Content-Type", "application/grpc")
@@ -99,8 +84,6 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		deadline:     deadline,
 		readDeadline: deadline,
 		stall:        s.limits.Stall,
-		unary:        unary,
-		singleInput:  !bulk && !native,
 		slots:        s.slots,
 		metrics:      &s.metrics,
 		method:       methodLabel(request.RequestURI),
@@ -137,11 +120,11 @@ func (d *delivery) shorten(deadline time.Time) {
 func (d *delivery) armRead() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.finished {
+	if d.finished || d.inputStopped {
 		return io.ErrClosedPipe
 	}
 	d.readDeadline = d.deadline
-	if (d.unary || d.singleInput) && !d.inputDecoded || d.nativeWaiting {
+	if d.inputWaiting {
 		if stall := time.Now().Add(d.stall); stall.Before(d.readDeadline) {
 			d.readDeadline = stall
 		}
@@ -149,32 +132,7 @@ func (d *delivery) armRead() error {
 	return d.controller.SetReadDeadline(d.readDeadline)
 }
 
-func (d *delivery) consumedInput(n int) {
-	if d.unary || d.singleInput {
-		d.mu.Lock()
-		d.inputDecoded = true
-		if !d.finished {
-			// Backend execution is not an input stall after the unary frame
-			// has been decoded, including clients that have not half-closed.
-			d.readDeadline = d.deadline
-			_ = d.controller.SetReadDeadline(d.readDeadline)
-		}
-		d.mu.Unlock()
-	}
-	d.input.grant(n)
-}
-
-func (d *delivery) beginResponse() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.finished {
-		return
-	}
-	if deadline := time.Now().Add(d.stall); deadline.Before(d.deadline) {
-		d.deadline = deadline
-	}
-	_ = d.controller.SetWriteDeadline(d.deadline)
-}
+func (d *delivery) consumedInput(n int) { d.input.grant(n) }
 
 func (d *delivery) armWrite() error {
 	d.mu.Lock()
@@ -199,7 +157,7 @@ func (d *delivery) armWrite() error {
 
 func (d *delivery) finishWrite(err error) {
 	d.ioFailure("output", err)
-	if err != nil || d.unary {
+	if err != nil {
 		return
 	}
 	d.mu.Lock()
@@ -207,38 +165,22 @@ func (d *delivery) finishWrite(err error) {
 	if d.finished {
 		return
 	}
-	// A live Bulk may legitimately be idle between fully flushed frames. Its
+	// A live Route may legitimately be idle between fully flushed frames. Its
 	// existing idle/input watchdog owns that wait, not a stale write-stall timer.
 	_ = d.controller.SetWriteDeadline(d.deadline)
 }
 
-func (d *delivery) retain(ticket *store.Ticket) {
-	d.mu.Lock()
-	if d.finished {
-		d.mu.Unlock()
-		ticket.Ack()
-		return
-	}
-	d.ticket = ticket
-	d.mu.Unlock()
-}
-
 func (d *delivery) finish() {
 	d.mu.Lock()
-	pump := d.nativePump
+	pump := d.inputPump
 	d.mu.Unlock()
 	if pump != nil {
 		<-pump
 	}
 	d.mu.Lock()
 	d.finished = true
-	ticket := d.ticket
-	d.ticket = nil
 	d.releaseSlotLocked()
 	d.mu.Unlock()
-	if ticket != nil {
-		ticket.Ack()
-	}
 }
 
 func (d *delivery) endRPC() {

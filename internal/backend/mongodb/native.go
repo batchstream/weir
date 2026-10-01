@@ -19,7 +19,7 @@ const NativeCommandLimit = 4 << 20
 
 const NativeResponseLimit = 4 << 20
 
-func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
 		return nil, f
 	}
@@ -32,12 +32,12 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
 	p := &execution.Plan{
-		Backend:     target,
-		Native:      true,
-		Key:         open.Resource,
-		Bytes:       proto.Size(open) + protocol.EntryOverhead,
-		ResultBytes: protocol.NativeChunk + protocol.ResultOverhead,
-		PageBytes:   scanPageBudget,
+		Backend:      target,
+		Singleton:    true,
+		Key:          open.Resource,
+		Bytes:        proto.Size(open) + protocol.EntryOverhead,
+		ResultBytes:  protocol.NativeChunk + protocol.ResultOverhead,
+		WorkingBytes: scanPageBudget,
 	}
 	return p, nil
 }
@@ -96,7 +96,7 @@ func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) ExecuteNative(ctx context.Context, work *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
 	raw, err := io.ReadAll(io.LimitReader(exchange.Source, NativeCommandLimit+1))
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "incomplete Native BSON input")), execution.Neutral

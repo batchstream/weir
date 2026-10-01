@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/app"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
@@ -27,13 +26,13 @@ type feedbackControl struct {
 	suppressed prometheus.Counter
 }
 
-func (a *feedbackControl) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
-	results, feedback := a.Adapter.Execute(ctx, plans)
+func (a *feedbackControl) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+	feedback := a.Adapter.Execute(ctx, plans, emit)
 	if feedback == execution.Congested {
 		a.suppressed.Inc()
 		feedback = execution.Neutral
 	}
-	return results, feedback
+	return feedback
 }
 
 func serveControl(ctx context.Context, config, routes string, suppress bool) error {
@@ -99,10 +98,7 @@ func serveControl(ctx context.Context, config, routes string, suppress bool) err
 	transport := server.DefaultLimits()
 	transport.Sessions = cfg.Basic.Transport.MaxSessions
 	transport.Connections = cfg.Basic.Transport.MaxConnections
-	transport.UnaryLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Unary)
-	transport.BulkLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Bulk)
-	transport.ScanLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Scan)
-	transport.NativeLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Native)
+	transport.RouteLifetime = time.Duration(cfg.Basic.Transport.Timeouts.Route)
 	transport.Stall = time.Duration(cfg.Basic.Transport.Timeouts.Stall)
 	admission, err := server.NewAdmission(transport)
 	if err != nil {

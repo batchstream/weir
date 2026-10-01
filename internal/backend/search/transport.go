@@ -11,7 +11,7 @@ import (
 )
 
 const metadataLimit = 256 << 10
-const responseLimit = 1 << 20
+const responseLimit = 8 << 20
 const callLimit = 2 * time.Second
 
 var errTransport = errors.New("backend transport failed")

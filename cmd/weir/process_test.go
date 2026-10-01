@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/routeclient"
 	"io"
 	"net"
 	"net/http"
@@ -607,7 +609,7 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 	defer cancel()
 
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	stream, err := conn.NewStream(ctx, desc, pb.Weir_Read_FullMethodName)
+	stream, err := conn.NewStream(ctx, desc, pb.Weir_Route_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +710,9 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	var result *pb.MutationResult
 	var callErr error
 	go func() {
-		result, callErr = client.Mutate(ctx, request)
+		var routedResult711 *pb.Result
+		routedResult711, callErr = routeclient.Record(ctx, client, testutil.RecordCall(request))
+		result = routedResult711.GetMutation()
 		close(done)
 	}()
 

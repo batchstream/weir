@@ -1,30 +1,25 @@
-// Package execution defines the shared, encoding-independent record execution boundary.
+// Package execution defines the single adapter boundary used by Route.
 package execution
 
 import (
 	"context"
 	"io"
+	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 )
 
 type Plan struct {
-	Operation          *pb.BulkOperation
-	Key                string
-	Bytes, ResultBytes int
-	// Context preserves the caller's deadline and is canceled on abandonment.
-	// The scheduler attaches it to a copy at dispatch.
-	// Adapters check it before starting each item's next phase, but use the
-	// shared Execute context for backend calls so cancellation cannot affect peers.
-	Context context.Context
-	// Scan and Native reserve their bounded page/exchange working set for the
-	// lifetime of the one shared live-session slot.
-	Scan      bool
-	Native    bool
-	Exchange  *NativeExchange
-	PageBytes int
-	// Backend is private to the adapter that prepared this plan.
-	Backend any
+	ID                                   uint64
+	Call                                 *pb.Call
+	Operation                            *pb.Operation
+	Key, BatchKey                        string
+	Bytes, ResultBytes, WorkingBytes     int
+	Continue, CleanupRequired, Streaming bool
+	Singleton                            bool
+	Context                              context.Context
+	BackendTimeout                       time.Duration
+	Backend                              any
 }
 
 type Feedback uint8
@@ -35,19 +30,18 @@ const (
 	Congested
 )
 
+// Emit borrows an event until it returns. Callers must not mutate its contents.
+// One caller's canceled emission does not cancel other members of a shared batch.
+type Emit func(*Plan, *pb.Event) error
+
 type Adapter interface {
-	Prepare(*pb.BulkOperation) (*Plan, *pb.Failure)
-	Execute(context.Context, []*Plan) ([]*pb.BulkResult, Feedback)
-	PrepareScan(*pb.ScanRequest) (*Plan, *pb.Failure)
-	FetchScan(context.Context, *Plan) (*ScanPage, Feedback)
-	CloseScan(context.Context, *Plan) *pb.Failure
-	PrepareNative(*pb.NativeOpen) (*Plan, *pb.Failure)
-	ExecuteNative(context.Context, *Plan, *NativeExchange) (*pb.NativeEnd, Feedback)
+	PrepareCall(uint64, *pb.Call) (*Plan, *pb.Failure)
+	Execute(context.Context, []*Plan, Emit) Feedback
+	ClosePlan(context.Context, *Plan) *pb.Failure
 	Close() error
 }
 
-// The source and sink are bounded transport dependencies, not backend semantics.
-// Close interrupts a blocked input read without canceling a completed response.
+// These private adapter dependencies model one bounded native exchange.
 type NativeExchange struct {
 	Source io.ReadCloser
 	Sink   NativeSink
@@ -58,8 +52,6 @@ type NativeSink interface {
 	Chunk([]byte) error
 }
 
-// A page is completely validated before publication. Only positive native
-// exhaustion evidence permits Exhausted=true. Failure pages contain no documents.
 type ScanPage struct {
 	Documents []*pb.Document
 	Exhausted bool

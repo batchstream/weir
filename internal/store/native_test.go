@@ -2,171 +2,96 @@ package store
 
 import (
 	"context"
-	"io"
-	"strings"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
-type nativeSink struct{}
-
-func (*nativeSink) Head(*pb.NativeHead) error { return nil }
-func (*nativeSink) Chunk([]byte) error        { return nil }
-func (*nativeSink) Interrupt()                {}
-func TestNativeSharesLedgerSessionAndC1(t *testing.T) {
-	a := &scanTestAdapter{fetching: make(chan struct{}, 1)}
+func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
+	adapter := &scanTestAdapter{}
 	limits := DefaultLimits()
-	limits.Concurrency = 1
-	limits.BackendTimeout = 80 * time.Millisecond
-	r, err := New(a, limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close(context.Background())
-	sink := &nativeSink{}
-	exchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: sink}
-	open := &pb.NativeOpen{}
-	ticket, f := r.StartNative(context.Background(), open, exchange)
-	if f != nil {
-		t.Fatal(f)
-	}
-	<-a.fetching
-	families := testmetrics.Gather(t, r)
-	if testmetrics.Sum(families, "weir_store_live_sessions") != 1 || testmetrics.Sum(families, "weir_store_native_reserved_bytes") <= 0 || testmetrics.Sum(families, "weir_store_active_executions") != 1 {
-		t.Fatal("Native metrics missing reservation")
-	}
-	req := &pb.ScanRequest{}
-	if _, f := r.StartScan(context.Background(), req); f == nil {
-		t.Fatal("separate Scan budget")
-	}
-	if _, f := r.StartNative(context.Background(), open, exchange); f == nil {
-		t.Fatal("separate Native budget")
-	}
-	p := plan(1, "ordinary", true)
-	ordinary, f, _ := r.Submit(context.Background(), p, nil)
-	if f != nil {
-		t.Fatal(f)
-	}
-	select {
-	case <-ordinary.ready:
-		t.Fatal("Native permit released while exchange active")
-	case <-time.After(20 * time.Millisecond):
-	}
-	end := ticket.WaitNative()
-	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {
-		t.Fatal(end)
-	}
-	if r.Snapshot().NativeSessions != 1 {
-		t.Fatal("released before output ack")
-	}
-	ticket.Ack()
-	if _, err := ordinary.Wait(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	ordinary.Ack()
-	if r.controller.epoch != 0 {
-		t.Fatal("upload timeout treated as DB congestion")
-	}
-	scan, f := r.StartScan(context.Background(), req)
-	if f != nil {
-		t.Fatal(f)
-	}
-	if _, f := r.StartNative(context.Background(), open, exchange); f == nil {
-		t.Fatal("Native did not share Scan budget")
-	}
-	families = testmetrics.Gather(t, r)
-	if testmetrics.Sum(families, "weir_store_scan_page_reserved_bytes") <= 0 || testmetrics.Sum(families, "weir_store_pending_entries") != 1 {
-		t.Fatal("Scan continuation metrics")
-	}
-	scan.CloseScan()
-	families = testmetrics.Gather(t, r)
-	if testmetrics.Sum(families, "weir_store_live_sessions") != 0 || testmetrics.Sum(families, "weir_store_window_changes_total") != 0 || testmetrics.Sum(families, "weir_store_native_completions_total") != 1 {
-		t.Fatal("Native metric release/feedback")
-	}
-	if snap := r.Snapshot(); snap.LiveSessions != 0 || snap.Retained != 0 || snap.Pending != 0 || snap.ResultBytes != 0 {
-		t.Fatal(snap)
-	}
-}
-func TestNativeQueuedCancelAndRejectionDoNotRead(t *testing.T) {
-	a := &scanTestAdapter{}
-	limits := DefaultLimits()
-	limits.PendingOperations = 1
+	limits.WorkingBytes = 24 << 20
+	runtime := newRuntime(adapter, limits)
+	runtime.controller.window = 2
 	limits.Collect = 0
-	r := newRuntime(a, limits)
-	p := plan(0, "first", true)
-	first, f, _ := r.Submit(context.Background(), p, nil)
-	if f != nil {
-		t.Fatal(f)
-	}
-	open := &pb.NativeOpen{}
-	exchange := &execution.NativeExchange{}
-	if _, f := r.StartNative(context.Background(), open, exchange); f == nil {
-		t.Fatal("queue limit")
-	}
-	r.mu.Lock()
-	b := r.selectLocked(time.Now())
-	r.mu.Unlock()
+	runtime.limits.Collect = 0
+	session := runtime.NewSession()
+	defer session.Close()
 	ctx, cancel := context.WithCancel(context.Background())
-	ticket, f := r.StartNative(ctx, open, exchange)
-	if f != nil {
-		t.Fatal(f)
-	}
-	cancel()
-	r.mu.Lock()
-	r.cancelQueuedLocked()
-	r.mu.Unlock()
-	end := ticket.WaitNative()
-	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || a.fetches.Load() != 0 {
-		t.Fatal(end)
-	}
-	ticket.Ack()
-	r.mu.Lock()
-	finish(r, b)
-	r.mu.Unlock()
-	first.Ack()
-	if snap := r.Snapshot(); snap.LiveSessions != 0 || snap.PendingBytes != 0 || snap.Retained != 0 {
-		t.Fatal(snap)
-	}
-}
-
-// The five-minute RPC lifetime does not replace the physical execution budget.
-func TestNativeDefaultPhysicalExecutionBudget(t *testing.T) {
-	a := &scanTestAdapter{fetching: make(chan struct{}, 1)}
-	limits := DefaultLimits()
-	if limits.BackendTimeout != 2*time.Second {
-		t.Fatal("default physical budget changed")
-	}
-	r, err := New(a, limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close(context.Background())
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	sink := &nativeSink{}
-	exchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: sink}
-	open := &pb.NativeOpen{}
-	started := time.Now()
-	ticket, failure := r.StartNative(ctx, open, exchange)
+	open := &pb.NativeOpen{Resource: "records"}
+	native := &pb.NativeCall{Open: open}
+	variant := &pb.Call_Native{Native: native}
+	call := &pb.Call{Version: 1, Operation: variant}
+	first, _ := runtime.PrepareCall(1, call)
+	ticket, failure, _ := runtime.Submit(ctx, first, session)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	select {
-	case <-ticket.ready:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Native escaped Store physical deadline")
+	scan := &pb.ScanRequest{Resource: "records"}
+	scanVariant := &pb.Call_Scan{Scan: scan}
+	scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+	second, _ := runtime.PrepareCall(2, scanCall)
+	secondTicket, failure, _ := runtime.Submit(ctx, second, session)
+	if failure != nil {
+		t.Fatal(failure)
 	}
-	elapsed := time.Since(started)
-	end := ticket.WaitNative()
+	runtime.mu.Lock()
+	firstBatch := runtime.selectLocked(time.Now())
+	if firstBatch == nil {
+		runtime.mu.Unlock()
+		t.Fatal("native singleton did not dispatch")
+	}
+	if other := runtime.selectLocked(time.Now()); other != nil {
+		runtime.mu.Unlock()
+		t.Fatal("Scan bypassed Native execution working budget")
+	}
+	finish(runtime, firstBatch)
+	secondBatch := runtime.selectLocked(time.Now())
+	if secondBatch == nil {
+		runtime.mu.Unlock()
+		t.Fatal("released native budget did not unblock Scan")
+	}
+	finish(runtime, secondBatch)
+	runtime.mu.Unlock()
+	secondTicket.Ack()
+	ticket.Abandon()
+	runtime.mu.Lock()
+	runtime.cancelQueuedLocked()
+	runtime.mu.Unlock()
+	if snapshot := runtime.Snapshot(); snapshot.WorkingBytes != 0 || snapshot.Retained != 0 {
+		t.Fatal("queued cancellation leaked reservation", snapshot)
+	}
+}
+
+func TestCanceledSingletonDoesNotRunOrPoisonPeer(t *testing.T) {
+	adapter := &scanTestAdapter{pages: 1}
+	limits := DefaultLimits()
+	limits.Collect = 0
+	runtime, err := New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	session := runtime.NewSession()
+	defer session.Close()
+	canceled, stop := context.WithCancel(context.Background())
+	stop()
+	first := plan(1, "first", false)
+	if _, failure, _ := runtime.Submit(canceled, first, session); failure == nil {
+		t.Fatal("admitted canceled operation")
+	}
+	work := plan(2, "second", false)
+	ticket, failure, _ := runtime.Submit(context.Background(), work, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = ticket.Wait(ctx)
+	if err != nil {
+		t.Fatal("peer was canceled", err)
+	}
 	ticket.Ack()
-	if elapsed < 1900*time.Millisecond || end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || ctx.Err() != nil {
-		t.Fatal("Native did not use stricter Store budget", elapsed, end, ctx.Err())
-	}
-	if snap := r.Snapshot(); snap.Active != 0 || snap.Retained != 0 {
-		t.Fatal(snap)
-	}
 }

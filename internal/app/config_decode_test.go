@@ -168,7 +168,7 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input = strings.Replace(string(basic), "max_sessions: 16", "max_sessions: 16\n    max_ſessions: 16", 1)
+	input = strings.Replace(string(basic), "max_sessions: 4", "max_sessions: 4\n    max_ſessions: 4", 1)
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote basic field", err)
 	}
@@ -186,7 +186,7 @@ func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 		"memory:\n",
 		"transport: null\n",
 		"transport:\n  max_connections: null\n",
-		"transport:\n  timeouts:\n    unary: null\n",
+		"transport:\n  timeouts:\n    route: null\n",
 		"forwarding: null\n",
 		"routing: null\n",
 	} {
@@ -349,7 +349,7 @@ func TestConfigurationScalarTypes(t *testing.T) {
 		basic + "diagnostics:\n  allow_intranet: yes\n",
 		basic + "diagnostics:\n  allow_intranet: 'true'\n",
 		basic + "transport:\n  max_connections: '16'\n",
-		basic + "transport:\n  max_sessions: 16.0\n",
+		basic + "transport:\n  max_sessions: 4.0\n",
 		basic + "forwarding:\n  hop_limit: false\n",
 	} {
 		_, err := DecodeBasic(strings.NewReader(fragment))

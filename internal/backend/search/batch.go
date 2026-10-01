@@ -184,7 +184,7 @@ type recordWrite struct {
 type recordBatch struct {
 	adapter  *Adapter
 	ctx      context.Context
-	results  []*pb.BulkResult
+	results  []*pb.Result
 	programs []*programExecution
 	feedback execution.Feedback
 	request  bytes.Buffer
@@ -309,14 +309,14 @@ func (b *recordBatch) flush() {
 	b.pending = b.pending[:0]
 }
 
-func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) ([]*pb.Result, execution.Feedback) {
 	if len(works) == 0 {
 		return nil, execution.Neutral
 	}
 	batch := recordBatch{
 		adapter:  a,
 		ctx:      ctx,
-		results:  make([]*pb.BulkResult, len(works)),
+		results:  make([]*pb.Result, len(works)),
 		programs: make([]*programExecution, len(works)),
 		feedback: execution.Healthy,
 	}

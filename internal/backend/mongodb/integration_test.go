@@ -297,9 +297,9 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 		d := &pb.Document{MediaType: "application/bson", Data: raw}
 		action := &pb.MutateRequest_Create{Create: d}
 		m := &pb.MutateRequest{Resource: "weir://mongo/" + db + "/records/s:" + id, Action: action}
-		v := &pb.BulkOperation_Mutate{Mutate: m}
-		op := &pb.BulkOperation{Operation: v}
-		p, f := a.Prepare(op)
+		v := &pb.Operation_Mutate{Mutate: m}
+		op := &pb.Operation{Operation: v}
+		p, f := a.prepareRecord(op)
 		if f != nil {
 			t.Fatal(f)
 		}
@@ -307,7 +307,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	results, _ := a.Execute(ctx, plans)
+	results, _ := a.executeRecords(ctx, plans)
 	for _, r := range results {
 		if r.GetMutation().Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal(r)
@@ -395,9 +395,9 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 		empty := &pb.Empty{}
 		action := &pb.MutateRequest_Delete{Delete: empty}
 		m := &pb.MutateRequest{Resource: "weir://mongo/" + db + "/records/s:" + id, Action: action}
-		v := &pb.BulkOperation_Mutate{Mutate: m}
-		op := &pb.BulkOperation{Operation: v}
-		p, f := a.Prepare(op)
+		v := &pb.Operation_Mutate{Mutate: m}
+		op := &pb.Operation{Operation: v}
+		p, f := a.prepareRecord(op)
 		if f != nil {
 			t.Fatal(f)
 		}
@@ -405,7 +405,7 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	results, _ := a.Execute(ctx, plans)
+	results, _ := a.executeRecords(ctx, plans)
 	for _, r := range results {
 		if r.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal(r)
