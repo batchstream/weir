@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,87 +11,68 @@ import (
 	"github.com/batchstream/weir/internal/testutil"
 )
 
-func TestBasicConfigurationReference(t *testing.T) {
-	filename := filepath.Join(testutil.Root(t), "config.example.yaml")
+func TestBasicConfigurationFile(t *testing.T) {
+	filename := filepath.Join(testutil.Root(t), "config", "weir.yaml")
 	cfg, err := Load(filename)
 	if err != nil {
-		t.Fatal("basic reference and its adjacent routing example must load", err)
+		t.Fatal("basic configuration and its adjacent routing file must load", err)
 	}
 
 	expected := DefaultConfig().Basic
 	expected.Listeners.Application = "127.0.0.1:7447"
 	expected.Diagnostics.Address = "127.0.0.1:7449"
-	expected.Routing.File = "routes.example.yaml"
+	expected.Routing.File = "routes.yaml"
 	if cfg.Basic != expected {
-		t.Fatal("basic reference differs from its documented defaults and addresses")
-	}
-	if len(cfg.Routing.Services) != 1 || len(cfg.Routing.Routes) != 1 || cfg.Routing.Services[0].Local.MongoDB == nil {
-		t.Fatal("minimal routing example must declare one MongoDB service and route")
+		t.Fatal("basic configuration differs from its documented defaults and addresses")
 	}
 }
 
-func TestRoutingConfigurationReference(t *testing.T) {
-	filename := filepath.Join(testutil.Root(t), "config.example.yaml")
+func TestRoutingConfigurationFile(t *testing.T) {
+	filename := filepath.Join(testutil.Root(t), "config", "routes.yaml")
 	raw, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, block, found := strings.Cut(string(raw), "# routing-reference-begin\n")
-	if !found {
-		t.Fatal("routing reference start marker is missing")
-	}
-	block, _, found = strings.Cut(block, "# routing-reference-end")
-	if !found {
-		t.Fatal("routing reference end marker is missing")
-	}
-
-	var document strings.Builder
-	for _, line := range strings.Split(strings.TrimSuffix(block, "\n"), "\n") {
-		if line == "#" {
-			line = ""
-		} else {
-			var commented bool
-			line, commented = strings.CutPrefix(line, "# ")
-			if !commented {
-				t.Fatal("routing reference must become YAML after removing one comment prefix")
-			}
-		}
-		document.WriteString(line)
-		document.WriteByte('\n')
-	}
-	input := document.String()
-	cfg, err := DecodeRouting(strings.NewReader(input))
+	cfg, err := DecodeRouting(bytes.NewReader(raw))
 	if err != nil {
-		t.Fatal("complete commented routing reference must validate", err)
+		t.Fatal("routing file must validate without accessing its backend", err)
 	}
-	if len(cfg.Services) != 3 || len(cfg.Routes) != 3 ||
-		cfg.Services[0].Local.MongoDB == nil ||
-		cfg.Services[1].Local.Search == nil ||
-		cfg.Services[2].Remote == nil {
-		t.Fatal("complete reference must cover MongoDB, Search and remote services")
+	if len(cfg.Services) != 3 || len(cfg.Routes) != 3 {
+		t.Fatal("routing file must declare MongoDB, Search and remote services and routes")
+	}
+	service := cfg.Services[0]
+	if service.Name != "database" || service.Remote != nil || service.Local == nil ||
+		service.Local.MongoDB == nil || service.Local.Search != nil {
+		t.Fatal("routing file must declare a local MongoDB service")
+	}
+	limits := service.Local.runtimeLimits()
+	if limits.Concurrency != 4 || limits.BatchOperations != 16 {
+		t.Fatal("local scheduler limits differ from their documented defaults")
+	}
+	if cfg.Routes[0].Store != "mongo" || cfg.Routes[0].Service != service.Name {
+		t.Fatal("public MongoDB Store must target the declared service")
 	}
 
-	for _, profile := range []string{search.ElasticsearchProfile, search.OpenSearchProfile} {
-		t.Run(profile, func(t *testing.T) {
-			secured := strings.Replace(input, "http://127.0.0.1:9200", "https://127.0.0.1:9200", 1)
-			secured = strings.Replace(secured, "profile: \""+search.ElasticsearchProfile+"\"", "profile: \""+profile+"\"", 1)
-			for _, field := range []string{"connection:", "  username:", "  password:", "  ca_file:"} {
-				if !strings.Contains(secured, "# "+field) {
-					t.Fatal("optional HTTPS reference field is missing", field)
-				}
-				secured = strings.Replace(secured, "# "+field, field, 1)
-			}
-			cfg, err := DecodeRouting(strings.NewReader(secured))
-			if err != nil {
-				t.Fatal("uncommented HTTPS reference must validate without opening its CA path", err)
-			}
-			backend := cfg.Services[1].Local.Search
-			if backend.Profile != profile || backend.Connection == nil ||
-				backend.Connection.Username != "weir" ||
-				backend.Connection.Password != "change-me" ||
-				backend.Connection.CAFile != "/etc/weir/ca.pem" {
-				t.Fatal("HTTPS reference did not populate its documented connection fields")
-			}
-		})
+	service = cfg.Services[1]
+	if service.Name != "search" || service.Remote != nil || service.Local == nil ||
+		service.Local.Search == nil || service.Local.MongoDB != nil {
+		t.Fatal("routing file must declare a local Search service")
+	}
+	backend := service.Local.Search
+	if !strings.HasPrefix(backend.URL, "https://") || backend.Profile != search.ElasticsearchProfile ||
+		backend.Connection == nil || backend.Connection.Username != "weir" ||
+		backend.Connection.Password != "change-me" || backend.Connection.CAFile != "/etc/weir/ca.pem" {
+		t.Fatal("Search routing configuration must include the documented HTTPS connection fields")
+	}
+	if cfg.Routes[1].Store != "search" || cfg.Routes[1].Service != service.Name {
+		t.Fatal("public Search Store must target the declared service")
+	}
+
+	service = cfg.Services[2]
+	if service.Name != "upstream" || service.Local != nil || service.Remote == nil {
+		t.Fatal("routing file must declare a remote service")
+	}
+	if cfg.Routes[2].Store != "remote" || cfg.Routes[2].Service != service.Name {
+		t.Fatal("public remote Store must target the declared service")
 	}
 }

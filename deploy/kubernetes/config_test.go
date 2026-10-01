@@ -10,7 +10,7 @@ import (
 )
 
 func TestDeploymentConfiguration(t *testing.T) {
-	cfg, err := app.Load("node.example.yaml")
+	cfg, err := app.Load("weir.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,7 @@ func run(args []string, output io.Writer) error {
 		},
 	}
 
-	serveConfig := "weir.yaml"
+	serveConfig := "config/weir.yaml"
 	serveCommand := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the node using basic and routing configuration",
@@ -57,11 +57,11 @@ func run(args []string, output io.Writer) error {
 		&serveConfig,
 		"config",
 		"c",
-		"weir.yaml",
+		"config/weir.yaml",
 		"basic YAML configuration referencing a routing file",
 	)
 
-	checkConfig := "weir.yaml"
+	checkConfig := "config/weir.yaml"
 	checkCommand := &cobra.Command{
 		Use:   "check",
 		Short: "Validate configuration without listeners, DNS or backend connections",
@@ -83,7 +83,7 @@ func run(args []string, output io.Writer) error {
 		&checkConfig,
 		"config",
 		"c",
-		"weir.yaml",
+		"config/weir.yaml",
 		"basic YAML configuration referencing a routing file",
 	)
 
