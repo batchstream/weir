@@ -37,6 +37,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 		}
 	}}
 	cfg := Config{URI: proxy.URI(), Store: "mongo", Database: f.DB, Collection: "records", Pool: 1}
+	cfg = mongoFixtureConfig(t, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	a, err := Open(ctx, cfg)
@@ -142,7 +143,12 @@ func (c *retirementConn) Close() error {
 func TestMongoDriverRetirementOwnership(t *testing.T) {
 	f := testmongo.OpenSecure(t)
 	d := newBoundedDialer(2, 3)
-	opts, err := connectionOptions(f.URI, d)
+	cfg := Config{URI: f.URI, Store: "mongo", Database: f.DB, Collection: "records", Pool: 1}
+	cfg = mongoFixtureConfig(t, cfg)
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := connectionOptions(cfg, d)
 	if err != nil {
 		t.Fatal(err)
 	}

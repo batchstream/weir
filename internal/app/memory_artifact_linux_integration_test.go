@@ -61,7 +61,7 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	if err := admin.Database(db).CreateCollection(ctx, "records"); err != nil {
 		t.Fatal(err)
 	}
-	cfg := packagedConfig(uri, db)
+	cfg := packagedConfig(t, uri, db)
 	cfg.Basic.Memory = 128 << 20
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)

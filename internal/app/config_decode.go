@@ -15,11 +15,6 @@ import (
 
 const maxConfigBytes = 128 << 10
 
-type serviceFileConfig struct {
-	Local  *Local  `yaml:"local"`
-	Remote *Remote `yaml:"remote"`
-}
-
 // DecodeBasic reads process settings without opening the routing document.
 func DecodeBasic(input io.Reader) (BasicConfig, error) {
 	cfg := DefaultConfig().Basic
@@ -32,7 +27,7 @@ func DecodeBasic(input io.Reader) (BasicConfig, error) {
 	return cfg, cfg.Validate()
 }
 
-// DecodeRouting validates declarations without opening service files or backends.
+// DecodeRouting validates resolved, inline configuration without performing IO.
 func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 	cfg := RoutingConfig{}
 	if err := decodeConfigYAML(input, &cfg, true); err != nil {
@@ -43,7 +38,7 @@ func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 
 // Load resolves every configuration file and validates the graph before startup.
 // Relative routing paths are resolved from the basic document's directory.
-// Relative service paths are resolved from the routing document's directory.
+// Relative credential paths are resolved from the routing document's directory.
 func Load(filename string) (Config, error) {
 	cfg := Config{}
 	file, err := os.Open(filename)
@@ -66,61 +61,20 @@ func Load(filename string) (Config, error) {
 	if err != nil {
 		return cfg, errors.New("routing configuration unavailable")
 	}
-	routing, decodeErr := DecodeRouting(file)
+	routing := RoutingConfig{}
+	decodeErr = decodeConfigYAML(file, &routing, true)
 	closeErr = file.Close()
 	if decodeErr != nil {
-		return cfg, decodeErr
+		return cfg, fmt.Errorf("routing %w", decodeErr)
 	}
 	if closeErr != nil {
 		return cfg, errors.New("routing configuration unavailable")
 	}
-	for i := range routing.Services {
-		service := &routing.Services[i]
-		if service.File == "" {
-			continue
-		}
-		serviceFilename := service.File
-		if !filepath.IsAbs(serviceFilename) {
-			serviceFilename = filepath.Join(filepath.Dir(routingFilename), serviceFilename)
-		}
-		definition, err := loadServiceFile(serviceFilename)
-		if err != nil {
-			return cfg, err
-		}
-		service.Local, service.Remote = definition.Local, definition.Remote
-		service.File = ""
+	if err := routing.resolveCredentials(filepath.Dir(routingFilename)); err != nil {
+		return cfg, err
 	}
 	cfg.Basic, cfg.Routing = basic, routing
 	return cfg, cfg.Validate()
-}
-
-func loadServiceFile(filename string) (serviceFileConfig, error) {
-	cfg := serviceFileConfig{}
-	info, err := os.Stat(filename)
-	if err != nil || !info.Mode().IsRegular() {
-		return cfg, errors.New("service configuration unavailable")
-	}
-	file, err := os.Open(filename)
-	if err != nil {
-		return cfg, errors.New("service configuration unavailable")
-	}
-	info, err = file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		_ = file.Close()
-		return cfg, errors.New("service configuration unavailable")
-	}
-	decodeErr := decodeConfigYAML(file, &cfg, true)
-	closeErr := file.Close()
-	if decodeErr != nil {
-		return cfg, fmt.Errorf("service %w", decodeErr)
-	}
-	if closeErr != nil {
-		return cfg, errors.New("service configuration unavailable")
-	}
-	if (cfg.Local == nil) == (cfg.Remote == nil) {
-		return cfg, errors.New("service configuration requires exactly one of local or remote")
-	}
-	return cfg, nil
 }
 
 func decodeConfigYAML(input io.Reader, target any, allowNull bool) error {

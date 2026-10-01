@@ -41,6 +41,7 @@ func scanServer(t *testing.T, kind string, sl Limits) scanFixture {
 	if kind == "mongo" {
 		f.mongo = testmongo.Open(t)
 		cfg := mongodb.Config{URI: f.mongo.URI, Store: "mongo", Database: f.mongo.DB, Collection: "records", Pool: 1}
+		cfg = mongoFixtureConfig(t, cfg)
 		adapter, err = mongodb.Open(ctx, cfg)
 		f.root = "weir://mongo/" + f.mongo.DB + "/records"
 	} else {

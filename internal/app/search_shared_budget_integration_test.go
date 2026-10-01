@@ -44,7 +44,7 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 	t.Helper()
 	b := opts.fixture.Backend
 	proxy := startSearchBudgetProxy(t, opts.fixture, opts.observation)
-	connection := &search.Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
+	connection := &SearchConnection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
 	backend := &Search{
 		URL:        "https://" + proxy.listener.Addr().String(),
 		Index:      b.Index,

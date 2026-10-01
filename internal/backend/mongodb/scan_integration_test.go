@@ -34,6 +34,7 @@ func TestMongoScanTraversal(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
 			cfg := Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			a, err := Open(ctx, cfg)
@@ -110,6 +111,7 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 					proxy.AlterRemaining.Store(1)
 				}
 				cfg := Config{URI: proxy.URI(), Store: "mongo", Database: db, Collection: "records", Pool: 1}
+				cfg = mongoFixtureConfig(t, cfg)
 				a, err := Open(ctx, cfg)
 				if err != nil {
 					t.Fatal(err)
@@ -150,6 +152,7 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
 			cfg := Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			a, err := Open(ctx, cfg)

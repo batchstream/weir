@@ -400,7 +400,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build weir: %v %s", err, output)
 	}
-	mongo := &Mongo{URI: mongoFixture.URI, Database: database, Collection: "records"}
+	mongo := mongoFixtureConfig(t, mongoFixture.URI, database)
 	mongoLocal := &Local{MongoDB: mongo}
 	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
 	searchLocal := &Local{Search: backend}

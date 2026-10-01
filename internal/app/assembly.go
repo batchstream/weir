@@ -156,13 +156,7 @@ func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, er
 	var adapter execution.Adapter
 	var err error
 	if cfg.MongoDB != nil {
-		config := mongodb.Config{
-			URI:        cfg.MongoDB.URI,
-			Store:      name,
-			Database:   cfg.MongoDB.Database,
-			Collection: cfg.MongoDB.Collection,
-			Pool:       uint64(limits.Concurrency),
-		}
+		config := cfg.mongoConfig(name)
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
 		config := cfg.searchConfig(name)

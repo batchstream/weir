@@ -49,7 +49,18 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 		t.Skip("secure profile opt-in")
 	}
 	fixture := testmongo.OpenSecure(t)
-	mongo := &Mongo{URI: fixture.URI, Database: fixture.DB, Collection: "records"}
+	mongo := mongoFixtureConfig(t, fixture.URI, fixture.DB)
+	valueDirectory := t.TempDir()
+	mongo.UsernameFile = filepath.Join(valueDirectory, "username")
+	mongo.PasswordFile = filepath.Join(valueDirectory, "password")
+	if err := os.WriteFile(mongo.UsernameFile, []byte(mongo.Username+"\n"), 0600); err != nil {
+		t.Fatal("cannot write owned username value")
+	}
+	if err := os.WriteFile(mongo.PasswordFile, []byte(mongo.Password+"\r\n"), 0600); err != nil {
+		t.Fatal("cannot write owned password value")
+	}
+	mongo.Username, mongo.Password = "", ""
+
 	local := &Local{MongoDB: mongo}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "mongo", Service: "database"}

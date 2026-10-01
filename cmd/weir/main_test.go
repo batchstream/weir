@@ -31,17 +31,18 @@ func TestVersionWithoutConfiguration(t *testing.T) {
 	}
 }
 
-func TestCheckConfigWithoutBackendOrCAAccess(t *testing.T) {
+func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
 	directory := t.TempDir()
 	file := filepath.Join(directory, "weir.yaml")
 	routingDirectory := filepath.Join(directory, "nested")
-	serviceDirectory := filepath.Join(routingDirectory, "services")
-	if err := os.MkdirAll(serviceDirectory, 0700); err != nil {
+	valueDirectory := filepath.Join(routingDirectory, "values")
+	if err := os.MkdirAll(valueDirectory, 0700); err != nil {
 		t.Fatal(err)
 	}
 
 	routingFile := filepath.Join(routingDirectory, "routes.yaml")
-	serviceFile := filepath.Join(serviceDirectory, "search.yaml")
+	usernameFile := filepath.Join(valueDirectory, "username")
+	passwordFile := filepath.Join(valueDirectory, "password")
 	basic := `listeners:
   application: 192.0.2.1:7447
 routing:
@@ -49,20 +50,18 @@ routing:
 `
 	routing := `services:
   - name: search
-    file: services/search.yaml
+    local:
+      search:
+        url: https://unresolved.invalid:443
+        index: records
+        profile: elasticsearch-8.19.22
+        connection:
+          username_file: values/username
+          password_file: values/password
+          ca_file: /missing/ca-sentinel.pem
 routes:
   - store: records
     service: search
-`
-	service := `local:
-  search:
-    url: https://unresolved.invalid:443
-    index: records
-    profile: elasticsearch-8.19.22
-    connection:
-      username: user
-      password: password-sentinel
-      ca_file: /missing/ca-sentinel.pem
 `
 	if err := os.WriteFile(file, []byte(basic), 0600); err != nil {
 		t.Fatal(err)
@@ -70,19 +69,21 @@ routes:
 	if err := os.WriteFile(routingFile, []byte(routing), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(serviceFile, []byte(service), 0600); err != nil {
+	if err := os.WriteFile(usernameFile, []byte("user"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(passwordFile, []byte("password-sentinel"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Chdir(directory)
 	var output bytes.Buffer
 	if err := run([]string{"check"}, &output); err != nil || output.String() != "configuration valid\n" {
-		t.Fatal("default basic file must resolve nested routes and service without startup IO", err, output.String())
+		t.Fatal("default basic file must resolve nested routes and credential values without startup IO", err, output.String())
 	}
 
-	// Routing paths belong to the basic file, even from a different working directory.
+	// Value paths belong to the routing file, even from a different working directory.
 	t.Chdir(t.TempDir())
-
 	for _, flag := range []string{"--config", "-c"} {
 		output.Reset()
 		if err := run([]string{"check", flag, file}, &output); err != nil {
@@ -94,19 +95,32 @@ routes:
 	}
 
 	t.Chdir(directory)
-	for _, invalid := range []string{
-		"local:\n  search: [password-sentinel\n",
-		service + "unknown-secret-sentinel: password-sentinel\n",
-	} {
-		if err := os.WriteFile(serviceFile, []byte(invalid), 0600); err != nil {
+	invalidCases := []struct {
+		document string
+		reason   string
+	}{
+		{
+			strings.Replace(routing, "          username_file:", "          username: user-sentinel\n          username_file:", 1),
+			"credential value and file are mutually exclusive",
+		},
+		{
+			strings.Replace(routing, "values/password", "values/missing-secret-sentinel", 1),
+			"credential file unavailable",
+		},
+		{
+			strings.Replace(routing, "    local:", "    file: service-sentinel.yaml\n    local:", 1),
+			"routing invalid configuration YAML or unknown field",
+		},
+	}
+	for _, tc := range invalidCases {
+		if err := os.WriteFile(routingFile, []byte(tc.document), 0600); err != nil {
 			t.Fatal(err)
 		}
 		for _, command := range []string{"check", "serve"} {
 			output.Reset()
 			err := run([]string{command}, &output)
-			if err == nil || !strings.HasPrefix(err.Error(), "service invalid configuration YAML") ||
-				strings.Contains(err.Error(), "sentinel") || output.Len() != 0 {
-				t.Fatal("invalid service file must fail before startup without exposing values", command, err, output.String())
+			if err == nil || err.Error() != tc.reason || output.Len() != 0 {
+				t.Fatal("invalid credential source must fail before startup without exposing values", command, err, output.String())
 			}
 		}
 	}

@@ -24,24 +24,44 @@ const maxOCSPBytes = 64 << 10
 
 var errTLSBound = errors.New("MongoDB TLS profile exceeds certificate or OCSP bounds")
 
-// ApplyURI normally loads the CA without a size limit. Remove only that option,
-// then supply the same exclusive root pool using a bounded regular-file read.
-// ValidateURI must precede this function (including all file and DNS access).
-func connectionOptions(raw string, dialer *boundedDialer) (*options.ClientOptions, error) {
-	parsed, err := url.Parse(raw)
+// Keep authentication out of the driver's stored URI and supply it with SetAuth.
+// ApplyURI normally loads the CA without a size limit. Remove its CA option and
+// supply the same exclusive root pool using a bounded regular-file read.
+// ValidateConfig must precede this function (including all file and DNS access).
+func connectionOptions(cfg Config, dialer *boundedDialer) (*options.ClientOptions, error) {
+	parsed, err := url.Parse(cfg.URI)
 	if err != nil {
 		return nil, errors.New("invalid MongoDB connection profile")
 	}
 	query := parsed.Query()
 	caFile := ""
+	authSource := ""
+	authMechanism := ""
 	for key, values := range query {
-		if strings.EqualFold(key, "tlsCAFile") {
+		switch strings.ToLower(key) {
+		case "tlscafile":
 			caFile = values[0]
+			query.Del(key)
+		case "authsource":
+			authSource = values[0]
+			query.Del(key)
+		case "authmechanism":
+			authMechanism = values[0]
 			query.Del(key)
 		}
 	}
 	parsed.RawQuery = query.Encode()
 	opts := options.Client().ApplyURI(parsed.String())
+	if cfg.Username != "" {
+		credential := options.Credential{
+			AuthMechanism: authMechanism,
+			AuthSource:    authSource,
+			Username:      cfg.Username,
+			Password:      cfg.Password,
+			PasswordSet:   true,
+		}
+		opts.SetAuth(credential)
+	}
 	if err := opts.Validate(); err != nil {
 		return nil, errors.New("invalid MongoDB connection profile")
 	}

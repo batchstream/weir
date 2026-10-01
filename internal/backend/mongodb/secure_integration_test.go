@@ -25,6 +25,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cfg := Config{URI: fixture.URI, Store: "mongo", Database: fixture.DB, Collection: "records", Pool: 4}
+	cfg = mongoFixtureConfig(t, cfg)
 	adapter, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -52,8 +53,10 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	}
 	for name, uri := range map[string]string{"password": fixture.BadPassURI, "missing": fixture.MissingPassURI, "CA": fixture.BadCAURI, "SAN": fixture.WrongHostURI, "privilege": fixture.DeniedURI} {
 		t.Run(name, func(t *testing.T) {
-			cfg.URI = uri
-			bad, err := Open(ctx, cfg)
+			invalid := cfg
+			invalid.URI = uri
+			invalid = mongoFixtureConfig(t, invalid)
+			bad, err := Open(ctx, invalid)
 			if bad != nil {
 				bad.Close()
 			}
@@ -79,6 +82,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 			uri = fixture.BadCAURI
 		}
 		cfg := Config{URI: uri, Store: "mongo", Database: fixture.DB, Collection: "records", Pool: 1}
+		cfg = mongoFixtureConfig(t, cfg)
 		ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 		start := time.Now()
 		adapter, err := Open(ctx, cfg)
@@ -91,6 +95,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 		}
 	}
 	cfg := Config{URI: fixture.URI, Store: "mongo", Database: fixture.DB, Collection: "records", Pool: 1}
+	cfg = mongoFixtureConfig(t, cfg)
 	for i := 0; i < 4; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		adapter, err := Open(ctx, cfg)
@@ -123,6 +128,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			native, db := backend.Admin, backend.DB
 			proxy := testmongo.StartProxy(t, backend)
 			cfg := Config{URI: proxy.URI(), Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			adapter, err := Open(ctx, cfg)

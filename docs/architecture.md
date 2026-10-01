@@ -185,13 +185,17 @@ timeouts under `transport`, and the hop budget under `forwarding.hop_limit`.
 strings such as `"30s"` or `"5m"`. A required `routing.file` selects the separate
 routing YAML file, containing Services and Routes, including backend connection
 and local scheduler settings. Relative routing paths resolve from the basic file's
-directory. Each service selects inline `local`, inline `remote`, or a nonempty
-`file` path. Service file paths resolve from the routing document's directory;
-absolute paths and symbolic links are supported. Referenced service files contain
-exactly one `local` or `remote` block, with the same adapter and scheduler fields.
-Names and routes remain in the routing document; file references cannot recurse
-or merge with inline settings. All documents require one YAML mapping with exact
-field names and reject unknown fields, duplicate keys, anchors, aliases, merge
+directory. Services select `local` or `remote` settings in that routing document.
+MongoDB credentials and Search `connection` credentials each select direct
+`username`/`password` strings or `username_file`/`password_file` text paths.
+Sources are mutually exclusive per credential and must form a complete pair;
+direct and file sources can be mixed. Credential paths resolve from the routing
+document's directory; absolute paths and ordinary symbolic links are supported.
+The loader removes one final LF or CRLF while preserving spaces, rejects empty
+or invalid UTF-8/control text, and bounds usernames/passwords at 128/256 bytes.
+Credentials are loaded before assembly and passed separately to backend clients;
+MongoDB URIs contain no userinfo. Both YAML documents require one mapping with
+exact field names and reject unknown fields, duplicate keys, anchors, aliases, merge
 keys, explicit tags, trailing documents and inputs over 128 KiB. The
 `config/weir.yaml` basic reference and
 `config/routes.yaml` routing reference document every field's purpose, required
