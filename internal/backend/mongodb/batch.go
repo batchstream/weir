@@ -121,7 +121,13 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 	}
 	selector := bson.D{{Key: "$in", Value: ids}}
 	filter := bson.D{{Key: "_id", Value: selector}}
-	command := bson.D{{Key: "find", Value: a.config.Collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: int32(len(ids))}, {Key: "allowPartialResults", Value: false}}
+	command := bson.D{
+		{Key: "find", Value: a.config.Collection},
+		{Key: "filter", Value: filter},
+		{Key: "limit", Value: int64(len(ids))},
+		{Key: "batchSize", Value: int32(len(ids))},
+		{Key: "allowPartialResults", Value: false},
+	}
 	state := &scanPlan{items: len(ids)}
 	session, err := a.client.StartSession()
 	valid := err == nil
@@ -199,7 +205,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 				stopped = true
 				break
 			}
-			command = bson.D{{Key: "getMore", Value: state.cursor}, {Key: "collection", Value: a.config.Collection}, {Key: "batchSize", Value: int32(len(ids) - received)}}
+			command = bson.D{
+				{Key: "getMore", Value: state.cursor},
+				{Key: "collection", Value: a.config.Collection},
+				{Key: "batchSize", Value: int32(len(ids) - received)},
+			}
 		}
 		valid = valid && state.cursorKnown && state.cursor == 0
 	}
@@ -262,7 +272,13 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 		case "create":
 			op = bson.D{{Key: "insert", Value: int32(0)}, {Key: "document", Value: n.document}}
 		case "put", "replace", "expression":
-			op = bson.D{{Key: "update", Value: int32(0)}, {Key: "filter", Value: filter}, {Key: "updateMods", Value: n.document}, {Key: "multi", Value: false}, {Key: "upsert", Value: n.action == "put"}}
+			op = bson.D{
+				{Key: "update", Value: int32(0)},
+				{Key: "filter", Value: filter},
+				{Key: "updateMods", Value: n.document},
+				{Key: "multi", Value: false},
+				{Key: "upsert", Value: n.action == "put"},
+			}
 		case "delete":
 			op = bson.D{{Key: "delete", Value: int32(0)}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
 		default:
@@ -279,7 +295,15 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 	namespace := bson.D{{Key: "ns", Value: a.config.Database + "." + a.config.Collection}}
 	concern := bson.D{{Key: "w", Value: "majority"}}
 	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(active))}}
-	command := bson.D{{Key: "bulkWrite", Value: int32(1)}, {Key: "ops", Value: ops}, {Key: "nsInfo", Value: bson.A{namespace}}, {Key: "ordered", Value: false}, {Key: "errorsOnly", Value: false}, {Key: "cursor", Value: cursorOpts}, {Key: "writeConcern", Value: concern}}
+	command := bson.D{
+		{Key: "bulkWrite", Value: int32(1)},
+		{Key: "ops", Value: ops},
+		{Key: "nsInfo", Value: bson.A{namespace}},
+		{Key: "ordered", Value: false},
+		{Key: "errorsOnly", Value: false},
+		{Key: "cursor", Value: cursorOpts},
+		{Key: "writeConcern", Value: concern},
+	}
 	state := &writeBatch{plans: active, results: make([]*pb.MutationResult, len(active))}
 	session, err := a.client.StartSession()
 	if err != nil {
@@ -301,7 +325,11 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 	}
 	valid := state.reply(raw, true)
 	for page := 1; valid && state.cursor.cursor != 0 && page < len(active); page++ {
-		command = bson.D{{Key: "getMore", Value: state.cursor.cursor}, {Key: "collection", Value: "$cmd.bulkWrite"}, {Key: "batchSize", Value: int32(len(active) - state.received)}}
+		command = bson.D{
+			{Key: "getMore", Value: state.cursor.cursor},
+			{Key: "collection", Value: "$cmd.bulkWrite"},
+			{Key: "batchSize", Value: int32(len(active) - state.received)},
+		}
 		attempt, release := nativeAttemptContext(ctx)
 		raw, err = a.client.Database("admin").RunCommand(attempt, command).Raw()
 		release()

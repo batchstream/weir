@@ -41,9 +41,16 @@ def secret_path(name):
 
 
 def allowed(name):
-    return name in ('go.mod', 'go.sum', 'README.md') or name.startswith('deploy/docker/') or (
-        name.endswith('.go') and not name.endswith('_test.go') and
-        name.startswith(('api/', 'internal/', 'cmd/weir/')) and not name.startswith('internal/testutil/'))
+    return (
+        name in ('go.mod', 'go.sum', 'README.md', 'config.example.yaml', 'routes.example.yaml')
+        or name.startswith('deploy/docker/')
+        or (
+            name.endswith('.go')
+            and not name.endswith('_test.go')
+            and name.startswith(('api/', 'internal/', 'cmd/weir/'))
+            and not name.startswith('internal/testutil/')
+        )
+    )
 
 
 def source_files(root, revision, *, qualification=False):
@@ -265,10 +272,14 @@ def build_once(opts):
         binary_hashes[target] = sha(binary.read_bytes())
         if qualification:
             continue
-        members = {binary.name: (binary.read_bytes(), 0o755),
-                   'README.md': ((source / 'README.md').read_bytes(), 0o644),
-                   'node.example.json': ((source / 'deploy/docker/node.example.json').read_bytes(), 0o644),
-                   'routes.example.json': ((source / 'deploy/docker/routes.example.json').read_bytes(), 0o644)}
+        members = {
+            binary.name: (binary.read_bytes(), 0o755),
+            'README.md': ((source / 'README.md').read_bytes(), 0o644),
+            'node.example.yaml': ((source / 'deploy/docker/node.example.yaml').read_bytes(), 0o644),
+            'routes.example.yaml': ((source / 'deploy/docker/routes.example.yaml').read_bytes(), 0o644),
+            'reference/config.example.yaml': ((source / 'config.example.yaml').read_bytes(), 0o644),
+            'reference/routes.example.yaml': ((source / 'routes.example.yaml').read_bytes(), 0o644),
+        }
         if system == 'darwin':
             for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
                 members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)

@@ -21,18 +21,22 @@ type bulkIndex struct {
 	original uint64
 	read     bool
 }
+
 type bulkReject struct {
 	result *pb.BulkResult
 	ack    chan struct{}
 }
+
 type bulkResponse struct {
 	frame *pb.BulkResponseFrame
 	err   error
 }
+
 type bulkInput struct {
 	frame *pb.BulkRequestFrame
 	err   error
 }
+
 type bulkRelay struct {
 	cause               error
 	ctx                 context.Context
@@ -82,7 +86,20 @@ func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFram
 	if err != nil {
 		return err
 	}
-	relay := &bulkRelay{ctx: ctx, cancel: cancel, upstream: upstream, downstream: downstream, delivery: d, name: name, indexes: make(map[uint64]bulkIndex), credit: make(chan struct{}, relayOutstanding), requests: make(chan struct{}), inputs: make(chan bulkInput), invalid: make(chan bulkReject), uploadDone: make(chan struct{})}
+	relay := &bulkRelay{
+		ctx:        ctx,
+		cancel:     cancel,
+		upstream:   upstream,
+		downstream: downstream,
+		delivery:   d,
+		name:       name,
+		indexes:    make(map[uint64]bulkIndex),
+		credit:     make(chan struct{}, relayOutstanding),
+		requests:   make(chan struct{}),
+		inputs:     make(chan bulkInput),
+		invalid:    make(chan bulkReject),
+		uploadDone: make(chan struct{}),
+	}
 	inputDone := make(chan struct{})
 	d.mu.Lock()
 	d.nativePump = inputDone
@@ -114,7 +131,11 @@ func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFram
 			}
 		}
 	}()
-	defer func() { cancel(); <-relay.uploadDone; <-responseDone }()
+	defer func() {
+		cancel()
+		<-relay.uploadDone
+		<-responseDone
+	}()
 	demand <- struct{}{}
 	var delivered uint64
 	var terminal *pb.BulkResponseFrame
@@ -139,7 +160,11 @@ func (s *Server) remoteBulk(upstream grpc.BidiStreamingServer[pb.BulkRequestFram
 				<-relay.uploadDone
 				relay.mu.Lock()
 				end := terminal.GetEnd()
-				valid := relay.halfClosed && len(relay.indexes) == 0 && end.ReceivedCount == relay.forwarded && end.ResultCount == relay.forwarded && delivered == relay.received
+				valid := relay.halfClosed &&
+					len(relay.indexes) == 0 &&
+					end.ReceivedCount == relay.forwarded &&
+					end.ResultCount == relay.forwarded &&
+					delivered == relay.received
 				received, draining := relay.received, relay.drain
 				relay.mu.Unlock()
 				if !valid {
@@ -209,6 +234,7 @@ func (r *bulkRelay) readInput(done chan<- struct{}) {
 		}
 	}
 }
+
 func (s *Server) uploadBulk(r *bulkRelay) {
 	defer close(r.uploadDone)
 	for {
@@ -275,7 +301,10 @@ func (s *Server) uploadBulk(r *bulkRelay) {
 		r.received++
 		r.mu.Unlock()
 		if failure != nil {
-			rejected := bulkReject{result: protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, failure), ack: make(chan struct{})}
+			rejected := bulkReject{
+				result: protocol.ResultError(op, pb.MutationOutcome_NOT_STARTED, failure),
+				ack:    make(chan struct{}),
+			}
 			select {
 			case <-r.ctx.Done():
 				return
@@ -302,6 +331,7 @@ func (s *Server) uploadBulk(r *bulkRelay) {
 		}
 	}
 }
+
 func (r *bulkRelay) finishInput(draining bool) {
 	r.mu.Lock()
 	r.halfClosed = true
@@ -316,6 +346,7 @@ func (r *bulkRelay) fail(err error) {
 	r.mu.Unlock()
 	r.cancel()
 }
+
 func (r *bulkRelay) failure(err error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

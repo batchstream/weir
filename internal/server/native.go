@@ -33,7 +33,14 @@ func (s *Server) Native(stream grpc.BidiStreamingServer[pb.NativeRequestFrame, p
 	if !ok {
 		return status.Error(codes.Internal, "missing HTTP/2 delivery lifetime")
 	}
-	duplex := &nativeStream{stream: stream, delivery: delivery, stop: make(chan struct{}), requests: make(chan struct{}), received: make(chan nativeReceive, 1), done: make(chan struct{})}
+	duplex := &nativeStream{
+		stream:   stream,
+		delivery: delivery,
+		stop:     make(chan struct{}),
+		requests: make(chan struct{}),
+		received: make(chan nativeReceive, 1),
+		done:     make(chan struct{}),
+	}
 	defer delivery.beginResponse()
 	defer duplex.Close()
 	delivery.nativeRead(true)
@@ -102,6 +109,7 @@ func (s *nativeStream) receive() {
 		}
 	}
 }
+
 func (s *nativeStream) Read(dst []byte) (int, error) {
 	select {
 	case <-s.stop:
@@ -159,21 +167,25 @@ func (s *nativeStream) Read(dst []byte) (int, error) {
 	s.chunk = s.chunk[n:]
 	return n, nil
 }
+
 func (s *nativeStream) Close() error {
 	s.once.Do(func() { close(s.stop) })
 	s.delivery.nativeRead(false)
 	return nil
 }
+
 func (s *nativeStream) Head(head *pb.NativeHead) error {
 	variant := &pb.NativeResponseFrame_Head{Head: head}
 	frame := &pb.NativeResponseFrame{Frame: variant}
 	return s.stream.Send(frame)
 }
+
 func (s *nativeStream) Chunk(raw []byte) error {
 	variant := &pb.NativeResponseFrame_Chunk{Chunk: raw}
 	frame := &pb.NativeResponseFrame{Frame: variant}
 	return s.stream.Send(frame)
 }
+
 func (s *nativeStream) Interrupt() {
 	d := s.delivery
 	d.mu.Lock()
@@ -199,6 +211,7 @@ func (d *delivery) nativeRead(waiting bool) {
 	d.readDeadline = deadline
 	_ = d.controller.SetReadDeadline(deadline)
 }
+
 func minTime(a, b time.Time) time.Time {
 	if a.Before(b) {
 		return a

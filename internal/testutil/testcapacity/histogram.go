@@ -11,6 +11,7 @@ type Histogram struct {
 	Counts [1191]uint64
 	MaxNS  int64
 }
+
 type Bucket struct {
 	UpperUS int64  `json:"upper_us"`
 	Count   uint64 `json:"count"`
@@ -28,6 +29,7 @@ func upper(i int) int64 {
 	}
 	return -1
 }
+
 func (h *Histogram) Add(d time.Duration) {
 	n := d.Nanoseconds()
 	if n < 0 {
@@ -51,6 +53,7 @@ func (h *Histogram) Add(d time.Duration) {
 	}
 	h.Counts[i]++
 }
+
 func (h *Histogram) Merge(other Histogram) {
 	for i, n := range other.Counts {
 		h.Counts[i] += n
@@ -59,6 +62,7 @@ func (h *Histogram) Merge(other Histogram) {
 		h.MaxNS = other.MaxNS
 	}
 }
+
 func (h Histogram) Percentile(p uint64) int64 {
 	var total uint64
 	for _, n := range h.Counts {
@@ -77,6 +81,7 @@ func (h Histogram) Percentile(p uint64) int64 {
 	}
 	return -1
 }
+
 func (h Histogram) MarshalJSON() ([]byte, error) {
 	buckets := make([]Bucket, 0, 64)
 	for i, n := range h.Counts {

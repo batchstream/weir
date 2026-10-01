@@ -1,0 +1,8 @@
+listeners:
+  application: "127.0.0.1:7447"
+
+forwarding:
+  hop_limit: 4
+
+routing:
+  file: "peer-a.routes.yaml"

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/testutil"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -31,6 +31,7 @@ func remoteConfig(t *testing.T) Config {
 	cfg.Routing.Routes = []Route{route}
 	return cfg
 }
+
 func TestConfigurationValidation(t *testing.T) {
 	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "overflow", "zero-session"} {
 		t.Run(mode, func(t *testing.T) {
@@ -97,7 +98,12 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	node, err := Open(ctx, cfg)
-	if node != nil || err == nil || !strings.Contains(err.Error(), "MongoDB replica-set qualification failed") || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), address) || strings.Contains(err.Error(), "mongodb://") {
+	if node != nil ||
+		err == nil ||
+		!strings.Contains(err.Error(), "MongoDB replica-set qualification failed") ||
+		strings.Contains(err.Error(), "sentinel") ||
+		strings.Contains(err.Error(), address) ||
+		strings.Contains(err.Error(), "mongodb://") {
 		t.Fatal("startup exposed a driver connection error or lost its qualification reason", err)
 	}
 }
@@ -169,7 +175,15 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 			t.Fatal(listener, err)
 		}
 	}
-	for _, listener := range []string{":7447", "localhost:7447", "127.0.0.1:-1", "127.0.0.1:+1", "127.0.0.1:65536", "127.0.0.1:", "[invalid]:7447"} {
+	for _, listener := range []string{
+		":7447",
+		"localhost:7447",
+		"127.0.0.1:-1",
+		"127.0.0.1:+1",
+		"127.0.0.1:65536",
+		"127.0.0.1:",
+		"[invalid]:7447",
+	} {
 		cfg := remoteConfig(t)
 		cfg.Basic.Listeners.Application = listener
 		if err := cfg.Validate(); err == nil {
@@ -197,22 +211,22 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 
 func TestRemovedAuthenticationFieldsAreUnknown(t *testing.T) {
 	cfg := remoteConfig(t)
-	cfg.Basic.Routing.File = "routing.json"
-	basic, err := json.Marshal(cfg.Basic)
+	cfg.Basic.Routing.File = "routing.yaml"
+	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"identity", "allow", "lua_worker"} {
-		input := `{"` + field + `":null,` + string(basic[1:])
+		input := field + ": unknown\n" + string(basic)
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 			t.Fatal("legacy field accepted", field)
 		}
 	}
-	routing, err := json.Marshal(cfg.Routing)
+	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := strings.Replace(string(routing), `"remote":{`, `"remote":{"server_name":"obsolete",`, 1)
+	input := strings.Replace(string(routing), "remote:\n", "remote:\n            server_name: obsolete\n", 1)
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("legacy remote identity accepted")
 	}
@@ -262,7 +276,7 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 }
 
 func TestCurrentPeerExamples(t *testing.T) {
-	for _, name := range []string{"peer-a.json", "peer-b.json"} {
+	for _, name := range []string{"peer-a.yaml", "peer-b.yaml"} {
 		filename := filepath.Join(testutil.Root(t), "examples", name)
 		if _, err := Load(filename); err != nil {
 			t.Fatal(name, err)
@@ -272,15 +286,25 @@ func TestCurrentPeerExamples(t *testing.T) {
 
 func TestRemoteEndpointListConfiguration(t *testing.T) {
 	cfg := remoteConfig(t)
-	raw, err := json.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input := strings.Replace(string(raw), `"endpoints":["127.0.0.1:1"]`, `"endpoint":"127.0.0.1:1"`, 1)
+	input := `services:
+  - name: remote
+    remote:
+      endpoint: 127.0.0.1:1
+      max_concurrency: 2
+routes:
+  - store: records
+    service: remote
+`
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("legacy endpoint accepted", err)
 	}
-	for _, endpoints := range [][]string{nil, {}, {"peer:1", "PEER.:01"}, {"dns:///peer:1"}, {"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"}} {
+	for _, endpoints := range [][]string{
+		nil,
+		{},
+		{"peer:1", "PEER.:01"},
+		{"dns:///peer:1"},
+		{"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"},
+	} {
 		cfg.Routing.Services[0].Remote.Endpoints = endpoints
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("invalid endpoint list accepted", endpoints)

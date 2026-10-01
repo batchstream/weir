@@ -14,6 +14,7 @@ import (
 
 const maxLevels = 32
 const maxMountBytes = 128 << 10
+
 const maxCgroupBytes = 16 << 10
 
 var errProfile = errors.New("unsupported memory profile")

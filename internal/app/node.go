@@ -53,26 +53,35 @@ func (n *Node) Start(startup context.Context) error {
 		if n.startErr = startup.Err(); n.startErr != nil {
 			return
 		}
+
 		n.started = true
 		ctx, cancel := context.WithCancel(context.Background())
 		n.stopGuard = cancel
 		n.guardDone = make(chan struct{})
-		go func() { defer close(n.guardDone); n.guard.Run(ctx) }()
+		go func() {
+			defer close(n.guardDone)
+			n.guard.Run(ctx)
+		}()
+
 		for i, srv := range n.servers {
 			listener := n.listeners[i]
 			n.serving.Go(func() { n.listenerEnded(srv.Serve(listener)) })
 			<-srv.Serving()
 		}
+
 		if n.diagnostics != nil {
 			n.serving.Go(func() { n.listenerEnded(n.diagnostics.serve()) })
 		}
+
 		if n.startErr = startup.Err(); n.startErr != nil {
 			return
 		}
 		n.state = "serving"
 	})
+
 	return n.startErr
 }
+
 func (n *Node) Addresses() []string {
 	addresses := make([]string, len(n.listeners))
 	for i, listener := range n.listeners {
@@ -80,10 +89,12 @@ func (n *Node) Addresses() []string {
 	}
 	return addresses
 }
+
 func (n *Node) Close(ctx context.Context) error {
 	n.once.Do(func() {
 		drain, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+
 		n.mu.Lock()
 		n.closed = true
 		n.state = "draining"
@@ -91,6 +102,7 @@ func (n *Node) Close(ctx context.Context) error {
 		n.drains.Inc()
 		n.admission.BeginDrain()
 		n.mu.Unlock()
+
 		if n.stopGuard != nil {
 			n.stopGuard()
 			<-n.guardDone
@@ -98,6 +110,7 @@ func (n *Node) Close(ctx context.Context) error {
 		for _, runtime := range n.runtimes {
 			runtime.BeginDrain()
 		}
+
 		finished := make(chan error, len(n.servers)+len(n.runtimes))
 		for _, srv := range n.servers {
 			go func() { finished <- srv.Shutdown(drain) }()
@@ -108,12 +121,14 @@ func (n *Node) Close(ctx context.Context) error {
 		for range len(n.servers) + len(n.runtimes) {
 			n.closeErr = errors.Join(n.closeErr, <-finished)
 		}
+
 		for _, listener := range n.listeners {
 			_ = listener.Close()
 		}
 		for _, remote := range n.remotes {
 			n.closeErr = errors.Join(n.closeErr, remote.Close())
 		}
+
 		n.drainDuration.Observe(time.Since(started).Seconds())
 		n.mu.Lock()
 		n.state = "closed"
@@ -121,6 +136,7 @@ func (n *Node) Close(ctx context.Context) error {
 		n.closeDiagnostics()
 		n.serving.Wait()
 	})
+
 	return n.closeErr
 }
 
@@ -129,6 +145,7 @@ func (n *Node) ready() bool {
 	defer n.mu.Unlock()
 	return n.state == "serving"
 }
+
 func (n *Node) listenerEnded(err error) {
 	n.mu.Lock()
 	if !n.closed {

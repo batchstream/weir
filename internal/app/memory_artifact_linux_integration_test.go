@@ -82,7 +82,11 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	} else {
 		difference = oracle - rss
 	}
-	if rss == 0 || difference > 8<<20 || testmetrics.Sum(metrics, "weir_memory_unknown") != 0 || testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 || testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != 512<<20 {
+	if rss == 0 ||
+		difference > 8<<20 ||
+		testmetrics.Sum(metrics, "weir_memory_unknown") != 0 ||
+		testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 ||
+		testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != 512<<20 {
 		t.Fatal("Linux memory observation", rss, oracle)
 	}
 	labels = map[string]string{"source": "darwin_phys_footprint"}
@@ -94,5 +98,12 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	if time.Since(start) > 3*time.Second {
 		t.Fatal("exact Linux close bound")
 	}
-	t.Logf("exact source=%s PID=%d RSS=%d smaps=%d cgroup=512MiB; Read/Mutate/Bulk and SIGTERM=%s; mixed owned Darwin Mongo", source, p.command.Process.Pid, rss, oracle, time.Since(start))
+	t.Logf(
+		"exact source=%s PID=%d RSS=%d smaps=%d cgroup=512MiB; Read/Mutate/Bulk and SIGTERM=%s; mixed owned Darwin Mongo",
+		source,
+		p.command.Process.Pid,
+		rss,
+		oracle,
+		time.Since(start),
+	)
 }

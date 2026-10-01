@@ -21,16 +21,50 @@ type runtimeMetrics struct {
 var durationBuckets = []float64{.001, .01, .1, 1, 10}
 
 func newRuntimeMetrics() runtimeMetrics {
-	recordOpts := prometheus.CounterOpts{Name: "weir_store_records_total", Help: "Admitted record terminal evidence; not delivery receipts."}
-	execOpts := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Physical adapter invocations, once per batch, fetch or Native exchange."}
-	rejectOpts := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Local admission/preparation denial decisions; excludes Bulk capacity denials."}
-	changeOpts := prometheus.CounterOpts{Name: "weir_store_window_changes_total", Help: "Actual AIMD window increases or decreases; excludes stale feedback and reductions at C=1."}
-	nativeOpts := prometheus.CounterOpts{Name: "weir_store_native_completions_total", Help: "Admitted Native completion observed locally, not client acknowledgement."}
-	scanOpts := prometheus.CounterOpts{Name: "weir_store_scan_terminations_total", Help: "Admitted local Scan traversal evidence after cursor cleanup, not delivery."}
-	queueOpts := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from admission/continuation readiness to dispatch per dispatched item.", Buckets: durationBuckets}
-	durationOpts := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Record batch or Scan fetch adapter call duration; excludes client delivery.", Buckets: durationBuckets}
-	batchOpts := prometheus.HistogramOpts{Name: "weir_store_record_batch_operations", Help: "Logical record operations per physical record adapter invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
-	exchangeOpts := prometheus.HistogramOpts{Name: "weir_store_native_exchange_seconds", Help: "Native adapter exchange including upload, backend I/O and response delivery; not backend latency.", Buckets: durationBuckets}
+	recordOpts := prometheus.CounterOpts{
+		Name: "weir_store_records_total",
+		Help: "Admitted record terminal evidence; not delivery receipts.",
+	}
+	execOpts := prometheus.CounterOpts{
+		Name: "weir_store_executions_total",
+		Help: "Physical adapter invocations, once per batch, fetch or Native exchange.",
+	}
+	rejectOpts := prometheus.CounterOpts{
+		Name: "weir_store_rejections_total",
+		Help: "Local admission/preparation denial decisions; excludes Bulk capacity denials.",
+	}
+	changeOpts := prometheus.CounterOpts{
+		Name: "weir_store_window_changes_total",
+		Help: "Actual AIMD window increases or decreases; excludes stale feedback and reductions at C=1.",
+	}
+	nativeOpts := prometheus.CounterOpts{
+		Name: "weir_store_native_completions_total",
+		Help: "Admitted Native completion observed locally, not client acknowledgement.",
+	}
+	scanOpts := prometheus.CounterOpts{
+		Name: "weir_store_scan_terminations_total",
+		Help: "Admitted local Scan traversal evidence after cursor cleanup, not delivery.",
+	}
+	queueOpts := prometheus.HistogramOpts{
+		Name:    "weir_store_queue_wait_seconds",
+		Help:    "Time from admission/continuation readiness to dispatch per dispatched item.",
+		Buckets: durationBuckets,
+	}
+	durationOpts := prometheus.HistogramOpts{
+		Name:    "weir_store_execution_seconds",
+		Help:    "Record batch or Scan fetch adapter call duration; excludes client delivery.",
+		Buckets: durationBuckets,
+	}
+	batchOpts := prometheus.HistogramOpts{
+		Name:    "weir_store_record_batch_operations",
+		Help:    "Logical record operations per physical record adapter invocation.",
+		Buckets: []float64{1, 2, 4, 8, 16, 128},
+	}
+	exchangeOpts := prometheus.HistogramOpts{
+		Name:    "weir_store_native_exchange_seconds",
+		Help:    "Native adapter exchange including upload, backend I/O and response delivery; not backend latency.",
+		Buckets: durationBuckets,
+	}
 	m := runtimeMetrics{
 		records:    prometheus.NewCounterVec(recordOpts, []string{"operation", "outcome"}),
 		executions: prometheus.NewCounterVec(execOpts, []string{"kind"}),
@@ -73,19 +107,35 @@ func newRuntimeMetrics() runtimeMetrics {
 // Collect takes one short ledger snapshot. Encoding and channel sends are outside
 // the Runtime lock. Different Stores do not form an atomic process snapshot.
 func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
+
 func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	s := r.Snapshot()
 	values := map[string]float64{
-		"pending_entries": float64(s.Pending), "pending_reserved_bytes": float64(s.PendingBytes),
-		"result_reserved_entries": float64(s.Retained), "result_reserved_bytes": float64(s.ResultBytes),
-		"retained_results": float64(s.Ready), "retained_result_reserved_bytes": float64(s.ReadyBytes), "active_executions": float64(s.Active), "window": float64(s.Window),
-		"live_sessions": float64(s.LiveSessions), "scan_sessions": float64(s.ScanSessions), "native_sessions": float64(s.NativeSessions),
-		"scan_page_reserved_bytes": float64(s.ScanPageBytes), "native_reserved_bytes": float64(s.NativeBytes),
-		"scan_pages": float64(s.ScanPages), "scan_cleanups": float64(s.ScanCleanups),
-		"pending_entries_limit": float64(r.limits.PendingOperations), "pending_reserved_bytes_limit": float64(r.limits.PendingBytes),
-		"result_reserved_entries_limit": float64(r.limits.ResultOperations), "result_reserved_bytes_limit": float64(r.limits.ResultBytes),
-		"window_limit": float64(r.limits.Concurrency), "live_sessions_limit": 1,
-		"cooldown": boolValue(s.Cooldown), "draining": boolValue(s.Draining), "closed": boolValue(s.Closed), "overloaded": boolValue(s.Overloaded),
+		"pending_entries":                float64(s.Pending),
+		"pending_reserved_bytes":         float64(s.PendingBytes),
+		"result_reserved_entries":        float64(s.Retained),
+		"result_reserved_bytes":          float64(s.ResultBytes),
+		"retained_results":               float64(s.Ready),
+		"retained_result_reserved_bytes": float64(s.ReadyBytes),
+		"active_executions":              float64(s.Active),
+		"window":                         float64(s.Window),
+		"live_sessions":                  float64(s.LiveSessions),
+		"scan_sessions":                  float64(s.ScanSessions),
+		"native_sessions":                float64(s.NativeSessions),
+		"scan_page_reserved_bytes":       float64(s.ScanPageBytes),
+		"native_reserved_bytes":          float64(s.NativeBytes),
+		"scan_pages":                     float64(s.ScanPages),
+		"scan_cleanups":                  float64(s.ScanCleanups),
+		"pending_entries_limit":          float64(r.limits.PendingOperations),
+		"pending_reserved_bytes_limit":   float64(r.limits.PendingBytes),
+		"result_reserved_entries_limit":  float64(r.limits.ResultOperations),
+		"result_reserved_bytes_limit":    float64(r.limits.ResultBytes),
+		"window_limit":                   float64(r.limits.Concurrency),
+		"live_sessions_limit":            1,
+		"cooldown":                       boolValue(s.Cooldown),
+		"draining":                       boolValue(s.Draining),
+		"closed":                         boolValue(s.Closed),
+		"overloaded":                     boolValue(s.Overloaded),
 	}
 	for name, value := range values {
 		desc := prometheus.NewDesc("weir_store_"+name, "Local ledger state/limit; byte values are reservations, not heap or RSS.", nil, nil)
@@ -99,11 +149,23 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		collector.Collect(ch)
 	}
 	m := &r.metrics
-	collectors := []prometheus.Collector{m.records, m.executions, m.rejections, m.changes, m.native, m.scans, m.queue, m.duration, m.batch, m.exchange}
+	collectors := []prometheus.Collector{
+		m.records,
+		m.executions,
+		m.rejections,
+		m.changes,
+		m.native,
+		m.scans,
+		m.queue,
+		m.duration,
+		m.batch,
+		m.exchange,
+	}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}
 }
+
 func boolValue(value bool) float64 {
 	if value {
 		return 1
@@ -122,6 +184,7 @@ func (r *Runtime) observeLocked(b *batch, fb execution.Feedback) {
 		r.metrics.changes.WithLabelValues("decrease").Inc()
 	}
 }
+
 func (r *Runtime) terminalLocked(t *Ticket, result *pb.BulkResult) {
 	if t.plan.Native {
 		label := "invalid"

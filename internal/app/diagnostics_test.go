@@ -38,6 +38,7 @@ func diagnosticNode(t *testing.T) *Node {
 	})
 	return node
 }
+
 func health(t *testing.T, node *Node, path string) int {
 	t.Helper()
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -49,6 +50,7 @@ func health(t *testing.T, node *Node, path string) int {
 	_, _ = io.Copy(io.Discard, response.Body)
 	return response.StatusCode
 }
+
 func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	n := diagnosticNode(t)
 	second := diagnosticNode(t)
@@ -147,6 +149,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		t.Fatal("diagnostics remained open")
 	}
 }
+
 func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 	n := diagnosticNode(t)
 	n.Start(context.Background())
@@ -187,6 +190,7 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 		t.Fatal("unknown route counter")
 	}
 }
+
 func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 	for _, address := range []string{"localhost:1", ":0", "0.0.0.0:0", "[::]:0", "192.0.2.1:1"} {
 		cfg := remoteConfig(t)
@@ -235,7 +239,10 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		t.Fatal("slow headers retained connections")
 	}
 	// Oversized headers and body-bearing requests are bounded by the same path.
-	for _, raw := range []string{"GET /metrics HTTP/1.1\r\nHost: local\r\nBig: " + strings.Repeat("x", 16<<10) + "\r\n\r\n", "POST /metrics HTTP/1.1\r\nHost: local\r\nContent-Length: 1000000000\r\n\r\n"} {
+	for _, raw := range []string{
+		"GET /metrics HTTP/1.1\r\nHost: local\r\nBig: " + strings.Repeat("x", 16<<10) + "\r\n\r\n",
+		"POST /metrics HTTP/1.1\r\nHost: local\r\nContent-Length: 1000000000\r\n\r\n",
+	} {
 		conn, err := net.Dial("tcp", n.DiagnosticAddress())
 		if err != nil {
 			t.Fatal(err)
@@ -307,6 +314,7 @@ func TestIntranetDiagnosticsRequireExplicitOptIn(t *testing.T) {
 		t.Fatal("wildcard diagnostic listener did not serve bounded metrics")
 	}
 }
+
 func TestDiagnosticsScrapeCloseRace(t *testing.T) {
 	n := diagnosticNode(t)
 	n.Start(context.Background())
@@ -343,6 +351,7 @@ func (l *smallSendListener) Accept() (net.Conn, error) {
 	}
 	return conn, nil
 }
+
 func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	cfg := remoteConfig(t)
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"

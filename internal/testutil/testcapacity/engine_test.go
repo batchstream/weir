@@ -29,7 +29,12 @@ func TestOpenLoopFullSlotsTimeoutAndCancellation(t *testing.T) {
 	opts := TrialOptions{Rate: 1000, Seconds: 1, Workers: 1, Prefix: "test"}
 	started := time.Now()
 	trial, err := runTrial(context.Background(), c, opts)
-	if err != nil || trial.Measure.All.Planned != 1000 || trial.Measure.All.Drop < 900 || trial.Measure.All.Completed+trial.Measure.All.Drop != 1000 || trial.Measure.All.Arrival.MaxNS < int64(900*time.Millisecond) || time.Since(started) > 2500*time.Millisecond {
+	if err != nil ||
+		trial.Measure.All.Planned != 1000 ||
+		trial.Measure.All.Drop < 900 ||
+		trial.Measure.All.Completed+trial.Measure.All.Drop != 1000 ||
+		trial.Measure.All.Arrival.MaxNS < int64(900*time.Millisecond) ||
+		time.Since(started) > 2500*time.Millisecond {
 		t.Fatal(trial.Measure.All, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -78,7 +83,18 @@ func TestWriteOnlyTimingLedgerAndSuccessLatency(t *testing.T) {
 
 func TestMaximumDispersedTrialEvidenceBound(t *testing.T) {
 	var m Metrics
-	histograms := []*Histogram{&m.Wake, &m.Decision, &m.Construct, &m.Handoff, &m.WorkerStart, &m.SuccessArrival, &m.SuccessDispatch, &m.Arrival, &m.Dispatch, &m.Lag}
+	histograms := []*Histogram{
+		&m.Wake,
+		&m.Decision,
+		&m.Construct,
+		&m.Handoff,
+		&m.WorkerStart,
+		&m.SuccessArrival,
+		&m.SuccessDispatch,
+		&m.Arrival,
+		&m.Dispatch,
+		&m.Lag,
+	}
 	for _, histogram := range histograms {
 		for i := range histogram.Counts {
 			histogram.Counts[i] = 1
@@ -126,7 +142,13 @@ func TestDueAndCancelledTimingConservation(t *testing.T) {
 		}
 		return n
 	}
-	if m.Due != 1000 || m.CancelledFuture != 0 || count(m.Wake) != 1000 || count(m.Decision) != 1000 || count(m.Construct) != 1000 || count(m.Handoff) != m.Started+m.WorkerExpired || count(m.Lag) != m.Started {
+	if m.Due != 1000 ||
+		m.CancelledFuture != 0 ||
+		count(m.Wake) != 1000 ||
+		count(m.Decision) != 1000 ||
+		count(m.Construct) != 1000 ||
+		count(m.Handoff) != m.Started+m.WorkerExpired ||
+		count(m.Lag) != m.Started {
 		t.Fatal("timing count identity", m.Planned, m.Due, m.Started, m.Drop)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

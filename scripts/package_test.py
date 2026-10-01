@@ -37,7 +37,16 @@ class PackageTests(unittest.TestCase):
         for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
             self.assertFalse(package.allowed(name), name)
         self.assertFalse(package.allowed('cmd/weir-lua-worker/main.go'))
-        for name in ('README.md', 'deploy/docker/Dockerfile', 'deploy/docker/node.example.json', 'deploy/docker/routes.example.json', 'deploy/docker/licenses/purego-NOTICE.txt'):
+        included = (
+            'README.md',
+            'config.example.yaml',
+            'routes.example.yaml',
+            'deploy/docker/Dockerfile',
+            'deploy/docker/node.example.yaml',
+            'deploy/docker/routes.example.yaml',
+            'deploy/docker/licenses/purego-NOTICE.txt',
+        )
+        for name in included:
             self.assertTrue(package.allowed(name), name)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -118,8 +127,10 @@ class PackageTests(unittest.TestCase):
                     'deploy/docker/Dockerfile': b'product Dockerfile',
                     'scripts/qualification.Dockerfile': b'qualification Dockerfile',
                     'README.md': b'fixture docs',
-                    'deploy/docker/node.example.json': b'{}',
-                    'deploy/docker/routes.example.json': b'{"services":[],"routes":[]}',
+                    'config.example.yaml': b'listeners:\n  application: 127.0.0.1:7447\nrouting:\n  file: routes.example.yaml\n',
+                    'routes.example.yaml': b'services: []\nroutes: []\n',
+                    'deploy/docker/node.example.yaml': b'listeners:\n  application: 127.0.0.1:7447\nrouting:\n  file: routes.example.yaml\n',
+                    'deploy/docker/routes.example.yaml': b'services: []\nroutes: []\n',
                 }
 
                 def run(args, *, cwd=None, env=None):
@@ -161,8 +172,14 @@ class PackageTests(unittest.TestCase):
                 if not qualification:
                     archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
                     with tarfile.open(archive_path) as archive:
-                        for config in ('node.example.json', 'routes.example.json'):
-                            self.assertEqual(archive.extractfile(config).read(), inputs['deploy/docker/' + config])
+                        configurations = {
+                            'node.example.yaml': 'deploy/docker/node.example.yaml',
+                            'routes.example.yaml': 'deploy/docker/routes.example.yaml',
+                            'reference/config.example.yaml': 'config.example.yaml',
+                            'reference/routes.example.yaml': 'routes.example.yaml',
+                        }
+                        for filename, source_path in configurations.items():
+                            self.assertEqual(archive.extractfile(filename).read(), inputs[source_path])
                 receipt.assert_called_once()
                 docker.assert_called_once()
 

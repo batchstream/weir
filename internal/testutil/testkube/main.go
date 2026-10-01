@@ -28,6 +28,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 func run() error {
 	mode := flag.String("mode", "idle", "bounded owned fixture phase")
 	id := flag.String("id", "smoke", "unique operation suffix")
@@ -80,7 +81,14 @@ func run() error {
 		_, _, err := admin(ctx, "POST", "/records/_refresh", "")
 		return err
 	}
-	connection, err := grpc.NewClient(*target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0)))
+	connection, err := grpc.NewClient(
+		*target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithNoProxy(),
+		grpc.WithDisableRetry(),
+		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0)),
+	)
 	if err != nil {
 		return err
 	}

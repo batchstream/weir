@@ -31,6 +31,7 @@ type searchBudgetExecutor struct {
 	concurrency int
 	locals      int
 }
+
 type searchBudgetStart struct {
 	binary      string
 	fixture     *testsearch.SecureFixture
@@ -44,7 +45,12 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 	b := opts.fixture.Backend
 	proxy := startSearchBudgetProxy(t, opts.fixture, opts.observation)
 	connection := &search.Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
-	backend := &Search{URL: "https://" + proxy.listener.Addr().String(), Index: b.Index, Profile: b.Profile, Connection: connection}
+	backend := &Search{
+		URL:        "https://" + proxy.listener.Addr().String(),
+		Index:      b.Index,
+		Profile:    b.Profile,
+		Connection: connection,
+	}
 	local := &Local{Search: backend, MaxConcurrency: opts.concurrency, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}
@@ -58,16 +64,33 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 		cfg.Routing.Routes = append(cfg.Routing.Routes, secondRoute)
 	}
 	p := startProcess(t, opts.binary, cfg)
-	e := &searchBudgetExecutor{process: p, client: endpointProcessClient(t, p.address), proxy: proxy, root: "weir://records/" + b.Index, concurrency: opts.concurrency, locals: len(cfg.Routing.Services)}
-	t.Logf("start time=%s PID=%d C=%d extra-local=%t application=%s diagnostics=%s", time.Now().UTC().Format(time.RFC3339Nano), p.command.Process.Pid, opts.concurrency, opts.extra, p.address, p.diagnostic)
+	e := &searchBudgetExecutor{
+		process:     p,
+		client:      endpointProcessClient(t, p.address),
+		proxy:       proxy,
+		root:        "weir://records/" + b.Index,
+		concurrency: opts.concurrency,
+		locals:      len(cfg.Routing.Services),
+	}
+	t.Logf(
+		"start time=%s PID=%d C=%d extra-local=%t application=%s diagnostics=%s",
+		time.Now().UTC().Format(time.RFC3339Nano),
+		p.command.Process.Pid,
+		opts.concurrency,
+		opts.extra,
+		p.address,
+		p.diagnostic,
+	)
 	return e
 }
+
 func searchBudgetPut(root, id string) *pb.MutateRequest {
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 	action := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: root + "/s:" + id, Action: action}
 	return request
 }
+
 func searchBudgetRead(t *testing.T, e *searchBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -89,6 +112,7 @@ func searchBudgetRead(t *testing.T, e *searchBudgetExecutor) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
 func TestSearchSharedProcessBudget(t *testing.T) {
 	if os.Getenv("WEIR_M12_INTEGRATION") != "search" {
 		t.Skip("requires WEIR_M12_INTEGRATION=search")
@@ -125,7 +149,10 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	workers.Wait()
 	cancel()
 	observation.hold(nil, 0)
-	budgetWait(t, "warm settled", func() bool { a, _, _, _ := observation.snapshot(); return a == 0 })
+	budgetWait(t, "warm settled", func() bool {
+		a, _, _, _ := observation.snapshot()
+		return a == 0
+	})
 	for _, e := range peers {
 		if window := budgetWindow(t, e.process); window != e.concurrency {
 			t.Fatal("Search AIMD did not reach C", window, e.concurrency)
@@ -138,7 +165,10 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 			workers.Go(func() { searchBudgetRead(t, e) })
 		}
 	}
-	budgetWait(t, "seven Search HTTP exchanges", func() bool { a, _, _, _ := observation.snapshot(); return a == 7 })
+	budgetWait(t, "seven Search HTTP exchanges", func() bool {
+		a, _, _, _ := observation.snapshot()
+		return a == 7
+	})
 	for _, e := range peers {
 		current, peak := e.proxy.sockets()
 		budgetOwner(t, e.process, e.locals, e.concurrency+1)
@@ -157,7 +187,10 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	nativeGate := make(chan struct{})
 	peers[2].proxy.observation.hold(nativeGate, 0)
 	workers.Go(func() { searchBudgetNative(t, peers[2]) })
-	budgetWait(t, "Native plus idle pool", func() bool { n, _ := peers[2].proxy.sockets(); return n == peers[2].concurrency+1 })
+	budgetWait(t, "Native plus idle pool", func() bool {
+		n, _ := peers[2].proxy.sockets()
+		return n == peers[2].concurrency+1
+	})
 	t.Logf("Native + ordinary idle connections: PID=%d TCP=%d=P+1 while Native holds one Store permit", peers[2].process.command.Process.Pid, peers[2].concurrency+1)
 	close(nativeGate)
 	peers[2].proxy.observation.hold(nil, 0)
@@ -178,7 +211,11 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	}
 	searchBudgetOverload(t, peers, observation)
 	searchBudgetMixed(t, peers, f)
-	forward := budgetForwardOptions{binary: binary, peers: []*process{peers[0].process, peers[1].process, peers[2].process}, request: searchBudgetPut(first.root, "forwarded")}
+	forward := budgetForwardOptions{
+		binary:  binary,
+		peers:   []*process{peers[0].process, peers[1].process, peers[2].process},
+		request: searchBudgetPut(first.root, "forwarded"),
+	}
 	budgetForwarding(t, forward)
 	opts.concurrency = 1
 	opts.extra = true
@@ -207,6 +244,7 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	}
 	t.Logf("final proxy HTTP peak=%d total=%d completed=%d; all executor upstream sockets=0; all Weir processes Wait completed", peak, started, completed)
 }
+
 func searchBudgetOverload(t *testing.T, peers []*searchBudgetExecutor, o *budgetObservation) {
 	t.Helper()
 	expected := 0
@@ -233,7 +271,10 @@ func searchBudgetOverload(t *testing.T, peers []*searchBudgetExecutor, o *budget
 			})
 		}
 	}
-	budgetWait(t, "Search overload active", func() bool { a, _, _, _ := o.snapshot(); return a == expected })
+	budgetWait(t, "Search overload active", func() bool {
+		a, _, _, _ := o.snapshot()
+		return a == expected
+	})
 	for _, e := range peers {
 		f := testmetrics.Scrape(t, e.process.diagnostic)
 		if testmetrics.Sum(f, "weir_store_pending_entries") < 1 || testmetrics.Sum(f, "weir_store_active_executions") > float64(e.concurrency) {
@@ -253,6 +294,7 @@ func searchBudgetOverload(t *testing.T, peers []*searchBudgetExecutor, o *budget
 	}
 	t.Logf("72 mixed Read/Mutate/Bulk producers/450ms, 100ms wire hold: rejected/non-OK=%d successful=%d, fresh calls recovered", rejected.Load(), applied.Load())
 }
+
 func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearch.SecureFixture) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -388,6 +430,7 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 	}
 	t.Log("Read/Mutate/Bulk/Native/Scan coexistence; three processes plus direct native Create: exactly one winner, DB atomicity")
 }
+
 func searchBudgetNative(t *testing.T, e *searchBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -427,11 +470,16 @@ func searchBudgetNative(t *testing.T, e *searchBudgetExecutor) {
 		t.Fatal(err)
 	}
 }
+
 func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts searchBudgetStart) *searchBudgetExecutor {
 	t.Helper()
 	old := peers[0]
 	replacement := startSearchBudgetExecutor(t, opts)
-	t.Logf("3 -> 4 executors time=%s; replacement PID=%d has TWO Local adapters for same index", time.Now().UTC().Format(time.RFC3339Nano), replacement.process.command.Process.Pid)
+	t.Logf(
+		"3 -> 4 executors time=%s; replacement PID=%d has TWO Local adapters for same index",
+		time.Now().UTC().Format(time.RFC3339Nano),
+		replacement.process.command.Process.Pid,
+	)
 	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_window_limit") != 2 {
 		t.Fatal("two Search Local budgets merged")
 	}
@@ -441,10 +489,22 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	}
 	targets := make([]budgetReadTarget, 0, 5)
 	for _, e := range append(peers, replacement) {
-		target := budgetReadTarget{process: e.process, client: e.client, root: e.root, locals: e.locals, limit: e.concurrency + 1}
+		target := budgetReadTarget{
+			process: e.process,
+			client:  e.client,
+			root:    e.root,
+			locals:  e.locals,
+			limit:   e.concurrency + 1,
+		}
 		targets = append(targets, target)
 	}
-	extra := budgetReadTarget{process: replacement.process, client: replacement.client, root: strings.Replace(replacement.root, "weir://records/", "weir://extra/", 1), locals: 2, limit: 2}
+	extra := budgetReadTarget{
+		process: replacement.process,
+		client:  replacement.client,
+		root:    strings.Replace(replacement.root, "weir://records/", "weir://extra/", 1),
+		locals:  2,
+		limit:   2,
+	}
 	targets = append(targets, extra)
 	budgetOverlap(t, targets, opts.observation)
 	budgetReplacementReads(t, targets[3:])
@@ -498,7 +558,10 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 		t.Fatal("Search commit reply loss outcome", result)
 	}
 	old.process.stop(t)
-	budgetWait(t, "Search old sockets closed", func() bool { n, _ := old.proxy.sockets(); return n == 0 })
+	budgetWait(t, "Search old sockets closed", func() bool {
+		n, _ := old.proxy.sockets()
+		return n == 0
+	})
 	request := searchBudgetPut(replacement.root, "new-independent")
 	result, err := replacement.client.Mutate(ctx, request)
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
@@ -527,6 +590,10 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 			t.Fatal("version/readback", id, status, doc.Version)
 		}
 	}
-	t.Logf("4 -> 3 time=%s old PID=%d Wait exited, sockets=0; acknowledged drop=1 -> UNKNOWN; queued write absent; new mutation count=2 across both Local stores, versions=1; no replay", time.Now().UTC().Format(time.RFC3339Nano), old.process.command.Process.Pid)
+	t.Logf(
+		"4 -> 3 time=%s old PID=%d Wait exited, sockets=0; acknowledged drop=1 -> UNKNOWN; queued write absent; new mutation count=2 across both Local stores, versions=1; no replay",
+		time.Now().UTC().Format(time.RFC3339Nano),
+		old.process.command.Process.Pid,
+	)
 	return replacement
 }

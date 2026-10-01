@@ -19,7 +19,16 @@ func printVersion(output io.Writer) error {
 		Target   string `json:"target"`
 		State    string `json:"state"`
 		Dirty    string `json:"dirty"`
-	}{"weir", "dev", "unknown", runtime.Version(), runtime.GOOS + "/" + runtime.GOARCH, "dev", "unknown"}
+	}{
+		"weir",
+		"dev",
+		"unknown",
+		runtime.Version(),
+		runtime.GOOS + "/" + runtime.GOARCH,
+		"dev",
+		"unknown",
+	}
+
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			switch setting.Key {
@@ -30,11 +39,13 @@ func printVersion(output io.Writer) error {
 			}
 		}
 	}
+
 	if sourceRevision != "" {
 		identity.Revision = sourceRevision
 		identity.Version = "local-" + sourceRevision
 		identity.State = "clean-commit"
 		identity.Dirty = "false"
 	}
+
 	return json.NewEncoder(output).Encode(identity)
 }

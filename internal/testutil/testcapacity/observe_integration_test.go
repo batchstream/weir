@@ -29,8 +29,19 @@ func TestNativeSelfObservation(t *testing.T) {
 	if len(changed.Errors) == 0 {
 		t.Fatal("reused PID identity accepted")
 	}
-	t.Logf("native pid=%s uid=%d cgroup=%q namespace=%v hash=%s RSS=%d ticks=%d/%d", first.Process.Identity.PID, first.Process.Identity.UID, first.Process.Identity.Cgroup, first.Process.Identity.Namespaces, first.Process.Identity.SHA256, first.RSS, first.Process.UserTicks, first.Process.SystemTicks)
+	t.Logf(
+		"native pid=%s uid=%d cgroup=%q namespace=%v hash=%s RSS=%d ticks=%d/%d",
+		first.Process.Identity.PID,
+		first.Process.Identity.UID,
+		first.Process.Identity.Cgroup,
+		first.Process.Identity.Namespaces,
+		first.Process.Identity.SHA256,
+		first.RSS,
+		first.Process.UserTicks,
+		first.Process.SystemTicks,
+	)
 }
+
 func TestNativeObservationExitedTarget(t *testing.T) {
 	if os.Getenv("WEIR_CAPACITY_INTEGRATION") != "1" {
 		t.Skip("explicit owned Linux fixture required")
@@ -56,6 +67,7 @@ func TestNativeObservationExitedTarget(t *testing.T) {
 	}
 	t.Logf("child PID=%s Wait complete; exited target rejected", pid)
 }
+
 func TestNativeObservationChild(t *testing.T) {
 	if strings.TrimSpace(os.Getenv("WEIR_OBSERVATION_CHILD")) != "1" {
 		t.Skip("owned child only")

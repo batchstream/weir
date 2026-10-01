@@ -30,6 +30,7 @@ type ProcessIdentity struct {
 	Cgroup     string            `json:"cgroup"`
 	Namespaces map[string]string `json:"namespaces"`
 }
+
 type ProcessSample struct {
 	Identity    ProcessIdentity `json:"identity"`
 	RSS         uint64          `json:"rss_bytes"`
@@ -40,6 +41,7 @@ type ProcessSample struct {
 	Status      string          `json:"status"`
 	Stat        string          `json:"stat"`
 }
+
 type Sample struct {
 	Sequence           uint64            `json:"sequence"`
 	Role               string            `json:"role"`
@@ -62,6 +64,7 @@ type Sample struct {
 	NetworkOmitted     bool              `json:"network_omitted,omitempty"`
 	IdentityHashCached bool              `json:"identity_hash_cached,omitempty"`
 }
+
 type Sampler struct {
 	Role, PID        string
 	Target, Observer ProcessIdentity
@@ -83,6 +86,7 @@ func boundedFile(name string) (string, error) {
 	}
 	return string(b), err
 }
+
 func boundedNames(name string, limit int) ([]string, error) {
 	f, err := os.Open(name)
 	if err != nil {
@@ -98,12 +102,14 @@ func boundedNames(name string, limit int) ([]string, error) {
 	}
 	return names, nil
 }
+
 func unsigned(raw string) (uint64, error) {
 	if raw == "" || strings.Trim(raw, "0123456789") != "" {
 		return 0, errors.New("unsigned integer required")
 	}
 	return strconv.ParseUint(raw, 10, 64)
 }
+
 func processStat(raw string) (start, user, system uint64, err error) {
 	// comm can contain spaces and parentheses. Fields after its last ')' start at 3.
 	close := strings.LastIndex(raw, ") ")
@@ -130,6 +136,7 @@ func processStat(raw string) (start, user, system uint64, err error) {
 	}
 	return
 }
+
 func processStatus(raw string) (rss, threads, uid uint64, err error) {
 	seen := map[string]bool{}
 	for _, line := range strings.Split(raw, "\n") {
@@ -196,6 +203,7 @@ func processStatus(raw string) (rss, threads, uid uint64, err error) {
 	}
 	return
 }
+
 func executableHash(pid string) (string, error) {
 	f, err := os.Open("/proc/" + pid + "/exe")
 	if err != nil {
@@ -209,6 +217,7 @@ func executableHash(pid string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), err
 }
+
 func readProcess(pid string, hash bool) (ProcessSample, error) {
 	p := ProcessSample{}
 	p.Identity.PID = pid
@@ -251,12 +260,14 @@ func readProcess(pid string, hash bool) (ProcessSample, error) {
 	p.FD = len(names)
 	return p, err
 }
+
 func sameContainer(target, observer ProcessIdentity) error {
 	if target.UID == 0 || target.UID != observer.UID || target.Cgroup != "0::/\n" || target.Cgroup != observer.Cgroup || !reflect.DeepEqual(target.Namespaces, observer.Namespaces) {
 		return errors.New("same nonroot UID/namespaces and visible cgroup-v2 leaf required; ancestors unknown")
 	}
 	return nil
 }
+
 func findJVM(root string) (string, error) {
 	names, err := boundedNames(root, 1024)
 	if err != nil {
@@ -300,6 +311,7 @@ func findJVM(root string) (string, error) {
 	}
 	return found, nil
 }
+
 func newSampler(role, pid string) (*Sampler, error) {
 	if role != "weir" && role != "es" && role != "client" {
 		return nil, errors.New("explicit observer role required")
@@ -360,6 +372,7 @@ func newSampler(role, pid string) (*Sampler, error) {
 	s := &Sampler{Role: role, PID: pid, Target: target.Identity, Observer: observer.Identity}
 	return s, nil
 }
+
 func counterFile(raw string) (map[string]uint64, error) {
 	result := map[string]uint64{}
 	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
@@ -378,6 +391,7 @@ func counterFile(raw string) (map[string]uint64, error) {
 	}
 	return result, nil
 }
+
 func validateCgroup(files map[string]string) error {
 	for _, name := range []string{"memory.current", "memory.max", "memory.swap.max", "pids.current", "pids.max"} {
 		if _, err := unsigned(strings.TrimSpace(files[name])); err != nil {
@@ -394,7 +408,10 @@ func validateCgroup(files map[string]string) error {
 			return errors.New("cpu.max finite quota/period")
 		}
 	}
-	for name, keys := range map[string][]string{"memory.events": {"low", "high", "max", "oom", "oom_kill", "oom_group_kill"}, "cpu.stat": {"usage_usec", "user_usec", "system_usec", "nr_periods", "nr_throttled", "throttled_usec"}} {
+	for name, keys := range map[string][]string{
+		"memory.events": {"low", "high", "max", "oom", "oom_kill", "oom_group_kill"},
+		"cpu.stat":      {"usage_usec", "user_usec", "system_usec", "nr_periods", "nr_throttled", "throttled_usec"},
+	} {
 		values, e := counterFile(files[name])
 		if e != nil {
 			return e
@@ -442,8 +459,15 @@ func validateCgroup(files map[string]string) error {
 	}
 	return nil
 }
+
 func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
-	s := Sample{Sequence: o.Sequence, Role: o.Role, Time: time.Now().UTC(), MonotonicNS: time.Since(observationEpoch).Nanoseconds(), Files: map[string]string{}}
+	s := Sample{
+		Sequence:    o.Sequence,
+		Role:        o.Role,
+		Time:        time.Now().UTC(),
+		MonotonicNS: time.Since(observationEpoch).Nanoseconds(),
+		Files:       map[string]string{},
+	}
 	record := func(err error) {
 		if err != nil {
 			s.Errors = append(s.Errors, err.Error())
@@ -471,7 +495,18 @@ func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
 			record(errors.New("JVM target changed"))
 		}
 	}
-	for _, name := range []string{"memory.current", "memory.max", "memory.swap.max", "memory.events", "cpu.max", "cpu.stat", "pids.current", "pids.max", "cpuset.cpus.effective", "io.stat"} {
+	for _, name := range []string{
+		"memory.current",
+		"memory.max",
+		"memory.swap.max",
+		"memory.events",
+		"cpu.max",
+		"cpu.stat",
+		"pids.current",
+		"pids.max",
+		"cpuset.cpus.effective",
+		"io.stat",
+	} {
 		value, e := boundedFile("/sys/fs/cgroup/" + name)
 		record(e)
 		if e == nil {
@@ -534,7 +569,10 @@ func (o *Sampler) sample(ctx context.Context, diagnostic *Client) Sample {
 	}
 	if o.Previous != nil {
 		previous := o.Previous
-		if s.Process.UserTicks < previous.Process.UserTicks || s.Process.SystemTicks < previous.Process.SystemTicks || s.Observer.UserTicks < previous.Observer.UserTicks || s.Observer.SystemTicks < previous.Observer.SystemTicks {
+		if s.Process.UserTicks < previous.Process.UserTicks ||
+			s.Process.SystemTicks < previous.Process.SystemTicks ||
+			s.Observer.UserTicks < previous.Observer.UserTicks ||
+			s.Observer.SystemTicks < previous.Observer.SystemTicks {
 			record(errors.New("process CPU counter decreased"))
 		}
 		for _, name := range []string{"cpu.stat", "memory.events"} {
@@ -587,6 +625,7 @@ func (w *evidenceWriter) Write(raw []byte) (int, error) {
 	w.Bytes += n
 	return n, err
 }
+
 func observe(control *observationControl, encoder *json.Encoder, o *Sampler, seconds int) error {
 	ctx := control.Context
 	if seconds < 2 || seconds > 2698 {
@@ -611,7 +650,19 @@ func observe(control *observationControl, encoder *json.Encoder, o *Sampler, sec
 	if err != nil {
 		return err
 	}
-	identity := map[string]any{"type": "identity", "role": o.Role, "target": o.Target, "observer": o.Observer, "exe_sha256": o.Target.SHA256, "goos": runtime.GOOS, "goarch": runtime.GOARCH, "kernel": kernel, "go": runtime.Version(), "scope": "visible cgroup-v2 leaf; hidden ancestors unknown", "process_cpu_unit": "USER_HZ ticks, no percentage conversion"}
+	identity := map[string]any{
+		"type":             "identity",
+		"role":             o.Role,
+		"target":           o.Target,
+		"observer":         o.Observer,
+		"exe_sha256":       o.Target.SHA256,
+		"goos":             runtime.GOOS,
+		"goarch":           runtime.GOARCH,
+		"kernel":           kernel,
+		"go":               runtime.Version(),
+		"scope":            "visible cgroup-v2 leaf; hidden ancestors unknown",
+		"process_cpu_unit": "USER_HZ ticks, no percentage conversion",
+	}
 	if err = encoder.Encode(identity); err != nil {
 		return err
 	}

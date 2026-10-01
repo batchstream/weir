@@ -60,7 +60,15 @@ func pacing(ctx context.Context, encoder *json.Encoder, opts TrialOptions) error
 	if kernelErr != nil {
 		return kernelErr
 	}
-	out := map[string]any{"kind": "native pacing diagnostic only", "trial": t, "samples": samples, "goos": runtime.GOOS, "goarch": runtime.GOARCH, "exe_sha256": hash, "kernel": kernel}
+	out := map[string]any{
+		"kind":       "native pacing diagnostic only",
+		"trial":      t,
+		"samples":    samples,
+		"goos":       runtime.GOOS,
+		"goarch":     runtime.GOARCH,
+		"exe_sha256": hash,
+		"kernel":     kernel,
+	}
 	if e := encoder.Encode(out); e != nil {
 		return e
 	}

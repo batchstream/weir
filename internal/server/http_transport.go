@@ -94,7 +94,17 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("Grpc-Message", status.Convert(err).Message())
 		return
 	}
-	state := &delivery{controller: controller, deadline: deadline, readDeadline: deadline, stall: s.limits.Stall, unary: unary, singleInput: !bulk && !native, slots: s.slots, metrics: &s.metrics, method: methodLabel(request.RequestURI)}
+	state := &delivery{
+		controller:   controller,
+		deadline:     deadline,
+		readDeadline: deadline,
+		stall:        s.limits.Stall,
+		unary:        unary,
+		singleInput:  !bulk && !native,
+		slots:        s.slots,
+		metrics:      &s.metrics,
+		method:       methodLabel(request.RequestURI),
+	}
 	input := newCreditedBody(ctx, request.Body, state)
 	state.input = input
 	defer input.Close()
@@ -262,6 +272,7 @@ func (w *deadlineWriter) Write(p []byte) (int, error) {
 	w.delivery.finishWrite(err)
 	return n, err
 }
+
 func (w *deadlineWriter) Flush() {
 	if err := w.delivery.armWrite(); err != nil {
 		w.delivery.ioFailure("output", err)
@@ -289,9 +300,17 @@ type creditedBody struct {
 const inputCredits = protocol.MaxFrame + 5
 
 func newCreditedBody(ctx context.Context, source io.ReadCloser, owner *delivery) *creditedBody {
-	b := &creditedBody{source: source, delivery: owner, ctx: ctx, available: inputCredits, wake: make(chan struct{}, 1), closed: make(chan struct{})}
+	b := &creditedBody{
+		source:    source,
+		delivery:  owner,
+		ctx:       ctx,
+		available: inputCredits,
+		wake:      make(chan struct{}, 1),
+		closed:    make(chan struct{}),
+	}
 	return b
 }
+
 func (b *creditedBody) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -331,6 +350,7 @@ func (b *creditedBody) Read(p []byte) (int, error) {
 		}
 	}
 }
+
 func (b *creditedBody) grant(n int) {
 	if n <= 0 {
 		return
@@ -343,8 +363,12 @@ func (b *creditedBody) grant(n int) {
 	default:
 	}
 }
+
 func (b *creditedBody) Close() error {
-	b.once.Do(func() { close(b.closed); b.err = b.source.Close() })
+	b.once.Do(func() {
+		close(b.closed)
+		b.err = b.source.Close()
+	})
 	return b.err
 }
 
@@ -358,6 +382,7 @@ func (deliveryStats) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Co
 	}
 	return ctx
 }
+
 func (deliveryStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 	state, ok := ctx.Value(deliveryKey).(*delivery)
 	if !ok {
@@ -375,6 +400,7 @@ func (deliveryStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 		state.endRPC()
 	}
 }
+
 func (deliveryStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
 	if state, ok := ctx.Value(deliveryKey).(*delivery); ok {
 		// This is synchronous in ServeHTTP, before its RPC goroutine starts.
@@ -384,4 +410,5 @@ func (deliveryStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.
 	}
 	return ctx
 }
+
 func (deliveryStats) HandleConn(context.Context, stats.ConnStats) {}

@@ -189,7 +189,10 @@ func (s *Server) remoteNative(args nativeRelay) (resultErr error) {
 			return args.remote.incomplete("Native", err, "missing Native End")
 		}
 		if end := frame.GetEnd(); end != nil {
-			if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE && (!head || end.Failure != nil) || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE && (end.Failure == nil || end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE) {
+			if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE && (!head || end.Failure != nil) ||
+				end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE &&
+					(end.Failure == nil ||
+						end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE) {
 				return status.Error(codes.Internal, "invalid peer Native completion")
 			}
 			timer = time.AfterFunc(s.limits.Stall, cancel)

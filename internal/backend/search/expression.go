@@ -96,7 +96,12 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 		return unknown, execution.Neutral
 	}
 	if response.Error != nil {
-		if response.Status != status || response.Result != "" || response.Version != nil || response.Seq != nil || response.Term != nil || response.Shards != nil {
+		if response.Status != status ||
+			response.Result != "" ||
+			response.Version != nil ||
+			response.Seq != nil ||
+			response.Term != nil ||
+			response.Shards != nil {
 			return unknown, execution.Neutral
 		}
 		failure, sample := a.reject(response.Error.Type, status)
@@ -108,11 +113,27 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 		}
 		return unknown, execution.Neutral
 	}
-	if status != 200 || response.Index != a.config.Index || response.ID != n.id || response.Version == nil || *response.Version < 1 || response.Seq == nil || *response.Seq < 0 || response.Term == nil || *response.Term < 1 || response.Shards == nil {
+	if status != 200 ||
+		response.Index != a.config.Index ||
+		response.ID != n.id ||
+		response.Version == nil ||
+		*response.Version < 1 ||
+		response.Seq == nil ||
+		*response.Seq < 0 ||
+		response.Term == nil ||
+		*response.Term < 1 ||
+		response.Shards == nil {
 		return unknown, execution.Neutral
 	}
 	shards := response.Shards
-	if shards.Total == nil || shards.Successful == nil || shards.Failed == nil || *shards.Total < 0 || *shards.Successful < 0 || *shards.Failed < 0 || *shards.Successful > *shards.Total || *shards.Failed > *shards.Total-*shards.Successful {
+	if shards.Total == nil ||
+		shards.Successful == nil ||
+		shards.Failed == nil ||
+		*shards.Total < 0 ||
+		*shards.Successful < 0 ||
+		*shards.Failed < 0 ||
+		*shards.Successful > *shards.Total ||
+		*shards.Failed > *shards.Total-*shards.Successful {
 		return unknown, execution.Neutral
 	}
 	switch response.Result {

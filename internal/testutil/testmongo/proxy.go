@@ -26,6 +26,7 @@ type WireEvent struct {
 	Dropped      bool
 	ReplyDigest  [32]byte
 }
+
 type Proxy struct {
 	backendAddress string
 	uri            string
@@ -99,9 +100,11 @@ func startProxy(t *testing.T, opts proxyOptions) *Proxy {
 	})
 	return p
 }
+
 func (p *Proxy) URI() string {
 	return p.uri
 }
+
 func (p *Proxy) Events() []WireEvent {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -116,10 +119,15 @@ func (p *Proxy) Sockets() (current, peak int) {
 	defer p.mu.Unlock()
 	return p.upstream, p.peakUpstream
 }
+
 func (p *Proxy) relay(client net.Conn) {
 	defer p.group.Done()
 	defer client.Close()
-	defer func() { p.mu.Lock(); delete(p.conns, client); p.mu.Unlock() }()
+	defer func() {
+		p.mu.Lock()
+		delete(p.conns, client)
+		p.mu.Unlock()
+	}()
 	backend, err := net.DialTimeout("tcp", p.backendAddress, time.Second)
 	if err != nil {
 		return
@@ -154,7 +162,11 @@ func (p *Proxy) relay(client net.Conn) {
 	}
 	p.conns[backend] = struct{}{}
 	p.mu.Unlock()
-	defer func() { p.mu.Lock(); delete(p.conns, backend); p.mu.Unlock() }()
+	defer func() {
+		p.mu.Lock()
+		delete(p.conns, backend)
+		p.mu.Unlock()
+	}()
 	for {
 		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
 		_ = backend.SetDeadline(time.Now().Add(5 * time.Second))
@@ -286,7 +298,12 @@ func alterScanReply(message []byte, mode string) []byte {
 							return message
 						}
 						if mode == "write_error_391" {
-							item = bson.D{{Key: "idx", Value: int32(k)}, {Key: "ok", Value: int32(0)}, {Key: "n", Value: int32(0)}, {Key: "code", Value: int32(391)}}
+							item = bson.D{
+								{Key: "idx", Value: int32(k)},
+								{Key: "ok", Value: int32(0)},
+								{Key: "n", Value: int32(0)},
+								{Key: "code", Value: int32(391)},
+							}
 						} else {
 							for m := range item {
 								if item[m].Key == "n" {
@@ -314,6 +331,7 @@ func alterScanReply(message []byte, mode string) []byte {
 	binary.LittleEndian.PutUint32(result, uint32(len(result)))
 	return result
 }
+
 func readMessage(r io.Reader) ([]byte, error) {
 	header := make([]byte, 16)
 	if _, err := io.ReadFull(r, header); err != nil {
@@ -328,6 +346,7 @@ func readMessage(r io.Reader) ([]byte, error) {
 	_, err := io.ReadFull(r, data[16:])
 	return data, err
 }
+
 func commandDocument(message []byte) bson.Raw {
 	if len(message) < 21 {
 		return nil

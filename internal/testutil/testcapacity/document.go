@@ -19,6 +19,7 @@ func readID(n int) string {
 	}
 	return fmt.Sprintf("read-%04d", v%corpusSize)
 }
+
 func payload(id string) []byte {
 	out := make([]byte, 0, 1024)
 	out = append(out, `{"data":"`...)
@@ -30,4 +31,5 @@ func payload(id string) []byte {
 	out = append(out, '"', '}')
 	return out
 }
+
 func validPayload(raw []byte, id string) bool { return bytes.Equal(raw, payload(id)) }

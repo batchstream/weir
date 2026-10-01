@@ -112,10 +112,23 @@ func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
 	if err != nil || cfg.Relays < 1 || cfg.Relays > 16 {
 		return nil, errors.New("invalid peer endpoints or relay bound")
 	}
-	r := &RemoteWeir{slots: make(chan struct{}, cfg.Relays), sockets: make(chan struct{}, 2*len(identities)), resolutions: make(chan struct{}, 2)}
-	termOpts := prometheus.CounterOpts{Name: "weir_relay_terminations_total", Help: "Admitted relay returns, including upstream I/O errors; never database executions."}
-	incOpts := prometheus.CounterOpts{Name: "weir_relay_incomplete_total", Help: "Missing End, extra frames or non-OK after End observed from downstream."}
-	rejOpts := prometheus.CounterOpts{Name: "weir_relay_rejections_total", Help: "RemoteWeir relay or socket capacity rejection events."}
+	r := &RemoteWeir{
+		slots:       make(chan struct{}, cfg.Relays),
+		sockets:     make(chan struct{}, 2*len(identities)),
+		resolutions: make(chan struct{}, 2),
+	}
+	termOpts := prometheus.CounterOpts{
+		Name: "weir_relay_terminations_total",
+		Help: "Admitted relay returns, including upstream I/O errors; never database executions.",
+	}
+	incOpts := prometheus.CounterOpts{
+		Name: "weir_relay_incomplete_total",
+		Help: "Missing End, extra frames or non-OK after End observed from downstream.",
+	}
+	rejOpts := prometheus.CounterOpts{
+		Name: "weir_relay_rejections_total",
+		Help: "RemoteWeir relay or socket capacity rejection events.",
+	}
 	r.terminations = prometheus.NewCounterVec(termOpts, []string{"method", "status"})
 	r.incompletes = prometheus.NewCounterVec(incOpts, []string{"method"})
 	r.rejections = prometheus.NewCounterVec(rejOpts, []string{"reason"})
@@ -131,7 +144,12 @@ func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
 		r.rejections.WithLabelValues(reason)
 	}
 	for _, identity := range identities {
-		e := &remoteEndpoint{identity: identity, owner: r, sockets: make(chan struct{}, 2), physical: make(map[*peerConn]struct{})}
+		e := &remoteEndpoint{
+			identity: identity,
+			owner:    r,
+			sockets:  make(chan struct{}, 2),
+			physical: make(map[*peerConn]struct{}),
+		}
 		e.ctx, e.cancel = context.WithCancel(context.Background())
 		reconnect := backoff.Config{BaseDelay: 100 * time.Millisecond, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 2 * time.Second}
 		params := grpc.ConnectParams{Backoff: reconnect, MinConnectTimeout: peerConnectTimeout}
@@ -141,7 +159,12 @@ func NewRemote(cfg RemoteConfig) (*RemoteWeir, error) {
 			grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
 			grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535),
 			grpc.WithReadBufferSize(16 << 10), grpc.WithWriteBufferSize(16 << 10), grpc.WithMaxHeaderListSize(16 << 10),
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(protocol.MaxFrame), grpc.MaxCallSendMsgSize(protocol.MaxFrame), grpc.MaxRetryRPCBufferSize(0), grpc.WaitForReady(false)),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(protocol.MaxFrame),
+				grpc.MaxCallSendMsgSize(protocol.MaxFrame),
+				grpc.MaxRetryRPCBufferSize(0),
+				grpc.WaitForReady(false),
+			),
 		}
 		target := "passthrough:///" + identity
 		host, port, _ := net.SplitHostPort(identity)
@@ -194,7 +217,10 @@ func (r *RemoteWeir) selectClient(ctx context.Context, key string) (pb.WeirClien
 		}
 		isReady := state == connectivity.Ready
 		score := affinityScore(key, e.identity)
-		if chosen == nil || isReady && !ready || isReady == ready && (bytes.Compare(score[:], best[:]) > 0 || score == best && e.identity < chosen.identity) {
+		if chosen == nil ||
+			isReady && !ready ||
+			isReady == ready && (bytes.Compare(score[:], best[:]) > 0 ||
+				score == best && e.identity < chosen.identity) {
 			chosen, best, ready = e, score, isReady
 		}
 	}
@@ -245,7 +271,10 @@ func (e *remoteEndpoint) dial(ctx context.Context, address string) (net.Conn, er
 	defer e.dials.Done()
 	ctx, cancel := context.WithTimeout(ctx, peerConnectTimeout)
 	stop := context.AfterFunc(e.ctx, cancel)
-	defer func() { stop(); cancel() }()
+	defer func() {
+		stop()
+		cancel()
+	}()
 	d := net.Dialer{Timeout: peerConnectTimeout, KeepAlive: 30 * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", address)
 	e.mu.Lock()

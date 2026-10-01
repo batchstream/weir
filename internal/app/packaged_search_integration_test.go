@@ -51,7 +51,14 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &version) != nil || version["revision"] != source || version["state"] != "clean-commit" || version["target"] != "darwin/arm64" {
 		t.Fatal("archive identity mismatch")
 	}
-	identity := packagedDocker(t, "image", "inspect", "--format", `{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Os}}/{{.Architecture}} {{.Config.User}} {{json .Config.Entrypoint}}`, image)
+	identity := packagedDocker(
+		t,
+		"image",
+		"inspect",
+		"--format",
+		`{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Os}}/{{.Architecture}} {{.Config.User}} {{json .Config.Entrypoint}}`,
+		image,
+	)
 	if strings.TrimSpace(identity) != source+` linux/arm64 65532:65532 ["/weir"]` {
 		t.Fatal("image identity mismatch", identity)
 	}
@@ -113,7 +120,10 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 			if elapsed > 3*time.Second {
 				t.Fatal("original SIGTERM/Wait budget exceeded", elapsed)
 			}
-			budgetWait(t, "packaged Search sockets closed", func() bool { n, _ := proxy.sockets(); return n == 0 })
+			budgetWait(t, "packaged Search sockets closed", func() bool {
+				n, _ := proxy.sockets()
+				return n == 0
+			})
 			t.Logf("%s exact artifact CRUD/Bulk/Native/Scan/expression/cancel/UNKNOWN; SIGTERM/Wait=%s; proxy=0", platform, elapsed)
 		})
 	}
@@ -126,7 +136,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				cfg := packagedSearchConfig(fixture.Backend)
 				directory := filepath.Join(root, "negative-"+negative)
 				packagedSearchFiles(t, directory, cfg)
-				filename := filepath.Join(directory, "node-routing.json")
+				filename := filepath.Join(directory, "node-routing.yaml")
 				raw, err := os.ReadFile(filename)
 				if err != nil {
 					t.Fatal(err)
@@ -157,7 +167,14 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				if err := os.WriteFile(filename, raw, 0644); err != nil {
 					t.Fatal(err)
 				}
-				opts := packagedContainerOptions{owner: owner, name: owner + "-" + negative, image: image, directory: directory, helper: helper, negative: true}
+				opts := packagedContainerOptions{
+					owner:     owner,
+					name:      owner + "-" + negative,
+					image:     image,
+					directory: directory,
+					helper:    helper,
+					negative:  true,
+				}
 				packagedContainer(t, opts)
 				if strings.TrimSpace(packagedDocker(t, "wait", opts.name)) != "1" {
 					t.Fatal("invalid connection/profile reached serving")
@@ -211,7 +228,7 @@ func packagedSearchFiles(t *testing.T, directory string, cfg Config) {
 	service := Service{Name: cfg.Routing.Services[0].Name, Local: &local}
 	cfg.Routing.Services = []Service{service}
 	cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = "0.0.0.0:7447", "127.0.0.1:7449"
-	writeConfigFiles(t, filepath.Join(directory, "node.json"), cfg, 0644)
+	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
 }
 
 func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.SecureFixture, proxy *searchBudgetProxy) {

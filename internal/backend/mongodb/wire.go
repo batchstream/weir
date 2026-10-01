@@ -55,6 +55,7 @@ func (c *boundedConn) Read(dst []byte) (int, error) {
 	}
 	return n, nil
 }
+
 func boundedReply(message []byte) bool {
 	if len(message) < 16 || int64(binary.LittleEndian.Uint32(message[:4])) != int64(len(message)) {
 		return false
@@ -69,7 +70,10 @@ func boundedReply(message []byte) bool {
 		}
 		raw = message[21:]
 	case 1:
-		if len(message) < 41 || binary.LittleEndian.Uint32(message[16:20]) & ^uint32(8) != 0 || binary.LittleEndian.Uint64(message[20:28]) != 0 || binary.LittleEndian.Uint32(message[32:36]) != 1 {
+		if len(message) < 41 ||
+			binary.LittleEndian.Uint32(message[16:20]) & ^uint32(8) != 0 ||
+			binary.LittleEndian.Uint64(message[20:28]) != 0 ||
+			binary.LittleEndian.Uint32(message[32:36]) != 1 {
 			return false
 		}
 		raw = message[36:]

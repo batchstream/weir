@@ -116,6 +116,7 @@ func startMemoryPressure(t *testing.T) *memoryPressure {
 	p.set(t, 0)
 	return p
 }
+
 func (p *memoryPressure) set(t *testing.T, count int) {
 	t.Helper()
 	if _, err := fmt.Fprintln(p.input, count); err != nil {
@@ -126,6 +127,7 @@ func (p *memoryPressure) set(t *testing.T, count int) {
 	}
 	p.count = count
 }
+
 func (p *memoryPressure) stop(t *testing.T) {
 	t.Helper()
 	if p.stopped {
@@ -145,6 +147,7 @@ func (p *memoryPressure) stop(t *testing.T) {
 	}
 	t.Logf("helper PID=%d released and Wait completed", p.command.Process.Pid)
 }
+
 func (p *memoryPressure) target(t *testing.T, percent uint64) {
 	t.Helper()
 	current := memoryFile(t, "/sys/fs/cgroup/memory.current")
@@ -156,6 +159,7 @@ func (p *memoryPressure) target(t *testing.T, percent uint64) {
 	}
 	p.set(t, count)
 }
+
 func memoryFile(t *testing.T, name string) uint64 {
 	t.Helper()
 	raw, err := os.ReadFile(name)
@@ -176,7 +180,9 @@ func memoryState(t *testing.T, p *process, label string, latched bool) {
 		metrics := testmetrics.Scrape(t, p.diagnostic)
 		value := testmetrics.Sum(metrics, "weir_memory_latched")
 		if value == 0 && !latched || value == 1 && latched {
-			if testmetrics.Sum(metrics, "weir_memory_unknown") != 0 || testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 || testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != 512<<20 {
+			if testmetrics.Sum(metrics, "weir_memory_unknown") != 0 ||
+				testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 ||
+				testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != 512<<20 {
 				t.Fatal("invalid Linux profile")
 			}
 			current := memoryFile(t, "/sys/fs/cgroup/memory.current")
@@ -205,7 +211,19 @@ func memoryState(t *testing.T, p *process, label string, latched bool) {
 			if label == "middle" && (observed <= float64(512<<20)*.70 || observed >= float64(512<<20)*.80) {
 				t.Fatal("not in hysteresis band", observed)
 			}
-			t.Logf("%s PID=%d elapsed=%s RSS=%g independent_RSS=%d RSS_delta=%d cgroup_sample=%g independent_current=%d limit=%d latch=%v", label, p.command.Process.Pid, time.Since(start), rss, independentRSS, rssDelta, observed, current, 512<<20, latched)
+			t.Logf(
+				"%s PID=%d elapsed=%s RSS=%g independent_RSS=%d RSS_delta=%d cgroup_sample=%g independent_current=%d limit=%d latch=%v",
+				label,
+				p.command.Process.Pid,
+				time.Since(start),
+				rss,
+				independentRSS,
+				rssDelta,
+				observed,
+				current,
+				512<<20,
+				latched,
+			)
 			return
 		}
 		if time.Since(start) > 2*time.Second {
@@ -313,7 +331,10 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	if err := stream.Send(frame); err != nil {
 		t.Fatal(err)
 	}
-	budgetWait(t, "admitted Bulk", func() bool { active, _, _, _ := observer.snapshot(); return active == 1 })
+	budgetWait(t, "admitted Bulk", func() bool {
+		active, _, _, _ := observer.snapshot()
+		return active == 1
+	})
 	helper.target(t, 84)
 	memoryState(t, p, "high", true)
 	memoryState(t, front, "high-forward", true)
@@ -385,7 +406,10 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	if time.Since(start) > 3*time.Second {
 		t.Fatal("fixed 3s CLI shutdown bound")
 	}
-	budgetWait(t, "proxy sockets released", func() bool { current, _ := proxy.Sockets(); return current == 0 })
+	budgetWait(t, "proxy sockets released", func() bool {
+		current, _ := proxy.Sockets()
+		return current == 0
+	})
 	helper.stop(t)
 	for _, pid := range []int{p.command.Process.Pid, front.command.Process.Pid, helper.command.Process.Pid} {
 		if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); !os.IsNotExist(err) {

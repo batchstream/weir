@@ -159,7 +159,11 @@ func TestStartCleanupJoinsBoundedWorkers(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer udp.Close()
-		question := dnsmessage.Question{Name: dnsmessage.MustNewName("fixture.weir.test."), Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}
+		question := dnsmessage.Question{
+			Name:  dnsmessage.MustNewName("fixture.weir.test."),
+			Type:  dnsmessage.TypeA,
+			Class: dnsmessage.ClassINET,
+		}
 		message := dnsmessage.Message{Questions: []dnsmessage.Question{question}}
 		wire, err := message.Pack()
 		if err != nil {

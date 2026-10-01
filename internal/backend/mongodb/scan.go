@@ -70,7 +70,14 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 			native.options = append(native.options, option)
 		}
 	}
-	p := &execution.Plan{Scan: true, Key: req.Resource, Bytes: proto.Size(req) + protocol.EntryOverhead + 4096, ResultBytes: protocol.MaxDocument + protocol.ResultOverhead, PageBytes: scanPageBudget, Backend: native}
+	p := &execution.Plan{
+		Scan:        true,
+		Key:         req.Resource,
+		Bytes:       proto.Size(req) + protocol.EntryOverhead + 4096,
+		ResultBytes: protocol.MaxDocument + protocol.ResultOverhead,
+		PageBytes:   scanPageBudget,
+		Backend:     native,
+	}
 	return p, nil
 }
 
@@ -91,14 +98,22 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			return page, execution.Neutral
 		}
 		n.session = session
-		command = bson.D{{Key: "find", Value: a.config.Collection}, {Key: "batchSize", Value: int32(n.items)}, {Key: "allowPartialResults", Value: false}}
+		command = bson.D{
+			{Key: "find", Value: a.config.Collection},
+			{Key: "batchSize", Value: int32(n.items)},
+			{Key: "allowPartialResults", Value: false},
+		}
 		command = append(command, n.options...)
 	} else {
 		if n.cursor == 0 {
 			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "cursor already exhausted")
 			return page, execution.Neutral
 		}
-		command = bson.D{{Key: "getMore", Value: n.cursor}, {Key: "collection", Value: a.config.Collection}, {Key: "batchSize", Value: int32(n.items)}}
+		command = bson.D{
+			{Key: "getMore", Value: n.cursor},
+			{Key: "collection", Value: a.config.Collection},
+			{Key: "batchSize", Value: int32(n.items)},
+		}
 	}
 	ctx = mongo.NewSessionContext(ctx, n.session)
 	attempt := ctx
@@ -292,6 +307,7 @@ func validScanBSON(raw []byte, depth int, nodes *int) bool {
 func scanFraming(raw []byte) bool {
 	return len(raw) >= 5 && int64(binary.LittleEndian.Uint32(raw)) == int64(len(raw)) && raw[len(raw)-1] == 0
 }
+
 func scanFields(raw []byte) (map[string]bson.RawValue, error) {
 	if !scanFraming(raw) {
 		return nil, fmt.Errorf("invalid BSON framing")

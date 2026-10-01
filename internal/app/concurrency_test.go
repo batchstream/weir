@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,20 +11,26 @@ import (
 	"testing"
 
 	"github.com/batchstream/weir/internal/backend/search"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestLocalConcurrencyConfiguration(t *testing.T) {
 	for _, c := range []int{0, 1, 2, 4, 32, -1, 33} {
 		t.Run(fmt.Sprint(c), func(t *testing.T) {
 			connection := &search.Connection{CAFile: "/missing/concurrency-ca.pem"}
-			backend := &Search{URL: "https://unresolved.invalid:443", Index: "records", Profile: "elasticsearch-8.19.22", Connection: connection}
+			backend := &Search{
+				URL:        "https://unresolved.invalid:443",
+				Index:      "records",
+				Profile:    "elasticsearch-8.19.22",
+				Connection: connection,
+			}
 			local := &Local{Search: backend, MaxConcurrency: c}
 			service := Service{Name: "local", Local: local}
 			route := Route{Store: "records", Service: "local"}
 			cfg := DefaultConfig()
 			cfg.Basic.Listeners.Application = "127.0.0.1:0"
 			cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
-			raw, err := json.Marshal(cfg.Routing)
+			raw, err := yaml.Marshal(cfg.Routing)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -48,7 +53,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 				t.Fatal("different validation/assembly limits")
 			}
 			if c == 0 {
-				omitted := strings.Replace(string(raw), `"max_concurrency":0,`, "", 1)
+				omitted := strings.Replace(string(raw), "        max_concurrency: 0\n", "", 1)
 				decoded, err = DecodeRouting(strings.NewReader(omitted))
 				if err != nil || decoded.Services[0].Local.runtimeLimits().Concurrency != 4 {
 					t.Fatal("omitted default", err)
@@ -66,7 +71,11 @@ func TestLocalConcurrencyWholeGraphBeforeIO(t *testing.T) {
 	backend := &Search{URL: endpoint.URL, Index: "records", Profile: "elasticsearch-8.19.22"}
 	first := &Local{Search: backend}
 	for _, c := range []int{-1, 33} {
-		mongo := &Mongo{URI: "mongodb://unresolved.invalid:27017/?tls=true&tlsCAFile=/missing/concurrency-ca.pem", Database: "records", Collection: "records"}
+		mongo := &Mongo{
+			URI:        "mongodb://unresolved.invalid:27017/?tls=true&tlsCAFile=/missing/concurrency-ca.pem",
+			Database:   "records",
+			Collection: "records",
+		}
 		invalid := &Local{MongoDB: mongo, MaxConcurrency: c}
 		firstService := Service{Name: "first", Local: first}
 		invalidService := Service{Name: "invalid", Local: invalid}

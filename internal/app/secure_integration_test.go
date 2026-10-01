@@ -21,7 +21,7 @@ import (
 
 func secureNode(t *testing.T, cfg Config) *Node {
 	t.Helper()
-	filename := filepath.Join(t.TempDir(), "node.json")
+	filename := filepath.Join(t.TempDir(), "node.yaml")
 	writeConfigFiles(t, filename, cfg, 0600)
 	cfg, err := Load(filename)
 	if err != nil {
@@ -229,7 +229,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
 				t.Fatal("Native lost response")
 			}
-			t.Log("production basic/routing JSON Load/Open: CRUD, conflict/missing, opaque int64, expression, Bulk End/EOF, Scan End/EOF, Native End/EOF passed")
+			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, Bulk End/EOF, Scan End/EOF, Native End/EOF passed")
 		})
 	}
 }

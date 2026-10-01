@@ -85,11 +85,17 @@ type budgetReadTarget struct {
 
 func budgetOverlap(t *testing.T, targets []budgetReadTarget, o *budgetObservation) {
 	t.Helper()
-	budgetWait(t, "before five Local barrier", func() bool { a, _, _, _ := o.snapshot(); return a == 0 })
+	budgetWait(t, "before five Local barrier", func() bool {
+		a, _, _, _ := o.snapshot()
+		return a == 0
+	})
 	gate := make(chan struct{})
 	o.hold(gate, 0)
 	var release sync.Once
-	defer release.Do(func() { close(gate); o.hold(nil, 0) })
+	defer release.Do(func() {
+		close(gate)
+		o.hold(nil, 0)
+	})
 	var workers sync.WaitGroup
 	for _, target := range targets {
 		workers.Go(func() {
@@ -102,7 +108,10 @@ func budgetOverlap(t *testing.T, targets []budgetReadTarget, o *budgetObservatio
 			}
 		})
 	}
-	budgetWait(t, "five Local simultaneous requests", func() bool { a, _, _, _ := o.snapshot(); return a == 5 })
+	budgetWait(t, "five Local simultaneous requests", func() bool {
+		a, _, _, _ := o.snapshot()
+		return a == 5
+	})
 	seen := make(map[*process]bool)
 	owned, limit, active := 0, 0, 0
 	for _, target := range targets {
@@ -121,9 +130,13 @@ func budgetOverlap(t *testing.T, targets []budgetReadTarget, o *budgetObservatio
 		t.Fatal("four process/five Local overlap missing", len(seen), active, owned, limit)
 	}
 	t.Logf("simultaneous 4 processes / 5 Local: active=%d owned=%d derived ceiling=%d; observer request gate still closed", active, owned, limit)
-	release.Do(func() { close(gate); o.hold(nil, 0) })
+	release.Do(func() {
+		close(gate)
+		o.hold(nil, 0)
+	})
 	workers.Wait()
 }
+
 func budgetReplacementReads(t *testing.T, targets []budgetReadTarget) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

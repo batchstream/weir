@@ -9,7 +9,13 @@ import (
 
 func TestHistogramMergeBounds(t *testing.T) {
 	var a, b Histogram
-	for _, d := range []time.Duration{time.Microsecond, 5 * time.Millisecond, 100 * time.Millisecond, 250 * time.Millisecond, 2*time.Second + 1} {
+	for _, d := range []time.Duration{
+		time.Microsecond,
+		5 * time.Millisecond,
+		100 * time.Millisecond,
+		250 * time.Millisecond,
+		2*time.Second + 1,
+	} {
 		a.Add(d)
 		b.Add(d)
 	}

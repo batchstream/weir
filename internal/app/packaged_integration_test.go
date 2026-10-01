@@ -139,7 +139,7 @@ func TestPackagedArtifacts(t *testing.T) {
 				}
 				packagedFiles(t, directory, uri, fixture.DB)
 				if negative == "hostname" {
-					filename := filepath.Join(directory, "node-routing.json")
+					filename := filepath.Join(directory, "node-routing.yaml")
 					raw, err := os.ReadFile(filename)
 					if err != nil {
 						t.Fatal(err)
@@ -150,7 +150,14 @@ func TestPackagedArtifacts(t *testing.T) {
 					}
 				}
 				name := owner + "-negative-" + negative
-				opts := packagedContainerOptions{owner: owner, name: name, image: image, directory: directory, helper: helper, negative: true}
+				opts := packagedContainerOptions{
+					owner:     owner,
+					name:      name,
+					image:     image,
+					directory: directory,
+					helper:    helper,
+					negative:  true,
+				}
 				packagedContainer(t, opts)
 				exit := packagedDocker(t, "wait", name)
 				if strings.TrimSpace(exit) != "1" {
@@ -173,7 +180,13 @@ func TestPackagedArtifacts(t *testing.T) {
 			t.Fatal(err)
 		}
 		packagedFiles(t, directory, proxy.URI(), fixture.DB)
-		opts := packagedContainerOptions{owner: owner, name: owner + "-fault", image: image, directory: directory, helper: helper}
+		opts := packagedContainerOptions{
+			owner:     owner,
+			name:      owner + "-fault",
+			image:     image,
+			directory: directory,
+			helper:    helper,
+		}
 		address := packagedContainer(t, opts)
 		client := endpointProcessClient(t, address)
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
@@ -206,7 +219,10 @@ func TestPackagedArtifacts(t *testing.T) {
 		if strings.TrimSpace(packagedDocker(t, "wait", opts.name)) != "0" {
 			t.Fatal("fault process close")
 		}
-		budgetWait(t, "proxy closed", func() bool { current, _ := proxy.Sockets(); return current == 0 })
+		budgetWait(t, "proxy closed", func() bool {
+			current, _ := proxy.Sockets()
+			return current == 0
+		})
 		t.Log("one acknowledged real backend update; reply dropped; UNKNOWN; no replay; proxy sockets=0")
 	})
 }
@@ -249,7 +265,7 @@ func packagedFiles(t *testing.T, directory, uri, database string) {
 	config := packagedConfig(parsed.String(), database)
 	config.Basic.Listeners.Application = "0.0.0.0:7447"
 	config.Basic.Diagnostics.Address = "127.0.0.1:7449"
-	writeConfigFiles(t, filepath.Join(directory, "node.json"), config, 0644)
+	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), config, 0644)
 }
 
 type packagedContainerOptions struct {
@@ -301,7 +317,7 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 	args := []string{"create", "--name", opts.name, "--label", "weir.owner=" + opts.owner, "--platform=linux/arm64",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=512m", "--memory-swap=512m", "--cpus=2", "--pids-limit=96",
 		"--add-host=m15-wrong:host-gateway", "--publish", "127.0.0.1::7447", "--mount", "type=bind,src=" + opts.directory + ",dst=/fixture,readonly",
-		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.json"}
+		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.yaml"}
 	packagedDocker(t, args...)
 	packagedDocker(t, "start", opts.name)
 	if opts.negative {
@@ -389,7 +405,9 @@ func TestPackagedImageProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(status), "Uid:\t65532\t65532\t65532\t65532") || !strings.Contains(string(status), "NoNewPrivs:\t1") || !strings.Contains(string(status), "CapEff:\t0000000000000000") {
+	if !strings.Contains(string(status), "Uid:\t65532\t65532\t65532\t65532") ||
+		!strings.Contains(string(status), "NoNewPrivs:\t1") ||
+		!strings.Contains(string(status), "CapEff:\t0000000000000000") {
 		t.Fatal("PID1 privileges")
 	}
 	cmd, err := os.ReadFile("/proc/1/cmdline")
@@ -404,12 +422,19 @@ func TestPackagedImageProbe(t *testing.T) {
 		t.Fatal("finite cgroup", err)
 	}
 	metrics := testmetrics.Scrape(t, "127.0.0.1:7449")
-	if testmetrics.Sum(metrics, "weir_memory_unknown") != 0 || testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 || testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != 512<<20 || testmetrics.Sum(metrics, "weir_memory_latched") != 0 {
+	if testmetrics.Sum(metrics, "weir_memory_unknown") != 0 ||
+		testmetrics.Sum(metrics, "weir_memory_cgroup_valid") != 1 ||
+		testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") != 512<<20 ||
+		testmetrics.Sum(metrics, "weir_memory_latched") != 0 {
 		t.Fatal("nonroot readonly Linux memory observation")
 	}
 	rss := testmetrics.Sample(metrics, "weir_memory_sample_bytes", map[string]string{"source": "linux_rss"}).GetGauge().GetValue()
 	if rss <= 0 {
 		t.Fatal("RSS absent")
 	}
-	t.Logf("PID1 /weir UID=65532 CapEff=0 NoNewPrivs=1 readonly; Linux RSS=%g cgroup current=%g limit=536870912 unknown=0", rss, testmetrics.Sum(metrics, "weir_memory_cgroup_current_bytes"))
+	t.Logf(
+		"PID1 /weir UID=65532 CapEff=0 NoNewPrivs=1 readonly; Linux RSS=%g cgroup current=%g limit=536870912 unknown=0",
+		rss,
+		testmetrics.Sum(metrics, "weir_memory_cgroup_current_bytes"),
+	)
 }

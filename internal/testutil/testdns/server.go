@@ -50,7 +50,16 @@ func Start(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{Address: udp.LocalAddr().String(), udp: udp, tcp: tcp, answers: make(map[string]Answer), conns: make(map[net.Conn]bool), ctx: ctx, cancel: cancel, slots: make(chan struct{}, 64)}
+	s := &Server{
+		Address: udp.LocalAddr().String(),
+		udp:     udp,
+		tcp:     tcp,
+		answers: make(map[string]Answer),
+		conns:   make(map[net.Conn]bool),
+		ctx:     ctx,
+		cancel:  cancel,
+		slots:   make(chan struct{}, 64),
+	}
 	s.workers.Go(s.serveUDP)
 	s.workers.Go(s.serveTCP)
 	t.Cleanup(func() {
@@ -234,7 +243,14 @@ func (s *Server) reply(raw []byte, tcp bool) []byte {
 		case <-timer.C:
 		}
 	}
-	head := dnsmessage.Header{ID: header.ID, Response: true, Authoritative: true, RecursionAvailable: true, RCode: answer.Code, Truncated: answer.TCP && !tcp}
+	head := dnsmessage.Header{
+		ID:                 header.ID,
+		Response:           true,
+		Authoritative:      true,
+		RecursionAvailable: true,
+		RCode:              answer.Code,
+		Truncated:          answer.TCP && !tcp,
+	}
 	b := dnsmessage.NewBuilder(nil, head)
 	b.EnableCompression()
 	if b.StartQuestions() != nil || b.Question(q) != nil || b.StartAnswers() != nil {

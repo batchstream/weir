@@ -39,7 +39,11 @@ type Result struct {
 }
 
 func ValidateProgram(program Program) error {
-	if len(program.Source) == 0 || len(program.Source) > MaxSourceBytes || !utf8.ValidString(program.Source) || strings.IndexByte(program.Source, 0) >= 0 || strings.HasPrefix(program.Source, "\x1bLua") {
+	if len(program.Source) == 0 ||
+		len(program.Source) > MaxSourceBytes ||
+		!utf8.ValidString(program.Source) ||
+		strings.IndexByte(program.Source, 0) >= 0 ||
+		strings.HasPrefix(program.Source, "\x1bLua") {
 		return fmt.Errorf("invalid or oversized Lua source")
 	}
 	if err := value.Validate(program.Current); err != nil {

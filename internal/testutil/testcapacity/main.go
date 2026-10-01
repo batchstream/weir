@@ -24,6 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 func run() (runErrFinal error) {
 	mode := flag.String("mode", "", "config, trial, observe, idle, pace")
 	legacy := flag.Bool("legacy-expiry", false, "diagnostic-only original 5ms expiry")
@@ -86,7 +87,11 @@ func run() (runErrFinal error) {
 		limits := store.DefaultLimits()
 		limits.Concurrency = 4
 		limits.BatchOperations = 16
-		timing := map[string]any{"expiry_ms": arrivalExpiry.Milliseconds(), "max_catchup_per_wake": catchupLimit, "deadline_ms": callLifetime.Milliseconds()}
+		timing := map[string]any{
+			"expiry_ms":            arrivalExpiry.Milliseconds(),
+			"max_catchup_per_wake": catchupLimit,
+			"deadline_ms":          callLifetime.Milliseconds(),
+		}
 		out := map[string]any{"config": cfg, "store_effective": limits, "timing": timing}
 		return encoder.Encode(out)
 	}
@@ -139,7 +144,18 @@ func run() (runErrFinal error) {
 		return c.setup(call, encoder)
 	}
 	if *mode == "pace" {
-		opts := TrialOptions{Rate: *rate, Seconds: *seconds, Workers: 64, Prefix: "pace", TimingOnly: true, WriteEvery: *writeEvery, LegacyExpiry: *legacy, ArrivalExpiryMS: *arrivalExpiryMS, MaxCatchup: *maxCatchup, ClientQueue: *clientQueue}
+		opts := TrialOptions{
+			Rate:            *rate,
+			Seconds:         *seconds,
+			Workers:         64,
+			Prefix:          "pace",
+			TimingOnly:      true,
+			WriteEvery:      *writeEvery,
+			LegacyExpiry:    *legacy,
+			ArrivalExpiryMS: *arrivalExpiryMS,
+			MaxCatchup:      *maxCatchup,
+			ClientQueue:     *clientQueue,
+		}
 		return pacing(ctx, encoder, opts)
 	}
 	if *mode != "trial" {
@@ -212,7 +228,17 @@ func run() (runErrFinal error) {
 			return deadline.Err()
 		}
 	}
-	opts := TrialOptions{Rate: *rate, WarmSeconds: *warm, Seconds: *seconds, Prefix: *prefix, Workers: *workers, WriteEvery: *writeEvery, ArrivalExpiryMS: *arrivalExpiryMS, MaxCatchup: *maxCatchup, ClientQueue: *clientQueue}
+	opts := TrialOptions{
+		Rate:            *rate,
+		WarmSeconds:     *warm,
+		Seconds:         *seconds,
+		Prefix:          *prefix,
+		Workers:         *workers,
+		WriteEvery:      *writeEvery,
+		ArrivalExpiryMS: *arrivalExpiryMS,
+		MaxCatchup:      *maxCatchup,
+		ClientQueue:     *clientQueue,
+	}
 	t, runErr := runTrial(deadline, c, opts)
 	var rt *Trial
 	if runErr == nil && *recovery > 0 {
@@ -260,7 +286,13 @@ func run() (runErrFinal error) {
 			continue
 		}
 		a, ae := c.audit(deadline, trial)
-		out = map[string]any{"type": "audit", "prefix": trial.Options.Prefix, "audit": a, "error": fmt.Sprint(ae), "ledger": trial.Ledger}
+		out = map[string]any{
+			"type":   "audit",
+			"prefix": trial.Options.Prefix,
+			"audit":  a,
+			"error":  fmt.Sprint(ae),
+			"ledger": trial.Ledger,
+		}
 		if err = encoder.Encode(out); err != nil {
 			return err
 		}

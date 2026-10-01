@@ -45,7 +45,7 @@
                 "args": [
                   "serve",
                   "--config",
-                  "/etc/weir/node.json"
+                  "/etc/weir/node.yaml"
                 ],
                 "ports": [
                   {

@@ -24,14 +24,14 @@ indices. MongoDB program transforms require transactions on a replica set.
 ```sh
 go build -o bin/weir ./cmd/weir
 bin/weir version
-bin/weir check --config deploy/docker/node.example.json
+bin/weir check --config config.example.yaml
 ```
 
-Copy the [basic configuration template](https://github.com/batchstream/weir/blob/main/deploy/docker/node.example.json)
-and its [routing configuration](https://github.com/batchstream/weir/blob/main/deploy/docker/routes.example.json)
+Copy the [complete configuration reference](https://github.com/batchstream/weir/blob/main/config.example.yaml)
+and its [routing example](https://github.com/batchstream/weir/blob/main/routes.example.yaml)
 into the same directory. Set the backend address and resource names in the routing
-file. Start with `bin/weir serve --config /path/to/node.json`;
-`bin/weir serve` loads `weir.json` in the current directory.
+file. Start with `bin/weir serve --config /path/to/weir.yaml`;
+`bin/weir serve` loads `weir.yaml` in the current directory.
 Lua program transforms run inside the Weir process; no additional executable or
 runtime path configuration is required.
 The application listener uses plaintext gRPC; deploy it on an isolated network.
@@ -49,55 +49,59 @@ HTTP settings under `diagnostics`, connection/session limits and readable timeou
 under `transport`, and the hop budget under `forwarding`. Its required
 `routing.file` selects a separate file containing `services` and `routes`.
 
-For example, `weir.json`:
+The [configuration reference](https://github.com/batchstream/weir/blob/main/config.example.yaml)
+documents every basic and routing field, including its purpose, required status,
+default, allowed values and conditional relationships. Its basic configuration
+can be copied directly; the routing section includes commented MongoDB, Search,
+HTTPS authentication and peer-forwarding examples.
 
-```json
-{
-  "listeners": {"application": "127.0.0.1:7447"},
-  "diagnostics": {"address": "127.0.0.1:7449"},
-  "memory": "512MiB",
-  "transport": {
-    "max_connections": 16,
-    "max_sessions": 16,
-    "timeouts": {
-      "unary": "30s",
-      "bulk": "15m",
-      "scan": "5m",
-      "native": "5m",
-      "stall": "30s"
-    }
-  },
-  "forwarding": {"hop_limit": 4},
-  "routing": {"file": "routes.json"}
-}
+For example, `weir.yaml`:
+
+```yaml
+listeners:
+  application: "127.0.0.1:7447"
+diagnostics:
+  address: "127.0.0.1:7449"
+memory: "512MiB"
+transport:
+  max_connections: 16
+  max_sessions: 16
+  timeouts:
+    unary: "30s"
+    bulk: "15m"
+    scan: "5m"
+    native: "5m"
+    stall: "30s"
+forwarding:
+  hop_limit: 4
+routing:
+  file: "routes.yaml"
 ```
 
-And `routes.json`:
+And `routes.yaml`:
 
-```json
-{
-  "services": [{
-    "name": "database",
-    "local": {
-      "max_concurrency": 4,
-      "max_batch_operations": 16,
-      "mongodb": {
-        "uri": "mongodb://127.0.0.1:27028/?directConnection=true",
-        "database": "weir_m1",
-        "collection": "records"
-      }
-    }
-  }],
-  "routes": [{"store": "mongo", "service": "database"}]
-}
+```yaml
+services:
+  - name: "database"
+    local:
+      max_concurrency: 4
+      max_batch_operations: 16
+      mongodb:
+        uri: "mongodb://127.0.0.1:27028/?directConnection=true"
+        database: "weir_m1"
+        collection: "records"
+routes:
+  - store: "mongo"
+    service: "database"
 ```
 
 Relative routing paths resolve from the basic file's directory; absolute paths
 are also supported. Configure at least one application or peer listener. Both
-files are strict JSON objects: unknown fields, duplicate keys, trailing data and
-files over 128 KiB are rejected. Weir validates both files and the complete route
-graph before opening listeners or backend connections. Changes to either file
-take effect after a restart.
+files are strict single-document YAML mappings with exact lowercase field names.
+Unknown fields, duplicate keys, anchors, aliases, merge keys, explicit tags,
+trailing documents and files over 128 KiB are rejected. Weir validates both files
+and the complete route graph before opening listeners or backend connections.
+Changes to either file take effect after a restart.
 
 Memory is a string containing an integer and `B`, `KiB`, `MiB` or `GiB`, such as
 `"512MiB"` or `"1GiB"`; the allowed process budget is 64 MiB through 64 GiB.
@@ -110,8 +114,8 @@ The CLI uses Cobra commands:
 
 | Command | Purpose |
 | --- | --- |
-| `weir serve --config weir.json` | Load both files and start the server. |
-| `weir check --config weir.json` | Validate both files without backend or listener access. |
+| `weir serve --config weir.yaml` | Load both files and start the server. |
+| `weir check --config weir.yaml` | Validate both files without backend or listener access. |
 | `weir version` | Print build identity. |
 | `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
 | `weir --help` | Show commands; each command also accepts `--help`. |

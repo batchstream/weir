@@ -5,24 +5,31 @@ import (
 	"errors"
 	"strconv"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
-// Duration is a Go duration encoded as a JSON string, including its unit.
+// Duration is a Go duration encoded as a string, including its unit.
 type Duration time.Duration
 
 func (value Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(value).String())
 }
 
-func (value *Duration) UnmarshalJSON(raw []byte) error {
-	var text string
-	if err := json.Unmarshal(raw, &text); err != nil {
+func (value Duration) MarshalYAML() (any, error) {
+	return time.Duration(value).String(), nil
+}
+
+func (value *Duration) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
 		return errors.New("duration requires a string with a time unit")
 	}
-	parsed, err := time.ParseDuration(text)
+
+	parsed, err := time.ParseDuration(node.Value)
 	if err != nil {
 		return errors.New("invalid duration")
 	}
+
 	*value = Duration(parsed)
 	return nil
 }
@@ -31,23 +38,37 @@ func (value *Duration) UnmarshalJSON(raw []byte) error {
 type ByteSize uint64
 
 func (value ByteSize) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value.text())
+}
+
+func (value ByteSize) MarshalYAML() (any, error) {
+	return value.text(), nil
+}
+
+func (value ByteSize) text() string {
 	bytes := uint64(value)
 	for _, unit := range []struct {
 		name string
 		size uint64
-	}{{"GiB", 1 << 30}, {"MiB", 1 << 20}, {"KiB", 1 << 10}, {"B", 1}} {
+	}{
+		{"GiB", 1 << 30},
+		{"MiB", 1 << 20},
+		{"KiB", 1 << 10},
+		{"B", 1},
+	} {
 		if bytes != 0 && bytes%unit.size == 0 || unit.size == 1 {
-			return json.Marshal(strconv.FormatUint(bytes/unit.size, 10) + unit.name)
+			return strconv.FormatUint(bytes/unit.size, 10) + unit.name
 		}
 	}
-	return nil, errors.New("invalid byte size")
+	return "0B"
 }
 
-func (value *ByteSize) UnmarshalJSON(raw []byte) error {
-	var text string
-	if err := json.Unmarshal(raw, &text); err != nil {
+func (value *ByteSize) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
 		return errors.New("memory requires a string with a byte unit")
 	}
+
+	text := node.Value
 	end := 0
 	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
 		end++
@@ -55,6 +76,7 @@ func (value *ByteSize) UnmarshalJSON(raw []byte) error {
 	if end == 0 {
 		return errors.New("invalid byte size")
 	}
+
 	var multiplier uint64
 	switch text[end:] {
 	case "B":
@@ -68,10 +90,12 @@ func (value *ByteSize) UnmarshalJSON(raw []byte) error {
 	default:
 		return errors.New("invalid byte size unit")
 	}
+
 	amount, err := strconv.ParseUint(text[:end], 10, 64)
 	if err != nil || amount > ^uint64(0)/multiplier {
 		return errors.New("byte size exceeds bound")
 	}
+
 	*value = ByteSize(amount * multiplier)
 	return nil
 }

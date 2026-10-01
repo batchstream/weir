@@ -24,8 +24,10 @@ import (
 
 const NativeDescriptor = "application/vnd.weir.search-http.v1+protobuf"
 const NativeBodyLimit = 8 << 20
+
 const NativeResponseLimit = 8 << 20
 const NativeItemLimit = 256 << 10
+
 const nativeMetadataLine = 4 << 10
 const nativeBudget = 4 << 20
 
@@ -47,7 +49,14 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	if f := nativeDescriptor(descriptor, open.BodyMediaType); f != nil {
 		return nil, f
 	}
-	p := &execution.Plan{Native: true, Key: open.Resource, Bytes: proto.Size(open) + protocol.EntryOverhead, ResultBytes: protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead, PageBytes: nativeBudget, Backend: descriptor}
+	p := &execution.Plan{
+		Native:      true,
+		Key:         open.Resource,
+		Bytes:       proto.Size(open) + protocol.EntryOverhead,
+		ResultBytes: protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead,
+		PageBytes:   nativeBudget,
+		Backend:     descriptor,
+	}
 	return p, nil
 }
 
@@ -152,6 +161,7 @@ func (r *nativeBulkReader) line(limit int) ([]byte, error) {
 		return line, nil
 	}
 }
+
 func (r *nativeBulkReader) item() ([]byte, error) {
 	metadata, err := r.line(nativeMetadataLine)
 	if err != nil {
@@ -197,6 +207,7 @@ func (r *nativeBulkReader) item() ([]byte, error) {
 	}
 	return append(metadata, source...), nil
 }
+
 func (r *nativeBulkReader) Read(dst []byte) (int, error) {
 	if len(dst) == 0 {
 		return 0, nil
@@ -224,7 +235,11 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 		defer stop()
 	}
 	interrupted := make(chan struct{})
-	stopIO := context.AfterFunc(ctx, func() { _ = exchange.Source.Close(); exchange.Sink.Interrupt(); close(interrupted) })
+	stopIO := context.AfterFunc(ctx, func() {
+		_ = exchange.Source.Close()
+		exchange.Sink.Interrupt()
+		close(interrupted)
+	})
 	defer func() {
 		if !stopIO() {
 			<-interrupted
@@ -289,7 +304,10 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 	// Preserve a complete early backend reply before stopping input. A local
 	// upload cancellation is not allowed to replace a known complete native error.
 	defer exchange.Source.Close()
-	if response.ContentLength > NativeResponseLimit || response.Header.Get("Content-Encoding") != "" || len(response.Trailer) != 0 || response.StatusCode == http.StatusSwitchingProtocols {
+	if response.ContentLength > NativeResponseLimit ||
+		response.Header.Get("Content-Encoding") != "" ||
+		len(response.Trailer) != 0 ||
+		response.StatusCode == http.StatusSwitchingProtocols {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP response bounds")), execution.Neutral
 	}
 	metadata := &spb.Response{StatusCode: uint32(response.StatusCode)}
@@ -373,6 +391,7 @@ func (b *nativeHTTPBody) Read(dst []byte) (int, error) {
 	b.mu.Unlock()
 	return n, err
 }
+
 func (b *nativeHTTPBody) Close() error {
 	b.mu.Lock()
 	b.closed = true

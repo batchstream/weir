@@ -17,101 +17,130 @@ import (
 
 // Config contains the separately loaded process and routing settings.
 type Config struct {
-	Basic   BasicConfig   `json:"basic"`
-	Routing RoutingConfig `json:"routing"`
+	Basic   BasicConfig   `json:"basic" yaml:"basic"`
+	Routing RoutingConfig `json:"routing" yaml:"routing"`
 }
 
 // BasicConfig groups settings by their process responsibility.
 type BasicConfig struct {
-	Listeners   ListenerConfig    `json:"listeners"`
-	Diagnostics DiagnosticsConfig `json:"diagnostics"`
-	Memory      ByteSize          `json:"memory"`
-	Transport   TransportConfig   `json:"transport"`
-	Forwarding  ForwardingConfig  `json:"forwarding"`
-	Routing     RoutingSource     `json:"routing"`
+	Listeners   ListenerConfig    `json:"listeners" yaml:"listeners"`
+	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
+	Memory      ByteSize          `json:"memory" yaml:"memory"`
+	Transport   TransportConfig   `json:"transport" yaml:"transport"`
+	Forwarding  ForwardingConfig  `json:"forwarding" yaml:"forwarding"`
+	Routing     RoutingSource     `json:"routing" yaml:"routing"`
 }
 
 type ListenerConfig struct {
-	Application string `json:"application"`
-	Peer        string `json:"peer"`
+	Application string `json:"application" yaml:"application"`
+	Peer        string `json:"peer" yaml:"peer"`
 }
 
 type DiagnosticsConfig struct {
-	Address       string `json:"address"`
-	AllowIntranet bool   `json:"allow_intranet"`
+	Address       string `json:"address" yaml:"address"`
+	AllowIntranet bool   `json:"allow_intranet" yaml:"allow_intranet"`
 }
 
 type ForwardingConfig struct {
-	HopLimit int `json:"hop_limit"`
+	HopLimit int `json:"hop_limit" yaml:"hop_limit"`
 }
 
 type RoutingSource struct {
-	File string `json:"file"`
+	File string `json:"file" yaml:"file"`
 }
 
 // RoutingConfig defines the complete, static service and Store graph.
 type RoutingConfig struct {
-	Services []Service `json:"services"`
-	Routes   []Route   `json:"routes"`
+	Services []Service `json:"services" yaml:"services"`
+	Routes   []Route   `json:"routes" yaml:"routes"`
 }
 
 type Route struct {
-	Store   string `json:"store"`
-	Service string `json:"service"`
+	Store   string `json:"store" yaml:"store"`
+	Service string `json:"service" yaml:"service"`
 }
+
 type Service struct {
-	Name   string  `json:"name"`
-	Local  *Local  `json:"local"`
-	Remote *Remote `json:"remote"`
+	Name   string  `json:"name" yaml:"name"`
+	Local  *Local  `json:"local" yaml:"local"`
+	Remote *Remote `json:"remote" yaml:"remote"`
 }
+
 type Local struct {
-	MongoDB            *Mongo  `json:"mongodb"`
-	Search             *Search `json:"search"`
-	MaxConcurrency     int     `json:"max_concurrency"`
-	MaxBatchOperations int     `json:"max_batch_operations"`
+	MongoDB            *Mongo  `json:"mongodb" yaml:"mongodb"`
+	Search             *Search `json:"search" yaml:"search"`
+	MaxConcurrency     int     `json:"max_concurrency" yaml:"max_concurrency"`
+	MaxBatchOperations int     `json:"max_batch_operations" yaml:"max_batch_operations"`
 }
+
 type Mongo struct {
-	URI        string `json:"uri"`
-	Database   string `json:"database"`
-	Collection string `json:"collection"`
+	URI        string `json:"uri" yaml:"uri"`
+	Database   string `json:"database" yaml:"database"`
+	Collection string `json:"collection" yaml:"collection"`
 }
+
 type Search struct {
-	Connection *search.Connection `json:"connection"`
-	URL        string             `json:"url"`
-	Index      string             `json:"index"`
-	Profile    string             `json:"profile"`
+	Connection *search.Connection `json:"connection" yaml:"connection"`
+	URL        string             `json:"url" yaml:"url"`
+	Index      string             `json:"index" yaml:"index"`
+	Profile    string             `json:"profile" yaml:"profile"`
 }
+
 type Remote struct {
-	Endpoints      []string `json:"endpoints"`
-	MaxConcurrency int      `json:"max_concurrency"`
+	Endpoints      []string `json:"endpoints" yaml:"endpoints"`
+	MaxConcurrency int      `json:"max_concurrency" yaml:"max_concurrency"`
 }
+
 type TransportConfig struct {
-	MaxConnections int               `json:"max_connections"`
-	MaxSessions    int               `json:"max_sessions"`
-	Timeouts       TransportTimeouts `json:"timeouts"`
+	MaxConnections int               `json:"max_connections" yaml:"max_connections"`
+	MaxSessions    int               `json:"max_sessions" yaml:"max_sessions"`
+	Timeouts       TransportTimeouts `json:"timeouts" yaml:"timeouts"`
 }
 
 type TransportTimeouts struct {
-	Unary  Duration `json:"unary"`
-	Bulk   Duration `json:"bulk"`
-	Scan   Duration `json:"scan"`
-	Native Duration `json:"native"`
-	Stall  Duration `json:"stall"`
+	Unary  Duration `json:"unary" yaml:"unary"`
+	Bulk   Duration `json:"bulk" yaml:"bulk"`
+	Scan   Duration `json:"scan" yaml:"scan"`
+	Native Duration `json:"native" yaml:"native"`
+	Stall  Duration `json:"stall" yaml:"stall"`
 }
 
 func DefaultConfig() Config {
 	defaults := server.DefaultLimits()
-	timeouts := TransportTimeouts{Unary: Duration(defaults.UnaryLifetime), Bulk: Duration(defaults.BulkLifetime), Scan: Duration(defaults.ScanLifetime), Native: Duration(defaults.NativeLifetime), Stall: Duration(defaults.Stall)}
-	transport := TransportConfig{MaxConnections: defaults.Connections, MaxSessions: defaults.Sessions, Timeouts: timeouts}
+	timeouts := TransportTimeouts{
+		Unary:  Duration(defaults.UnaryLifetime),
+		Bulk:   Duration(defaults.BulkLifetime),
+		Scan:   Duration(defaults.ScanLifetime),
+		Native: Duration(defaults.NativeLifetime),
+		Stall:  Duration(defaults.Stall),
+	}
+	transport := TransportConfig{
+		MaxConnections: defaults.Connections,
+		MaxSessions:    defaults.Sessions,
+		Timeouts:       timeouts,
+	}
 	forwarding := ForwardingConfig{HopLimit: 4}
-	basic := BasicConfig{Memory: 512 << 20, Transport: transport, Forwarding: forwarding}
+	basic := BasicConfig{
+		Memory:     512 << 20,
+		Transport:  transport,
+		Forwarding: forwarding,
+	}
+
 	cfg := Config{Basic: basic}
 	return cfg
 }
 
 func (cfg TransportConfig) serverLimits() server.Limits {
 	timeouts := cfg.Timeouts
-	limits := server.Limits{Connections: cfg.MaxConnections, Sessions: cfg.MaxSessions, UnaryLifetime: time.Duration(timeouts.Unary), BulkLifetime: time.Duration(timeouts.Bulk), ScanLifetime: time.Duration(timeouts.Scan), NativeLifetime: time.Duration(timeouts.Native), Stall: time.Duration(timeouts.Stall)}
+	limits := server.Limits{
+		Connections:    cfg.MaxConnections,
+		Sessions:       cfg.MaxSessions,
+		UnaryLifetime:  time.Duration(timeouts.Unary),
+		BulkLifetime:   time.Duration(timeouts.Bulk),
+		ScanLifetime:   time.Duration(timeouts.Scan),
+		NativeLifetime: time.Duration(timeouts.Native),
+		Stall:          time.Duration(timeouts.Stall),
+	}
 	return limits
 }
 
@@ -121,12 +150,17 @@ func address(value string, loopback bool) bool {
 	host, port, err := net.SplitHostPort(value)
 	ip := net.ParseIP(host)
 	number, portErr := strconv.Atoi(port)
-	return err == nil && ip != nil && (!loopback || ip.IsLoopback()) && port != "" && strings.Trim(port, "0123456789") == "" && portErr == nil && number >= 0 && number <= 65535
+
+	return err == nil && ip != nil && (!loopback || ip.IsLoopback()) &&
+		port != "" && strings.Trim(port, "0123456789") == "" &&
+		portErr == nil && number >= 0 && number <= 65535
 }
+
 func validName(name string) bool {
 	parsed, segments, err := protocol.ParseResource("weir://" + name)
 	return err == nil && parsed == name && len(segments) == 0
 }
+
 func (cfg Config) Validate() error {
 	if err := cfg.Basic.Validate(); err != nil {
 		return err
@@ -141,7 +175,10 @@ func (cfg BasicConfig) Validate() error {
 	if cfg.Diagnostics.Address != "" && !address(cfg.Diagnostics.Address, !cfg.Diagnostics.AllowIntranet) {
 		return errors.New("diagnostics requires explicit IP and port; non-loopback requires diagnostics.allow_intranet")
 	}
-	if cfg.Listeners.Application == "" && cfg.Listeners.Peer == "" || cfg.Listeners.Application != "" && !address(cfg.Listeners.Application, false) || cfg.Listeners.Peer != "" && !address(cfg.Listeners.Peer, false) {
+
+	if cfg.Listeners.Application == "" && cfg.Listeners.Peer == "" ||
+		cfg.Listeners.Application != "" && !address(cfg.Listeners.Application, false) ||
+		cfg.Listeners.Peer != "" && !address(cfg.Listeners.Peer, false) {
 		return errors.New("invalid listener configuration")
 	}
 	listeners := []string{cfg.Listeners.Application, cfg.Listeners.Peer, cfg.Diagnostics.Address}
@@ -164,12 +201,15 @@ func (cfg BasicConfig) Validate() error {
 			}
 		}
 	}
-	if cfg.Forwarding.HopLimit < 0 || cfg.Forwarding.HopLimit > 8 || cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
+
+	if cfg.Forwarding.HopLimit < 0 || cfg.Forwarding.HopLimit > 8 ||
+		cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
 		return errors.New("invalid process bounds")
 	}
 	if err := cfg.Transport.serverLimits().Validate(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -177,26 +217,31 @@ func (cfg RoutingConfig) Validate() error {
 	if len(cfg.Services) == 0 || len(cfg.Services) > 16 || len(cfg.Routes) == 0 || len(cfg.Routes) > 16 {
 		return errors.New("invalid static graph bounds")
 	}
+
 	services := make(map[string]Service)
 	for _, service := range cfg.Services {
 		if !validName(service.Name) || services[service.Name].Name != "" || (service.Local == nil) == (service.Remote == nil) {
 			return errors.New("invalid or duplicate Service")
 		}
 		services[service.Name] = service
+
 		if r := service.Remote; r != nil {
 			_, endpointErr := server.CanonicalEndpoints(r.Endpoints)
 			if endpointErr != nil || r.MaxConcurrency < 1 || r.MaxConcurrency > 16 {
 				return errors.New("invalid RemoteWeir")
 			}
 		}
+
 		if l := service.Local; l != nil {
 			if (l.MongoDB == nil) == (l.Search == nil) {
 				return errors.New("LocalStore requires exactly one adapter")
 			}
+
 			limits := l.runtimeLimits()
 			if err := limits.Validate(); err != nil {
 				return err
 			}
+
 			if m := l.MongoDB; m != nil {
 				if !mongoName.MatchString(m.Database) || !mongoName.MatchString(m.Collection) || m.URI == "" {
 					return errors.New("invalid MongoDB configuration")
@@ -205,6 +250,7 @@ func (cfg RoutingConfig) Validate() error {
 					return err
 				}
 			}
+
 			if l.Search != nil {
 				config := l.searchConfig(service.Name)
 				if err := search.ValidateConfig(config); err != nil {
@@ -213,6 +259,7 @@ func (cfg RoutingConfig) Validate() error {
 			}
 		}
 	}
+
 	stores := make(map[string]bool)
 	uses := make(map[string]int)
 	for _, route := range cfg.Routes {
@@ -222,11 +269,13 @@ func (cfg RoutingConfig) Validate() error {
 		stores[route.Store] = true
 		uses[route.Service]++
 	}
+
 	for name, service := range services {
 		if uses[name] == 0 || service.Local != nil && uses[name] != 1 {
 			return errors.New("unused or aliased LocalStore")
 		}
 	}
+
 	return nil
 }
 
@@ -238,10 +287,18 @@ func (l *Local) runtimeLimits() store.Limits {
 	if l.MaxBatchOperations != 0 {
 		limits.BatchOperations = l.MaxBatchOperations
 	}
+
 	return limits
 }
 
 func (l *Local) searchConfig(name string) search.Config {
-	cfg := search.Config{Store: name, URL: l.Search.URL, Index: l.Search.Index, Profile: l.Search.Profile, Pool: l.runtimeLimits().Concurrency, Connection: l.Search.Connection}
+	cfg := search.Config{
+		Store:      name,
+		URL:        l.Search.URL,
+		Index:      l.Search.Index,
+		Profile:    l.Search.Profile,
+		Pool:       l.runtimeLimits().Concurrency,
+		Connection: l.Search.Connection,
+	}
 	return cfg
 }

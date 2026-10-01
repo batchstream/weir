@@ -24,7 +24,14 @@ func TestProcessParsing(t *testing.T) {
 	if err != nil || rss != 43008 || threads != 2 || uid != 1000 {
 		t.Fatal(rss, threads, uid, err)
 	}
-	for _, raw := range []string{"", strings.ReplaceAll(good, "kB", "MB"), strings.ReplaceAll(good, "42", "18446744073709551615"), strings.ReplaceAll(good, "42", "-1"), good + "Threads: 2\n", strings.ReplaceAll(good, "1000 1000 1000 1000", "1000 0 1000 1000")} {
+	for _, raw := range []string{
+		"",
+		strings.ReplaceAll(good, "kB", "MB"),
+		strings.ReplaceAll(good, "42", "18446744073709551615"),
+		strings.ReplaceAll(good, "42", "-1"),
+		good + "Threads: 2\n",
+		strings.ReplaceAll(good, "1000 1000 1000 1000", "1000 0 1000 1000"),
+	} {
 		if _, _, _, err := processStatus(raw); err == nil {
 			t.Fatalf("accepted %q", raw)
 		}
@@ -42,12 +49,17 @@ func TestProcessParsing(t *testing.T) {
 	if err != nil || start != 123 || user != 3 || system != 5 {
 		t.Fatal(start, user, system, err)
 	}
-	for _, bad := range []string{"", strings.Replace(raw, " S ", " Z ", 1), strings.Replace(raw, " 123 ", " 18446744073709551616 ", 1)} {
+	for _, bad := range []string{
+		"",
+		strings.Replace(raw, " S ", " Z ", 1),
+		strings.Replace(raw, " 123 ", " 18446744073709551616 ", 1),
+	} {
 		if _, _, _, err = processStat(bad); err == nil {
 			t.Fatal("bad stat accepted")
 		}
 	}
 }
+
 func TestBoundedObservationFiles(t *testing.T) {
 	root := t.TempDir()
 	name := filepath.Join(root, "file")
@@ -72,12 +84,18 @@ func TestBoundedObservationFiles(t *testing.T) {
 		t.Fatal("directory bound")
 	}
 }
+
 func TestTargetIdentityAndJVM(t *testing.T) {
 	target := ProcessIdentity{UID: 1000, Cgroup: "0::/\n", Namespaces: map[string]string{"pid": "pid:[1]"}}
 	if err := sameContainer(target, target); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []ProcessIdentity{{UID: 0, Cgroup: "0::/\n", Namespaces: target.Namespaces}, {UID: 1001, Cgroup: "0::/\n", Namespaces: target.Namespaces}, {UID: 1000, Cgroup: "0::/other\n", Namespaces: target.Namespaces}, {UID: 1000, Cgroup: "0::/\n", Namespaces: map[string]string{"pid": "pid:[2]"}}} {
+	for _, bad := range []ProcessIdentity{
+		{UID: 0, Cgroup: "0::/\n", Namespaces: target.Namespaces},
+		{UID: 1001, Cgroup: "0::/\n", Namespaces: target.Namespaces},
+		{UID: 1000, Cgroup: "0::/other\n", Namespaces: target.Namespaces},
+		{UID: 1000, Cgroup: "0::/\n", Namespaces: map[string]string{"pid": "pid:[2]"}},
+	} {
 		if err := sameContainer(target, bad); err == nil {
 			t.Fatal("identity accepted")
 		}
@@ -120,12 +138,33 @@ func TestTargetIdentityAndJVM(t *testing.T) {
 		t.Fatal("exited JVM")
 	}
 }
+
 func TestObservationCgroupParsing(t *testing.T) {
-	files := map[string]string{"memory.current": "10\n", "memory.max": "100\n", "memory.swap.max": "0\n", "pids.current": "1\n", "pids.max": "8\n", "cpu.max": "100000 100000\n", "cpu.stat": "usage_usec 1\nuser_usec 1\nsystem_usec 0\nnr_periods 1\nnr_throttled 0\nthrottled_usec 0\n", "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n", "cpuset.cpus.effective": "0-3\n", "io.stat": ""}
+	files := map[string]string{
+		"memory.current":        "10\n",
+		"memory.max":            "100\n",
+		"memory.swap.max":       "0\n",
+		"pids.current":          "1\n",
+		"pids.max":              "8\n",
+		"cpu.max":               "100000 100000\n",
+		"cpu.stat":              "usage_usec 1\nuser_usec 1\nsystem_usec 0\nnr_periods 1\nnr_throttled 0\nthrottled_usec 0\n",
+		"memory.events":         "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+		"cpuset.cpus.effective": "0-3\n",
+		"io.stat":               "",
+	}
 	if err := validateCgroup(files); err != nil {
 		t.Fatal(err)
 	}
-	for name, raw := range map[string]string{"memory.current": "-1", "memory.max": "max", "pids.max": "18446744073709551616", "cpu.max": "100 percent", "cpu.stat": "usage_usec 1\nusage_usec 2", "memory.events": "oom 0", "io.stat": "8:0 rbytes=-1", "cpuset.cpus.effective": ""} {
+	for name, raw := range map[string]string{
+		"memory.current":        "-1",
+		"memory.max":            "max",
+		"pids.max":              "18446744073709551616",
+		"cpu.max":               "100 percent",
+		"cpu.stat":              "usage_usec 1\nusage_usec 2",
+		"memory.events":         "oom 0",
+		"io.stat":               "8:0 rbytes=-1",
+		"cpuset.cpus.effective": "",
+	} {
 		original := files[name]
 		files[name] = raw
 		if err := validateCgroup(files); err == nil {
@@ -138,6 +177,7 @@ func TestObservationCgroupParsing(t *testing.T) {
 		t.Fatal("missing io.stat")
 	}
 }
+
 func TestObservationHTTPBounds(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/large" {
@@ -163,6 +203,7 @@ func TestObservationHTTPBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
 func TestEvidenceBlockedOutputAndCancellation(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -188,6 +229,7 @@ func TestEvidenceBlockedOutputAndCancellation(t *testing.T) {
 		t.Fatal("total bound")
 	}
 }
+
 func TestEvidenceJSONPipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -255,6 +297,7 @@ func TestEvidenceInheritedBlockingPipe(t *testing.T) {
 		t.Fatalf("Wait=%v stderr=%s", err, stderr.String())
 	}
 }
+
 func TestEvidenceInputCancellation(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -262,7 +305,11 @@ func TestEvidenceInputCancellation(t *testing.T) {
 	}
 	defer w.Close()
 	done := make(chan error, 1)
-	go func() { var raw [1]byte; _, err := r.Read(raw[:]); done <- err }()
+	go func() {
+		var raw [1]byte
+		_, err := r.Read(raw[:])
+		done <- err
+	}()
 	r.Close()
 	select {
 	case err := <-done:
@@ -284,7 +331,10 @@ func TestJVMModuleMarkerAndLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := filepath.Join(directory, "cmdline")
-	for _, raw := range []string{"java\x00-m\x00org.elasticsearch.server/org.elasticsearch.bootstrap.Elasticsearch\x00", "java\x00org.elasticsearch.bootstrap.Elasticsearch\x00"} {
+	for _, raw := range []string{
+		"java\x00-m\x00org.elasticsearch.server/org.elasticsearch.bootstrap.Elasticsearch\x00",
+		"java\x00org.elasticsearch.bootstrap.Elasticsearch\x00",
+	} {
 		if err := os.WriteFile(name, []byte(raw), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -293,7 +343,10 @@ func TestJVMModuleMarkerAndLauncher(t *testing.T) {
 			t.Fatal(pid, err)
 		}
 	}
-	for _, raw := range []string{"java\x00org.elasticsearch.launcher.CliToolLauncher\x00", "java\x00-Dother=org.elasticsearch.bootstrap.Elasticsearch\x00"} {
+	for _, raw := range []string{
+		"java\x00org.elasticsearch.launcher.CliToolLauncher\x00",
+		"java\x00-Dother=org.elasticsearch.bootstrap.Elasticsearch\x00",
+	} {
 		if err := os.WriteFile(name, []byte(raw), 0600); err != nil {
 			t.Fatal(err)
 		}

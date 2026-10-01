@@ -34,12 +34,14 @@ func admin(ctx context.Context, method, path, body string) (int, []byte, error) 
 	}
 	return reply.StatusCode, raw, err
 }
+
 func put(id string) *pb.MutateRequest {
 	doc := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf(`{"n":1,"op":%q}`, id))}
 	action := &pb.MutateRequest_Put{Put: doc}
 	request := &pb.MutateRequest{Resource: "weir://records/records/s:" + id, Action: action}
 	return request
 }
+
 func persisted(ctx context.Context, id string) error {
 	code, raw, err := admin(ctx, "GET", "/records/_doc/"+id, "")
 	var result struct {

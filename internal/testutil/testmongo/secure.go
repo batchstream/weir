@@ -226,7 +226,13 @@ func (fixture *SecureFixture) uri(username, password, host, caFile string) strin
 			credentials = url.UserPassword(username, password)
 		}
 	}
-	requestURI := url.URL{Scheme: "mongodb", User: credentials, Host: net.JoinHostPort(host, strconv.Itoa(fixture.port)), Path: "/", RawQuery: query.Encode()}
+	requestURI := url.URL{
+		Scheme:   "mongodb",
+		User:     credentials,
+		Host:     net.JoinHostPort(host, strconv.Itoa(fixture.port)),
+		Path:     "/",
+		RawQuery: query.Encode(),
+	}
 	return requestURI.String()
 }
 
@@ -290,7 +296,16 @@ func (fixture *SecureFixture) startMongo(t *testing.T) {
 
 func (fixture *SecureFixture) connect(t *testing.T, uri string) *mongo.Client {
 	t.Helper()
-	options := options.Client().ApplyURI(uri).SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetEnableOverloadRetargeting(false).SetMaxPoolSize(4).SetMaxConnecting(2).SetServerSelectionTimeout(2 * time.Second).SetConnectTimeout(2 * time.Second)
+	options := options.Client().
+		ApplyURI(uri).
+		SetRetryReads(false).
+		SetRetryWrites(false).
+		SetMaxAdaptiveRetries(0).
+		SetEnableOverloadRetargeting(false).
+		SetMaxPoolSize(4).
+		SetMaxConnecting(2).
+		SetServerSelectionTimeout(2 * time.Second).
+		SetConnectTimeout(2 * time.Second)
 	if err := options.Validate(); err != nil {
 		t.Fatal("secure fixture client options are invalid")
 	}
@@ -324,7 +339,13 @@ func (fixture *SecureFixture) initializeReplicaSet(t *testing.T, client *mongo.C
 	t.Helper()
 	configuration := bson.D{
 		{Key: "_id", Value: "weir_m10"},
-		{Key: "members", Value: bson.A{bson.D{{Key: "_id", Value: 0}, {Key: "host", Value: net.JoinHostPort("127.0.0.1", strconv.Itoa(fixture.port))}}}},
+		{
+			Key: "members",
+			Value: bson.A{bson.D{
+				{Key: "_id", Value: 0},
+				{Key: "host", Value: net.JoinHostPort("127.0.0.1", strconv.Itoa(fixture.port))},
+			}},
+		},
 	}
 	command := bson.D{{Key: "replSetInitiate", Value: configuration}}
 	if err := fixture.command(client, "admin", command); err != nil {
@@ -373,8 +394,14 @@ func (fixture *SecureFixture) configureUsers(t *testing.T) {
 	role := bson.D{
 		{Key: "role", Value: "weirApplication"},
 		{Key: "privileges", Value: bson.A{
-			bson.D{{Key: "resource", Value: bson.D{{Key: "db", Value: fixture.DB}, {Key: "collection", Value: "records"}}}, {Key: "actions", Value: bson.A{"find", "insert", "update", "remove"}}},
-			bson.D{{Key: "resource", Value: bson.D{{Key: "db", Value: fixture.DB}, {Key: "collection", Value: ""}}}, {Key: "actions", Value: bson.A{"listCollections"}}},
+			bson.D{
+				{Key: "resource", Value: bson.D{{Key: "db", Value: fixture.DB}, {Key: "collection", Value: "records"}}},
+				{Key: "actions", Value: bson.A{"find", "insert", "update", "remove"}},
+			},
+			bson.D{
+				{Key: "resource", Value: bson.D{{Key: "db", Value: fixture.DB}, {Key: "collection", Value: ""}}},
+				{Key: "actions", Value: bson.A{"listCollections"}},
+			},
 		}},
 		{Key: "roles", Value: bson.A{}},
 	}
@@ -390,7 +417,11 @@ func (fixture *SecureFixture) configureUsers(t *testing.T) {
 		t.Fatalf("cannot create minimal MongoDB fixture role (%T)", err)
 	}
 	password := fixture.randomSecret(t)
-	user := bson.D{{Key: "createUser", Value: "weir_app"}, {Key: "pwd", Value: password}, {Key: "roles", Value: bson.A{bson.D{{Key: "role", Value: "weirApplication"}, {Key: "db", Value: fixture.DB}}}}}
+	user := bson.D{
+		{Key: "createUser", Value: "weir_app"},
+		{Key: "pwd", Value: password},
+		{Key: "roles", Value: bson.A{bson.D{{Key: "role", Value: "weirApplication"}, {Key: "db", Value: fixture.DB}}}},
+	}
 	if err := fixture.command(admin, "admin", user); err != nil {
 		t.Fatal("cannot create temporary MongoDB fixture application user")
 	}
@@ -400,7 +431,11 @@ func (fixture *SecureFixture) configureUsers(t *testing.T) {
 	fixture.BadCAURI = fixture.uri("weir_app", password, "127.0.0.1", filepath.Join(fixture.root, "untrusted-ca.pem"))
 	fixture.MissingPassURI = fixture.uri("weir_app", "", "127.0.0.1", fixture.caFile)
 	deniedPassword := fixture.randomSecret(t)
-	deniedUser := bson.D{{Key: "createUser", Value: "weir_denied"}, {Key: "pwd", Value: deniedPassword}, {Key: "roles", Value: bson.A{}}}
+	deniedUser := bson.D{
+		{Key: "createUser", Value: "weir_denied"},
+		{Key: "pwd", Value: deniedPassword},
+		{Key: "roles", Value: bson.A{}},
+	}
 	if err := fixture.command(admin, "admin", deniedUser); err != nil {
 		t.Fatal("cannot create temporary MongoDB fixture negative user")
 	}

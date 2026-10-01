@@ -30,6 +30,7 @@ func methodLabel(method string) string {
 		return "other"
 	}
 }
+
 func statusLabel(err error) string {
 	if err == nil {
 		return "ok"
@@ -48,11 +49,28 @@ type transportMetrics struct {
 }
 
 func newTransportMetrics() transportMetrics {
-	rpcOpts := prometheus.CounterOpts{Name: "weir_rpc_completions_total", Help: "gRPC handler/transport completion status; not client delivery acknowledgement."}
-	failureOpts := prometheus.CounterOpts{Name: "weir_transport_failures_total", Help: "At most one observed I/O failure per direction per admitted RPC, independent of execution evidence."}
-	watchOpts := prometheus.CounterOpts{Name: "weir_watchdog_expirations_total", Help: "Explicit Bulk watchdog expiry; input_or_result does not attribute blame to the client or backend."}
-	forcedOpts := prometheus.CounterOpts{Name: "weir_transport_forced_closes_total", Help: "Actual transport force-close actions, not inferred lost operations."}
-	m := transportMetrics{rpcs: prometheus.NewCounterVec(rpcOpts, []string{"method", "status"}), failures: prometheus.NewCounterVec(failureOpts, []string{"method", "phase"}), watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}), forced: prometheus.NewCounterVec(forcedOpts, []string{"reason"})}
+	rpcOpts := prometheus.CounterOpts{
+		Name: "weir_rpc_completions_total",
+		Help: "gRPC handler/transport completion status; not client delivery acknowledgement.",
+	}
+	failureOpts := prometheus.CounterOpts{
+		Name: "weir_transport_failures_total",
+		Help: "At most one observed I/O failure per direction per admitted RPC, independent of execution evidence.",
+	}
+	watchOpts := prometheus.CounterOpts{
+		Name: "weir_watchdog_expirations_total",
+		Help: "Explicit Bulk watchdog expiry; input_or_result does not attribute blame to the client or backend.",
+	}
+	forcedOpts := prometheus.CounterOpts{
+		Name: "weir_transport_forced_closes_total",
+		Help: "Actual transport force-close actions, not inferred lost operations.",
+	}
+	m := transportMetrics{
+		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"method", "status"}),
+		failures:  prometheus.NewCounterVec(failureOpts, []string{"method", "phase"}),
+		watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}),
+		forced:    prometheus.NewCounterVec(forcedOpts, []string{"reason"}),
+	}
 	for _, method := range metricMethods {
 		for _, label := range metricStatuses {
 			m.rpcs.WithLabelValues(method, label)
@@ -69,7 +87,9 @@ func newTransportMetrics() transportMetrics {
 	}
 	return m
 }
+
 func (s *Server) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(s, ch) }
+
 func (s *Server) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.rpcs.Collect(ch)
 	s.metrics.failures.Collect(ch)
@@ -78,8 +98,14 @@ func (s *Server) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (a *Admission) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(a, ch) }
+
 func (a *Admission) Collect(ch chan<- prometheus.Metric) {
-	values := map[string]int{"connections": len(a.connections), "connections_limit": cap(a.connections), "sessions": len(a.slots), "sessions_limit": cap(a.slots)}
+	values := map[string]int{
+		"connections":       len(a.connections),
+		"connections_limit": cap(a.connections),
+		"sessions":          len(a.slots),
+		"sessions_limit":    cap(a.slots),
+	}
 	for name, value := range values {
 		desc := prometheus.NewDesc("weir_ingress_"+name, "Shared application/peer admission occupancy or limit.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
@@ -88,8 +114,14 @@ func (a *Admission) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (r *RemoteWeir) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
+
 func (r *RemoteWeir) Collect(ch chan<- prometheus.Metric) {
-	values := map[string]int{"relays": len(r.slots), "relays_limit": cap(r.slots), "sockets": len(r.sockets), "sockets_limit": cap(r.sockets)}
+	values := map[string]int{
+		"relays":        len(r.slots),
+		"relays_limit":  cap(r.slots),
+		"sockets":       len(r.sockets),
+		"sockets_limit": cap(r.sockets),
+	}
 	for name, value := range values {
 		desc := prometheus.NewDesc("weir_remote_"+name, "RemoteWeir reserved relay/socket occupancy or limit; sockets include in-progress dial.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
@@ -107,10 +139,12 @@ func (r *RemoteWeir) Collect(ch chan<- prometheus.Metric) {
 	r.incompletes.Collect(ch)
 	r.rejections.Collect(ch)
 }
+
 func (r *RemoteWeir) incomplete(method string, err error, message string) error {
 	r.incompletes.WithLabelValues(method).Inc()
 	return incomplete(err, message)
 }
+
 func (d *delivery) ioFailure(phase string, err error) {
 	if err == nil || errors.Is(err, io.EOF) || d.metrics == nil {
 		return
