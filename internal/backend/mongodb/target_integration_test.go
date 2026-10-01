@@ -276,12 +276,17 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 			command := bson.D{{Key: "create", Value: target.collection}}
 			switch kind {
 			case "view":
-				command = append(command, bson.E{Key: "viewOn", Value: "records"}, bson.E{Key: "pipeline", Value: bson.A{}})
+				view := bson.E{Key: "viewOn", Value: "records"}
+				pipeline := bson.E{Key: "pipeline", Value: bson.A{}}
+				command = append(command, view, pipeline)
 			case "capped":
-				command = append(command, bson.E{Key: "capped", Value: true}, bson.E{Key: "size", Value: 4096})
+				capped := bson.E{Key: "capped", Value: true}
+				size := bson.E{Key: "size", Value: 4096}
+				command = append(command, capped, size)
 			case "collation":
 				collation := bson.D{{Key: "locale", Value: "en"}}
-				command = append(command, bson.E{Key: "collation", Value: collation})
+				option := bson.E{Key: "collation", Value: collation}
+				command = append(command, option)
 			}
 			if err := fixture.fixture.Admin.Database(target.database).RunCommand(ctx, command).Err(); err != nil {
 				t.Fatal(err)

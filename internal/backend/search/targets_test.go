@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -256,6 +257,103 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			}
 			if calls.Load() != wantCalls {
 				t.Fatal("ambiguous response triggered replay", calls.Load())
+			}
+		})
+	}
+}
+
+func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
+	cases := []struct {
+		name      string
+		liveRight bool
+	}{
+		{name: "skip_cancelled_target"},
+		{name: "keep_live_caller_on_same_target", liveRight: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			cancelled, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var rightInspections, writes atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/left":
+					cancel()
+					_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", "left"))
+				case "/right":
+					rightInspections.Add(1)
+					if !test.liveRight {
+						// A cancelled-only target must never consume the batch's
+						// shared deadline while the left caller is still valid.
+						<-r.Context().Done()
+						return
+					}
+					_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", "right"))
+				case "/_bulk":
+					writes.Add(1)
+					raw, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					if strings.Contains(string(raw), `"_id":"cancelled"`) {
+						t.Error("cancelled caller reached backend write")
+					}
+					if !strings.Contains(string(raw), `"_index":"left"`) || !strings.Contains(string(raw), `"_id":"left"`) {
+						t.Error("valid left target missing from write", string(raw))
+					}
+					fmt.Fprint(w, `{"errors":false,"took":1,"items":[{"index":{"_index":"left","_id":"left","status":200,"result":"updated","_seq_no":1,"_primary_term":1,"_shards":{"total":1,"successful":1,"failed":0}}}`)
+					if test.liveRight {
+						if !strings.Contains(string(raw), `"_index":"right"`) || !strings.Contains(string(raw), `"_id":"live"`) {
+							t.Error("live right target missing from write", string(raw))
+						}
+						fmt.Fprint(w, `,{"index":{"_index":"right","_id":"live","status":200,"result":"updated","_seq_no":1,"_primary_term":1,"_shards":{"total":1,"successful":1,"failed":0}}}`)
+					}
+					fmt.Fprint(w, "]}")
+				default:
+					t.Error("unexpected request after caller cancellation", r.URL.Path)
+				}
+			})
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			cfg := Config{Store: "search", URL: server.URL}
+			a := &Adapter{config: cfg, dialect: ElasticsearchProfile, client: server.Client(), ctx: context.Background()}
+			left := batchTestPlan(t, a, "put", "weir://search/left/s:left")
+			right := batchTestPlan(t, a, "put", "weir://search/right/s:cancelled")
+			right.Context = cancelled
+			works := []*execution.Plan{left, right}
+			if test.liveRight {
+				live := batchTestPlan(t, a, "put", "weir://search/right/s:live")
+				works = append(works, live)
+			}
+			for i, work := range works {
+				work.Operation.Index = uint64(i)
+			}
+			ctx, stop := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer stop()
+			results, feedback := a.Execute(ctx, works)
+			if len(results) != len(works) || writes.Load() != 1 || feedback != execution.Neutral {
+				t.Fatal("cancelled target blocked valid caller", results, writes.Load(), feedback)
+			}
+			for i, result := range results {
+				if result.Index != uint64(i) {
+					t.Fatal("caller result position lost", results)
+				}
+				mutation := result.GetMutation()
+				if i == 1 {
+					if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+						t.Fatal("cancelled caller lost its cancellation result", result)
+					}
+				} else if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil {
+					t.Fatal("valid caller failed after sibling cancellation", result)
+				}
+			}
+			wantRight := int32(0)
+			if test.liveRight {
+				wantRight = 1
+			}
+			if rightInspections.Load() != wantRight {
+				t.Fatal("target qualification ignored caller liveness", rightInspections.Load(), wantRight)
 			}
 		})
 	}

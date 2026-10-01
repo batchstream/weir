@@ -360,6 +360,11 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.B
 	qualified := make(map[string]qualification)
 	for _, i := range positions {
 		work := works[i]
+		if failure := batch.callerFailure(work, i); failure != nil {
+			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
+			continue
+		}
 		native := work.Backend.(*plan)
 		target, exists := qualified[native.index]
 		if !exists {
@@ -369,6 +374,11 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.B
 			if failure != nil {
 				batch.feedback = combineFeedback(batch.feedback, sample)
 			}
+		}
+		if failure := batch.callerFailure(work, i); failure != nil {
+			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
+			continue
 		}
 		caps := target.caps
 		denied := target.failure
