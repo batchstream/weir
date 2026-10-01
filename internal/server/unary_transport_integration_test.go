@@ -231,7 +231,7 @@ func TestUnaryLifetimeIncludesHandlerTime(t *testing.T) {
 	if _, err := f.mongo.Admin.Database(f.mongo.DB).Collection("records").InsertOne(ctx, doc); err != nil {
 		t.Fatal(err)
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 140}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 140}}
 	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	start := time.Now()
 	stream := startPausedUnaryRead(t, f, ctx)

@@ -134,8 +134,6 @@ def prepare(f, plan, artifact):
                     "max_batch_operations": 16,
                     "search": {
                         "url": "http://elasticsearch:9200",
-                        "index": "records",
-                        "profile": "elasticsearch-8.19.22",
                     },
                 },
             }

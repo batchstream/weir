@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/batchstream/weir/internal/backend/search"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -292,8 +291,6 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 	connection := &SearchConnection{Username: "user", Password: "secret-sentinel", CAFile: "/missing/ca-secret-sentinel.pem"}
 	backend := &Search{
 		URL:        "https://unresolved.invalid:443",
-		Index:      "records",
-		Profile:    search.ElasticsearchProfile,
 		Connection: connection,
 	}
 	local := &Local{Search: backend}
@@ -314,7 +311,7 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { contacts.Add(1) })
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
-	backend := &Search{URL: endpoint.URL, Index: "records", Profile: search.ElasticsearchProfile}
+	backend := &Search{URL: endpoint.URL}
 	local := &Local{Search: backend}
 	service := Service{Name: "search", Local: local}
 	invalidService := Service{Name: "invalid"}
@@ -393,8 +390,6 @@ func TestRoutingNullFields(t *testing.T) {
       search: null
       mongodb:
         uri: mongodb://127.0.0.1:27017
-        database: example
-        collection: records
 routes:
   - store: records
     service: database
@@ -403,7 +398,7 @@ routes:
 	if err != nil || cfg.Services[0].Remote != nil || cfg.Services[0].Local.Search != nil {
 		t.Fatal("unused adapter blocks may be explicitly null", err)
 	}
-	for _, field := range []string{"uri", "database", "collection"} {
+	for _, field := range []string{"uri"} {
 		lines := strings.Split(input, "\n")
 		for i, line := range lines {
 			prefix := "        " + field + ":"
@@ -432,8 +427,6 @@ func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
     local:
       search:
         url: https://127.0.0.1:9200
-        index: records
-        profile: elasticsearch-8.19.22
         connection:
           username: user-secret-sentinel
           password: password-secret-sentinel
@@ -455,12 +448,35 @@ routes:
 	for _, mutation := range [][2]string{
 		{"password-secret-sentinel", "null"},
 		{"username: user-secret-sentinel", "username: bad:user-secret-sentinel"},
-		{"profile: elasticsearch-8.19.22", "profile: profile-secret-sentinel"},
 	} {
 		invalid := strings.Replace(input, mutation[0], mutation[1], 1)
 		_, err := DecodeRouting(strings.NewReader(invalid))
 		if err == nil || strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "/missing/") {
 			t.Fatal("invalid nested input accepted or leaked a sensitive value", mutation, err)
+		}
+	}
+}
+
+func TestRoutingRejectsConfiguredResourceTargets(t *testing.T) {
+	for _, backend := range []string{"mongodb", "search"} {
+		endpoint := "uri: mongodb://127.0.0.1:27017"
+		fields := []string{"database", "collection"}
+		if backend == "search" {
+			endpoint = "url: http://127.0.0.1:9200"
+			fields = []string{"index", "profile"}
+		}
+		input := "services:\n  - name: local\n    local:\n      " + backend + ":\n        " + endpoint + "\nroutes:\n  - store: records\n    service: local\n"
+		if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
+			t.Fatal("server connection must validate without a configured resource target", backend, err)
+		}
+		for _, field := range fields {
+			t.Run(backend+"/"+field, func(t *testing.T) {
+				invalid := strings.Replace(input, "        "+endpoint+"\n", "        "+endpoint+"\n        "+field+": resource-secret-sentinel\n", 1)
+				_, err := DecodeRouting(strings.NewReader(invalid))
+				if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
+					t.Fatal("removed target/profile field must be rejected without exposing its value", err)
+				}
+			})
 		}
 	}
 }

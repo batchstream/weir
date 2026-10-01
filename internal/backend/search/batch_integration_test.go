@@ -77,9 +77,9 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 		t.Fatal(failure)
 	}
 	works := []*execution.Plan{
-		searchPlan(t, a, "read", "read"), searchPlan(t, a, "read", "missing-read"),
-		searchPlan(t, a, "replace", "replace"), programWork,
-		searchPlan(t, a, "put", "put"), searchPlan(t, a, "create", "create"), searchPlan(t, a, "delete", "delete"),
+		searchPlan(t, a, "read", searchResource(backend.Index, "read")), searchPlan(t, a, "read", searchResource(backend.Index, "missing-read")),
+		searchPlan(t, a, "replace", searchResource(backend.Index, "replace")), programWork,
+		searchPlan(t, a, "put", searchResource(backend.Index, "put")), searchPlan(t, a, "create", searchResource(backend.Index, "create")), searchPlan(t, a, "delete", searchResource(backend.Index, "delete")),
 	}
 	for _, id := range []string{"expression", "noop", "missing-expression"} {
 		body := `{"doc":{"n":2}}`
@@ -188,7 +188,7 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	put := searchPlan(t, a, "put", "put")
+	put := searchPlan(t, a, "put", searchResource(backend.Index, "put"))
 	works := []*execution.Plan{programWork, put}
 	results, feedback := a.Execute(context.Background(), works)
 	if len(results) != 2 || reads.Load() != 2 || writes.Load() != 2 || feedback != execution.Neutral {

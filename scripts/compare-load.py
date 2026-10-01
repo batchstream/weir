@@ -400,8 +400,6 @@ class Fixture:
                         "max_batch_operations": self.args.batch_operations,
                         "search": {
                             "url": "http://elasticsearch:9200",
-                            "index": "records",
-                            "profile": "elasticsearch-8.19.22",
                         },
                     },
                 }
@@ -410,7 +408,7 @@ class Fixture:
         }
         self.save("node.yaml", config_yaml.dumps(config))
         self.save("routes.yaml", config_yaml.dumps(routes))
-        # Qualifying a fresh node requires the index to exist before startup.
+        # Resource targets must exist before record operations; startup qualifies the server.
         run(
             [
                 "docker",

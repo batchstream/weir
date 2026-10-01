@@ -24,7 +24,7 @@ import (
 
 func secureConfig(b *testsearch.Backend) Config {
 	connection := &Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
-	cfg := Config{Store: "search", URL: b.URL, Index: b.Index, Profile: b.Profile, Pool: 4, Connection: connection}
+	cfg := Config{Store: "search", URL: b.URL, Pool: 4, Connection: connection}
 	return cfg
 }
 func secureAdapter(t *testing.T, b *testsearch.Backend) *Adapter {
@@ -40,8 +40,8 @@ func secureAdapter(t *testing.T, b *testsearch.Backend) *Adapter {
 func TestSecureSearchProductionOpen(t *testing.T) {
 	fixture := testsearch.OpenSecure(t)
 	a := secureAdapter(t, fixture.Backend)
-	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", "minimal")), pb.MutationOutcome_APPLIED, 0)
-	result := runSearch(t, a, searchPlan(t, a, "read", "minimal"))
+	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(fixture.Backend.Index, "minimal"))), pb.MutationOutcome_APPLIED, 0)
+	result := runSearch(t, a, searchPlan(t, a, "read", searchResource(fixture.Backend.Index, "minimal")))
 	if result.GetRead().GetDocument() == nil {
 		t.Fatal("production read after write failed", result)
 	}
@@ -75,14 +75,14 @@ func TestSecureSearchQualification(t *testing.T) {
 	})
 	t.Run("direct-operations", func(t *testing.T) {
 		for _, action := range []string{"put", "replace", "delete", "create"} {
-			assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, "record")), pb.MutationOutcome_APPLIED, 0)
+			assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, searchResource(b.Index, "record"))), pb.MutationOutcome_APPLIED, 0)
 		}
-		assertOutcome(t, runSearch(t, a, searchPlan(t, a, "create", "record")), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
-		source := runSearch(t, a, searchPlan(t, a, "read", "record")).GetRead().GetDocument().GetData()
+		assertOutcome(t, runSearch(t, a, searchPlan(t, a, "create", searchResource(b.Index, "record"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
+		source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "record"))).GetRead().GetDocument().GetData()
 		if !strings.Contains(string(source), "9223372036854775807") {
 			t.Fatal("int64 source changed")
 		}
-		works := []*execution.Plan{searchPlan(t, a, "put", "bulk-a"), searchPlan(t, a, "put", "bulk-b")}
+		works := []*execution.Plan{searchPlan(t, a, "put", searchResource(b.Index, "bulk-a")), searchPlan(t, a, "put", searchResource(b.Index, "bulk-b"))}
 		replies, _ := a.Execute(context.Background(), works)
 		if len(replies) != 2 {
 			t.Fatal("bulk association")
@@ -90,9 +90,9 @@ func TestSecureSearchQualification(t *testing.T) {
 		for _, reply := range replies {
 			assertOutcome(t, reply, pb.MutationOutcome_APPLIED, 0)
 		}
-		assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", "counter")), pb.MutationOutcome_APPLIED, 0)
-		assertOutcome(t, runSearch(t, a, searchExpression(t, a, `{"doc":{"n":9007199254740993}}`)), pb.MutationOutcome_APPLIED, 0)
-		source = runSearch(t, a, searchPlan(t, a, "read", "counter")).GetRead().GetDocument().GetData()
+		assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "counter"))), pb.MutationOutcome_APPLIED, 0)
+		assertOutcome(t, runSearch(t, a, searchExpression(t, a, b.Index, `{"doc":{"n":9007199254740993}}`)), pb.MutationOutcome_APPLIED, 0)
+		source = runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).GetRead().GetDocument().GetData()
 		if !strings.Contains(string(source), "9007199254740993") || !strings.Contains(string(source), `"keep":"source"`) {
 			t.Fatal("expression changed unrelated source")
 		}
@@ -103,7 +103,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("native bulk", end, capture.body.String())
 		}
 		fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-		scan := scanWork(t, a, 2)
+		scan := scanWork(t, a, b.Index, 2)
 		count := 0
 		exhausted := false
 		for step := 0; step < 12; step++ {
@@ -138,7 +138,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("authentication preflight/redaction")
 		}
 		denied := secureAdapter(t, fixture.Denied)
-		work := searchPlan(t, denied, "put", "forbidden")
+		work := searchPlan(t, denied, "put", searchResource(b.Index, "forbidden"))
 		result := runSearch(t, denied, work)
 		if result.GetMutation().Outcome == pb.MutationOutcome_APPLIED {
 			t.Fatal("reader wrote")
@@ -253,9 +253,9 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 	}
 	switch operation {
 	case "ordinary", "bulk":
-		works := []*execution.Plan{searchPlan(t, a, "put", id)}
+		works := []*execution.Plan{searchPlan(t, a, "put", searchResource(b.Index, id))}
 		if operation == "bulk" {
-			works = append(works, searchPlan(t, a, "put", id+"-second"))
+			works = append(works, searchPlan(t, a, "put", searchResource(b.Index, id+"-second")))
 		}
 		var replies []*pb.BulkResult
 		if fault == "drain" {

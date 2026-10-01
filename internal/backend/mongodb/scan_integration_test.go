@@ -19,9 +19,9 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func scanWork(t *testing.T, a *Adapter, hint uint32) *execution.Plan {
+func scanWork(t *testing.T, a *Adapter, database string, hint uint32) *execution.Plan {
 	t.Helper()
-	req := &pb.ScanRequest{Resource: "weir://mongo/" + a.config.Database + "/records", FetchItemsHint: hint}
+	req := &pb.ScanRequest{Resource: "weir://mongo/" + database + "/records", FetchItemsHint: hint}
 	p, f := a.PrepareScan(req)
 	if f != nil {
 		t.Fatal(f)
@@ -33,7 +33,7 @@ func TestMongoScanTraversal(t *testing.T) {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
-			cfg := Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -55,7 +55,7 @@ func TestMongoScanTraversal(t *testing.T) {
 				}
 				expected[int32(i)] = raw
 			}
-			p := scanWork(t, a, 8)
+			p := scanWork(t, a, db, 8)
 			defer a.CloseScan(ctx, p)
 			seen := map[int32]bool{}
 			for calls := 0; ; calls++ {
@@ -110,14 +110,14 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 					proxy.AlterMode = mode
 					proxy.AlterRemaining.Store(1)
 				}
-				cfg := Config{URI: proxy.URI(), Store: "mongo", Database: db, Collection: "records", Pool: 1}
+				cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
 				cfg = mongoFixtureConfig(t, cfg)
 				a, err := Open(ctx, cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
 				defer a.Close()
-				p := scanWork(t, a, 1)
+				p := scanWork(t, a, db, 1)
 				defer a.CloseScan(ctx, p)
 				if command == "getMore" {
 					page, _ := a.FetchScan(ctx, p)
@@ -151,7 +151,7 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
-			cfg := Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -166,7 +166,7 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			p := scanWork(t, a, 1)
+			p := scanWork(t, a, db, 1)
 			defer a.CloseScan(ctx, p)
 			if mode != "cancel_find" {
 				page, _ := a.FetchScan(ctx, p)
@@ -185,7 +185,7 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 				if mode == "cancel_getMore" {
 					command = "getMore"
 				}
-				data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:" + db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
+				data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
 				testmongo.FailCommand(t, native, data, 1)
 				var stop context.CancelFunc
 				ctx, stop = context.WithTimeout(ctx, 40*time.Millisecond)
@@ -233,7 +233,7 @@ func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
 			}}
 			options := adapterTestOptions{fixture: backend, monitor: monitor}
 			a := testAdapter(t, options)
-			p := scanWork(t, a, 32)
+			p := scanWork(t, a, db, 32)
 			defer a.CloseScan(ctx, p)
 			page, _ := a.FetchScan(ctx, p)
 			if mode == "boundary" {

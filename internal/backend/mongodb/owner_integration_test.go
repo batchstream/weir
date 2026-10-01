@@ -36,7 +36,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 			}
 		}
 	}}
-	cfg := Config{URI: proxy.URI(), Store: "mongo", Database: f.DB, Collection: "records", Pool: 1}
+	cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
 	cfg = mongoFixtureConfig(t, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -45,8 +45,8 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	old := ownerMutation(t, a, "remote-tail")
-	next := ownerMutation(t, a, "independent")
+	old := ownerMutation(t, a, f.DB, "remote-tail")
+	next := ownerMutation(t, a, f.DB, "independent")
 	callCtx, stop := context.WithCancel(ctx)
 	result := make(chan []*pb.BulkResult, 1)
 	go func() { r, _ := a.Execute(callCtx, []*execution.Plan{old}); result <- r }()
@@ -103,7 +103,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	ownerWait(t, func() bool { n, _ := proxy.Sockets(); return n == 0 })
 }
 
-func ownerMutation(t *testing.T, a *Adapter, id string) *execution.Plan {
+func ownerMutation(t *testing.T, a *Adapter, database, id string) *execution.Plan {
 	t.Helper()
 	doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: 1}}
 	raw, err := bson.Marshal(doc)
@@ -112,7 +112,7 @@ func ownerMutation(t *testing.T, a *Adapter, id string) *execution.Plan {
 	}
 	body := &pb.Document{MediaType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: body}
-	req := &pb.MutateRequest{Resource: "weir://mongo/" + a.config.Database + "/records/s:" + id, Action: put}
+	req := &pb.MutateRequest{Resource: "weir://mongo/" + database + "/records/s:" + id, Action: put}
 	mutation := &pb.BulkOperation_Mutate{Mutate: req}
 	op := &pb.BulkOperation{Operation: mutation}
 	plan, failure := a.Prepare(op)
@@ -143,7 +143,7 @@ func (c *retirementConn) Close() error {
 func TestMongoDriverRetirementOwnership(t *testing.T) {
 	f := testmongo.OpenSecure(t)
 	d := newBoundedDialer(2, 3)
-	cfg := Config{URI: f.URI, Store: "mongo", Database: f.DB, Collection: "records", Pool: 1}
+	cfg := Config{URI: f.URI, Store: "mongo", Pool: 1}
 	cfg = mongoFixtureConfig(t, cfg)
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)

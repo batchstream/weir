@@ -205,7 +205,7 @@ func TestUnaryDecodedInputDoesNotTimeoutBackend(t *testing.T) {
 	limits.UnaryLifetime = time.Second
 	limits.Stall = 100 * time.Millisecond
 	f := setupWithLimits(t, true, limits)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
 	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	wire := openUnaryWire(t, f)
 	request := unaryRequestBytes(t, f)

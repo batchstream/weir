@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir/internal/backend/search"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -23,8 +22,6 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	c := &SearchConnection{Username: "app", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
 	backend := &Search{
 		URL:        "https://unresolved.invalid:443",
-		Index:      "records",
-		Profile:    "elasticsearch-8.19.22",
 		Connection: c,
 	}
 	local := &Local{Search: backend}
@@ -91,8 +88,6 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	}
 	backend := &Search{
 		URL:        "https://unresolved.invalid:9200",
-		Index:      "records",
-		Profile:    search.ElasticsearchProfile,
 		Connection: connection,
 	}
 	local := &Local{Search: backend}

@@ -26,7 +26,7 @@ type fixture struct {
 func setup(t *testing.T) fixture {
 	backend := testmongo.Open(t)
 	native, db := backend.Admin, backend.DB
-	cfg := mongodb.Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "records"}
+	cfg := mongodb.Config{URI: backend.URI, Store: "mongo"}
 	parsed, err := url.Parse(cfg.URI)
 	if err != nil {
 		t.Fatal("invalid owned MongoDB fixture URI")
@@ -115,7 +115,7 @@ func warm(t *testing.T, f fixture) {
 func TestNativeIndependentReadsOverlap(t *testing.T) {
 	f := setup(t)
 	warm(t, f)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
 	testmongo.FailCommand(t, f.native, data, 2)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -138,7 +138,7 @@ func TestNativeIndependentReadsOverlap(t *testing.T) {
 }
 func TestNativeBatchMixedDeadlines(t *testing.T) {
 	f := setup(t)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	short, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer stop()
@@ -200,7 +200,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 		}
 		ticket.Ack()
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "closeConnection", Value: true}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "closeConnection", Value: true}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	tickets = nil
 	for _, key := range []string{"unknown_a", "unknown_b"} {
@@ -221,7 +221,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 }
 func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	f := setup(t)
-	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -253,7 +253,7 @@ func TestNativeShutdownQueueAndExecution(t *testing.T) {
 func TestNativeWriteConcernAmbiguity(t *testing.T) {
 	f := setup(t)
 	wc := bson.D{{Key: "code", Value: 64}, {Key: "errmsg", Value: "isolated test concern failure"}}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.db}, {Key: "writeConcernError", Value: wc}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "writeConcernError", Value: wc}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

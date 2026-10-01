@@ -68,8 +68,6 @@ func serveControl(ctx context.Context, config, routes string, suppress bool) err
 	options := search.Config{
 		Store:      "records",
 		URL:        backend.URL,
-		Index:      backend.Index,
-		Profile:    backend.Profile,
 		Pool:       limits.Concurrency,
 		Connection: connection,
 	}

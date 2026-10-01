@@ -73,15 +73,11 @@ type Mongo struct {
 	Password     string `json:"password" yaml:"password"`
 	UsernameFile string `json:"username_file" yaml:"username_file"`
 	PasswordFile string `json:"password_file" yaml:"password_file"`
-	Database     string `json:"database" yaml:"database"`
-	Collection   string `json:"collection" yaml:"collection"`
 }
 
 type Search struct {
 	Connection *SearchConnection `json:"connection" yaml:"connection"`
 	URL        string            `json:"url" yaml:"url"`
-	Index      string            `json:"index" yaml:"index"`
-	Profile    string            `json:"profile" yaml:"profile"`
 }
 
 type SearchConnection struct {
@@ -322,8 +318,6 @@ func (l *Local) searchConfig(name string) search.Config {
 	cfg := search.Config{
 		Store:      name,
 		URL:        l.Search.URL,
-		Index:      l.Search.Index,
-		Profile:    l.Search.Profile,
 		Pool:       l.runtimeLimits().Concurrency,
 		Connection: connection,
 	}
@@ -333,13 +327,11 @@ func (l *Local) searchConfig(name string) search.Config {
 func (l *Local) mongoConfig(name string) mongodb.Config {
 	m := l.MongoDB
 	cfg := mongodb.Config{
-		URI:        m.URI,
-		Username:   m.Username,
-		Password:   m.Password,
-		Store:      name,
-		Database:   m.Database,
-		Collection: m.Collection,
-		Pool:       uint64(l.runtimeLimits().Concurrency),
+		URI:      m.URI,
+		Username: m.Username,
+		Password: m.Password,
+		Store:    name,
+		Pool:     uint64(l.runtimeLimits().Concurrency),
 	}
 	return cfg
 }

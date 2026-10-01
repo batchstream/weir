@@ -16,7 +16,6 @@ import (
 
 func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	backend := testmongo.Open(t)
-	database := backend.DB
 	cfg := remoteConfig(t)
 	first, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -30,7 +29,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	cfg.Routing.Routes = nil
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
-		mongo := mongoFixtureConfig(t, backend.URI, database)
+		mongo := mongoFixtureConfig(t, backend.URI)
 		local := &Local{MongoDB: mongo}
 		service := Service{Name: name, Local: local}
 		cfg.Routing.Services = append(cfg.Routing.Services, service)

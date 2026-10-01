@@ -40,13 +40,13 @@ func scanServer(t *testing.T, kind string, sl Limits) scanFixture {
 	var err error
 	if kind == "mongo" {
 		f.mongo = testmongo.Open(t)
-		cfg := mongodb.Config{URI: f.mongo.URI, Store: "mongo", Database: f.mongo.DB, Collection: "records", Pool: 1}
+		cfg := mongodb.Config{URI: f.mongo.URI, Store: "mongo", Pool: 1}
 		cfg = mongoFixtureConfig(t, cfg)
 		adapter, err = mongodb.Open(ctx, cfg)
 		f.root = "weir://mongo/" + f.mongo.DB + "/records"
 	} else {
 		f.backend = testsearch.Open(t)
-		cfg := search.Config{Store: "search", URL: f.backend.URL, Index: f.backend.Index, Profile: f.backend.Profile, Pool: 1}
+		cfg := search.Config{Store: "search", URL: f.backend.URL, Pool: 1}
 		adapter, err = search.Open(ctx, cfg)
 		f.root = "weir://search/" + f.backend.Index
 	}

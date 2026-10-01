@@ -26,14 +26,14 @@ func replicaRuntime(t *testing.T, f scanFixture, endpoint string) *store.Runtime
 		if endpoint == "" {
 			endpoint = f.mongo.URI
 		}
-		cfg := mongodb.Config{URI: endpoint, Store: "mongo", Database: f.mongo.DB, Collection: "records", Pool: 1}
+		cfg := mongodb.Config{URI: endpoint, Store: "mongo", Pool: 1}
 		cfg = mongoFixtureConfig(t, cfg)
 		adapter, err = mongodb.Open(ctx, cfg)
 	} else {
 		if endpoint == "" {
 			endpoint = f.backend.URL
 		}
-		cfg := search.Config{URL: endpoint, Store: "search", Index: f.backend.Index, Profile: f.backend.Profile, Pool: 1}
+		cfg := search.Config{URL: endpoint, Store: "search", Pool: 1}
 		adapter, err = search.Open(ctx, cfg)
 	}
 	if err != nil {

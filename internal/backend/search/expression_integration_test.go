@@ -20,9 +20,9 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-func searchExpression(t *testing.T, a *Adapter, raw string) *execution.Plan {
+func searchExpression(t *testing.T, a *Adapter, index, raw string) *execution.Plan {
 	t.Helper()
-	op := expressionOperation("weir://search/"+a.config.Index+"/s:counter", raw)
+	op := expressionOperation(searchResource(index, "counter"), raw)
 	p, f := a.Prepare(op)
 	if f != nil {
 		t.Fatal(f)
@@ -32,7 +32,7 @@ func searchExpression(t *testing.T, a *Adapter, raw string) *execution.Plan {
 
 func TestSearchExpressionMergeMissingAndNoop(t *testing.T) {
 	a, b := setupSearch(t)
-	p := searchExpression(t, a, `{"doc":{"n":9007199254740993,"nested":{"change":null},"array":[2]}}`)
+	p := searchExpression(t, a, b.Index, `{"doc":{"n":9007199254740993,"nested":{"change":null},"array":[2]}}`)
 	assertOutcome(t, runSearch(t, a, p), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
 	status, _ := b.Do(t, "GET", "/"+b.Index+"/_doc/counter", "")
 	if status != 404 {
@@ -43,15 +43,15 @@ func TestSearchExpressionMergeMissingAndNoop(t *testing.T) {
 		t.Fatal(status)
 	}
 	assertOutcome(t, runSearch(t, a, p), pb.MutationOutcome_APPLIED, 0)
-	source := runSearch(t, a, searchPlan(t, a, "read", "counter")).GetRead().GetDocument().GetData()
+	source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).GetRead().GetDocument().GetData()
 	var got map[string]json.RawMessage
 	if json.Unmarshal(source, &got) != nil || string(got["n"]) != "9007199254740993" || string(got["keep"]) != `"untouched"` || string(got["array"]) != "[2]" || !strings.Contains(string(got["nested"]), `"keep":1`) || !strings.Contains(string(got["nested"]), `"change":null`) {
 		t.Fatal(string(source))
 	}
 	for _, body := range []string{`{"doc":{}}`, string(p.Backend.(*plan).source)} {
-		assertOutcome(t, runSearch(t, a, searchExpression(t, a, body)), pb.MutationOutcome_APPLIED, 0)
+		assertOutcome(t, runSearch(t, a, searchExpression(t, a, b.Index, body)), pb.MutationOutcome_APPLIED, 0)
 	}
-	assertOutcome(t, runSearch(t, a, searchExpression(t, a, `{"doc":{"n":"bad number"}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
+	assertOutcome(t, runSearch(t, a, searchExpression(t, a, b.Index, `{"doc":{"n":"bad number"}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
 }
 
 func TestSearchExpressionRealReplyFaultsAndNativeCompetition(t *testing.T) {
@@ -149,7 +149,7 @@ func TestSearchExpressionRealReplyFaultsAndNativeCompetition(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer through.Close()
-			p := searchExpression(t, through, `{"doc":{"added":true}}`)
+			p := searchExpression(t, through, b.Index, `{"doc":{"added":true}}`)
 			result := runSearch(t, through, p)
 			switch mode {
 			case "drop", "truncate", "missing", "redirect":
@@ -202,8 +202,8 @@ func TestSearchExpressionPipelineAndSourceQualification(t *testing.T) {
 			if status != 200 {
 				t.Fatal(status)
 			}
-			assertOutcome(t, runSearch(t, a, searchExpression(t, a, `{"doc":{"expression":true}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
-			source := runSearch(t, a, searchPlan(t, a, "read", "counter")).GetRead().GetDocument().GetData()
+			assertOutcome(t, runSearch(t, a, searchExpression(t, a, b.Index, `{"doc":{"expression":true}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
+			source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).GetRead().GetDocument().GetData()
 			if strings.Contains(string(source), "expression") {
 				t.Fatal("disallowed update sent")
 			}
@@ -220,7 +220,7 @@ func TestSearchExpressionPipelineAndSourceQualification(t *testing.T) {
 			t.Logf("%s %s native Update pipeline marker=%v; pipeline=_none rejected", b.Profile, setting, strings.Contains(string(observed), `"pipeline_marker":true`))
 			// Ordinary APIs keep their separate established pipeline policy.
 			if setting == "default" {
-				assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", "ordinary")), pb.MutationOutcome_APPLIED, 0)
+				assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "ordinary"))), pb.MutationOutcome_APPLIED, 0)
 			}
 		})
 	}
@@ -232,14 +232,7 @@ func TestSearchExpressionPipelineAndSourceQualification(t *testing.T) {
 				source = `{"excludes":["hidden"]}`
 			}
 			b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"_source":`+source+`}}`)
-			cfg := a.config
-			cfg.Index = index
-			other, err := Open(context.Background(), cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer other.Close()
-			assertOutcome(t, runSearch(t, other, searchExpression(t, other, `{"doc":{}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
+			assertOutcome(t, runSearch(t, a, searchExpression(t, a, index, `{"doc":{}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 		})
 	}
 }
@@ -256,7 +249,7 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 		start := make(chan struct{})
 		var group sync.WaitGroup
 		for i := 0; i < 8; i++ {
-			p := searchExpression(t, a, fmt.Sprintf(`{"doc":{"n":%d}}`, wave*8+i+1))
+			p := searchExpression(t, a, b.Index, fmt.Sprintf(`{"doc":{"n":%d}}`, wave*8+i+1))
 			group.Go(func() {
 				<-start
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

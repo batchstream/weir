@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil"
 )
 
@@ -58,7 +57,7 @@ func TestRoutingConfigurationFile(t *testing.T) {
 		t.Fatal("routing file must declare a local Search service")
 	}
 	backend := service.Local.Search
-	if !strings.HasPrefix(backend.URL, "https://") || backend.Profile != search.ElasticsearchProfile ||
+	if !strings.HasPrefix(backend.URL, "https://") ||
 		backend.Connection == nil || backend.Connection.Username != "weir" ||
 		backend.Connection.Password != "change-me" || backend.Connection.CAFile != "/etc/weir/ca.pem" {
 		t.Fatal("Search routing configuration must include the documented HTTPS connection fields")

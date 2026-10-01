@@ -12,13 +12,13 @@ import (
 
 // Backend fixtures expose standard MongoDB URIs. Application configuration keeps
 // credentials in explicit fields, so split the URI before writing configuration.
-func mongoFixtureConfig(t *testing.T, uri, database string) *Mongo {
+func mongoFixtureConfig(t *testing.T, uri string) *Mongo {
 	t.Helper()
 	parsed, err := url.Parse(uri)
 	if err != nil {
 		t.Fatal("invalid owned MongoDB fixture URI")
 	}
-	backend := &Mongo{Database: database, Collection: "records"}
+	backend := &Mongo{}
 	if parsed.User != nil {
 		backend.Username = parsed.User.Username()
 		backend.Password, _ = parsed.User.Password()

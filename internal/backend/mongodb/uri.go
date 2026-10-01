@@ -17,9 +17,7 @@ const maxMongoURIBytes = 4096
 // ValidateConfig is pure and accepts only the audited single-endpoint profiles.
 // Credentials are supplied separately; the URI never carries user information.
 func ValidateConfig(cfg Config) error {
-	if cfg.Pool < 1 || cfg.Pool > 32 ||
-		!namespacePattern.MatchString(cfg.Database) ||
-		!namespacePattern.MatchString(cfg.Collection) {
+	if cfg.Pool < 1 || cfg.Pool > 32 {
 		return errors.New("invalid MongoDB configuration")
 	}
 	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
@@ -43,7 +41,7 @@ func ValidateConfig(cfg Config) error {
 		return errors.New("MongoDB URI userinfo is unsupported; configure credentials separately")
 	}
 	if parsed.Path != "" && parsed.Path != "/" || parsed.RawPath != "" {
-		return errors.New("MongoDB URI path is unsupported; configure the database separately")
+		return errors.New("MongoDB URI path is unsupported; the resource supplies the database")
 	}
 	host, port, err := net.SplitHostPort(parsed.Host)
 	if err != nil || !validMongoHost(host) || !validMongoPort(port) {

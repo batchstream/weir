@@ -91,8 +91,8 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 			defer stopShort()
 			long, stopLong := context.WithTimeout(context.Background(), time.Second)
 			defer stopLong()
-			first := searchPlan(t, adapter, "put", "short")
-			second := searchPlan(t, adapter, "put", "long")
+			first := searchPlan(t, adapter, "put", searchResource(b.Index, "short"))
+			second := searchPlan(t, adapter, "put", searchResource(b.Index, "long"))
 			if expression {
 				var failure *pb.Failure
 				first, failure = adapter.Prepare(expressionOperation("weir://search/"+b.Index+"/s:short", `{"doc":{"n":1}}`))

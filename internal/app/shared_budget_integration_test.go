@@ -119,7 +119,7 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	proxy.Monitor = &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	drop := make(chan struct{})
 	proxy.DropCommand, proxy.DropGate = "bulkWrite", drop
-	backend := mongoFixtureConfig(t, proxy.URI(), fixture.DB)
+	backend := mongoFixtureConfig(t, proxy.URI())
 	local := &Local{MongoDB: backend, MaxConcurrency: concurrency, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "records", Service: "database"}

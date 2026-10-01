@@ -16,7 +16,7 @@ import (
 func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	t.Helper()
 	backend := testsearch.Open(t)
-	cfg := Config{Store: "search", URL: backend.URL, Index: backend.Index, Profile: backend.Profile, Pool: 4}
+	cfg := Config{Store: "search", URL: backend.URL, Pool: 4}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	adapter, err := Open(ctx, cfg)
@@ -26,9 +26,12 @@ func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	t.Cleanup(func() { _ = adapter.Close(); _ = adapter.Close() })
 	return adapter, backend
 }
-func searchPlan(t *testing.T, a *Adapter, action, id string) *execution.Plan {
+func searchResource(index, id string) string {
+	return "weir://search/" + index + "/" + protocol.EncodeSegment("s:"+id)
+}
+
+func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	resource := "weir://search/" + a.config.Index + "/" + protocol.EncodeSegment("s:"+id)
 	op := &pb.BulkOperation{}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}

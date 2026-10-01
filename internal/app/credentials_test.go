@@ -24,11 +24,9 @@ func credentialTestConfig(t *testing.T, backend string) Config {
 	local := &Local{}
 	if backend == "mongodb" {
 		local.MongoDB = &Mongo{
-			URI:        "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true",
-			Username:   "user-secret-sentinel",
-			Password:   " password-secret-sentinel:@/%?汉 ",
-			Database:   "example",
-			Collection: "records",
+			URI:      "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true",
+			Username: "user-secret-sentinel",
+			Password: " password-secret-sentinel:@/%?汉 ",
 		}
 	} else {
 		connection := &SearchConnection{
@@ -38,8 +36,6 @@ func credentialTestConfig(t *testing.T, backend string) Config {
 		}
 		local.Search = &Search{
 			URL:        "https://unresolved.invalid:9200",
-			Index:      "records",
-			Profile:    "elasticsearch-8.19.22",
 			Connection: connection,
 		}
 	}

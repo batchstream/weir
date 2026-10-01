@@ -19,6 +19,7 @@ const pitKeepAlive = "60s"
 const maxPITBytes = 16 << 10
 
 type scanPlan struct {
+	index                    string
 	query                    json.RawMessage
 	items                    int
 	pit                      string
@@ -31,13 +32,17 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, f
 	}
 	_, parts, _ := protocol.ParseResource(req.Resource)
-	if len(parts) != 1 || parts[0] != a.config.Index {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only the configured concrete index supports Scan")
+	if len(parts) != 1 || !indexPattern.MatchString(parts[0]) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan requires one concrete Search index")
 	}
 	if req.ReadMediaType != "" && req.ReadMediaType != "application/json" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native JSON hits")
 	}
-	native := &scanPlan{items: protocol.FetchItems(req.FetchItemsHint), query: json.RawMessage(`{"match_all":{}}`)}
+	native := &scanPlan{
+		index: parts[0],
+		items: protocol.FetchItems(req.FetchItemsHint),
+		query: json.RawMessage(`{"match_all":{}}`),
+	}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "search selector requires JSON")
@@ -75,7 +80,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		return page, execution.Neutral
 	}
 	if !n.opened {
-		caps, f, fb := a.inspect(ctx, false)
+		caps, f, fb := a.inspect(ctx, n.index, false)
 		if f != nil {
 			page.Failure = f
 			return page, fb
@@ -85,12 +90,12 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			return page, execution.Neutral
 		}
 		call := exchange{
-			path:  "/" + a.config.Index + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
+			path:  "/" + n.index + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
 			body:  []byte("{}"),
 			limit: metadataLimit,
 		}
-		if a.config.Profile == OpenSearchProfile {
-			call.path = "/" + a.config.Index + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
+		if a.dialect == OpenSearchProfile {
+			call.path = "/" + n.index + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
 		}
 		n.opened = true
 		status, raw, err := a.request(ctx, call)
@@ -112,7 +117,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		return page, execution.Neutral
 	}
 	sort := "_shard_doc"
-	if a.config.Profile == OpenSearchProfile {
+	if a.dialect == OpenSearchProfile {
 		sort = "_doc"
 	} // Unique in the qualified single-shard PIT reader.
 	pit := map[string]any{"id": n.pit, "keep_alive": pitKeepAlive}
@@ -171,7 +176,7 @@ func (a *Adapter) openPITReply(raw []byte, n *scanPlan) *pb.Failure {
 		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid PIT response")
 	}
 	key := "id"
-	if a.config.Profile == OpenSearchProfile {
+	if a.dialect == OpenSearchProfile {
 		key = "pit_id"
 	}
 	var id string
@@ -180,11 +185,11 @@ func (a *Adapter) openPITReply(raw []byte, n *scanPlan) *pb.Failure {
 	}
 	n.pit = id // Keep latest known state for cleanup even on a failed envelope.
 	for name := range fields {
-		if name != key && name != "_shards" && (name != "creation_time" || a.config.Profile != OpenSearchProfile) {
+		if name != key && name != "_shards" && (name != "creation_time" || a.dialect != OpenSearchProfile) {
 			return protocol.Fail(pb.FailureCode_INTERNAL, "unexpected PIT envelope field")
 		}
 	}
-	if a.config.Profile == OpenSearchProfile {
+	if a.dialect == OpenSearchProfile {
 		var created int64
 		if json.Unmarshal(fields["creation_time"], &created) != nil || created <= 0 {
 			return protocol.Fail(pb.FailureCode_INTERNAL, "missing PIT creation evidence")
@@ -227,7 +232,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			return page
 		}
 		n.pit = id
-	} else if a.config.Profile == ElasticsearchProfile {
+	} else if a.dialect == ElasticsearchProfile {
 		return page
 	}
 	for _, key := range []string{"error", "aggregations", "suggest", "_clusters"} {
@@ -289,7 +294,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			Sort   []json.RawMessage `json:"sort"`
 		}
 		if json.Unmarshal(row, &hit) != nil ||
-			hit.Index != a.config.Index ||
+			hit.Index != n.index ||
 			hit.ID == "" ||
 			len(hit.ID) > 512 ||
 			!object(hit.Source) ||
@@ -343,7 +348,7 @@ func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	}
 	body := map[string]any{"id": n.pit}
 	endpoint := "/_pit"
-	if a.config.Profile == OpenSearchProfile {
+	if a.dialect == OpenSearchProfile {
 		body = map[string]any{"pit_id": []string{n.pit}}
 		endpoint = "/_search/point_in_time"
 	}
@@ -353,7 +358,7 @@ func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	if err != nil || status != 200 {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote PIT cleanup unconfirmed")
 	}
-	if a.config.Profile == OpenSearchProfile {
+	if a.dialect == OpenSearchProfile {
 		var reply struct {
 			PITs []struct {
 				ID         string `json:"pit_id"`

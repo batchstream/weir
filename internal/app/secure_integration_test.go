@@ -49,7 +49,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 		t.Skip("secure profile opt-in")
 	}
 	fixture := testmongo.OpenSecure(t)
-	mongo := mongoFixtureConfig(t, fixture.URI, fixture.DB)
+	mongo := mongoFixtureConfig(t, fixture.URI)
 	valueDirectory := t.TempDir()
 	mongo.UsernameFile = filepath.Join(valueDirectory, "username")
 	mongo.PasswordFile = filepath.Join(valueDirectory, "password")

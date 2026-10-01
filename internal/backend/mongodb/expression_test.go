@@ -33,7 +33,7 @@ func expressionBSON(t testing.TB, doc bson.D) []byte {
 }
 
 func TestMongoExpressionValidation(t *testing.T) {
-	cfg := Config{Store: "mongo", Database: "db", Collection: "records"}
+	cfg := Config{Store: "mongo"}
 	a := &Adapter{config: cfg}
 	decimal, _ := bson.ParseDecimal128("1.25")
 	nonfinite, _ := bson.ParseDecimal128("Infinity")

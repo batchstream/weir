@@ -24,13 +24,15 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 		return nil, f
 	}
 	_, parts, _ := protocol.ParseResource(open.Resource)
-	if len(parts) != 2 || parts[0] != a.config.Database || parts[1] != a.config.Collection {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native requires the configured collection")
+	if len(parts) != 2 || !validNamespace(parts) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
 	if open.Descriptor_.MediaType != NativeDescriptor || len(open.Descriptor_.Data) != 0 || open.BodyMediaType != "application/bson" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native requires empty Mongo command descriptor and BSON body")
 	}
+	target := namespace{database: parts[0], collection: parts[1]}
 	p := &execution.Plan{
+		Backend:     target,
 		Native:      true,
 		Key:         open.Resource,
 		Bytes:       proto.Size(open) + protocol.EntryOverhead,
@@ -40,7 +42,7 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	return p, nil
 }
 
-func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
+func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive ordered BSON command")
 	nodes := 65536
 	if len(raw) > NativeCommandLimit {
@@ -65,7 +67,7 @@ func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native Mongo command")
 	}
 	target, ok := elements[0].Value().StringValueOK()
-	if !ok || target != a.config.Collection {
+	if !ok || target != namespace.collection {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native command target differs from resource")
 	}
 	for key, value := range fields {
@@ -94,19 +96,23 @@ func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) ExecuteNative(ctx context.Context, _ *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) ExecuteNative(ctx context.Context, work *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
 	raw, err := io.ReadAll(io.LimitReader(exchange.Source, NativeCommandLimit+1))
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "incomplete Native BSON input")), execution.Neutral
 	}
-	if f := a.nativeCommand(raw); f != nil {
+	target := work.Backend.(namespace)
+	if f := a.nativeCommand(raw, target); f != nil {
 		return protocol.NativeFailure(false, f), execution.Neutral
 	}
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx)), execution.Neutral
 	}
+	if failure, signal := a.qualifyTarget(ctx, target); failure != nil {
+		return protocol.NativeFailure(false, failure), signal
+	}
 	command := bson.Raw(raw)
-	reply, err := a.client.Database(a.config.Database).RunCommand(ctx, command).Raw()
+	reply, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
 	if err != nil && len(reply) == 0 {
 		var native mongo.CommandError
 		if errors.As(err, &native) {

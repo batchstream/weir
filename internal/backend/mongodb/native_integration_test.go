@@ -24,7 +24,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
 			proxy := testmongo.StartProxy(t, backend)
-			cfg := Config{URI: proxy.URI(), Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -65,7 +65,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				if mode == "overload" {
 					code = 16500
 				}
-				data := bson.D{{Key: "failCommands", Value: bson.A{"findAndModify"}}, {Key: "errorCode", Value: code}, {Key: "appName", Value: "weir:" + db}}
+				data := bson.D{{Key: "failCommands", Value: bson.A{"findAndModify"}}, {Key: "errorCode", Value: code}, {Key: "appName", Value: "weir:mongo"}}
 				testmongo.FailCommand(t, native, data, 1)
 			}
 			raw, _ := bson.Marshal(command)
@@ -92,7 +92,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				t.Fatal(end)
 			}
 			if mode == "drop" {
-				verifyReconnectRead(t, a, proxy, "x")
+				verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:x")
 			}
 			count := 0
 			for _, event := range proxy.Events() {

@@ -249,19 +249,13 @@ func TestGroupedConfigurationRejectsOldFieldsAndNumbers(t *testing.T) {
 	for _, local := range []string{
 		`      mongo:
         uri: mongodb://127.0.0.1:27017
-        database: db
-        collection: records
 `,
 		`      mongodb:
         uri: mongodb://127.0.0.1:27017
-        database: db
-        collection: records
       concurrency: 4
 `,
 		`      mongodb:
         uri: mongodb://127.0.0.1:27017
-        database: db
-        collection: records
       batch_operations: 16
 `,
 	} {

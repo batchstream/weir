@@ -263,6 +263,9 @@ Canonical form is `weir://<store>[/<adapter-defined-path>]`.
 
 Core enforces syntax, byte bounds, and extraction of Store; adapters enforce path
 grammar and canonical backend identity. Core never infers collection/index names.
+Each local service configures one backend server connection. MongoDB database and
+collection names and Search index names come from the resource URI, so one Store
+can address multiple supported targets on that server without new configuration.
 The protocol package must specify canonicalization independently of a language's
 URL library:
 
@@ -643,7 +646,7 @@ NOT_APPLIED and supplies no congestion signal.
 
 #### Search backend connection profile
 
-The implemented Elasticsearch 8.17.0 / OpenSearch 2.19.0 profile uses one static
+The implemented Elasticsearch 8.19.22 / OpenSearch 2.19.6 profile uses one static
 base URL with explicit DNS/IP and port: credential-free HTTP, or standard verified
 HTTPS with optional explicit Basic credentials. The optional connection block has
 only username, password and CA file. App whole-graph validation and adapter Open
@@ -1358,7 +1361,9 @@ pinning, and bounded server selection must be qualified against supported versio
 
 ## 12. Elasticsearch and OpenSearch Atomic RMW
 
-Active exact profiles are `elasticsearch-8.19.22` and `opensearch-2.19.6`. Startup
+The adapter identifies the product and version from the server response; no profile
+field is configured. Active exact profiles are `elasticsearch-8.19.22` and
+`opensearch-2.19.6`. Startup
 rejects other versions or distributions; accepting a profile is a semantic contract,
 not a declaration that every bundled server component is secure. Security and
 deployment qualification remain separately recorded in the production checklist.

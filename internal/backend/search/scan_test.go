@@ -22,8 +22,8 @@ func scanTestReply() map[string]json.RawMessage {
 func TestScanEnvelopeAndLatestPIT(t *testing.T) {
 	for _, mode := range []string{"valid", "skipped", "timeout", "early", "shard_failure", "missing_shards", "missing_timed_out", "missing_took", "missing_hits", "null_hits", "missing_pit", "error_tail", "failed_tail", "duplicate_sort", "bad_score", "bad_max_score", "wrong_index", "big_hit", "too_many"} {
 		t.Run(mode, func(t *testing.T) {
-			a := &Adapter{config: Config{Store: "search", Index: "records", Profile: ElasticsearchProfile}}
-			n := &scanPlan{items: 1, pit: "previous"}
+			a := &Adapter{dialect: ElasticsearchProfile, config: Config{Store: "search"}}
+			n := &scanPlan{index: "records", items: 1, pit: "previous"}
 			fields := scanTestReply()
 			switch mode {
 			case "skipped":
@@ -81,7 +81,7 @@ func TestScanEnvelopeAndLatestPIT(t *testing.T) {
 	}
 }
 func TestScanSelectorControlsAndBounds(t *testing.T) {
-	a := &Adapter{config: Config{Store: "search", Index: "records"}}
+	a := &Adapter{dialect: ElasticsearchProfile, config: Config{Store: "search"}}
 	for _, key := range []string{"pit", "search_after", "from", "size", "sort", "track_total_hits", "timeout", "terminate_after", "allow_partial_search_results", "aggregations", "aggs", "_source", "routing", "slice", "stored_fields", "rescore", "script_fields", "profile"} {
 		selector := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf(`{"%s":{}}`, key))}
 		req := &pb.ScanRequest{Resource: "weir://search/records", Selector: selector}
@@ -123,7 +123,7 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 			defer server.Close()
 			transport := newTransport(1)
 			defer transport.CloseIdleConnections()
-			a := &Adapter{config: Config{URL: server.URL}, ctx: context.Background(), client: &http.Client{Transport: transport, CheckRedirect: noRedirect}}
+			a := &Adapter{dialect: ElasticsearchProfile, config: Config{URL: server.URL}, ctx: context.Background(), client: &http.Client{Transport: transport, CheckRedirect: noRedirect}}
 			call := exchange{path: "/_search", body: []byte("{}"), limit: responseLimit}
 			_, _, err := a.request(context.Background(), call)
 			if err == nil {
@@ -135,8 +135,8 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 
 func TestScanHitByteBoundary(t *testing.T) {
 	for _, extra := range []int{0, 1} {
-		a := &Adapter{config: Config{Index: "records", Profile: ElasticsearchProfile}}
-		n := &scanPlan{items: 1, pit: "previous"}
+		a := &Adapter{dialect: ElasticsearchProfile}
+		n := &scanPlan{index: "records", items: 1, pit: "previous"}
 		hit := `{"_index":"records","_id":"a","_score":null,"_source":{"pad":""},"sort":[0]}`
 		hit = strings.Replace(hit, `"pad":""`, `"pad":"`+strings.Repeat("x", protocol.MaxDocument-len(hit)+extra)+`"`, 1)
 		fields := scanTestReply()

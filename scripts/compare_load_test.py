@@ -162,6 +162,8 @@ class PairedComparison(unittest.TestCase):
         self.assertNotIn('"routes":', current_config)
         self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
+        for field in ("database", "collection", "index", "profile"):
+            self.assertNotIn('"' + field + '":', current_routes)
         self.assertEqual(commands[0][2], ["serve", "--config", "/node.yaml", "--routes", "/routes.yaml"])
         self.assertEqual(commands[1][2], commands[0][2])
         for mode, options, command in commands[2:]:

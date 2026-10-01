@@ -31,13 +31,18 @@ const NativeItemLimit = 256 << 10
 const nativeMetadataLine = 4 << 10
 const nativeBudget = 4 << 20
 
+type nativePlan struct {
+	index   string
+	request *spb.Request
+}
+
 func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
 		return nil, f
 	}
 	_, parts, _ := protocol.ParseResource(open.Resource)
-	if len(parts) != 1 || parts[0] != a.config.Index {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native requires the configured concrete index")
+	if len(parts) != 1 || !indexPattern.MatchString(parts[0]) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one concrete Search index")
 	}
 	if open.Descriptor_.MediaType != NativeDescriptor {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native descriptor")
@@ -49,13 +54,14 @@ func (a *Adapter) PrepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	if f := nativeDescriptor(descriptor, open.BodyMediaType); f != nil {
 		return nil, f
 	}
+	native := &nativePlan{index: parts[0], request: descriptor}
 	p := &execution.Plan{
 		Native:      true,
 		Key:         open.Resource,
 		Bytes:       proto.Size(open) + protocol.EntryOverhead,
 		ResultBytes: protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead,
 		PageBytes:   nativeBudget,
-		Backend:     descriptor,
+		Backend:     native,
 	}
 	return p, nil
 }
@@ -245,7 +251,8 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 			<-interrupted
 		}
 	}()
-	d := p.Backend.(*spb.Request)
+	native := p.Backend.(*nativePlan)
+	d := native.request
 	var body io.Reader
 	if d.Method == "GET" {
 		var byte [1]byte
@@ -253,15 +260,16 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 		if n != 0 || err != io.EOF {
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "GET requires an empty half-closed upload")), execution.Neutral
 		}
-	} else {
-		caps, failure, feedback := a.inspect(ctx, true)
-		if failure != nil {
-			return protocol.NativeFailure(false, failure), feedback
-		}
+	}
+	caps, failure, sample := a.inspect(ctx, native.index, true)
+	if failure != nil {
+		return protocol.NativeFailure(false, failure), sample
+	}
+	if d.Method != "GET" {
 		if !caps.nativeWrite {
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native bulk requires no default/final ingest pipeline")), execution.Neutral
 		}
-		reader := &nativeBulkReader{reader: bufio.NewReaderSize(exchange.Source, 4096), index: a.config.Index}
+		reader := &nativeBulkReader{reader: bufio.NewReaderSize(exchange.Source, 4096), index: native.index}
 		first, err := reader.item()
 		if err != nil {
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid first Native bulk item")), execution.Neutral
@@ -272,7 +280,7 @@ func (a *Adapter) ExecuteNative(ctx context.Context, p *execution.Plan, exchange
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx)), execution.Neutral
 	}
-	endpoint := a.config.URL + "/" + a.config.Index + d.Path
+	endpoint := a.config.URL + "/" + native.index + d.Path
 	if d.Query != "" {
 		endpoint += "?" + d.Query
 	}

@@ -37,7 +37,15 @@ services:
 
       # MongoDB adapter; mutually exclusive with local.search.
       # Required: exactly one local adapter. Default: absent.
-      # Allowed: uri/credentials/database/collection fields below.
+      # Allowed: uri and credential fields below. This service connects to one
+      # MongoDB server; resource URIs choose the database and collection.
+      # Records: weir://mongo/<database>/<collection>/<typed-id>.
+      # Scan/Native: weir://mongo/<database>/<collection>.
+      # IDs use s:<string>, i:<canonical-int64> or oid:<lowercase-ObjectID-hex>.
+      # Database and collection names match ^[A-Za-z][A-Za-z0-9_]{0,62}$.
+      # Targets must be pre-created, non-capped collections with
+      # simple collation. Program transforms require a replica set supporting
+      # transactions. Weir never creates collections or changes their layout.
       mongodb:
         # Explicit single-endpoint MongoDB connection URI.
         # Required: yes. Default: none. Allowed: mongodb://host:port/ URI
@@ -50,8 +58,8 @@ services:
         #   authSource, authMechanism=SCRAM-SHA-256, tls=true, tlsCAFile.
         # Without credentials, authentication/TLS options must be absent.
         # With credentials, a username/password pair, authSource, authMechanism
-        # and tls=true are all required. authSource must match the database-name
-        # grammar below. authMechanism allows only SCRAM-SHA-256.
+        # and tls=true are all required. authSource must match
+        # ^[A-Za-z][A-Za-z0-9_]{0,62}$. Only SCRAM-SHA-256 is supported.
         # tlsCAFile is optional: default system roots; a relative CA path
         # resolves from the process working directory, not the routing file.
         # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
@@ -89,17 +97,6 @@ services:
         # password. Can be combined with an inline username or username_file.
         password_file: ""
 
-        # Pre-created database used by this local Store.
-        # Required: yes. Default: none.
-        # Allowed: ^[A-Za-z][A-Za-z0-9_]{0,62}$.
-        database: "example"
-
-        # Pre-created collection; program transforms require a replica set
-        # supporting transactions.
-        # Required: yes. Default: none.
-        # Allowed: ^[A-Za-z][A-Za-z0-9_]{0,62}$.
-        collection: "records"
-
   - name: "search"
     local:
       # These local scheduler fields use the same defaults/bounds as above.
@@ -108,7 +105,10 @@ services:
 
       # Elasticsearch/OpenSearch adapter; mutually exclusive with mongodb.
       # Required: exactly one local adapter. Default: absent.
-      # Allowed: url/index/profile and optional connection mapping below.
+      # Allowed: url and optional connection mapping below. This service connects
+      # to one Search server; resource URIs choose the concrete index.
+      # Records: weir://search/<index>/s:<id> (exact string IDs only).
+      # Scan/Native: weir://search/<index>.
       search:
         # One backend HTTP endpoint.
         # Required: yes. Default: none. Allowed: http://host:port or
@@ -116,16 +116,12 @@ services:
         # No userinfo, path, query, fragment, zones or unspecified/multicast IP.
         url: "https://127.0.0.1:9200"
 
-        # Pre-created concrete index with one primary shard and default routing.
-        # Required: yes. Default: none.
-        # Allowed: ^[a-z][a-z0-9_-]{0,62}$; aliases/data streams are unsupported.
-        # Backend action.auto_create_index must be false.
-        index: "records"
-
-        # Exact audited backend distribution/version.
-        # Required: yes. Default: none.
-        # Allowed: "elasticsearch-8.19.22" | "opensearch-2.19.6".
-        profile: "elasticsearch-8.19.22"
+        # Weir identifies the server product/version during startup: supported
+        # versions are Elasticsearch 8.19.22 and OpenSearch 2.19.6.
+        # Backend action.auto_create_index must be false. Record APIs require a
+        # pre-created concrete index, one primary shard and default routing;
+        # aliases/data streams are unsupported. The URI index must match
+        # ^[a-z][a-z0-9_-]{0,62}$.
 
         # HTTPS authentication/trust options. Omit this block for HTTP.
         # Required: no. Default: absent (system roots; no Basic credentials).

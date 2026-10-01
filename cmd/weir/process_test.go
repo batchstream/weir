@@ -102,6 +102,10 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch r.URL.Path {
 	case "/":
+		if b.hold == "invalid-version" {
+			http.Error(w, "backend-error-sentinel", http.StatusBadGateway)
+			return
+		}
 		fmt.Fprintf(w, `{"version":{"number":%q,"build_flavor":"default"}}`, search.ElasticsearchVersion)
 	case "/_cluster/settings":
 		io.WriteString(w, `{"defaults":{"action.auto_create_index":"false"}}`)
@@ -114,9 +118,7 @@ func (b *startupBackend) handle(w http.ResponseWriter, r *http.Request) {
 
 func (b *startupBackend) config() app.Config {
 	backend := &app.Search{
-		URL:     b.server.URL,
-		Index:   "records",
-		Profile: search.ElasticsearchProfile,
+		URL: b.server.URL,
 	}
 	local := &app.Local{
 		Search:             backend,
@@ -379,20 +381,20 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 		t.Run(fmt.Sprint("partial=", partial), func(t *testing.T) {
 			hold := "/"
 			if partial {
-				hold = "/blocked"
+				hold = ""
 			}
 			b := newStartupBackend(t, hold)
+			held := b
 			cfg := b.config()
 			if partial {
+				held = newStartupBackend(t, "/")
 				remote := &app.Remote{Endpoints: []string{"127.0.0.1:1"}, MaxConcurrency: 1}
 				service := app.Service{Name: "remote", Remote: remote}
 				cfg.Routing.Services = append([]app.Service{service}, cfg.Routing.Services...)
 				remoteRoute := app.Route{Store: "remote", Service: "remote"}
 				cfg.Routing.Routes = append(cfg.Routing.Routes, remoteRoute)
 				backend := &app.Search{
-					URL:     b.server.URL,
-					Index:   "blocked",
-					Profile: search.ElasticsearchProfile,
+					URL: held.server.URL,
 				}
 				local := &app.Local{Search: backend, MaxConcurrency: 1}
 				second := app.Service{Name: "second", Local: local}
@@ -400,21 +402,25 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 				cfg.Routing.Services, cfg.Routing.Routes = append(cfg.Routing.Services, second), append(cfg.Routing.Routes, route)
 			}
 			p := startCLI(t, cfg, "cli")
-			event(t, b.entered)
-			p.terminate(t, "backend received "+hold+"; response withheld")
-			event(t, b.canceled)
+			event(t, held.entered)
+			p.terminate(t, "backend received /; response withheld")
+			event(t, held.canceled)
 			p.wait(t, 1)
 			expected := "local Store \"records\" startup qualification failed: search version qualification failed\n"
 			if partial {
-				expected = "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable\n"
+				expected = "local Store \"second\" startup qualification failed: search version qualification failed\n"
 			}
 			if p.stdout.text() != "" ||
 				!strings.HasSuffix(p.stderr.text(), expected) ||
 				strings.Contains(p.stderr.text(), "sentinel") ||
-				strings.Contains(p.stderr.text(), b.server.URL) {
+				strings.Contains(p.stderr.text(), b.server.URL) ||
+				strings.Contains(p.stderr.text(), held.server.URL) {
 				t.Fatal("canceled startup announced ready or lost safe error", p.stdout.text(), p.stderr.text())
 			}
 			b.idle(t)
+			if held != b {
+				held.idle(t)
+			}
 		})
 	}
 }
@@ -538,13 +544,12 @@ func beforeStartChild(config, routes string) error {
 }
 
 func TestCLIStartupFailure(t *testing.T) {
-	b := newStartupBackend(t, "")
+	b := newStartupBackend(t, "invalid-version")
 	cfg := b.config()
-	cfg.Routing.Services[0].Local.Search.Index = "missing"
 	p := startCLI(t, cfg, "cli")
 	p.wait(t, 1)
 	if p.stdout.text() != "" ||
-		!strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search index qualification failed: index qualification response unavailable\n") ||
+		!strings.HasSuffix(p.stderr.text(), "local Store \"records\" startup qualification failed: search version qualification failed\n") ||
 		strings.Contains(p.stderr.text(), "sentinel") ||
 		strings.Contains(p.stderr.text(), b.server.URL) {
 		t.Fatal("startup error leaked or announced readiness", p.stdout.text(), p.stderr.text())
@@ -628,12 +633,11 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 }
 
 func TestStartupCancellationReleasesOwners(t *testing.T) {
-	b := newStartupBackend(t, "/blocked")
+	b := newStartupBackend(t, "")
+	held := newStartupBackend(t, "/")
 	cfg := b.config()
 	backend := &app.Search{
-		URL:     b.server.URL,
-		Index:   "blocked",
-		Profile: search.ElasticsearchProfile,
+		URL: held.server.URL,
 	}
 	local := &app.Local{Search: backend, MaxConcurrency: 1}
 	service := app.Service{Name: "second", Local: local}
@@ -660,18 +664,19 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 			t.Error("Open goroutine did not stop")
 		}
 	})
-	event(t, b.entered)
+	event(t, held.entered)
 	started := time.Now()
 	cancel()
 	event(t, done)
 	if node != nil ||
 		err == nil ||
-		err.Error() != "local Store \"second\" startup qualification failed: search index qualification failed: index qualification response unavailable" ||
+		err.Error() != "local Store \"second\" startup qualification failed: search version qualification failed" ||
 		time.Since(started) > 2*time.Second {
 		t.Fatal("partial Open cancellation", node, err, time.Since(started))
 	}
-	event(t, b.canceled)
+	event(t, held.canceled)
 	b.idle(t)
+	held.idle(t)
 	t.Log("partial Open releases first Runtime/Adapter and canceled second Adapter without process exit")
 }
 

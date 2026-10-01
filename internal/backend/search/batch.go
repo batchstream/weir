@@ -22,10 +22,41 @@ type observedRecord struct {
 	feedback execution.Feedback
 }
 
-// mget uses real-time source and preserves the entire request's positional ID
-// correspondence before publishing any document. The response and JSON walker
-// are bounded for every document in each sequential request.
+type recordGroup struct {
+	index     string
+	works     []*execution.Plan
+	positions []int
+}
+
+// mget groups the bounded batch by concrete index. Identical IDs in different
+// indexes remain separate records, with results restored to caller positions.
 func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedRecord {
+	byIndex := make(map[string]*recordGroup)
+	groups := make([]*recordGroup, 0)
+	for i, work := range works {
+		index := work.Backend.(*plan).index
+		group := byIndex[index]
+		if group == nil {
+			group = &recordGroup{index: index}
+			byIndex[index] = group
+			groups = append(groups, group)
+		}
+		group.works = append(group.works, work)
+		group.positions = append(group.positions, i)
+	}
+	observed := make([]observedRecord, len(works))
+	for _, group := range groups {
+		for i, record := range a.mgetIndex(ctx, group.index, group.works) {
+			observed[group.positions[i]] = record
+		}
+	}
+	return observed
+}
+
+// Each real-time pre-read verifies the entire positional ID and index
+// correspondence before publishing a document. Response and JSON bounds apply
+// to every document in each sequential request.
+func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*execution.Plan) []observedRecord {
 	observed := make([]observedRecord, len(works))
 	for start := 0; start < len(works); start += getBatchItems {
 		end := min(start+getBatchItems, len(works))
@@ -53,7 +84,7 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 		body := map[string]any{"ids": ids}
 		encoded, _ := json.Marshal(body)
 		call := exchange{
-			path: "/" + a.config.Index + "/_mget?realtime=true", body: encoded,
+			path: "/" + index + "/_mget?realtime=true", body: encoded,
 			contentType: "application/json", limit: len(group)*(protocol.MaxDocument+getFramingLimit) + getFramingLimit,
 			jsonNodes: len(group)*(16384+32) + 1,
 		}
@@ -84,7 +115,7 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 		}
 		corresponds := true
 		for i, reply := range envelope.Docs {
-			if reply.Index != a.config.Index || reply.ID != ids[i] {
+			if reply.Index != index || reply.ID != ids[i] {
 				corresponds = false
 				break
 			}
@@ -104,7 +135,7 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 					if rejected, sample := a.reject(reply.Error.Type, reply.Status); rejected != nil {
 						observation.failure, observation.feedback = rejected, sample
 					} else if reply.Error.Type == "index_not_found_exception" {
-						observation.failure = protocol.Fail(pb.FailureCode_NOT_FOUND, "configured index missing")
+						observation.failure = protocol.Fail(pb.FailureCode_NOT_FOUND, "requested index missing")
 					}
 				}
 			case reply.Found == nil || reply.Status != 0:
@@ -190,7 +221,7 @@ func (b *recordBatch) closePrograms() {
 // after framing; the batch retains at most one bounded NDJSON request.
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
 	native := work.Backend.(*plan)
-	metadata := map[string]any{"_index": b.adapter.config.Index, "_id": native.id}
+	metadata := map[string]any{"_index": native.index, "_id": native.id}
 	action := native.action
 	switch action {
 	case "expression":
@@ -321,14 +352,26 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan) ([]*pb.B
 	if len(positions) == 0 {
 		return batch.results, batch.feedback
 	}
-	caps, failure, sample := a.inspect(ctx, false)
-	if failure != nil {
-		batch.feedback = combineFeedback(batch.feedback, sample)
+	type qualification struct {
+		caps    capabilities
+		failure *pb.Failure
 	}
+	// This map lives only for this bounded Execute call, never across requests.
+	qualified := make(map[string]qualification)
 	for _, i := range positions {
 		work := works[i]
 		native := work.Backend.(*plan)
-		denied := failure
+		target, exists := qualified[native.index]
+		if !exists {
+			caps, failure, sample := a.inspect(ctx, native.index, false)
+			target = qualification{caps: caps, failure: failure}
+			qualified[native.index] = target
+			if failure != nil {
+				batch.feedback = combineFeedback(batch.feedback, sample)
+			}
+		}
+		caps := target.caps
+		denied := target.failure
 		if denied == nil {
 			switch {
 			case native.action == "read" && !caps.source:

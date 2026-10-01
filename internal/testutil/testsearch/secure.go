@@ -395,12 +395,13 @@ plugins.security.allow_default_init_securityindex: false
     - index_patterns: ['weir_m11_*']
       allowed_actions: ['indices:*']
 weir_application:
-  cluster_permissions: ['cluster:monitor/main', 'cluster:monitor/state', 'indices:data/write/bulk*']
+  # Multi-get needs a coordinating cluster permission as well as index reads.
+  cluster_permissions: ['cluster:monitor/main', 'cluster:monitor/state', 'indices:data/read/mget', 'indices:data/write/bulk*']
   index_permissions:
     - index_patterns: ['weir_m11_*']
       allowed_actions: ['indices:admin/get', 'indices:admin/mapping/put', 'indices:data/read/*', 'indices:data/write/*']
 weir_reader:
-  cluster_permissions: ['cluster:monitor/main', 'cluster:monitor/state']
+  cluster_permissions: ['cluster:monitor/main', 'cluster:monitor/state', 'indices:data/read/mget']
   index_permissions:
     - index_patterns: ['weir_m11_*']
       allowed_actions: ['indices:admin/get', 'indices:data/read/*']

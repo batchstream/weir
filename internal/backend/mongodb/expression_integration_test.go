@@ -18,10 +18,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func mongoExpression(t *testing.T, a *Adapter, doc bson.D) *execution.Plan {
+func mongoExpression(t *testing.T, a *Adapter, database string, doc bson.D) *execution.Plan {
 	t.Helper()
 	raw := expressionBSON(t, doc)
-	op := expressionOperation("weir://mongo/"+a.config.Database+"/records/s:counter", raw)
+	op := expressionOperation("weir://mongo/"+database+"/records/s:counter", raw)
 	p, f := a.Prepare(op)
 	if f != nil {
 		t.Fatal(f)
@@ -39,7 +39,7 @@ func executeMongoExpression(t *testing.T, a *Adapter, p *execution.Plan) *pb.Mut
 func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 	backend := testmongo.Open(t)
 	client, db := backend.Admin, backend.DB
-	cfg := Config{Store: "mongo", Database: db, Collection: "records", URI: backend.URI, Pool: 4}
+	cfg := Config{Store: "mongo", URI: backend.URI, Pool: 4}
 	cfg = mongoFixtureConfig(t, cfg)
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 	defer a.Close()
 	c := client.Database(db).Collection("records")
 	inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
-	p := mongoExpression(t, a, inc)
+	p := mongoExpression(t, a, db, inc)
 	r := executeMongoExpression(t, a, p)
 	if r.Outcome != pb.MutationOutcome_NOT_APPLIED || r.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED {
 		t.Fatal(r)
@@ -59,7 +59,7 @@ func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 		t.Fatal(err)
 	}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "data", Value: bson.D{{Key: "$literal", Value: "ordinary data"}}}}}, {Key: "$unset", Value: bson.D{{Key: "remove", Value: ""}}}, {Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}, {Key: "small", Value: int32(1)}, {Key: "decimal", Value: decimal}, {Key: "missing", Value: int32(2)}}}}
-	r = executeMongoExpression(t, a, mongoExpression(t, a, update))
+	r = executeMongoExpression(t, a, mongoExpression(t, a, db, update))
 	if r.Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal(r)
 	}
@@ -72,18 +72,18 @@ func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 		t.Fatal(raw)
 	}
 	overflow := bson.D{{Key: "$inc", Value: bson.D{{Key: "wide", Value: int64(1)}}}}
-	r = executeMongoExpression(t, a, mongoExpression(t, a, overflow))
+	r = executeMongoExpression(t, a, mongoExpression(t, a, db, overflow))
 	if r.Outcome != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("int64 overflow", r)
 	}
 	t.Logf("native promotion: int32 overflow -> %v; int64 overflow rejected; decimal=%s", raw.Lookup("small").Type, raw.Lookup("decimal").Decimal128())
 	null := bson.D{{Key: "$inc", Value: bson.D{{Key: "null", Value: 1}}}}
-	r = executeMongoExpression(t, a, mongoExpression(t, a, null))
+	r = executeMongoExpression(t, a, mongoExpression(t, a, db, null))
 	if r.Outcome != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("null inc", r)
 	}
 	noop := bson.D{{Key: "$set", Value: bson.D{}}}
-	r = executeMongoExpression(t, a, mongoExpression(t, a, noop))
+	r = executeMongoExpression(t, a, mongoExpression(t, a, db, noop))
 	if r.Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("noop", r)
 	}
@@ -150,7 +150,7 @@ func TestMongoExpressionNativeCompetition(t *testing.T) {
 			opts := adapterTestOptions{fixture: backend, monitor: monitor}
 			a := testAdapter(t, opts)
 			inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
-			r := executeMongoExpression(t, a, mongoExpression(t, a, inc))
+			r := executeMongoExpression(t, a, mongoExpression(t, a, db, inc))
 			if reads.Load() != 0 || updates.Load() != 1 {
 				t.Fatal("pre-read or replay", reads.Load(), updates.Load())
 			}
@@ -193,7 +193,7 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 				proxy.AlterRemaining.Store(1)
 			}
 			if mode == "concern" || mode == "conflict" {
-				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + db}}
+				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}}
 				if mode == "concern" {
 					concern := bson.E{Key: "writeConcernError", Value: bson.D{{Key: "code", Value: 64}, {Key: "errmsg", Value: "fixture concern"}}}
 					data = append(data, concern)
@@ -206,7 +206,7 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 			opts := adapterTestOptions{fixture: backend, uri: proxy.URI()}
 			a := testAdapter(t, opts)
 			inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
-			r := executeMongoExpression(t, a, mongoExpression(t, a, inc))
+			r := executeMongoExpression(t, a, mongoExpression(t, a, db, inc))
 			want := pb.MutationOutcome_UNKNOWN
 			if mode == "conflict" {
 				want = pb.MutationOutcome_NOT_APPLIED
@@ -215,7 +215,7 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 				t.Fatal(mode, r)
 			}
 			if mode == "drop" {
-				verifyReconnectRead(t, a, proxy, "counter")
+				verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:"+"counter")
 			}
 			writes := 0
 			for _, e := range proxy.Events() {
@@ -271,7 +271,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 				}
 			}()
 			inc := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
-			p := mongoExpression(t, a, inc)
+			p := mongoExpression(t, a, db, inc)
 			runtime.SetOverloaded(true)
 			if _, failure, _ := runtime.Submit(context.Background(), p, nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal(failure)
@@ -331,7 +331,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			}
 			first.Ack()
 			if mode == "drop" {
-				verifyReconnectRead(t, a, proxy, "counter")
+				verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:"+"counter")
 			}
 			writes := 0
 			for _, e := range proxy.Events() {

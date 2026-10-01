@@ -14,8 +14,9 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 	for _, first := range []bool{false, true} {
 		for _, mode := range []string{"valid", "empty_live", "exhausted", "partial", "partial_top", "partial_type", "missing_id", "missing_ns", "wrong_ns", "missing_batch", "wrong_batch", "error_tail", "oversized", "too_many", "truncated", "duplicate"} {
 			t.Run(mode+map[bool]string{true: "_first", false: "_more"}[first], func(t *testing.T) {
-				a := &Adapter{config: Config{Database: "db", Collection: "records"}}
-				n := &scanPlan{items: 1, cursor: 9}
+				a := &Adapter{config: Config{}}
+				target := namespace{database: "db", collection: "records"}
+				n := &scanPlan{target: target, items: 1, cursor: 9}
 				name := "nextBatch"
 				if first {
 					name = "firstBatch"
@@ -91,7 +92,7 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 	}
 }
 func TestMongoScanSelectorControls(t *testing.T) {
-	a := &Adapter{config: Config{Store: "mongo", Database: "db", Collection: "records"}}
+	a := &Adapter{config: Config{Store: "mongo"}}
 	for _, name := range []string{"find", "aggregate", "allowPartialResults", "tailable", "awaitData", "noCursorTimeout", "batchSize", "limit", "skip", "singleBatch", "maxTimeMS", "getMore", "lsid", "readConcern", "collation"} {
 		selector := bson.D{{Key: name, Value: true}}
 		raw, _ := bson.Marshal(selector)
