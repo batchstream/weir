@@ -227,7 +227,7 @@ func TestGRPCOutOfOrderCompletion(t *testing.T) {
 	if f.runtime.Snapshot().Window < 2 {
 		t.Fatal("warmup")
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
 	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	stream, err := f.client.Bulk(ctx)
 	if err != nil {
@@ -386,7 +386,7 @@ func TestGRPCDrainWithoutClientHalfClose(t *testing.T) {
 	f := setup(t, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:" + f.mongo.DB}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 100}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 100}}
 	testmongo.FailCommand(t, f.mongo.Admin, data, 1)
 	stream, err := f.client.Bulk(ctx)
 	if err != nil {

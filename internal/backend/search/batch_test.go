@@ -18,9 +18,8 @@ import (
 
 const testIndexReply = `{"records":{"settings":{"index.uuid":"test","index.number_of_shards":"1"},"mappings":{"_source":{"enabled":true}}}}`
 
-func batchTestPlan(t *testing.T, a *Adapter, action, id string) *execution.Plan {
+func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	resource := "weir://search/records/s:" + id
 	op := &pb.BulkOperation{}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
@@ -90,13 +89,13 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", Index: "records", URL: server.URL, Profile: ElasticsearchProfile}
-	a := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
+	cfg := Config{Store: "search", URL: server.URL}
+	a := &Adapter{dialect: ElasticsearchProfile, config: cfg, client: server.Client(), ctx: context.Background()}
 	actions := []string{"read", "read", "replace", "expression", "program", "put", "create", "delete"}
 	ids := []string{"read", "missing", "replace", "expression", "program", "put", "create", "delete"}
 	works := make([]*execution.Plan, len(actions))
 	for i, action := range actions {
-		works[i] = batchTestPlan(t, a, action, ids[i])
+		works[i] = batchTestPlan(t, a, action, "weir://search/records/s:"+ids[i])
 		works[i].Operation.Index = uint64(100 + i)
 		if action == "replace" || action == "program" {
 			if works[i].ResultBytes < protocol.MaxDocument+protocol.ResultOverhead {
@@ -148,9 +147,9 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", Index: "records", URL: server.URL}
-			a := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-			works := []*execution.Plan{batchTestPlan(t, a, "read", "first"), batchTestPlan(t, a, "read", "second")}
+			cfg := Config{Store: "search", URL: server.URL}
+			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, client: server.Client(), ctx: context.Background()}
+			works := []*execution.Plan{batchTestPlan(t, a, "read", "weir://search/records/s:first"), batchTestPlan(t, a, "read", "weir://search/records/s:second")}
 			results, signal := a.Execute(context.Background(), works)
 			if signal != execution.Neutral || len(results) != 2 || results[1].GetRead().GetFailure() == nil {
 				t.Fatal("incomplete/error evidence", results, signal)
@@ -205,9 +204,9 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", Index: "records", URL: server.URL, Profile: ElasticsearchProfile}
-			a := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-			works := []*execution.Plan{batchTestPlan(t, a, "program", "program"), batchTestPlan(t, a, "put", "put")}
+			cfg := Config{Store: "search", URL: server.URL}
+			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, client: server.Client(), ctx: context.Background()}
+			works := []*execution.Plan{batchTestPlan(t, a, "program", "weir://search/records/s:program"), batchTestPlan(t, a, "put", "weir://search/records/s:put")}
 			results, signal := a.Execute(context.Background(), works)
 			wantCalls, wantOutcome := int32(2), pb.MutationOutcome_APPLIED
 			if mode == "unknown" {
@@ -257,11 +256,11 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", Index: "records", URL: server.URL}
-	a := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-	replace := batchTestPlan(t, a, "replace", "replace")
+	cfg := Config{Store: "search", URL: server.URL}
+	a := &Adapter{dialect: ElasticsearchProfile, config: cfg, client: server.Client(), ctx: context.Background()}
+	replace := batchTestPlan(t, a, "replace", "weir://search/records/s:replace")
 	replace.Context = caller
-	put := batchTestPlan(t, a, "put", "put")
+	put := batchTestPlan(t, a, "put", "weir://search/records/s:put")
 	results, _ := a.Execute(context.Background(), []*execution.Plan{replace, put})
 	if writes.Load() != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller isolation", results, writes.Load())
@@ -305,11 +304,11 @@ func TestMgetGroupsBoundDocumentsAndRecheckLaterCallers(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", Index: "records", URL: server.URL}
-	a := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
+	cfg := Config{Store: "search", URL: server.URL}
+	a := &Adapter{dialect: ElasticsearchProfile, config: cfg, client: server.Client(), ctx: context.Background()}
 	works := make([]*execution.Plan, getBatchItems+2)
 	for i := range works {
-		works[i] = batchTestPlan(t, a, "read", fmt.Sprint(i))
+		works[i] = batchTestPlan(t, a, "read", "weir://search/records/s:"+fmt.Sprint(i))
 	}
 	works[getBatchItems].Context = caller
 	results, feedback := a.Execute(context.Background(), works)

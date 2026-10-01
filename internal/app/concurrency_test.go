@@ -19,8 +19,6 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 			connection := &SearchConnection{CAFile: "/missing/concurrency-ca.pem"}
 			backend := &Search{
 				URL:        "https://unresolved.invalid:443",
-				Index:      "records",
-				Profile:    "elasticsearch-8.19.22",
 				Connection: connection,
 			}
 			local := &Local{Search: backend, MaxConcurrency: c}
@@ -67,13 +65,11 @@ func TestLocalConcurrencyWholeGraphBeforeIO(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { contacts.Add(1) })
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
-	backend := &Search{URL: endpoint.URL, Index: "records", Profile: "elasticsearch-8.19.22"}
+	backend := &Search{URL: endpoint.URL}
 	first := &Local{Search: backend}
 	for _, c := range []int{-1, 33} {
 		mongo := &Mongo{
-			URI:        "mongodb://unresolved.invalid:27017/?tls=true&tlsCAFile=/missing/concurrency-ca.pem",
-			Database:   "records",
-			Collection: "records",
+			URI: "mongodb://unresolved.invalid:27017/?tls=true&tlsCAFile=/missing/concurrency-ca.pem",
 		}
 		invalid := &Local{MongoDB: mongo, MaxConcurrency: c}
 		firstService := Service{Name: "first", Local: first}

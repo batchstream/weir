@@ -93,8 +93,6 @@ services:
       max_batch_operations: 16
       mongodb:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-        database: "weir_m1"
-        collection: "records"
 routes:
   - store: "mongo"
     service: "database"
@@ -108,6 +106,11 @@ Services contain `local` or `remote` settings in the routing file. MongoDB and
 Search credentials can be configured as `username`/`password`
 values or read from `username_file`/`password_file` paths. Each credential must
 use only one source; inline and file sources can be mixed across the pair.
+Each local service connects to one backend server. The resource URI selects the
+MongoDB database and collection (`weir://mongo/example/records/s:one`) or Search
+index (`weir://search/records/s:one`); these targets are not configuration fields.
+Weir identifies Elasticsearch or OpenSearch and its supported version during
+startup, without a configured product profile.
 For example, a MongoDB service can use an inline username and a mounted password:
 
 ```yaml
@@ -118,8 +121,6 @@ services:
         uri: "mongodb://mongo.example.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
         username: "weir"
         password_file: "/run/secrets/mongo-password"
-        database: "example"
-        collection: "records"
 routes:
   - store: "mongo"
     service: "database"

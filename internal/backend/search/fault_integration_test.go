@@ -104,8 +104,8 @@ func TestSearchCommittedReplyLossAndIncompleteBulk(t *testing.T) {
 			}
 			defer a.Close()
 			// Startup establishes a reusable connection before the ambiguous POST.
-			first := searchPlan(t, a, "put", "first")
-			second := searchPlan(t, a, "put", "second")
+			first := searchPlan(t, a, "put", searchResource(b.Index, "first"))
+			second := searchPlan(t, a, "put", searchResource(b.Index, "second"))
 			second.Operation.Index = 1
 			works := []*execution.Plan{first, second}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -141,7 +141,7 @@ func TestSearchReplaceNativeCompetition(t *testing.T) {
 	for _, mode := range []string{"update", "delete", "delete_recreate"} {
 		t.Run(mode, func(t *testing.T) {
 			base, b := setupSearch(t)
-			assertOutcome(t, runSearch(t, base, searchPlan(t, base, "put", "race")), pb.MutationOutcome_APPLIED, 0)
+			assertOutcome(t, runSearch(t, base, searchPlan(t, base, "put", searchResource(b.Index, "race"))), pb.MutationOutcome_APPLIED, 0)
 			var raced atomic.Bool
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				request, err := http.NewRequestWithContext(r.Context(), r.Method, b.URL+r.URL.RequestURI(), r.Body)
@@ -191,7 +191,7 @@ func TestSearchReplaceNativeCompetition(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer a.Close()
-			result := runSearch(t, a, searchPlan(t, a, "replace", "race"))
+			result := runSearch(t, a, searchPlan(t, a, "replace", searchResource(b.Index, "race")))
 			assertOutcome(t, result, pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_CONFLICT)
 			status, raw := b.Do(t, "GET", "/"+b.Index+"/_doc/race", "")
 			if mode == "delete" {
@@ -239,17 +239,17 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	create := searchPlan(t, a, "create", "direct")
-	put := searchPlan(t, a, "put", "other")
+	create := searchPlan(t, a, "create", searchResource(b.Index, "direct"))
+	put := searchPlan(t, a, "put", searchResource(b.Index, "other"))
 	put.Operation.Index = 1
 	works := []*execution.Plan{create, put}
 	results, _ := a.Execute(ctx, works)
 	for _, result := range results {
 		assertOutcome(t, result, pb.MutationOutcome_APPLIED, 0)
 	}
-	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "replace", "direct")), pb.MutationOutcome_APPLIED, 0)
+	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "replace", searchResource(b.Index, "direct"))), pb.MutationOutcome_APPLIED, 0)
 	for _, id := range []string{"direct", "other"} {
-		result := runSearch(t, a, searchPlan(t, a, "read", id)).GetRead()
+		result := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, id))).GetRead()
 		if result.GetDocument() == nil || strings.Contains(string(result.GetDocument().Data), "changed") {
 			t.Fatal("default pipeline touched Weir source", result)
 		}
@@ -263,13 +263,13 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		t.Fatal(status)
 	}
 	for _, action := range []string{"put", "create", "replace"} {
-		assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, "direct")), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
+		assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, searchResource(b.Index, "direct"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 	}
-	read := searchPlan(t, a, "read", "direct")
+	read := searchPlan(t, a, "read", searchResource(b.Index, "direct"))
 	if runSearch(t, a, read).GetRead().GetDocument() == nil {
 		t.Fatal("final pipeline disabled reads")
 	}
-	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "delete", "direct")), pb.MutationOutcome_APPLIED, 0)
+	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "delete", searchResource(b.Index, "direct"))), pb.MutationOutcome_APPLIED, 0)
 	// The same no-pipeline flag does not skip final ingest for direct native callers.
 	status, raw = b.Do(t, "PUT", "/"+b.Index+"/_doc/final?pipeline=_none", `{"n":1}`)
 	if status < 400 {
@@ -284,26 +284,17 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		t.Run(spec.name, func(t *testing.T) {
 			index := b.Index + "_" + spec.name
 			b.Create(t, index, spec.body)
-			cfg := a.config
-			cfg.Index = index
-			other, err := Open(context.Background(), cfg)
-			if spec.name == "routing" || spec.name == "shards" {
-				if err == nil {
-					_ = other.Close()
-					t.Fatal("required routing accepted")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer other.Close()
-			read := searchPlan(t, other, "read", "a")
-			if runSearch(t, other, read).GetRead().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+			read := searchPlan(t, a, "read", searchResource(index, "a"))
+			if runSearch(t, a, read).GetRead().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatal("lossy source read allowed")
 			}
-			assertOutcome(t, runSearch(t, other, searchPlan(t, other, "put", "a")), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
-			assertOutcome(t, runSearch(t, other, searchPlan(t, other, "delete", "a")), pb.MutationOutcome_APPLIED, 0)
+			assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(index, "a"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
+			deletion := searchPlan(t, a, "delete", searchResource(index, "a"))
+			if spec.name == "routing" || spec.name == "shards" {
+				assertOutcome(t, runSearch(t, a, deletion), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
+			} else {
+				assertOutcome(t, runSearch(t, a, deletion), pb.MutationOutcome_APPLIED, 0)
+			}
 		})
 	}
 	alias := b.Index + "_alias"
@@ -311,21 +302,8 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	if status != 200 {
 		t.Fatal(status)
 	}
-	cfg := a.config
-	cfg.Index = alias
-	invalid, err := Open(context.Background(), cfg)
-	if err == nil {
-		_ = invalid.Close()
+	aliasRead := searchPlan(t, a, "read", searchResource(alias, "a"))
+	if runSearch(t, a, aliasRead).GetRead().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("alias accepted")
-	}
-	cfg = a.config
-	cfg.Profile = OpenSearchProfile
-	if a.config.Profile == cfg.Profile {
-		cfg.Profile = ElasticsearchProfile
-	}
-	invalid, err = Open(context.Background(), cfg)
-	if err == nil {
-		_ = invalid.Close()
-		t.Fatal("wrong product accepted")
 	}
 }

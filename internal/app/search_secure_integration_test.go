@@ -24,12 +24,14 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	fixture := testsearch.OpenSecure(t)
 	b := fixture.Backend
 	connection := &SearchConnection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
-	backend := &Search{URL: b.URL, Index: b.Index, Profile: b.Profile, Connection: connection}
+	backend := &Search{URL: b.URL, Connection: connection}
 	t.Run("partial-startup-cleanup", func(t *testing.T) {
 		base := secureHTTPOpenCount(t, fixture.Admin)
 		first := &Local{Search: backend}
 		otherBackend := *backend
-		otherBackend.Index = b.Index + "_absent"
+		otherConnection := *connection
+		otherConnection.Password = "wrong-owned-pair"
+		otherBackend.Connection = &otherConnection
 		other := &Local{Search: &otherBackend}
 		firstService := Service{Name: "first", Local: first}
 		otherService := Service{Name: "second", Local: other}
@@ -42,7 +44,7 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		for i := 0; i < 3; i++ {
 			node, err := Open(context.Background(), failed)
 			if node != nil || err == nil {
-				t.Fatal("partial startup should reject missing index")
+				t.Fatal("partial startup should reject failed server authentication")
 			}
 		}
 		for deadline := time.Now().Add(time.Second); ; {
@@ -100,7 +102,16 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	read := &pb.ReadRequest{Resource: mutation.Resource}
 	found, err := client.Read(ctx, read)
 	if err != nil || !bytes.Equal(found.GetDocument().GetData(), doc.Data) {
-		t.Fatal("opaque JSON changed", err)
+		failure := found.GetFailure()
+		t.Fatalf(
+			"opaque JSON changed: transport=%v failure_code=%s failure_message=%q missing=%t got_bytes=%d want_bytes=%d",
+			err,
+			failure.GetCode(),
+			failure.GetMessage(),
+			found.GetMissing() != nil,
+			len(found.GetDocument().GetData()),
+			len(doc.Data),
+		)
 	}
 	create := &pb.MutateRequest_Create{Create: doc}
 	mutation.Action = create

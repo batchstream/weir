@@ -17,10 +17,10 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 	case status == 409 && errorType == "version_conflict_engine_exception":
 		return protocol.Fail(pb.FailureCode_CONFLICT, "native conditional conflict"), execution.Neutral
 	case status == 404 && errorType == "index_not_found_exception":
-		return protocol.Fail(pb.FailureCode_NOT_FOUND, "configured index missing"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_NOT_FOUND, "requested index missing"), execution.Neutral
 	case status == 429 &&
-		(a.config.Profile == ElasticsearchProfile && errorType == "es_rejected_execution_exception" ||
-			a.config.Profile == OpenSearchProfile && errorType == "rejected_execution_exception"),
+		(a.dialect == ElasticsearchProfile && errorType == "es_rejected_execution_exception" ||
+			a.dialect == OpenSearchProfile && errorType == "rejected_execution_exception"),
 		status == 503 && errorType == "unavailable_shards_exception":
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
 	}
@@ -86,7 +86,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		entry := envelope.Items[i]
 		encoded, ok := entry[action]
 		var item expressionResponse
-		if !ok || len(entry) != 1 || json.Unmarshal(encoded, &item) != nil || item.Index != a.config.Index || item.ID != native.id {
+		if !ok || len(entry) != 1 || json.Unmarshal(encoded, &item) != nil || item.Index != native.index || item.ID != native.id {
 			return results, execution.Neutral
 		}
 		hadErrors = hadErrors || item.Error != nil
@@ -111,6 +111,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			var signal execution.Feedback
 			if native.program != nil {
 				opts := programWriteReplyOptions{
+					index:          native.index,
 					id:             native.id,
 					expectedResult: native.expectedResult,
 					status:         item.Status,

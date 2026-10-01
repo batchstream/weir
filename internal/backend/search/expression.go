@@ -114,7 +114,7 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 		return unknown, execution.Neutral
 	}
 	if status != 200 ||
-		response.Index != a.config.Index ||
+		response.Index != n.index ||
 		response.ID != n.id ||
 		response.Version == nil ||
 		*response.Version < 1 ||

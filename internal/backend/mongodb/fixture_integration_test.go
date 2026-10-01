@@ -29,7 +29,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 		proxy.Monitor = o.monitor
 		o.uri = proxy.URI()
 	}
-	cfg := Config{URI: o.uri, Store: "mongo", Database: o.fixture.DB, Collection: "records", Pool: 4}
+	cfg := Config{URI: o.uri, Store: "mongo", Pool: 4}
 	cfg = mongoFixtureConfig(t, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -45,9 +45,9 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 	})
 	return a
 }
-func prepareCounter(t *testing.T, a *Adapter, key string) *execution.Plan {
+func prepareCounter(t *testing.T, a *Adapter, resource string) *execution.Plan {
 	t.Helper()
-	r := &pb.ReadRequest{Resource: "weir://mongo/" + a.config.Database + "/records/s:" + key}
+	r := &pb.ReadRequest{Resource: resource}
 	v := &pb.BulkOperation_Read{Read: r}
 	op := &pb.BulkOperation{Operation: v}
 	p, f := a.Prepare(op)

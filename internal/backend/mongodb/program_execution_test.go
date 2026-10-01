@@ -37,7 +37,8 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var responses []bson.D
+			qualification := collectionQualificationResponse("db", "records")
+			responses := []bson.D{qualification}
 			var wantCounts []int32
 			for attempt, commit := range tc.commits {
 				if attempt == 0 || tc.reevaluate {
@@ -78,9 +79,10 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer client.Disconnect(context.Background())
-			a := &Adapter{client: client, collection: client.Database("db").Collection("records")}
+			a := &Adapter{client: client}
 			program := &luaengine.Program{Source: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
-			native := &plan{id: "item", program: program}
+			target := namespace{database: "db", collection: "records"}
+			native := &plan{target: target, id: "item", program: program}
 			result, _ := a.runProgram(context.Background(), native)
 			if result.GetOutcome() != tc.outcome || result.GetFailure().GetCode() != tc.failure {
 				t.Fatalf("unexpected result: %v", result)

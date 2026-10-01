@@ -32,6 +32,7 @@ type RMWReport struct {
 // counter transform. It is intentionally not wired to AtomicTransform or any public RPC.
 func (a *Adapter) IncrementConformance(ctx context.Context, work *execution.Plan) RMWReport {
 	p := work.Backend.(*plan)
+	collection := a.client.Database(p.target.database).Collection(p.target.collection)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	report := RMWReport{}
@@ -64,7 +65,7 @@ func (a *Adapter) IncrementConformance(ctx context.Context, work *execution.Plan
 		if err = session.StartTransaction(transactionOptions()); err != nil {
 			break
 		}
-		raw, readErr := a.collection.FindOne(txctx, filter).Raw()
+		raw, readErr := collection.FindOne(txctx, filter).Raw()
 		missing := errors.Is(readErr, mongo.ErrNoDocuments)
 		if readErr != nil && !missing {
 			err = readErr
@@ -92,9 +93,9 @@ func (a *Adapter) IncrementConformance(ctx context.Context, work *execution.Plan
 					}
 					if err == nil {
 						if missing {
-							_, err = a.collection.InsertOne(txctx, bson.Raw(encoded))
+							_, err = collection.InsertOne(txctx, bson.Raw(encoded))
 						} else {
-							_, err = a.collection.ReplaceOne(txctx, filter, bson.Raw(encoded))
+							_, err = collection.ReplaceOne(txctx, filter, bson.Raw(encoded))
 						}
 					}
 				}

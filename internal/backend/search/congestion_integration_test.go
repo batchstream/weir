@@ -28,7 +28,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 		for worker := 0; worker < 4; worker++ {
 			works := make([]*execution.Plan, 128)
 			for i := range works {
-				works[i] = searchPlan(t, a, "create", fmt.Sprintf("load-%d-%d-%d", wave, worker, i))
+				works[i] = searchPlan(t, a, "create", searchResource(b.Index, fmt.Sprintf("load-%d-%d-%d", wave, worker, i)))
 				works[i].Operation.Index = uint64(i)
 			}
 			workers.Go(func() {

@@ -72,8 +72,8 @@ func batchMockAdapter(t *testing.T, responses []bson.D, monitor *event.CommandMo
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
-	config := Config{Store: "mongo", Database: "db", Collection: "records"}
-	a := &Adapter{client: client, collection: client.Database("db").Collection("records"), config: config}
+	config := Config{Store: "mongo"}
+	a := &Adapter{client: client, config: config}
 	return a
 }
 
@@ -101,7 +101,7 @@ func TestMongoPointReadRejectsMalformedCursorEvidence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			response := readCursorResponse(tc.cursor)
 			cleanup := bson.D{{Key: "ok", Value: 1}, {Key: "cursorsKilled", Value: bson.A{int64(8)}}, {Key: "cursorsAlive", Value: bson.A{}}, {Key: "cursorsNotFound", Value: bson.A{}}, {Key: "cursorsUnknown", Value: bson.A{}}}
-			responses := []bson.D{response, cleanup}
+			responses := []bson.D{collectionQualificationResponse("db", "records"), response, cleanup}
 			a := batchMockAdapter(t, responses, nil)
 			var plans []*execution.Plan
 			for _, name := range []string{"a", "b"} {
@@ -129,7 +129,7 @@ func TestMongoPointReadMatchesTypedIDsAcrossPages(t *testing.T) {
 	stringDoc := bson.D{{Key: "_id", Value: "a"}}
 	first := bson.D{{Key: "id", Value: int64(17)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{integerDoc}}}
 	next := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "nextBatch", Value: bson.A{objectDoc, stringDoc}}}
-	responses := []bson.D{readCursorResponse(first), readCursorResponse(next)}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(first), readCursorResponse(next)}
 	var commands []string
 	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) { commands = append(commands, e.CommandName) }}
 	a := batchMockAdapter(t, responses, monitor)
@@ -148,7 +148,7 @@ func TestMongoPointReadMatchesTypedIDsAcrossPages(t *testing.T) {
 			t.Fatal("result identity/order mismatch", replies)
 		}
 	}
-	if len(commands) != 2 || commands[0] != "find" || commands[1] != "getMore" {
+	if len(commands) != 3 || commands[0] != "listCollections" || commands[1] != "find" || commands[2] != "getMore" {
 		t.Fatal("read batch was not a single cursor", commands)
 	}
 }
@@ -241,7 +241,7 @@ func TestMongoVerboseWriteCursorKeepsItemIndexesAndSessionAcrossPages(t *testing
 	nextCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "admin.$cmd.bulkWrite"}, {Key: "nextBatch", Value: bson.A{nextItem}}}
 	first := bson.D{{Key: "ok", Value: 1}, {Key: "cursor", Value: firstCursor}, {Key: "nErrors", Value: 0}, {Key: "nInserted", Value: 2}, {Key: "nDeleted", Value: 0}, {Key: "nMatched", Value: 0}, {Key: "nModified", Value: 0}, {Key: "nUpserted", Value: 0}}
 	next := readCursorResponse(nextCursor)
-	responses := []bson.D{first, next}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), first, next}
 	var commands []string
 	var sessions []bson.Raw
 	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
@@ -282,7 +282,7 @@ func TestMongoReadContinuationStopsWhenItsCallersCancel(t *testing.T) {
 	document := bson.D{{Key: "_id", Value: "a"}}
 	cursor := bson.D{{Key: "id", Value: int64(19)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
 	cleanup := bson.D{{Key: "ok", Value: 1}, {Key: "cursorsKilled", Value: bson.A{int64(19)}}, {Key: "cursorsAlive", Value: bson.A{}}, {Key: "cursorsNotFound", Value: bson.A{}}, {Key: "cursorsUnknown", Value: bson.A{}}}
-	responses := []bson.D{readCursorResponse(cursor), cleanup}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor), cleanup}
 	var commands []string
 	monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
 		commands = append(commands, e.CommandName)
@@ -305,7 +305,7 @@ func TestMongoReadContinuationStopsWhenItsCallersCancel(t *testing.T) {
 	if replies[0].GetRead().GetDocument() == nil || replies[1].GetRead().GetFailure().GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
 		t.Fatal("canceled reads consumed further cursor work", replies, signal)
 	}
-	if len(commands) != 2 || commands[0] != "find" || commands[1] != "killCursors" {
+	if len(commands) != 3 || commands[0] != "listCollections" || commands[1] != "find" || commands[2] != "killCursors" {
 		t.Fatal("canceled cursor was continued", commands)
 	}
 }
@@ -341,7 +341,7 @@ func TestMongoBulkCursorRejectsDuplicateAndMissingIndexes(t *testing.T) {
 }
 
 func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
-	config := Config{Store: "mongo", Database: "db", Collection: "records"}
+	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
 	opts := batchOperationOptions{resource: "weir://mongo/db/records/s:a", action: "read"}
 	p, failure := a.Prepare(batchOperation(t, opts))

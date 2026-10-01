@@ -3,8 +3,6 @@ services:
     local:
       search:
         url: "http://elasticsearch:9200"
-        index: "records"
-        profile: "elasticsearch-8.19.22"
       max_concurrency: 2
 
 routes:

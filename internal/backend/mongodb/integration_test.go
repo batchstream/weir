@@ -61,7 +61,7 @@ func TestNativeRMWConflicts(t *testing.T) {
 			}}
 			o := adapterTestOptions{fixture: backend, monitor: monitor}
 			a := testAdapter(t, o)
-			p := prepareCounter(t, a, "counter")
+			p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:counter")
 			report := a.IncrementConformance(ctx, p)
 			if report.Result.Outcome != pb.MutationOutcome_APPLIED || report.Attempts < 2 || report.Evaluations < 2 {
 				t.Fatalf("fresh transaction/recompute required: %+v %+v", report, report.Result)
@@ -106,7 +106,7 @@ func TestCommitReplyLostAfterRealCommit(t *testing.T) {
 			}
 			o := adapterTestOptions{fixture: backend, uri: proxy.URI()}
 			a := testAdapter(t, o)
-			p := prepareCounter(t, a, "counter")
+			p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:counter")
 			ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
 			defer cancel()
 			start := time.Now()
@@ -173,7 +173,7 @@ func TestRMWAttemptAndDeadlineBounds(t *testing.T) {
 	}}
 	o := adapterTestOptions{fixture: backend, monitor: monitor}
 	a := testAdapter(t, o)
-	p := prepareCounter(t, a, "counter")
+	p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:counter")
 	report := a.IncrementConformance(context.Background(), p)
 	if report.Result.Outcome != pb.MutationOutcome_NOT_APPLIED || report.Attempts != 5 || report.Commits != 0 {
 		t.Fatal(report, report.Result)
@@ -187,18 +187,21 @@ func TestRMWAttemptAndDeadlineBounds(t *testing.T) {
 }
 func TestPartialInitializationAndClose(t *testing.T) {
 	backend := testmongo.Open(t)
-	native, db := backend.Admin, backend.DB
+	native := backend.Admin
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	before := connectionCount(t, native)
-	cfg := Config{URI: backend.URI, Store: "mongo", Database: db, Collection: "not_created", Pool: 1}
+	cfg := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 	cfg = mongoFixtureConfig(t, cfg)
 	for i := 0; i < 5; i++ {
-		if a, err := Open(ctx, cfg); err == nil || a != nil {
-			t.Fatal("must unwind failed qualification")
+		attempt, err := Open(ctx, cfg)
+		if err != nil {
+			t.Fatal("server qualification must not require a target collection", err)
+		}
+		if err = attempt.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
-	cfg.Collection = "records"
 	a, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -243,8 +246,8 @@ func TestCommitCancellationRetainsOriginalDeadline(t *testing.T) {
 	native, db := backend.Admin, backend.DB
 	o := adapterTestOptions{fixture: backend}
 	a := testAdapter(t, o)
-	p := prepareCounter(t, a, "deadline")
-	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:" + db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
+	p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:deadline")
+	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
 	testmongo.FailCommand(t, native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
@@ -272,7 +275,7 @@ func TestUnrelatedUniqueConflictDoesNotRetry(t *testing.T) {
 	}
 	o := adapterTestOptions{fixture: backend}
 	a := testAdapter(t, o)
-	p := prepareCounter(t, a, "new")
+	p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:new")
 	report := a.IncrementConformance(ctx, p)
 	if report.Attempts != 1 || report.Commits != 0 || report.Result.Outcome != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal(report, report.Result)
@@ -310,7 +313,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 			t.Fatal(r)
 		}
 	}
-	verifyReconnectRead(t, a, proxy, "one")
+	verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:one")
 	inserts := 0
 	for _, e := range proxy.Events() {
 		if e.Command == "bulkWrite" {
@@ -339,7 +342,7 @@ func TestAmbiguitySurvivesLaterDefiniteError(t *testing.T) {
 	proxy.DropGate = gate
 	o := adapterTestOptions{fixture: backend, uri: proxy.URI()}
 	a := testAdapter(t, o)
-	p := prepareCounter(t, a, "sticky")
+	p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:sticky")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	done := make(chan RMWReport, 1)
@@ -360,7 +363,7 @@ func TestAmbiguitySurvivesLaterDefiniteError(t *testing.T) {
 		close(gate)
 		t.Fatal("successful commit never reached proxy")
 	}
-	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:" + db}, {Key: "errorCode", Value: 2}}
+	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "errorCode", Value: 2}}
 	testmongo.FailCommand(t, native, data, 100)
 	close(gate)
 	report := <-done
@@ -427,8 +430,8 @@ func TestCloseDuringCommit(t *testing.T) {
 	}}
 	o := adapterTestOptions{fixture: backend, monitor: monitor}
 	a := testAdapter(t, o)
-	p := prepareCounter(t, a, "closing")
-	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:" + db}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
+	p := prepareCounter(t, a, "weir://mongo/"+db+"/records/s:closing")
+	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
 	testmongo.FailCommand(t, native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

@@ -47,8 +47,6 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 	connection := &SearchConnection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
 	backend := &Search{
 		URL:        "https://" + proxy.listener.Addr().String(),
-		Index:      b.Index,
-		Profile:    b.Profile,
 		Connection: connection,
 	}
 	local := &Local{Search: backend, MaxConcurrency: opts.concurrency, MaxBatchOperations: 1}

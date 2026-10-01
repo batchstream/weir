@@ -71,7 +71,8 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			}
 			var calls int
 			monitor := &event.CommandMonitor{Started: func(_ context.Context, _ *event.CommandStartedEvent) { calls++ }}
-			deployment := drivertest.NewMockDeployment(response)
+			qualification := collectionQualificationResponse("db", "records")
+			deployment := drivertest.NewMockDeployment(qualification, response)
 			opts := options.Client().SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetMonitor(monitor)
 			opts.Deployment = deployment
 			client, err := mongo.Connect(opts)
@@ -79,7 +80,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer client.Disconnect(context.Background())
-			cfg := Config{Store: "mongo", Database: "db", Collection: "records"}
+			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, config: cfg}
 			descriptor := &pb.Document{MediaType: NativeDescriptor}
 			open := &pb.NativeOpen{Resource: "weir://mongo/db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
@@ -103,7 +104,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			defer source.Close()
 			exchange := &execution.NativeExchange{Source: source, Sink: capture}
 			end, feedback := a.ExecuteNative(context.Background(), plan, exchange)
-			if end.Completion != test.completion || feedback != test.feedback || calls != 1 {
+			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
 				t.Fatal(end, feedback, calls)
 			}
 			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
@@ -119,19 +120,20 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 	}
 }
 func TestMongoNativeCommandScope(t *testing.T) {
-	cfg := Config{Store: "mongo", Database: "db", Collection: "records"}
+	cfg := Config{Store: "mongo"}
 	a := &Adapter{config: cfg}
+	target := namespace{database: "db", collection: "records"}
 	for _, name := range []string{"find", "aggregate", "getMore", "killCursors", "drop", "insert", "eval", "startSession"} {
 		command := bson.D{{Key: name, Value: "records"}}
 		raw, _ := bson.Marshal(command)
-		if a.nativeCommand(raw) == nil {
+		if a.nativeCommand(raw, target) == nil {
 			t.Fatal(name)
 		}
 	}
 	for _, key := range []string{"$db", "lsid", "txnNumber", "autocommit", "startTransaction", "writeConcern", "readConcern", "pipeline", "let"} {
 		command := bson.D{{Key: "findAndModify", Value: "records"}, {Key: key, Value: 1}}
 		raw, _ := bson.Marshal(command)
-		if a.nativeCommand(raw) == nil {
+		if a.nativeCommand(raw, target) == nil {
 			t.Fatal(key)
 		}
 	}
@@ -141,35 +143,37 @@ func TestMongoNativeCommandScope(t *testing.T) {
 		{{Key: "count", Value: "records"}, {Key: "count", Value: "other"}},
 	} {
 		raw, _ := bson.Marshal(command)
-		if a.nativeCommand(raw) == nil {
+		if a.nativeCommand(raw, target) == nil {
 			t.Fatal(command)
 		}
 	}
 }
 
 func TestMongoNativeRejectsCode(t *testing.T) {
-	cfg := Config{Collection: "records"}
+	cfg := Config{}
 	a := &Adapter{config: cfg}
+	target := namespace{database: "db", collection: "records"}
 	for _, key := range []string{"$where", "$function", "$accumulator"} {
 		query := bson.D{{Key: key, Value: "code"}}
 		command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
 		raw, _ := bson.Marshal(command)
-		if a.nativeCommand(raw) == nil {
+		if a.nativeCommand(raw, target) == nil {
 			t.Fatal(key)
 		}
 	}
 }
 
 func TestMongoNativeExactCommandBound(t *testing.T) {
-	cfg := Config{Collection: "records"}
+	cfg := Config{}
 	a := &Adapter{config: cfg}
+	target := namespace{database: "db", collection: "records"}
 	query := bson.D{{Key: "pad", Value: ""}}
 	command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
 	base, _ := bson.Marshal(command)
 	for _, extra := range []int{0, 1} {
 		query[0].Value = strings.Repeat("x", NativeCommandLimit-len(base)+extra)
 		raw, _ := bson.Marshal(command)
-		f := a.nativeCommand(raw)
+		f := a.nativeCommand(raw, target)
 		if extra == 0 && f != nil || extra == 1 && f == nil {
 			t.Fatal(extra, len(raw), f)
 		}

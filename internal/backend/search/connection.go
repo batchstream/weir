@@ -28,11 +28,8 @@ type Connection struct {
 // rules before Open can read a CA file, resolve a hostname or contact a backend.
 func ValidateConfig(cfg Config) error {
 	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
-	if err != nil || name != cfg.Store || len(segments) != 0 || !indexPattern.MatchString(cfg.Index) || cfg.Pool < 1 || cfg.Pool > 32 {
+	if err != nil || name != cfg.Store || len(segments) != 0 || cfg.Pool < 1 || cfg.Pool > 32 {
 		return errors.New("invalid Search configuration")
-	}
-	if cfg.Profile != ElasticsearchProfile && cfg.Profile != OpenSearchProfile {
-		return errors.New("unsupported Search profile")
 	}
 	endpoint, err := canonicalURL(cfg.URL)
 	if err != nil {

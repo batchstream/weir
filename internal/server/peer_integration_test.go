@@ -428,7 +428,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 			}
 			proxy.DropRemaining.Store(1)
 		}
-		cfg := mongodb.Config{Store: kind, URI: proxy.URI(), Database: f.mongo.DB, Collection: "records", Pool: 1}
+		cfg := mongodb.Config{Store: kind, URI: proxy.URI(), Pool: 1}
 		cfg = mongoFixtureConfig(t, cfg)
 		adapter, err = mongodb.Open(context.Background(), cfg)
 		f.root = "weir://mongo/" + f.mongo.DB + "/records"
@@ -479,7 +479,7 @@ func faultBackend(t *testing.T, kind string, drop bool, native bool) backendFaul
 		proxy := httptest.NewServer(handler)
 		t.Cleanup(proxy.Close)
 		result.endpoint = proxy.URL
-		cfg := search.Config{Store: kind, URL: proxy.URL, Index: backend.Index, Profile: backend.Profile, Pool: 1}
+		cfg := search.Config{Store: kind, URL: proxy.URL, Pool: 1}
 		adapter, err = search.Open(context.Background(), cfg)
 		f.root = "weir://search/" + backend.Index
 	}

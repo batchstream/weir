@@ -27,10 +27,9 @@ func TestProgramWriteReplyRecognizesRejectionEnvelopes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.profile+"/"+tc.kind, func(t *testing.T) {
-			config := Config{Index: "records", Profile: tc.profile}
-			a := &Adapter{config: config}
+			a := &Adapter{dialect: tc.profile}
 			raw := []byte(fmt.Sprintf(`{"error":{"type":%q},"status":%d}`, tc.kind, tc.status))
-			opts := programWriteReplyOptions{id: "item", expectedResult: "updated", status: tc.status, raw: raw}
+			opts := programWriteReplyOptions{index: "records", id: "item", expectedResult: "updated", status: tc.status, raw: raw}
 			result, feedback := a.programWriteReply(opts)
 			if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != tc.failure || feedback != tc.feedback {
 				t.Fatalf("rejection was not recognized: result=%v feedback=%v", result, feedback)
@@ -40,8 +39,7 @@ func TestProgramWriteReplyRecognizesRejectionEnvelopes(t *testing.T) {
 }
 
 func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
-	config := Config{Index: "records", Profile: ElasticsearchProfile}
-	a := &Adapter{config: config}
+	a := &Adapter{dialect: ElasticsearchProfile}
 	success := `{"_index":"records","_id":"item","_version":1,"_seq_no":0,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`
 	cases := []struct {
 		action string
@@ -53,7 +51,7 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		raw := []byte(strings.Replace(success, `"updated"`, fmt.Sprintf("%q", tc.action), 1))
-		opts := programWriteReplyOptions{id: "item", expectedResult: tc.action, status: tc.status, raw: raw}
+		opts := programWriteReplyOptions{index: "records", id: "item", expectedResult: tc.action, status: tc.status, raw: raw}
 		result, feedback := a.programWriteReply(opts)
 		if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil || feedback != execution.Healthy {
 			t.Fatalf("success was not recognized: %v", result)
@@ -71,13 +69,13 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 		`{"error":{"type":"mapper_parsing_exception"},"status":200,"result":"updated"}`,
 	}
 	for _, raw := range invalid {
-		opts := programWriteReplyOptions{id: "item", expectedResult: "updated", status: 200, raw: []byte(raw)}
+		opts := programWriteReplyOptions{index: "records", id: "item", expectedResult: "updated", status: 200, raw: []byte(raw)}
 		result, feedback := a.programWriteReply(opts)
 		if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
 			t.Fatalf("ambiguous response was accepted: %s: %v", raw, result)
 		}
 	}
-	opts := programWriteReplyOptions{id: "item", expectedResult: "updated", status: 200, raw: []byte(success), err: errTimeout}
+	opts := programWriteReplyOptions{index: "records", id: "item", expectedResult: "updated", status: 200, raw: []byte(success), err: errTimeout}
 	result, feedback := a.programWriteReply(opts)
 	if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
 		t.Fatalf("lost acknowledgement was accepted: %v", result)
@@ -85,11 +83,10 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 }
 
 func TestProgramWriteReplyRejectsContradictoryErrorEvidence(t *testing.T) {
-	config := Config{Index: "records", Profile: ElasticsearchProfile}
-	a := &Adapter{config: config}
+	a := &Adapter{dialect: ElasticsearchProfile}
 	for _, field := range []string{`"result":"updated"`, `"_version":1`, `"_seq_no":1`, `"_primary_term":1`, `"_shards":{}`} {
 		raw := []byte(fmt.Sprintf(`{"error":{"type":"mapper_parsing_exception"},"status":400,%s}`, field))
-		opts := programWriteReplyOptions{id: "item", expectedResult: "updated", status: 400, raw: raw}
+		opts := programWriteReplyOptions{index: "records", id: "item", expectedResult: "updated", status: 400, raw: raw}
 		result, feedback := a.programWriteReply(opts)
 		if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
 			t.Fatalf("contradictory response was accepted: %s: %v", raw, result)

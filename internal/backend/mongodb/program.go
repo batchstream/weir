@@ -57,6 +57,10 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 	}
 	ctx, cancel := context.WithTimeout(parent, programLifetime)
 	defer cancel()
+	if failure, signal := a.qualifyTarget(ctx, native.target); failure != nil {
+		return protocol.Mutation(pb.MutationOutcome_NOT_STARTED, failure), signal
+	}
+	collection := a.client.Database(native.target.database).Collection(native.target.collection)
 	session, err := a.client.StartSession()
 	if err != nil {
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction unavailable")
@@ -86,7 +90,7 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction could not start")
 			return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
 		}
-		raw, readErr := a.collection.FindOne(txctx, filter).Raw()
+		raw, readErr := collection.FindOne(txctx, filter).Raw()
 		missing := errors.Is(readErr, mongo.ErrNoDocuments)
 		if readErr != nil && !missing {
 			if shouldRetryProgramTransaction(readErr) && a.abortProgramTransaction(session) {
@@ -127,7 +131,7 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 				a.abortProgramTransaction(session)
 				return protocol.Mutation(pb.MutationOutcome_APPLIED, nil), execution.Healthy
 			}
-			deleted, deleteErr := a.collection.DeleteOne(txctx, filter)
+			deleted, deleteErr := collection.DeleteOne(txctx, filter)
 			if deleteErr == nil && deleted.DeletedCount != 1 {
 				deleteErr = errProgramWriteConflict
 			}
@@ -153,10 +157,10 @@ func (a *Adapter) runProgram(parent context.Context, native *plan) (*pb.Mutation
 				return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
 			}
 			if missing {
-				_, err = a.collection.InsertOne(txctx, encoded)
+				_, err = collection.InsertOne(txctx, encoded)
 			} else {
 				var updated *mongo.UpdateResult
-				updated, err = a.collection.ReplaceOne(txctx, filter, encoded)
+				updated, err = collection.ReplaceOne(txctx, filter, encoded)
 				if err == nil && updated.MatchedCount != 1 {
 					err = errProgramWriteConflict
 				}
@@ -249,11 +253,13 @@ func mongoIdentity(id any) (value.Field, error) {
 
 func withMongoIdentity(document value.Value, identity value.Field, id any) (value.Value, bool) {
 	if document.Kind != value.Object || value.Validate(document) != nil {
-		return value.Value{}, false
+		var zero value.Value
+		return zero, false
 	}
 	existing, err := document.Lookup("_id")
 	if err != nil || existing.Kind != value.Missing && !equalID(existing, id) {
-		return value.Value{}, false
+		var zero value.Value
+		return zero, false
 	}
 	result := value.Value{Kind: value.Object, Fields: make([]value.Field, 0, len(document.Fields)+1)}
 	result.Fields = append(result.Fields, identity)
@@ -263,7 +269,8 @@ func withMongoIdentity(document value.Value, identity value.Field, id any) (valu
 		}
 	}
 	if err := value.Validate(result); err != nil {
-		return value.Value{}, false
+		var zero value.Value
+		return zero, false
 	}
 	return result, true
 }

@@ -91,8 +91,6 @@ def prepare(f, artifact, profile):
                         "max_concurrency": concurrency,
                         "search": {
                             "url": "http://elasticsearch:9200",
-                            "index": "records",
-                            "profile": "elasticsearch-8.19.22",
                         },
                     },
                 }

@@ -23,6 +23,7 @@ const scanPageBudget = 128 << 20
 const scanNativeLimit = 48 << 20
 
 type scanPlan struct {
+	target         namespace
 	options        bson.D
 	items          int
 	session        *mongo.Session
@@ -36,13 +37,14 @@ func (a *Adapter) PrepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, f
 	}
 	_, parts, _ := protocol.ParseResource(req.Resource)
-	if len(parts) != 2 || parts[0] != a.config.Database || parts[1] != a.config.Collection {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only the configured collection supports Scan")
+	if len(parts) != 2 || !validNamespace(parts) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Scan target")
 	}
 	if req.ReadMediaType != "" && req.ReadMediaType != "application/bson" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native BSON")
 	}
-	native := &scanPlan{items: protocol.FetchItems(req.FetchItemsHint)}
+	target := namespace{database: parts[0], collection: parts[1]}
+	native := &scanPlan{target: target, items: protocol.FetchItems(req.FetchItemsHint)}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
@@ -91,7 +93,12 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	first := !n.opened
 	var command bson.D
 	if first {
-		n.opened = true // An unsuccessful first attempt must never be restarted.
+		// An unsuccessful first attempt must never be restarted.
+		n.opened = true
+		if failure, signal := a.qualifyTarget(ctx, n.target); failure != nil {
+			page.Failure = failure
+			return page, signal
+		}
 		session, err := a.client.StartSession()
 		if err != nil {
 			page.Failure = backendFailure(ctx, err)
@@ -99,7 +106,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		}
 		n.session = session
 		command = bson.D{
-			{Key: "find", Value: a.config.Collection},
+			{Key: "find", Value: n.target.collection},
 			{Key: "batchSize", Value: int32(n.items)},
 			{Key: "allowPartialResults", Value: false},
 		}
@@ -111,7 +118,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		}
 		command = bson.D{
 			{Key: "getMore", Value: n.cursor},
-			{Key: "collection", Value: a.config.Collection},
+			{Key: "collection", Value: n.target.collection},
 			{Key: "batchSize", Value: int32(n.items)},
 		}
 	}
@@ -125,7 +132,7 @@ func (a *Adapter) FetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		attempt, release = nativeAttemptContext(ctx)
 		defer release()
 	}
-	raw, err := a.client.Database(a.config.Database).RunCommand(attempt, command).Raw()
+	raw, err := a.client.Database(n.target.database).RunCommand(attempt, command).Raw()
 	if err != nil {
 		page.Failure = backendFailure(ctx, err)
 		if mongo.IsTimeout(err) {
@@ -171,7 +178,7 @@ func (a *Adapter) scanReply(raw bson.Raw, n *scanPlan, first bool) *execution.Sc
 	n.cursor = id
 	n.cursorKnown = true
 	ns, ok := values["ns"].StringValueOK()
-	if !ok || ns != a.config.Database+"."+a.config.Collection {
+	if !ok || ns != n.target.String() {
 		return page
 	}
 	good := fields["ok"]
@@ -374,9 +381,9 @@ func (a *Adapter) CloseScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	if n.cursor == 0 {
 		return nil
 	}
-	command := bson.D{{Key: "killCursors", Value: a.config.Collection}, {Key: "cursors", Value: bson.A{n.cursor}}}
+	command := bson.D{{Key: "killCursors", Value: n.target.collection}, {Key: "cursors", Value: bson.A{n.cursor}}}
 	ctx = mongo.NewSessionContext(ctx, n.session)
-	raw, err := a.client.Database(a.config.Database).RunCommand(ctx, command).Raw()
+	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
 	if err != nil {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote cursor cleanup unconfirmed")
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidateMongoConfigProfiles(t *testing.T) {
-	cfg := Config{Store: "mongo", Database: "catalog", Collection: "records", Pool: 1}
+	cfg := Config{Store: "mongo", Pool: 1}
 	for _, uri := range []string{
 		"mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll",
 		"mongodb://[::1]:27028/",
@@ -34,11 +34,9 @@ func TestValidateMongoConfigProfiles(t *testing.T) {
 
 func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 	base := Config{
-		URI:        "mongodb://127.0.0.1:27028/",
-		Store:      "mongo",
-		Database:   "catalog",
-		Collection: "records",
-		Pool:       1,
+		URI:   "mongodb://127.0.0.1:27028/",
+		Store: "mongo",
+		Pool:  1,
 	}
 	var cases []Config
 	for _, uri := range []string{
@@ -110,15 +108,11 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		invalid.Username, invalid.Password = pair.username, pair.password
 		cases = append(cases, invalid)
 	}
-	for _, field := range []string{"store", "database", "collection", "pool-zero", "pool-large"} {
+	for _, field := range []string{"store", "pool-zero", "pool-large"} {
 		invalid := base
 		switch field {
 		case "store":
 			invalid.Store = "invalid/private-sentinel"
-		case "database":
-			invalid.Database = "invalid-private-sentinel"
-		case "collection":
-			invalid.Collection = "invalid-private-sentinel"
 		case "pool-zero":
 			invalid.Pool = 0
 		case "pool-large":
@@ -140,13 +134,11 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 
 func TestMongoDriverAuthenticationOptions(t *testing.T) {
 	cfg := Config{
-		URI:        "mongodb://unresolved.invalid:27028/?AUTHMechanism=SCRAM-SHA-256&AuthSource=admin&tls=true&directConnection=true",
-		Store:      "mongo",
-		Database:   "catalog",
-		Collection: "records",
-		Pool:       1,
-		Username:   " user:@/%?#用户 ",
-		Password:   " pass:@/%?#🔐 ",
+		URI:      "mongodb://unresolved.invalid:27028/?AUTHMechanism=SCRAM-SHA-256&AuthSource=admin&tls=true&directConnection=true",
+		Store:    "mongo",
+		Pool:     1,
+		Username: " user:@/%?#用户 ",
+		Password: " pass:@/%?#🔐 ",
 	}
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
@@ -177,7 +169,7 @@ func TestMongoDriverAuthenticationOptions(t *testing.T) {
 }
 
 func TestMongoDriverUnauthenticatedOptions(t *testing.T) {
-	cfg := Config{URI: "mongodb://127.0.0.1:27028/", Store: "mongo", Database: "catalog", Collection: "records", Pool: 1}
+	cfg := Config{URI: "mongodb://127.0.0.1:27028/", Store: "mongo", Pool: 1}
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}

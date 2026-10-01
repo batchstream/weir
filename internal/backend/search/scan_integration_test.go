@@ -19,9 +19,9 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
-func scanWork(t *testing.T, a *Adapter, hint uint32) *execution.Plan {
+func scanWork(t *testing.T, a *Adapter, index string, hint uint32) *execution.Plan {
 	t.Helper()
-	req := &pb.ScanRequest{Resource: "weir://search/" + a.config.Index, FetchItemsHint: hint}
+	req := &pb.ScanRequest{Resource: "weir://search/" + index, FetchItemsHint: hint}
 	p, f := a.PrepareScan(req)
 	if f != nil {
 		t.Fatal(f)
@@ -39,7 +39,7 @@ func TestSearchScanTraversal(t *testing.T) {
 				}
 			}
 			b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-			p := scanWork(t, a, 8)
+			p := scanWork(t, a, b.Index, 8)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			defer a.CloseScan(ctx, p)
@@ -192,7 +192,7 @@ func TestSearchScanFaultPages(t *testing.T) {
 						t.Fatal(err)
 					}
 					defer a.Close()
-					p := scanWork(t, a, 1)
+					p := scanWork(t, a, b.Index, 1)
 					defer a.CloseScan(ctx, p)
 					count := 0
 					failed := false
@@ -230,7 +230,7 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p := scanWork(t, a, 1)
+	p := scanWork(t, a, b.Index, 1)
 	defer a.CloseScan(ctx, p)
 	page, _ := a.FetchScan(ctx, p)
 	if page.Failure != nil {
@@ -254,7 +254,7 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	}
 	_ = a.CloseScan(ctx, p)
 	for _, stage := range []string{"open", "fetch"} {
-		p := scanWork(t, a, 1)
+		p := scanWork(t, a, b.Index, 1)
 		if stage == "fetch" {
 			page, _ := a.FetchScan(ctx, p)
 			if page.Failure != nil {
@@ -337,7 +337,7 @@ func TestSearchScanCancelInFlight(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer a.Close()
-			p := scanWork(t, a, 1)
+			p := scanWork(t, a, b.Index, 1)
 			if target == "fetch" {
 				ctx, stop := context.WithTimeout(context.Background(), time.Second)
 				page, _ := a.FetchScan(ctx, p)

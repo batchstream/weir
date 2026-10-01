@@ -40,14 +40,14 @@ func buildEndpointProcess(t *testing.T) string {
 	return binary
 }
 
-func endpointProcessConfig(t *testing.T) Config {
+func endpointProcessConfig(t *testing.T) (Config, map[string]string) {
 	t.Helper()
 	mongoFixture := testmongo.Open(t)
 	database := mongoFixture.DB
 	search := testsearch.Open(t)
-	mongo := mongoFixtureConfig(t, mongoFixture.URI, database)
+	mongo := mongoFixtureConfig(t, mongoFixture.URI)
 	mongoLocal := &Local{MongoDB: mongo}
-	backend := &Search{URL: search.URL, Index: search.Index, Profile: search.Profile}
+	backend := &Search{URL: search.URL}
 	searchLocal := &Local{Search: backend}
 	m := Service{Name: "mongo", Local: mongoLocal}
 	s := Service{Name: "search", Local: searchLocal}
@@ -58,7 +58,11 @@ func endpointProcessConfig(t *testing.T) Config {
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Routing.Services = []Service{m, s}
 	cfg.Routing.Routes = []Route{mr, sr}
-	return cfg
+	roots := map[string]string{
+		"mongo":  "weir://mongo/" + database + "/records",
+		"search": "weir://search/" + search.Index,
+	}
+	return cfg, roots
 }
 
 func endpointProcessClient(t *testing.T, address string) pb.WeirClient {
@@ -79,7 +83,7 @@ func endpointProcessClient(t *testing.T, address string) pb.WeirClient {
 }
 
 func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
-	cfg := endpointProcessConfig(t)
+	cfg, roots := endpointProcessConfig(t)
 	binary := buildEndpointProcess(t)
 	var peers []*process
 	var addresses []string
@@ -103,10 +107,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	defer cancel()
 	for i := 0; i < 80; i++ {
 		for _, kind := range []string{"mongo", "search"} {
-			root := "weir://mongo/" + cfg.Routing.Services[0].Local.MongoDB.Database + "/records"
-			if kind == "search" {
-				root = "weir://search/" + cfg.Routing.Services[1].Local.Search.Index
-			}
+			root := roots[kind]
 			req := &pb.ReadRequest{Resource: fmt.Sprintf("%s/s:process%d", root, i)}
 			result, err := client.Read(ctx, req)
 			if err != nil || result.GetMissing() == nil {
@@ -127,7 +128,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 		t.Fatal("duplicated execution", total)
 	}
 	peers[0].stop(t)
-	req := &pb.ReadRequest{Resource: "weir://mongo/" + cfg.Routing.Services[0].Local.MongoDB.Database + "/records/s:after-stop"}
+	req := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
 	for range 20 {
 		result, err := client.Read(ctx, req)
 		if err != nil || result.GetMissing() == nil {
@@ -138,7 +139,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	replacement := startProcess(t, binary, cfg)
 	until := time.Now().Add(5 * time.Second)
 	for i := 0; ; i++ {
-		req.Resource = fmt.Sprintf("weir://mongo/%s/records/s:replacement%d", cfg.Routing.Services[0].Local.MongoDB.Database, i)
+		req.Resource = fmt.Sprintf("%s/s:replacement%d", roots["mongo"], i)
 		result, err := client.Read(ctx, req)
 		if err != nil || result.GetMissing() == nil {
 			t.Fatal(result, err)
@@ -217,7 +218,7 @@ func TestEndpointDNSProcessChild(t *testing.T) {
 }
 
 func TestEndpointDNSAcrossProcesses(t *testing.T) {
-	cfg := endpointProcessConfig(t)
+	cfg, roots := endpointProcessConfig(t)
 	binary := buildEndpointProcess(t)
 	first := startProcess(t, binary, cfg)
 	_, port, _ := net.SplitHostPort(first.address)
@@ -241,7 +242,7 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	client := endpointProcessClient(t, front.address)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	req := &pb.ReadRequest{Resource: "weir://mongo/" + cfg.Routing.Services[0].Local.MongoDB.Database + "/records/s:dns"}
+	req := &pb.ReadRequest{Resource: roots["mongo"] + "/s:dns"}
 	if result, err := client.Read(ctx, req); err != nil || result.GetMissing() == nil {
 		t.Fatal(result, err)
 	}

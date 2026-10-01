@@ -33,14 +33,14 @@ import (
 func TestSearchConnectionValidation(t *testing.T) {
 	good := []string{"http://10.0.0.1:9200", "https://Search.Example:443", "https://[::1]:9200", "http://127.0.0.1:9200", "https://192.168.1.2:443"}
 	for _, endpoint := range good {
-		cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 4, URL: endpoint}
+		cfg := Config{Store: "search", Pool: 4, URL: endpoint}
 		if err := ValidateConfig(cfg); err != nil {
 			t.Fatal("valid endpoint rejected", err)
 		}
 	}
 	bad := []string{"http://host", "http://host:", "http://host:0", "http://host:65536", "http://host:+80", "https://a:b@host:443", "http://host:80/", "http://host:80?", "http://host:80#", "http://host:80/path", "http://host:80?q=v", "http://host:80#f", "http://%68ost:80", "http://[host]:80", "http://[fe80::1%25en0]:80", "http://127.1:80", "http://0127.0.0.1:80", "http://0.0.0.0:80", "http://[::]:80", "http://224.1.2.3:80", "http://host.:80", "http://.host:80", "http://bad_host:80", "http://-host:80", "http://host-:80", "http://a..b:80", "http://é.example:80", "http://host:80\\evil", "ftp://host:80", "https:host:443", strings.Repeat("a", 1025)}
 	for _, endpoint := range bad {
-		cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 4, URL: endpoint}
+		cfg := Config{Store: "search", Pool: 4, URL: endpoint}
 		if err := ValidateConfig(cfg); err == nil {
 			t.Fatal("invalid endpoint accepted")
 		}
@@ -48,7 +48,7 @@ func TestSearchConnectionValidation(t *testing.T) {
 	for _, mode := range []string{"http-auth", "missing-user", "missing-password", "long-user", "long-pass", "colon", "control", "ca-http", "long-ca", "empty"} {
 		t.Run(mode, func(t *testing.T) {
 			c := &Connection{Username: "user", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
-			cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 4, URL: "https://unresolved.invalid:443", Connection: c}
+			cfg := Config{Store: "search", Pool: 4, URL: "https://unresolved.invalid:443", Connection: c}
 			if err := ValidateConfig(cfg); err != nil {
 				t.Fatal("preflight accessed CA or DNS", err)
 			}
@@ -134,7 +134,7 @@ func qualification(w http.ResponseWriter, r *http.Request) bool {
 }
 func openTestTLS(t *testing.T, endpoint string, connection *Connection) *Adapter {
 	t.Helper()
-	cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 2, URL: endpoint, Connection: connection}
+	cfg := Config{Store: "search", Pool: 2, URL: endpoint, Connection: connection}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +191,7 @@ func TestSearchTLSValidationAndCAErrors(t *testing.T) {
 	for _, mode := range []string{"wrong-ca", "expired", "missing-ca", "oversize-ca", "malformed-ca", "directory-ca", "system-roots"} {
 		t.Run(mode, func(t *testing.T) {
 			connection := *c
-			cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 1, URL: endpoint.URL, Connection: &connection}
+			cfg := Config{Store: "search", Pool: 1, URL: endpoint.URL, Connection: &connection}
 			switch mode {
 			case "wrong-ca":
 				connection.CAFile = other.CAFile
@@ -238,13 +238,13 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 	})
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 1, URL: "https://SEARCH.test:" + port, Connection: c, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", Pool: 1, URL: "https://SEARCH.test:" + port, Connection: c, Resolver: dns.Resolver()}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if names.Load() != 3 {
+	if names.Load() != 2 {
 		t.Fatal("qualification SNI")
 	}
 	unreachable := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.2")}}
@@ -440,7 +440,7 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	crowded.TLS = &tls.Config{Certificates: []tls.Certificate{pair}}
 	crowded.StartTLS()
 	defer crowded.Close()
-	cfg := Config{Store: "search", Index: "records", Profile: ElasticsearchProfile, Pool: 1, URL: crowded.URL, Connection: c}
+	cfg := Config{Store: "search", Pool: 1, URL: crowded.URL, Connection: c}
 	rejected, err := Open(context.Background(), cfg)
 	if rejected != nil || err == nil {
 		t.Fatal("excessive certificate chain accepted")

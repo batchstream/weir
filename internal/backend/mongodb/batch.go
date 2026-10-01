@@ -33,34 +33,54 @@ func (a *Adapter) Execute(ctx context.Context, plans []*execution.Plan) ([]*pb.B
 		}
 		return results, execution.Neutral
 	}
-	var reads, writes []*execution.Plan
-	var readPositions, writePositions, programs []int
+	type targetBatch struct {
+		reads, writes                 []*execution.Plan
+		readPositions, writePositions []int
+	}
+	groups := make([]targetBatch, 0)
+	positions := make(map[namespace]int)
+	var programs []int
 	for i, p := range plans {
-		switch p.Backend.(*plan).action {
-		case "read":
-			reads = append(reads, p)
-			readPositions = append(readPositions, i)
-		case "program":
+		native := p.Backend.(*plan)
+		if native.action == "program" {
 			programs = append(programs, i)
-		default:
-			writes = append(writes, p)
-			writePositions = append(writePositions, i)
+			continue
+		}
+		position, exists := positions[native.target]
+		if !exists {
+			position = len(groups)
+			positions[native.target] = position
+			group := targetBatch{}
+			groups = append(groups, group)
+		}
+		group := &groups[position]
+		if native.action == "read" {
+			group.reads = append(group.reads, p)
+			group.readPositions = append(group.readPositions, i)
+		} else {
+			group.writes = append(group.writes, p)
+			group.writePositions = append(group.writePositions, i)
 		}
 	}
+
 	signal := execution.Healthy
-	if len(reads) != 0 {
-		replies, sample := a.executeReads(ctx, reads)
-		for i, reply := range replies {
-			results[readPositions[i]] = reply
+	for _, group := range groups {
+		if len(group.reads) != 0 {
+			replies, sample := a.executeReads(ctx, group.reads)
+			for i, reply := range replies {
+				results[group.readPositions[i]] = reply
+			}
+			signal = batchFeedback(signal, sample)
 		}
-		signal = batchFeedback(signal, sample)
 	}
-	if len(writes) != 0 {
-		replies, sample := a.executeWrites(ctx, writes)
-		for i, reply := range replies {
-			results[writePositions[i]] = reply
+	for _, group := range groups {
+		if len(group.writes) != 0 {
+			replies, sample := a.executeWrites(ctx, group.writes)
+			for i, reply := range replies {
+				results[group.writePositions[i]] = reply
+			}
+			signal = batchFeedback(signal, sample)
 		}
-		signal = batchFeedback(signal, sample)
 	}
 	for _, i := range programs {
 		p := plans[i]
@@ -102,40 +122,48 @@ func unstarted(ctx context.Context, p *execution.Plan) *pb.BulkResult {
 }
 
 func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+	if results, signal := a.qualifyRecordBatch(ctx, plans); results != nil {
+		return results, signal
+	}
 	results := make([]*pb.BulkResult, len(plans))
 	skipped := make([]bool, len(plans))
 	ids := make(bson.A, 0, len(plans))
-	positions := make(map[any]int, len(plans))
+	positions := make(map[any][]int, len(plans))
+	target := plans[0].Backend.(*plan).target
 	for i, p := range plans {
 		if result := unstarted(ctx, p); result != nil {
 			results[i] = result
 			skipped[i] = true
 			continue
 		}
+
 		id := p.Backend.(*plan).id
-		positions[id] = i
-		ids = append(ids, id)
+		if _, exists := positions[id]; !exists {
+			ids = append(ids, id)
+		}
+		positions[id] = append(positions[id], i)
 	}
 	if len(ids) == 0 {
 		return results, execution.Neutral
 	}
+
 	selector := bson.D{{Key: "$in", Value: ids}}
 	filter := bson.D{{Key: "_id", Value: selector}}
 	command := bson.D{
-		{Key: "find", Value: a.config.Collection},
+		{Key: "find", Value: target.collection},
 		{Key: "filter", Value: filter},
 		{Key: "limit", Value: int64(len(ids))},
 		{Key: "batchSize", Value: int32(len(ids))},
 		{Key: "allowPartialResults", Value: false},
 	}
-	state := &scanPlan{items: len(ids)}
+	state := &scanPlan{target: target, items: len(ids)}
 	session, err := a.client.StartSession()
 	valid := err == nil
 	received := 0
 	stopped := false
 	if valid {
 		state.session = session
-		defer a.closeRecordCursor(state, a.config.Database, a.config.Collection)
+		defer a.closeRecordCursor(state)
 		ctx = mongo.NewSessionContext(ctx, session)
 		for page := 0; page < len(ids); page++ {
 			attempt := ctx
@@ -143,7 +171,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 			if page != 0 {
 				attempt, release = nativeAttemptContext(ctx)
 			}
-			raw, readErr := a.client.Database(a.config.Database).RunCommand(attempt, command).Raw()
+			raw, readErr := a.client.Database(target.database).RunCommand(attempt, command).Raw()
 			if release != nil {
 				release()
 			}
@@ -161,7 +189,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 			}
 			var documents []bson.Raw
 			if valid {
-				documents, valid = cursorDocuments(fields, state, a.config.Database+"."+a.config.Collection, page == 0)
+				documents, valid = cursorDocuments(fields, state, target.String(), page == 0)
 			}
 			if !valid || len(documents) > len(ids)-received || len(documents) == 0 && state.cursor != 0 {
 				valid = false
@@ -169,8 +197,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 			}
 			for _, raw := range documents {
 				id, validID := rawRecordID(raw.Lookup("_id"))
-				i, found := positions[id]
-				if !validID || !found || results[i] != nil {
+				matches, found := positions[id]
+				if !validID || !found || results[matches[0]] != nil {
 					valid = false
 					break
 				}
@@ -187,7 +215,9 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 					reply = protocol.ReadDocument(d)
 				}
 				variant := &pb.BulkResult_Read{Read: reply}
-				results[i] = &pb.BulkResult{Index: plans[i].Operation.Index, Result: variant}
+				for _, i := range matches {
+					results[i] = &pb.BulkResult{Index: plans[i].Operation.Index, Result: variant}
+				}
 				received++
 			}
 			if !valid || state.cursor == 0 {
@@ -207,7 +237,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 			}
 			command = bson.D{
 				{Key: "getMore", Value: state.cursor},
-				{Key: "collection", Value: a.config.Collection},
+				{Key: "collection", Value: target.collection},
 				{Key: "batchSize", Value: int32(len(ids) - received)},
 			}
 		}
@@ -256,15 +286,20 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 }
 
 func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*pb.BulkResult, execution.Feedback) {
+	if results, signal := a.qualifyRecordBatch(ctx, plans); results != nil {
+		return results, signal
+	}
 	results := make([]*pb.BulkResult, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
+	target := plans[0].Backend.(*plan).target
 	for i, p := range plans {
 		if result := unstarted(ctx, p); result != nil {
 			results[i] = result
 			continue
 		}
+
 		n := p.Backend.(*plan)
 		filter := bson.D{{Key: "_id", Value: n.id}}
 		var op bson.D
@@ -292,13 +327,14 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 	if len(active) == 0 {
 		return results, execution.Neutral
 	}
-	namespace := bson.D{{Key: "ns", Value: a.config.Database + "." + a.config.Collection}}
+
+	namespaceInfo := bson.D{{Key: "ns", Value: target.String()}}
 	concern := bson.D{{Key: "w", Value: "majority"}}
 	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(active))}}
 	command := bson.D{
 		{Key: "bulkWrite", Value: int32(1)},
 		{Key: "ops", Value: ops},
-		{Key: "nsInfo", Value: bson.A{namespace}},
+		{Key: "nsInfo", Value: bson.A{namespaceInfo}},
 		{Key: "ordered", Value: false},
 		{Key: "errorsOnly", Value: false},
 		{Key: "cursor", Value: cursorOpts},
@@ -314,7 +350,8 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 	}
 	state.cursor.session = session
 	state.cursor.items = len(active)
-	defer a.closeRecordCursor(&state.cursor, "admin", "$cmd.bulkWrite")
+	state.cursor.target = namespace{database: "admin", collection: "$cmd.bulkWrite"}
+	defer a.closeRecordCursor(&state.cursor)
 	ctx = mongo.NewSessionContext(ctx, session)
 	raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
 	if err != nil && len(raw) == 0 {
@@ -371,15 +408,11 @@ type writeBatch struct {
 	uncertainCounts bool
 }
 
-func (a *Adapter) closeRecordCursor(state *scanPlan, database, collection string) {
-	// Reuse the qualified cursor cleanup path with the returned namespace.
-	config := a.config
-	config.Database, config.Collection = database, collection
-	cleanup := &Adapter{client: a.client, config: config}
+func (a *Adapter) closeRecordCursor(state *scanPlan) {
 	work := &execution.Plan{Backend: state}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	_ = cleanup.CloseScan(ctx, work)
+	_ = a.CloseScan(ctx, work)
 }
 
 func (b *writeBatch) reply(raw bson.Raw, first bool) bool {

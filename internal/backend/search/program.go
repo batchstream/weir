@@ -94,6 +94,7 @@ func safeProgramSource(v value.Value) bool {
 }
 
 type programWriteReplyOptions struct {
+	index          string
 	id             string
 	expectedResult string
 	status         int
@@ -121,7 +122,7 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.Mutation
 		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), signal
 	}
 	if opts.status != 200 && opts.status != 201 ||
-		reply.Index != a.config.Index ||
+		reply.Index != opts.index ||
 		reply.ID != opts.id ||
 		reply.Result != opts.expectedResult ||
 		reply.Version == nil ||

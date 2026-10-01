@@ -13,7 +13,7 @@ import (
 
 func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 	backend := testmongo.Open(t)
-	native, db := backend.Admin, backend.DB
+	native := backend.Admin
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	count := func() int {
@@ -25,9 +25,9 @@ func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 		return reply.Connections.Current
 	}
 	before := count()
-	mongo := mongoFixtureConfig(t, backend.URI, db)
+	mongo := mongoFixtureConfig(t, backend.URI)
 	// The second valid static configuration fails only after Mongo opens.
-	search := &Search{URL: "http://127.0.0.1:1", Index: "records", Profile: "elasticsearch-8.19.22"}
+	search := &Search{URL: "http://127.0.0.1:1"}
 	first := &Local{MongoDB: mongo}
 	second := &Local{Search: search}
 	mongoService := Service{Name: "mongo", Local: first}

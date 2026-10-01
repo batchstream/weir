@@ -3,8 +3,6 @@ services:
     local:
       mongodb:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-        database: "weir_m1"
-        collection: "records"
 
 routes:
   - store: "mongo"

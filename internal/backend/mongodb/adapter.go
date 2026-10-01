@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,32 +24,28 @@ import (
 )
 
 type Config struct {
-	URI        string
-	Store      string
-	Database   string
-	Collection string
-	Username   string
-	Password   string
-	Pool       uint64
+	URI      string
+	Store    string
+	Username string
+	Password string
+	Pool     uint64
 }
 
 type Adapter struct {
-	dialer     *boundedDialer
-	client     *mongo.Client
-	collection *mongo.Collection
-	config     Config
-	once       sync.Once
-	closeErr   error
+	dialer   *boundedDialer
+	client   *mongo.Client
+	config   Config
+	once     sync.Once
+	closeErr error
 }
 
 type plan struct {
+	target   namespace
 	id       any
 	document bson.Raw
 	action   string
 	program  *luaengine.Program
 }
-
-var namespacePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
@@ -68,7 +63,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 	opts.SetDirect(true).
-		SetAppName("weir:" + cfg.Database).
+		SetAppName("weir:" + cfg.Store).
 		SetMaxPoolSize(cfg.Pool).
 		SetMinPoolSize(0).
 		SetMaxConnecting(mongoMaxConnecting).
@@ -93,10 +88,9 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
 	a := &Adapter{
-		dialer:     dialer,
-		client:     client,
-		config:     cfg,
-		collection: client.Database(cfg.Database).Collection(cfg.Collection),
+		dialer: dialer,
+		client: client,
+		config: cfg,
 	}
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
@@ -129,20 +123,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if build.Version != "8.0.32" {
 		return fmt.Errorf("only MongoDB 8.0.32 is qualified for this milestone")
 	}
-	filter := bson.D{{Key: "name", Value: a.config.Collection}}
-	specs, err := a.client.Database(a.config.Database).ListCollectionSpecifications(ctx, filter)
-	if err != nil {
-		return mongoQualificationFailure("MongoDB collection qualification failed", err)
-	}
-	if len(specs) != 1 || specs[0].Type != "collection" {
-		return fmt.Errorf("create the fixed collection before starting Weir")
-	}
-	if col := specs[0].Options.Lookup("collation"); col.Type != 0 && col.Document().Lookup("locale").StringValue() != "simple" {
-		return fmt.Errorf("simple collation required")
-	}
-	if specs[0].Options.Lookup("capped").Type != 0 && specs[0].Options.Lookup("capped").Boolean() {
-		return fmt.Errorf("capped collections unsupported")
-	}
+
 	return nil
 }
 
@@ -176,14 +157,15 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	}
 	resource := protocol.Resource(op)
 	_, s, err := protocol.ParseResource(resource)
-	if err != nil || len(s) != 3 || s[0] != a.config.Database || s[1] != a.config.Collection {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only the configured database/collection is supported")
+	if err != nil || len(s) != 3 || !validNamespace(s) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB record target")
 	}
 	id, err := parseID(s[2])
 	if err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record identity")
 	}
-	native := &plan{id: id}
+	target := namespace{database: s[0], collection: s[1]}
+	native := &plan{target: target, id: id}
 	p := &execution.Plan{Operation: op, Key: resource, Backend: native, ResultBytes: protocol.ResultOverhead}
 	if r := op.GetRead(); r != nil {
 		if r.AdapterOptions != nil || r.ReadMediaType != "" && r.ReadMediaType != "application/bson" {

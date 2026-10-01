@@ -29,9 +29,9 @@ func TestJSONBoundsAndExactNumbers(t *testing.T) {
 	}
 }
 func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
-	cfg := Config{Store: "search", Index: "records"}
-	a := &Adapter{config: cfg}
-	for _, resource := range []string{"weir://other/records/s:a", "weir://search/records/i:1", "weir://search/records/s:", "weir://search/alias/s:a", "weir://search/records/s:a?routing=x"} {
+	cfg := Config{Store: "search"}
+	a := &Adapter{dialect: ElasticsearchProfile, config: cfg}
+	for _, resource := range []string{"weir://other/records/s:a", "weir://search/records/i:1", "weir://search/records/s:", "weir://search/Records/s:a", "weir://search/records/s:a?routing=x"} {
 		read := &pb.ReadRequest{Resource: resource}
 		variant := &pb.BulkOperation_Read{Read: read}
 		op := &pb.BulkOperation{Operation: variant}
@@ -91,7 +91,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			defer cancel()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{URL: server.URL}
-			a := &Adapter{config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
+			a := &Adapter{dialect: ElasticsearchProfile, config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
 			defer a.Close()
 			call := exchange{path: "/", limit: metadataLimit}
 			if _, _, err := a.request(ctx, call); err == nil {
@@ -101,8 +101,8 @@ func TestResponseAndRequestLimits(t *testing.T) {
 	}
 }
 func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
-	cfg := Config{Store: "search", Index: "records"}
-	a := &Adapter{config: cfg}
+	cfg := Config{Store: "search"}
+	a := &Adapter{dialect: ElasticsearchProfile, config: cfg}
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
@@ -124,8 +124,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 }
 
 func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
-	cfg := Config{Index: "records", Profile: ElasticsearchProfile}
-	a := &Adapter{config: cfg}
+	a := &Adapter{dialect: ElasticsearchProfile}
 	for _, code := range []int{200, 400, 404, 429, 500} {
 		failure, _ := a.reject("version_conflict_engine_exception", code)
 		if failure != nil {
@@ -137,7 +136,7 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
 	variant := &pb.BulkOperation_Mutate{Mutate: mutation}
 	op := &pb.BulkOperation{Operation: variant}
-	native := &plan{id: "a", action: "delete"}
+	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{Operation: op, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)
 	results, _ := a.bulkResults([]*execution.Plan{work}, 200, raw, nil)
@@ -148,8 +147,7 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 
 func TestFiniteCongestionProfiles(t *testing.T) {
 	for _, profile := range []string{ElasticsearchProfile, OpenSearchProfile} {
-		cfg := Config{Profile: profile}
-		a := &Adapter{config: cfg}
+		a := &Adapter{dialect: profile}
 		for _, name := range []string{"es_rejected_execution_exception", "rejected_execution_exception"} {
 			failure, feedback := a.reject(name, 429)
 			matches := profile == ElasticsearchProfile && name == "es_rejected_execution_exception" || profile == OpenSearchProfile && name == "rejected_execution_exception"

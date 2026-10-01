@@ -24,7 +24,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	fixture := testmongo.OpenSecure(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cfg := Config{URI: fixture.URI, Store: "mongo", Database: fixture.DB, Collection: "records", Pool: 4}
+	cfg := Config{URI: fixture.URI, Store: "mongo", Pool: 4}
 	cfg = mongoFixtureConfig(t, cfg)
 	adapter, err := Open(ctx, cfg)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	if result[0].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result)
 	}
-	read := prepareCounter(t, adapter, "secure")
+	read := prepareCounter(t, adapter, "weir://mongo/"+fixture.DB+"/records/s:secure")
 	result, _ = adapter.Execute(ctx, []*execution.Plan{read})
 	if result[0].GetRead().GetDocument() == nil {
 		t.Fatal(result)
@@ -57,6 +57,20 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 			invalid.URI = uri
 			invalid = mongoFixtureConfig(t, invalid)
 			bad, err := Open(ctx, invalid)
+			if name == "privilege" {
+				if err != nil || bad == nil {
+					t.Fatal("server qualification must not require target privileges", err)
+				}
+				work := prepareCounter(t, bad, "weir://mongo/"+fixture.DB+"/records/s:secure")
+				replies, _ := bad.Execute(ctx, []*execution.Plan{work})
+				if replies[0].GetRead().GetFailure() == nil || replies[0].GetRead().GetDocument() != nil {
+					t.Fatal("request bypassed target privilege check", replies)
+				}
+				if err = bad.Close(); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
 			if bad != nil {
 				bad.Close()
 			}
@@ -81,7 +95,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 		if i%2 == 0 {
 			uri = fixture.BadCAURI
 		}
-		cfg := Config{URI: uri, Store: "mongo", Database: fixture.DB, Collection: "records", Pool: 1}
+		cfg := Config{URI: uri, Store: "mongo", Pool: 1}
 		cfg = mongoFixtureConfig(t, cfg)
 		ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 		start := time.Now()
@@ -94,7 +108,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 			t.Fatal("failure/close exceeded finite deadline")
 		}
 	}
-	cfg := Config{URI: fixture.URI, Store: "mongo", Database: fixture.DB, Collection: "records", Pool: 1}
+	cfg := Config{URI: fixture.URI, Store: "mongo", Pool: 1}
 	cfg = mongoFixtureConfig(t, cfg)
 	for i := 0; i < 4; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -127,7 +141,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
 			proxy := testmongo.StartProxy(t, backend)
-			cfg := Config{URI: proxy.URI(), Store: "mongo", Database: db, Collection: "records", Pool: 1}
+			cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
@@ -142,7 +156,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				t.Fatal(err)
 			}
 			increment := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
-			work := mongoExpression(t, adapter, increment)
+			work := mongoExpression(t, adapter, db, increment)
 			if kind != "expression" {
 				raw, _ := bson.Marshal(document)
 				doc := &pb.Document{MediaType: "application/bson", Data: raw}
@@ -161,7 +175,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				proxy.AlterMode = "write_error_391"
 				proxy.AlterRemaining.Store(1)
 			} else {
-				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "errorCode", Value: int32(391)}, {Key: "appName", Value: "weir:" + db}}
+				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "errorCode", Value: int32(391)}, {Key: "appName", Value: "weir:mongo"}}
 				testmongo.FailCommand(t, native, data, 1)
 			}
 			results, _ := adapter.Execute(ctx, []*execution.Plan{work})
@@ -187,11 +201,11 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 	}
 }
 
-func verifyReconnectRead(t *testing.T, adapter *Adapter, proxy *testmongo.Proxy, key string) {
+func verifyReconnectRead(t *testing.T, adapter *Adapter, proxy *testmongo.Proxy, resource string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	plan := prepareCounter(t, adapter, key)
+	plan := prepareCounter(t, adapter, resource)
 	results, _ := adapter.Execute(ctx, []*execution.Plan{plan})
 	if results[0].GetRead().GetDocument() == nil {
 		t.Fatal("new connection did not recover after lost reply", results)

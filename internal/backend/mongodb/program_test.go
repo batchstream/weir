@@ -9,7 +9,7 @@ import (
 )
 
 func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
-	config := Config{Store: "mongo", Database: "db", Collection: "records"}
+	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
 	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte("return weir.keep()")}
 	form := &pb.Transform_Program{Program: program}

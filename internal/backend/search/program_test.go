@@ -60,8 +60,8 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	a := &Adapter{
-		config: Config{Store: "search", URL: server.URL, Index: "records"},
+	a := &Adapter{dialect: ElasticsearchProfile,
+		config: Config{Store: "search", URL: server.URL},
 		client: server.Client(),
 		ctx:    context.Background(),
 	}
@@ -115,8 +115,8 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			a := &Adapter{
-				config: Config{Store: "search", URL: server.URL, Index: "records"},
+			a := &Adapter{dialect: ElasticsearchProfile,
+				config: Config{Store: "search", URL: server.URL},
 				client: server.Client(),
 				ctx:    context.Background(),
 			}

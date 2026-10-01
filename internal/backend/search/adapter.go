@@ -27,9 +27,10 @@ const ElasticsearchProfile = "elasticsearch-" + ElasticsearchVersion
 const OpenSearchProfile = "opensearch-" + OpenSearchVersion
 
 type Config struct {
-	Store, URL, Index, Profile string
-	Pool                       int
-	Connection                 *Connection
+	Store      string
+	URL        string
+	Pool       int
+	Connection *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
 	Resolver *net.Resolver
 }
@@ -37,6 +38,7 @@ type Config struct {
 type Adapter struct {
 	dialer          *connectionDialer
 	config          Config
+	dialect         string
 	client          *http.Client
 	transport       *http.Transport
 	nativeTransport *http.Transport
@@ -47,7 +49,9 @@ type Adapter struct {
 }
 
 type plan struct {
-	id, action     string
+	index          string
+	id             string
+	action         string
 	source         []byte
 	program        *luaengine.Program
 	expectedResult string
@@ -133,15 +137,13 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if err != nil || status != 200 || json.Unmarshal(raw, &info) != nil {
 		return fmt.Errorf("search version qualification failed")
 	}
-	switch a.config.Profile {
-	case ElasticsearchProfile:
-		if info.Version.Number != ElasticsearchVersion || info.Version.BuildFlavor != "default" || info.Version.Distribution != "" {
-			return fmt.Errorf("expected Elasticsearch %s default distribution", ElasticsearchVersion)
-		}
-	case OpenSearchProfile:
-		if info.Version.Number != OpenSearchVersion || info.Version.Distribution != "opensearch" {
-			return fmt.Errorf("expected OpenSearch %s distribution", OpenSearchVersion)
-		}
+	switch {
+	case info.Version.Number == ElasticsearchVersion && info.Version.BuildFlavor == "default" && info.Version.Distribution == "":
+		a.dialect = ElasticsearchProfile
+	case info.Version.Number == OpenSearchVersion && info.Version.Distribution == "opensearch":
+		a.dialect = OpenSearchProfile
+	default:
+		return fmt.Errorf("unsupported Search server version or distribution")
 	}
 	call.path = "/_cluster/settings?include_defaults=true&flat_settings=true"
 	status, raw, err = a.request(ctx, call)
@@ -159,16 +161,12 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if string(auto) != `"false"` && string(auto) != "false" {
 		return fmt.Errorf("search profile requires action.auto_create_index=false; Weir never modifies settings")
 	}
-	_, failure, _ := a.inspect(ctx, false)
-	if failure != nil {
-		return fmt.Errorf("search index qualification failed: %s", failure.Message)
-	}
 	return nil
 }
 
-func (a *Adapter) inspect(ctx context.Context, native bool) (capabilities, *pb.Failure, execution.Feedback) {
+func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capabilities, *pb.Failure, execution.Feedback) {
 	caps := capabilities{}
-	call := exchange{path: "/" + a.config.Index + "?flat_settings=true", limit: metadataLimit, native: native}
+	call := exchange{path: "/" + target + "?flat_settings=true", limit: metadataLimit, native: native}
 	status, raw, err := a.request(ctx, call)
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed"), execution.Congested
@@ -180,7 +178,7 @@ func (a *Adapter) inspect(ctx context.Context, native bool) (capabilities, *pb.F
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
 	}
 	if status != 200 {
-		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "configured concrete index unavailable"), execution.Neutral
+		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "requested concrete index unavailable"), execution.Neutral
 	}
 	type indexInfo struct {
 		DataStream string `json:"data_stream"`
@@ -198,7 +196,7 @@ func (a *Adapter) inspect(ctx context.Context, native bool) (capabilities, *pb.F
 	if json.Unmarshal(raw, &indexes) != nil || len(indexes) != 1 {
 		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "index qualification invalid"), execution.Neutral
 	}
-	index, ok := indexes[a.config.Index]
+	index, ok := indexes[target]
 	if !ok ||
 		index.DataStream != "" ||
 		index.Settings["index.uuid"] == "" ||
@@ -227,14 +225,14 @@ func (a *Adapter) Prepare(op *pb.BulkOperation) (*execution.Plan, *pb.Failure) {
 	}
 	resource := protocol.Resource(op)
 	_, segments, err := protocol.ParseResource(resource)
-	if err != nil || len(segments) != 2 || segments[0] != a.config.Index {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only the configured concrete index is supported")
+	if err != nil || len(segments) != 2 || !indexPattern.MatchString(segments[0]) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "one concrete Search index and string ID required")
 	}
 	key := segments[1]
 	if !strings.HasPrefix(key, "s:") || len(key) <= 2 || len(key[2:]) > 512 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "exact string ID of 1-512 bytes required")
 	}
-	native := &plan{id: key[2:]}
+	native := &plan{index: segments[0], id: key[2:]}
 	work := &execution.Plan{
 		Operation:   op,
 		Key:         resource,

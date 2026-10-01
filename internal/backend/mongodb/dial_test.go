@@ -256,7 +256,7 @@ func TestMongoOwnerOpenFailure(t *testing.T) {
 	listener, active := ownerListener(t)
 	for range 4 {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-		cfg := Config{URI: "mongodb://" + listener.Addr().String() + "/?directConnection=true", Store: "records", Database: "owned", Collection: "records", Pool: 1}
+		cfg := Config{URI: "mongodb://" + listener.Addr().String() + "/?directConnection=true", Store: "records", Pool: 1}
 		a, err := Open(ctx, cfg)
 		cancel()
 		if a != nil || err == nil {

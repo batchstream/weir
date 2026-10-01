@@ -51,8 +51,6 @@ func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
     local:
       search:
         url: https://unresolved.invalid:443
-        index: records
-        profile: elasticsearch-8.19.22
         connection:
           username_file: values/username
           password_file: values/password

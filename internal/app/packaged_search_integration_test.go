@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -131,9 +133,43 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 		handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 		unrelated := httptest.NewTLSServer(handler)
 		defer unrelated.Close()
-		for _, negative := range []string{"ca", "hostname", "credentials", "old-profile", "wrong-product"} {
+		for _, negative := range []string{"ca", "hostname", "credentials", "unsupported-version", "unsupported-distribution"} {
 			t.Run(negative, func(t *testing.T) {
 				cfg := packagedSearchConfig(fixture.Backend)
+				var identityContacts atomic.Int32
+				if negative == "unsupported-version" || negative == "unsupported-distribution" {
+					version, distribution := "8.17.0", ""
+					if fixture.Backend.Profile == search.OpenSearchProfile {
+						version, distribution = "2.19.0", "opensearch"
+					}
+					if negative == "unsupported-distribution" {
+						version, distribution = "8.19.22", "unsupported-product"
+					}
+					identity := fmt.Sprintf(`{"version":{"number":%q,"distribution":%q,"build_flavor":"default"},"secret":"response-sentinel"}`, version, distribution)
+					handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						identityContacts.Add(1)
+						if r.URL.Path != "/" {
+							t.Error("identity rejection must happen before other server requests")
+						}
+						_, _ = io.WriteString(w, identity)
+					})
+					// Only this test fixture's own generated server materials are used.
+					certificate, err := tls.LoadX509KeyPair(
+						filepath.Join(fixture.Root, "materials", "server.pem"),
+						filepath.Join(fixture.Root, "materials", "server.key"),
+					)
+					if err != nil {
+						t.Fatal("owned identity server certificate unavailable")
+					}
+					identityServer := httptest.NewUnstartedServer(handler)
+					identityServer.TLS = &tls.Config{
+						Certificates: []tls.Certificate{certificate},
+						MinVersion:   tls.VersionTLS12,
+					}
+					identityServer.StartTLS()
+					t.Cleanup(identityServer.Close)
+					cfg.Routing.Services[0].Local.Search.URL = identityServer.URL
+				}
 				directory := filepath.Join(root, "negative-"+negative)
 				packagedSearchFiles(t, directory, cfg)
 				filename := filepath.Join(directory, "node-routing.yaml")
@@ -151,18 +187,6 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 					raw = []byte(strings.ReplaceAll(string(raw), "host.docker.internal", "m15-wrong"))
 				case "credentials":
 					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Password, "wrong-owned-pair"))
-				case "old-profile":
-					old := "elasticsearch-8.17.0"
-					if fixture.Backend.Profile == search.OpenSearchProfile {
-						old = "opensearch-2.19.0"
-					}
-					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Profile, old))
-				case "wrong-product":
-					other := search.OpenSearchProfile
-					if fixture.Backend.Profile == other {
-						other = search.ElasticsearchProfile
-					}
-					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Profile, other))
 				}
 				if err := os.WriteFile(filename, raw, 0644); err != nil {
 					t.Fatal(err)
@@ -177,11 +201,17 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				}
 				packagedContainer(t, opts)
 				if strings.TrimSpace(packagedDocker(t, "wait", opts.name)) != "1" {
-					t.Fatal("invalid connection/profile reached serving")
+					t.Fatal("invalid connection/server identity reached serving")
 				}
 				logs := packagedDocker(t, "logs", opts.name)
-				if strings.Contains(logs, "Weir listening") || strings.Contains(logs, fixture.Backend.Password) {
+				if strings.Contains(logs, "Weir listening") || strings.Contains(logs, fixture.Backend.Password) || strings.Contains(logs, "sentinel") {
 					t.Fatal("invalid startup served or disclosed credentials")
+				}
+				if (negative == "unsupported-version" || negative == "unsupported-distribution") && identityContacts.Load() == 0 {
+					t.Fatal("server identity rejection did not reach the owned identity response")
+				}
+				if (negative == "unsupported-version" || negative == "unsupported-distribution") && !strings.Contains(logs, "unsupported Search server version or distribution") {
+					t.Fatal("unsupported server identity must preserve its redacted rejection reason", logs)
 				}
 				t.Log("exact image rejected", negative, "before serving")
 			})
@@ -191,7 +221,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 
 func packagedSearchConfig(b *testsearch.Backend) Config {
 	connection := &SearchConnection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
-	backend := &Search{URL: b.URL, Index: b.Index, Profile: b.Profile, Connection: connection}
+	backend := &Search{URL: b.URL, Connection: connection}
 	local := &Local{Search: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
 	service := Service{Name: "database", Local: local}
 	route := Route{Store: "search", Service: "database"}
