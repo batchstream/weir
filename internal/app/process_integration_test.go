@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/batchstream/weir/weirclient"
+	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net/http"
 	"os/exec"

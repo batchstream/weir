@@ -5,8 +5,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/weirclient"
 	"io"
 	"net/http"
 	"os"

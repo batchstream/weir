@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"github.com/batchstream/weir/weirclient"
+	weirclient "github.com/batchstream/weir-go"
 	"net"
 	"path/filepath"
 	"strings"

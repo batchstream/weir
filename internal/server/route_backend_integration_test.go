@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/api/protocol"
 	searchpb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
@@ -29,7 +30,6 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
-	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/protobuf/proto"
 )

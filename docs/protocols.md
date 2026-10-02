@@ -52,6 +52,13 @@ PeerDiscoveryService. Old RPC paths and aliases are removed. Shared endpoint
 validation belongs to the public protocol helpers; the production Go client does
 not depend on the peer protocol or directory implementation.
 
+The [Go SDK](https://github.com/batchstream/weir-go) is an independent module,
+`github.com/batchstream/weir-go` (package `weir`). This server repository owns the
+canonical public schemas and generated Go bindings. Public Go helpers in
+`api/protocol` and `api/netlimit` share protocol validation and bounded DNS
+transport with the SDK; they depend only on public bindings and standard runtime
+libraries. The SDK imports no server internals or peer protocol.
+
 The repository currently generates Go bindings for both schemas through
 `scripts/generate.sh`. Other language bindings and SDKs are deferred. Future SDKs
 can generate the public schema independently, then implement initialization,

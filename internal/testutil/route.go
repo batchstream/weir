@@ -3,8 +3,8 @@ package testutil
 import (
 	"strings"
 
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/protobuf/proto"
 )
 
