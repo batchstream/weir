@@ -26,7 +26,7 @@ func main() {
 }
 
 func run() (runErrFinal error) {
-	mode := flag.String("mode", "", "config, trial, observe, idle, pace")
+	mode := flag.String("mode", "", "config, trial, observe, idle, pace, connection-probe, connection-observe, profile-node")
 	legacy := flag.Bool("legacy-expiry", false, "diagnostic-only original 5ms expiry")
 	reservation := flag.Int("mutation-reservation", 0, "controller reservation including seeds")
 	backend := flag.String("backend", "http://elasticsearch:9200", "owned backend")
@@ -49,6 +49,11 @@ func run() (runErrFinal error) {
 	maxCatchup := flag.Int("max-catchup", 0, "comparison-only catchup override, bounded to 512")
 	clientQueue := flag.Int("client-queue", 0, "bounded comparison client queue, maximum 512")
 	loadDelayMS := flag.Int("load-delay-ms", 0, "integration fixture pause after setup for controller resource changes, at most 5000 ms")
+	connectionPort := flag.Int("connection-port", 9200, "observed database process TCP listening port")
+	connectionIntervalMS := flag.Int("connection-interval-ms", 200, "raw socket observation interval, 100-2000 ms")
+	connectionIdleSeconds := flag.Int("connection-idle-seconds", 12, "read-only probe keeps clients open after load, at most 45 seconds")
+	connectionStartAt := flag.String("connection-start-at", "", "shared RFC3339Nano load start for multiple probe processes")
+	cpuProfile := flag.String("cpu-profile", "", "opt-in profile-node CPU profile output")
 	flag.Parse()
 	if *loadDelayMS < 0 || *loadDelayMS > 5000 {
 		return errors.New("load delay bound")
@@ -77,6 +82,31 @@ func run() (runErrFinal error) {
 		output.SingleWriteLimit = 32 << 20
 	}
 	encoder := json.NewEncoder(output)
+	if *mode == "profile-node" {
+		opts := ProfileNodeOptions{Config: *config, Routes: *routes, Output: *cpuProfile}
+		return profiledNode(ctx, opts)
+	}
+	if *mode == "connection-observe" {
+		opts := ConnectionObserveOptions{
+			PID: *pid, Port: *connectionPort, Seconds: *seconds, IntervalMS: *connectionIntervalMS,
+		}
+		return connectionObserve(ctx, encoder, opts)
+	}
+	if *mode == "connection-probe" {
+		var start time.Time
+		if *connectionStartAt != "" {
+			var err error
+			start, err = time.Parse(time.RFC3339Nano, *connectionStartAt)
+			if err != nil {
+				return errors.New("invalid connection probe shared start")
+			}
+		}
+		opts := ConnectionProbeOptions{
+			Backend: *backend, Target: *target, Pool: *pool, Workers: *workers,
+			Queue: *clientQueue, Rate: *rate, Seconds: *seconds, IdleSeconds: *connectionIdleSeconds, StartAt: start,
+		}
+		return connectionProbe(ctx, encoder, opts)
+	}
 	if *mode == "serve-control" {
 		return serveControl(ctx, *config, *routes, *suppressCongestion)
 	}

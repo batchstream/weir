@@ -60,18 +60,26 @@ class PairedComparison(unittest.TestCase):
                 stdout = "test-engine"
                 if "NCPU" in argv[-1]:
                     stdout = '{"cpus":8,"memory_bytes":8589934592,"kernel":"test","arch":"aarch64"}'
+            elif "getconf" in argv:
+                stdout = "100" if argv[-1] == "CLK_TCK" else "4096"
+            elif argv[:2] == ["docker", "exec"] and argv[-2] == "-c":
+                stdout = "1/comm"
+            elif argv[-1] == "/proc/42/comm":
+                stdout = "java"
             elif "pace" in argv:
                 stdout = json.dumps(probe)
             result = subprocess.CompletedProcess(argv, 0, stdout, "")
             return result
 
-        identity = {"version": {"number": "8.19.22"}}
+        identity = {"version": {"number": "8.19.22"}, "nodes": {"server": {"process": {"id": 42}}}}
         inventory = {"containers": [], "networks": {}, "volumes": []}
         with patch.object(entry, "run", side_effect=command), \
                 patch.object(entry, "http", return_value=json.dumps(identity)), \
                 patch.object(fixture, "inventory", return_value=inventory), \
                 patch.object(fixture, "create", side_effect=["db-id", "client-id"]):
             fixture.start()
+        self.assertEqual(fixture.db_pid, "42")
+        self.assertEqual(json.loads((fixture.root / "database-process-identity.json").read_text()), identity)
         with tarfile.open(fixture.root / "binaries.tar") as archive:
             self.assertEqual(archive.getnames(), ["client", "weir", "baseline"])
             for name, path in fixture.binaries.items():
@@ -108,6 +116,12 @@ class PairedComparison(unittest.TestCase):
                 stdout = "test-engine"
                 if "NCPU" in argv[-1]:
                     stdout = '{"cpus":8,"memory_bytes":8589934592,"kernel":"test","arch":"aarch64"}'
+            elif "getconf" in argv:
+                stdout = "100" if argv[-1] == "CLK_TCK" else "4096"
+            elif argv[:2] == ["docker", "exec"] and argv[-2] == "-c":
+                stdout = "1/comm"
+            elif argv[-1] == "/proc/42/comm":
+                stdout = "java"
             elif "pace" in argv:
                 stdout = json.dumps(probe)
             result = subprocess.CompletedProcess(argv, 0, stdout, "")
@@ -117,7 +131,7 @@ class PairedComparison(unittest.TestCase):
             self.assertEqual(set(imported_binaries), {"client", "weir", "baseline"})
             self.args.weir.write_bytes(b"replaced-current-weir")
             self.args.baseline_weir.write_bytes(b"replaced-baseline-weir")
-            identity = {"version": {"number": "8.19.22"}}
+            identity = {"version": {"number": "8.19.22"}, "nodes": {"server": {"process": {"id": 42}}}}
             return json.dumps(identity)
 
         inventory = {"containers": [], "networks": {}, "volumes": []}
@@ -160,6 +174,7 @@ class PairedComparison(unittest.TestCase):
         self.assertNotIn('"routing":', current_config)
         self.assertNotIn('"services":', current_config)
         self.assertNotIn('"routes":', current_config)
+
         self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
         for field in ("database", "collection", "index", "profile"):
@@ -184,6 +199,23 @@ class PairedComparison(unittest.TestCase):
                 self.assertIn("type=bind,source=" + str(fixture.root / filename) + ",target=/" + filename + ",readonly", options)
         for options in (baseline_options, current_options):
             self.assertNotIn("WEIR_CAPACITY_INTEGRATION=1", options)
+
+    def test_elasticsearch_rejects_untrusted_process_identifiers_before_client_start(self):
+        for pid in (0, -1, True, "42", 2**31):
+            values = vars(self.args).copy()
+            values["output"] = Path(self.temp.name) / ("invalid-pid-" + str(pid))
+            args = argparse.Namespace(**values)
+            fixture = entry.Fixture(args)
+            fixture.db, fixture.db_url = "db-id", "http://owned-db"
+            identity = {"nodes": {"server": {"process": {"id": pid}}}}
+            completed = subprocess.CompletedProcess([], 0, "sha256:owned-image", "")
+            with self.subTest(pid=pid), patch.object(entry, "run", return_value=completed), \
+                    patch.object(entry, "http", return_value=json.dumps(identity)), \
+                    patch.object(fixture, "inventory", return_value={}), \
+                    patch.object(fixture, "start_elasticsearch"), patch.object(fixture, "start_client") as client:
+                with self.assertRaisesRegex(RuntimeError, "process identity invalid"):
+                    fixture.start()
+                client.assert_not_called()
 
     def test_shared_prewarm_covers_both_production_paths_and_restores_cpu(self):
         fixture = entry.Fixture(self.args)
@@ -210,6 +242,27 @@ class PairedComparison(unittest.TestCase):
         trials = [c.args[0] for c in run.call_args_list if "trial" in c.args[0]]
         self.assertNotIn("-target", trials[0])
         self.assertTrue(all(c[c.index("-target") + 1] == "weir:7447" for c in trials[1:]))
+        self.assertTrue(all(c[c.index("-client-queue") + 1] == "256" for c in trials))
+
+    def test_configured_client_queue_is_used_by_prewarm(self):
+        self.args.client_queue = 32
+        fixture = entry.Fixture(self.args)
+        fixture.db, fixture.client = "db-id", "client-id"
+        fixture.summary["provenance"] = {
+            "binary_sha256": {"baseline": "baseline-hash", "weir": "current-hash"},
+            "declared_binary_sources": {"baseline": "b" * 40, "weir": "c" * 40},
+        }
+        trial = {"type": "trial", "run_error": "<nil>", "trial": {"measure": {"all": {}}}}
+        audit = {"type": "audit", "error": "<nil>"}
+        output = json.dumps(trial) + "\n" + json.dumps(audit) + "\n"
+        completed = subprocess.CompletedProcess([], 0, output, "")
+        with patch.object(entry, "run", return_value=completed) as run, \
+                patch.object(fixture, "start_weir"), patch.object(fixture, "stop_weir"):
+            fixture.prewarm(10)
+        commands = [item.args[0] for item in run.call_args_list if "trial" in item.args[0]]
+        self.assertEqual(len(commands), 3)
+        self.assertTrue(all(command[command.index("-client-queue") + 1] == "32" for command in commands))
+        self.assertTrue(all(receipt["client_queue"] == 32 for receipt in fixture.summary["prewarm"]))
 
     def test_diagnostic_prewarm_uses_adaptive_path(self):
         self.args.modes = "adaptive,control"
@@ -224,6 +277,36 @@ class PairedComparison(unittest.TestCase):
             fixture.prewarm(1)
         self.assertEqual(start.call_args_list, [call("adaptive")])
         self.assertEqual([r["mode"] for r in fixture.summary["prewarm"]], ["direct", "adaptive"])
+
+    def test_mongo_route_and_setup_use_the_same_owned_server(self):
+        self.args.backend = "mongodb"
+        fixture = entry.Fixture(self.args)
+        fixture.client = "client-id"
+        completed = subprocess.CompletedProcess([], 0, "127.0.0.1:9000", "")
+        with patch.object(entry, "run", return_value=completed) as run, \
+                patch.object(entry, "http", return_value="metrics"), \
+                patch.object(fixture, "stop_weir"), patch.object(fixture, "create", return_value="node"):
+            fixture.start_weir("weir")
+        routes = (fixture.root / "routes.yaml").read_text()
+        self.assertIn(fixture.backend_url, routes)
+        self.assertNotIn('"search"', routes)
+        setup = run.call_args_list[0].args[0]
+        self.assertEqual(setup[setup.index("-backend") + 1], fixture.backend_url)
+
+    def test_resource_units_exclude_other_container_processes(self):
+        samples = [
+            dict(monotonic=10, process_cpu_ticks=100, cpu=dict(usage_usec=1000000, throttled_usec=100),
+                 rss_pages=10, memory_current=100000, memory_peak=200000, memory_events=dict(oom_kill=0)),
+            dict(monotonic=20, process_cpu_ticks=350, cpu=dict(usage_usec=3600000, throttled_usec=1000100),
+                 rss_pages=20, memory_current=150000, memory_peak=200000, memory_events=dict(oom_kill=0)),
+        ]
+        options = dict(cpu=0.25, ticks=100, page_size=4096)
+        result = entry.resource_summary(samples, options)
+        self.assertEqual(result["cpu_cores_mean"], 0.25)
+        self.assertEqual(result["cpu_quota_percent"], 100)
+        self.assertEqual(result["rss_max"], 81920)
+        self.assertEqual(result["throttled_seconds"], 1)
+        self.assertEqual(result["cgroup_cpu_cores_mean"], 0.26)
 
     def test_main_alternates_paired_trials_with_same_client(self):
         fixture = Mock()
@@ -246,6 +329,7 @@ class PairedComparison(unittest.TestCase):
         self.assertEqual(options.baseline_source, "b" * 40)
         self.assertIsNone(options.client_source)
         self.assertEqual(options.weir_source, "c" * 40)
+        self.assertEqual(options.client_queue, 256)
         self.assertEqual(fixture.prewarm.call_args_list, [call(10)])
         expected = [call("baseline", 3200, 0, 10), call("weir", 3200, 0, 10),
                     call("weir", 3200, 1, 10), call("baseline", 3200, 1, 10),
@@ -253,6 +337,25 @@ class PairedComparison(unittest.TestCase):
         self.assertEqual(fixture.trial.call_args_list, expected)
         fixture.start.assert_called_once()
         fixture.cleanup.assert_called_once()
+
+    def test_main_passes_explicit_client_queue(self):
+        fixture = Mock()
+        fixture.cleanup.return_value = True
+        argv = ["compare-load.py", "--client", "client", "--weir", "weir", "--output", "unused",
+                "--client-queue", "32"]
+        with patch.object(sys, "argv", argv), patch.object(entry, "Fixture", return_value=fixture) as factory, \
+                patch.object(entry.signal, "signal"):
+            entry.main()
+        self.assertEqual(factory.call_args.args[0].client_queue, 32)
+
+    def test_invalid_client_queue_fails_before_fixture_creation(self):
+        for size in (0, 513):
+            argv = ["compare-load.py", "--client", "client", "--weir", "weir", "--output", "unused",
+                    "--client-queue", str(size)]
+            with self.subTest(queue=size), patch.object(sys, "argv", argv), patch.object(entry, "Fixture") as fixture, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                entry.main()
+            fixture.assert_not_called()
 
     def test_main_resolves_explicit_older_client_source(self):
         fixture = Mock()

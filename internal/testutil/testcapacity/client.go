@@ -3,18 +3,23 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/routeclient"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -23,8 +28,10 @@ type Client struct {
 	HTTP             *http.Client
 	Transport        *http.Transport
 	Backend          string
+	MongoBackend     bool
 	Connections      []*grpc.ClientConn
 	RPC              []pb.WeirClient
+	Mongo            *mongo.Client
 }
 
 func newClient(backend, target string, pool int) (*Client, error) {
@@ -47,7 +54,15 @@ func newClient(backend, target string, pool int) (*Client, error) {
 		Transport:     transport,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirect refused") },
 	}
-	c := &Client{HTTP: hc, Transport: transport, Backend: backend}
+	c := &Client{HTTP: hc, Transport: transport, Backend: backend, MongoBackend: strings.HasPrefix(backend, "mongodb://")}
+	if c.MongoBackend && target == "" {
+		var err error
+		c.Mongo, err = newMongoClient(backend, pool)
+		if err != nil {
+			c.Close()
+			return nil, err
+		}
+	}
 	if target != "" {
 		for i := 0; i < 4; i++ {
 			conn, err := routeclient.Dial(target)
@@ -67,6 +82,11 @@ func (c *Client) Close() {
 		conn.Close()
 	}
 	c.Transport.CloseIdleConnections()
+	if c.Mongo != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		c.Mongo.Disconnect(ctx)
+	}
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
@@ -101,6 +121,36 @@ func failure(class string, write bool) Result {
 	return r
 }
 
+// Only fixed diagnostic text is exposed; arbitrary status messages may contain
+// a resource name or payload and are represented by a bounded fingerprint.
+func failureMessage(err error) string {
+	message := status.Convert(err).Message()
+	switch {
+	case strings.Contains(message, "RST_STREAM with error code: INTERNAL_ERROR"):
+		return "http2_internal_reset"
+	case errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded:
+		return "deadline_exceeded"
+	case errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled:
+		return "canceled"
+	}
+	diagnostics := []struct{ text, tag string }{
+		{text: "invalid execution emission", tag: "invalid_execution_emission"},
+		{text: "uncorrelated execution emission", tag: "uncorrelated_execution_emission"},
+		{text: "invalid downstream response envelope", tag: "invalid_downstream_response"},
+		{text: "unknown or completed downstream request ID", tag: "invalid_downstream_request_id"},
+		{text: "missing HTTP/2 delivery lifetime", tag: "missing_delivery_lifetime"},
+		{text: "missing ingress context", tag: "missing_ingress_context"},
+		{text: "request ID unavailable", tag: "request_id_unavailable"},
+	}
+	for _, diagnostic := range diagnostics {
+		if strings.Contains(message, diagnostic.text) {
+			return diagnostic.tag
+		}
+	}
+	digest := sha256.Sum256([]byte(message))
+	return "sha256:" + hex.EncodeToString(digest[:8])
+}
+
 func (c *Client) Call(ctx context.Context, op Operation) Result {
 	if op.Write {
 		c.MutationsStarted.Add(1)
@@ -114,26 +164,35 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 	}
 	client := c.RPC[op.Number%len(c.RPC)]
 	resource := "records/s:" + op.ID
+	media := "application/json"
+	data := payload(op.ID)
+	if c.MongoBackend {
+		resource = "weir_load/records/s:" + op.ID
+		media = "application/bson"
+		data = mongoPayload(op.ID)
+	}
 	if !op.Write {
-		req := &pb.ReadRequest{Resource: resource, ReadMediaType: "application/json"}
+		req := &pb.ReadRequest{Resource: resource, ReadMediaType: media}
 		variant := &pb.Call_Read{Read: req}
 		call := &pb.Call{Version: 1, Operation: variant}
 		opts := routeclient.RecordOptions{Destination: "records", Call: call}
 		result, err := routeclient.Record(ctx, client, opts)
 		resp := result.GetRead()
 		if err != nil {
-			return failure("transport_"+status.Code(err).String(), false)
+			r := failure("transport_"+status.Code(err).String(), false)
+			r.Message = failureMessage(err)
+			return r
 		}
 		if f := resp.GetFailure(); f != nil {
 			return failure("protocol_"+f.Code.String(), false)
 		}
-		if resp.GetDocument() == nil || resp.GetDocument().MediaType != "application/json" || !validPayload(resp.GetDocument().Data, op.ID) {
+		if resp.GetDocument() == nil || resp.GetDocument().MediaType != media || !bytes.Equal(resp.GetDocument().Data, data) {
 			return failure("payload_or_response", false)
 		}
 		r := Result{Class: "ok"}
 		return r
 	}
-	doc := &pb.Document{MediaType: "application/json", Data: payload(op.ID)}
+	doc := &pb.Document{MediaType: media, Data: data}
 	action := &pb.MutateRequest_Put{Put: doc}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
 	variant := &pb.Call_Mutate{Mutate: req}
@@ -141,10 +200,7 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 	opts := routeclient.RecordOptions{Destination: "records", Call: call}
 	result, err := routeclient.Record(ctx, client, opts)
 	resp := result.GetMutation()
-	if err != nil {
-		return failure("transport_"+status.Code(err).String(), true)
-	}
-	r := Result{Outcome: byte(resp.GetOutcome()), Class: "ok"}
+	r := Result{Outcome: unknown, Class: "ok"}
 	// Public enum and ledger encodings are deliberately different.
 	switch resp.GetOutcome() {
 	case pb.MutationOutcome_APPLIED:
@@ -156,7 +212,17 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 	case pb.MutationOutcome_NOT_STARTED:
 		r.Outcome = notStarted
 	default:
-		return failure("invalid_outcome", true)
+		r.Class = "invalid_outcome"
+	}
+	// Record preserves a validated result even when its end frame or trailers
+	// are lost. RPC failure is distinct from irreversible mutation evidence.
+	if err != nil {
+		r.Class = "transport_" + status.Code(err).String()
+		r.Message = failureMessage(err)
+		return r
+	}
+	if r.Class != "ok" {
+		return r
 	}
 	if f := resp.GetFailure(); f != nil {
 		r.Class = "protocol_" + f.Code.String()
@@ -176,6 +242,9 @@ type Record struct {
 }
 
 func (c *Client) direct(ctx context.Context, op Operation) Result {
+	if c.Mongo != nil {
+		return c.directMongo(ctx, op)
+	}
 	if !op.Write {
 		code, raw, err := c.request(ctx, "GET", "/records/_doc/"+op.ID+"?realtime=true", nil)
 		if err != nil {

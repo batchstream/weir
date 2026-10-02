@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit, disposable, real-ES direct/Weir load comparison. No retries.
+"""Disposable MongoDB/Elasticsearch direct/Weir load comparison. No retries.
 
 Build binaries before invocation; every supplied binary must be linux/arm64.
 --baseline-weir enables production baseline/current comparisons in one fixture.
@@ -63,6 +63,53 @@ def delta(before, after, name, *, optional=False):
     return metric(after, name, optional=optional) - metric(before, name, optional=optional)
 
 
+def database_resources(cid, pid):
+    # Fixed /proc and cgroup paths only; no configuration or credential reads.
+    script = (
+        'cat /sys/fs/cgroup/cpu.stat; '
+        'echo memory_current; cat /sys/fs/cgroup/memory.current; '
+        'echo memory_peak; cat /sys/fs/cgroup/memory.peak; '
+        'echo memory_events; cat /sys/fs/cgroup/memory.events; '
+        'echo process_stat; cat /proc/' + pid + '/stat; '
+        'echo process_statm; cat /proc/' + pid + '/statm'
+    )
+    raw = run(["docker", "exec", cid, "sh", "-c", script], timeout=10).stdout
+    cpu, rest = raw.split("memory_current\n")
+    current, rest = rest.split("memory_peak\n")
+    peak, rest = rest.split("memory_events\n")
+    events, rest = rest.split("process_stat\n")
+    stat, statm = rest.split("process_statm\n")
+    fields = stat[stat.rfind(")") + 2:].split()
+    result = {
+        "monotonic": time.monotonic(),
+        "cpu": dict((k, int(v)) for k, v in (line.split() for line in cpu.splitlines())),
+        "memory_current": int(current), "memory_peak": int(peak),
+        "memory_events": dict((k, int(v)) for k, v in (line.split() for line in events.splitlines())),
+        "process_cpu_ticks": int(fields[11]) + int(fields[12]),
+        "rss_pages": int(statm.split()[1]), "raw": raw,
+    }
+    return result
+
+
+def resource_summary(samples, options):
+    first, last = samples[0], samples[-1]
+    elapsed = last["monotonic"] - first["monotonic"]
+    if elapsed <= 0:
+        raise RuntimeError("resource sample clock")
+    cores = (last["process_cpu_ticks"] - first["process_cpu_ticks"]) / options["ticks"] / elapsed
+    result = {
+        "sample_count": len(samples), "sample_seconds": elapsed,
+        "cpu_cores_mean": cores, "cpu_quota_percent": cores / options["cpu"] * 100,
+        "cgroup_cpu_cores_mean": (last["cpu"]["usage_usec"] - first["cpu"]["usage_usec"]) / 1e6 / elapsed,
+        "throttled_seconds": (last["cpu"]["throttled_usec"] - first["cpu"]["throttled_usec"]) / 1e6,
+        "rss_max": max(s["rss_pages"] for s in samples) * options["page_size"],
+        "cgroup_memory_max": max(s["memory_current"] for s in samples),
+        "cgroup_memory_peak_lifetime": last["memory_peak"],
+        "oom_kills": last["memory_events"]["oom_kill"] - first["memory_events"]["oom_kill"],
+    }
+    return result
+
+
 class Fixture:
     def __init__(self, args):
         self.args = args
@@ -76,6 +123,14 @@ class Fixture:
         self.root = args.output.resolve()
         self.root.mkdir(parents=True, exist_ok=False)
         self.summary = {"owner": self.owner, "runs": [], "cleanup": None}
+        self.backend = getattr(args, "backend", "elasticsearch")
+        self.weir_cpu = getattr(args, "weir_cpu", 2)
+        self.workers = getattr(args, "workers", 8)
+        reserved_mib = 228 + 64 * self.workers + 2 * args.pool
+        self.weir_memory = max(768, ((reserved_mib + 255) // 256) * 256)
+        self.weir_cpuset = "3,4" if self.weir_cpu <= 2 else "3,4,5,6"
+        self.backend_url = ("mongodb://mongodb:27017/?directConnection=true"
+                            if self.backend == "mongodb" else "http://elasticsearch:9200")
 
     def save(self, name, value):
         raw = value if isinstance(value, str) else json.dumps(value, indent=2)
@@ -125,6 +180,58 @@ class Fixture:
                 str(archive),
             ]
         ).stdout.strip()
+        if self.backend == "mongodb":
+            self.db = self.create("db", [
+                "--memory", "1536m", "--memory-swap", "1536m", "--cpus", "1",
+                "--cpuset-cpus", "0", "--network-alias", "mongodb",
+                "--tmpfs", "/data/db:rw,size=1073741824",
+                "--tmpfs", "/data/configdb:rw,size=16777216",
+            ], ["mongod", "--bind_ip_all", "--replSet", "weir_load_test", "--wiredTigerCacheSizeGB", "0.25", "--oplogSize", "64"], self.args.mongo_image)
+            until = time.monotonic() + 120
+            while time.monotonic() < until:
+                ready = run(["docker", "exec", self.db, "mongosh", "--quiet", "--norc", "--eval",
+                             'print(JSON.stringify({version:db.version(),ping:db.runCommand({ping:1}).ok}))'],
+                            timeout=10, check=False)
+                if ready.returncode == 0:
+                    break
+                running = run(["docker", "inspect", "--format", "{{.State.Running}}", self.db]).stdout.strip()
+                if running != "true":
+                    raise RuntimeError("MongoDB exited during startup; see saved container log")
+                time.sleep(1)
+            else:
+                raise TimeoutError("MongoDB startup")
+            script = ('rs.initiate({_id:"weir_load_test",members:[{_id:0,host:"mongodb:27017"}]}); '
+                      'for(let i=0;i<120;i++){if(db.hello().isWritablePrimary)break;sleep(500)}; '
+                      'if(!db.hello().isWritablePrimary)throw new Error("primary timeout"); '
+                      'print(JSON.stringify({version:db.version(),hello:db.hello()}))')
+            identity = run(["docker", "exec", self.db, "mongosh", "--quiet", "--norc", "--eval", script], timeout=90)
+            self.save("database-identity.json", json.loads(identity.stdout.splitlines()[-1]))
+        else:
+            self.start_elasticsearch()
+            # The ES container also runs a Java CLI launcher. Use the server's
+            # own process identity rather than the first Java /proc entry.
+            process_identity = json.loads(http(self.db_url + "/_nodes/_local/process?filter_path=nodes.*.process.id"))
+            nodes = process_identity.get("nodes", {})
+            if not isinstance(nodes, dict) or len(nodes) != 1:
+                raise RuntimeError("Elasticsearch server process identity missing")
+            pid = next(iter(nodes.values())).get("process", {}).get("id")
+            if type(pid) is not int or not 1 <= pid <= 2**31 - 1:
+                raise RuntimeError("Elasticsearch server process identity invalid")
+            self.db_pid = str(pid)
+            comm = run(["docker", "exec", self.db, "cat", "/proc/" + self.db_pid + "/comm"]).stdout.strip()
+            if comm != "java":
+                raise RuntimeError("Elasticsearch server process identity disagrees with /proc")
+            self.save("database-process-identity.json", process_identity)
+        if self.backend == "mongodb":
+            self.db_pid = run(["docker", "exec", self.db, "sh", "-c",
+                              'for f in /proc/[0-9]*/comm; do case "$(cat "$f" 2>/dev/null)" in mongod) echo "${f#/proc/}"; break;; esac; done']).stdout.strip().split("/")[0]
+        if not self.db_pid.isdecimal():
+            raise RuntimeError("database process identity missing")
+        self.db_ticks = int(run(["docker", "exec", self.db, "getconf", "CLK_TCK"]).stdout)
+        self.db_page_size = int(run(["docker", "exec", self.db, "getconf", "PAGESIZE"]).stdout)
+        self.start_client(binary_hashes)
+
+    def start_elasticsearch(self):
         self.db = self.create(
             "db",
             [
@@ -176,6 +283,8 @@ class Fixture:
                 time.sleep(1)
         else:
             raise TimeoutError("database startup")
+
+    def start_client(self, binary_hashes):
         self.client = self.create(
             "client",
             [
@@ -208,6 +317,8 @@ class Fixture:
             "binary_sha256": binary_hashes,
             "declared_binary_sources": sources,
             "es_image": self.args.es_image,
+            "backend": self.backend,
+            "database_image": self.args.mongo_image if self.backend == "mongodb" else self.args.es_image,
             "host": run(["uname", "-sm"]).stdout.strip(),
             "docker": run(["docker", "info", "--format", "{{.ServerVersion}}"]).stdout.strip(),
             "vm": json.loads(
@@ -228,13 +339,18 @@ class Fixture:
                     "write_threads": 1,
                     "write_queue": self.args.db_queue,
                 },
-                "weir": {"cpu": 2, "memory_mib": 768, "cpuset": "3,4"},
+                "weir": {"cpu": self.weir_cpu, "memory_mib": self.weir_memory, "cpuset": self.weir_cpuset},
                 "client": {"cpu": 2, "memory_mib": 2048, "cpuset": "1,2"},
             },
             "options": {
                 k: str(v) if isinstance(v, Path) else v for k, v in vars(self.args).items()
             },
         }
+        if self.backend == "mongodb":
+            resources = self.summary["provenance"]["resources"]["database"]
+            del resources["write_threads"], resources["write_queue"]
+            resources["wiredtiger_cache_mib"] = 256
+            resources["replica_set"] = "single-primary"
         self.summary["pacing"] = []
         for rate in [max(map(int, self.args.rates.split(",")))]:
             paced = run(
@@ -256,7 +372,7 @@ class Fixture:
                     "-max-catchup",
                     "512",
                     "-client-queue",
-                    "256",
+                    str(getattr(self.args, "client_queue", 256)),
                 ],
                 timeout=30,
             )
@@ -305,7 +421,7 @@ class Fixture:
         run(["docker", "update", "--cpus", "1", self.db])
         self.stop_weir()
         training = []
-        modes = ("direct", "adaptive")
+        modes = ("direct", "weir") if "weir" in self.args.modes.split(",") else ("direct", "adaptive")
         if "baseline" in self.args.modes.split(","):
             modes = ("direct", "baseline", "weir")
         for mode in modes:
@@ -332,15 +448,16 @@ class Fixture:
                 "-write-every",
                 str(write_every),
                 "-workers",
-                "64",
+                str(getattr(self.args, "workers", 8)),
                 "-arrival-expiry-ms",
                 "100",
                 "-max-catchup",
                 "512",
                 "-client-queue",
-                "256",
+                str(getattr(self.args, "client_queue", 256)),
                 "-mutation-reservation",
                 str(1000 + 16000 // write_every),
+                "-backend", self.backend_url,
             ]
             if mode != "direct":
                 command += ["-target", "weir:7447"]
@@ -348,12 +465,12 @@ class Fixture:
             self.save(prefix + "-client.jsonl", result.stdout)
             self.save(prefix + "-stderr.log", result.stderr)
             if result.returncode:
-                raise RuntimeError("common JVM prewarm failed: " + result.stderr)
+                raise RuntimeError("common backend prewarm failed: " + result.stderr)
             records = [json.loads(line) for line in result.stdout.splitlines()]
             trial = next(r for r in records if r.get("type") == "trial")
             audit = next(r for r in records if r.get("type") == "audit")
             if trial.get("run_error") != "<nil>" or audit["error"] != "<nil>":
-                raise RuntimeError("common JVM prewarm load or audit failed")
+                raise RuntimeError("common backend prewarm load or audit failed")
             receipt = {
                 "mode": mode,
                 "write_every": write_every,
@@ -362,6 +479,7 @@ class Fixture:
                 "store_concurrency_limit": self.args.pool if mode != "direct" else None,
                 "rate": 800,
                 "seconds": 20,
+                "client_queue": getattr(self.args, "client_queue", 256),
                 "metrics": trial["trial"]["measure"]["all"],
                 "audit": audit,
             }
@@ -388,8 +506,8 @@ class Fixture:
         config = {
             "listeners": {"application": "0.0.0.0:7447"},
             "diagnostics": {"address": "0.0.0.0:7449", "allow_intranet": True},
-            "memory": "768MiB",
-            "transport": {"max_connections": 16, "max_sessions": 64},
+            "memory": str(self.weir_memory) + "MiB",
+            "transport": {"max_connections": 16, "max_sessions": self.workers},
         }
         routes = {
             "services": [
@@ -406,6 +524,16 @@ class Fixture:
             ],
             "routes": [{"store": "records", "service": "database"}],
         }
+        if self.backend == "mongodb":
+            local = routes["services"][0]["local"]
+            del local["search"]
+            local["mongodb"] = {"uri": self.backend_url}
+        collect_ms = getattr(self.args, "collect_ms", None)
+        if mode != "baseline" and collect_ms is not None:
+            routes["services"][0]["local"]["batch_collect"] = str(collect_ms) + "ms"
+        max_read_size = getattr(self.args, "max_read_size", None)
+        if mode != "baseline" and max_read_size is not None:
+            routes["services"][0]["local"]["max_read_size"] = max_read_size
         self.save("node.yaml", config_yaml.dumps(config))
         self.save("routes.yaml", config_yaml.dumps(routes))
         # Resource targets must exist before record operations; startup qualifies the server.
@@ -419,6 +547,7 @@ class Fixture:
                 "setup",
                 "-mutation-reservation",
                 "1000",
+                "-backend", self.backend_url,
             ],
             timeout=90,
         )
@@ -429,13 +558,13 @@ class Fixture:
             "--pids-limit",
             "256",
             "--memory",
-            "768m",
+            str(self.weir_memory) + "m",
             "--memory-swap",
-            "768m",
+            str(self.weir_memory) + "m",
             "--cpus",
-            "2",
+            str(self.weir_cpu),
             "--cpuset-cpus",
-            "3,4",
+            self.weir_cpuset,
             "--network-alias",
             "weir",
             "--read-only",
@@ -489,7 +618,8 @@ class Fixture:
             while not finished.is_set():
                 entry = {"wall_time": time.time()}
                 try:
-                    entry["database"] = json.loads(
+                    entry["database_resources"] = database_resources(self.db, self.db_pid)
+                    entry["database"] = {} if self.backend == "mongodb" else json.loads(
                         http(
                             self.db_url
                             + "/_nodes/stats/thread_pool,http,jvm,process,indexing_pressure,fs?filter_path=nodes.*.thread_pool.write,nodes.*.http.current_open,nodes.*.http.total_opened,nodes.*.process.cpu,nodes.*.jvm.mem,nodes.*.jvm.gc,nodes.*.indexing_pressure,nodes.*.fs.io_stats"
@@ -532,17 +662,18 @@ class Fixture:
             "-write-every",
             str(write_every),
             "-workers",
-            "64",
+            str(getattr(self.args, "workers", 8)),
             "-arrival-expiry-ms",
             "100",
             "-max-catchup",
             "512",
             "-client-queue",
-            "256",
+            str(getattr(self.args, "client_queue", 256)),
             "-load-delay-ms",
             "2000",
             "-mutation-reservation",
             str(1000 + planned // write_every),
+            "-backend", self.backend_url,
         ]
         if self.args.recovery_rate:
             command += [
@@ -628,8 +759,20 @@ class Fixture:
             )
         if len(measured) < 2:
             raise RuntimeError("database evidence missing")
-        node = lambda s: next(iter(s["database"]["nodes"].values()))
-        first, last = node(measured[0]), node(measured[-1])
+        resource_options = dict(cpu=self.args.db_cpu, ticks=self.db_ticks, page_size=self.db_page_size)
+        db_summary = resource_summary([s["database_resources"] for s in measured], resource_options)
+        if self.backend == "elasticsearch":
+            node = lambda s: next(iter(s["database"]["nodes"].values()))
+            first, last = node(measured[0]), node(measured[-1])
+            db_summary.update({
+                "write_rejected": last["thread_pool"]["write"]["rejected"] - first["thread_pool"]["write"]["rejected"],
+                "write_completed": last["thread_pool"]["write"]["completed"] - first["thread_pool"]["write"]["completed"],
+                "write_queue_max": max(node(s)["thread_pool"]["write"]["queue"] for s in measured),
+                "open_http_max": max(node(s)["http"]["current_open"] for s in measured),
+                "cpu_time_ms": last["process"]["cpu"]["total_in_millis"] - first["process"]["cpu"]["total_in_millis"],
+                "jvm_heap_max": max(node(s)["jvm"]["mem"]["heap_used_in_bytes"] for s in measured),
+                "gc_ms": sum(last["jvm"]["gc"]["collectors"][k]["collection_time_in_millis"] - first["jvm"]["gc"]["collectors"][k]["collection_time_in_millis"] for k in last["jvm"]["gc"]["collectors"]),
+            })
         out = {
             "prefix": prefix,
             "mode": mode,
@@ -649,23 +792,7 @@ class Fixture:
                 ),
                 None,
             ),
-            "database": {
-                "write_rejected": last["thread_pool"]["write"]["rejected"]
-                - first["thread_pool"]["write"]["rejected"],
-                "write_completed": last["thread_pool"]["write"]["completed"]
-                - first["thread_pool"]["write"]["completed"],
-                "write_queue_max": max(node(s)["thread_pool"]["write"]["queue"] for s in measured),
-                "sample_count": len(measured),
-                "open_http_max": max(node(s)["http"]["current_open"] for s in measured),
-                "cpu_time_ms": last["process"]["cpu"]["total_in_millis"]
-                - first["process"]["cpu"]["total_in_millis"],
-                "jvm_heap_max": max(node(s)["jvm"]["mem"]["heap_used_in_bytes"] for s in measured),
-                "gc_ms": sum(
-                    last["jvm"]["gc"]["collectors"][k]["collection_time_in_millis"]
-                    - first["jvm"]["gc"]["collectors"][k]["collection_time_in_millis"]
-                    for k in last["jvm"]["gc"]["collectors"]
-                ),
-            },
+            "database": db_summary,
         }
         client_samples = [
             r["sample"]
@@ -711,6 +838,9 @@ class Fixture:
         }
         if mode != "direct":
             metrics = [s["metrics"] for s in measured if "metrics" in s]
+            batch_metric = "weir_store_batch_operations"
+            if any(line.startswith("weir_store_record_batch_operations_sum ") for line in metrics[0].splitlines()):
+                batch_metric = "weir_store_record_batch_operations"
             out["weir"] = {
                 "window_min": min(metric(m, "weir_store_window") for m in metrics),
                 "window_max": max(metric(m, "weir_store_window") for m in metrics),
@@ -736,12 +866,14 @@ class Fixture:
                 "rejections": delta(metrics[0], metrics[-1], "weir_store_rejections_total"),
                 "executions": delta(metrics[0], metrics[-1], "weir_store_executions_total"),
                 "batch_mean": delta(
-                    metrics[0], metrics[-1], "weir_store_record_batch_operations_sum"
+                    metrics[0], metrics[-1], batch_metric + "_sum"
                 )
                 / max(
-                    1, delta(metrics[0], metrics[-1], "weir_store_record_batch_operations_count")
+                    1, delta(metrics[0], metrics[-1], batch_metric + "_count")
                 ),
                 "rss_max": max(metric(m, "process_resident_memory_bytes") for m in metrics),
+                "cpu_cores_mean": delta(metrics[0], metrics[-1], "process_cpu_seconds_total") / (measured[-1]["wall_time"] - measured[0]["wall_time"]),
+                "cgroup_memory_max": max(metric(m, "weir_memory_cgroup_current_bytes") for m in metrics),
                 "suppressed": delta(
                     metrics[0],
                     metrics[-1],
@@ -865,7 +997,14 @@ def main():
         help="optional separately tuned direct pool; zero uses --pool",
     )
     parser.add_argument("--batch-operations", type=int, default=16)
+    parser.add_argument("--collect-ms", type=int, help="current Weir batch collection window, 0..10 ms; baseline retains 1 ms")
+    parser.add_argument("--max-read-size", help="current Weir ordinary Record Read bound, e.g. 16KiB; baseline retains 2MiB")
     parser.add_argument("--db-cpu", type=float, default=1)
+    parser.add_argument("--backend", choices=("elasticsearch", "mongodb"), default="elasticsearch")
+    parser.add_argument("--mongo-image", default="sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c")
+    parser.add_argument("--weir-cpu", type=float, default=2)
+    parser.add_argument("--workers", type=int, default=8, help="client workers and configured Route session cap, 1..64")
+    parser.add_argument("--client-queue", type=int, default=256, help="bounded open-loop generator queue, 1..512")
     parser.add_argument("--db-queue", type=int, default=200)
     parser.add_argument(
         "--prewarm",
@@ -883,6 +1022,11 @@ def main():
         or not 1 <= args.repetitions <= 4
         or not 1 <= args.seconds <= 120
         or not 0 <= args.warm <= 20
+        or not 0.1 <= args.db_cpu <= 2
+        or not 0.1 <= args.weir_cpu <= 4
+        or not 1 <= args.workers <= 64
+        or not 1 <= args.client_queue <= 512
+        or args.collect_ms is not None and not 0 <= args.collect_ms <= 10
     ):
         parser.error("bounded trial options required")
     modes = args.modes.split(",")
