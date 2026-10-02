@@ -143,3 +143,88 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 		_ = listener.Close()
 	}
 }
+
+func TestDiscoveryOnlyWildcardApplicationLearnsTargets(t *testing.T) {
+	for _, application := range []string{"0.0.0.0:0", "[::]:0"} {
+		t.Run(application, func(t *testing.T) {
+			loopback := "127.0.0.1"
+			if strings.HasPrefix(application, "[") {
+				probe, err := net.Listen("tcp6", "[::1]:0")
+				if err != nil {
+					t.Skip("IPv6 loopback unavailable")
+				}
+				_ = probe.Close()
+				loopback = "::1"
+			}
+			cfg := emptyConfig(t)
+			cfg.Basic.Listeners.Application = application
+			cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+			cfg.Basic.Discovery.Group = "discovery-only"
+			node, err := Open(context.Background(), cfg)
+			if err != nil {
+				t.Fatal("discovery-only wildcard listener failed assembly", err)
+			}
+			t.Cleanup(func() { _ = node.Close(context.Background()) })
+			if err := node.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			addresses := node.Addresses()
+			peerConnection, err := grpc.NewClient("passthrough:///"+addresses[1], grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer peerConnection.Close()
+			advertisement := &pb.NodeAdvertisement{
+				NodeId: strings.Repeat("1", 32), Sequence: 1,
+				Group: "owners", Stores: []string{"records"}, Targets: []string{"business.example:7447"},
+				RemainingLeaseMs: 10000,
+			}
+			exchangeRequest := &pb.ExchangeRequest{Nodes: []*pb.NodeAdvertisement{advertisement}}
+			peer := pb.NewDirectoryClient(peerConnection)
+			exchanged, err := peer.Exchange(ctx, exchangeRequest)
+			if err != nil {
+				t.Fatal("discovery-only node rejected learned Store", err)
+			}
+			localAdvertisement := false
+			for _, entry := range exchanged.Nodes {
+				if entry.Group == "discovery-only" {
+					localAdvertisement = true
+					if len(entry.Stores) != 0 || len(entry.Targets) != 0 {
+						t.Fatal("discovery-only node advertised business targets", entry)
+					}
+				}
+			}
+			if !localAdvertisement {
+				t.Fatal("local directory membership missing")
+			}
+			_, port, err := net.SplitHostPort(addresses[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			applicationAddress := net.JoinHostPort(loopback, port)
+			connection, err := grpc.NewClient("passthrough:///"+applicationAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.Close()
+			client := pb.NewWeirClient(connection)
+			resolveRequest := &pb.ResolveRequest{Store: "records"}
+			resolved, err := client.Resolve(ctx, resolveRequest)
+			if err != nil || resolved.Group != "owners" || len(resolved.Targets) != 1 || resolved.Targets[0] != "business.example:7447" {
+				t.Fatal("wildcard initialization ingress did not Resolve learned targets", resolved, err)
+			}
+			if err := node.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			for _, address := range addresses {
+				listener, err := net.Listen("tcp", address)
+				if err != nil {
+					t.Fatal("wildcard discovery-only shutdown retained a listener", err)
+				}
+				_ = listener.Close()
+			}
+		})
+	}
+}

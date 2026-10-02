@@ -85,6 +85,17 @@ Peaks are sampled every 50 ms and aggregated by field. RSS keeps allocator
 high-water pages; this is bounded-workload evidence, not an OS memory ceiling or
 a production throughput benchmark.
 
+## Independent review repair
+
+Review identified an assembly mismatch: discovery-only nodes using a wildcard
+application listener passed configuration validation but tried to advertise that
+wildcard as a business target during startup. Automatic target advertisement now
+applies only to local Store providers.
+`TestDiscoveryOnlyWildcardApplicationLearnsTargets` passes for both IPv4 and IPv6:
+real startup, peer learning, application Resolve, empty local business targets,
+and listener release after shutdown. Focused race and complete app/cmd/deployment
+tests passed after the repair.
+
 ## Scope of evidence
 
 URI affinity is absent. The protocol is independent of Kubernetes; sample manifests

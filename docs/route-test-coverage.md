@@ -29,7 +29,7 @@ and measurements are recorded separately in the PR verification report.
 | Native request exact bounds, errors and response loss | MongoDB/Search native conformance suites; native requests now enter the same Route scheduler with one complete bounded input Call |
 | Finite Scan pages, cross-instance continuation, mixed BSON IDs, PIT expiry, cancellation and cleanup | MongoDB/Search scan conformance suites; Route continuation tests; unified Store streaming reservation/cancellation tests |
 | Lua in the main process, transaction/CAS boundaries and ambiguous commit | `internal/luaengine` tests, MongoDB program commit/transaction tests, Search conditional-write program tests, adapter Route preparation tests |
-| Application assembly, TLS/authentication configuration, startup cleanup, diagnostics and process lifecycle | Existing application and CLI tests migrated to Route; private backend connection qualification/TLS suites retained |
+| Application assembly, TLS/authentication configuration, startup cleanup, diagnostics and process lifecycle | `TestDiscoveryOnlyWildcardApplicationLearnsTargets`; existing application and CLI lifecycle tests; private backend connection qualification/TLS suites retained |
 
 The new protocol intentionally removes Native's fragmented upload and early reply
 before upload completion: one complete Native input body is capped at 8 MiB inside

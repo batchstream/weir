@@ -100,7 +100,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		peerAddress = discovery.PeerAddress
 	}
 	targets := discovery.Advertise
-	if len(targets) == 0 && applicationAddress != "" {
+	if len(targets) == 0 && len(node.localNames) != 0 {
 		targets = []string{applicationAddress}
 	}
 	directoryConfig := directory.Config{
