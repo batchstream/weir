@@ -27,7 +27,7 @@ and measurements are recorded separately in the PR verification report.
 | DNS UDP/TCP, answer order/count, stale-answer clearing, replacement, resolution storms and original deadline | Retained and Route-migrated `peer_dns_test.go`; application DNS process integration suite |
 | Record batch item errors, typed ID correspondence, write concern and acknowledged-reply loss | MongoDB/Search batch, fault and runtime integration suites, retained after replacing execution DTOs |
 | Native request exact bounds, errors and response loss | MongoDB/Search native conformance suites; native requests now enter the same Route scheduler with one complete bounded input Call |
-| Scan exhaustion evidence, page failures, killed cursors/PITs, cancellation and cleanup | MongoDB/Search scan conformance suites; unified Store streaming reservation/cancellation tests |
+| Finite Scan pages, cross-instance continuation, mixed BSON IDs, PIT expiry, cancellation and cleanup | MongoDB/Search scan conformance suites; Route continuation tests; unified Store streaming reservation/cancellation tests |
 | Lua in the main process, transaction/CAS boundaries and ambiguous commit | `internal/luaengine` tests, MongoDB program commit/transaction tests, Search conditional-write program tests, adapter Route preparation tests |
 | Application assembly, TLS/authentication configuration, startup cleanup, diagnostics and process lifecycle | Existing application and CLI tests migrated to Route; private backend connection qualification/TLS suites retained |
 
@@ -38,10 +38,12 @@ Native completion evidence. The deleted tests that required the old fragmented
 upload/Open protocol are no longer applicable. Native remains on the same bounded
 scheduler and result channel as records and scans.
 
-Scanning now requests bounded pages of one document. Its total traversal can be
-large, but each document remains at most 2 MiB and each response fragment at most
-64 KiB. A scan requires a valid ScanEnd Event, matching document count, the outer
-request end, and the final gRPC OK status. Native similarly requires its NativeEnd
+Scanning returns finite pages of at most 256 documents, fetching one document per
+backend step. Each document remains at most 2 MiB and each response fragment at
+most 64 KiB. A successful page requires a valid ScanEnd Event with explicit
+exhaustion or a continuation token, matching page document count, the outer
+request end, and the final gRPC OK status. The next page starts a new Route RPC;
+its token does not depend on the previous Weir instance. Native similarly requires its NativeEnd
 Event and complete outer transport termination. These business terminal Events
 are not acknowledgements that the caller received or consumed bytes.
 

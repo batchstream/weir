@@ -571,6 +571,8 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 				for _, event := range events {
 					if end := event.GetScanEnd(); end != nil && end.Failure == nil {
 						end.Failure = failure
+						end.Exhausted = false
+						end.NextContinuationToken = nil
 					}
 				}
 			}

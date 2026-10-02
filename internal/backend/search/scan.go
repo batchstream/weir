@@ -1,6 +1,7 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -26,6 +27,14 @@ type scanPlan struct {
 	pit                      string
 	after                    int64
 	hasAfter, opened, closed bool
+	pageSize                 uint64
+	fingerprint              string
+	resumed, transferred     bool
+}
+
+type scanCheckpoint struct {
+	PIT   string `json:"pit"`
+	After int64  `json:"after"`
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -40,9 +49,11 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native JSON hits")
 	}
 	native := &scanPlan{
-		index: parts[0],
-		items: 1,
-		query: json.RawMessage(`{"match_all":{}}`),
+		index:       parts[0],
+		items:       1,
+		query:       json.RawMessage(`{"match_all":{}}`),
+		pageSize:    protocol.ScanPageSize(req),
+		fingerprint: protocol.ScanFingerprint(req, "search:"+a.dialect),
 	}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/json" {
@@ -61,6 +72,20 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 			}
 			native.query = value
 		}
+	}
+	if len(req.ContinuationToken) != 0 {
+		raw, err := protocol.DecodeScanToken(req.ContinuationToken, "search:"+a.dialect, native.fingerprint)
+		var checkpoint scanCheckpoint
+		decodeErr := json.Unmarshal(raw, &checkpoint)
+		canonical, _ := json.Marshal(checkpoint)
+		if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched Search Scan continuation")
+		}
+		native.pit = checkpoint.PIT
+		native.after = checkpoint.After
+		native.hasAfter = true
+		native.opened = true
+		native.resumed = true
 	}
 	p := &execution.Plan{
 		Singleton:    true,
@@ -145,6 +170,18 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	page = a.scanReply(raw, n)
 	if page.Failure != nil {
 		return page, execution.Neutral
+	}
+	if !page.Exhausted && n.count+uint64(len(page.Documents)) >= n.pageSize {
+		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after}
+		state, _ := json.Marshal(checkpoint)
+		token, err := protocol.EncodeScanToken("search:"+a.dialect, n.fingerprint, state)
+		if err != nil {
+			page.Documents = nil
+			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")
+			return page, execution.Neutral
+		}
+		page.Complete = true
+		page.NextContinuationToken = token
 	}
 	return page, execution.Healthy
 }
@@ -341,6 +378,12 @@ func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 		n.pit = ""
 		n.query = nil
 	}()
+	// An input checkpoint remains retryable until the backend's keep-alive
+	// expires, including when the last page or its transport acknowledgement is
+	// lost. The caller cannot acknowledge receipt through a completed Route RPC.
+	if n.resumed || n.transferred {
+		return nil
+	}
 	if n.pit == "" {
 		if n.opened {
 			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "PIT allocation reply lost; remote cleanup unconfirmed")

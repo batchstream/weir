@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"strconv"
+	"strings"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 	"google.golang.org/protobuf/proto"
 )
@@ -23,14 +22,14 @@ const scanPageBudget = 24 << 20
 const scanNativeLimit = 8 << 20
 
 type scanPlan struct {
-	count          uint64
-	target         namespace
-	options        bson.D
-	items          int
-	session        *mongo.Session
-	cursor         int64
-	opened, closed bool
-	cursorKnown    bool
+	count             uint64
+	target            namespace
+	options           bson.D
+	filter            bson.RawValue
+	last              bson.Raw
+	fingerprint       string
+	pageSize          uint64
+	qualified, closed bool
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -45,7 +44,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native BSON")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, items: 1}
+	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), fingerprint: protocol.ScanFingerprint(req, "mongodb")}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
@@ -69,9 +68,35 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 			if fields[key].Type != bson.TypeEmbeddedDocument {
 				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "find option must be a document")
 			}
-			option := bson.E{Key: key, Value: e.Value()}
-			native.options = append(native.options, option)
+			switch key {
+			case "filter":
+				native.filter = e.Value()
+			case "sort":
+				sort, err := scanFields(e.Value().Value)
+				if err != nil || len(sort) != 0 && (len(sort) != 1 || !scanOK(sort["_id"])) {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan requires ascending _id order")
+				}
+			case "projection":
+				projection, err := scanFields(e.Value().Value)
+				if err != nil {
+					return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Scan projection")
+				}
+				for name, value := range projection {
+					if strings.HasPrefix(name, "_id.") || name == "_id" && !scanOK(value) && !(value.Type == bson.TypeBoolean && value.Boolean()) {
+						return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan projection must preserve the original _id")
+					}
+				}
+				option := bson.E{Key: key, Value: e.Value()}
+				native.options = append(native.options, option)
+			}
 		}
+	}
+	if len(req.ContinuationToken) != 0 {
+		state, err := protocol.DecodeScanToken(req.ContinuationToken, "mongodb", native.fingerprint)
+		if err != nil || !validScanID(state) {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched MongoDB Scan continuation")
+		}
+		native.last = state
 	}
 	p := &execution.Plan{
 		Singleton:    true,
@@ -84,6 +109,38 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	return p, nil
 }
 
+func scanFindCommand(n *scanPlan) bson.D {
+	order := bson.D{{Key: "_id", Value: int32(1)}}
+	command := bson.D{
+		{Key: "find", Value: n.target.collection},
+		{Key: "sort", Value: order},
+		{Key: "hint", Value: order},
+		{Key: "limit", Value: int64(1)},
+		{Key: "batchSize", Value: int32(1)},
+		{Key: "singleBatch", Value: true},
+		{Key: "allowPartialResults", Value: false},
+	}
+	command = append(command, n.options...)
+	filter := any(n.filter)
+	if n.filter.Type == 0 {
+		filter = bson.D{}
+	}
+	if len(n.last) != 0 {
+		id := n.last.Lookup("_id")
+		// Expression comparison uses the full BSON order. Native $gt applies
+		// type bracketing, while find.min has an exclusive MaxKey upper bound.
+		// $literal preserves dollar-prefixed strings and embedded document IDs.
+		literal := bson.D{{Key: "$literal", Value: id}}
+		greater := bson.D{{Key: "$gt", Value: bson.A{"$_id", literal}}}
+		boundary := bson.D{{Key: "$expr", Value: greater}}
+		both := bson.D{{Key: "$and", Value: bson.A{filter, boundary}}}
+		filter = both
+	}
+	element := bson.E{Key: "filter", Value: filter}
+	command = append(command, element)
+	return command
+}
+
 func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
 	n := p.Backend.(*scanPlan)
 	page := &execution.ScanPage{}
@@ -91,173 +148,78 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = protocol.ContextFailure(ctx)
 		return page, execution.Neutral
 	}
-	first := !n.opened
-	var command bson.D
-	if first {
-		// An unsuccessful first attempt must never be restarted.
-		n.opened = true
+	if !n.qualified {
 		if failure, signal := a.qualifyTarget(ctx, n.target); failure != nil {
 			page.Failure = failure
 			return page, signal
 		}
-		session, err := a.client.StartSession()
-		if err != nil {
-			page.Failure = backendFailure(ctx, err)
-			return page, execution.Neutral
-		}
-		n.session = session
-		command = bson.D{
-			{Key: "find", Value: n.target.collection},
-			{Key: "batchSize", Value: int32(n.items)},
-			{Key: "allowPartialResults", Value: false},
-		}
-		command = append(command, n.options...)
-	} else {
-		if n.cursor == 0 {
-			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "cursor already exhausted")
-			return page, execution.Neutral
-		}
-		command = bson.D{
-			{Key: "getMore", Value: n.cursor},
-			{Key: "collection", Value: n.target.collection},
-			{Key: "batchSize", Value: int32(n.items)},
-		}
+		n.qualified = true
 	}
-	ctx = mongo.NewSessionContext(ctx, n.session)
-	attempt := ctx
-	if !first {
-		// RunCommand's CSOT adds maxTimeMS to every command, but MongoDB
-		// forbids it on non-tailable getMore. Retain the same absolute parent
-		// cancellation via the already-qualified socket-cancellation bridge.
-		var release context.CancelFunc
-		attempt, release = nativeAttemptContext(ctx)
-		defer release()
-	}
-	raw, err := a.client.Database(n.target.database).RunCommand(attempt, command).Raw()
+	command := scanFindCommand(n)
+	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
 	if err != nil {
 		page.Failure = backendFailure(ctx, err)
-		if mongo.IsTimeout(err) {
-			page.Failure = protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "cursor fetch timed out")
-		}
 		return page, feedback(ctx, err)
 	}
-	page = a.scanReply(raw, n, first)
+	cursor := &recordCursor{target: n.target, items: 1}
+	page = a.recordCursorReply(raw, cursor, true)
 	if page.Failure != nil {
 		return page, execution.Neutral
+	}
+	if cursor.cursor != 0 {
+		page.Documents = nil
+		page.Exhausted = false
+		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "single-batch Scan retained a cursor")
+		return page, execution.Neutral
+	}
+	page.Exhausted = len(page.Documents) == 0
+	if len(page.Documents) != 0 {
+		id := bson.Raw(page.Documents[0].Data).Lookup("_id")
+		identity := bson.D{{Key: "_id", Value: id}}
+		state, err := bson.Marshal(identity)
+		if err != nil || !validScanID(state) {
+			page.Documents = nil
+			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan _id is invalid or exceeds continuation bound")
+			return page, execution.Neutral
+		}
+		n.last = state
+	}
+	if !page.Exhausted && n.count+uint64(len(page.Documents)) >= n.pageSize {
+		token, err := protocol.EncodeScanToken("mongodb", n.fingerprint, n.last)
+		if err != nil {
+			page.Documents = nil
+			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")
+			return page, execution.Neutral
+		}
+		page.Complete = true
+		page.NextContinuationToken = token
 	}
 	return page, execution.Healthy
 }
 
-// Parse the bounded command envelope and batch. Copy bounded documents unchanged
-// so one output frame cannot pin a much larger driver message after page release.
-// Never use Cursor.Next's false result as exhaustion evidence.
-func (a *Adapter) scanReply(raw bson.Raw, n *scanPlan, first bool) *execution.ScanPage {
-	page := &execution.ScanPage{}
-	invalid := protocol.Fail(pb.FailureCode_INTERNAL, "incomplete or malformed cursor response")
-	page.Failure = invalid
-	if len(raw) > scanNativeLimit {
-		page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "cursor response exceeds native bound")
-		return page
+func validScanID(raw []byte) bool {
+	if len(raw) > protocol.MaxScanState {
+		return false
+	}
+	nodes := 65536
+	if !validScanBSON(raw, 0, &nodes) {
+		return false
 	}
 	fields, err := scanFields(raw)
-	if err != nil {
-		return page
+	if err != nil || len(fields) != 1 {
+		return false
 	}
-	cursor, ok := fields["cursor"].DocumentOK()
-	if !ok {
-		return page
-	}
-	values, err := scanFields(cursor)
-	if err != nil {
-		return page
-	}
-	id, ok := values["id"].Int64OK()
-	if !ok {
-		return page
-	}
-	// Retain the actual returned state even if later metadata invalidates the page.
-	n.cursor = id
-	n.cursorKnown = true
-	ns, ok := values["ns"].StringValueOK()
-	if !ok || ns != n.target.String() {
-		return page
-	}
-	good := fields["ok"]
-	if !scanOK(good) {
-		return page
-	}
-	for key := range fields {
-		if key != "ok" && key != "cursor" && key != "operationTime" && key != "$clusterTime" && key != "partialResultsReturned" {
-			return page
-		}
-	}
-	for _, envelope := range []map[string]bson.RawValue{fields, values} {
-		if partial, exists := envelope["partialResultsReturned"]; exists {
-			value, valid := partial.BooleanOK()
-			if !valid {
-				return page
-			}
-			if value {
-				page.Failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "partial cursor results")
-				return page
-			}
-		}
-		for _, key := range []string{"errmsg", "code", "writeConcernError", "writeErrors", "errors"} {
-			if _, exists := envelope[key]; exists {
-				return page
-			}
-		}
-	}
-	batchName := "nextBatch"
-	if first {
-		batchName = "firstBatch"
-	}
-	other := "firstBatch"
-	if first {
-		other = "nextBatch"
-	}
-	if _, exists := values[other]; exists {
-		return page
-	}
-	batch, ok := values[batchName].ArrayOK()
-	if !ok || !scanFraming(batch) {
-		return page
-	}
-	rest := batch[4 : len(batch)-1]
-	docs := make([]*pb.Document, 0, n.items)
-	for len(rest) > 0 {
-		if len(docs) >= n.items {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "cursor batch exceeds item bound")
-			return page
-		}
-		element, tail, valid := bsoncore.ReadElement(rest)
-		if !valid {
-			return page
-		}
-		rest = tail
-		value, err := element.ValueErr()
-		if err != nil || value.Type != bsoncore.TypeEmbeddedDocument {
-			return page
-		}
-		key, err := element.KeyErr()
-		if err != nil || key != strconv.Itoa(len(docs)) {
-			return page
-		}
-		if len(value.Data) > protocol.MaxDocument {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored Scan document exceeds output bound")
-			return page
-		}
-		nodes := 65536
-		if !validScanBSON(value.Data, 0, &nodes) {
-			return page
-		}
-		doc := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), value.Data...)}
-		docs = append(docs, doc)
-	}
-	page.Documents = docs
-	page.Exhausted = id == 0
-	page.Failure = nil
-	return page
+	id, exists := fields["_id"]
+	return exists && id.Type != bson.TypeArray && id.Type != bson.TypeRegex && id.Type != bson.TypeUndefined && id.Type != 0
+}
+
+func (a *Adapter) closeScan(_ context.Context, p *execution.Plan) *pb.Failure {
+	state := p.Backend.(*scanPlan)
+	state.closed = true
+	state.options = nil
+	state.filter = bson.RawValue{}
+	state.last = nil
+	return nil
 }
 
 func scanOK(value bson.RawValue) bool {
@@ -345,82 +307,4 @@ func scanFields(raw []byte) (map[string]bson.RawValue, error) {
 		fields[key] = bson.RawValue{Type: bson.Type(value.Type), Value: value.Data}
 	}
 	return fields, nil
-}
-
-func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure {
-	n := p.Backend.(*scanPlan)
-	if n.closed {
-		return nil
-	}
-	n.closed = true
-	defer func() {
-		n.cursor = 0
-		n.options = nil
-		if n.session != nil {
-			n.session.EndSession(ctx)
-			n.session = nil
-		}
-	}()
-	if n.session == nil {
-		return nil
-	}
-	if !n.cursorKnown {
-		// A lost find reply can hide a newly allocated cursor. The explicit
-		// session is still known and exclusively held, so target only that
-		// session instead of silently omitting cleanup of the unknown cursor.
-		command := bson.D{{Key: "killSessions", Value: bson.A{n.session.ID()}}}
-		raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
-		if err != nil {
-			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote Scan session cleanup unconfirmed")
-		}
-		fields, err := scanFields(raw)
-		if err != nil || !scanOK(fields["ok"]) {
-			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote Scan session cleanup unconfirmed")
-		}
-		return nil
-	}
-	if n.cursor == 0 {
-		return nil
-	}
-	command := bson.D{{Key: "killCursors", Value: n.target.collection}, {Key: "cursors", Value: bson.A{n.cursor}}}
-	ctx = mongo.NewSessionContext(ctx, n.session)
-	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
-	if err != nil {
-		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote cursor cleanup unconfirmed")
-	}
-	fields, err := scanFields(raw)
-	if err != nil {
-		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup response")
-	}
-	if !scanOK(fields["ok"]) {
-		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup status")
-	}
-	confirmed := false
-	for _, key := range []string{"cursorsKilled", "cursorsNotFound", "cursorsAlive", "cursorsUnknown"} {
-		array, ok := fields[key].ArrayOK()
-		if !ok || !scanFraming(array) {
-			return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup envelope")
-		}
-		rest := array[4 : len(array)-1]
-		if len(rest) == 0 {
-			continue
-		}
-		element, tail, ok := bsoncore.ReadElement(rest)
-		if !ok || len(tail) != 0 || key == "cursorsAlive" || key == "cursorsUnknown" || confirmed {
-			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote cursor cleanup unconfirmed")
-		}
-		value, err := element.ValueErr()
-		if err != nil {
-			return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup identity")
-		}
-		id, ok := value.Int64OK()
-		if !ok || id != n.cursor {
-			return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup identity")
-		}
-		confirmed = true
-	}
-	if confirmed {
-		return nil
-	}
-	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote cursor cleanup unconfirmed")
 }

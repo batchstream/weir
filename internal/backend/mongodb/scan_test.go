@@ -16,7 +16,7 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 			t.Run(mode+map[bool]string{true: "_first", false: "_more"}[first], func(t *testing.T) {
 				a := &Adapter{config: Config{}}
 				target := namespace{database: "db", collection: "records"}
-				n := &scanPlan{target: target, items: 1, cursor: 9}
+				n := &recordCursor{target: target, items: 1, cursor: 9}
 				name := "nextBatch"
 				if first {
 					name = "firstBatch"
@@ -75,7 +75,7 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 				if mode == "truncated" {
 					raw = raw[:len(raw)-1]
 				}
-				page := a.scanReply(raw, n, first)
+				page := a.recordCursorReply(raw, n, first)
 				valid := mode == "valid" || mode == "exhausted" || mode == "empty_live"
 				if valid {
 					if page.Failure != nil || page.Exhausted != (mode == "exhausted") {
@@ -108,5 +108,43 @@ func TestMongoScanSelectorControls(t *testing.T) {
 	req := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: doc}
 	if _, f := a.prepareScan(req); f == nil {
 		t.Fatal("oversized selector")
+	}
+}
+
+func TestMongoScanRejectsUnstableIdentitySelectorsAndTokens(t *testing.T) {
+	config := Config{Store: "mongo"}
+	adapter := &Adapter{config: config}
+	cases := []bson.D{
+		{{Key: "sort", Value: bson.D{{Key: "n", Value: int32(1)}}}},
+		{{Key: "sort", Value: bson.D{{Key: "_id", Value: int32(-1)}}}},
+		{{Key: "projection", Value: bson.D{{Key: "_id", Value: int32(0)}}}},
+		{{Key: "projection", Value: bson.D{{Key: "_id.n", Value: int32(1)}}}},
+		{{Key: "projection", Value: bson.D{{Key: "_id", Value: "$n"}}}},
+	}
+	for _, selector := range cases {
+		raw, _ := bson.Marshal(selector)
+		document := &pb.Document{MediaType: "application/bson", Data: raw}
+		request := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: document}
+		if _, failure := adapter.prepareScan(request); failure == nil {
+			t.Fatal("unstable identity selector accepted", selector)
+		}
+	}
+	request := &pb.ScanRequest{Resource: "weir://mongo/db/records"}
+	fingerprint := protocol.ScanFingerprint(request, "mongodb")
+	identities := []bson.D{
+		{{Key: "other", Value: "id"}},
+		{{Key: "_id", Value: bson.A{int32(1)}}},
+		{{Key: "_id", Value: bson.Regex{Pattern: "id"}}},
+	}
+	for _, identity := range identities {
+		raw, _ := bson.Marshal(identity)
+		token, err := protocol.EncodeScanToken("mongodb", fingerprint, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.ContinuationToken = token
+		if _, failure := adapter.prepareScan(request); failure == nil {
+			t.Fatal("invalid continuation identity accepted", identity)
+		}
 	}
 }

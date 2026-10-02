@@ -230,6 +230,9 @@ func ValidateScan(req *pb.ScanRequest, store string) *pb.Failure {
 	if req.ReadMediaType != "" && !validMedia(req.ReadMediaType) {
 		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Scan media type")
 	}
+	if req.PageSize > MaxScanPageSize || len(req.ContinuationToken) > MaxScanToken {
+		return Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan page size or continuation exceeds bound")
+	}
 	if d := req.Selector; d != nil && (!validMedia(d.MediaType) || len(d.Data) > MaxSelector) {
 		return Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or oversized selector")
 	}
@@ -402,7 +405,15 @@ func ValidateEvent(event *pb.Event) error {
 	case *pb.Event_Chunk:
 		valid = len(value.Chunk) > 0 && len(value.Chunk) <= NativeChunk
 	case *pb.Event_ScanEnd:
-		valid = value.ScanEnd != nil && validFailure(value.ScanEnd.Failure)
+		end := value.ScanEnd
+		if end != nil {
+			valid = validFailure(end.Failure) && len(end.NextContinuationToken) <= MaxScanToken
+			if end.Failure == nil {
+				valid = valid && end.Exhausted != (len(end.NextContinuationToken) != 0)
+			} else {
+				valid = valid && !end.Exhausted && len(end.NextContinuationToken) == 0
+			}
+		}
 	case *pb.Event_NativeEnd:
 		end := value.NativeEnd
 		if end != nil {

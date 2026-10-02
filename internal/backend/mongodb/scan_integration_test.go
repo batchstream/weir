@@ -90,10 +90,10 @@ func TestMongoScanTraversal(t *testing.T) {
 	}
 }
 
-func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
-	for _, command := range []string{"find", "getMore"} {
+func TestMongoScanFaultPagesAndNoAutomaticRetry(t *testing.T) {
+	for _, stage := range []string{"first", "next"} {
 		for _, mode := range []string{"partial", "partial_top", "missing_batch", "truncate", "drop"} {
-			t.Run(command+"_"+mode, func(t *testing.T) {
+			t.Run(stage+"_"+mode, func(t *testing.T) {
 				backend := testmongo.Open(t)
 				native, db := backend.Admin, backend.DB
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -106,12 +106,12 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 				}
 				proxy := testmongo.StartProxy(t, backend)
 				if mode == "drop" {
-					proxy.DropCommand = command
-					proxy.DropRemaining.Store(1)
+					proxy.DropCommand = "find"
+					proxy.DropRemaining.Store(0)
 				} else {
-					proxy.AlterCommand = command
+					proxy.AlterCommand = "find"
 					proxy.AlterMode = mode
-					proxy.AlterRemaining.Store(1)
+					proxy.AlterRemaining.Store(0)
 				}
 				cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
 				cfg = mongoFixtureConfig(t, cfg)
@@ -122,11 +122,16 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 				defer a.Close()
 				p := scanWork(t, a, db)
 				defer a.closeScan(ctx, p)
-				if command == "getMore" {
+				if stage == "next" {
 					page, _ := a.fetchScan(ctx, p)
 					if page.Failure != nil || len(page.Documents) != 1 {
 						t.Fatal(page)
 					}
+				}
+				if mode == "drop" {
+					proxy.DropRemaining.Store(1)
+				} else {
+					proxy.AlterRemaining.Store(1)
 				}
 				page, _ := a.fetchScan(ctx, p)
 				if page.Failure == nil || len(page.Documents) != 0 || page.Exhausted {
@@ -142,15 +147,19 @@ func TestMongoScanFaultPagesAndNoRestart(t *testing.T) {
 						gets++
 					}
 				}
-				if finds != 1 || command == "getMore" && gets != 1 || command == "find" && gets != 0 {
+				wantFinds := 1
+				if stage == "next" {
+					wantFinds = 2
+				}
+				if finds != wantFinds || gets != 0 {
 					t.Fatal("restarted traversal", finds, gets)
 				}
 			})
 		}
 	}
 }
-func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
-	for _, mode := range []string{"killed", "cancel_find", "cancel_getMore"} {
+func TestMongoScanFetchCancellation(t *testing.T) {
+	for _, mode := range []string{"cancel_first", "cancel_next"} {
 		t.Run(mode, func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
@@ -171,31 +180,19 @@ func TestMongoScanCursorKilledAndFetchCancellation(t *testing.T) {
 			}
 			p := scanWork(t, a, db)
 			defer a.closeScan(ctx, p)
-			if mode != "cancel_find" {
+			if mode == "cancel_next" {
 				page, _ := a.fetchScan(ctx, p)
 				if page.Failure != nil || len(page.Documents) != 1 {
 					t.Fatal(page)
 				}
 			}
-			if mode == "killed" {
-				n := p.Backend.(*scanPlan)
-				command := bson.D{{Key: "killCursors", Value: "records"}, {Key: "cursors", Value: bson.A{n.cursor}}}
-				if err := native.Database(db).RunCommand(ctx, command).Err(); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				command := "find"
-				if mode == "cancel_getMore" {
-					command = "getMore"
-				}
-				data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
-				testmongo.FailCommand(t, native, data, 1)
-				var stop context.CancelFunc
-				ctx, stop = context.WithTimeout(ctx, 40*time.Millisecond)
-				defer stop()
-			}
+			data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
+			testmongo.FailCommand(t, native, data, 1)
+			attempt, stop := context.WithTimeout(ctx, 40*time.Millisecond)
+			defer stop()
+
 			start := time.Now()
-			page, _ := a.fetchScan(ctx, p)
+			page, _ := a.fetchScan(attempt, p)
 			if page.Failure == nil || len(page.Documents) != 0 || time.Since(start) > 500*time.Millisecond {
 				t.Fatal("cursor fault/cancel", page, time.Since(start))
 			}

@@ -56,7 +56,9 @@ type NativeSink interface {
 }
 
 type ScanPage struct {
-	Documents []*pb.Document
-	Exhausted bool
-	Failure   *pb.Failure
+	Documents             []*pb.Document
+	Exhausted             bool
+	Complete              bool
+	NextContinuationToken []byte
+	Failure               *pb.Failure
 }

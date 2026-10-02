@@ -30,8 +30,8 @@ Store calls can select different collections/indices within a single RPC.
 `Response{id,payload,end}` carries arbitrarily split bytes of a length-delimited
 sequence of Event version 1 protobuf messages. Individual Events are bounded;
 clients can decode one Event at a time. Record Events contain a read result or
-mutation outcome. Scans emit document Events followed by ScanEnd with a count and
-failure. Native exchanges emit response metadata, byte chunks and NativeEnd with
+mutation outcome. Scans emit a finite page of document Events followed by ScanEnd with a page count,
+failure, and either a next continuation token or explicit exhaustion. Native exchanges emit response metadata, byte chunks and NativeEnd with
 transport completeness; native errors remain backend data. The execution DTO
 Result index mirrors the outer ID for adapter result correlation.
 
@@ -189,10 +189,41 @@ Canceling a blocked response interrupts that HTTP/2 stream through its owned
 deadlines. A transport stall watchdog can still close the shared connection to
 bound an unresponsive peer. Cancellation alone does not close sibling streams.
 
-Scan is a continuation of the same admitted ticket: one bounded page per scheduler
-step, no prefetch, FIFO continuation after publication, with cursor/PIT owned by the
-adapter and bounded cancellation cleanup. Sending a page does not retain an
+Scan admits one finite page per Call: `page_size=0` selects 128 documents, and the
+maximum is 256. Each scheduler step fetches at most one document, with no prefetch
+and FIFO continuation after publication. Sending a document does not retain an
 execution permit, so a stalled scan at concurrency one permits short record work.
+
+The client starts a new finite Route RPC for each page and supplies the previous
+`next_continuation_token`. A live Route remains pinned to one downstream instance,
+but the next RPC can select any instance serving the same Store and backend. No
+Weir session, process registry or shared task storage survives between scan pages.
+A page succeeds only after its ScanEnd count, request end frame and final gRPC OK;
+only then may the client commit its token. If delivery fails, the previous token
+remains the checkpoint. Replaying a page can repeat already consumed documents.
+
+MongoDB performs a bounded `find` with `singleBatch=true`, ascending `_id` sort
+and the `_id` index. The token carries the last original BSON `_id`; the next query
+uses an indexed `$expr` comparison with the last ID as a `$literal`. This preserves
+BSON cross-type ordering, including MinKey and MaxKey, without a retained MongoDB
+session or cursor. Projection must preserve the original `_id`, and alternate
+sort orders are rejected. Each query sees its own database state; concurrent inserts, deletes or filter changes
+can change the traversal. This is not a snapshot across pages.
+
+Search's token carries the latest backend PIT ID and `search_after` value. The PIT
+preserves the index snapshot and can be used by another Weir instance. Once a PIT
+has been passed to the client, later page failures and exhaustion leave it available
+until its 60-second keep-alive expires. This lets the client retry its last committed
+checkpoint when a terminal response is lost. A newly opened PIT that has never been
+passed to the client is cleaned up on failure or immediate exhaustion. An expired
+PIT fails rather than silently starting a different snapshot.
+
+Continuation tokens are bounded, versioned client inputs tied to the Store,
+resource, selector, representation and backend dialect. They are opaque to clients;
+their checksum detects corruption and is not authentication. Backend permissions
+remain the access boundary. This replaces the old whole-traversal Scan semantics;
+executors, relays and clients must upgrade together because unknown fields fail
+strict validation.
 Native exchange is a singleton that can hold one execution permit during bounded
 backend streaming; slow output is canceled by the transport progress budget.
 The backend timeout defaults to 2 seconds. Native MongoDB qualification and command

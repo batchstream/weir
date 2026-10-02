@@ -84,11 +84,20 @@ message ScanRequest {
   string resource = 1;
   Document selector = 2;
   string read_media_type = 3;
+  // One finite page. Zero uses 128; the maximum is 256 documents.
+  uint32 page_size = 4;
+  // Resume a completed page on any Weir instance serving this Store.
+  bytes continuation_token = 5;
 }
-// Counts document Events produced by the backend cursor. This is not a client
-// receipt acknowledgement. A scan requires this Event without failure, a matching
-// document Event count, the request end frame, and final gRPC OK (EOF).
-message ScanEnd { uint64 document_count = 1; Failure failure = 2; }
+// Counts document Events in this finite page. A successful page has exactly one
+// of exhausted or next_continuation_token. Commit its checkpoint only after the
+// matching document count, request end frame, and final gRPC OK (EOF).
+message ScanEnd {
+  uint64 document_count = 1;
+  Failure failure = 2;
+  bytes next_continuation_token = 3;
+  bool exhausted = 4;
+}
 // Response transport evidence only; never a normalized mutation result.
 enum NativeCompletion {
   NATIVE_COMPLETION_UNSPECIFIED = 0;

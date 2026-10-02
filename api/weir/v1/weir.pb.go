@@ -1485,8 +1485,12 @@ type ScanRequest struct {
 	Resource      string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
 	Selector      *Document              `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
 	ReadMediaType string                 `protobuf:"bytes,3,opt,name=read_media_type,json=readMediaType,proto3" json:"read_media_type,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// One finite page. Zero uses 128; the maximum is 256 documents.
+	PageSize uint32 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Resume a completed page on any Weir instance serving this Store.
+	ContinuationToken []byte `protobuf:"bytes,5,opt,name=continuation_token,json=continuationToken,proto3" json:"continuation_token,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ScanRequest) Reset() {
@@ -1540,15 +1544,31 @@ func (x *ScanRequest) GetReadMediaType() string {
 	return ""
 }
 
-// Counts document Events produced by the backend cursor. This is not a client
-// receipt acknowledgement. A scan requires this Event without failure, a matching
-// document Event count, the request end frame, and final gRPC OK (EOF).
+func (x *ScanRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ScanRequest) GetContinuationToken() []byte {
+	if x != nil {
+		return x.ContinuationToken
+	}
+	return nil
+}
+
+// Counts document Events in this finite page. A successful page has exactly one
+// of exhausted or next_continuation_token. Commit its checkpoint only after the
+// matching document count, request end frame, and final gRPC OK (EOF).
 type ScanEnd struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DocumentCount uint64                 `protobuf:"varint,1,opt,name=document_count,json=documentCount,proto3" json:"document_count,omitempty"`
-	Failure       *Failure               `protobuf:"bytes,2,opt,name=failure,proto3" json:"failure,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	DocumentCount         uint64                 `protobuf:"varint,1,opt,name=document_count,json=documentCount,proto3" json:"document_count,omitempty"`
+	Failure               *Failure               `protobuf:"bytes,2,opt,name=failure,proto3" json:"failure,omitempty"`
+	NextContinuationToken []byte                 `protobuf:"bytes,3,opt,name=next_continuation_token,json=nextContinuationToken,proto3" json:"next_continuation_token,omitempty"`
+	Exhausted             bool                   `protobuf:"varint,4,opt,name=exhausted,proto3" json:"exhausted,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ScanEnd) Reset() {
@@ -1593,6 +1613,20 @@ func (x *ScanEnd) GetFailure() *Failure {
 		return x.Failure
 	}
 	return nil
+}
+
+func (x *ScanEnd) GetNextContinuationToken() []byte {
+	if x != nil {
+		return x.NextContinuationToken
+	}
+	return nil
+}
+
+func (x *ScanEnd) GetExhausted() bool {
+	if x != nil {
+		return x.Exhausted
+	}
+	return false
 }
 
 type NativeOpen struct {
@@ -1845,14 +1879,18 @@ const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\x04read\x18\n" +
 	" \x01(\v2\x13.weir.v1.ReadResultH\x00R\x04read\x125\n" +
 	"\bmutation\x18\v \x01(\v2\x17.weir.v1.MutationResultH\x00R\bmutationB\b\n" +
-	"\x06result\"\x80\x01\n" +
+	"\x06result\"\xcc\x01\n" +
 	"\vScanRequest\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\x12-\n" +
 	"\bselector\x18\x02 \x01(\v2\x11.weir.v1.DocumentR\bselector\x12&\n" +
-	"\x0fread_media_type\x18\x03 \x01(\tR\rreadMediaType\"\\\n" +
+	"\x0fread_media_type\x18\x03 \x01(\tR\rreadMediaType\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\rR\bpageSize\x12-\n" +
+	"\x12continuation_token\x18\x05 \x01(\fR\x11continuationToken\"\xb2\x01\n" +
 	"\aScanEnd\x12%\n" +
 	"\x0edocument_count\x18\x01 \x01(\x04R\rdocumentCount\x12*\n" +
-	"\afailure\x18\x02 \x01(\v2\x10.weir.v1.FailureR\afailure\"\x83\x01\n" +
+	"\afailure\x18\x02 \x01(\v2\x10.weir.v1.FailureR\afailure\x126\n" +
+	"\x17next_continuation_token\x18\x03 \x01(\fR\x15nextContinuationToken\x12\x1c\n" +
+	"\texhausted\x18\x04 \x01(\bR\texhausted\"\x83\x01\n" +
 	"\n" +
 	"NativeOpen\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\x121\n" +

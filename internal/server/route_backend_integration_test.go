@@ -195,8 +195,8 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	scanValue := &pb.Call_Scan{Scan: scan}
 	scanCall := &pb.Call{Version: 1, Operation: scanValue}
 	events := routeBackendEvents(t, client, scanCall)
-	if len(events) != 2 || events[0].GetDocument() == nil || events[1].GetScanEnd().GetDocumentCount() != 1 || events[1].GetScanEnd().Failure != nil {
-		t.Fatal("Mongo scan did not preserve its cursor completion semantics", events)
+	if len(events) != 2 || events[0].GetDocument() == nil || events[1].GetScanEnd().GetDocumentCount() != 1 || events[1].GetScanEnd().Failure != nil || !events[1].GetScanEnd().GetExhausted() || len(events[1].GetScanEnd().GetNextContinuationToken()) != 0 {
+		t.Fatal("Mongo scan did not report its exhausted page", events)
 	}
 
 	rawCounter, _ := bson.Marshal(counter)
