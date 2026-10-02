@@ -9,10 +9,11 @@ Production services and Kubernetes clusters were not contacted.
 
 The complete default Go suite, complete race suite and CGO-disabled suite passed.
 Ordinary and integration-tagged vet passed. All integration-tagged packages
-compiled. Integration-tagged capacity-helper race tests passed. Repeating
+compiled on Darwin and cross-compiled for Linux/arm64 (compilation only).
+Integration-tagged capacity-helper race tests passed. Repeating
 `scripts/generate.sh` preserved every generated Go file's SHA-256 hash.
-Python helper tests passed with the compiled completion fixture: 123 tests in
-ordinary mode with no skips, and 123 tests under optimization with 29 intentional
+Python helper tests passed with the compiled completion fixture: 124 tests in
+ordinary mode with no skips, and 124 tests under optimization with 30 intentional
 assertion-related skips. The CI workflow repeats these checks on native Linux
 with fixed offline tools.
 

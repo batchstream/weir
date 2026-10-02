@@ -8,7 +8,8 @@
 # max_batch_operations: default 32; explicit 0 selects default; range 1..128.
 # batch_collect: default 5ms; range 0s..10ms; explicit zero disables collection wait.
 # max_read_size: default 16KiB; range 1KiB..2MiB; oversized records fail boundedly.
-# MongoDB URI: mongodb:// or mongodb+srv://, without embedded user credentials.
+# MongoDB URI: mongodb:// with one host and explicit port, without userinfo.
+# mongodb+srv, multi-host and replica-set topology discovery are unsupported.
 # Search URL: http:// or https:// server origin. Auth and CA require HTTPS.
 # Backend startup qualifies connectivity/product and supported server policy.
 # Both adapters accept separate username/password, or username_file/password_file.
