@@ -45,8 +45,11 @@ func TestRoutingConfigurationFile(t *testing.T) {
 		t.Fatal("routing file must declare a local MongoDB service")
 	}
 	limits := service.Local.runtimeLimits()
-	if limits.Concurrency != 4 || limits.BatchOperations != 16 || limits.Collect != time.Millisecond {
+	if limits.Concurrency != 2 || limits.BatchOperations != 32 || limits.Collect != 5*time.Millisecond {
 		t.Fatal("local scheduler limits differ from their documented defaults")
+	}
+	if service.Local.mongoConfig("mongo").MaxReadSize != 16<<10 {
+		t.Fatal("MongoDB read limit differs from its documented default")
 	}
 	if cfg.Routes[0].Store != "mongo" || cfg.Routes[0].Service != service.Name {
 		t.Fatal("public MongoDB Store must target the declared service")
@@ -56,6 +59,10 @@ func TestRoutingConfigurationFile(t *testing.T) {
 	if service.Name != "search" || service.Remote != nil || service.Local == nil ||
 		service.Local.Search == nil || service.Local.MongoDB != nil {
 		t.Fatal("routing file must declare a local Search service")
+	}
+	limits = service.Local.runtimeLimits()
+	if limits.Concurrency != 2 || limits.BatchOperations != 32 || limits.Collect != 5*time.Millisecond || service.Local.searchConfig("search").MaxReadSize != 16<<10 {
+		t.Fatal("Search limits differ from their documented defaults")
 	}
 	backend := service.Local.Search
 	if !strings.HasPrefix(backend.URL, "https://") ||

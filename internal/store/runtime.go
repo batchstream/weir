@@ -23,8 +23,8 @@ func DefaultLimits() Limits {
 	limits := Limits{
 		PendingOperations: 256, PendingBytes: 32 << 20, ResultOperations: 128, ResultBytes: 32 << 20,
 		WorkingBytes: 128 << 20, BatchResultBytes: 8 << 20,
-		Concurrency: 4, BatchOperations: 16, BatchBytes: 8 << 20, SessionOutstanding: 8,
-		Collect: time.Millisecond, BackendTimeout: 2 * time.Second,
+		Concurrency: 2, BatchOperations: 32, BatchBytes: 8 << 20, SessionOutstanding: 8,
+		Collect: 5 * time.Millisecond, BackendTimeout: 2 * time.Second,
 	}
 	return limits
 }

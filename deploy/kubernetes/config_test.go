@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/batchstream/weir/internal/app"
 )
@@ -17,6 +18,10 @@ func TestDeploymentConfiguration(t *testing.T) {
 
 	if cfg.Basic.Listeners.Application != "0.0.0.0:7447" || cfg.Basic.Diagnostics.Address != "127.0.0.1:7449" || cfg.Basic.Memory != app.ByteSize(768<<20) {
 		t.Fatal("Pod bind or memory budget changed")
+	}
+	local := cfg.Routing.Services[0].Local
+	if local.MaxConcurrency != 2 || local.MaxBatchOperations != 32 || local.BatchCollect == nil || time.Duration(*local.BatchCollect) != 5*time.Millisecond || local.MaxReadSize == nil || *local.MaxReadSize != app.ByteSize(16<<10) {
+		t.Fatal("Pod routing does not use the tuned small-document defaults")
 	}
 
 	raw, err := os.ReadFile("weir.json")

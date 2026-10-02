@@ -29,7 +29,7 @@ type Config struct {
 	Username string
 	Password string
 	Pool     uint64
-	// MaxReadSize bounds ordinary Record Read only; zero uses the 2 MiB protocol limit.
+	// MaxReadSize bounds ordinary Record Read only; zero uses the 16 KiB default.
 	MaxReadSize int
 }
 
@@ -54,7 +54,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 	if cfg.MaxReadSize == 0 {
-		cfg.MaxReadSize = protocol.MaxDocument
+		cfg.MaxReadSize = execution.DefaultMaxReadSize
 	}
 	dialer := newBoundedDialer(int(cfg.Pool)+1, mongoMaxConnecting+1)
 	complete := false

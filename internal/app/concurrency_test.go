@@ -43,7 +43,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 			}
 			expected := c
 			if c == 0 {
-				expected = 4
+				expected = 2
 			}
 			actual := decoded.Services[0].Local
 			if actual.runtimeLimits().Concurrency != expected || actual.searchConfig("records").Pool != expected {
@@ -52,7 +52,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 			if c == 0 {
 				omitted := strings.Replace(string(raw), "        max_concurrency: 0\n", "", 1)
 				decoded, err = DecodeRouting(strings.NewReader(omitted))
-				if err != nil || decoded.Services[0].Local.runtimeLimits().Concurrency != 4 {
+				if err != nil || decoded.Services[0].Local.runtimeLimits().Concurrency != 2 {
 					t.Fatal("omitted default", err)
 				}
 			}

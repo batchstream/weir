@@ -9,6 +9,7 @@ import (
 
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -342,7 +343,7 @@ func (l *Local) searchConfig(name string) search.Config {
 		URL:         l.Search.URL,
 		Pool:        l.runtimeLimits().Concurrency,
 		Connection:  connection,
-		MaxReadSize: protocol.MaxDocument,
+		MaxReadSize: execution.DefaultMaxReadSize,
 	}
 	if l.MaxReadSize != nil {
 		cfg.MaxReadSize = int(*l.MaxReadSize)
@@ -358,7 +359,7 @@ func (l *Local) mongoConfig(name string) mongodb.Config {
 		Password:    m.Password,
 		Store:       name,
 		Pool:        uint64(l.runtimeLimits().Concurrency),
-		MaxReadSize: protocol.MaxDocument,
+		MaxReadSize: execution.DefaultMaxReadSize,
 	}
 	if l.MaxReadSize != nil {
 		cfg.MaxReadSize = int(*l.MaxReadSize)

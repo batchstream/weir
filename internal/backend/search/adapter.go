@@ -26,7 +26,7 @@ type Config struct {
 	Store string
 	URL   string
 	Pool  int
-	// MaxReadSize bounds ordinary Record Read only; zero uses the 2 MiB protocol limit.
+	// MaxReadSize bounds ordinary Record Read only; zero uses the 16 KiB default.
 	MaxReadSize int
 	Connection  *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
@@ -64,7 +64,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 	if cfg.MaxReadSize == 0 {
-		cfg.MaxReadSize = protocol.MaxDocument
+		cfg.MaxReadSize = execution.DefaultMaxReadSize
 	}
 	cfg.URL, _ = canonicalURL(cfg.URL)
 	if cfg.Connection != nil {

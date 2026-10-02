@@ -93,7 +93,7 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	actions := []string{"read", "read", "replace", "expression", "program", "put", "create", "delete"}
 	ids := []string{"read", "missing", "replace", "expression", "program", "put", "create", "delete"}
@@ -308,7 +308,7 @@ func TestMgetGroupsBoundDocumentsAndRecheckLaterCallers(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL}
+	cfg := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	works := make([]*execution.Plan, getBatchItems+2)
 	for i := range works {

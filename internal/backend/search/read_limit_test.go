@@ -17,7 +17,7 @@ import (
 )
 
 func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
-	for _, limit := range []int{0, 1023, 1024, protocol.MaxDocument, protocol.MaxDocument + 1} {
+	for _, limit := range []int{0, 1023, 1024, 16 << 10, protocol.MaxDocument, protocol.MaxDocument + 1} {
 		config := Config{Store: "search", URL: "http://127.0.0.1:9200", Pool: 4, MaxReadSize: limit}
 		valid := limit == 0 || limit >= 1024 && limit <= protocol.MaxDocument
 		if (ValidateConfig(config) == nil) != valid {
@@ -35,7 +35,7 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 			t.Fatal(failure)
 		}
 		if limit == 0 {
-			limit = protocol.MaxDocument
+			limit = 16 << 10
 		}
 		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes > 24<<20 || work.WorkingBytes < 3*metadataLimit {
 			t.Fatal("read declaration was not reflected in resource bounds", limit, work.ResultBytes, work.WorkingBytes)
@@ -91,8 +91,20 @@ func TestSearchSmallReadProfileBatches128Records(t *testing.T) {
 }
 
 func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
-	for _, size := range []int{1024, 1025, 70 << 10} {
-		t.Run(fmt.Sprint(size), func(t *testing.T) {
+	cases := []struct {
+		limit int
+		size  int
+	}{
+		{1024, 1024}, {1024, 1025}, {1024, 70 << 10},
+		{0, 16 << 10}, {0, (16 << 10) + 1},
+		{protocol.MaxDocument, (16 << 10) + 1},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("limit=%d/size=%d", tc.limit, tc.size), func(t *testing.T) {
+			size, limit := tc.size, tc.limit
+			if limit == 0 {
+				limit = 16 << 10
+			}
 			source := `{"pad":"` + strings.Repeat("x", size-len(`{"pad":""}`)) + `"}`
 			var writes atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +122,7 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			config := Config{Store: "search", URL: server.URL, MaxReadSize: 1024}
+			config := Config{Store: "search", URL: server.URL, MaxReadSize: tc.limit}
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 			read := batchTestPlan(t, adapter, "read", "weir://search/records/s:read")
 			writeSource := []byte(`{"pad":"` + strings.Repeat("x", 2048) + `"}`)
@@ -124,7 +136,7 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			works := []*execution.Plan{read, write}
 			results, _ := adapter.executeRecords(context.Background(), works)
 			result := results[0].GetRead()
-			if size == 1024 && len(result.GetDocument().Data) != size || size > 1024 && result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+			if size <= limit && len(result.GetDocument().Data) != size || size > limit && result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal("read size boundary was not enforced", size, result)
 			}
 			if writes.Load() != 1 || results[1].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutation().Failure != nil {

@@ -12,7 +12,7 @@ import (
 )
 
 func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
-	for _, limit := range []int{0, 1023, 1024, protocol.MaxDocument, protocol.MaxDocument + 1} {
+	for _, limit := range []int{0, 1023, 1024, 16 << 10, protocol.MaxDocument, protocol.MaxDocument + 1} {
 		config := Config{Store: "mongo", URI: "mongodb://127.0.0.1:27017", Pool: 4, MaxReadSize: limit}
 		valid := limit == 0 || limit >= 1024 && limit <= protocol.MaxDocument
 		if (ValidateConfig(config) == nil) != valid {
@@ -30,7 +30,7 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 			t.Fatal(failure)
 		}
 		if limit == 0 {
-			limit = protocol.MaxDocument
+			limit = 16 << 10
 		}
 		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes != 2*scanNativeLimit+max(1<<20, 4*limit) {
 			t.Fatal("read declaration was not reflected in resource bounds", limit, work.ResultBytes, work.WorkingBytes)
@@ -39,7 +39,19 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 }
 
 func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
-	for _, size := range []int{1024, 1025} {
+	cases := []struct {
+		limit int
+		size  int
+	}{
+		{1024, 1024}, {1024, 1025},
+		{0, 16 << 10}, {0, (16 << 10) + 1},
+		{protocol.MaxDocument, (16 << 10) + 1},
+	}
+	for _, tc := range cases {
+		size, limit := tc.size, tc.limit
+		if limit == 0 {
+			limit = 16 << 10
+		}
 		document := bson.D{{Key: "_id", Value: "read"}, {Key: "pad", Value: ""}}
 		empty := expressionBSON(t, document)
 		document[1].Value = strings.Repeat("x", size-len(empty))
@@ -54,7 +66,7 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 		}
 		responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(readCursor), writeReply}
 		adapter := batchMockAdapter(t, responses, nil)
-		adapter.config.MaxReadSize = 1024
+		adapter.config.MaxReadSize = tc.limit
 		writeDocument := bson.D{{Key: "_id", Value: "write"}, {Key: "pad", Value: strings.Repeat("x", 2048)}}
 		readOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:read", action: "read", index: 9}
 		writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", index: 8, document: writeDocument}
@@ -68,7 +80,7 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 		}
 		results, _ := adapter.executeRecords(context.Background(), plans)
 		read := results[0].GetRead()
-		if size == 1024 && len(read.GetDocument().Data) != size || size > 1024 && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+		if size <= limit && len(read.GetDocument().Data) != size || size > limit && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 			t.Fatal("read size boundary was not enforced", size, read)
 		}
 		if results[1].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutation().Failure != nil {
