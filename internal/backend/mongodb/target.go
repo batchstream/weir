@@ -53,8 +53,9 @@ func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) (*pb.Fail
 	return nil, execution.Healthy
 }
 
-// A cancelled group never contacts MongoDB. Recheck each caller after this
-// qualification in the command builder, because metadata I/O can outlive it.
+// A cancelled group never contacts MongoDB. Read and write commands within one
+// Execute share this qualification; each later Execute inspects the target again.
+// Command builders recheck callers because metadata I/O can outlive them.
 func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
 	var failure *pb.Failure
 	signal := execution.Neutral

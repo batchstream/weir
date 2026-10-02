@@ -41,6 +41,13 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	for i, work := range works {
 		results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
 	}
+	if err == errWriteNotSent {
+		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")
+		for i, work := range works {
+			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+		}
+		return results, execution.Neutral
+	}
 	if err != nil || len(raw) > responseLimit || validateJSON(raw, 16384) != nil {
 		return results, execution.Neutral
 	}
@@ -75,6 +82,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	}
 	// Validate the entire positional correspondence before trusting any item.
 	hadErrors := false
+	items := make([]expressionResponse, len(works))
 	for i, work := range works {
 		native := work.Backend.(*plan)
 		action := native.action
@@ -85,8 +93,8 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		}
 		entry := envelope.Items[i]
 		encoded, ok := entry[action]
-		var item expressionResponse
-		if !ok || len(entry) != 1 || json.Unmarshal(encoded, &item) != nil || item.Index != native.index || item.ID != native.id {
+		item := &items[i]
+		if !ok || len(entry) != 1 || json.Unmarshal(encoded, item) != nil || item.Index != native.index || item.ID != native.id {
 			return results, execution.Neutral
 		}
 		hadErrors = hadErrors || item.Error != nil
@@ -104,8 +112,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			action = "update"
 		}
 		encoded := envelope.Items[i][action]
-		var item expressionResponse
-		_ = json.Unmarshal(encoded, &item)
+		item := &items[i]
 		if native.program != nil || native.action == "expression" {
 			var mutation *pb.MutationResult
 			var signal execution.Feedback

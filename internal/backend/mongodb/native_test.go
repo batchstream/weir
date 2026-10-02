@@ -43,25 +43,34 @@ func (c *nativeCapture) Interrupt() {}
 
 func TestMongoNativeExplicitCongestion(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		code       int32
-		failHead   bool
-		failChunk  bool
-		oversized  bool
-		completion pb.NativeCompletion
-		feedback   execution.Feedback
+		name             string
+		code             int32
+		failHead         bool
+		failChunk        bool
+		oversized        bool
+		cancelAfterReply bool
+		invalidOK        bool
+		completion       pb.NativeCompletion
+		feedback         execution.Feedback
 	}{
 		{name: "shutdown", code: 91, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
 		{name: "stepdown", code: 189, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
 		{name: "capacity", code: 16500, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
 		{name: "deterministic_error", code: 2, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "success", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "success", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Completed},
+		{name: "canceled_after_reply", cancelAfterReply: true, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "invalid_ok", invalidOK: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "success_head_failure", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "success_chunk_failure", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 		{name: "head_failure", code: 16500, failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 		{name: "chunk_failure", code: 16500, failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 		{name: "oversized", code: 16500, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}}
+			if test.invalidOK {
+				response[0].Value = int32(2)
+			}
 			if test.code != 0 {
 				message := "native error"
 				if test.oversized {
@@ -70,7 +79,16 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 				response = bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: test.code}, {Key: "errmsg", Value: message}}
 			}
 			var calls int
-			monitor := &event.CommandMonitor{Started: func(_ context.Context, _ *event.CommandStartedEvent) { calls++ }}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			monitor := &event.CommandMonitor{
+				Started: func(_ context.Context, _ *event.CommandStartedEvent) { calls++ },
+				Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
+					if test.cancelAfterReply && e.CommandName == "count" {
+						cancel()
+					}
+				},
+			}
 			qualification := collectionQualificationResponse("db", "records")
 			deployment := drivertest.NewMockDeployment(qualification, response)
 			opts := options.Client().SetRetryWrites(false).SetRetryReads(false).SetMaxAdaptiveRetries(0).SetMonitor(monitor)
@@ -103,7 +121,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			source := io.NopCloser(bytes.NewReader(raw))
 			defer source.Close()
 			exchange := &execution.NativeExchange{Source: source, Sink: capture}
-			end, feedback := a.executeNative(context.Background(), plan, exchange)
+			end, feedback := a.executeNative(ctx, plan, exchange)
 			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
 				t.Fatal(end, feedback, calls)
 			}

@@ -23,10 +23,12 @@ const ElasticsearchProduct = "elasticsearch"
 const OpenSearchProduct = "opensearch"
 
 type Config struct {
-	Store      string
-	URL        string
-	Pool       int
-	Connection *Connection
+	Store string
+	URL   string
+	Pool  int
+	// MaxReadSize bounds ordinary Record Read only; zero uses the 2 MiB protocol limit.
+	MaxReadSize int
+	Connection  *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
 	Resolver *net.Resolver
 }
@@ -60,6 +62,9 @@ var indexPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
+	}
+	if cfg.MaxReadSize == 0 {
+		cfg.MaxReadSize = protocol.MaxDocument
 	}
 	cfg.URL, _ = canonicalURL(cfg.URL)
 	if cfg.Connection != nil {
@@ -242,7 +247,7 @@ func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure)
 		}
 		native.action = "read"
 		// Reserve bounded source scratch for the batched pre-read.
-		work.ResultBytes += protocol.MaxDocument
+		work.ResultBytes += a.maxReadSize()
 	} else {
 		mutation := op.GetMutate()
 		if mutation.AdapterOptions != nil {

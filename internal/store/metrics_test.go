@@ -95,12 +95,14 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 	r.mu.Lock()
 	// An old epoch and a congestion signal at the minimum window are not actual reductions.
 	r.observeLocked(b, execution.Congested)
-	fresh := &batch{epoch: r.controller.epoch}
+	fresh := &batch{epoch: r.controller.epoch, recoveryEligible: true}
 	r.observeLocked(fresh, execution.Congested)
 	fresh.epoch = r.controller.epoch
 	r.observeLocked(fresh, execution.Congested)
 	fresh.epoch = r.controller.epoch
 	fresh.saturated = true
+	r.controller.cooldown = time.Time{}
+	r.controller.lastGrowth = time.Now().Add(-time.Second)
 	for range 4 {
 		r.observeLocked(fresh, execution.Healthy)
 	}
@@ -112,7 +114,10 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 	if testmetrics.Sample(families, "weir_store_window_changes_total", map[string]string{"direction": "increase"}).GetCounter().GetValue() != 1 {
 		t.Fatal("growth count")
 	}
-	if testmetrics.Series(families) != 67 {
+	if testmetrics.Sample(families, "weir_store_backpressure_events_total", map[string]string{"reason": "backend"}).GetCounter().GetValue() != 3 {
+		t.Fatal("backend cooldown at the minimum window was not observable")
+	}
+	if testmetrics.Series(families) != 76 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

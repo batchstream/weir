@@ -31,6 +31,9 @@ func ValidateConfig(cfg Config) error {
 	if err != nil || name != cfg.Store || len(segments) != 0 || cfg.Pool < 1 || cfg.Pool > 32 {
 		return errors.New("invalid Search configuration")
 	}
+	if cfg.MaxReadSize != 0 && (cfg.MaxReadSize < 1024 || cfg.MaxReadSize > protocol.MaxDocument) {
+		return errors.New("Search maximum read size must be between 1 KiB and 2 MiB")
+	}
 	endpoint, err := canonicalURL(cfg.URL)
 	if err != nil {
 		return err

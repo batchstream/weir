@@ -10,6 +10,7 @@ import (
 
 type runtimeMetrics struct {
 	executions, rejections, changes, records *prometheus.CounterVec
+	backpressure                             *prometheus.CounterVec
 	queue, duration                          *prometheus.HistogramVec
 	batch                                    prometheus.Histogram
 	feedback                                 execution.Feedback
@@ -21,10 +22,12 @@ func newRuntimeMetrics() runtimeMetrics {
 	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Physical unified adapter invocations."}
 	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Preparation and admission denials."}
 	changeOptions := prometheus.CounterOpts{Name: "weir_store_window_changes_total", Help: "Actual adaptive concurrency changes."}
+	backpressureOptions := prometheus.CounterOpts{Name: "weir_store_backpressure_events_total", Help: "Backpressure actions: concurrency reductions or dispatch cooldown after explicit backend congestion, including at the window floor."}
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from admission to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration including bounded streaming output.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per bounded invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
 	metrics := runtimeMetrics{records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), changes: prometheus.NewCounterVec(changeOptions, []string{"direction"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
+	metrics.backpressure = prometheus.NewCounterVec(backpressureOptions, []string{"reason"})
 	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown", "invalid"} {
 		metrics.records.WithLabelValues("mutate", outcome)
 	}
@@ -39,6 +42,9 @@ func newRuntimeMetrics() runtimeMetrics {
 	}
 	for _, direction := range []string{"increase", "decrease"} {
 		metrics.changes.WithLabelValues(direction)
+	}
+	for _, reason := range []string{"backend", "latency"} {
+		metrics.backpressure.WithLabelValues(reason)
 	}
 	return metrics
 }
@@ -59,14 +65,26 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		description := prometheus.NewDesc("weir_store_"+name, "Bounded local admission reservations; bytes do not represent heap or RSS.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
 	}
+	latencyValues := map[string]float64{
+		"baseline_seconds": snapshot.LatencyBaseline.Seconds(),
+		"sample_seconds":   snapshot.LatencySample.Seconds(),
+		"ratio":            snapshot.LatencyRatio,
+		"profiles":         float64(snapshot.LatencyProfiles),
+		"ready_profiles":   float64(snapshot.LatencyReadyProfiles),
+		"recovery_hold":    boolValue(snapshot.LatencyRecoveryHold),
+	}
+	for name, value := range latencyValues {
+		description := prometheus.NewDesc("weir_store_latency_"+name, "Last eligible comparable-batch latency evidence; duration is normalized to the operation-count bucket upper bound.", nil, nil)
+		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
+	}
 	description := prometheus.NewDesc("weir_store_feedback", "Last observed execution feedback.", []string{"feedback"}, nil)
-	for _, label := range []string{"unobserved", "healthy", "congested", "neutral"} {
+	for _, label := range []string{"unobserved", "healthy", "congested", "neutral", "completed"} {
 		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, boolValue(snapshot.Feedback == label), label)
 	}
 	if collector, ok := r.adapter.(prometheus.Collector); ok {
 		collector.Collect(ch)
 	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.changes, r.metrics.queue, r.metrics.duration, r.metrics.batch}
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.changes, r.metrics.backpressure, r.metrics.queue, r.metrics.duration, r.metrics.batch}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}
@@ -79,7 +97,11 @@ func boolValue(value bool) float64 {
 }
 func (r *Runtime) observeLocked(b *batch, feedback execution.Feedback) {
 	before := r.controller.window
-	r.controller.observe(b, feedback, r.limits.Concurrency, time.Now())
+	opts := observation{batch: b, feedback: feedback, maximum: r.limits.Concurrency, now: time.Now()}
+	reason := r.controller.observe(opts)
+	if reason != "" {
+		r.metrics.backpressure.WithLabelValues(reason).Inc()
+	}
 	r.metrics.feedback, r.metrics.observed = feedback, true
 	if r.controller.window > before {
 		r.metrics.changes.WithLabelValues("increase").Inc()

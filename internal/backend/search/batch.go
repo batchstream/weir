@@ -58,11 +58,21 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 // to every document in each sequential request.
 func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*execution.Plan) []observedRecord {
 	observed := make([]observedRecord, len(works))
-	for start := 0; start < len(works); start += getBatchItems {
-		end := min(start+getBatchItems, len(works))
+	for start := 0; start < len(works); {
+		end := start
+		bound := getFramingLimit
+		for end < len(works) && end-start < batchOperationLimit {
+			item := a.sourceLimit(works[end]) + getFramingLimit
+			if bound+item > batchBodyLimit {
+				break
+			}
+			bound += item
+			end++
+		}
 		group := make([]*execution.Plan, 0, end-start)
 		indexes := make([]int, 0, end-start)
 		ids := make([]string, 0, end-start)
+		bound = getFramingLimit
 		for i := start; i < end; i++ {
 			work := works[i]
 			caller := ctx
@@ -77,7 +87,9 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 			group = append(group, work)
 			indexes = append(indexes, i)
 			ids = append(ids, work.Backend.(*plan).id)
+			bound += a.sourceLimit(work) + getFramingLimit
 		}
+		start = end
 		if len(group) == 0 {
 			continue
 		}
@@ -85,7 +97,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		encoded, _ := json.Marshal(body)
 		call := exchange{
 			path: "/" + index + "/_mget?realtime=true", body: encoded,
-			contentType: "application/json", limit: len(group)*(protocol.MaxDocument+getFramingLimit) + getFramingLimit,
+			contentType: "application/json", limit: bound,
 			jsonNodes: len(group)*(16384+32) + 1,
 		}
 		status, raw, err := a.request(ctx, call)
@@ -96,6 +108,8 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 			failure = protocol.ContextFailure(ctx)
 		case err == errTransport:
 			feedback = execution.Congested
+		case err == errResponseLimit:
+			failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record response exceeds configured read bound")
 		case err == nil && (status == 429 || status == 503):
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
 			feedback = execution.Congested
@@ -148,7 +162,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 				observation.reply, observation.failure, observation.feedback = nil, failure, execution.Neutral
 			case validateJSON(reply.Source, 16384) != nil:
 				observation.reply, observation.failure, observation.feedback = nil, failure, execution.Neutral
-			case len(reply.Source) > protocol.MaxDocument:
+			case len(reply.Source) > a.sourceLimit(group[i]):
 				observation.reply = nil
 				observation.failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit")
 				observation.feedback = execution.Neutral
@@ -282,9 +296,10 @@ func (b *recordBatch) flush() {
 	}
 	if len(works) != 0 {
 		call := exchange{
-			path:  "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1&timeout=1s",
-			body:  body[:length],
-			limit: responseLimit,
+			path:     "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1&timeout=1s",
+			body:     body[:length],
+			limit:    responseLimit,
+			mutation: true,
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
 		replies, sample := b.adapter.bulkResults(works, status, raw, err)

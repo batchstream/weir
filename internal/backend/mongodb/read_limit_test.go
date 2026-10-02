@@ -1,0 +1,78 @@
+package mongodb
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/protocol"
+	"go.mongodb.org/mongo-driver/v2/bson"
+)
+
+func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
+	for _, limit := range []int{0, 1023, 1024, protocol.MaxDocument, protocol.MaxDocument + 1} {
+		config := Config{Store: "mongo", URI: "mongodb://127.0.0.1:27017", Pool: 4, MaxReadSize: limit}
+		valid := limit == 0 || limit >= 1024 && limit <= protocol.MaxDocument
+		if (ValidateConfig(config) == nil) != valid {
+			t.Fatal("invalid maximum read size accepted", limit)
+		}
+		if !valid {
+			continue
+		}
+		adapter := &Adapter{config: config}
+		request := &pb.ReadRequest{Resource: "db/records/s:id"}
+		variant := &pb.Call_Read{Read: request}
+		call := &pb.Call{Version: 1, Operation: variant}
+		work, failure := adapter.PrepareCall(1, call)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		if limit == 0 {
+			limit = protocol.MaxDocument
+		}
+		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes != 2*scanNativeLimit+max(1<<20, 4*limit) {
+			t.Fatal("read declaration was not reflected in resource bounds", limit, work.ResultBytes, work.WorkingBytes)
+		}
+	}
+}
+
+func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
+	for _, size := range []int{1024, 1025} {
+		document := bson.D{{Key: "_id", Value: "read"}, {Key: "pad", Value: ""}}
+		empty := expressionBSON(t, document)
+		document[1].Value = strings.Repeat("x", size-len(empty))
+		readCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
+		item := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+		writeCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "admin.$cmd.bulkWrite"}, {Key: "firstBatch", Value: bson.A{item}}}
+		writeReply := bson.D{
+			{Key: "ok", Value: 1}, {Key: "cursor", Value: writeCursor},
+			{Key: "nErrors", Value: 0}, {Key: "nInserted", Value: 0},
+			{Key: "nDeleted", Value: 0}, {Key: "nMatched", Value: 1},
+			{Key: "nModified", Value: 1}, {Key: "nUpserted", Value: 0},
+		}
+		responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(readCursor), writeReply}
+		adapter := batchMockAdapter(t, responses, nil)
+		adapter.config.MaxReadSize = 1024
+		writeDocument := bson.D{{Key: "_id", Value: "write"}, {Key: "pad", Value: strings.Repeat("x", 2048)}}
+		readOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:read", action: "read", index: 9}
+		writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", index: 8, document: writeDocument}
+		var plans []*execution.Plan
+		for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
+			work, failure := adapter.prepareRecord(batchOperation(t, opts))
+			if failure != nil {
+				t.Fatal("read size profile affected mutation admission", failure)
+			}
+			plans = append(plans, work)
+		}
+		results, _ := adapter.executeRecords(context.Background(), plans)
+		read := results[0].GetRead()
+		if size == 1024 && len(read.GetDocument().Data) != size || size > 1024 && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+			t.Fatal("read size boundary was not enforced", size, read)
+		}
+		if results[1].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutation().Failure != nil {
+			t.Fatal("acknowledged write was affected by a read limit", results[1])
+		}
+	}
+}

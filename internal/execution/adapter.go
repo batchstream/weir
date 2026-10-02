@@ -28,6 +28,9 @@ const (
 	Neutral Feedback = iota
 	Healthy
 	Congested
+	// Completed permits a slow capacity probe after a complete Native transport
+	// exchange. Its opaque body makes no assertion about business or write effects.
+	Completed
 )
 
 // Emit borrows an event until it returns. Callers must not mutate its contents.

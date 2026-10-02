@@ -61,10 +61,12 @@ type Service struct {
 }
 
 type Local struct {
-	MongoDB            *Mongo  `json:"mongodb" yaml:"mongodb"`
-	Search             *Search `json:"search" yaml:"search"`
-	MaxConcurrency     int     `json:"max_concurrency" yaml:"max_concurrency"`
-	MaxBatchOperations int     `json:"max_batch_operations" yaml:"max_batch_operations"`
+	MongoDB            *Mongo    `json:"mongodb" yaml:"mongodb"`
+	Search             *Search   `json:"search" yaml:"search"`
+	MaxConcurrency     int       `json:"max_concurrency" yaml:"max_concurrency"`
+	MaxBatchOperations int       `json:"max_batch_operations" yaml:"max_batch_operations"`
+	BatchCollect       *Duration `json:"batch_collect,omitempty" yaml:"batch_collect,omitempty"`
+	MaxReadSize        *ByteSize `json:"max_read_size,omitempty" yaml:"max_read_size,omitempty"`
 }
 
 type Mongo struct {
@@ -243,6 +245,9 @@ func (cfg RoutingConfig) Validate() error {
 		}
 
 		if l := service.Local; l != nil {
+			if l.MaxReadSize != nil && (*l.MaxReadSize < 1<<10 || *l.MaxReadSize > protocol.MaxDocument) {
+				return errors.New("max_read_size must be between 1KiB and 2MiB")
+			}
 			limits := l.runtimeLimits()
 			if err := limits.Validate(); err != nil {
 				return err
@@ -316,6 +321,9 @@ func (l *Local) runtimeLimits() store.Limits {
 	if l.MaxBatchOperations != 0 {
 		limits.BatchOperations = l.MaxBatchOperations
 	}
+	if l.BatchCollect != nil {
+		limits.Collect = time.Duration(*l.BatchCollect)
+	}
 
 	return limits
 }
@@ -330,10 +338,14 @@ func (l *Local) searchConfig(name string) search.Config {
 		}
 	}
 	cfg := search.Config{
-		Store:      name,
-		URL:        l.Search.URL,
-		Pool:       l.runtimeLimits().Concurrency,
-		Connection: connection,
+		Store:       name,
+		URL:         l.Search.URL,
+		Pool:        l.runtimeLimits().Concurrency,
+		Connection:  connection,
+		MaxReadSize: protocol.MaxDocument,
+	}
+	if l.MaxReadSize != nil {
+		cfg.MaxReadSize = int(*l.MaxReadSize)
 	}
 	return cfg
 }
@@ -341,11 +353,15 @@ func (l *Local) searchConfig(name string) search.Config {
 func (l *Local) mongoConfig(name string) mongodb.Config {
 	m := l.MongoDB
 	cfg := mongodb.Config{
-		URI:      m.URI,
-		Username: m.Username,
-		Password: m.Password,
-		Store:    name,
-		Pool:     uint64(l.runtimeLimits().Concurrency),
+		URI:         m.URI,
+		Username:    m.Username,
+		Password:    m.Password,
+		Store:       name,
+		Pool:        uint64(l.runtimeLimits().Concurrency),
+		MaxReadSize: protocol.MaxDocument,
+	}
+	if l.MaxReadSize != nil {
+		cfg.MaxReadSize = int(*l.MaxReadSize)
 	}
 	return cfg
 }

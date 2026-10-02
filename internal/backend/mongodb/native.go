@@ -139,16 +139,20 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, excha
 	nodes := 65536
 	fields, framingErr := scanFields(reply)
 	envelopeOK := false
+	commandOK := false
 	switch fields["ok"].Type {
 	case bson.TypeDouble:
 		n := fields["ok"].Double()
 		envelopeOK = n == 0 || n == 1
+		commandOK = n == 1
 	case bson.TypeInt32:
 		n := fields["ok"].Int32()
 		envelopeOK = n == 0 || n == 1
+		commandOK = n == 1
 	case bson.TypeInt64:
 		n := fields["ok"].Int64()
 		envelopeOK = n == 0 || n == 1
+		commandOK = n == 1
 	}
 	if len(reply) > NativeResponseLimit || framingErr != nil || !envelopeOK || !validScanBSON(reply, 0, &nodes) {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "invalid or excessive Native BSON reply")), execution.Neutral
@@ -170,6 +174,10 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, excha
 	var commandFailure mongo.CommandError
 	if errors.As(err, &commandFailure) && signal == execution.Congested {
 		resultFeedback = execution.Congested
+	} else if err == nil && commandOK && ctx.Err() == nil {
+		// A complete command envelope permits a low-rate capacity probe. It
+		// does not interpret Native write effects or assert a mutation outcome.
+		resultFeedback = execution.Completed
 	}
 	return end, resultFeedback
 }

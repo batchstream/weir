@@ -56,3 +56,46 @@ func TestDeploymentConfiguration(t *testing.T) {
 		t.Fatal("deployment must load the mounted YAML configuration")
 	}
 }
+
+func TestOptionalHPARetainsExplicitReplicaAndRateBounds(t *testing.T) {
+	raw, err := os.ReadFile("hpa.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		APIVersion string `json:"apiVersion"`
+		Kind       string
+		Spec       struct {
+			MinReplicas    int
+			MaxReplicas    int
+			ScaleTargetRef struct {
+				Kind string
+				Name string
+			}
+			Behavior map[string]struct {
+				StabilizationWindowSeconds int
+				Policies                   []struct {
+					Type          string
+					Value         int
+					PeriodSeconds int
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.APIVersion != "autoscaling/v2" || manifest.Kind != "HorizontalPodAutoscaler" || manifest.Spec.MinReplicas != 1 || manifest.Spec.MaxReplicas != 4 || manifest.Spec.ScaleTargetRef.Kind != "Deployment" || manifest.Spec.ScaleTargetRef.Name != "weir" {
+		t.Fatal("unbounded or unrelated HPA target")
+	}
+	for _, direction := range []string{"scaleUp", "scaleDown"} {
+		behavior, found := manifest.Spec.Behavior[direction]
+		if !found || behavior.StabilizationWindowSeconds < 60 || len(behavior.Policies) != 1 {
+			t.Fatal("HPA requires bounded scale changes", direction)
+		}
+		policy := behavior.Policies[0]
+		if policy.Type != "Pods" || policy.Value != 1 || policy.PeriodSeconds < 60 {
+			t.Fatal("HPA scale rate exceeds one Pod per minute", direction)
+		}
+	}
+}
