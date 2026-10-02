@@ -12,7 +12,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
@@ -74,7 +74,7 @@ func TestDirectoryWithdrawalDoesNotDelayAdmittedWriteDrain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	go func() {
-		response, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+		response, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 		result <- response
 		callErrors <- err
 	}()

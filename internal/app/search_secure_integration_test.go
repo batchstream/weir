@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"strings"
 	"testing"
@@ -76,13 +76,13 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer conn.Close()
-			client := pb.NewWeirClient(conn)
+			client := pb.NewStoreServiceClient(conn)
 			searchClientOperations(t, client, fixture, name)
 		})
 	}
 }
 
-func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsearch.SecureFixture, name string) {
+func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture *testsearch.SecureFixture, name string) {
 	t.Helper()
 	b := fixture.Backend
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -91,13 +91,13 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9007199254740993,"keep":"opaque"}`)}
 	put := &pb.MutateRequest_Put{Put: doc}
 	mutation := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-	routedResult98, err := routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	routedResult98, err := weirclient.Record(ctx, client, testutil.RecordCall(mutation))
 	result := routedResult98.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("Put", result, err)
 	}
 	read := &pb.ReadRequest{Resource: mutation.Resource}
-	routedResult103, err := routeclient.Record(ctx, client, testutil.RecordCall(read))
+	routedResult103, err := weirclient.Record(ctx, client, testutil.RecordCall(read))
 	found := routedResult103.GetRead()
 	if err != nil || !bytes.Equal(found.GetDocument().GetData(), doc.Data) {
 		failure := found.GetFailure()
@@ -114,7 +114,7 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	create := &pb.MutateRequest_Create{Create: doc}
 	mutation.Action = create
 	var routedResult118 *pb.Result
-	routedResult118, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	routedResult118, err = weirclient.Record(ctx, client, testutil.RecordCall(mutation))
 	result = routedResult118.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("duplicate create", result, err)
@@ -123,20 +123,20 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	remove := &pb.MutateRequest_Delete{Delete: empty}
 	mutation.Action = remove
 	var routedResult125 *pb.Result
-	routedResult125, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	routedResult125, err = weirclient.Record(ctx, client, testutil.RecordCall(mutation))
 	result = routedResult125.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("delete", result, err)
 	}
 	var routedResult129 *pb.Result
-	routedResult129, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+	routedResult129, err = weirclient.Record(ctx, client, testutil.RecordCall(read))
 	found = routedResult129.GetRead()
 	if err != nil || found.GetMissing() == nil {
 		t.Fatal("missing", found, err)
 	}
 	mutation.Action = create
 	var routedResult134 *pb.Result
-	routedResult134, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	routedResult134, err = weirclient.Record(ctx, client, testutil.RecordCall(mutation))
 	result = routedResult134.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("create", result, err)
@@ -144,7 +144,7 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	replace := &pb.MutateRequest_Replace{Replace: doc}
 	mutation.Action = replace
 	var routedResult140 *pb.Result
-	routedResult140, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	routedResult140, err = weirclient.Record(ctx, client, testutil.RecordCall(mutation))
 	result = routedResult140.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replace", result, err)
@@ -155,7 +155,7 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation.Action = action
 	var routedResult149 *pb.Result
-	routedResult149, err = routeclient.Record(ctx, client, testutil.RecordCall(mutation))
+	routedResult149, err = weirclient.Record(ctx, client, testutil.RecordCall(mutation))
 	result = routedResult149.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("expression", result, err)
@@ -180,7 +180,7 @@ func searchClientOperations(t *testing.T, client pb.WeirClient, fixture *testsea
 		t.Fatal("Bulk EOF", err)
 	}
 	var routedResult184 *pb.Result
-	routedResult184, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+	routedResult184, err = weirclient.Record(ctx, client, testutil.RecordCall(read))
 	found = routedResult184.GetRead()
 	if err != nil || !strings.Contains(string(found.GetDocument().GetData()), "9007199254740995") {
 		t.Fatal("expression int64", err)

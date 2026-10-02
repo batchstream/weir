@@ -9,14 +9,14 @@ import (
 	"fmt"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"time"
 )
 
 // Each logical operation is sent once. An absent transport result stays UNKNOWN;
 // direct GET is evidence only for these isolated, uniquely named fixture records.
-func load(ctx context.Context, client pb.WeirClient, prefix string) error {
+func load(ctx context.Context, client pb.StoreServiceClient, prefix string) error {
 	for i := 0; i < 60; i++ {
 		id := fmt.Sprintf("%s-%03d", prefix, i)
 		if err := mutation(ctx, client, id); err != nil {
@@ -31,11 +31,11 @@ func load(ctx context.Context, client pb.WeirClient, prefix string) error {
 	return nil
 }
 
-func mutation(ctx context.Context, client pb.WeirClient, id string) error {
+func mutation(ctx context.Context, client pb.StoreServiceClient, id string) error {
 	call, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	request := put(id)
-	result, err := routeclient.Record(call, client, testutil.RecordCall(request))
+	result, err := weirclient.Record(call, client, testutil.RecordCall(request))
 	reply := result.GetMutation()
 	outcome := "UNKNOWN"
 	if err == nil {
@@ -73,9 +73,9 @@ func verifyEffect(ctx context.Context, id, outcome string) error {
 	return nil
 }
 
-func hold(ctx context.Context, client pb.WeirClient, prefix string) error {
+func hold(ctx context.Context, client pb.StoreServiceClient, prefix string) error {
 	next := 0
-	opts := routeclient.Options{Destination: "records"}
+	opts := weirclient.Options{StoreName: "records"}
 	opts.Produce = func(ctx context.Context) (*pb.Call, error) {
 		if next == 40 {
 			return nil, io.EOF
@@ -104,7 +104,7 @@ func hold(ctx context.Context, client pb.WeirClient, prefix string) error {
 		fmt.Printf("HOLD id=%d APPLIED\n", id)
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := weirclient.Execute(ctx, client, opts); err != nil {
 		return err
 	}
 	fmt.Println("HOLD all 40 request ends and final OK")

@@ -44,12 +44,12 @@ type interruptedSendStream struct {
 }
 
 func (s *interruptedSendStream) Context() context.Context { return s.ctx }
-func (s *interruptedSendStream) Send(*pb.Response) error {
+func (s *interruptedSendStream) Send(*pb.ExecuteResponse) error {
 	close(s.started)
 	<-s.interrupted
 	return context.DeadlineExceeded
 }
-func (s *interruptedSendStream) Recv() (*pb.Request, error) { return nil, nil }
+func (s *interruptedSendStream) Recv() (*pb.ExecuteRequest, error) { return nil, nil }
 
 func TestCanceledSendInterruptsOnlyItsHTTP2Stream(t *testing.T) {
 	server := &Server{metrics: newTransportMetrics()}
@@ -71,9 +71,9 @@ func TestCanceledSendInterruptsOnlyItsHTTP2Stream(t *testing.T) {
 	ctx, cancel := context.WithCancel(streamContext)
 	defer cancel()
 	stream := &interruptedSendStream{ctx: streamContext, started: make(chan struct{}), interrupted: writer.interrupted}
-	response := &pb.Response{Id: 1, End: true}
+	response := &pb.ExecuteResponse{RequestId: 1, RequestComplete: true}
 	done := make(chan error, 1)
-	go func() { done <- server.sendRoute(ctx, stream, response) }()
+	go func() { done <- server.sendExecutionResponse(ctx, stream, response) }()
 	<-stream.started
 	cancel()
 	select {
@@ -104,9 +104,9 @@ func TestStalledSendStillClosesAnUnresponsivePeer(t *testing.T) {
 	writer := &interruptedResponseWriter{interrupted: make(chan struct{})}
 	defer writer.once.Do(func() { close(writer.interrupted) })
 	stream := &interruptedSendStream{ctx: ctx, started: make(chan struct{}), interrupted: writer.interrupted}
-	response := &pb.Response{Id: 1, End: true}
+	response := &pb.ExecuteResponse{RequestId: 1, RequestComplete: true}
 	done := make(chan error, 1)
-	go func() { done <- server.sendRoute(ctx, stream, response) }()
+	go func() { done <- server.sendExecutionResponse(ctx, stream, response) }()
 	<-stream.started
 	if err := sibling.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)

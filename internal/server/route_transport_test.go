@@ -12,7 +12,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -65,7 +65,7 @@ func TestRouteSlowConsumerBackpressureAndShutdown(t *testing.T) {
 	_, client := peerClient(t, address)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stream, err := client.Route(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestRouteSlowConsumerBackpressureAndShutdown(t *testing.T) {
 	go func() {
 		defer close(done)
 		for id := uint64(1); ; id++ {
-			request := &pb.Request{Id: id, Destination: "records", Payload: payload}
+			request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CallPayload: payload}
 			if stream.Send(request) != nil {
 				return
 			}
@@ -186,7 +186,7 @@ func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) 
 	var produced int
 	results := make(map[uint64]*pb.MutationResult)
 	completed := make(map[uint64]bool)
-	opts := routeclient.Options{Destination: "records"}
+	opts := weirclient.Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		if produced == 2 {
 			return nil, io.EOF
@@ -211,7 +211,7 @@ func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) 
 		return nil
 	}
 	opts.Complete = func(_ context.Context, id uint64) error { completed[id] = true; return nil }
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := weirclient.Execute(ctx, client, opts); err != nil {
 		t.Fatal("valid acknowledgement truncated Route", err)
 	}
 	first := results[1]

@@ -1,4 +1,4 @@
-// Package execution defines the single adapter boundary used by Route.
+// Package execution defines the single adapter boundary used by Execute.
 package execution
 
 import (

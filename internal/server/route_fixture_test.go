@@ -188,7 +188,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 	})
 	return srv, listener.Addr().String()
 }
-func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.WeirClient) {
+func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
 	t.Helper()
 	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxResponse), grpc.MaxCallSendMsgSize(protocol.MaxFrame))}
 	conn, err := grpc.NewClient("passthrough:///"+address, options...)
@@ -196,7 +196,7 @@ func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.WeirClient) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return conn, pb.NewWeirClient(conn)
+	return conn, pb.NewStoreServiceClient(conn)
 }
 func testRequest() *pb.ReadRequest {
 	request := &pb.ReadRequest{Resource: "data/s:key"}
@@ -218,16 +218,16 @@ func waitPeerIdle(t *testing.T, s *Server) {
 		time.Sleep(time.Millisecond)
 	}
 }
-func routeRecord(client pb.WeirClient, ctx context.Context, call *pb.Call) (*pb.Result, error) {
+func routeRecord(client pb.StoreServiceClient, ctx context.Context, call *pb.Call) (*pb.Result, error) {
 	data, err := proto.Marshal(call)
 	if err != nil {
 		return nil, err
 	}
-	stream, err := client.Route(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-	request := &pb.Request{Id: 1, Destination: "records", Payload: data}
+	request := &pb.ExecuteRequest{RequestId: 1, StoreName: "records", CallPayload: data}
 	if err := stream.Send(request); err != nil {
 		return nil, err
 	}
@@ -247,16 +247,16 @@ func routeRecord(client pb.WeirClient, ctx context.Context, call *pb.Call) (*pb.
 			}
 			break
 		}
-		if err := protocol.ValidateResponse(response); err != nil {
+		if err := protocol.ValidateExecuteResponse(response); err != nil {
 			return nil, err
 		}
-		if response.Id != 1 || ended {
+		if response.RequestId != 1 || ended {
 			return nil, io.ErrUnexpectedEOF
 		}
-		if response.End {
+		if response.RequestComplete {
 			ended = true
 		} else {
-			_, _ = encoded.Write(response.Payload)
+			_, _ = encoded.Write(response.EventFragment)
 		}
 	}
 	event := &pb.Event{}
@@ -268,7 +268,7 @@ func routeRecord(client pb.WeirClient, ctx context.Context, call *pb.Call) (*pb.
 	}
 	return event.GetResult(), nil
 }
-func routeRead(client pb.WeirClient, ctx context.Context, request *pb.ReadRequest) (*pb.ReadResult, error) {
+func routeRead(client pb.StoreServiceClient, ctx context.Context, request *pb.ReadRequest) (*pb.ReadResult, error) {
 	value := &pb.Call_Read{Read: request}
 	call := &pb.Call{Version: 1, Operation: value}
 	result, err := routeRecord(client, ctx, call)
@@ -277,7 +277,7 @@ func routeRead(client pb.WeirClient, ctx context.Context, request *pb.ReadReques
 	}
 	return result.GetRead(), nil
 }
-func routeMutate(client pb.WeirClient, ctx context.Context, request *pb.MutateRequest) (*pb.MutationResult, error) {
+func routeMutate(client pb.StoreServiceClient, ctx context.Context, request *pb.MutateRequest) (*pb.MutationResult, error) {
 	value := &pb.Call_Mutate{Mutate: request}
 	call := &pb.Call{Version: 1, Operation: value}
 	result, err := routeRecord(client, ctx, call)

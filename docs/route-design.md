@@ -1,12 +1,12 @@
-# Direct Route redesign and acceptance
+# Direct Execute redesign and acceptance
 
-Clients initialize through any Weir application's Resolve, then connect directly
+Clients initialize through any Weir application's ResolveStore, then connect directly
 to the returned Store group's business addresses. Equal peers synchronize owner
-advertisements through periodic Directory.Exchange. The directory and its cache
+advertisements through periodic PeerDiscoveryService.SyncDirectory. The directory and its cache
 are bounded and leased; URI affinity is deferred. Remote Store configuration,
 business forwarding and hop budgets are removed. See [discovery design](discovery-design.md).
 
-One finite bidirectional Route RPC carries strictly increasing positive IDs to one
+One finite bidirectional Execute RPC carries strictly increasing positive IDs to one
 local Store. The first valid envelope fixes the Store runtime, and the client
 transport pins that RPC to one instance. Input half-close stops new requests while
 remaining responses drain. Directory or DNS changes affect subsequent RPCs.

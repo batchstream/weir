@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"net"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -112,9 +113,9 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		client := pb.NewWeirClient(connection)
+		client := pb.NewStoreServiceClient(connection)
 		requestContext := ctx
-		routedResult139, readErr := routeclient.Record(requestContext, client, testutil.RecordCall(request))
+		routedResult139, readErr := weirclient.Record(requestContext, client, testutil.RecordCall(request))
 		result := routedResult139.GetRead()
 		closeErr := connection.Close()
 		want := codes.Unavailable
@@ -176,22 +177,22 @@ func TestDiscoveryOnlyWildcardApplicationLearnsTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer peerConnection.Close()
-			advertisement := &pb.NodeAdvertisement{
-				NodeId: strings.Repeat("1", 32), Sequence: 1,
-				Group: "owners", Stores: []string{"records"}, Targets: []string{"business.example:7447"},
-				RemainingLeaseMs: 10000,
+			advertisement := &peerpb.NodeAnnouncement{
+				IncarnationId: strings.Repeat("1", 32), Revision: 1,
+				ReplicaGroup: "owners", StoreNames: []string{"records"}, StoreEndpoints: []string{"business.example:7447"},
+				LeaseRemainingMs: 10000,
 			}
-			exchangeRequest := &pb.ExchangeRequest{Nodes: []*pb.NodeAdvertisement{advertisement}}
-			peer := pb.NewDirectoryClient(peerConnection)
-			exchanged, err := peer.Exchange(ctx, exchangeRequest)
+			exchangeRequest := &peerpb.SyncDirectoryRequest{Announcements: []*peerpb.NodeAnnouncement{advertisement}}
+			peer := peerpb.NewPeerDiscoveryServiceClient(peerConnection)
+			exchanged, err := peer.SyncDirectory(ctx, exchangeRequest)
 			if err != nil {
 				t.Fatal("discovery-only node rejected learned Store", err)
 			}
 			localAdvertisement := false
-			for _, entry := range exchanged.Nodes {
-				if entry.Group == "discovery-only" {
+			for _, entry := range exchanged.Announcements {
+				if entry.ReplicaGroup == "discovery-only" {
 					localAdvertisement = true
-					if len(entry.Stores) != 0 || len(entry.Targets) != 0 {
+					if len(entry.StoreNames) != 0 || len(entry.StoreEndpoints) != 0 {
 						t.Fatal("discovery-only node advertised business targets", entry)
 					}
 				}
@@ -209,10 +210,10 @@ func TestDiscoveryOnlyWildcardApplicationLearnsTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer connection.Close()
-			client := pb.NewWeirClient(connection)
-			resolveRequest := &pb.ResolveRequest{Store: "records"}
-			resolved, err := client.Resolve(ctx, resolveRequest)
-			if err != nil || resolved.Group != "owners" || len(resolved.Targets) != 1 || resolved.Targets[0] != "business.example:7447" {
+			client := pb.NewStoreServiceClient(connection)
+			resolveRequest := &pb.ResolveStoreRequest{StoreName: "records"}
+			resolved, err := client.ResolveStore(ctx, resolveRequest)
+			if err != nil || len(resolved.Endpoints) != 1 || resolved.Endpoints[0] != "business.example:7447" {
 				t.Fatal("wildcard initialization ingress did not Resolve learned targets", resolved, err)
 			}
 			if err := node.Close(ctx); err != nil {

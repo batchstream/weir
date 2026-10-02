@@ -249,7 +249,7 @@ func (cfg Config) validateDiscovery() error {
 	if discovery.PeerAddressEnv != "" {
 		return errors.New("unresolved peer address environment source")
 	}
-	if discovery.Group != "" && !directory.ValidGroup(discovery.Group) {
+	if discovery.Group != "" && !directory.ValidReplicaGroup(discovery.Group) {
 		return errors.New("invalid discovery group")
 	}
 	if len(discovery.Advertise) > 16 || len(discovery.Seeds) > 16 {
@@ -257,13 +257,13 @@ func (cfg Config) validateDiscovery() error {
 	}
 	for _, addresses := range [][]string{discovery.Advertise, discovery.Seeds} {
 		if len(addresses) != 0 {
-			if _, err := directory.CanonicalTargets(addresses); err != nil {
+			if _, err := protocol.CanonicalEndpoints(addresses); err != nil {
 				return errors.New("invalid discovery addresses")
 			}
 		}
 	}
 	if discovery.PeerAddress != "" {
-		if _, err := directory.CanonicalAddress(discovery.PeerAddress); err != nil {
+		if _, err := protocol.CanonicalEndpoint(discovery.PeerAddress); err != nil {
 			return errors.New("invalid advertised peer address")
 		}
 		if cfg.Basic.Listeners.Peer == "" {

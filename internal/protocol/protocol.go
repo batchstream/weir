@@ -262,14 +262,14 @@ func NativeFailure(started bool, failure *pb.Failure) *pb.NativeEnd {
 	return end
 }
 
-// ValidateRequest checks only the routing envelope. Payload interpretation is
-// restricted to the final node selected by destination configuration.
-func ValidateRequest(req *pb.Request, destination string, lastID uint64) error {
-	if req == nil || req.Id == 0 || req.Id <= lastID || proto.Size(req) > MaxFrame || len(req.Payload) == 0 || len(req.Payload) > MaxPayload {
+// ValidateExecuteRequest checks the execution envelope. One RPC stays bound to
+// the Store selected by its first request; Call decoding happens at that Store.
+func ValidateExecuteRequest(req *pb.ExecuteRequest, storeName string, lastID uint64) error {
+	if req == nil || req.RequestId == 0 || req.RequestId <= lastID || proto.Size(req) > MaxFrame || len(req.CallPayload) == 0 || len(req.CallPayload) > MaxPayload {
 		return fmt.Errorf("invalid request ID or payload bounds")
 	}
-	if !storePattern.MatchString(req.Destination) || len(req.Destination) > 63 || destination != "" && req.Destination != destination {
-		return fmt.Errorf("invalid or inconsistent destination")
+	if !ValidStoreName(req.StoreName) || storeName != "" && req.StoreName != storeName {
+		return fmt.Errorf("invalid or inconsistent Store name")
 	}
 	if len(req.ProtoReflect().GetUnknown()) != 0 {
 		return fmt.Errorf("unknown request fields")
@@ -277,15 +277,15 @@ func ValidateRequest(req *pb.Request, destination string, lastID uint64) error {
 	return nil
 }
 
-func ValidateResponse(response *pb.Response) error {
-	if response == nil || response.Id == 0 || proto.Size(response) > MaxResponse || len(response.ProtoReflect().GetUnknown()) != 0 {
+func ValidateExecuteResponse(response *pb.ExecuteResponse) error {
+	if response == nil || response.RequestId == 0 || proto.Size(response) > MaxResponse || len(response.ProtoReflect().GetUnknown()) != 0 {
 		return fmt.Errorf("invalid response envelope")
 	}
-	if response.End {
-		if len(response.Payload) != 0 {
-			return fmt.Errorf("terminal response must have empty payload")
+	if response.RequestComplete {
+		if len(response.EventFragment) != 0 {
+			return fmt.Errorf("completed request must have empty event fragment")
 		}
-	} else if len(response.Payload) == 0 || len(response.Payload) > NativeChunk {
+	} else if len(response.EventFragment) == 0 || len(response.EventFragment) > NativeChunk {
 		return fmt.Errorf("invalid response fragment")
 	}
 	return nil

@@ -1,17 +1,19 @@
 # Store discovery and direct business traffic
 
 This breaking refactor separates Store discovery from business execution. The
-public application service exposes Resolve and finite Route. A private peer
-Directory service exchanges owner advertisements. All run in the single Weir
+public StoreService exposes ResolveStore and finite Execute. The private
+PeerDiscoveryService exchanges owner announcements with SyncDirectory. All run in the single Weir
 process. URI affinity and automatic business retries are intentionally absent.
+
+The public and peer schemas are independent; see [protocol boundaries and names](protocols.md).
 
 ## Topology
 
 Clients can initialize through any Weir application address. A normal load-balanced
 seed service can select any group: every peer eventually learns the same Store
-ownership directory. Resolve returns the provider group's reachable host:port
+ownership directory. ResolveStore returns the provider group's reachable host:port
 business targets, rather than a forwarding next hop. The client connects directly
-to those targets. Route only accepts a locally configured Store; there is no
+to those targets. Execute only accepts a locally configured Store; there is no
 remote execution destination or fallback forwarding path.
 
 The protocol uses Store names, replica group identities, instance advertisements
@@ -25,13 +27,13 @@ address so bootstrap can return concrete peers for later synchronization.
 ## Ownership advertisements
 
 Every process gets a fresh random node ID and monotonically increasing heartbeat
-sequence. An advertisement contains its peer address, group, complete local Store
-names, business targets, sequence, remaining lease and withdrawal state. Backend
+sequence. An advertisement contains its peer address, replica group, complete local Store
+names, business endpoints, revision, remaining lease and withdrawal state. Backend
 URIs, authentication and backend configuration are never synchronized.
 
 Same-group live advertisements contribute the group's Store targets. Identical
 shared DNS targets deduplicate; individual addresses union across replicas. If a
-Store is advertised by different groups, Resolve returns an explicit ownership
+Store is advertised by different groups, ResolveStore returns an explicit ownership
 conflict. Synchronization does not resolve conflicting ownership by arrival order.
 
 An owner periodically advances its sequence and renews its own lease. Relays send
@@ -56,7 +58,7 @@ peer control contains business payloads. Shutdown cancels synchronization, joins
 owned workers and makes a bounded best-effort withdrawal.
 
 This is eventual consistency. A new or isolated node can temporarily lack a
-mapping. Resolve returns a transient discovery error for an unavailable mapping,
+mapping. ResolveStore returns a transient discovery error for an unavailable mapping,
 not a claim that a globally unknown Store permanently does not exist. Startup
 and client initialization have caller-visible bounded deadlines.
 
@@ -69,10 +71,10 @@ resolved, before opening business channels. Business methods reject uninitialize
 Stores.
 
 The client periodically refreshes directory mappings and actively resolves DNS.
-Refresh borrows a ready business connection for Resolve: every application node
+Refresh borrows a ready business connection for ResolveStore: every application node
 is a directory entry point. Transient failures can use one temporary seed
 connection shared by the round. Borrowed connections are never closed by refresh.
-Four workers can resolve DNS while at most two Resolve calls run concurrently.
+Four workers can resolve DNS while at most two ResolveStore calls run concurrently.
 Bounded rounds try least-recently-attempted Stores first; failures also advance
 that order, and a canceled request waiting for control admission does not. This
 prevents slow or unavailable Stores from permanently starving other mappings.
@@ -82,13 +84,13 @@ last-good mapping. Ownership conflicts invalidate the cached mapping. Returned
 targets and DNS answer sets are validated and bounded before installation.
 
 DNS updates add/remove physical channels without migrating or replaying an active
-Route. A drained/failed active connection leaves incomplete writes indeterminate.
+Execute. A drained/failed active connection leaves incomplete writes indeterminate.
 The same rules cover finite native exchanges and scan pages. Explicit client Close
 cancels background work, closes owned channels and joins refresh/DNS work.
 
 ## Acceptance
 
-Default offline tests must cover arbitrary seed Resolve, direct-only Route,
+Default offline tests must cover arbitrary seed ResolveStore, direct-only Execute,
 periodic peer convergence, same-group replicas, ownership conflicts, origin lease
 expiry without resurrection, withdrawal, malformed atomic exchange rejection,
 seed self-selection, bounded state and lifecycle cleanup. Client tests must prove

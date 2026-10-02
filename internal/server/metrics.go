@@ -6,22 +6,23 @@ import (
 	"io"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-var metricMethods = []string{"Route", "Resolve", "Exchange", "other"}
+var metricMethods = []string{"execute", "resolve_store", "sync_directory", "other"}
 var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
 
 func methodLabel(method string) string {
 	switch method {
-	case pb.Weir_Route_FullMethodName:
-		return "Route"
-	case pb.Weir_Resolve_FullMethodName:
-		return "Resolve"
-	case pb.Directory_Exchange_FullMethodName:
-		return "Exchange"
+	case pb.StoreService_Execute_FullMethodName:
+		return "execute"
+	case pb.StoreService_ResolveStore_FullMethodName:
+		return "resolve_store"
+	case peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName:
+		return "sync_directory"
 	default:
 		return "other"
 	}
@@ -55,7 +56,7 @@ func newTransportMetrics() transportMetrics {
 	}
 	watchOpts := prometheus.CounterOpts{
 		Name: "weir_watchdog_expirations_total",
-		Help: "Explicit Route watchdog expiry; input_or_result does not attribute blame to the client or backend.",
+		Help: "Explicit Execute watchdog expiry; input_or_result does not attribute blame to the client or backend.",
 	}
 	forcedOpts := prometheus.CounterOpts{
 		Name: "weir_transport_forced_closes_total",

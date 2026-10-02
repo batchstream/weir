@@ -29,26 +29,26 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/protobuf/proto"
 )
 
-func routeBackendServer(t *testing.T, adapter execution.Adapter) ([]*routeAcceptanceNode, pb.WeirClient) {
+func routeBackendServer(t *testing.T, adapter execution.Adapter) ([]*routeAcceptanceNode, pb.StoreServiceClient) {
 	t.Helper()
 	opts := routeAcceptanceNodeOptions{adapter: adapter}
 	executor := startRouteAcceptanceNode(t, opts)
 	return []*routeAcceptanceNode{executor}, routeAcceptanceClient(t, executor.address)
 }
 
-func routeBackendEvents(t *testing.T, client pb.WeirClient, call *pb.Call) []*pb.Event {
+func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, call *pb.Call) []*pb.Event {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	produced := false
 	var events []*pb.Event
 	bytes := 0
-	opts := routeclient.Options{Destination: "records"}
+	opts := weirclient.Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		if produced {
 			return nil, io.EOF
@@ -64,7 +64,7 @@ func routeBackendEvents(t *testing.T, client pb.WeirClient, call *pb.Call) []*pb
 		events = append(events, proto.Clone(event).(*pb.Event))
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := weirclient.Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	return events
@@ -115,7 +115,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, bson.Raw(raw)); err != nil {
 		t.Fatal(err)
 	}
-	stream, err := client.Route(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	value := &pb.Call_Mutate{Mutate: mutation}
 	call := &pb.Call{Version: 1, Operation: value}
 	produced, applied := 0, 0
-	opts := routeclient.Options{Destination: "records"}
+	opts := weirclient.Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		if produced == 12 {
 			return nil, io.EOF
@@ -173,7 +173,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 		applied++
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := weirclient.Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	var observed struct{ N int32 }
@@ -210,7 +210,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 		results[id] = event.GetResult().GetMutation()
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := weirclient.Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	if results[1].GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[1].GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[2].GetOutcome() != pb.MutationOutcome_APPLIED {
@@ -436,7 +436,7 @@ func TestRouteMongoPerformance(t *testing.T) {
 			produced := 0
 			var timesMu sync.Mutex
 			times := make(map[uint64]time.Time)
-			opts := routeclient.Options{Destination: "records"}
+			opts := weirclient.Options{StoreName: "records"}
 			opts.Produce = func(context.Context) (*pb.Call, error) {
 				if produced == recordsPerRPC {
 					return nil, io.EOF
@@ -462,7 +462,7 @@ func TestRouteMongoPerformance(t *testing.T) {
 				latenciesMu.Unlock()
 				return nil
 			}
-			errors <- routeclient.Run(ctx, client, opts)
+			errors <- weirclient.Execute(ctx, client, opts)
 		})
 	}
 	done := make(chan struct{})

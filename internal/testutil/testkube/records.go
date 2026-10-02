@@ -7,13 +7,13 @@ import (
 	"fmt"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 )
 
-func smoke(ctx context.Context, client pb.WeirClient, id string) error {
+func smoke(ctx context.Context, client pb.StoreServiceClient, id string) error {
 	next := 0
-	opts := routeclient.Options{Destination: "records"}
+	opts := weirclient.Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		if next == 3 {
 			return nil, io.EOF
@@ -43,7 +43,7 @@ func smoke(ctx context.Context, client pb.WeirClient, id string) error {
 		fmt.Printf("operation request=%d complete=%v\n", requestID, result)
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := weirclient.Execute(ctx, client, opts); err != nil {
 		return err
 	}
 	if err := persisted(ctx, id); err != nil {

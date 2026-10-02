@@ -31,7 +31,7 @@ func NewAdmission(l Limits) (*Admission, error) {
 		Help: "Process ingress rejection branches; no client-controlled label values.",
 	}
 	a.rejections = prometheus.NewCounterVec(opts, []string{"reason"})
-	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "route", "operation", "hop"} {
+	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "execute", "operation", "hop"} {
 		a.rejections.WithLabelValues(reason)
 	}
 	return a, nil

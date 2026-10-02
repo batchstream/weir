@@ -1,11 +1,11 @@
 # Weir
 
 Weir discovers logical Stores and executes finite database batches. Clients initialize
-through any Weir node with `Resolve`, then connect directly to the returned business
+through any Weir node with `ResolveStore`, then connect directly to the returned business
 targets. Nodes synchronize their Store directory through bounded periodic peer
-exchanges. Business `Route` streams execute only local Stores.
+exchanges. Business `Execute` streams execute only local Stores.
 
-Each finite bidirectional Route RPC selects one Store and one instance. Record
+Each finite bidirectional Execute RPC selects one Store and one instance. Record
 reads/mutations, scans, native exchanges and atomic Lua transforms share the
 bounded Store scheduler. Compatible operations batch across RPCs. Lua runs inside
 the single Weir process. Uncompleted writes remain indeterminate after transport
@@ -34,7 +34,7 @@ bin/weir serve --config config/weir.yaml --routes config/routes.yaml
 The basic process configuration and optional local Store document are separate.
 Both CLI paths resolve from the working directory. `--config` defaults to
 `./weir.yaml`; an omitted `--routes` assembles no backend. Nodes without local
-Stores can participate in discovery and answer Resolve for learned Stores.
+Stores can participate in discovery and answer ResolveStore for learned Stores.
 
 A process file:
 
@@ -106,34 +106,37 @@ metadata is not authentication. Lua programs must be trusted: a fresh restricted
 VM, execution/source/value/stack limits and bounded concurrency do not impose a
 hard allocation limit on arbitrary Lua objects.
 
+The [public and peer protocols](docs/protocols.md) are independent schemas and
+services. The public schema is suitable for future language-specific bindings.
+
 ## Client initialization and business calls
 
 The high-level client resolves every requested Store before exposing business
 methods. It reuses round-robin channels, refreshes directory mappings and DNS,
-and drains retired connections without moving an active Route to another instance.
+and drains retired connections without moving an active Execute to another instance.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
-the remaining Resolve TTL.
+the remaining ResolveStore TTL.
 
 ```go
-options := routeclient.OpenOptions{
+options := weirclient.OpenOptions{
     Seed: "127.0.0.1:7447",
     Stores: []string{"mongo"},
 }
-client, err := routeclient.Open(ctx, options)
+client, err := weirclient.Open(ctx, options)
 if err != nil {
     return err
 }
 defer client.Close()
-// client.Record, client.Run and client.ScanPage connect to the resolved Store.
+// client.Record, client.Execute and client.ScanPage connect to the resolved Store.
 ```
 
 The [basic](examples/basic/main.go), [native](examples/native/main.go) and
 [scan](examples/scan/main.go) examples initialize through a seed. Low-level
-`Dial` and finite `Run`/`Record`/`ScanPage` helpers remain available for callers
+`Dial` and finite `Execute`/`Record`/`ScanPage` helpers remain available for callers
 that already hold a direct generated gRPC client.
 
-A Route succeeds only after every request's business terminal and end frame,
+An Execute succeeds only after every request's business terminal and end frame,
 input half-close and final gRPC OK. A finite scan page returns a continuation
 checkpoint or exhaustion; commit its checkpoint only after complete delivery.
 A later page can use another instance. MongoDB scans paginate by ascending `_id`
@@ -148,7 +151,7 @@ A seed can be an individual node, ordinary DNS name or load-balanced service.
 
 In Kubernetes, each Store group can use its own Deployment, HPA and headless
 business Service. A normal ClusterIP Service S1 selecting all Weir groups exposes
-application Resolve and peer bootstrap ports. A client connects to S1, resolves
+application ResolveStore and peer bootstrap ports. A client connects to S1, resolves
 its Store to that group's headless DNS, then load-balances directly across the
 group's Ready Pods. S1 need not be headless. Scaling changes the DNS instance set;
 Store reassignment changes the directory mapping.

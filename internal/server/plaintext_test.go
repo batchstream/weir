@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/store"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -48,9 +49,9 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					}
 					var block, encoded bytes.Buffer
 					encoder := hpack.NewEncoder(&block)
-					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.Weir_Route_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
+					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
 					if peer {
-						fields[3].Value = pb.Directory_Exchange_FullMethodName
+						fields[3].Value = peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName
 					}
 					for _, field := range fields {
 						if err := encoder.WriteField(field); err != nil {

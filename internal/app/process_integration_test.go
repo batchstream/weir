@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"net/http"
 	"os/exec"
@@ -124,7 +124,7 @@ func watchProcess(t *testing.T, command *exec.Cmd, diagnostics bool) *process {
 }
 
 type processSmokeOptions struct {
-	client      pb.WeirClient
+	client      pb.StoreServiceClient
 	store, root string
 	search      *testsearch.Backend
 	initialized bool
@@ -174,13 +174,13 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	document := processDocument(t, opts.store, "example", 1)
 	put := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: resource, Action: put}
-	routedResult173, err := routeclient.Record(ctx, opts.client, testutil.RecordCall(mutation))
+	routedResult173, err := weirclient.Record(ctx, opts.client, testutil.RecordCall(mutation))
 	result := routedResult173.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
 		t.Fatal("direct mutation", result, err)
 	}
 	read := &pb.ReadRequest{Resource: resource}
-	routedResult178, err := routeclient.Record(ctx, opts.client, testutil.RecordCall(read))
+	routedResult178, err := weirclient.Record(ctx, opts.client, testutil.RecordCall(read))
 	found := routedResult178.GetRead()
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
 		t.Fatal("direct read", found, err)
@@ -414,9 +414,9 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		if kind == "search" {
 			root = "weir://search/" + search.Index
 		}
-		resolveRequest := &pb.ResolveRequest{Store: kind}
-		response, err := rawSeed.Resolve(ctx, resolveRequest)
-		if err != nil || len(response.Targets) != 1 || response.Targets[0] != owner.address {
+		resolveRequest := &pb.ResolveStoreRequest{StoreName: kind}
+		response, err := rawSeed.ResolveStore(ctx, resolveRequest)
+		if err != nil || len(response.Endpoints) != 1 || response.Endpoints[0] != owner.address {
 			t.Fatal("nonowner did not learn final business target", response, err)
 		}
 		doc := processDocument(t, kind, "initialized", 7)
@@ -431,7 +431,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		if err != nil || processRecordNumber(t, found.GetRead().GetDocument()) != 7 {
 			t.Fatal("initialized client persisted read", found, err)
 		}
-		_, err = routeclient.Record(ctx, rawSeed, testutil.RecordCall(read))
+		_, err = weirclient.Record(ctx, rawSeed, testutil.RecordCall(read))
 		if status.Code(err) != codes.Unavailable {
 			t.Fatal("nonowner business request was not rejected", err)
 		}
@@ -478,7 +478,7 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	_, err = conn.NewStream(ctx, desc, pb.Weir_Route_FullMethodName)
+	_, err = conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}

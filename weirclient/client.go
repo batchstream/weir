@@ -1,9 +1,9 @@
-// Package routeclient runs finite Route batches with bounded parallel sending
+// Package weirclient runs finite Execute batches with bounded parallel sending
 // and receiving. Callbacks must honor their context and release each Event before
 // returning. Consume exposes incremental Events; Complete observes the validated
-// request end. Run still requires final gRPC OK for whole-batch success. A
+// request end. Execute still requires final gRPC OK for whole-batch success. A
 // transport error cannot invalidate an acknowledged write or prove rollback.
-package routeclient
+package weirclient
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 )
 
 type Options struct {
-	Destination string
+	StoreName string
 	// Produce returns io.EOF after the finite batch. Only one Produce call runs at
 	// a time and at most eight calls are retained, regardless of total batch size.
 	Produce func(context.Context) (*pb.Call, error)
@@ -88,15 +88,15 @@ func (l *ledger) register(ctx context.Context, id uint64, entry *pending) error 
 	}
 }
 
-// Run opens exactly one Route RPC, half-closes after Produce finishes and drains
+// Execute opens exactly one Execute RPC, half-closes after Produce finishes and drains
 // all responses. It does not retry. Reuse the supplied gRPC connection across calls.
-func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
+func Execute(ctx context.Context, client pb.StoreServiceClient, opts Options) error {
 	if client == nil || opts.Produce == nil || opts.Consume == nil {
-		return errors.New("Route requires client, producer and consumer")
+		return errors.New("Execute requires client, producer and consumer")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := client.Route(ctx, grpc.MaxCallSendMsgSize(protocol.MaxFrame), grpc.MaxCallRecvMsgSize(protocol.MaxResponse), grpc.MaxRetryRPCBufferSize(0))
+	stream, err := client.Execute(ctx, grpc.MaxCallSendMsgSize(protocol.MaxFrame), grpc.MaxCallRecvMsgSize(protocol.MaxResponse), grpc.MaxRetryRPCBufferSize(0))
 	if err != nil {
 		return err
 	}
@@ -131,10 +131,10 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 			if !inputEnded {
 				cancel()
 				_ = join()
-				return errors.New("Route ended before input half-close; uncompleted writes are indeterminate")
+				return errors.New("Execute ended before input half-close; uncompleted writes are indeterminate")
 			}
 			if remaining != 0 {
-				return errors.New("Route ended with incomplete requests; uncompleted writes are indeterminate")
+				return errors.New("Execute ended with incomplete requests; uncompleted writes are indeterminate")
 			}
 			return join()
 		}
@@ -143,28 +143,28 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 			if sendErr := join(); sendErr != nil && !errors.Is(sendErr, context.Canceled) && !errors.Is(sendErr, io.EOF) {
 				return sendErr
 			}
-			return fmt.Errorf("Route interrupted; uncompleted writes are indeterminate: %w", err)
+			return fmt.Errorf("Execute interrupted; uncompleted writes are indeterminate: %w", err)
 		}
-		if err := protocol.ValidateResponse(frame); err != nil {
+		if err := protocol.ValidateExecuteResponse(frame); err != nil {
 			return err
 		}
 		l.Lock()
-		entry := l.entries[frame.Id]
+		entry := l.entries[frame.RequestId]
 		l.Unlock()
 		if entry == nil {
-			return errors.New("Route response has unknown or completed ID")
+			return errors.New("Execute response has unknown or completed ID")
 		}
-		if frame.End {
+		if frame.RequestComplete {
 			if len(entry.data) != 0 || !entry.terminal {
-				return errors.New("Route end before complete business result")
+				return errors.New("Execute end before complete business result")
 			}
 			if opts.Complete != nil {
-				if err := opts.Complete(ctx, frame.Id); err != nil {
+				if err := opts.Complete(ctx, frame.RequestId); err != nil {
 					return err
 				}
 			}
 			l.Lock()
-			delete(l.entries, frame.Id)
+			delete(l.entries, frame.RequestId)
 			l.bytes -= entry.bytes
 			l.reserved--
 			l.notify()
@@ -172,12 +172,12 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 			continue
 		}
 		if entry.terminal {
-			return errors.New("Route data after terminal business result")
+			return errors.New("Execute data after terminal business result")
 		}
-		if len(entry.data)+len(frame.Payload) > protocol.MaxEvent+10+protocol.NativeChunk {
-			return errors.New("Route event exceeds bounded decode workspace")
+		if len(entry.data)+len(frame.EventFragment) > protocol.MaxEvent+10+protocol.NativeChunk {
+			return errors.New("Execute event exceeds bounded decode workspace")
 		}
-		entry.data = append(entry.data, frame.Payload...)
+		entry.data = append(entry.data, frame.EventFragment...)
 		for len(entry.data) > 0 {
 			length, n := binary.Uvarint(entry.data)
 			if n == 0 {
@@ -200,10 +200,10 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 			if err := protocol.ValidateEvent(event); err != nil {
 				return err
 			}
-			if err := validateEvent(entry, frame.Id, event); err != nil {
+			if err := validateEvent(entry, frame.RequestId, event); err != nil {
 				return err
 			}
-			if err := opts.Consume(ctx, frame.Id, event); err != nil {
+			if err := opts.Consume(ctx, frame.RequestId, event); err != nil {
 				return err
 			}
 			consumed := n + int(length)
@@ -216,7 +216,7 @@ func Run(ctx context.Context, client pb.WeirClient, opts Options) error {
 	}
 }
 
-func produce(ctx context.Context, stream grpc.BidiStreamingClient[pb.Request, pb.Response], opts Options, l *ledger) error {
+func produce(ctx context.Context, stream grpc.BidiStreamingClient[pb.ExecuteRequest, pb.ExecuteResponse], opts Options, l *ledger) error {
 	var id uint64
 	for {
 		if err := l.reserve(ctx); err != nil {
@@ -235,7 +235,7 @@ func produce(ctx context.Context, stream grpc.BidiStreamingClient[pb.Request, pb
 			return err
 		}
 		if id == ^uint64(0) {
-			return errors.New("Route ID space exhausted")
+			return errors.New("Execute ID space exhausted")
 		}
 		id++
 		if call == nil || call.Version != 1 || call.Operation == nil || proto.Size(call) > protocol.MaxPayload {
@@ -248,8 +248,8 @@ func produce(ctx context.Context, stream grpc.BidiStreamingClient[pb.Request, pb
 		if _, err := protocol.DecodeCall(data); err != nil {
 			return err
 		}
-		request := &pb.Request{Id: id, Destination: opts.Destination, Payload: data}
-		if err := protocol.ValidateRequest(request, opts.Destination, id-1); err != nil {
+		request := &pb.ExecuteRequest{RequestId: id, StoreName: opts.StoreName, CallPayload: data}
+		if err := protocol.ValidateExecuteRequest(request, opts.StoreName, id-1); err != nil {
 			return err
 		}
 		entry := &pending{bytes: len(data), kind: callKind(call)}
@@ -336,22 +336,22 @@ func validateEvent(p *pending, id uint64, e *pb.Event) error {
 }
 
 // Record executes one read or mutation. It collects its single bounded result.
-// Use Run for batches, scans and native streaming results. It never retries.
+// Use Execute for batches, scans and native streaming results. It never retries.
 // A transport error can accompany a validated business result. Check the error
 // for RPC completion and retain the result as backend evidence; APPLIED is not
 // invalidated by a missing end frame or a later non-OK RPC status.
 type RecordOptions struct {
-	Destination string
-	Call        *pb.Call
+	StoreName string
+	Call      *pb.Call
 }
 
-func Record(ctx context.Context, client pb.WeirClient, opts RecordOptions) (*pb.Result, error) {
+func Record(ctx context.Context, client pb.StoreServiceClient, opts RecordOptions) (*pb.Result, error) {
 	if opts.Call == nil || opts.Call.GetRead() == nil && opts.Call.GetMutate() == nil {
 		return nil, errors.New("Record requires a read or mutation Call")
 	}
 	produced := false
 	var result *pb.Result
-	batch := Options{Destination: opts.Destination}
+	batch := Options{StoreName: opts.StoreName}
 	batch.Produce = func(context.Context) (*pb.Call, error) {
 		if produced {
 			return nil, io.EOF
@@ -360,7 +360,7 @@ func Record(ctx context.Context, client pb.WeirClient, opts RecordOptions) (*pb.
 		return opts.Call, nil
 	}
 	batch.Consume = func(_ context.Context, _ uint64, e *pb.Event) error { result = e.GetResult(); return nil }
-	if err := Run(ctx, client, batch); err != nil {
+	if err := Execute(ctx, client, batch); err != nil {
 		return result, err
 	}
 	if result == nil {
@@ -370,16 +370,16 @@ func Record(ctx context.Context, client pb.WeirClient, opts RecordOptions) (*pb.
 }
 
 // ScanPage executes one finite page and consumes each document incrementally.
-// Only a successful Route end and final gRPC OK expose its next checkpoint.
+// Only a successful Execute end and final gRPC OK expose its next checkpoint.
 // Retrying an interrupted page uses the previous checkpoint and may redeliver
 // documents; the caller owns deduplication and committing consumed output.
 type ScanPageOptions struct {
-	Destination string
-	Request     *pb.ScanRequest
-	Consume     func(context.Context, *pb.Document) error
+	StoreName string
+	Request   *pb.ScanRequest
+	Consume   func(context.Context, *pb.Document) error
 }
 
-func ScanPage(ctx context.Context, client pb.WeirClient, opts ScanPageOptions) (*pb.ScanEnd, error) {
+func ScanPage(ctx context.Context, client pb.StoreServiceClient, opts ScanPageOptions) (*pb.ScanEnd, error) {
 	if opts.Request == nil || opts.Consume == nil {
 		return nil, errors.New("ScanPage requires a request and document consumer")
 	}
@@ -387,7 +387,7 @@ func ScanPage(ctx context.Context, client pb.WeirClient, opts ScanPageOptions) (
 	call := &pb.Call{Version: 1, Operation: variant}
 	produced := false
 	var end *pb.ScanEnd
-	batch := Options{Destination: opts.Destination}
+	batch := Options{StoreName: opts.StoreName}
 	batch.Produce = func(context.Context) (*pb.Call, error) {
 		if produced {
 			return nil, io.EOF
@@ -402,7 +402,7 @@ func ScanPage(ctx context.Context, client pb.WeirClient, opts ScanPageOptions) (
 		end = event.GetScanEnd()
 		return nil
 	}
-	if err := Run(ctx, client, batch); err != nil {
+	if err := Execute(ctx, client, batch); err != nil {
 		return nil, err
 	}
 	if end == nil {

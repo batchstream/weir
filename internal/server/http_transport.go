@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc/codes"
@@ -47,11 +48,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	control := false
 	allowed := false
 	switch request.RequestURI {
-	case pb.Weir_Route_FullMethodName:
+	case pb.StoreService_Execute_FullMethodName:
 		allowed = !s.peer
-	case pb.Weir_Resolve_FullMethodName:
+	case pb.StoreService_ResolveStore_FullMethodName:
 		allowed, control = !s.peer, true
-	case pb.Directory_Exchange_FullMethodName:
+	case peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName:
 		allowed, control = s.peer, true
 	}
 	if !allowed {
@@ -61,7 +62,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if control {
-		lifetime = min(directory.ExchangeTimeout, s.limits.Stall)
+		lifetime = min(directory.SyncTimeout, s.limits.Stall)
 	}
 	ingress, err := s.ingress(request)
 	if err != nil {
@@ -182,7 +183,7 @@ func (d *delivery) finishWrite(err error) {
 	if d.finished {
 		return
 	}
-	// A live Route may legitimately be idle between fully flushed frames. Its
+	// A live Execute may legitimately be idle between fully flushed frames. Its
 	// existing idle/input watchdog owns that wait, not a stale write-stall timer.
 	_ = d.controller.SetWriteDeadline(d.deadline)
 }

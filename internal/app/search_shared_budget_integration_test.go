@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"os"
 	"strings"
@@ -27,7 +27,7 @@ import (
 
 type searchBudgetExecutor struct {
 	process     *process
-	client      pb.WeirClient
+	client      pb.StoreServiceClient
 	proxy       *searchBudgetProxy
 	root        string
 	concurrency int
@@ -98,7 +98,7 @@ func searchBudgetRead(t *testing.T, e *searchBudgetExecutor) {
 	defer cancel()
 	request := &pb.ReadRequest{Resource: e.root + "/s:seed"}
 	for attempts := 1; ; attempts++ {
-		routedResult98, err := routeclient.Record(ctx, e.client, testutil.RecordCall(request))
+		routedResult98, err := weirclient.Record(ctx, e.client, testutil.RecordCall(request))
 		result := routedResult98.GetRead()
 		if err == nil && result.GetFailure() == nil {
 			if attempts > 1 {
@@ -140,7 +140,7 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 			workers.Go(func() {
 				for ctx.Err() == nil {
 					request := &pb.ReadRequest{Resource: e.root + "/s:warm"}
-					routedResult139, err := routeclient.Record(ctx, e.client, testutil.RecordCall(request))
+					routedResult139, err := weirclient.Record(ctx, e.client, testutil.RecordCall(request))
 					result := routedResult139.GetRead()
 					if err == nil && result.GetFailure() == nil {
 						reads.Add(1)
@@ -203,7 +203,7 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	peers[2].proxy.reject.Store(true)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	request := &pb.ReadRequest{Resource: peers[2].root + "/s:seed"}
-	_, _ = routeclient.Record(callCtx, peers[2].client, testutil.RecordCall(request))
+	_, _ = weirclient.Record(callCtx, peers[2].client, testutil.RecordCall(request))
 	stop()
 	peers[2].proxy.reject.Store(false)
 	if budgetWindow(t, peers[2].process) != 2 || budgetWindow(t, peers[1].process) != 2 {
@@ -313,7 +313,7 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 			request := searchBudgetPut(e.root, "race-create")
 			doc := request.GetPut()
 			request.Action = &pb.MutateRequest_Create{Create: doc}
-			routedResult311, err := routeclient.Record(ctx, e.client, testutil.RecordCall(request))
+			routedResult311, err := weirclient.Record(ctx, e.client, testutil.RecordCall(request))
 			result := routedResult311.GetMutation()
 			if err != nil {
 				t.Error(err)
@@ -515,7 +515,7 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	response := make(chan *pb.MutationResult, 1)
 	go func() {
 		request := searchBudgetPut(old.root, "lost-reply")
-		routedResult528, err := routeclient.Record(ctx, old.client, testutil.RecordCall(request))
+		routedResult528, err := weirclient.Record(ctx, old.client, testutil.RecordCall(request))
 		result := routedResult528.GetMutation()
 		if err != nil {
 			t.Error(err)
@@ -528,7 +528,7 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	go func() {
 		defer close(queuedDone)
 		request := searchBudgetPut(old.root, "queued-cancel")
-		_, _ = routeclient.Record(queuedCtx, old.client, testutil.RecordCall(request))
+		_, _ = weirclient.Record(queuedCtx, old.client, testutil.RecordCall(request))
 	}()
 	budgetWait(t, "Search old queued write", func() bool {
 		return testmetrics.Sum(testmetrics.Scrape(t, old.process.diagnostic), "weir_store_pending_entries") == 1
@@ -552,14 +552,14 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 		return n == 0
 	})
 	request := searchBudgetPut(replacement.root, "new-independent")
-	routedResult564, err := routeclient.Record(ctx, replacement.client, testutil.RecordCall(request))
+	routedResult564, err := weirclient.Record(ctx, replacement.client, testutil.RecordCall(request))
 	result = routedResult564.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
 	request = searchBudgetPut(extra.root, "new-independent-extra")
 	var routedResult569 *pb.Result
-	routedResult569, err = routeclient.Record(ctx, replacement.client, testutil.RecordCall(request))
+	routedResult569, err = weirclient.Record(ctx, replacement.client, testutil.RecordCall(request))
 	result = routedResult569.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("extra Local mutation", result, err)

@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"net"
 	"path/filepath"
 	"strings"
@@ -255,8 +255,8 @@ func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer conn.Close()
-		client := pb.NewWeirClient(conn)
-		result, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+		client := pb.NewStoreServiceClient(conn)
+		result, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 		want := codes.Unavailable
 		if i == 1 {
 			want = codes.Unimplemented

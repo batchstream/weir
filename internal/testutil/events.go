@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/protobuf/proto"
 )
 
-// Events is a bounded typed Route harness used by repository conformance tests.
+// Events is a bounded typed Execute harness used by repository conformance tests.
 // It retains one input Call and one output Event, not a complete batch.
 type Events struct {
 	ctx    context.Context
@@ -20,9 +20,9 @@ type Events struct {
 	err    error
 }
 
-func OpenEvents(ctx context.Context, client pb.WeirClient, destination string) *Events {
+func OpenEvents(ctx context.Context, client pb.StoreServiceClient, destination string) *Events {
 	stream := &Events{ctx: ctx, input: make(chan *pb.Call, 1), output: make(chan *pb.Event, 1), done: make(chan struct{})}
-	opts := routeclient.Options{Destination: destination}
+	opts := weirclient.Options{StoreName: destination}
 	opts.Produce = func(ctx context.Context) (*pb.Call, error) {
 		select {
 		case call, ok := <-stream.input:
@@ -42,7 +42,7 @@ func OpenEvents(ctx context.Context, client pb.WeirClient, destination string) *
 			return ctx.Err()
 		}
 	}
-	go func() { stream.err = routeclient.Run(ctx, client, opts); close(stream.output); close(stream.done) }()
+	go func() { stream.err = weirclient.Execute(ctx, client, opts); close(stream.output); close(stream.done) }()
 	return stream
 }
 
@@ -88,7 +88,7 @@ func FixtureCall(call *pb.Call) (string, *pb.Call) {
 	return destination, call
 }
 
-func OneEvents(ctx context.Context, client pb.WeirClient, call *pb.Call) (*Events, error) {
+func OneEvents(ctx context.Context, client pb.StoreServiceClient, call *pb.Call) (*Events, error) {
 	destination, call := FixtureCall(call)
 	stream := OpenEvents(ctx, client, destination)
 	if err := stream.Send(call); err != nil {

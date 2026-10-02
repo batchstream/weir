@@ -16,7 +16,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,7 +30,7 @@ type Client struct {
 	Backend          string
 	MongoBackend     bool
 	Connections      []*grpc.ClientConn
-	RPC              []pb.WeirClient
+	RPC              []pb.StoreServiceClient
 	Mongo            *mongo.Client
 }
 
@@ -65,13 +65,13 @@ func newClient(backend, target string, pool int) (*Client, error) {
 	}
 	if target != "" {
 		for i := 0; i < 4; i++ {
-			conn, err := routeclient.Dial(target)
+			conn, err := weirclient.Dial(target)
 			if err != nil {
 				c.Close()
 				return nil, err
 			}
 			c.Connections = append(c.Connections, conn)
-			c.RPC = append(c.RPC, pb.NewWeirClient(conn))
+			c.RPC = append(c.RPC, pb.NewStoreServiceClient(conn))
 		}
 	}
 	return c, nil
@@ -175,8 +175,8 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 		req := &pb.ReadRequest{Resource: resource, ReadMediaType: media}
 		variant := &pb.Call_Read{Read: req}
 		call := &pb.Call{Version: 1, Operation: variant}
-		opts := routeclient.RecordOptions{Destination: "records", Call: call}
-		result, err := routeclient.Record(ctx, client, opts)
+		opts := weirclient.RecordOptions{StoreName: "records", Call: call}
+		result, err := weirclient.Record(ctx, client, opts)
 		resp := result.GetRead()
 		if err != nil {
 			r := failure("transport_"+status.Code(err).String(), false)
@@ -197,8 +197,8 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 	req := &pb.MutateRequest{Resource: resource, Action: action}
 	variant := &pb.Call_Mutate{Mutate: req}
 	call := &pb.Call{Version: 1, Operation: variant}
-	opts := routeclient.RecordOptions{Destination: "records", Call: call}
-	result, err := routeclient.Record(ctx, client, opts)
+	opts := weirclient.RecordOptions{StoreName: "records", Call: call}
+	result, err := weirclient.Record(ctx, client, opts)
 	resp := result.GetMutation()
 	r := Result{Outcome: unknown, Class: "ok"}
 	// Public enum and ledger encodings are deliberately different.

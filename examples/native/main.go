@@ -1,4 +1,4 @@
-// A finite Route batch with a bounded native request and incremental response.
+// A finite Execute batch with a bounded native request and incremental response.
 // Native backend errors remain native response data, not normalized write outcomes.
 package main
 
@@ -14,7 +14,7 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/protobuf/proto"
 )
@@ -59,8 +59,8 @@ func run() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	openOptions := routeclient.OpenOptions{Seed: *address, Stores: []string{*store}}
-	client, err := routeclient.Open(ctx, openOptions)
+	openOptions := weirclient.OpenOptions{Seed: *address, Stores: []string{*store}}
+	client, err := weirclient.Open(ctx, openOptions)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func run() error {
 	produced := false
 	total := 0
 	var terminal *pb.NativeEnd
-	opts := routeclient.Options{Destination: *store}
+	opts := weirclient.Options{StoreName: *store}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		if produced {
 			return nil, io.EOF
@@ -90,7 +90,7 @@ func run() error {
 		// Consume native bytes here without collecting the entire response.
 		return nil
 	}
-	if err := client.Run(ctx, opts); err != nil {
+	if err := client.Execute(ctx, opts); err != nil {
 		return fmt.Errorf("native response incomplete; effects indeterminate: %w", err)
 	}
 	if terminal == nil || terminal.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {

@@ -1,4 +1,4 @@
-package routeclient
+package weirclient
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/netlimit"
+	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/balancer/roundrobin"
 	"google.golang.org/grpc/codes"
@@ -41,7 +41,7 @@ type OpenOptions struct {
 	Resolver        *net.Resolver
 }
 
-// Client initializes Store destinations through Resolve and sends each finite
+// Client initializes Store destinations through ResolveStore and sends each finite
 // business RPC directly to the discovered Store's replicas. It has no URI
 // affinity and never replays a business request. Close joins its refresh worker.
 type Client struct {
@@ -56,13 +56,13 @@ type Client struct {
 }
 
 type storeChannel struct {
-	channel *addressChannel
-	mu      sync.RWMutex
-	targets []string
-	expires time.Time
-	ttl     time.Duration
-	err     error
-	attempt time.Time
+	channel   *addressChannel
+	mu        sync.RWMutex
+	endpoints []string
+	expires   time.Time
+	ttl       time.Duration
+	err       error
+	attempt   time.Time
 }
 
 type addressChannel struct {
@@ -87,10 +87,10 @@ type refreshJob struct {
 }
 
 // Open completes initialization before returning: every requested Store has a
-// valid Resolve response and at least one ready direct business connection.
+// valid ResolveStore response and at least one ready direct business connection.
 // The opening context does not own the returned client's lifetime.
 func Open(ctx context.Context, options OpenOptions) (*Client, error) {
-	seed, err := directory.CanonicalAddress(options.Seed)
+	seed, err := protocol.CanonicalEndpoint(options.Seed)
 	if err != nil {
 		return nil, fmt.Errorf("initialization address: %w", err)
 	}
@@ -101,7 +101,7 @@ func Open(ctx context.Context, options OpenOptions) (*Client, error) {
 	options.Stores = slices.Clone(options.Stores)
 	slices.Sort(options.Stores)
 	for i, store := range options.Stores {
-		if !directory.ValidStore(store) || i > 0 && options.Stores[i-1] == store {
+		if !protocol.ValidStoreName(store) || i > 0 && options.Stores[i-1] == store {
 			return nil, errors.New("invalid or duplicate initialization Store")
 		}
 	}
@@ -138,13 +138,13 @@ func Open(ctx context.Context, options OpenOptions) (*Client, error) {
 		}
 		resolvedAt := time.Now()
 		ttl := time.Duration(response.CacheTtlMs) * time.Millisecond
-		entry := &storeChannel{targets: slices.Clone(response.Targets), expires: resolvedAt.Add(ttl), ttl: ttl, attempt: resolvedAt}
+		entry := &storeChannel{endpoints: slices.Clone(response.Endpoints), expires: resolvedAt.Add(ttl), ttl: ttl, attempt: resolvedAt}
 		client.stores[store] = entry
 	}
 	_ = seedChannel.connection.Close()
 	for _, store := range options.Stores {
 		entry := client.stores[store]
-		channel, channelErr := client.newChannel(ctx, entry.targets)
+		channel, channelErr := client.newChannel(ctx, entry.endpoints)
 		if channelErr != nil {
 			client.closeChannels()
 			cancel()
@@ -172,7 +172,7 @@ func Open(ctx context.Context, options OpenOptions) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) initialResolve(ctx context.Context, seed *addressChannel, store string) (*pb.ResolveResponse, error) {
+func (c *Client) initialResolve(ctx context.Context, seed *addressChannel, store string) (*pb.ResolveStoreResponse, error) {
 	for {
 		response, err := c.resolve(ctx, seed, store)
 		if err == nil || status.Code(err) != codes.Unavailable || ctx.Err() != nil {
@@ -204,38 +204,38 @@ func waitReady(ctx context.Context, connection *grpc.ClientConn) error {
 	}
 }
 
-func (c *Client) resolve(ctx context.Context, seed *addressChannel, store string) (*pb.ResolveResponse, error) {
+func (c *Client) resolve(ctx context.Context, seed *addressChannel, store string) (*pb.ResolveStoreResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.options.ResolveTimeout)
 	defer cancel()
-	request := &pb.ResolveRequest{Store: store}
-	client := pb.NewWeirClient(seed.connection)
+	request := &pb.ResolveStoreRequest{StoreName: store}
+	client := pb.NewStoreServiceClient(seed.connection)
 	started := time.Now()
-	response, err := client.Resolve(ctx, request, grpc.WaitForReady(true))
+	response, err := client.ResolveStore(ctx, request, grpc.WaitForReady(true))
 	if err != nil {
 		return nil, fmt.Errorf("resolve Store %s: %w", store, err)
 	}
-	if response == nil || response.Store != store || !directory.ValidGroup(response.Group) || response.CacheTtlMs == 0 || response.CacheTtlMs > uint64(directory.CacheTTL/time.Millisecond) || len(response.ProtoReflect().GetUnknown()) != 0 {
+	if response == nil || response.StoreName != store || response.CacheTtlMs == 0 || response.CacheTtlMs > uint64(protocol.MaxDiscoveryCacheTTL/time.Millisecond) || len(response.ProtoReflect().GetUnknown()) != 0 {
 		return nil, fmt.Errorf("resolve Store %s: invalid directory response", store)
 	}
-	targets, err := directory.CanonicalTargets(response.Targets)
+	endpoints, err := protocol.CanonicalEndpoints(response.Endpoints)
 	if err != nil {
 		return nil, fmt.Errorf("resolve Store %s: %w", store, err)
 	}
-	response.Targets = targets
+	response.Endpoints = endpoints
 	// Start the lease before the RPC so time spent in transport, DNS and
 	// connection setup can never extend the owner's advertised cache lifetime.
 	elapsed := uint64((time.Since(started) + time.Millisecond - 1) / time.Millisecond)
 	if elapsed >= response.CacheTtlMs {
-		return nil, status.Error(codes.Unavailable, "directory response expired during Resolve")
+		return nil, status.Error(codes.Unavailable, "directory response expired during ResolveStore")
 	}
 	response.CacheTtlMs -= elapsed
 	return response, nil
 }
 
-func (c *Client) newChannel(ctx context.Context, targets []string) (*addressChannel, error) {
+func (c *Client) newChannel(ctx context.Context, endpoints []string) (*addressChannel, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.options.ResolveTimeout)
 	defer cancel()
-	addresses, err := physicalAddresses(ctx, c.options.Resolver, targets)
+	addresses, err := physicalAddresses(ctx, c.options.Resolver, endpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -253,9 +253,9 @@ func (c *Client) newChannel(ctx context.Context, targets []string) (*addressChan
 	return channel, nil
 }
 
-func physicalAddresses(ctx context.Context, dns *net.Resolver, targets []string) ([]string, error) {
+func physicalAddresses(ctx context.Context, dns *net.Resolver, endpoints []string) ([]string, error) {
 	addresses := make(map[string]struct{})
-	for _, target := range targets {
+	for _, target := range endpoints {
 		host, port, err := net.SplitHostPort(target)
 		if err != nil {
 			return nil, err
@@ -377,7 +377,7 @@ func (c *Client) refreshStores() {
 	workers.Wait()
 }
 
-func (c *Client) refreshResolve(round *refreshRound, store string) (*pb.ResolveResponse, error) {
+func (c *Client) refreshResolve(round *refreshRound, store string) (*pb.ResolveStoreResponse, error) {
 	select {
 	case <-round.ctx.Done():
 		return nil, round.ctx.Err()
@@ -399,7 +399,7 @@ func (c *Client) refreshResolve(round *refreshRound, store string) (*pb.ResolveR
 			return response, err
 		}
 	}
-	// Any application connection can Resolve. Only borrow it: closing it here
+	// Any application connection can ResolveStore. Only borrow it: closing it here
 	// would interrupt active finite business streams. A failed directory lookup
 	// falls back to one temporary initialization channel shared by this round.
 	round.mu.Lock()
@@ -422,7 +422,7 @@ func (c *Client) refreshResolve(round *refreshRound, store string) (*pb.ResolveR
 func (c *Client) refreshStore(round *refreshRound, store string) {
 	entry := c.stores[store]
 	entry.mu.RLock()
-	targets := slices.Clone(entry.targets)
+	endpoints := slices.Clone(entry.endpoints)
 	valid := time.Now().Before(entry.expires)
 	entry.mu.RUnlock()
 	var addresses []string
@@ -432,7 +432,7 @@ func (c *Client) refreshStore(round *refreshRound, store string) {
 	if valid {
 		started := time.Now()
 		lookup, lookupCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
-		addresses, lookupErr = physicalAddresses(lookup, c.options.Resolver, targets)
+		addresses, lookupErr = physicalAddresses(lookup, c.options.Resolver, endpoints)
 		lookupCancel()
 		if lookupErr == nil {
 			entry.mu.Lock()
@@ -456,8 +456,8 @@ func (c *Client) refreshStore(round *refreshRound, store string) {
 		return
 	}
 	resolvedAt := time.Now()
-	if !valid || lookupErr != nil || !slices.Equal(targets, response.Targets) {
-		addresses, lookupErr = physicalAddresses(round.ctx, c.options.Resolver, response.Targets)
+	if !valid || lookupErr != nil || !slices.Equal(endpoints, response.Endpoints) {
+		addresses, lookupErr = physicalAddresses(round.ctx, c.options.Resolver, response.Endpoints)
 	}
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -468,13 +468,13 @@ func (c *Client) refreshStore(round *refreshRound, store string) {
 		return
 	}
 	entry.channel.update(addresses)
-	entry.targets = slices.Clone(response.Targets)
+	entry.endpoints = slices.Clone(response.Endpoints)
 	entry.ttl = time.Duration(response.CacheTtlMs) * time.Millisecond
 	entry.expires = resolvedAt.Add(entry.ttl)
 	entry.err = nil
 }
 
-func (c *Client) storeClient(store string) (pb.WeirClient, error) {
+func (c *Client) storeClient(store string) (pb.StoreServiceClient, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.closed {
@@ -489,19 +489,19 @@ func (c *Client) storeClient(store string) (pb.WeirClient, error) {
 	if !time.Now().Before(entry.expires) {
 		return nil, fmt.Errorf("Store %s discovery is unavailable or expired: %v", store, entry.err)
 	}
-	return pb.NewWeirClient(entry.channel.connection), nil
+	return pb.NewStoreServiceClient(entry.channel.connection), nil
 }
 
-func (c *Client) Run(ctx context.Context, options Options) error {
-	client, err := c.storeClient(options.Destination)
+func (c *Client) Execute(ctx context.Context, options Options) error {
+	client, err := c.storeClient(options.StoreName)
 	if err != nil {
 		return err
 	}
-	return Run(ctx, client, options)
+	return Execute(ctx, client, options)
 }
 
 func (c *Client) Record(ctx context.Context, options RecordOptions) (*pb.Result, error) {
-	client, err := c.storeClient(options.Destination)
+	client, err := c.storeClient(options.StoreName)
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +509,7 @@ func (c *Client) Record(ctx context.Context, options RecordOptions) (*pb.Result,
 }
 
 func (c *Client) ScanPage(ctx context.Context, options ScanPageOptions) (*pb.ScanEnd, error) {
-	client, err := c.storeClient(options.Destination)
+	client, err := c.storeClient(options.StoreName)
 	if err != nil {
 		return nil, err
 	}

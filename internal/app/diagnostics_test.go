@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -73,16 +73,16 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	client := pb.NewWeirClient(conn)
+	client := pb.NewStoreServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	read := &pb.ReadRequest{Resource: "weir://records/db/records/s:missing"}
-	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read)) // observed failed dial, no synthetic backend work
+	_, _ = weirclient.Record(ctx, client, testutil.RecordCall(read)) // observed failed dial, no synthetic backend work
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("unknown Store changed readiness")
 	}
 	n.admission.SetOverloaded(true)
-	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read))
+	_, _ = weirclient.Record(ctx, client, testutil.RecordCall(read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("overload changed readiness")
 	}
@@ -107,7 +107,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	// Hold one real decoded-input slot while drain starts; diagnostics retain
 	// their own slots and must remain available after data readiness falls.
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	blocked, err := conn.NewStream(ctx, desc, pb.Weir_Route_FullMethodName)
+	blocked, err := conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read))
+	_, _ = weirclient.Record(ctx, client, testutil.RecordCall(read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("session capacity changed readiness")
 	}
@@ -162,14 +162,14 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	client := pb.NewWeirClient(conn)
+	client := pb.NewStoreServiceClient(conn)
 	random := rand.New(rand.NewPCG(6, 1))
 	for i := 0; i < 100; i++ {
 		nonce := fmt.Sprintf("%x", random.Uint64())
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, "weir-request-id", "secret-request-"+nonce)
 		req := &pb.ReadRequest{Resource: "weir://unknown" + nonce + "/private/s:document-secret"}
-		_, _ = routeclient.Record(ctx, client, testutil.RecordCall(req))
+		_, _ = weirclient.Record(ctx, client, testutil.RecordCall(req))
 		var output pb.ReadResult
 		_ = conn.Invoke(ctx, "/unknown"+nonce+"/Method", req, &output)
 		cancel()
@@ -189,8 +189,8 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 			}
 		}
 	}
-	if testmetrics.Sample(after, "weir_admission_rejections_total", map[string]string{"reason": "route"}).GetCounter().GetValue() != 100 {
-		t.Fatal("unknown route counter")
+	if testmetrics.Sample(after, "weir_admission_rejections_total", map[string]string{"reason": "execute"}).GetCounter().GetValue() != 100 {
+		t.Fatal("unknown Store execution counter")
 	}
 }
 

@@ -32,7 +32,7 @@ func assertRouteScanAcrossInstances(t *testing.T, opts routeScanAcrossInstancesO
 	const pageSize = 3
 	seen := make(map[string]bool)
 	var token []byte
-	readPage := func(t *testing.T, client pb.WeirClient) *pb.ScanEnd {
+	readPage := func(t *testing.T, client pb.StoreServiceClient) *pb.ScanEnd {
 		t.Helper()
 		request := &pb.ScanRequest{Resource: opts.resource, PageSize: pageSize, ContinuationToken: bytes.Clone(token)}
 		variant := &pb.Call_Scan{Scan: request}

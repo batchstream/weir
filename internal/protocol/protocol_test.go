@@ -71,29 +71,29 @@ func TestExpressionWireBoundaryIsOpaque(t *testing.T) {
 	}
 }
 
-func TestRouteEnvelopeIDsDestinationsAndFragments(t *testing.T) {
-	request := &pb.Request{Id: 9, Destination: "records", Payload: []byte{1}}
-	if err := ValidateRequest(request, "records", 2); err != nil {
+func TestExecuteEnvelopeIDsStoreNamesAndFragments(t *testing.T) {
+	request := &pb.ExecuteRequest{RequestId: 9, StoreName: "records", CallPayload: []byte{1}}
+	if err := ValidateExecuteRequest(request, "records", 2); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutate := range []func(*pb.Request){
-		func(r *pb.Request) { r.Id = 0 }, func(r *pb.Request) { r.Id = 2 }, func(r *pb.Request) { r.Destination = "other" }, func(r *pb.Request) { r.Payload = nil }, func(r *pb.Request) { r.ProtoReflect().SetUnknown([]byte{0x20, 1}) },
+	for _, mutate := range []func(*pb.ExecuteRequest){
+		func(r *pb.ExecuteRequest) { r.RequestId = 0 }, func(r *pb.ExecuteRequest) { r.RequestId = 2 }, func(r *pb.ExecuteRequest) { r.StoreName = "other" }, func(r *pb.ExecuteRequest) { r.CallPayload = nil }, func(r *pb.ExecuteRequest) { r.ProtoReflect().SetUnknown([]byte{0x20, 1}) },
 	} {
-		copied := proto.Clone(request).(*pb.Request)
+		copied := proto.Clone(request).(*pb.ExecuteRequest)
 		mutate(copied)
-		if err := ValidateRequest(copied, "records", 2); err == nil {
-			t.Fatal("accepted invalid route envelope", copied)
+		if err := ValidateExecuteRequest(copied, "records", 2); err == nil {
+			t.Fatal("accepted invalid execution envelope", copied)
 		}
 	}
-	chunk := &pb.Response{Id: 9, Payload: []byte{1}}
-	end := &pb.Response{Id: 9, End: true}
-	for _, response := range []*pb.Response{chunk, end} {
-		if err := ValidateResponse(response); err != nil {
+	chunk := &pb.ExecuteResponse{RequestId: 9, EventFragment: []byte{1}}
+	end := &pb.ExecuteResponse{RequestId: 9, RequestComplete: true}
+	for _, response := range []*pb.ExecuteResponse{chunk, end} {
+		if err := ValidateExecuteResponse(response); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, response := range []*pb.Response{{Id: 9}, {Id: 9, End: true, Payload: []byte{1}}, {Id: 0, End: true}, {Id: 9, Payload: make([]byte, NativeChunk+1)}} {
-		if err := ValidateResponse(response); err == nil {
+	for _, response := range []*pb.ExecuteResponse{{RequestId: 9}, {RequestId: 9, RequestComplete: true, EventFragment: []byte{1}}, {RequestId: 0, RequestComplete: true}, {RequestId: 9, EventFragment: make([]byte, NativeChunk+1)}} {
+		if err := ValidateExecuteResponse(response); err == nil {
 			t.Fatal("accepted invalid response")
 		}
 	}

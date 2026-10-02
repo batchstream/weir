@@ -94,7 +94,7 @@ func run() error {
 		return err
 	}
 	defer connection.Close()
-	client := pb.NewWeirClient(connection)
+	client := pb.NewStoreServiceClient(connection)
 	switch *mode {
 	case "smoke":
 		call, stop := context.WithTimeout(ctx, 4*time.Second)

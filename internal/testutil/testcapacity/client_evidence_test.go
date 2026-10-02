@@ -19,13 +19,13 @@ import (
 )
 
 type evidencePeer struct {
-	pb.UnimplementedWeirServer
+	pb.UnimplementedStoreServiceServer
 	outcome pb.MutationOutcome
 	end     bool
 	calls   atomic.Int64
 }
 
-func (p *evidencePeer) Route(stream pb.Weir_RouteServer) error {
+func (p *evidencePeer) Execute(stream pb.StoreService_ExecuteServer) error {
 	request, err := stream.Recv()
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func (p *evidencePeer) Route(stream pb.Weir_RouteServer) error {
 			mutation.Failure = &pb.Failure{Code: pb.FailureCode_UNAVAILABLE, Message: "fixture mutation evidence"}
 		}
 		value := &pb.Result_Mutation{Mutation: mutation}
-		result := &pb.Result{Index: request.Id, Result: value}
+		result := &pb.Result{Index: request.RequestId, Result: value}
 		variant := &pb.Event_Result{Result: result}
 		event := &pb.Event{Version: 1, Value: variant}
 		var encoded bytes.Buffer
@@ -45,13 +45,13 @@ func (p *evidencePeer) Route(stream pb.Weir_RouteServer) error {
 		if err != nil {
 			return err
 		}
-		response := &pb.Response{Id: request.Id, Payload: encoded.Bytes()}
+		response := &pb.ExecuteResponse{RequestId: request.RequestId, EventFragment: encoded.Bytes()}
 		err = stream.Send(response)
 		if err != nil {
 			return err
 		}
 		if p.end {
-			response = &pb.Response{Id: request.Id, End: true}
+			response = &pb.ExecuteResponse{RequestId: request.RequestId, RequestComplete: true}
 			err = stream.Send(response)
 			if err != nil {
 				return err
@@ -68,7 +68,7 @@ func evidenceClient(t *testing.T, peer *evidencePeer) *Client {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	pb.RegisterWeirServer(server, peer)
+	pb.RegisterStoreServiceServer(server, peer)
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Stop(); listener.Close() })
 	client, err := newClient("http://fixture.invalid", listener.Addr().String(), 4)
