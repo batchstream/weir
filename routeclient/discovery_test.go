@@ -28,12 +28,16 @@ type discoveryPeer struct {
 	records  map[string]*pb.ResolveResponse
 	err      error
 	delay    time.Duration
+	delays   map[string]time.Duration
 }
 
 func (p *discoveryPeer) Resolve(ctx context.Context, request *pb.ResolveRequest) (*pb.ResolveResponse, error) {
 	p.resolves.Add(1)
 	p.mu.Lock()
 	err, delay := p.err, p.delay
+	if override, exists := p.delays[request.Store]; exists {
+		delay = override
+	}
 	var response *pb.ResolveResponse
 	if record := p.records[request.Store]; record != nil {
 		response = proto.Clone(record).(*pb.ResolveResponse)

@@ -64,9 +64,18 @@ and client initialization have caller-visible bounded deadlines.
 
 Open resolves every requested Store and waits for at least one usable direct
 business connection per Store before returning a client. The initialization seed
-is used for control requests only. Business methods reject uninitialized Stores.
+is used for control requests only and is closed after all Store metadata is
+resolved, before opening business channels. Business methods reject uninitialized
+Stores.
 
 The client periodically refreshes directory mappings and actively resolves DNS.
+Refresh borrows a ready business connection for Resolve: every application node
+is a directory entry point. Transient failures can use one temporary seed
+connection shared by the round. Borrowed connections are never closed by refresh.
+Four workers can resolve DNS while at most two Resolve calls run concurrently.
+Bounded rounds try least-recently-attempted Stores first; failures also advance
+that order, and a canceled request waiting for control admission does not. This
+prevents slow or unavailable Stores from permanently starving other mappings.
 New RPCs round-robin across ready physical addresses. Store mappings have the
 owner lease-derived cache TTL; transient seed errors can retain only an unexpired
 last-good mapping. Ownership conflicts invalidate the cached mapping. Returned

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,6 +62,7 @@ type storeChannel struct {
 	expires time.Time
 	ttl     time.Duration
 	err     error
+	attempt time.Time
 }
 
 type addressChannel struct {
@@ -70,9 +72,18 @@ type addressChannel struct {
 }
 
 type refreshRound struct {
-	ctx  context.Context
-	seed *addressChannel
-	err  error
+	ctx       context.Context
+	preferred *addressChannel
+	mu        sync.Mutex
+	seed      *addressChannel
+	seedTried bool
+	err       error
+	control   chan struct{}
+}
+
+type refreshJob struct {
+	store   string
+	attempt time.Time
 }
 
 // Open completes initialization before returning: every requested Store has a
@@ -116,6 +127,8 @@ func Open(ctx context.Context, options OpenOptions) (*Client, error) {
 		return nil, fmt.Errorf("initialization connection: %w", err)
 	}
 	defer seedChannel.connection.Close()
+	// Finish discovery before opening business channels so a server can honor
+	// its physical connection limit without needing an extra bootstrap slot.
 	for _, store := range options.Stores {
 		response, resolveErr := client.initialResolve(ctx, seedChannel, store)
 		if resolveErr != nil {
@@ -124,7 +137,14 @@ func Open(ctx context.Context, options OpenOptions) (*Client, error) {
 			return nil, resolveErr
 		}
 		resolvedAt := time.Now()
-		channel, channelErr := client.newChannel(ctx, response.Targets)
+		ttl := time.Duration(response.CacheTtlMs) * time.Millisecond
+		entry := &storeChannel{targets: slices.Clone(response.Targets), expires: resolvedAt.Add(ttl), ttl: ttl, attempt: resolvedAt}
+		client.stores[store] = entry
+	}
+	_ = seedChannel.connection.Close()
+	for _, store := range options.Stores {
+		entry := client.stores[store]
+		channel, channelErr := client.newChannel(ctx, entry.targets)
 		if channelErr != nil {
 			client.closeChannels()
 			cancel()
@@ -139,9 +159,7 @@ func Open(ctx context.Context, options OpenOptions) (*Client, error) {
 			cancel()
 			return nil, fmt.Errorf("initialize Store %s: %w", store, readyErr)
 		}
-		ttl := time.Duration(response.CacheTtlMs) * time.Millisecond
-		entry := &storeChannel{channel: channel, targets: slices.Clone(response.Targets), expires: resolvedAt.Add(ttl), ttl: ttl}
-		client.stores[store] = entry
+		entry.channel = channel
 	}
 	for _, store := range options.Stores {
 		if _, err := client.storeClient(store); err != nil {
@@ -310,27 +328,95 @@ func (c *Client) refresh() {
 func (c *Client) refreshStores() {
 	ctx, cancel := context.WithTimeout(c.ctx, c.options.ResolveTimeout)
 	defer cancel()
-	seedContext, seedCancel := context.WithTimeout(ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
-	seed, err := c.newChannel(seedContext, []string{c.options.Seed})
-	seedCancel()
-	if seed != nil {
-		defer seed.connection.Close()
-	}
-	round := &refreshRound{ctx: ctx, seed: seed, err: err}
-	jobs := make(chan string, len(c.options.Stores))
+	var preferred *addressChannel
 	for _, store := range c.options.Stores {
-		jobs <- store
+		channel := c.stores[store].channel
+		if channel.connection.GetState() == connectivity.Ready {
+			preferred = channel
+			break
+		}
+	}
+	round := &refreshRound{ctx: ctx, preferred: preferred, control: make(chan struct{}, 2)}
+	defer func() {
+		if round.seed != nil {
+			_ = round.seed.connection.Close()
+		}
+	}()
+	ordered := make([]refreshJob, 0, len(c.options.Stores))
+	for _, store := range c.options.Stores {
+		entry := c.stores[store]
+		entry.mu.RLock()
+		job := refreshJob{store: store, attempt: entry.attempt}
+		entry.mu.RUnlock()
+		ordered = append(ordered, job)
+	}
+	// A bounded round can end before every Store is reached. Failed attempts
+	// also advance, so unavailable Stores cannot permanently starve the tail.
+	slices.SortFunc(ordered, func(a, b refreshJob) int {
+		if order := a.attempt.Compare(b.attempt); order != 0 {
+			return order
+		}
+		return strings.Compare(a.store, b.store)
+	})
+	jobs := make(chan string, len(ordered))
+	for _, job := range ordered {
+		jobs <- job.store
 	}
 	close(jobs)
 	var workers sync.WaitGroup
 	for range min(4, len(c.options.Stores)) {
 		workers.Go(func() {
 			for store := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
 				c.refreshStore(round, store)
 			}
 		})
 	}
 	workers.Wait()
+}
+
+func (c *Client) refreshResolve(round *refreshRound, store string) (*pb.ResolveResponse, error) {
+	select {
+	case <-round.ctx.Done():
+		return nil, round.ctx.Err()
+	case round.control <- struct{}{}:
+	}
+	defer func() { <-round.control }()
+	if err := round.ctx.Err(); err != nil {
+		return nil, err
+	}
+	entry := c.stores[store]
+	entry.mu.Lock()
+	entry.attempt = time.Now()
+	entry.mu.Unlock()
+	if round.preferred != nil {
+		resolve, resolveCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
+		response, err := c.resolve(resolve, round.preferred, store)
+		resolveCancel()
+		if err == nil || status.Code(err) != codes.Unavailable && status.Code(err) != codes.DeadlineExceeded || round.ctx.Err() != nil {
+			return response, err
+		}
+	}
+	// Any application connection can Resolve. Only borrow it: closing it here
+	// would interrupt active finite business streams. A failed directory lookup
+	// falls back to one temporary initialization channel shared by this round.
+	round.mu.Lock()
+	if !round.seedTried {
+		round.seedTried = true
+		seedContext, seedCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
+		round.seed, round.err = c.newChannel(seedContext, []string{c.options.Seed})
+		seedCancel()
+	}
+	seed, err := round.seed, round.err
+	round.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	resolve, resolveCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
+	defer resolveCancel()
+	return c.resolve(resolve, seed, store)
 }
 
 func (c *Client) refreshStore(round *refreshRound, store string) {
@@ -344,6 +430,7 @@ func (c *Client) refreshStore(round *refreshRound, store string) {
 	// Refresh cached business DNS before a seed RPC can consume the round's
 	// deadline. Discovery outages must not hide scaled replicas of a valid Store.
 	if valid {
+		started := time.Now()
 		lookup, lookupCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
 		addresses, lookupErr = physicalAddresses(lookup, c.options.Resolver, targets)
 		lookupCancel()
@@ -351,15 +438,13 @@ func (c *Client) refreshStore(round *refreshRound, store string) {
 			entry.mu.Lock()
 			entry.channel.update(addresses)
 			entry.mu.Unlock()
+		} else if round.ctx.Err() == nil {
+			entry.mu.Lock()
+			entry.attempt = started
+			entry.mu.Unlock()
 		}
 	}
-	var response *pb.ResolveResponse
-	err := round.err
-	if err == nil {
-		resolve, resolveCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
-		response, err = c.resolve(resolve, round.seed, store)
-		resolveCancel()
-	}
+	response, err := c.refreshResolve(round, store)
 	if err != nil {
 		entry.mu.Lock()
 		entry.err = err
@@ -433,7 +518,9 @@ func (c *Client) ScanPage(ctx context.Context, options ScanPageOptions) (*pb.Sca
 
 func (c *Client) closeChannels() {
 	for _, entry := range c.stores {
-		_ = entry.channel.connection.Close()
+		if entry.channel != nil {
+			_ = entry.channel.connection.Close()
+		}
 	}
 }
 

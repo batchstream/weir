@@ -96,6 +96,25 @@ real startup, peer learning, application Resolve, empty local business targets,
 and listener release after shutdown. Focused race and complete app/cmd/deployment
 tests passed after the repair.
 
+Review also reproduced a physical-connection budget mismatch: initialization and
+refresh needed an extra seed connection even when the accepted business capacity
+filled the application listener. The client now resolves all metadata before
+closing bootstrap and opening business channels, then borrows ready application
+connections for refresh. One temporary seed fallback is created only when needed.
+
+`TestOpenAndRefreshAtApplicationConnectionLimit` uses the actual server with one
+connection/one Store and sixteen connections/sixteen Stores, maintaining business
+requests beyond the original two-second advertisement lifetime.
+`TestRefreshPrioritizesUnrenewedStoresAfterRoundDeadline` maintains sixteen Stores
+with 300 ms Resolve calls beyond their initial five-second TTL, under a two-second
+round deadline. `TestRefreshFailuresCannotStarveHealthyTail` keeps a healthy Store
+usable while four unavailable Stores consume control time. Four DNS workers and
+two control slots remain bounded; least-recently-attempted scheduling advances
+only actual control/DNS attempts, avoiding both fixed tail starvation and expired
+mappings monopolizing priority. The complete client race suite passed after repair.
+The final source also passed the complete race and CGO-disabled suites, integration
+vet, and all three real multi-process app discovery/DNS profiles under race.
+
 ## Scope of evidence
 
 URI affinity is absent. The protocol is independent of Kubernetes; sample manifests

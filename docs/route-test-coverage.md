@@ -23,6 +23,7 @@ and measurements are recorded separately in the PR verification report.
 | HTTP/2 preface, header, partial gRPC frame and send stalls | Retained `plaintext_test.go`, `http_transport_test.go`, and new Route slow-consumer tests |
 | Receive buffering cannot eagerly drain unlimited request bodies | Retained credited-body tests for read-ahead, short-read refunds, cancellation and Close interruption |
 | HTTP completion and gRPC completion jointly own session credits | Retained `TestDeliverySlotRequiresBothCompletions`; connection-bound single-close test |
+| Physical connection budgets and fair, bounded directory refresh | `TestOpenAndRefreshAtApplicationConnectionLimit`; `TestRefreshPrioritizesUnrenewedStoresAfterRoundDeadline`; `TestRefreshFailuresCannotStarveHealthyTail` |
 | Portable endpoint validation, direct balancing, socket ownership and cleanup | `TestPortableAddressValidation`; `TestOpenResolvesMultipleStoresAndBalancesDirectStreams`; `TestConnectionBoundAndSingleClose`; `TestOpenCancellationAndCloseJoinDiscovery` |
 | DNS A/AAAA, answer bounds, active refresh, replacement and deadline | `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; `internal/netlimit/dns_test.go`; `TestEndpointDNSAcrossProcesses` |
 | Record batch item errors, typed ID correspondence, write concern and acknowledged-reply loss | MongoDB/Search batch, fault and runtime integration suites, retained after replacing execution DTOs |
