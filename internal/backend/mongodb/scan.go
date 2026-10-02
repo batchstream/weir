@@ -109,20 +109,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	return p, nil
 }
 
-func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
-	n := p.Backend.(*scanPlan)
-	page := &execution.ScanPage{}
-	if n.closed || ctx.Err() != nil {
-		page.Failure = protocol.ContextFailure(ctx)
-		return page, execution.Neutral
-	}
-	if !n.qualified {
-		if failure, signal := a.qualifyTarget(ctx, n.target); failure != nil {
-			page.Failure = failure
-			return page, signal
-		}
-		n.qualified = true
-	}
+func scanFindCommand(n *scanPlan) bson.D {
 	order := bson.D{{Key: "_id", Value: int32(1)}}
 	command := bson.D{
 		{Key: "find", Value: n.target.collection},
@@ -140,16 +127,35 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	}
 	if len(n.last) != 0 {
 		id := n.last.Lookup("_id")
-		minimum := bson.D{{Key: "_id", Value: id}}
-		exclude := bson.D{{Key: "$ne", Value: id}}
-		boundary := bson.D{{Key: "_id", Value: exclude}}
+		// Expression comparison uses the full BSON order. Native $gt applies
+		// type bracketing, while find.min has an exclusive MaxKey upper bound.
+		// $literal preserves dollar-prefixed strings and embedded document IDs.
+		literal := bson.D{{Key: "$literal", Value: id}}
+		greater := bson.D{{Key: "$gt", Value: bson.A{"$_id", literal}}}
+		boundary := bson.D{{Key: "$expr", Value: greater}}
 		both := bson.D{{Key: "$and", Value: bson.A{filter, boundary}}}
 		filter = both
-		element := bson.E{Key: "min", Value: minimum}
-		command = append(command, element)
 	}
 	element := bson.E{Key: "filter", Value: filter}
 	command = append(command, element)
+	return command
+}
+
+func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
+	n := p.Backend.(*scanPlan)
+	page := &execution.ScanPage{}
+	if n.closed || ctx.Err() != nil {
+		page.Failure = protocol.ContextFailure(ctx)
+		return page, execution.Neutral
+	}
+	if !n.qualified {
+		if failure, signal := a.qualifyTarget(ctx, n.target); failure != nil {
+			page.Failure = failure
+			return page, signal
+		}
+		n.qualified = true
+	}
+	command := scanFindCommand(n)
 	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
 	if err != nil {
 		page.Failure = backendFailure(ctx, err)

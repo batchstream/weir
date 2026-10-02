@@ -204,10 +204,10 @@ remains the checkpoint. Replaying a page can repeat already consumed documents.
 
 MongoDB performs a bounded `find` with `singleBatch=true`, ascending `_id` sort
 and the `_id` index. The token carries the last original BSON `_id`; the next query
-uses an inclusive index lower bound and excludes that ID. This preserves BSON
-cross-type index ordering without a retained MongoDB session or cursor. Projection
-must preserve the original `_id`, and alternate sort orders are rejected. Each
-query sees its own database state; concurrent inserts, deletes or filter changes
+uses an indexed `$expr` comparison with the last ID as a `$literal`. This preserves
+BSON cross-type ordering, including MinKey and MaxKey, without a retained MongoDB
+session or cursor. Projection must preserve the original `_id`, and alternate
+sort orders are rejected. Each query sees its own database state; concurrent inserts, deletes or filter changes
 can change the traversal. This is not a snapshot across pages.
 
 Search's token carries the latest backend PIT ID and `search_after` value. The PIT
