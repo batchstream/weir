@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/batchstream/weir/api/netlimit"
+	"github.com/batchstream/weir-protocol/api/netlimit"
 )
 
 // One owner covers both HTTP pools, including detached net/http dial attempts.

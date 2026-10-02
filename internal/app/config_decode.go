@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/batchstream/weir/api/protocol"
+	"github.com/batchstream/weir-protocol/api/protocol"
 	"go.yaml.in/yaml/v3"
 )
 

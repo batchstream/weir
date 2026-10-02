@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/batchstream/weir/api/netlimit"
-	"github.com/batchstream/weir/api/protocol"
+	"github.com/batchstream/weir-protocol/api/netlimit"
+	"github.com/batchstream/weir-protocol/api/protocol"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

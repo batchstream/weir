@@ -31,7 +31,7 @@ and prior PR verification reports.
 | HTTP completion and gRPC completion jointly own session credits | Retained `TestDeliverySlotRequiresBothCompletions`; connection-bound single-close test |
 | Physical connection budgets and fair, bounded directory refresh | `TestOpenAndRefreshAtApplicationConnectionLimit`; `TestRefreshPrioritizesUnrenewedStoresAfterRoundDeadline`; `TestRefreshFailuresCannotStarveHealthyTail` |
 | Portable endpoint validation, direct balancing, socket ownership and cleanup | `TestPortableEndpointValidation`; `TestOpenResolvesMultipleStoresAndBalancesDirectStreams`; `TestConnectionBoundAndSingleClose`; `TestOpenCancellationAndCloseJoinDiscovery` |
-| DNS A/AAAA, answer bounds, active refresh, replacement and deadline | `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; `api/netlimit/dns_test.go`; `TestEndpointDNSAcrossProcesses` |
+| DNS A/AAAA, answer bounds, active refresh, replacement and deadline | SDK `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; [protocol DNS bounds](https://github.com/batchstream/weir-protocol/blob/main/api/netlimit/dns_test.go); server `TestEndpointDNSAcrossProcesses` |
 | Record batch item errors, typed ID correspondence, write concern and acknowledged-reply loss | MongoDB/Search batch, fault and runtime integration suites, retained after replacing execution DTOs |
 | Native request exact bounds, errors and response loss | MongoDB/Search native conformance suites; native requests now enter the same Execute scheduler with one complete bounded input Call |
 | Finite Scan pages, cross-instance continuation, mixed BSON IDs, PIT expiry, cancellation and cleanup | MongoDB/Search scan conformance suites; Execute continuation tests; unified Store streaming reservation/cancellation tests |

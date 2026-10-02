@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/batchstream/weir/api/weir/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
 

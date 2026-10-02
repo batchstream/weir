@@ -12,21 +12,9 @@ fi
 PATH="$PWD/.tools/bin:$PATH" .tools/protoc/bin/protoc \
  --go_out=. --go_opt=module=github.com/batchstream/weir \
  --go-grpc_out=. --go-grpc_opt=module=github.com/batchstream/weir \
- api/weir/v1/store.proto internal/api/peer/v1/peer.proto
+ internal/api/peer/v1/peer.proto
 
 # Keep the named-struct-literal convention reproducible in generated Go code.
-awk '
- $0 == "\treturn &storeServiceClient{cc}" {
-  print "\tclient := &storeServiceClient{cc}"; print "\treturn client"; count++; next
- }
- index($0,"\treturn srv.(StoreServiceServer).Execute(&grpc.GenericServerStream") == 1 {
-  print "\tserverStream := &grpc.GenericServerStream[ExecuteRequest, ExecuteResponse]{ServerStream: stream}"
-  print "\treturn srv.(StoreServiceServer).Execute(serverStream)"; count++; next
- }
- { print }
- END { if (count != 2) exit 1 }
-' api/weir/v1/store_grpc.pb.go > .tools/store_grpc.pb.go
-mv .tools/store_grpc.pb.go api/weir/v1/store_grpc.pb.go
 awk '
  $0 == "\treturn &peerDiscoveryServiceClient{cc}" {
   print "\tclient := &peerDiscoveryServiceClient{cc}"; print "\treturn client"; count++; next
@@ -36,13 +24,11 @@ awk '
 ' internal/api/peer/v1/peer_grpc.pb.go > .tools/peer_grpc.pb.go
 mv .tools/peer_grpc.pb.go internal/api/peer/v1/peer_grpc.pb.go
 
-PATH="$PWD/.tools/bin:$PATH" .tools/protoc/bin/protoc --go_out=. --go_opt=module=github.com/batchstream/weir api/weir/search/v1/http.proto
-for go_file in api/weir/v1/store.pb.go internal/api/peer/v1/peer.pb.go api/weir/search/v1/http.pb.go; do
- awk '
+go_file=internal/api/peer/v1/peer.pb.go
+awk '
   $0 == "\ttype x struct{}" { print; print "\tpackageMarker := x{}"; next }
   { if (sub(/reflect.TypeOf\(x\{\}\)/,"reflect.TypeOf(packageMarker)")) count++; print }
   END { if (count != 1) exit 1 }
- ' "$go_file" > .tools/generated.pb.go
- mv .tools/generated.pb.go "$go_file"
- done
-gofmt -w api/weir/v1/store.pb.go api/weir/v1/store_grpc.pb.go internal/api/peer/v1/peer.pb.go internal/api/peer/v1/peer_grpc.pb.go api/weir/search/v1/http.pb.go
+' "$go_file" > .tools/generated.pb.go
+mv .tools/generated.pb.go "$go_file"
+gofmt -w internal/api/peer/v1/peer.pb.go internal/api/peer/v1/peer_grpc.pb.go

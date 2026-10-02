@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	weirclient "github.com/batchstream/weir-go"
-	pb "github.com/batchstream/weir/api/weir/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"time"

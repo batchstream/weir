@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	pb "github.com/batchstream/weir/api/weir/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
 // DefaultMaxReadSize bounds ordinary Record Read sources when no limit is set.

@@ -43,7 +43,7 @@ write and JavaScript options are rejected. Native replies are raw BSON, at most
 4 MiB, emitted as ordered chunks with a NativeEnd completion result.
 
 Search Native's descriptor is the explicit protobuf schema in
-`api/weir/search/v1/http.proto`. It supports POST `/_bulk` with
+[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/main/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
 `application/x-ndjson` and GET `/_doc/<unreserved-id>` with an empty body. Canonical
 query options are `refresh` for bulk or `realtime` for GET. Headers are restricted
 to `accept`, `content-type`, `x-opaque-id` with bounded values; they cannot override
