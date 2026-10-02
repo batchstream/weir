@@ -56,11 +56,15 @@ func (a *Admission) check() error {
 }
 
 func (s *Server) enter() error {
+	return s.enterSlots(s.slots)
+}
+
+func (s *Server) enterSlots(slots chan struct{}) error {
 	if err := s.admission.check(); err != nil {
 		return err
 	}
 	select {
-	case s.slots <- struct{}{}:
+	case slots <- struct{}{}:
 		return nil
 	default:
 		s.admission.rejections.WithLabelValues("sessions").Inc()

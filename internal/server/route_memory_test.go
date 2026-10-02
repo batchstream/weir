@@ -32,7 +32,6 @@ type routeMemorySnapshot struct {
 	CPUSeconds    float64
 	Route         RouteSnapshot
 	Store         store.Snapshot
-	RelaySlots    int
 	PhysicalConns int
 	Executed      int64
 	PeakBatch     int64
@@ -52,17 +51,9 @@ func TestRouteMemoryProcess(t *testing.T) {
 	}
 	limits := DefaultLimits()
 	limits.Stall = 5 * time.Second
-	opts := routeAcceptanceNodeOptions{limits: limits, hops: 4, peer: role != "entry"}
-	if role == "executor" {
-		adapter := newRouteAcceptanceAdapter(2 << 20)
-		adapter.seen = nil
-		opts.adapter = adapter
-	} else {
-		opts.target = os.Getenv("WEIR_ROUTE_MEMORY_TARGET")
-		if opts.target == "" {
-			t.Fatal("memory relay requires an owned downstream target")
-		}
-	}
+	adapter := newRouteAcceptanceAdapter(2 << 20)
+	adapter.seen = nil
+	opts := routeAcceptanceNodeOptions{limits: limits, adapter: adapter}
 	node := startRouteAcceptanceNode(t, opts)
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -79,9 +70,6 @@ func TestRouteMemoryProcess(t *testing.T) {
 		var memory runtime.MemStats
 		runtime.ReadMemStats(&memory)
 		snapshot := routeMemorySnapshot{At: time.Now(), HeapAlloc: memory.HeapAlloc, HeapInuse: memory.HeapInuse, HeapObjects: memory.HeapObjects, Goroutines: runtime.NumGoroutine(), Route: node.server.Snapshot()}
-		if node.remote != nil {
-			snapshot.RelaySlots = len(node.remote.slots)
-		}
 		node.server.connections.Range(func(_, _ any) bool { snapshot.PhysicalConns++; return true })
 		if node.runtime != nil {
 			snapshot.Store = node.runtime.Snapshot()
@@ -324,7 +312,6 @@ func mergeRouteMemoryPeak(peak, sample map[string]routeMemorySnapshot) {
 		old.Store.ResultBytes = max(old.Store.ResultBytes, value.Store.ResultBytes)
 		old.Store.WorkingBytes = max(old.Store.WorkingBytes, value.Store.WorkingBytes)
 		old.Store.Publishers = max(old.Store.Publishers, value.Store.Publishers)
-		old.RelaySlots = max(old.RelaySlots, value.RelaySlots)
 		old.PhysicalConns = max(old.PhysicalConns, value.PhysicalConns)
 		old.Executed = max(old.Executed, value.Executed)
 		old.PeakBatch = max(old.PeakBatch, value.PeakBatch)
@@ -332,18 +319,16 @@ func mergeRouteMemoryPeak(peak, sample map[string]routeMemorySnapshot) {
 	}
 }
 
-func TestRouteMemory200MiBTwoRelays(t *testing.T) {
+func TestRouteMemory200MiBDirect(t *testing.T) {
 	if os.Getenv("WEIR_ROUTE_MEMORY") != "1" {
-		t.Skip("explicit resource acceptance: WEIR_ROUTE_MEMORY=1 go test ./internal/server -run '^TestRouteMemory200MiBTwoRelays$' -count=1 -v")
+		t.Skip("explicit resource acceptance: WEIR_ROUTE_MEMORY=1 go test ./internal/server -run '^TestRouteMemory200MiBDirect$' -count=1 -v")
 	}
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Fatal("explicit resource acceptance requires Darwin or Linux RSS/CPU sampling")
 	}
 	executor := startRouteMemoryProcess(t, "executor", "")
-	relay := startRouteMemoryProcess(t, "relay", executor.address.RPC)
-	entry := startRouteMemoryProcess(t, "entry", relay.address.RPC)
-	processes := []*routeMemoryProcess{executor, relay, entry}
-	client := routeAcceptanceClient(t, entry.address.RPC)
+	processes := []*routeMemoryProcess{executor}
+	client := routeAcceptanceClient(t, executor.address.RPC)
 	runs := make([]routeMemoryRun, 0, 2)
 	for _, count := range []int{100, 400} {
 		baseline, err := routeMemoryCapture(processes, true)
@@ -475,7 +460,7 @@ func TestRouteMemory200MiBTwoRelays(t *testing.T) {
 				t.Fatal("executor queue, retained results or working set exceeded its configured budget", role, peak.Store)
 			}
 			after := run.AfterGC[role]
-			if after.Route.ActiveRPCs != 0 || after.Route.Outstanding != 0 || after.Route.OutstandingBytes != 0 || after.RelaySlots != 0 || after.Store.Pending != 0 || after.Store.Active != 0 || after.Store.Retained != 0 || after.Store.ResultBytes != 0 || after.Store.WorkingBytes != 0 || after.Store.Publishers != 0 {
+			if after.Route.ActiveRPCs != 0 || after.Route.Outstanding != 0 || after.Route.OutstandingBytes != 0 || after.Store.Pending != 0 || after.Store.Active != 0 || after.Store.Retained != 0 || after.Store.ResultBytes != 0 || after.Store.WorkingBytes != 0 || after.Store.Publishers != 0 {
 				t.Fatal("load left live RPCs/tasks/buffers", role, after)
 			}
 			if after.HeapAlloc > baseline[role].HeapAlloc+8<<20 || after.Goroutines > baseline[role].Goroutines+20 {
@@ -487,16 +472,16 @@ func TestRouteMemory200MiBTwoRelays(t *testing.T) {
 		t.Log("ROUTE_MEMORY_RUN=" + string(encoded))
 	}
 	// Increasing response volume by 4x must not produce a comparable increase in
-	// either relay's retained working set. RSS is observed separately, not used
+	// the executor's retained working set. RSS is observed separately, not used
 	// as proof that every page must be returned immediately after GC.
-	for _, role := range []string{"entry", "relay"} {
+	for _, role := range []string{"executor"} {
 		first, second := runs[0].Peak[role], runs[1].Peak[role]
 		if second.HeapAlloc > first.HeapAlloc+(16<<20) || second.HeapInuse > first.HeapInuse+(16<<20) || second.HeapObjects > first.HeapObjects+10000 {
-			t.Fatal("relay working set grew with total batch volume", role, first, second)
+			t.Fatal("executor working set grew with total batch volume", role, first, second)
 		}
 	}
 	if artifact := os.Getenv("WEIR_ROUTE_MEMORY_REPORT"); artifact != "" {
-		report := map[string]any{"platform": runtime.GOOS + "/" + runtime.GOARCH, "go": runtime.Version(), "two_forwarders": true, "pacing_per_frame_ms": 1, "runs": runs}
+		report := map[string]any{"platform": runtime.GOOS + "/" + runtime.GOARCH, "go": runtime.Version(), "direct_execution": true, "pacing_per_frame_ms": 1, "runs": runs}
 		raw, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			t.Fatal(err)

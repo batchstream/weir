@@ -6,19 +6,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Service is a closed choice between the two static execution destinations.
-// Assembly owns both; listeners only borrow references.
-type Service struct {
-	LocalStore *store.Runtime
-	RemoteWeir *RemoteWeir
-}
-
-func (s *Server) resolve(destination string) (Service, error) {
-	service, ok := s.routes[destination]
+func (s *Server) resolve(destination string) (*store.Runtime, error) {
+	runtime, ok := s.stores[destination]
 	if !ok {
 		s.admission.rejections.WithLabelValues("route").Inc()
-		empty := Service{}
-		return empty, status.Error(codes.InvalidArgument, "unknown destination")
+		return nil, status.Error(codes.Unavailable, "Store is not hosted here; Resolve before sending business requests")
 	}
-	return service, nil
+	return runtime, nil
 }

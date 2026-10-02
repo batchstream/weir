@@ -232,13 +232,13 @@ func TestPackagedArtifacts(t *testing.T) {
 func packagedConfig(t *testing.T, uri string) Config {
 	backend := mongoFixtureConfig(t, uri)
 	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
-	service := Service{Name: "database", Local: local}
-	route := Route{Store: "records", Service: "database"}
+	service := StoreConfig{Name: "records", Local: local}
+
 	config := DefaultConfig()
 	config.Basic.Listeners.Application = "127.0.0.1:0"
 	config.Basic.Diagnostics.Address = "127.0.0.1:0"
-	config.Routing.Services = []Service{service}
-	config.Routing.Routes = []Route{route}
+	config.Routing.Stores = []StoreConfig{service}
+
 	return config
 }
 
@@ -266,6 +266,7 @@ func packagedFiles(t *testing.T, directory, uri string) {
 	parsed.RawQuery = query.Encode()
 	config := packagedConfig(t, parsed.String())
 	config.Basic.Listeners.Application = "0.0.0.0:7447"
+	config.Basic.Discovery.Advertise = []string{"127.0.0.1:7447"}
 	config.Basic.Diagnostics.Address = "127.0.0.1:7449"
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), config, 0644)
 }

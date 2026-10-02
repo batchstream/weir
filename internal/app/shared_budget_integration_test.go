@@ -123,16 +123,17 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	proxy.DropCommand, proxy.DropGate = "bulkWrite", drop
 	backend := mongoFixtureConfig(t, proxy.URI())
 	local := &Local{MongoDB: backend, MaxConcurrency: concurrency, MaxBatchOperations: 1}
-	service := Service{Name: "database", Local: local}
-	route := Route{Store: "records", Service: "database"}
+	service := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
+	cfg.Basic.Discovery.Group = "records"
+	cfg.Routing.Stores = []StoreConfig{service}
 	if opts.extra {
-		second := Service{Name: "second", Local: local}
-		secondRoute := Route{Store: "extra", Service: "second"}
-		cfg.Routing.Services = append(cfg.Routing.Services, second)
-		cfg.Routing.Routes = append(cfg.Routing.Routes, secondRoute)
+		second := StoreConfig{Name: "extra", Local: local}
+
+		cfg.Routing.Stores = append(cfg.Routing.Stores, second)
+
 	}
 	p := startProcess(t, binary, cfg)
 	e := &mongoBudgetExecutor{
@@ -142,7 +143,7 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 		concurrency: concurrency,
 		root:        "weir://records/" + fixture.DB + "/records",
 		drop:        drop,
-		locals:      len(cfg.Routing.Services),
+		locals:      len(cfg.Routing.Stores),
 	}
 	t.Logf("start time=%s PID=%d C=%d application=%s diagnostics=%s", time.Now().UTC().Format(time.RFC3339Nano), p.command.Process.Pid, concurrency, p.address, p.diagnostic)
 	return e
@@ -295,12 +296,12 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	t.Log("real failCommand 16500: C4 window 4->2, C2 stays 2; independent feedback")
 	mongoBudgetOverload(t, peers, observation)
 	mongoBudgetMixed(t, peers, fixture)
-	forward := budgetForwardOptions{
+	discovery := budgetDiscoveryOptions{
 		binary:  binary,
 		peers:   []*process{peers[0].process, peers[1].process, peers[2].process},
-		request: budgetPut(first.root, "forwarded"),
+		request: budgetPut(first.root, "discovered"),
 	}
-	budgetForwarding(t, forward)
+	budgetDirectDiscovery(t, discovery)
 	start.concurrency = 1
 	start.extra = true
 	replacement := mongoBudgetReplacement(t, peers, start)
@@ -720,60 +721,54 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	return replacement
 }
 
-type budgetForwardOptions struct {
+type budgetDiscoveryOptions struct {
 	binary  string
 	peers   []*process
 	request *pb.MutateRequest
 }
 
-func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
+func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 	t.Helper()
-	binary, request := opts.binary, opts.request
-	var addresses []string
 	before := make([]float64, len(opts.peers))
+	cfg := emptyConfig(t)
+	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
 	for i, p := range opts.peers {
-		addresses = append(addresses, p.addresses[1])
+		cfg.Basic.Discovery.Seeds = append(cfg.Basic.Discovery.Seeds, p.addresses[1])
 		before[i] = testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_store_records_total")
 	}
-	remote := &Remote{Endpoints: addresses, MaxConcurrency: 4}
-	service := Service{Name: "remote", Remote: remote}
-	route := Route{Store: "records", Service: "remote"}
-	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Application, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
-	front := startProcess(t, binary, cfg)
-	defer front.stop(t)
-	client := endpointProcessClient(t, front.address)
+	seed := startProcess(t, opts.binary, cfg)
+	defer seed.stop(t)
+	client := openDiscoveredClient(t, seed.address, []string{"records"})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	stream := testutil.OpenEvents(ctx, client, "records")
-	for i := 0; i < 4; i++ {
-		mutation := &pb.Operation_Mutate{Mutate: request}
-		op := &pb.Operation{Index: uint64(i), Operation: mutation}
-		_, variant := testutil.OperationCall(op)
-		frame := variant
-		if err := stream.Send(frame); err != nil {
-			t.Fatal(err)
-		}
+	produced, completed := 0, 0
+	options := routeclient.Options{
+		Destination: "records",
+		Produce: func(context.Context) (*pb.Call, error) {
+			if produced == 4 {
+				return nil, io.EOF
+			}
+			produced++
+			mutation := &pb.Call_Mutate{Mutate: opts.request}
+			call := &pb.Call{Version: 1, Operation: mutation}
+			return call, nil
+		},
+		Consume: func(_ context.Context, id uint64, event *pb.Event) error {
+			if event.GetResult() != nil {
+				if id != uint64(completed+1) || event.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+					return fmt.Errorf("direct ordered batch invalid result %d", id)
+				}
+				completed++
+			}
+			return nil
+		},
 	}
-	if err := stream.CloseSend(); err != nil {
-		t.Fatal(err)
+	if err := client.Run(ctx, options); err != nil || completed != 4 {
+		t.Fatal("direct pinned batch", completed, err)
 	}
-	for i := 0; i < 4; i++ {
-		frame, err := stream.Recv()
-		if err != nil || frame.GetResult().Index != uint64(i+1) || frame.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-			t.Fatal("forwarded ordered Bulk", frame, err)
-		}
-	}
-	if _, err := stream.Recv(); err != io.EOF {
-		t.Fatal(err)
-	}
-	metrics := testmetrics.Scrape(t, front.diagnostic)
-	if metrics["weir_backend_connections_limit"] != nil ||
-		metrics["weir_store_window_limit"] != nil ||
-		metrics["weir_store_executions_total"] != nil ||
-		testmetrics.Sum(metrics, "weir_relay_terminations_total") != 1 {
-		t.Fatal("forward-only node constructed local execution")
+	metrics := testmetrics.Scrape(t, seed.diagnostic)
+	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_window_limit"] != nil || metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+		t.Fatal("initialization node owns execution or forwarding")
 	}
 	targets := 0
 	for i, p := range opts.peers {
@@ -781,13 +776,13 @@ func budgetForwarding(t *testing.T, opts budgetForwardOptions) {
 		if delta == 4 {
 			targets++
 		} else if delta != 0 {
-			t.Fatal("Bulk migrated or replayed", delta)
+			t.Fatal("business stream migrated or replayed", delta)
 		}
 	}
 	if targets != 1 {
-		t.Fatal("Bulk did not stay on one executor", targets)
+		t.Fatal("business stream did not remain on one executor", targets)
 	}
-	t.Logf("forward-only PID=%d, 3 static executor endpoints, one pinned ordered Bulk/4 writes/End/EOF; no Local runtime/pool", front.command.Process.Pid)
+	t.Logf("initialization-only PID=%d, direct ordered batch/4 writes; no relay or local pool", seed.command.Process.Pid)
 }
 
 // The same finite overload shape drives both real adapter profiles. Each Bulk

@@ -26,7 +26,7 @@ func main() {
 }
 
 func run() error {
-	address := flag.String("address", "127.0.0.1:7447", "loopback Weir listener")
+	address := flag.String("address", "127.0.0.1:7447", "Weir initialization listener")
 	store := flag.String("store", "mongo", "mongo or search")
 	database := flag.String("database", "weir_m1", "configured Mongo database")
 	index := flag.String("index", "weir_m2_example", "configured Search index")
@@ -57,15 +57,14 @@ func run() error {
 		return fmt.Errorf("unsupported store")
 	}
 
-	conn, err := routeclient.Dial(*address)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	openOptions := routeclient.OpenOptions{Seed: *address, Stores: []string{*store}}
+	client, err := routeclient.Open(ctx, openOptions)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	client := pb.NewWeirClient(conn)
+	defer client.Close()
 	native := &pb.NativeCall{Open: open, Body: body}
 	variant := &pb.Call_Native{Native: native}
 	call := &pb.Call{Version: 1, Operation: variant}
@@ -91,7 +90,7 @@ func run() error {
 		// Consume native bytes here without collecting the entire response.
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, opts); err != nil {
+	if err := client.Run(ctx, opts); err != nil {
 		return fmt.Errorf("native response incomplete; effects indeterminate: %w", err)
 	}
 	if terminal == nil || terminal.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {

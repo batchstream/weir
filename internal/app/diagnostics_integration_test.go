@@ -16,7 +16,7 @@ import (
 
 func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	backend := testmongo.Open(t)
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	first, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -25,16 +25,15 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	_ = first.Close()
 	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Services = nil
-	cfg.Routing.Routes = nil
+	cfg.Routing.Stores = nil
+
 	for i := 0; i < 16; i++ {
 		name := fmt.Sprintf("local%d", i)
 		mongo := mongoFixtureConfig(t, backend.URI)
 		local := &Local{MongoDB: mongo}
-		service := Service{Name: name, Local: local}
-		cfg.Routing.Services = append(cfg.Routing.Services, service)
-		route := Route{Store: name, Service: name}
-		cfg.Routing.Routes = append(cfg.Routing.Routes, route)
+		service := StoreConfig{Name: name, Local: local}
+		cfg.Routing.Stores = append(cfg.Routing.Stores, service)
+
 	}
 	cfg.Basic.Memory = ByteSize(cfg.ReservedMemory())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -54,7 +53,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 		}
 	}
 	// One Route vocabulary and one scheduler keep the maximum graph fixed.
-	const maximumSeries = 1274
+	const maximumSeries = 1444
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}
@@ -76,5 +75,5 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if testmetrics.Series(after) != maximumSeries {
 		t.Fatal("state added series")
 	}
-	t.Logf("maximum legal graph: 16 LocalStores, 2 data listeners, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
+	t.Logf("maximum local Store configuration: 16 LocalStores, business and peer directory listeners, exactly %d Weir Prometheus series; no synthetic executions", maximumSeries)
 }

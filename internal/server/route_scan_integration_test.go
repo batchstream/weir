@@ -62,7 +62,7 @@ func assertRouteScanAcrossInstances(t *testing.T, opts routeScanAcrossInstancesO
 
 	if !t.Run("origin", func(t *testing.T) {
 		adapter := opts.open(t)
-		nodes, client := routeBackendChain(t, adapter, 1)
+		nodes, client := routeBackendServer(t, adapter)
 		end := readPage(t, client)
 		if end.Exhausted || end.DocumentCount != pageSize || len(token) == 0 {
 			t.Fatal("origin did not return a resumable page", end)
@@ -78,7 +78,7 @@ func assertRouteScanAcrossInstances(t *testing.T, opts routeScanAcrossInstancesO
 	}
 	if !t.Run("replacement", func(t *testing.T) {
 		adapter := opts.open(t)
-		nodes, client := routeBackendChain(t, adapter, 1)
+		nodes, client := routeBackendServer(t, adapter)
 		for page := 0; page <= len(opts.wantIDs); page++ {
 			end := readPage(t, client)
 			assertRouteAcceptanceIdle(t, nodes)

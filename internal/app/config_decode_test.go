@@ -22,7 +22,7 @@ func TestDecodeBasicDefaultsAndRemovedRoutingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults := DefaultConfig().Basic
-	if cfg.Memory != defaults.Memory || cfg.Forwarding != defaults.Forwarding || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
+	if cfg.Memory != defaults.Memory || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
 		t.Fatal("process defaults changed")
 	}
 	for _, field := range []string{
@@ -47,7 +47,7 @@ func TestDecodeBasicDefaultsAndRemovedRoutingFields(t *testing.T) {
 }
 
 func TestStrictConfigurationDocuments(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := credentialTestConfig(t, "search")
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -60,13 +60,13 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 		t.Run(document, func(t *testing.T) {
 			raw := string(basic)
 			duplicate := "MEMORY: 512MiB\n"
-			crossField := "services: []\n"
+			crossField := "stores: []\n"
 			nestedDuplicate := strings.Replace(raw, "max_connections: 16", "max_connections: 16\n    MAX_CONNECTIONS: 16", 1)
 			if document == "routing" {
 				raw = string(routing)
-				duplicate = "SERVICES: []\n"
+				duplicate = "STORES: []\n"
 				crossField = "listeners: {}\n"
-				nestedDuplicate = strings.Replace(raw, "max_concurrency: 2", "max_concurrency: 2\n            MAX_CONCURRENCY: 2", 1)
+				nestedDuplicate = strings.Replace(raw, "max_concurrency: 0", "max_concurrency: 0\n      MAX_CONCURRENCY: 0", 1)
 			}
 			var decodeErr error
 			if document == "basic" {
@@ -81,7 +81,7 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 				"", "null", "[]", "true", "2", "secret-sentinel", "{", "{]",
 				"unknown-secret-sentinel: value\n" + raw,
 				duplicate + raw,
-				"ſervices: []\n" + string(routing),
+				"ſtores: []\n" + string(routing),
 				crossField + raw,
 				nestedDuplicate,
 				raw + "---\n{}\n",
@@ -155,12 +155,12 @@ func TestConfigurationNestingBound(t *testing.T) {
 }
 
 func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := credentialTestConfig(t, "search")
 	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := "ſervices: []\n" + string(routing)
+	input := "ſtores: []\n" + string(routing)
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote routing field", err)
 	}
@@ -175,7 +175,7 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 }
 
 func TestBasicConfigurationRejectsNullFields(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := credentialTestConfig(t, "search")
 	raw, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +218,7 @@ func TestLoadRoutingPaths(t *testing.T) {
 	if err := os.Mkdir(directory, 0700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := remoteConfig(t)
+	cfg := credentialTestConfig(t, "search")
 	routing, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestLoadRoutingPaths(t *testing.T) {
 		for _, routingPath := range []string{"routing.yaml", routingFilename} {
 			loaded, err := Load(basicPath, routingPath)
 			if err != nil || loaded.Basic.Listeners.Application != cfg.Basic.Listeners.Application ||
-				len(loaded.Routing.Services) != 1 || len(loaded.Routing.Routes) != 1 {
+				len(loaded.Routing.Stores) != 1 {
 				t.Fatal("basic and routing paths must both resolve from the working directory", err)
 			}
 		}
@@ -256,7 +256,7 @@ func TestLoadUnavailableDocumentsAreRedacted(t *testing.T) {
 	if _, err := Load(filename, ""); err == nil || err.Error() != "basic configuration unavailable" {
 		t.Fatal("missing basic error leaked path", err)
 	}
-	cfg := remoteConfig(t)
+	cfg := credentialTestConfig(t, "search")
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
@@ -294,11 +294,11 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 		Connection: connection,
 	}
 	local := &Local{Search: backend}
-	service := Service{Name: "search", Local: local}
-	route := Route{Store: "records", Service: "search"}
+	service := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = listener.Addr().String()
-	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service}
 	filename := filepath.Join(t.TempDir(), "node.yaml")
 	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
 	if _, err := Load(filename, routingFilename); err != nil {
@@ -313,12 +313,12 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 	defer endpoint.Close()
 	backend := &Search{URL: endpoint.URL}
 	local := &Local{Search: backend}
-	service := Service{Name: "search", Local: local}
-	invalidService := Service{Name: "invalid"}
-	route := Route{Store: "records", Service: "search"}
+	service := StoreConfig{Name: "records", Local: local}
+	invalidService := StoreConfig{Name: "invalid"}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")
-	cfg.Routing.Services, cfg.Routing.Routes = []Service{service, invalidService}, []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service, invalidService}
 	filename := filepath.Join(t.TempDir(), "node.yaml")
 	routingFilename := writeConfigFiles(t, filename, cfg, 0600)
 	if _, err := Load(filename, routingFilename); err == nil || contacts.Load() != 0 {
@@ -327,81 +327,55 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 }
 
 func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := credentialTestConfig(t, "search")
 	raw, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
 	}
 	decoded, err := DecodeRouting(strings.NewReader(string(raw)))
-	if err != nil || decoded.Services[0].Local != nil || decoded.Services[0].Remote == nil {
-		t.Fatal("optional null Local adapter rejected", err)
+	if err != nil || len(decoded.Stores) != 1 || decoded.Stores[0].Search == nil || decoded.Stores[0].MongoDB != nil {
+		t.Fatal("optional null backend rejected", err)
 	}
 	if _, err := DecodeRouting(io.LimitReader(strings.NewReader(string(raw)), int64(len(raw)/2))); err == nil {
-		t.Fatal("truncated routing document accepted")
+		t.Fatal("truncated Store document accepted")
 	}
 }
 
 func TestConfigurationScalarTypes(t *testing.T) {
 	basic := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
-		"listeners:\n  application: 127001\n",
-		"listeners:\n  application: 127.0.0.1:0\nmemory: true\n",
-		basic + "diagnostics:\n  allow_intranet: yes\n",
-		basic + "diagnostics:\n  allow_intranet: 'true'\n",
-		basic + "transport:\n  max_connections: '16'\n",
-		basic + "transport:\n  max_sessions: 4.0\n",
-		basic + "forwarding:\n  hop_limit: false\n",
+		"listeners:\n  application: 127001\n", basic + "memory: true\n", basic + "diagnostics:\n  allow_intranet: yes\n", basic + "diagnostics:\n  allow_intranet: 'true'\n", basic + "transport:\n  max_connections: '16'\n", basic + "transport:\n  max_sessions: 4.0\n", basic + "discovery:\n  seeds: [123]\n",
 	} {
 		_, err := DecodeBasic(strings.NewReader(fragment))
 		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
-			t.Fatal("basic field accepted implicit type coercion", fragment, err)
+			t.Fatal("basic field accepted implicit type coercion", err)
 		}
 	}
-
-	routing := `services:
-  - name: remote
-    remote:
-      endpoints: [127.0.0.1:1]
-      max_concurrency: 2
-routes:
-  - store: records
-    service: remote
-`
-	for _, replacement := range [][2]string{
-		{"name: remote", "name: true"},
-		{"endpoints: [127.0.0.1:1]", "endpoints: [123]"},
-		{"max_concurrency: 2", "max_concurrency: '2'"},
-		{"store: records", "store: 123"},
-		{"service: remote", "service: false"},
-	} {
-		input := strings.Replace(routing, replacement[0], replacement[1], 1)
-		_, err := DecodeRouting(strings.NewReader(input))
+	input := "stores:\n  - name: records\n    search:\n      url: http://127.0.0.1:9200\n    max_concurrency: 2\n"
+	for _, replacement := range [][2]string{{"name: records", "name: true"}, {"url: http://127.0.0.1:9200", "url: 123"}, {"max_concurrency: 2", "max_concurrency: '2'"}} {
+		invalid := strings.Replace(input, replacement[0], replacement[1], 1)
+		_, err := DecodeRouting(strings.NewReader(invalid))
 		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
-			t.Fatal("routing field accepted implicit type coercion", replacement, err)
+			t.Fatal("Store field accepted implicit coercion", replacement, err)
 		}
 	}
 }
 
 func TestRoutingNullFields(t *testing.T) {
-	input := `services:
+	input := `stores:
   - name: database
-    remote: null
-    local:
-      search: null
-      mongodb:
-        uri: mongodb://127.0.0.1:27017
-routes:
-  - store: records
-    service: database
+    search: null
+    mongodb:
+      uri: mongodb://127.0.0.1:27017
 `
 	cfg, err := DecodeRouting(strings.NewReader(input))
-	if err != nil || cfg.Services[0].Remote != nil || cfg.Services[0].Local.Search != nil {
+	if err != nil || cfg.Stores[0].Local.Search != nil {
 		t.Fatal("unused adapter blocks may be explicitly null", err)
 	}
 	for _, field := range []string{"uri"} {
 		lines := strings.Split(input, "\n")
 		for i, line := range lines {
-			prefix := "        " + field + ":"
+			prefix := "      " + field + ":"
 			if strings.HasPrefix(line, prefix) {
 				lines[i] = prefix + " null"
 			}
@@ -412,8 +386,8 @@ routes:
 		}
 	}
 	for _, document := range []string{
-		"services: [null]\nroutes: [null]\n",
-		"services:\n  - name: remote\n    remote:\n      endpoints: null\n      max_concurrency: 2\nroutes:\n  - store: records\n    service: remote\n",
+		"stores: [null]\n",
+		"stores:\n  - name: remote\n    remote:\n      endpoints: null\n      max_concurrency: 2\n",
 	} {
 		if _, err := DecodeRouting(strings.NewReader(document)); err == nil {
 			t.Fatal("null required graph or endpoint collection accepted")
@@ -422,24 +396,20 @@ routes:
 }
 
 func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
-	input := `services:
+	input := `stores:
   - name: search
-    local:
-      search:
-        url: https://127.0.0.1:9200
-        connection:
-          username: user-secret-sentinel
-          password: password-secret-sentinel
-          ca_file: /missing/ca-secret-sentinel.pem
-routes:
-  - store: records
-    service: search
+    search:
+      url: https://127.0.0.1:9200
+      connection:
+        username: user-secret-sentinel
+        password: password-secret-sentinel
+        ca_file: /missing/ca-secret-sentinel.pem
 `
 	if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
 		t.Fatal("valid secret-bearing fields should pass pure validation", err)
 	}
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
-		unknown := strings.Replace(input, "        connection:\n", "        connection:\n          "+field+": field-secret-sentinel\n", 1)
+		unknown := strings.Replace(input, "      connection:\n", "      connection:\n        "+field+": field-secret-sentinel\n", 1)
 		_, err := DecodeRouting(strings.NewReader(unknown))
 		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
 			t.Fatal("unknown nested option must be rejected without exposing credentials or parser details", field, err)
@@ -465,13 +435,13 @@ func TestRoutingRejectsConfiguredResourceTargets(t *testing.T) {
 			endpoint = "url: http://127.0.0.1:9200"
 			fields = []string{"index", "profile"}
 		}
-		input := "services:\n  - name: local\n    local:\n      " + backend + ":\n        " + endpoint + "\nroutes:\n  - store: records\n    service: local\n"
+		input := "stores:\n  - name: records\n    " + backend + ":\n      " + endpoint + "\n"
 		if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
 			t.Fatal("server connection must validate without a configured resource target", backend, err)
 		}
 		for _, field := range fields {
 			t.Run(backend+"/"+field, func(t *testing.T) {
-				invalid := strings.Replace(input, "        "+endpoint+"\n", "        "+endpoint+"\n        "+field+": resource-secret-sentinel\n", 1)
+				invalid := strings.Replace(input, "      "+endpoint+"\n", "      "+endpoint+"\n      "+field+": resource-secret-sentinel\n", 1)
 				_, err := DecodeRouting(strings.NewReader(invalid))
 				if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
 					t.Fatal("removed target/profile field must be rejected without exposing its value", err)

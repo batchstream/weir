@@ -126,12 +126,12 @@ func (b *startupBackend) config() app.Config {
 		MaxConcurrency:     1,
 		MaxBatchOperations: 1,
 	}
-	service := app.Service{Name: "local", Local: local}
-	route := app.Route{Store: "records", Service: "local"}
+	service := app.StoreConfig{Name: "records", Local: local}
+
 	cfg := app.DefaultConfig()
 	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address =
 		"127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Routing.Services, cfg.Routing.Routes = []app.Service{service}, []app.Route{route}
+	cfg.Routing.Stores = []app.StoreConfig{service}
 	return cfg
 }
 
@@ -228,7 +228,7 @@ func startCLI(t *testing.T, cfg app.Config, mode string) *cliProcess {
 		t.Fatal(err)
 	}
 	routes := ""
-	if len(cfg.Routing.Services) != 0 || len(cfg.Routing.Routes) != 0 {
+	if len(cfg.Routing.Stores) != 0 {
 		routing, err := yaml.Marshal(cfg.Routing)
 		if err != nil {
 			t.Fatal(err)
@@ -389,18 +389,13 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 			cfg := b.config()
 			if partial {
 				held = newStartupBackend(t, "/")
-				remote := &app.Remote{Endpoints: []string{"127.0.0.1:1"}, MaxConcurrency: 1}
-				service := app.Service{Name: "remote", Remote: remote}
-				cfg.Routing.Services = append([]app.Service{service}, cfg.Routing.Services...)
-				remoteRoute := app.Route{Store: "remote", Service: "remote"}
-				cfg.Routing.Routes = append(cfg.Routing.Routes, remoteRoute)
 				backend := &app.Search{
 					URL: held.server.URL,
 				}
 				local := &app.Local{Search: backend, MaxConcurrency: 1}
-				second := app.Service{Name: "second", Local: local}
-				route := app.Route{Store: "second", Service: "second"}
-				cfg.Routing.Services, cfg.Routing.Routes = append(cfg.Routing.Services, second), append(cfg.Routing.Routes, route)
+				second := app.StoreConfig{Name: "second", Local: local}
+
+				cfg.Routing.Stores = append(cfg.Routing.Stores, second)
 			}
 			p := startCLI(t, cfg, "cli")
 			event(t, held.entered)
@@ -641,9 +636,9 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 		URL: held.server.URL,
 	}
 	local := &app.Local{Search: backend, MaxConcurrency: 1}
-	service := app.Service{Name: "second", Local: local}
-	route := app.Route{Store: "second", Service: "second"}
-	cfg.Routing.Services, cfg.Routing.Routes = append(cfg.Routing.Services, service), append(cfg.Routing.Routes, route)
+	service := app.StoreConfig{Name: "second", Local: local}
+
+	cfg.Routing.Stores = append(cfg.Routing.Stores, service)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
@@ -35,7 +36,6 @@ type delivery struct {
 	rpcEnded                  bool
 	released                  bool
 	slots                     chan struct{}
-	remoteSlots               chan struct{}
 	input                     *creditedBody
 	metrics                   *transportMetrics
 	method                    string
@@ -44,6 +44,25 @@ type delivery struct {
 
 func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	lifetime := s.limits.RouteLifetime
+	control := false
+	allowed := false
+	switch request.RequestURI {
+	case pb.Weir_Route_FullMethodName:
+		allowed = !s.peer
+	case pb.Weir_Resolve_FullMethodName:
+		allowed, control = !s.peer, true
+	case pb.Directory_Exchange_FullMethodName:
+		allowed, control = s.peer, true
+	}
+	if !allowed {
+		s.admission.rejections.WithLabelValues("method").Inc()
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Grpc-Status", strconv.Itoa(int(codes.Unimplemented)))
+		return
+	}
+	if control {
+		lifetime = min(directory.ExchangeTimeout, s.limits.Stall)
+	}
 	ingress, err := s.ingress(request)
 	if err != nil {
 		s.admission.rejections.WithLabelValues("ingress").Inc()
@@ -63,17 +82,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	if err := controller.SetWriteDeadline(deadline); err != nil {
 		return
 	}
-	// A ServeHTTP transport dispatches exactly one RPC. Keep that lifecycle
-	// contract explicit, including malformed/unregistered method paths.
-	switch request.RequestURI {
-	case pb.Weir_Route_FullMethodName:
-	default:
-		s.admission.rejections.WithLabelValues("method").Inc()
-		w.Header().Set("Content-Type", "application/grpc")
-		w.Header().Set("Grpc-Status", strconv.Itoa(int(codes.Unimplemented)))
-		return
+	slots := s.slots
+	if control {
+		slots = s.control
 	}
-	if err := s.enter(); err != nil {
+	if err := s.enterSlots(slots); err != nil {
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Grpc-Status", strconv.Itoa(int(status.Code(err))))
 		w.Header().Set("Grpc-Message", status.Convert(err).Message())
@@ -84,7 +97,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 		deadline:     deadline,
 		readDeadline: deadline,
 		stall:        s.limits.Stall,
-		slots:        s.slots,
+		slots:        slots,
 		metrics:      &s.metrics,
 		method:       methodLabel(request.RequestURI),
 	}
@@ -98,7 +111,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	request = request.WithContext(ctx)
 	request.Body = input
 	writer := &deadlineWriter{ResponseWriter: w, delivery: state}
-	s.grpc.ServeHTTP(writer, request)
+	if control {
+		s.controlGRPC.ServeHTTP(writer, request)
+	} else {
+		s.grpc.ServeHTTP(writer, request)
+	}
 }
 
 func (d *delivery) shorten(deadline time.Time) {
@@ -194,9 +211,6 @@ func (d *delivery) releaseSlotLocked() {
 	if d.slots != nil && d.finished && (!d.rpcStarted || d.rpcEnded) && !d.released {
 		d.released = true
 		<-d.slots
-		if d.remoteSlots != nil {
-			<-d.remoteSlots
-		}
 	}
 }
 

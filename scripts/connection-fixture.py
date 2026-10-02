@@ -220,17 +220,17 @@ class Fixture:
             "memory": str(self.options.weir_memory_mib) + "MiB", "transport": {"max_connections": self.options.max_connections, "max_sessions": self.options.max_sessions},
         }
         routes = {
-            "services": [{"name": "database", "local": {
+            "stores": [{"name": "records",
                 "max_concurrency": 4, "max_batch_operations": 16,
                 "search": {"url": "http://elasticsearch:9200"},
-            }}],
-            "routes": [{"store": "records", "service": "database"}],
+            }],
         }
-        local = routes["services"][0]["local"]
+        local = routes["stores"][0]
         if self.options.collect_ms is not None:
             local["batch_collect"] = str(self.options.collect_ms) + "ms"
         if self.options.max_read_size is not None:
             local["max_read_size"] = self.options.max_read_size
+        node["discovery"] = {"group": "records", "advertise": ["weir-" + str(index) + ":7447"]}
         self.save("node.yaml", config_yaml.dumps(node))
         self.save("routes.yaml", config_yaml.dumps(routes))
         cid = self.create("weir-" + str(index), [

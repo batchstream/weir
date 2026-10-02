@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestBasicConfigurationFile(t *testing.T) {
 	expected := DefaultConfig().Basic
 	expected.Listeners.Application = "127.0.0.1:7447"
 	expected.Diagnostics.Address = "127.0.0.1:7449"
-	if cfg.Basic != expected {
+	if !reflect.DeepEqual(cfg.Basic, expected) {
 		t.Fatal("basic configuration differs from its documented defaults and addresses")
 	}
 }
@@ -34,51 +35,30 @@ func TestRoutingConfigurationFile(t *testing.T) {
 	}
 	cfg, err := DecodeRouting(bytes.NewReader(raw))
 	if err != nil {
-		t.Fatal("routing file must validate without accessing its backend", err)
+		t.Fatal("Store file must validate without backend IO", err)
 	}
-	if len(cfg.Services) != 3 || len(cfg.Routes) != 3 {
-		t.Fatal("routing file must declare MongoDB, Search and remote services and routes")
+	if len(cfg.Stores) != 2 {
+		t.Fatal("reference must declare MongoDB and Search Stores")
 	}
-	service := cfg.Services[0]
-	if service.Name != "database" || service.Remote != nil || service.Local == nil ||
-		service.Local.MongoDB == nil || service.Local.Search != nil {
-		t.Fatal("routing file must declare a local MongoDB service")
-	}
-	limits := service.Local.runtimeLimits()
-	if limits.Concurrency != 2 || limits.BatchOperations != 32 || limits.Collect != 5*time.Millisecond {
-		t.Fatal("local scheduler limits differ from their documented defaults")
-	}
-	if service.Local.mongoConfig("mongo").MaxReadSize != 16<<10 {
-		t.Fatal("MongoDB read limit differs from its documented default")
-	}
-	if cfg.Routes[0].Store != "mongo" || cfg.Routes[0].Service != service.Name {
-		t.Fatal("public MongoDB Store must target the declared service")
-	}
-
-	service = cfg.Services[1]
-	if service.Name != "search" || service.Remote != nil || service.Local == nil ||
-		service.Local.Search == nil || service.Local.MongoDB != nil {
-		t.Fatal("routing file must declare a local Search service")
-	}
-	limits = service.Local.runtimeLimits()
-	if limits.Concurrency != 2 || limits.BatchOperations != 32 || limits.Collect != 5*time.Millisecond || service.Local.searchConfig("search").MaxReadSize != 16<<10 {
-		t.Fatal("Search limits differ from their documented defaults")
-	}
-	backend := service.Local.Search
-	if !strings.HasPrefix(backend.URL, "https://") ||
-		backend.Connection == nil || backend.Connection.Username != "weir" ||
-		backend.Connection.Password != "change-me" || backend.Connection.CAFile != "/etc/weir/ca.pem" {
-		t.Fatal("Search routing configuration must include the documented HTTPS connection fields")
-	}
-	if cfg.Routes[1].Store != "search" || cfg.Routes[1].Service != service.Name {
-		t.Fatal("public Search Store must target the declared service")
-	}
-
-	service = cfg.Services[2]
-	if service.Name != "upstream" || service.Local != nil || service.Remote == nil {
-		t.Fatal("routing file must declare a remote service")
-	}
-	if cfg.Routes[2].Store != "remote" || cfg.Routes[2].Service != service.Name {
-		t.Fatal("public remote Store must target the declared service")
+	for _, definition := range cfg.Stores {
+		limits := definition.runtimeLimits()
+		if limits.Concurrency != 2 || limits.BatchOperations != 32 || limits.Collect != 5*time.Millisecond {
+			t.Fatal("documented scheduler defaults differ")
+		}
+		if definition.Name == "mongo" {
+			if definition.MongoDB == nil || definition.Search != nil || definition.mongoConfig("mongo").MaxReadSize != 16<<10 {
+				t.Fatal("invalid documented Mongo Store")
+			}
+		} else if definition.Name == "search" {
+			if definition.Search == nil || definition.MongoDB != nil || definition.searchConfig("search").MaxReadSize != 16<<10 {
+				t.Fatal("invalid documented Search Store")
+			}
+			backend := definition.Search
+			if !strings.HasPrefix(backend.URL, "https://") || backend.Connection == nil || backend.Connection.Username != "weir" || backend.Connection.Password != "change-me" || backend.Connection.CAFile != "/etc/weir/ca.pem" {
+				t.Fatal("documented Search HTTPS fields differ")
+			}
+		} else {
+			t.Fatal("unexpected local Store")
+		}
 	}
 }

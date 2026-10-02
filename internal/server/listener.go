@@ -14,7 +14,7 @@ import (
 func (s *Server) Serving() <-chan struct{} { return s.serving }
 func (s *Server) Serve(listener net.Listener) error {
 	close(s.serving)
-	bounded := &limitedListener{Listener: listener, slots: s.admission.connections, server: s}
+	bounded := &limitedListener{Listener: listener, slots: s.connectionSlots, server: s}
 	err := s.http.Serve(bounded)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
@@ -35,6 +35,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			// ServeHTTP has no gRPC Drain. net/http owns HTTP/2 graceful shutdown;
 			// Stop joins the remaining bounded handlers after transport cancellation.
 			s.grpc.Stop()
+			s.controlGRPC.Stop()
 			close(stopped)
 		}()
 		select {

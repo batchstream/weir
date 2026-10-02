@@ -53,6 +53,10 @@
                   {
                     "name": "grpc",
                     "containerPort": 7447
+                  },
+                  {
+                    "name": "peer",
+                    "containerPort": 7448
                   }
                 ],
                 "securityContext": {
@@ -122,6 +126,20 @@
                     "mountPath": "/etc/weir",
                     "readOnly": true
                   }
+                ],
+                "env": [
+                  {
+                    "name": "POD_IP",
+                    "valueFrom": {
+                      "fieldRef": {
+                        "fieldPath": "status.podIP"
+                      }
+                    }
+                  },
+                  {
+                    "name": "WEIR_PEER_ADDRESS",
+                    "value": "$(POD_IP):7448"
+                  }
                 ]
               }
             ],
@@ -146,6 +164,31 @@
       },
       "spec": {
         "type": "ClusterIP",
+        "selector": {
+          "app": "weir"
+        },
+        "ports": [
+          {
+            "name": "grpc",
+            "port": 7447,
+            "targetPort": "grpc"
+          },
+          {
+            "name": "peer",
+            "port": 7448,
+            "targetPort": "peer"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "weir-headless"
+      },
+      "spec": {
+        "clusterIP": "None",
         "selector": {
           "app": "weir"
         },

@@ -1,0 +1,451 @@
+package routeclient
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/netip"
+	"slices"
+	"sync"
+	"time"
+
+	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/netlimit"
+	"google.golang.org/grpc"
+	_ "google.golang.org/grpc/balancer/roundrobin"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/resolver"
+	"google.golang.org/grpc/resolver/manual"
+	"google.golang.org/grpc/status"
+)
+
+const maxClientStores = 16
+const maxClientAddresses = 64
+
+var ErrClosed = errors.New("Weir client is closed")
+
+// OpenOptions identifies an initialization endpoint and the Stores required by
+// this client. Addresses are IP or DNS host:port pairs on Weir's plaintext
+// application listener. RefreshInterval defaults to 30 seconds; ResolveTimeout
+// bounds each discovery/DNS/connection operation and defaults to two seconds.
+// Resolver is an optional standard DNS transport, useful for isolated networks.
+type OpenOptions struct {
+	Seed            string
+	Stores          []string
+	RefreshInterval time.Duration
+	ResolveTimeout  time.Duration
+	Resolver        *net.Resolver
+}
+
+// Client initializes Store destinations through Resolve and sends each finite
+// business RPC directly to the discovered Store's replicas. It has no URI
+// affinity and never replays a business request. Close joins its refresh worker.
+type Client struct {
+	options OpenOptions
+	stores  map[string]*storeChannel
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
+	mu      sync.RWMutex
+	closed  bool
+	once    sync.Once
+}
+
+type storeChannel struct {
+	channel *addressChannel
+	mu      sync.RWMutex
+	targets []string
+	expires time.Time
+	ttl     time.Duration
+	err     error
+}
+
+type addressChannel struct {
+	connection *grpc.ClientConn
+	resolver   *manual.Resolver
+	addresses  []string
+}
+
+type refreshRound struct {
+	ctx  context.Context
+	seed *addressChannel
+	err  error
+}
+
+// Open completes initialization before returning: every requested Store has a
+// valid Resolve response and at least one ready direct business connection.
+// The opening context does not own the returned client's lifetime.
+func Open(ctx context.Context, options OpenOptions) (*Client, error) {
+	seed, err := directory.CanonicalAddress(options.Seed)
+	if err != nil {
+		return nil, fmt.Errorf("initialization address: %w", err)
+	}
+	if len(options.Stores) < 1 || len(options.Stores) > maxClientStores {
+		return nil, errors.New("initialization requires 1-16 Stores")
+	}
+	options.Seed = seed
+	options.Stores = slices.Clone(options.Stores)
+	slices.Sort(options.Stores)
+	for i, store := range options.Stores {
+		if !directory.ValidStore(store) || i > 0 && options.Stores[i-1] == store {
+			return nil, errors.New("invalid or duplicate initialization Store")
+		}
+	}
+	if options.RefreshInterval == 0 {
+		options.RefreshInterval = 30 * time.Second
+	}
+	if options.ResolveTimeout == 0 {
+		options.ResolveTimeout = 2 * time.Second
+	}
+	if options.RefreshInterval < 50*time.Millisecond || options.RefreshInterval > time.Hour || options.ResolveTimeout < time.Millisecond || options.ResolveTimeout > time.Minute {
+		return nil, errors.New("invalid discovery interval or timeout")
+	}
+	if _, bounded := ctx.Deadline(); !bounded {
+		var openCancel context.CancelFunc
+		ctx, openCancel = context.WithTimeout(ctx, options.ResolveTimeout)
+		defer openCancel()
+	}
+	lifetime, cancel := context.WithCancel(context.Background())
+	client := &Client{options: options, stores: make(map[string]*storeChannel), ctx: lifetime, cancel: cancel, done: make(chan struct{})}
+	seedChannel, err := client.newChannel(ctx, []string{seed})
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("initialization connection: %w", err)
+	}
+	defer seedChannel.connection.Close()
+	for _, store := range options.Stores {
+		response, resolveErr := client.initialResolve(ctx, seedChannel, store)
+		if resolveErr != nil {
+			client.closeChannels()
+			cancel()
+			return nil, resolveErr
+		}
+		resolvedAt := time.Now()
+		channel, channelErr := client.newChannel(ctx, response.Targets)
+		if channelErr != nil {
+			client.closeChannels()
+			cancel()
+			return nil, fmt.Errorf("initialize Store %s: %w", store, channelErr)
+		}
+		ready, readyCancel := context.WithTimeout(ctx, options.ResolveTimeout)
+		readyErr := waitReady(ready, channel.connection)
+		readyCancel()
+		if readyErr != nil {
+			_ = channel.connection.Close()
+			client.closeChannels()
+			cancel()
+			return nil, fmt.Errorf("initialize Store %s: %w", store, readyErr)
+		}
+		ttl := time.Duration(response.CacheTtlMs) * time.Millisecond
+		entry := &storeChannel{channel: channel, targets: slices.Clone(response.Targets), expires: resolvedAt.Add(ttl), ttl: ttl}
+		client.stores[store] = entry
+	}
+	for _, store := range options.Stores {
+		if _, err := client.storeClient(store); err != nil {
+			client.closeChannels()
+			cancel()
+			return nil, err
+		}
+	}
+	go client.refresh()
+	return client, nil
+}
+
+func (c *Client) initialResolve(ctx context.Context, seed *addressChannel, store string) (*pb.ResolveResponse, error) {
+	for {
+		response, err := c.resolve(ctx, seed, store)
+		if err == nil || status.Code(err) != codes.Unavailable || ctx.Err() != nil {
+			return response, err
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func waitReady(ctx context.Context, connection *grpc.ClientConn) error {
+	connection.Connect()
+	for {
+		state := connection.GetState()
+		if state == connectivity.Ready {
+			return ctx.Err()
+		}
+		if state == connectivity.Shutdown {
+			return ErrClosed
+		}
+		if !connection.WaitForStateChange(ctx, state) {
+			return ctx.Err()
+		}
+	}
+}
+
+func (c *Client) resolve(ctx context.Context, seed *addressChannel, store string) (*pb.ResolveResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.options.ResolveTimeout)
+	defer cancel()
+	request := &pb.ResolveRequest{Store: store}
+	client := pb.NewWeirClient(seed.connection)
+	started := time.Now()
+	response, err := client.Resolve(ctx, request, grpc.WaitForReady(true))
+	if err != nil {
+		return nil, fmt.Errorf("resolve Store %s: %w", store, err)
+	}
+	if response == nil || response.Store != store || !directory.ValidGroup(response.Group) || response.CacheTtlMs == 0 || response.CacheTtlMs > uint64(directory.CacheTTL/time.Millisecond) || len(response.ProtoReflect().GetUnknown()) != 0 {
+		return nil, fmt.Errorf("resolve Store %s: invalid directory response", store)
+	}
+	targets, err := directory.CanonicalTargets(response.Targets)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Store %s: %w", store, err)
+	}
+	response.Targets = targets
+	// Start the lease before the RPC so time spent in transport, DNS and
+	// connection setup can never extend the owner's advertised cache lifetime.
+	elapsed := uint64((time.Since(started) + time.Millisecond - 1) / time.Millisecond)
+	if elapsed >= response.CacheTtlMs {
+		return nil, status.Error(codes.Unavailable, "directory response expired during Resolve")
+	}
+	response.CacheTtlMs -= elapsed
+	return response, nil
+}
+
+func (c *Client) newChannel(ctx context.Context, targets []string) (*addressChannel, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.options.ResolveTimeout)
+	defer cancel()
+	addresses, err := physicalAddresses(ctx, c.options.Resolver, targets)
+	if err != nil {
+		return nil, err
+	}
+	builder := manual.NewBuilderWithScheme("weir-discovery")
+	state := addressState(addresses)
+	builder.InitialState(state)
+	options := connectionOptions()
+	options = append(options, grpc.WithResolvers(builder), grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`), grpc.WithIdleTimeout(0))
+	connection, err := grpc.NewClient("weir-discovery:///replicas", options...)
+	if err != nil {
+		return nil, err
+	}
+	channel := &addressChannel{connection: connection, resolver: builder, addresses: addresses}
+	connection.Connect()
+	return channel, nil
+}
+
+func physicalAddresses(ctx context.Context, dns *net.Resolver, targets []string) ([]string, error) {
+	addresses := make(map[string]struct{})
+	for _, target := range targets {
+		host, port, err := net.SplitHostPort(target)
+		if err != nil {
+			return nil, err
+		}
+		ips := []string{host}
+		if _, parseErr := netip.ParseAddr(host); parseErr != nil {
+			ips, err = netlimit.LookupHostLimit(ctx, dns, host, maxClientAddresses)
+			if err != nil {
+				return nil, fmt.Errorf("resolve business address %s: %w", host, err)
+			}
+		}
+		for _, ip := range ips {
+			address := net.JoinHostPort(ip, port)
+			addresses[address] = struct{}{}
+			if len(addresses) > maxClientAddresses {
+				return nil, errors.New("Store exceeds 64 physical addresses")
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(addresses))
+	for address := range addresses {
+		result = append(result, address)
+	}
+	slices.Sort(result)
+	return result, nil
+}
+
+func addressState(addresses []string) resolver.State {
+	state := resolver.State{Addresses: make([]resolver.Address, 0, len(addresses))}
+	for _, address := range addresses {
+		endpoint := resolver.Address{Addr: address}
+		state.Addresses = append(state.Addresses, endpoint)
+	}
+	return state
+}
+
+func (a *addressChannel) update(addresses []string) {
+	if slices.Equal(a.addresses, addresses) {
+		return
+	}
+	a.addresses = slices.Clone(addresses)
+	state := addressState(addresses)
+	a.resolver.UpdateState(state)
+}
+
+func (c *Client) refresh() {
+	defer close(c.done)
+	for {
+		interval := c.options.RefreshInterval
+		for _, entry := range c.stores {
+			entry.mu.RLock()
+			interval = min(interval, entry.ttl/3)
+			entry.mu.RUnlock()
+		}
+		interval = max(interval, 50*time.Millisecond)
+		timer := time.NewTimer(interval)
+		select {
+		case <-c.ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		c.refreshStores()
+	}
+}
+
+func (c *Client) refreshStores() {
+	ctx, cancel := context.WithTimeout(c.ctx, c.options.ResolveTimeout)
+	defer cancel()
+	seedContext, seedCancel := context.WithTimeout(ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
+	seed, err := c.newChannel(seedContext, []string{c.options.Seed})
+	seedCancel()
+	if seed != nil {
+		defer seed.connection.Close()
+	}
+	round := &refreshRound{ctx: ctx, seed: seed, err: err}
+	jobs := make(chan string, len(c.options.Stores))
+	for _, store := range c.options.Stores {
+		jobs <- store
+	}
+	close(jobs)
+	var workers sync.WaitGroup
+	for range min(4, len(c.options.Stores)) {
+		workers.Go(func() {
+			for store := range jobs {
+				c.refreshStore(round, store)
+			}
+		})
+	}
+	workers.Wait()
+}
+
+func (c *Client) refreshStore(round *refreshRound, store string) {
+	entry := c.stores[store]
+	entry.mu.RLock()
+	targets := slices.Clone(entry.targets)
+	valid := time.Now().Before(entry.expires)
+	entry.mu.RUnlock()
+	var addresses []string
+	var lookupErr error
+	// Refresh cached business DNS before a seed RPC can consume the round's
+	// deadline. Discovery outages must not hide scaled replicas of a valid Store.
+	if valid {
+		lookup, lookupCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
+		addresses, lookupErr = physicalAddresses(lookup, c.options.Resolver, targets)
+		lookupCancel()
+		if lookupErr == nil {
+			entry.mu.Lock()
+			entry.channel.update(addresses)
+			entry.mu.Unlock()
+		}
+	}
+	var response *pb.ResolveResponse
+	err := round.err
+	if err == nil {
+		resolve, resolveCancel := context.WithTimeout(round.ctx, max(c.options.ResolveTimeout/4, time.Millisecond))
+		response, err = c.resolve(resolve, round.seed, store)
+		resolveCancel()
+	}
+	if err != nil {
+		entry.mu.Lock()
+		entry.err = err
+		if status.Code(err) == codes.FailedPrecondition || status.Code(err) == codes.NotFound || status.Code(err) == codes.InvalidArgument || !time.Now().Before(entry.expires) {
+			entry.expires = time.Time{}
+			entry.channel.update(nil)
+		}
+		entry.mu.Unlock()
+		return
+	}
+	resolvedAt := time.Now()
+	if !valid || lookupErr != nil || !slices.Equal(targets, response.Targets) {
+		addresses, lookupErr = physicalAddresses(round.ctx, c.options.Resolver, response.Targets)
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if lookupErr != nil {
+		entry.err = lookupErr
+		entry.expires = time.Time{}
+		entry.channel.update(nil)
+		return
+	}
+	entry.channel.update(addresses)
+	entry.targets = slices.Clone(response.Targets)
+	entry.ttl = time.Duration(response.CacheTtlMs) * time.Millisecond
+	entry.expires = resolvedAt.Add(entry.ttl)
+	entry.err = nil
+}
+
+func (c *Client) storeClient(store string) (pb.WeirClient, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return nil, ErrClosed
+	}
+	entry := c.stores[store]
+	if entry == nil {
+		return nil, fmt.Errorf("Store %s was not initialized", store)
+	}
+	entry.mu.RLock()
+	defer entry.mu.RUnlock()
+	if !time.Now().Before(entry.expires) {
+		return nil, fmt.Errorf("Store %s discovery is unavailable or expired: %v", store, entry.err)
+	}
+	return pb.NewWeirClient(entry.channel.connection), nil
+}
+
+func (c *Client) Run(ctx context.Context, options Options) error {
+	client, err := c.storeClient(options.Destination)
+	if err != nil {
+		return err
+	}
+	return Run(ctx, client, options)
+}
+
+func (c *Client) Record(ctx context.Context, options RecordOptions) (*pb.Result, error) {
+	client, err := c.storeClient(options.Destination)
+	if err != nil {
+		return nil, err
+	}
+	return Record(ctx, client, options)
+}
+
+func (c *Client) ScanPage(ctx context.Context, options ScanPageOptions) (*pb.ScanEnd, error) {
+	client, err := c.storeClient(options.Destination)
+	if err != nil {
+		return nil, err
+	}
+	return ScanPage(ctx, client, options)
+}
+
+func (c *Client) closeChannels() {
+	for _, entry := range c.stores {
+		_ = entry.channel.connection.Close()
+	}
+}
+
+// Close cancels active requests, stops discovery and waits for owned DNS I/O.
+func (c *Client) Close() error {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		c.mu.Unlock()
+		c.cancel()
+		c.closeChannels()
+		<-c.done
+	})
+	return nil
+}

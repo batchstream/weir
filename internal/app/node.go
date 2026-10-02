@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -15,31 +16,31 @@ import (
 )
 
 type Node struct {
-	mu                      sync.Mutex
-	closed                  bool
-	started                 bool
-	state                   string
-	registry                *prometheus.Registry
-	diagnostics             *diagnostics
-	guard                   *overload.Guard
-	localNames, remoteNames []string
-	drains                  prometheus.Counter
-	drainDuration           prometheus.Histogram
-	admission               *server.Admission
-	runtimes                []*store.Runtime
-	remotes                 []*server.RemoteWeir
-	servers                 []*server.Server
-	listeners               []net.Listener
-	targets                 []overload.Target
-	budget                  uint64
-	stopGuard               context.CancelFunc
-	guardDone               chan struct{}
-	start                   sync.Once
-	startErr                error
-	serving                 sync.WaitGroup
-	once                    sync.Once
-	closeErr                error
-	Errors                  chan error
+	mu            sync.Mutex
+	closed        bool
+	started       bool
+	state         string
+	registry      *prometheus.Registry
+	diagnostics   *diagnostics
+	guard         *overload.Guard
+	localNames    []string
+	drains        prometheus.Counter
+	drainDuration prometheus.Histogram
+	admission     *server.Admission
+	runtimes      []*store.Runtime
+	directory     *directory.Directory
+	servers       []*server.Server
+	listeners     []net.Listener
+	targets       []overload.Target
+	budget        uint64
+	stopGuard     context.CancelFunc
+	guardDone     chan struct{}
+	start         sync.Once
+	startErr      error
+	serving       sync.WaitGroup
+	once          sync.Once
+	closeErr      error
+	Errors        chan error
 }
 
 func (n *Node) Start(startup context.Context) error {
@@ -68,6 +69,8 @@ func (n *Node) Start(startup context.Context) error {
 			n.serving.Go(func() { n.listenerEnded(srv.Serve(listener)) })
 			<-srv.Serving()
 		}
+
+		n.directory.Start(ctx)
 
 		if n.diagnostics != nil {
 			n.serving.Go(func() { n.listenerEnded(n.diagnostics.serve()) })
@@ -111,22 +114,26 @@ func (n *Node) Close(ctx context.Context) error {
 			runtime.BeginDrain()
 		}
 
-		finished := make(chan error, len(n.servers)+len(n.runtimes))
+		remaining := len(n.servers) + len(n.runtimes)
+		if n.directory != nil {
+			remaining++
+		}
+		finished := make(chan error, remaining)
+		if n.directory != nil {
+			go func() { finished <- n.directory.Close(drain) }()
+		}
 		for _, srv := range n.servers {
 			go func() { finished <- srv.Shutdown(drain) }()
 		}
 		for _, runtime := range n.runtimes {
 			go func() { finished <- runtime.Close(drain) }()
 		}
-		for range len(n.servers) + len(n.runtimes) {
+		for range remaining {
 			n.closeErr = errors.Join(n.closeErr, <-finished)
 		}
 
 		for _, listener := range n.listeners {
 			_ = listener.Close()
-		}
-		for _, remote := range n.remotes {
-			n.closeErr = errors.Join(n.closeErr, remote.Close())
 		}
 
 		n.drainDuration.Observe(time.Since(started).Seconds())

@@ -30,14 +30,13 @@ func TestPartialStartupReleasesConstructedMongo(t *testing.T) {
 	search := &Search{URL: "http://127.0.0.1:1"}
 	first := &Local{MongoDB: mongo}
 	second := &Local{Search: search}
-	mongoService := Service{Name: "mongo", Local: first}
-	searchService := Service{Name: "search", Local: second}
-	mongoRoute := Route{Store: "mongo", Service: "mongo"}
-	searchRoute := Route{Store: "search", Service: "search"}
+	mongoService := StoreConfig{Name: "mongo", Local: first}
+	searchService := StoreConfig{Name: "search", Local: second}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{mongoService, searchService}
-	cfg.Routing.Routes = []Route{mongoRoute, searchRoute}
+	cfg.Routing.Stores = []StoreConfig{mongoService, searchService}
+
 	for range 5 {
 		if routes, err := Open(ctx, cfg); err == nil || routes != nil {
 			t.Fatal("partial startup served routes")

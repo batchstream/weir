@@ -1,15 +1,16 @@
 # Route architecture
 
-Weir is a synchronous finite-batch database router. It has one process and one
-public data RPC, `Route(stream Request) returns (stream Response)`. A logical Store
-selects either a local adapter/runtime or a static RemoteWeir service. There is no
-queue service, persistent task system, worker executable, IPC, compatibility
-protocol or migration switch.
+Weir is a synchronous finite-batch database service with one process. Clients use
+`Resolve` to discover a logical Store and connect directly to its business targets.
+`Route(stream Request) returns (stream Response)` executes local Stores only.
+Equal peers synchronize a bounded in-memory directory through periodic unary
+exchanges. See [discovery design](discovery-design.md) for ownership, leases and
+client endpoint lifecycle. Lua evaluates inside the main process.
 
 ## Protocol and completion
 
 `Request{id,destination,payload}` carries one complete Call. The first valid
-request fixes the Store, Service and one downstream instance. Every request repeats
+request fixes the local Store and runtime; the client selects one instance. Every request repeats
 the same destination. IDs are positive, strictly increasing unsigned integers;
 gaps are legal, reuse and overflow are not. They associate results only: no durable
 deduplication or exactly-once guarantee exists.
@@ -52,29 +53,31 @@ if another request or final transport status fails.
 APPLIED can include a typed failure of a later acknowledgement step, such as
 replica confirmation; the failure does not erase positive application evidence.
 
-## Routing and transport
+## Discovery and direct transport
 
-One inbound RPC owns one outbound Route RPC. Downstream selection happens once;
-health changes cannot move a live batch. Remote service channels and bounded DNS/
-socket ownership survive between RPCs. Inbound and outbound pumps operate
-concurrently. Each request is received, validated and sent before another is read;
-each response is received and sent before another is read. A slow send therefore
-stops application reads in that direction.
+Application listeners expose Resolve and Route. Peer listeners expose bounded
+Directory.Exchange controls. Each process owns one directory shared by its
+listeners. Control requests have separate finite admission and short deadlines;
+periodic peer synchronization cannot consume every business session slot.
 
-Upstream input EOF only half-closes downstream sending; receiving drains the
-remaining responses. Original cancellation and remaining deadline propagate via
-the outgoing context. Peer ingress requires a canonical forwarding budget 0..8;
-each forward decrements it. Application ingress supplies the configured initial
-budget and rejects client-supplied reserved hop metadata. Metadata is not
-authentication: deploy the plaintext application/peer listeners on an isolated
-network. Only bounded diagnostics and hop metadata are forwarded.
+A Store group publishes reachable DNS/IP host:port targets. Client initialization
+resolves each requested Store through any seed node, then opens reusable
+round-robin channels to the returned business instances. Directory mapping
+refresh and proactive DNS refresh update new-RPC selection. An active Route
+remains pinned to its original instance. No business payload crosses a peer
+Exchange or another Weir's Route. An unknown local destination is rejected before
+Store execution.
 
-A finite Route lifetime and progress timeout cover decoding, backend work, sends
-and HTTP2 trailers. Handler completion and delivery completion jointly own the
-shared ingress slot. Shutdown stops new admission/input while admitted work drains
-within the bounded shutdown deadline. Cancellation/error paths interrupt input,
-close downstream streams and join pumps; stalled transport can close its bounded
-connection, affecting co-resident RPCs whose unfinished writes remain indeterminate.
+The existing finite lifetime, cancellation, half-close, bounded outstanding IDs
+and input/output flow control apply to direct Route. Input EOF stops new business
+requests while remaining results drain. Shutdown stops new admission/input and
+lets admitted work drain within a bounded deadline. Cancellation and transport
+failure never prove an uncompleted write was not applied and never trigger
+business replay.
+
+Both plaintext listeners require deployment-isolated networking. The synchronized
+directory carries only public Store/group/peer/target advertisements, never
+backend connection configuration or credentials.
 
 ## Memory and backpressure
 
@@ -91,7 +94,9 @@ connection, affecting co-resident RPCs whose unfinished writes remain indetermin
 | Store backend workspace | 128 MiB; physical batch reserves 24 MiB scratch |
 | Physical batch output | 8 MiB worst-case reservations, so at most 3 maximum-size reads |
 | Physical batch input | 8 MiB charged bytes and configured operation cap (default 16) |
-| Default process ingress | 4 RPCs, 16 accepted connections shared by both listeners |
+| Default application ingress | 4 business RPCs, 16 accepted application connections |
+| Directory controls | 2 concurrent controls per listener, 16 independent peer connections; 2 MiB exchanges |
+| Process base reserve | 64 MiB including bounded directory/control workspace |
 
 A request credit is reserved before application Recv. The ledger stores only ID
 and byte charges and deletes them when the request end is sent. A single decoded
@@ -102,7 +107,7 @@ this node finishes sending that Event; Send is not acknowledgement of peer recei
 
 `ServeHTTP` gRPC otherwise drains input eagerly: creditedBody explicitly bounds
 read-ahead to one maximum request frame. HTTP2 receive windows are 65535 bytes per
-stream/connection with 16 KiB frames. Outbound peer channels use static 65535-byte
+stream/connection with 16 KiB frames. Client channels use static 65535-byte
 windows, 16 KiB read/write buffers, bounded sockets, zero retry history and bounded
 message/header sizes. The declared per-RPC 64 MiB envelope counts input read-ahead,
 protobuf decoding/encoding copies, one response encoding and transport buffers in
@@ -110,7 +115,7 @@ addition to the application ledger. Result/backend reservations are separately
 bounded per Store. Increasing batch length does not increase these live budgets.
 
 App configuration rejects a process memory threshold smaller than the conservative
-sum of RPC, connection, Store and endpoint envelopes. The default threshold is
+sum of RPC, connection, Store and directory/control envelopes. The default threshold is
 1 GiB. It is an admission/overload threshold, not an OS allocator/RSS limit: GC
 slack, native allocations and runtime overhead remain observable separately.
 Lua programs must be trusted: the in-process VM has source/value/stack limits,
@@ -121,12 +126,12 @@ It must not be described as an allocation sandbox.
 
 One Store scheduler admits every Call with input, output and workspace charges.
 It selects compatible adapter batch keys under count/input/result/workspace bounds,
-and waits at most `local.batch_collect` (default 5 ms, configurable 0–10 ms). A near-deadline
+and waits at most `batch_collect` (default 5 ms, configurable 0–10 ms). A near-deadline
 item dispatches without waiting to fill the batch. Ordinary MongoDB requests batch
 by namespace; Search requests batch by concrete index. Options and transaction
 semantics are validated by the adapter; incompatible work executes singly.
 
-Ordinary Record Read reserves `local.max_read_size` source bytes (default 16 KiB,
+Ordinary Record Read reserves `max_read_size` source bytes (default 16 KiB,
 configurable 1 KiB–2 MiB). Smaller declarations allow more small reads within the
 same bounded batch result budget. An oversized source fails with
 `RESOURCE_EXHAUSTED`; datasets with larger sources must explicitly raise the limit.
@@ -201,7 +206,7 @@ and FIFO continuation after publication. Sending a document does not retain an
 execution permit, so a stalled scan at concurrency one permits short record work.
 
 The client starts a new finite Route RPC for each page and supplies the previous
-`next_continuation_token`. A live Route remains pinned to one downstream instance,
+`next_continuation_token`. A live Route remains pinned to one business instance,
 but the next RPC can select any instance serving the same Store and backend. No
 Weir session, process registry or shared task storage survives between scan pages.
 A page succeeds only after its ScanEnd count, request end frame and final gRPC OK;
@@ -228,7 +233,7 @@ Continuation tokens are bounded, versioned client inputs tied to the Store,
 resource, selector, representation and backend dialect. They are opaque to clients;
 their checksum detects corruption and is not authentication. Backend permissions
 remain the access boundary. This replaces the old whole-traversal Scan semantics;
-executors, relays and clients must upgrade together because unknown fields fail
+servers and clients must upgrade together because unknown fields fail
 strict validation.
 Native exchange is a singleton that can hold one execution permit during bounded
 backend streaming; slow output is canceled by the transport progress budget.
@@ -258,7 +263,7 @@ entire batch in application callbacks requires memory for that entire batch.
 end frame or failing final status. Preserve that result as backend evidence and
 check the error separately for complete RPC success.
 Reuse a connection across finite RPCs; a permanently open stream is unnecessary.
-Use static gRPC windows/buffers for the same client transport budget as peers.
+Use static gRPC windows/buffers for the same client transport budget as the server.
 
 Default Go/Python tests are offline safe. Real MongoDB/Search suites use explicit
 integration flags and owned loopback fixtures. The coverage map and validation

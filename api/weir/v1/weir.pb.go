@@ -208,6 +208,308 @@ func (NativeCompletion) EnumDescriptor() ([]byte, []int) {
 	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{2}
 }
 
+type ResolveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Store         string                 `protobuf:"bytes,1,opt,name=store,proto3" json:"store,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveRequest) Reset() {
+	*x = ResolveRequest{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveRequest) ProtoMessage() {}
+
+func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveRequest.ProtoReflect.Descriptor instead.
+func (*ResolveRequest) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ResolveRequest) GetStore() string {
+	if x != nil {
+		return x.Store
+	}
+	return ""
+}
+
+type ResolveResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Store         string                 `protobuf:"bytes,1,opt,name=store,proto3" json:"store,omitempty"`
+	Group         string                 `protobuf:"bytes,2,opt,name=group,proto3" json:"group,omitempty"`
+	Targets       []string               `protobuf:"bytes,3,rep,name=targets,proto3" json:"targets,omitempty"`
+	CacheTtlMs    uint64                 `protobuf:"varint,4,opt,name=cache_ttl_ms,json=cacheTtlMs,proto3" json:"cache_ttl_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveResponse) Reset() {
+	*x = ResolveResponse{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveResponse) ProtoMessage() {}
+
+func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveResponse.ProtoReflect.Descriptor instead.
+func (*ResolveResponse) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ResolveResponse) GetStore() string {
+	if x != nil {
+		return x.Store
+	}
+	return ""
+}
+
+func (x *ResolveResponse) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *ResolveResponse) GetTargets() []string {
+	if x != nil {
+		return x.Targets
+	}
+	return nil
+}
+
+func (x *ResolveResponse) GetCacheTtlMs() uint64 {
+	if x != nil {
+		return x.CacheTtlMs
+	}
+	return 0
+}
+
+// An incarnation is generated for each process. Only its owner increases the
+// sequence or renews its lease. Relays reduce, never renew, remaining_lease_ms.
+type NodeAdvertisement struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	NodeId           string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Sequence         uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	PeerAddress      string                 `protobuf:"bytes,3,opt,name=peer_address,json=peerAddress,proto3" json:"peer_address,omitempty"`
+	Group            string                 `protobuf:"bytes,4,opt,name=group,proto3" json:"group,omitempty"`
+	Stores           []string               `protobuf:"bytes,5,rep,name=stores,proto3" json:"stores,omitempty"`
+	Targets          []string               `protobuf:"bytes,6,rep,name=targets,proto3" json:"targets,omitempty"`
+	RemainingLeaseMs uint64                 `protobuf:"varint,7,opt,name=remaining_lease_ms,json=remainingLeaseMs,proto3" json:"remaining_lease_ms,omitempty"`
+	Withdrawn        bool                   `protobuf:"varint,8,opt,name=withdrawn,proto3" json:"withdrawn,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *NodeAdvertisement) Reset() {
+	*x = NodeAdvertisement{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeAdvertisement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeAdvertisement) ProtoMessage() {}
+
+func (x *NodeAdvertisement) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeAdvertisement.ProtoReflect.Descriptor instead.
+func (*NodeAdvertisement) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *NodeAdvertisement) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *NodeAdvertisement) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *NodeAdvertisement) GetPeerAddress() string {
+	if x != nil {
+		return x.PeerAddress
+	}
+	return ""
+}
+
+func (x *NodeAdvertisement) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *NodeAdvertisement) GetStores() []string {
+	if x != nil {
+		return x.Stores
+	}
+	return nil
+}
+
+func (x *NodeAdvertisement) GetTargets() []string {
+	if x != nil {
+		return x.Targets
+	}
+	return nil
+}
+
+func (x *NodeAdvertisement) GetRemainingLeaseMs() uint64 {
+	if x != nil {
+		return x.RemainingLeaseMs
+	}
+	return 0
+}
+
+func (x *NodeAdvertisement) GetWithdrawn() bool {
+	if x != nil {
+		return x.Withdrawn
+	}
+	return false
+}
+
+type ExchangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*NodeAdvertisement   `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExchangeRequest) Reset() {
+	*x = ExchangeRequest{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExchangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExchangeRequest) ProtoMessage() {}
+
+func (x *ExchangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExchangeRequest.ProtoReflect.Descriptor instead.
+func (*ExchangeRequest) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ExchangeRequest) GetNodes() []*NodeAdvertisement {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+type ExchangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*NodeAdvertisement   `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExchangeResponse) Reset() {
+	*x = ExchangeResponse{}
+	mi := &file_api_weir_v1_weir_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExchangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExchangeResponse) ProtoMessage() {}
+
+func (x *ExchangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_weir_v1_weir_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExchangeResponse.ProtoReflect.Descriptor instead.
+func (*ExchangeResponse) Descriptor() ([]byte, []int) {
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ExchangeResponse) GetNodes() []*NodeAdvertisement {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
 // IDs are nonzero and strictly increasing within an RPC; gaps are allowed.
 // Payload is a versioned Call for the configured Store adapter.
 type Request struct {
@@ -221,7 +523,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[0]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -233,7 +535,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[0]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -246,7 +548,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{0}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Request) GetId() uint64 {
@@ -284,7 +586,7 @@ type Response struct {
 
 func (x *Response) Reset() {
 	*x = Response{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[1]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +598,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[1]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -309,7 +611,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{1}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Response) GetId() uint64 {
@@ -349,7 +651,7 @@ type Call struct {
 
 func (x *Call) Reset() {
 	*x = Call{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[2]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -361,7 +663,7 @@ func (x *Call) String() string {
 func (*Call) ProtoMessage() {}
 
 func (x *Call) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[2]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -374,7 +676,7 @@ func (x *Call) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Call.ProtoReflect.Descriptor instead.
 func (*Call) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{2}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Call) GetVersion() uint32 {
@@ -465,7 +767,7 @@ type NativeCall struct {
 
 func (x *NativeCall) Reset() {
 	*x = NativeCall{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[3]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -477,7 +779,7 @@ func (x *NativeCall) String() string {
 func (*NativeCall) ProtoMessage() {}
 
 func (x *NativeCall) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[3]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -490,7 +792,7 @@ func (x *NativeCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeCall.ProtoReflect.Descriptor instead.
 func (*NativeCall) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{3}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *NativeCall) GetOpen() *NativeOpen {
@@ -525,7 +827,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[4]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -537,7 +839,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[4]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -550,7 +852,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{4}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Event) GetVersion() uint32 {
@@ -669,7 +971,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[5]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -681,7 +983,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[5]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -694,7 +996,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{5}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{10}
 }
 
 type Document struct {
@@ -707,7 +1009,7 @@ type Document struct {
 
 func (x *Document) Reset() {
 	*x = Document{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[6]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -719,7 +1021,7 @@ func (x *Document) String() string {
 func (*Document) ProtoMessage() {}
 
 func (x *Document) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[6]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -732,7 +1034,7 @@ func (x *Document) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Document.ProtoReflect.Descriptor instead.
 func (*Document) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{6}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Document) GetMediaType() string {
@@ -759,7 +1061,7 @@ type Failure struct {
 
 func (x *Failure) Reset() {
 	*x = Failure{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[7]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -771,7 +1073,7 @@ func (x *Failure) String() string {
 func (*Failure) ProtoMessage() {}
 
 func (x *Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[7]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,7 +1086,7 @@ func (x *Failure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Failure.ProtoReflect.Descriptor instead.
 func (*Failure) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{7}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Failure) GetCode() FailureCode {
@@ -812,7 +1114,7 @@ type ReadRequest struct {
 
 func (x *ReadRequest) Reset() {
 	*x = ReadRequest{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[8]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -824,7 +1126,7 @@ func (x *ReadRequest) String() string {
 func (*ReadRequest) ProtoMessage() {}
 
 func (x *ReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[8]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -837,7 +1139,7 @@ func (x *ReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadRequest.ProtoReflect.Descriptor instead.
 func (*ReadRequest) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{8}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ReadRequest) GetResource() string {
@@ -875,7 +1177,7 @@ type ReadResult struct {
 
 func (x *ReadResult) Reset() {
 	*x = ReadResult{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[9]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -887,7 +1189,7 @@ func (x *ReadResult) String() string {
 func (*ReadResult) ProtoMessage() {}
 
 func (x *ReadResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[9]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -900,7 +1202,7 @@ func (x *ReadResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadResult.ProtoReflect.Descriptor instead.
 func (*ReadResult) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{9}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReadResult) GetResult() isReadResult_Result {
@@ -977,7 +1279,7 @@ type MutateRequest struct {
 
 func (x *MutateRequest) Reset() {
 	*x = MutateRequest{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[10]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -989,7 +1291,7 @@ func (x *MutateRequest) String() string {
 func (*MutateRequest) ProtoMessage() {}
 
 func (x *MutateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[10]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1002,7 +1304,7 @@ func (x *MutateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutateRequest.ProtoReflect.Descriptor instead.
 func (*MutateRequest) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{10}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MutateRequest) GetResource() string {
@@ -1115,7 +1417,7 @@ type MutationResult struct {
 
 func (x *MutationResult) Reset() {
 	*x = MutationResult{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[11]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1127,7 +1429,7 @@ func (x *MutationResult) String() string {
 func (*MutationResult) ProtoMessage() {}
 
 func (x *MutationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[11]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1140,7 +1442,7 @@ func (x *MutationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutationResult.ProtoReflect.Descriptor instead.
 func (*MutationResult) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{11}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MutationResult) GetOutcome() MutationOutcome {
@@ -1170,7 +1472,7 @@ type Transform struct {
 
 func (x *Transform) Reset() {
 	*x = Transform{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[12]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1484,7 @@ func (x *Transform) String() string {
 func (*Transform) ProtoMessage() {}
 
 func (x *Transform) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[12]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1497,7 @@ func (x *Transform) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Transform.ProtoReflect.Descriptor instead.
 func (*Transform) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{12}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Transform) GetForm() isTransform_Form {
@@ -1250,7 +1552,7 @@ type ProgramTransform struct {
 
 func (x *ProgramTransform) Reset() {
 	*x = ProgramTransform{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[13]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1262,7 +1564,7 @@ func (x *ProgramTransform) String() string {
 func (*ProgramTransform) ProtoMessage() {}
 
 func (x *ProgramTransform) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[13]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1275,7 +1577,7 @@ func (x *ProgramTransform) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProgramTransform.ProtoReflect.Descriptor instead.
 func (*ProgramTransform) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{13}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ProgramTransform) GetRuntime() string {
@@ -1314,7 +1616,7 @@ type Operation struct {
 
 func (x *Operation) Reset() {
 	*x = Operation{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[14]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1326,7 +1628,7 @@ func (x *Operation) String() string {
 func (*Operation) ProtoMessage() {}
 
 func (x *Operation) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[14]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1339,7 +1641,7 @@ func (x *Operation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Operation.ProtoReflect.Descriptor instead.
 func (*Operation) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{14}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Operation) GetIndex() uint64 {
@@ -1404,7 +1706,7 @@ type Result struct {
 
 func (x *Result) Reset() {
 	*x = Result{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[15]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1416,7 +1718,7 @@ func (x *Result) String() string {
 func (*Result) ProtoMessage() {}
 
 func (x *Result) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[15]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1429,7 +1731,7 @@ func (x *Result) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Result.ProtoReflect.Descriptor instead.
 func (*Result) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{15}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Result) GetIndex() uint64 {
@@ -1495,7 +1797,7 @@ type ScanRequest struct {
 
 func (x *ScanRequest) Reset() {
 	*x = ScanRequest{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[16]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1507,7 +1809,7 @@ func (x *ScanRequest) String() string {
 func (*ScanRequest) ProtoMessage() {}
 
 func (x *ScanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[16]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1520,7 +1822,7 @@ func (x *ScanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanRequest.ProtoReflect.Descriptor instead.
 func (*ScanRequest) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{16}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ScanRequest) GetResource() string {
@@ -1573,7 +1875,7 @@ type ScanEnd struct {
 
 func (x *ScanEnd) Reset() {
 	*x = ScanEnd{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[17]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1585,7 +1887,7 @@ func (x *ScanEnd) String() string {
 func (*ScanEnd) ProtoMessage() {}
 
 func (x *ScanEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[17]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1598,7 +1900,7 @@ func (x *ScanEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanEnd.ProtoReflect.Descriptor instead.
 func (*ScanEnd) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{17}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ScanEnd) GetDocumentCount() uint64 {
@@ -1640,7 +1942,7 @@ type NativeOpen struct {
 
 func (x *NativeOpen) Reset() {
 	*x = NativeOpen{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[18]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1652,7 +1954,7 @@ func (x *NativeOpen) String() string {
 func (*NativeOpen) ProtoMessage() {}
 
 func (x *NativeOpen) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[18]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1665,7 +1967,7 @@ func (x *NativeOpen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeOpen.ProtoReflect.Descriptor instead.
 func (*NativeOpen) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{18}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *NativeOpen) GetResource() string {
@@ -1699,7 +2001,7 @@ type NativeHead struct {
 
 func (x *NativeHead) Reset() {
 	*x = NativeHead{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[19]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1711,7 +2013,7 @@ func (x *NativeHead) String() string {
 func (*NativeHead) ProtoMessage() {}
 
 func (x *NativeHead) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[19]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1724,7 +2026,7 @@ func (x *NativeHead) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeHead.ProtoReflect.Descriptor instead.
 func (*NativeHead) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{19}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *NativeHead) GetMetadata() *Document {
@@ -1751,7 +2053,7 @@ type NativeEnd struct {
 
 func (x *NativeEnd) Reset() {
 	*x = NativeEnd{}
-	mi := &file_api_weir_v1_weir_proto_msgTypes[20]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1763,7 +2065,7 @@ func (x *NativeEnd) String() string {
 func (*NativeEnd) ProtoMessage() {}
 
 func (x *NativeEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_api_weir_v1_weir_proto_msgTypes[20]
+	mi := &file_api_weir_v1_weir_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1776,7 +2078,7 @@ func (x *NativeEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeEnd.ProtoReflect.Descriptor instead.
 func (*NativeEnd) Descriptor() ([]byte, []int) {
-	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{20}
+	return file_api_weir_v1_weir_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *NativeEnd) GetCompletion() NativeCompletion {
@@ -1797,7 +2099,28 @@ var File_api_weir_v1_weir_proto protoreflect.FileDescriptor
 
 const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\n" +
-	"\x16api/weir/v1/weir.proto\x12\aweir.v1\"U\n" +
+	"\x16api/weir/v1/weir.proto\x12\aweir.v1\"&\n" +
+	"\x0eResolveRequest\x12\x14\n" +
+	"\x05store\x18\x01 \x01(\tR\x05store\"y\n" +
+	"\x0fResolveResponse\x12\x14\n" +
+	"\x05store\x18\x01 \x01(\tR\x05store\x12\x14\n" +
+	"\x05group\x18\x02 \x01(\tR\x05group\x12\x18\n" +
+	"\atargets\x18\x03 \x03(\tR\atargets\x12 \n" +
+	"\fcache_ttl_ms\x18\x04 \x01(\x04R\n" +
+	"cacheTtlMs\"\xff\x01\n" +
+	"\x11NodeAdvertisement\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1a\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12!\n" +
+	"\fpeer_address\x18\x03 \x01(\tR\vpeerAddress\x12\x14\n" +
+	"\x05group\x18\x04 \x01(\tR\x05group\x12\x16\n" +
+	"\x06stores\x18\x05 \x03(\tR\x06stores\x12\x18\n" +
+	"\atargets\x18\x06 \x03(\tR\atargets\x12,\n" +
+	"\x12remaining_lease_ms\x18\a \x01(\x04R\x10remainingLeaseMs\x12\x1c\n" +
+	"\twithdrawn\x18\b \x01(\bR\twithdrawn\"C\n" +
+	"\x0fExchangeRequest\x120\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x1a.weir.v1.NodeAdvertisementR\x05nodes\"D\n" +
+	"\x10ExchangeResponse\x120\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x1a.weir.v1.NodeAdvertisementR\x05nodes\"U\n" +
 	"\aRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12 \n" +
 	"\vdestination\x18\x02 \x01(\tR\vdestination\x12\x18\n" +
@@ -1932,9 +2255,12 @@ const file_api_weir_v1_weir_proto_rawDesc = "" +
 	"\x1dNATIVE_COMPLETION_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12NATIVE_NOT_STARTED\x10\x01\x12\x15\n" +
 	"\x11RESPONSE_COMPLETE\x10\x02\x12\x17\n" +
-	"\x13RESPONSE_INCOMPLETE\x10\x0328\n" +
-	"\x04Weir\x120\n" +
-	"\x05Route\x12\x10.weir.v1.Request\x1a\x11.weir.v1.Response(\x010\x01B0Z.github.com/batchstream/weir/api/weir/v1;weirv1b\x06proto3"
+	"\x13RESPONSE_INCOMPLETE\x10\x032v\n" +
+	"\x04Weir\x12<\n" +
+	"\aResolve\x12\x17.weir.v1.ResolveRequest\x1a\x18.weir.v1.ResolveResponse\x120\n" +
+	"\x05Route\x12\x10.weir.v1.Request\x1a\x11.weir.v1.Response(\x010\x012L\n" +
+	"\tDirectory\x12?\n" +
+	"\bExchange\x12\x18.weir.v1.ExchangeRequest\x1a\x19.weir.v1.ExchangeResponseB0Z.github.com/batchstream/weir/api/weir/v1;weirv1b\x06proto3"
 
 var (
 	file_api_weir_v1_weir_proto_rawDescOnce sync.Once
@@ -1949,77 +2275,88 @@ func file_api_weir_v1_weir_proto_rawDescGZIP() []byte {
 }
 
 var file_api_weir_v1_weir_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_api_weir_v1_weir_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_api_weir_v1_weir_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_api_weir_v1_weir_proto_goTypes = []any{
-	(FailureCode)(0),         // 0: weir.v1.FailureCode
-	(MutationOutcome)(0),     // 1: weir.v1.MutationOutcome
-	(NativeCompletion)(0),    // 2: weir.v1.NativeCompletion
-	(*Request)(nil),          // 3: weir.v1.Request
-	(*Response)(nil),         // 4: weir.v1.Response
-	(*Call)(nil),             // 5: weir.v1.Call
-	(*NativeCall)(nil),       // 6: weir.v1.NativeCall
-	(*Event)(nil),            // 7: weir.v1.Event
-	(*Empty)(nil),            // 8: weir.v1.Empty
-	(*Document)(nil),         // 9: weir.v1.Document
-	(*Failure)(nil),          // 10: weir.v1.Failure
-	(*ReadRequest)(nil),      // 11: weir.v1.ReadRequest
-	(*ReadResult)(nil),       // 12: weir.v1.ReadResult
-	(*MutateRequest)(nil),    // 13: weir.v1.MutateRequest
-	(*MutationResult)(nil),   // 14: weir.v1.MutationResult
-	(*Transform)(nil),        // 15: weir.v1.Transform
-	(*ProgramTransform)(nil), // 16: weir.v1.ProgramTransform
-	(*Operation)(nil),        // 17: weir.v1.Operation
-	(*Result)(nil),           // 18: weir.v1.Result
-	(*ScanRequest)(nil),      // 19: weir.v1.ScanRequest
-	(*ScanEnd)(nil),          // 20: weir.v1.ScanEnd
-	(*NativeOpen)(nil),       // 21: weir.v1.NativeOpen
-	(*NativeHead)(nil),       // 22: weir.v1.NativeHead
-	(*NativeEnd)(nil),        // 23: weir.v1.NativeEnd
+	(FailureCode)(0),          // 0: weir.v1.FailureCode
+	(MutationOutcome)(0),      // 1: weir.v1.MutationOutcome
+	(NativeCompletion)(0),     // 2: weir.v1.NativeCompletion
+	(*ResolveRequest)(nil),    // 3: weir.v1.ResolveRequest
+	(*ResolveResponse)(nil),   // 4: weir.v1.ResolveResponse
+	(*NodeAdvertisement)(nil), // 5: weir.v1.NodeAdvertisement
+	(*ExchangeRequest)(nil),   // 6: weir.v1.ExchangeRequest
+	(*ExchangeResponse)(nil),  // 7: weir.v1.ExchangeResponse
+	(*Request)(nil),           // 8: weir.v1.Request
+	(*Response)(nil),          // 9: weir.v1.Response
+	(*Call)(nil),              // 10: weir.v1.Call
+	(*NativeCall)(nil),        // 11: weir.v1.NativeCall
+	(*Event)(nil),             // 12: weir.v1.Event
+	(*Empty)(nil),             // 13: weir.v1.Empty
+	(*Document)(nil),          // 14: weir.v1.Document
+	(*Failure)(nil),           // 15: weir.v1.Failure
+	(*ReadRequest)(nil),       // 16: weir.v1.ReadRequest
+	(*ReadResult)(nil),        // 17: weir.v1.ReadResult
+	(*MutateRequest)(nil),     // 18: weir.v1.MutateRequest
+	(*MutationResult)(nil),    // 19: weir.v1.MutationResult
+	(*Transform)(nil),         // 20: weir.v1.Transform
+	(*ProgramTransform)(nil),  // 21: weir.v1.ProgramTransform
+	(*Operation)(nil),         // 22: weir.v1.Operation
+	(*Result)(nil),            // 23: weir.v1.Result
+	(*ScanRequest)(nil),       // 24: weir.v1.ScanRequest
+	(*ScanEnd)(nil),           // 25: weir.v1.ScanEnd
+	(*NativeOpen)(nil),        // 26: weir.v1.NativeOpen
+	(*NativeHead)(nil),        // 27: weir.v1.NativeHead
+	(*NativeEnd)(nil),         // 28: weir.v1.NativeEnd
 }
 var file_api_weir_v1_weir_proto_depIdxs = []int32{
-	11, // 0: weir.v1.Call.read:type_name -> weir.v1.ReadRequest
-	13, // 1: weir.v1.Call.mutate:type_name -> weir.v1.MutateRequest
-	19, // 2: weir.v1.Call.scan:type_name -> weir.v1.ScanRequest
-	6,  // 3: weir.v1.Call.native:type_name -> weir.v1.NativeCall
-	21, // 4: weir.v1.NativeCall.open:type_name -> weir.v1.NativeOpen
-	18, // 5: weir.v1.Event.result:type_name -> weir.v1.Result
-	9,  // 6: weir.v1.Event.document:type_name -> weir.v1.Document
-	22, // 7: weir.v1.Event.head:type_name -> weir.v1.NativeHead
-	20, // 8: weir.v1.Event.scan_end:type_name -> weir.v1.ScanEnd
-	23, // 9: weir.v1.Event.native_end:type_name -> weir.v1.NativeEnd
-	0,  // 10: weir.v1.Failure.code:type_name -> weir.v1.FailureCode
-	9,  // 11: weir.v1.ReadRequest.adapter_options:type_name -> weir.v1.Document
-	9,  // 12: weir.v1.ReadResult.document:type_name -> weir.v1.Document
-	8,  // 13: weir.v1.ReadResult.missing:type_name -> weir.v1.Empty
-	10, // 14: weir.v1.ReadResult.failure:type_name -> weir.v1.Failure
-	9,  // 15: weir.v1.MutateRequest.adapter_options:type_name -> weir.v1.Document
-	9,  // 16: weir.v1.MutateRequest.put:type_name -> weir.v1.Document
-	9,  // 17: weir.v1.MutateRequest.create:type_name -> weir.v1.Document
-	9,  // 18: weir.v1.MutateRequest.replace:type_name -> weir.v1.Document
-	8,  // 19: weir.v1.MutateRequest.delete:type_name -> weir.v1.Empty
-	15, // 20: weir.v1.MutateRequest.atomic_transform:type_name -> weir.v1.Transform
-	1,  // 21: weir.v1.MutationResult.outcome:type_name -> weir.v1.MutationOutcome
-	10, // 22: weir.v1.MutationResult.failure:type_name -> weir.v1.Failure
-	16, // 23: weir.v1.Transform.program:type_name -> weir.v1.ProgramTransform
-	9,  // 24: weir.v1.Transform.backend_expression:type_name -> weir.v1.Document
-	9,  // 25: weir.v1.ProgramTransform.input:type_name -> weir.v1.Document
-	11, // 26: weir.v1.Operation.read:type_name -> weir.v1.ReadRequest
-	13, // 27: weir.v1.Operation.mutate:type_name -> weir.v1.MutateRequest
-	12, // 28: weir.v1.Result.read:type_name -> weir.v1.ReadResult
-	14, // 29: weir.v1.Result.mutation:type_name -> weir.v1.MutationResult
-	9,  // 30: weir.v1.ScanRequest.selector:type_name -> weir.v1.Document
-	10, // 31: weir.v1.ScanEnd.failure:type_name -> weir.v1.Failure
-	9,  // 32: weir.v1.NativeOpen.descriptor:type_name -> weir.v1.Document
-	9,  // 33: weir.v1.NativeHead.metadata:type_name -> weir.v1.Document
-	2,  // 34: weir.v1.NativeEnd.completion:type_name -> weir.v1.NativeCompletion
-	10, // 35: weir.v1.NativeEnd.failure:type_name -> weir.v1.Failure
-	3,  // 36: weir.v1.Weir.Route:input_type -> weir.v1.Request
-	4,  // 37: weir.v1.Weir.Route:output_type -> weir.v1.Response
-	37, // [37:38] is the sub-list for method output_type
-	36, // [36:37] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	5,  // 0: weir.v1.ExchangeRequest.nodes:type_name -> weir.v1.NodeAdvertisement
+	5,  // 1: weir.v1.ExchangeResponse.nodes:type_name -> weir.v1.NodeAdvertisement
+	16, // 2: weir.v1.Call.read:type_name -> weir.v1.ReadRequest
+	18, // 3: weir.v1.Call.mutate:type_name -> weir.v1.MutateRequest
+	24, // 4: weir.v1.Call.scan:type_name -> weir.v1.ScanRequest
+	11, // 5: weir.v1.Call.native:type_name -> weir.v1.NativeCall
+	26, // 6: weir.v1.NativeCall.open:type_name -> weir.v1.NativeOpen
+	23, // 7: weir.v1.Event.result:type_name -> weir.v1.Result
+	14, // 8: weir.v1.Event.document:type_name -> weir.v1.Document
+	27, // 9: weir.v1.Event.head:type_name -> weir.v1.NativeHead
+	25, // 10: weir.v1.Event.scan_end:type_name -> weir.v1.ScanEnd
+	28, // 11: weir.v1.Event.native_end:type_name -> weir.v1.NativeEnd
+	0,  // 12: weir.v1.Failure.code:type_name -> weir.v1.FailureCode
+	14, // 13: weir.v1.ReadRequest.adapter_options:type_name -> weir.v1.Document
+	14, // 14: weir.v1.ReadResult.document:type_name -> weir.v1.Document
+	13, // 15: weir.v1.ReadResult.missing:type_name -> weir.v1.Empty
+	15, // 16: weir.v1.ReadResult.failure:type_name -> weir.v1.Failure
+	14, // 17: weir.v1.MutateRequest.adapter_options:type_name -> weir.v1.Document
+	14, // 18: weir.v1.MutateRequest.put:type_name -> weir.v1.Document
+	14, // 19: weir.v1.MutateRequest.create:type_name -> weir.v1.Document
+	14, // 20: weir.v1.MutateRequest.replace:type_name -> weir.v1.Document
+	13, // 21: weir.v1.MutateRequest.delete:type_name -> weir.v1.Empty
+	20, // 22: weir.v1.MutateRequest.atomic_transform:type_name -> weir.v1.Transform
+	1,  // 23: weir.v1.MutationResult.outcome:type_name -> weir.v1.MutationOutcome
+	15, // 24: weir.v1.MutationResult.failure:type_name -> weir.v1.Failure
+	21, // 25: weir.v1.Transform.program:type_name -> weir.v1.ProgramTransform
+	14, // 26: weir.v1.Transform.backend_expression:type_name -> weir.v1.Document
+	14, // 27: weir.v1.ProgramTransform.input:type_name -> weir.v1.Document
+	16, // 28: weir.v1.Operation.read:type_name -> weir.v1.ReadRequest
+	18, // 29: weir.v1.Operation.mutate:type_name -> weir.v1.MutateRequest
+	17, // 30: weir.v1.Result.read:type_name -> weir.v1.ReadResult
+	19, // 31: weir.v1.Result.mutation:type_name -> weir.v1.MutationResult
+	14, // 32: weir.v1.ScanRequest.selector:type_name -> weir.v1.Document
+	15, // 33: weir.v1.ScanEnd.failure:type_name -> weir.v1.Failure
+	14, // 34: weir.v1.NativeOpen.descriptor:type_name -> weir.v1.Document
+	14, // 35: weir.v1.NativeHead.metadata:type_name -> weir.v1.Document
+	2,  // 36: weir.v1.NativeEnd.completion:type_name -> weir.v1.NativeCompletion
+	15, // 37: weir.v1.NativeEnd.failure:type_name -> weir.v1.Failure
+	3,  // 38: weir.v1.Weir.Resolve:input_type -> weir.v1.ResolveRequest
+	8,  // 39: weir.v1.Weir.Route:input_type -> weir.v1.Request
+	6,  // 40: weir.v1.Directory.Exchange:input_type -> weir.v1.ExchangeRequest
+	4,  // 41: weir.v1.Weir.Resolve:output_type -> weir.v1.ResolveResponse
+	9,  // 42: weir.v1.Weir.Route:output_type -> weir.v1.Response
+	7,  // 43: weir.v1.Directory.Exchange:output_type -> weir.v1.ExchangeResponse
+	41, // [41:44] is the sub-list for method output_type
+	38, // [38:41] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_api_weir_v1_weir_proto_init() }
@@ -2027,13 +2364,13 @@ func file_api_weir_v1_weir_proto_init() {
 	if File_api_weir_v1_weir_proto != nil {
 		return
 	}
-	file_api_weir_v1_weir_proto_msgTypes[2].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[7].OneofWrappers = []any{
 		(*Call_Read)(nil),
 		(*Call_Mutate)(nil),
 		(*Call_Scan)(nil),
 		(*Call_Native)(nil),
 	}
-	file_api_weir_v1_weir_proto_msgTypes[4].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[9].OneofWrappers = []any{
 		(*Event_Result)(nil),
 		(*Event_Document)(nil),
 		(*Event_Head)(nil),
@@ -2041,27 +2378,27 @@ func file_api_weir_v1_weir_proto_init() {
 		(*Event_ScanEnd)(nil),
 		(*Event_NativeEnd)(nil),
 	}
-	file_api_weir_v1_weir_proto_msgTypes[9].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[14].OneofWrappers = []any{
 		(*ReadResult_Document)(nil),
 		(*ReadResult_Missing)(nil),
 		(*ReadResult_Failure)(nil),
 	}
-	file_api_weir_v1_weir_proto_msgTypes[10].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[15].OneofWrappers = []any{
 		(*MutateRequest_Put)(nil),
 		(*MutateRequest_Create)(nil),
 		(*MutateRequest_Replace)(nil),
 		(*MutateRequest_Delete)(nil),
 		(*MutateRequest_AtomicTransform)(nil),
 	}
-	file_api_weir_v1_weir_proto_msgTypes[12].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[17].OneofWrappers = []any{
 		(*Transform_Program)(nil),
 		(*Transform_BackendExpression)(nil),
 	}
-	file_api_weir_v1_weir_proto_msgTypes[14].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[19].OneofWrappers = []any{
 		(*Operation_Read)(nil),
 		(*Operation_Mutate)(nil),
 	}
-	file_api_weir_v1_weir_proto_msgTypes[15].OneofWrappers = []any{
+	file_api_weir_v1_weir_proto_msgTypes[20].OneofWrappers = []any{
 		(*Result_Read)(nil),
 		(*Result_Mutation)(nil),
 	}
@@ -2072,9 +2409,9 @@ func file_api_weir_v1_weir_proto_init() {
 			GoPackagePath: reflect.TypeOf(packageMarker).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_weir_v1_weir_proto_rawDesc), len(file_api_weir_v1_weir_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   21,
+			NumMessages:   26,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_api_weir_v1_weir_proto_goTypes,
 		DependencyIndexes: file_api_weir_v1_weir_proto_depIdxs,

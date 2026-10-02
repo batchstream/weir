@@ -11,13 +11,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var metricMethods = []string{"Route", "other"}
+var metricMethods = []string{"Route", "Resolve", "Exchange", "other"}
 var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
 
 func methodLabel(method string) string {
 	switch method {
 	case pb.Weir_Route_FullMethodName:
 		return "Route"
+	case pb.Weir_Resolve_FullMethodName:
+		return "Resolve"
+	case pb.Directory_Exchange_FullMethodName:
+		return "Exchange"
 	default:
 		return "other"
 	}
@@ -103,38 +107,6 @@ func (a *Admission) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
 	}
 	a.rejections.Collect(ch)
-}
-
-func (r *RemoteWeir) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
-
-func (r *RemoteWeir) Collect(ch chan<- prometheus.Metric) {
-	values := map[string]int{
-		"relays":        len(r.slots),
-		"relays_limit":  cap(r.slots),
-		"sockets":       len(r.sockets),
-		"sockets_limit": cap(r.sockets),
-	}
-	for name, value := range values {
-		desc := prometheus.NewDesc("weir_remote_"+name, "RemoteWeir reserved relay/socket occupancy or limit; sockets include in-progress dial.", nil, nil)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
-	}
-	desc := prometheus.NewDesc("weir_remote_connectivity", "Number of configured endpoints in each gRPC state, not database health; scrape never connects.", []string{"state"}, nil)
-	states := make(map[string]int)
-	for _, endpoint := range r.endpoints {
-		states[endpoint.conn.GetState().String()]++
-	}
-	for _, label := range []string{"IDLE", "CONNECTING", "READY", "TRANSIENT_FAILURE", "SHUTDOWN"} {
-		value := float64(states[label])
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, label)
-	}
-	r.terminations.Collect(ch)
-	r.incompletes.Collect(ch)
-	r.rejections.Collect(ch)
-}
-
-func (r *RemoteWeir) incomplete(method string, err error, message string) error {
-	r.incompletes.WithLabelValues(method).Inc()
-	return incomplete(err, message)
 }
 
 func (d *delivery) ioFailure(phase string, err error) {

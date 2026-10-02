@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/batchstream/weir/internal/directory"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -33,10 +34,10 @@ func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 	return cfg, cfg.Validate()
 }
 
-// Load resolves every configuration file and validates the graph before startup.
+// Load resolves every configuration file and validates local Store definitions before startup.
 // Basic and routing paths are interpreted from the process working directory.
 // Relative credential paths are resolved from the routing document's directory.
-// An empty routing path selects a node without services or routes.
+// An empty routing path selects a node without local Stores.
 func Load(basicFilename, routingFilename string) (Config, error) {
 	cfg := Config{}
 	file, err := os.Open(basicFilename)
@@ -50,6 +51,17 @@ func Load(basicFilename, routingFilename string) (Config, error) {
 	}
 	if closeErr != nil {
 		return cfg, errors.New("basic configuration unavailable")
+	}
+	if basic.Discovery.PeerAddressEnv != "" {
+		value, exists := os.LookupEnv(basic.Discovery.PeerAddressEnv)
+		if !exists {
+			return cfg, errors.New("advertised peer address environment value unavailable")
+		}
+		canonical, err := directory.CanonicalAddress(value)
+		if err != nil {
+			return cfg, errors.New("invalid advertised peer address environment value")
+		}
+		basic.Discovery.PeerAddress, basic.Discovery.PeerAddressEnv = canonical, ""
 	}
 	if routingFilename == "" {
 		cfg.Basic = basic
@@ -125,7 +137,7 @@ func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string
 	if node.Tag == "!!null" {
 		if allowNull {
 			switch field {
-			case "local", "remote", "mongodb", "search", "connection", "services", "routes", "endpoints":
+			case "mongodb", "search", "connection", "stores", "seeds", "advertise":
 				return nil
 			}
 		}
@@ -175,7 +187,7 @@ func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string
 	case yaml.ScalarNode:
 		expectedTag := "!!str"
 		switch field {
-		case "max_connections", "max_sessions", "hop_limit", "max_concurrency", "max_batch_operations":
+		case "max_connections", "max_sessions", "max_concurrency", "max_batch_operations":
 			expectedTag = "!!int"
 		case "allow_intranet":
 			expectedTag = "!!bool"

@@ -165,8 +165,6 @@ transport:
   max_sessions: 1
   timeouts:
     route: 1.5s
-forwarding:
-  hop_limit: 0
 `
 	basic, err := DecodeBasic(strings.NewReader(input))
 	if err != nil {
@@ -175,10 +173,10 @@ forwarding:
 	expected := server.DefaultLimits()
 	expected.Sessions = 1
 	expected.RouteLifetime = 1500 * time.Millisecond
-	if basic.Transport.serverLimits() != expected || basic.Memory != 1<<30 || basic.Forwarding.HopLimit != 0 {
+	if basic.Transport.serverLimits() != expected || basic.Memory != 1<<30 {
 		t.Fatal("partial nested settings discarded defaults or changed units")
 	}
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic = basic
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
@@ -209,7 +207,6 @@ func TestGroupedConfigurationBounds(t *testing.T) {
     route: 1ns
     stall: 30s
 `,
-		"forwarding:\n  hop_limit: 8\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err != nil {
 			t.Fatal("valid inclusive bound rejected", fragment, err)
@@ -244,31 +241,28 @@ func TestGroupedConfigurationRejectsOldFieldsAndNumbers(t *testing.T) {
 		}
 	}
 	for _, local := range []string{
-		`      mongo:
-        uri: mongodb://127.0.0.1:27017
+		`    mongo:
+      uri: mongodb://127.0.0.1:27017
 `,
-		`      mongodb:
-        uri: mongodb://127.0.0.1:27017
-      concurrency: 4
+		`    mongodb:
+      uri: mongodb://127.0.0.1:27017
+    concurrency: 4
 `,
-		`      mongodb:
-        uri: mongodb://127.0.0.1:27017
-      batch_operations: 16
+		`    mongodb:
+      uri: mongodb://127.0.0.1:27017
+    batch_operations: 16
 `,
 	} {
-		input := "services:\n  - name: local\n    local:\n" + local + "routes:\n  - store: records\n    service: local\n"
+		input := "stores:\n  - name: records\n" + local
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 			t.Fatal("old local field accepted", local)
 		}
 	}
-	input := `services:
+	input := `stores:
   - name: remote
     remote:
       endpoints: [127.0.0.1:1]
       relays: 2
-routes:
-  - store: records
-    service: remote
 `
 	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 		t.Fatal("old remote relays field accepted")

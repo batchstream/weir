@@ -29,11 +29,8 @@ func (n *Node) registerMetrics(cfg Config) error {
 		}
 	}
 
-	for i, remote := range n.remotes {
-		labels := prometheus.Labels{"service": n.remoteNames[i]}
-		if err := prometheus.WrapRegistererWith(labels, n.registry).Register(remote); err != nil {
-			return err
-		}
+	if err := n.registry.Register(n.directory); err != nil {
+		return err
 	}
 
 	for i, srv := range n.servers {

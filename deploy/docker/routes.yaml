@@ -1,10 +1,5 @@
-services:
-  - name: "database"
-    local:
-      mongodb:
-        uri: "mongodb://db.example.invalid:27017/?directConnection=true"
-      max_concurrency: 2
-
-routes:
-  - store: "records"
-    service: "database"
+stores:
+  - name: records
+    mongodb:
+      uri: mongodb://db.example.invalid:27017/?directConnection=true
+    max_concurrency: 2

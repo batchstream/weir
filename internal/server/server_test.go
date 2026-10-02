@@ -80,16 +80,11 @@ func TestConnectionBoundAndSingleClose(t *testing.T) {
 // The fixture is the assembly owner. A listener never closes borrowed runtimes.
 func newLocalServer(t *testing.T, stores map[string]*store.Runtime, limits Limits) (*Server, error) {
 	t.Helper()
-	routes := make(map[string]Service)
-	for name, runtime := range stores {
-		service := Service{LocalStore: runtime}
-		routes[name] = service
-	}
 	admission, err := NewAdmission(limits)
 	if err != nil {
 		return nil, err
 	}
-	config := Config{Routes: routes, Limits: limits, Admission: admission, InitialForwards: 4}
+	config := Config{Stores: stores, Limits: limits, Admission: admission}
 	srv, err := New(config)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)

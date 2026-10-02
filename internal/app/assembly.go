@@ -9,6 +9,7 @@ import (
 
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
@@ -44,7 +45,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	durationOpts := prometheus.HistogramOpts{
 		Name:    "weir_node_drain_seconds",
-		Help:    "Node data drain and owned backend/remote cleanup duration.",
+		Help:    "Node data drain and owned backend/directory cleanup duration.",
 		Buckets: []float64{.01, .1, 1, 5, 10},
 	}
 	node.drains = prometheus.NewCounter(drainOpts)
@@ -59,68 +60,23 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		}
 	}()
 
-	services := make(map[string]server.Service)
-	for _, definition := range cfg.Routing.Services {
+	stores := make(map[string]*store.Runtime)
+	for _, definition := range cfg.Routing.Stores {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-
-		var service server.Service
-		if definition.Remote != nil {
-			remoteConfig := server.RemoteConfig{
-				Endpoints: definition.Remote.Endpoints,
-				Relays:    definition.Remote.MaxConcurrency,
-			}
-			service.RemoteWeir, err = server.NewRemote(remoteConfig)
-			if err != nil {
-				return nil, err
-			}
-			node.remotes = append(node.remotes, service.RemoteWeir)
-			node.remoteNames = append(node.remoteNames, definition.Name)
-		} else {
-			var name string
-			for _, route := range cfg.Routing.Routes {
-				if route.Service == definition.Name {
-					name = route.Store
-					break
-				}
-			}
-			service.LocalStore, err = openLocal(ctx, name, definition.Local)
-			if err != nil {
-				return nil, err
-			}
-			node.runtimes = append(node.runtimes, service.LocalStore)
-			node.localNames = append(node.localNames, name)
-			node.targets = append(node.targets, service.LocalStore)
-		}
-		services[definition.Name] = service
-	}
-
-	routes := make(map[string]server.Service)
-	for _, route := range cfg.Routing.Routes {
-		routes[route.Store] = services[route.Service]
-	}
-
-	for i, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
-		if address == "" {
-			continue
-		}
-		options := server.Config{
-			Routes:          routes,
-			Limits:          limits,
-			Admission:       admission,
-			InitialForwards: cfg.Basic.Forwarding.HopLimit,
-		}
-		options.Peer = i == 1
-		listenerServer, err := server.New(options)
+		runtime, err := openLocal(ctx, definition.Name, definition.Local)
 		if err != nil {
 			return nil, err
 		}
-		node.servers = append(node.servers, listenerServer)
+		node.runtimes = append(node.runtimes, runtime)
+		node.localNames = append(node.localNames, definition.Name)
+		node.targets = append(node.targets, runtime)
+		stores[definition.Name] = runtime
 	}
 
-	// Construct and validate both transports before binding either address.
-	for _, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
+	applicationAddress, peerAddress := "", ""
+	for i, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -132,6 +88,49 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 			return nil, errors.New("listener startup failed")
 		}
 		node.listeners = append(node.listeners, listener)
+		if i == 0 {
+			applicationAddress = listener.Addr().String()
+		} else {
+			peerAddress = listener.Addr().String()
+		}
+	}
+
+	discovery := cfg.Basic.Discovery
+	if discovery.PeerAddress != "" {
+		peerAddress = discovery.PeerAddress
+	}
+	targets := discovery.Advertise
+	if len(targets) == 0 && applicationAddress != "" {
+		targets = []string{applicationAddress}
+	}
+	directoryConfig := directory.Config{
+		Group:       discovery.Group,
+		PeerAddress: peerAddress,
+		Targets:     targets,
+		Stores:      node.localNames,
+		Seeds:       discovery.Seeds,
+	}
+	node.directory, err = directory.New(directoryConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
+		if address == "" {
+			continue
+		}
+		options := server.Config{
+			Stores:    stores,
+			Directory: node.directory,
+			Limits:    limits,
+			Admission: admission,
+			Peer:      i == 1,
+		}
+		listenerServer, err := server.New(options)
+		if err != nil {
+			return nil, err
+		}
+		node.servers = append(node.servers, listenerServer)
 	}
 
 	node.guard = overload.New(node.targets, node.budget)

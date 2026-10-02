@@ -9,13 +9,14 @@ import (
 
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 )
 
-// Config contains the separately loaded process and routing settings.
+// Config contains the separately loaded process and local Store settings.
 type Config struct {
 	Basic   BasicConfig   `json:"basic" yaml:"basic"`
 	Routing RoutingConfig `json:"routing" yaml:"routing"`
@@ -27,7 +28,7 @@ type BasicConfig struct {
 	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
 	Memory      ByteSize          `json:"memory" yaml:"memory"`
 	Transport   TransportConfig   `json:"transport" yaml:"transport"`
-	Forwarding  ForwardingConfig  `json:"forwarding" yaml:"forwarding"`
+	Discovery   DiscoveryConfig   `json:"discovery" yaml:"discovery"`
 }
 
 type ListenerConfig struct {
@@ -40,25 +41,23 @@ type DiagnosticsConfig struct {
 	AllowIntranet bool   `json:"allow_intranet" yaml:"allow_intranet"`
 }
 
-type ForwardingConfig struct {
-	HopLimit int `json:"hop_limit" yaml:"hop_limit"`
+// DiscoveryConfig advertises the local Store group and seeds directory synchronization.
+type DiscoveryConfig struct {
+	Group          string   `json:"group" yaml:"group"`
+	PeerAddress    string   `json:"peer_address" yaml:"peer_address"`
+	PeerAddressEnv string   `json:"peer_address_env" yaml:"peer_address_env"`
+	Seeds          []string `json:"seeds" yaml:"seeds,omitempty"`
+	Advertise      []string `json:"advertise" yaml:"advertise,omitempty"`
 }
 
-// RoutingConfig defines the complete, static service and Store graph.
+// RoutingConfig declares only Stores hosted by this process.
 type RoutingConfig struct {
-	Services []Service `json:"services" yaml:"services"`
-	Routes   []Route   `json:"routes" yaml:"routes"`
+	Stores []StoreConfig `json:"stores" yaml:"stores"`
 }
 
-type Route struct {
-	Store   string `json:"store" yaml:"store"`
-	Service string `json:"service" yaml:"service"`
-}
-
-type Service struct {
-	Name   string  `json:"name" yaml:"name"`
-	Local  *Local  `json:"local" yaml:"local"`
-	Remote *Remote `json:"remote" yaml:"remote"`
+type StoreConfig struct {
+	Name   string `json:"name" yaml:"name"`
+	*Local `yaml:",inline"`
 }
 
 type Local struct {
@@ -91,11 +90,6 @@ type SearchConnection struct {
 	CAFile       string `json:"ca_file" yaml:"ca_file"`
 }
 
-type Remote struct {
-	Endpoints      []string `json:"endpoints" yaml:"endpoints"`
-	MaxConcurrency int      `json:"max_concurrency" yaml:"max_concurrency"`
-}
-
 type TransportConfig struct {
 	MaxConnections int               `json:"max_connections" yaml:"max_connections"`
 	MaxSessions    int               `json:"max_sessions" yaml:"max_sessions"`
@@ -118,11 +112,9 @@ func DefaultConfig() Config {
 		MaxSessions:    defaults.Sessions,
 		Timeouts:       timeouts,
 	}
-	forwarding := ForwardingConfig{HopLimit: 4}
 	basic := BasicConfig{
-		Memory:     1 << 30,
-		Transport:  transport,
-		Forwarding: forwarding,
+		Memory:    1 << 30,
+		Transport: transport,
 	}
 
 	cfg := Config{Basic: basic}
@@ -162,6 +154,9 @@ func (cfg Config) Validate() error {
 	if err := cfg.Routing.Validate(); err != nil {
 		return err
 	}
+	if err := cfg.validateDiscovery(); err != nil {
+		return err
+	}
 	if uint64(cfg.Basic.Memory) < cfg.ReservedMemory() {
 		return errors.New("process memory budget cannot cover declared Route and Store bounds")
 	}
@@ -172,20 +167,22 @@ func (cfg Config) Validate() error {
 // Runtime heap and RSS additionally include GC slack, stacks and driver/native
 // allocations; the overload guard enforces the configured process threshold.
 func (cfg Config) ReservedMemory() uint64 {
-	budget := uint64(32<<20) + uint64(cfg.Basic.Transport.MaxSessions)*(64<<20) + uint64(cfg.Basic.Transport.MaxConnections)*(256<<10)
-	for _, service := range cfg.Routing.Services {
+	budget := uint64(64<<20) + uint64(cfg.Basic.Transport.MaxSessions)*(64<<20) + uint64(cfg.Basic.Transport.MaxConnections)*(256<<10)
+	for _, service := range cfg.Routing.Stores {
 		if service.Local != nil {
 			limits := service.Local.runtimeLimits()
 			budget += uint64(limits.PendingBytes + limits.ResultBytes + limits.WorkingBytes)
 			budget += uint64(limits.Concurrency) * (2 << 20)
-		} else if service.Remote != nil {
-			budget += uint64(len(service.Remote.Endpoints)) * (1 << 20)
 		}
 	}
 	return budget
 }
 
 func (cfg BasicConfig) Validate() error {
+	if err := cfg.Discovery.validateSource(); err != nil {
+		return err
+	}
+
 	if cfg.Diagnostics.AllowIntranet && cfg.Diagnostics.Address == "" {
 		return errors.New("diagnostics.allow_intranet requires a diagnostic listener")
 	}
@@ -219,14 +216,78 @@ func (cfg BasicConfig) Validate() error {
 		}
 	}
 
-	if cfg.Forwarding.HopLimit < 0 || cfg.Forwarding.HopLimit > 8 ||
-		cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
+	if cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
 		return errors.New("invalid process bounds")
 	}
 	if err := cfg.Transport.serverLimits().Validate(); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func (cfg DiscoveryConfig) validateSource() error {
+	if cfg.PeerAddress != "" && cfg.PeerAddressEnv != "" {
+		return errors.New("peer address value and environment source are mutually exclusive")
+	}
+	if cfg.PeerAddressEnv == "" {
+		return nil
+	}
+	if len(cfg.PeerAddressEnv) > 128 {
+		return errors.New("invalid peer address environment source")
+	}
+	for i, c := range cfg.PeerAddressEnv {
+		if !(c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || i > 0 && c >= '0' && c <= '9') {
+			return errors.New("invalid peer address environment source")
+		}
+	}
+	return nil
+}
+
+func (cfg Config) validateDiscovery() error {
+	discovery := cfg.Basic.Discovery
+	if discovery.PeerAddressEnv != "" {
+		return errors.New("unresolved peer address environment source")
+	}
+	if discovery.Group != "" && !directory.ValidGroup(discovery.Group) {
+		return errors.New("invalid discovery group")
+	}
+	if len(discovery.Advertise) > 16 || len(discovery.Seeds) > 16 {
+		return errors.New("discovery address bound exceeded")
+	}
+	for _, addresses := range [][]string{discovery.Advertise, discovery.Seeds} {
+		if len(addresses) != 0 {
+			if _, err := directory.CanonicalTargets(addresses); err != nil {
+				return errors.New("invalid discovery addresses")
+			}
+		}
+	}
+	if discovery.PeerAddress != "" {
+		if _, err := directory.CanonicalAddress(discovery.PeerAddress); err != nil {
+			return errors.New("invalid advertised peer address")
+		}
+		if cfg.Basic.Listeners.Peer == "" {
+			return errors.New("advertised peer address requires peer listener")
+		}
+	}
+	if len(discovery.Seeds) != 0 && cfg.Basic.Listeners.Peer == "" {
+		return errors.New("discovery seeds require peer listener")
+	}
+	if len(cfg.Routing.Stores) != 0 && cfg.Basic.Listeners.Application == "" {
+		return errors.New("local Stores require application listener")
+	}
+	if len(discovery.Advertise) == 0 && len(cfg.Routing.Stores) != 0 {
+		host, _, _ := net.SplitHostPort(cfg.Basic.Listeners.Application)
+		if net.ParseIP(host).IsUnspecified() {
+			return errors.New("wildcard application listener requires discovery.advertise")
+		}
+	}
+	if cfg.Basic.Listeners.Peer != "" && discovery.PeerAddress == "" {
+		host, _, _ := net.SplitHostPort(cfg.Basic.Listeners.Peer)
+		if net.ParseIP(host).IsUnspecified() {
+			return errors.New("wildcard peer listener requires discovery.peer_address")
+		}
+	}
 	return nil
 }
 
@@ -237,13 +298,7 @@ func (cfg RoutingConfig) Validate() error {
 	if err := cfg.validateCredentialSources(); err != nil {
 		return err
 	}
-	for _, service := range cfg.Services {
-		if r := service.Remote; r != nil {
-			_, endpointErr := server.CanonicalEndpoints(r.Endpoints)
-			if endpointErr != nil || r.MaxConcurrency < 1 || r.MaxConcurrency > 16 {
-				return errors.New("invalid RemoteWeir")
-			}
-		}
+	for _, service := range cfg.Stores {
 
 		if l := service.Local; l != nil {
 			if l.MaxReadSize != nil && (*l.MaxReadSize < 1<<10 || *l.MaxReadSize > protocol.MaxDocument) {
@@ -279,38 +334,19 @@ func (cfg RoutingConfig) Validate() error {
 }
 
 func (cfg RoutingConfig) validateGraph() error {
-	if len(cfg.Services) > 16 ||
-		len(cfg.Routes) > 16 ||
-		(len(cfg.Services) == 0) != (len(cfg.Routes) == 0) {
-		return errors.New("invalid static graph bounds")
+	if len(cfg.Stores) > 16 {
+		return errors.New("invalid local Store bounds")
 	}
-	services := make(map[string]Service)
-	for _, service := range cfg.Services {
-		if !validName(service.Name) || services[service.Name].Name != "" || (service.Local == nil) == (service.Remote == nil) {
-			return errors.New("invalid or duplicate Service")
+	names := make(map[string]bool)
+	for _, definition := range cfg.Stores {
+		if !validName(definition.Name) || names[definition.Name] || definition.Local == nil {
+			return errors.New("invalid or duplicate Store")
 		}
-		if l := service.Local; l != nil && (l.MongoDB == nil) == (l.Search == nil) {
+		if (definition.MongoDB == nil) == (definition.Search == nil) {
 			return errors.New("LocalStore requires exactly one adapter")
 		}
-		services[service.Name] = service
+		names[definition.Name] = true
 	}
-
-	stores := make(map[string]bool)
-	uses := make(map[string]int)
-	for _, route := range cfg.Routes {
-		if !validName(route.Store) || stores[route.Store] || services[route.Service].Name == "" {
-			return errors.New("duplicate Store or invalid Service reference")
-		}
-		stores[route.Store] = true
-		uses[route.Service]++
-	}
-
-	for name, service := range services {
-		if uses[name] == 0 || service.Local != nil && uses[name] != 1 {
-			return errors.New("unused or aliased LocalStore")
-		}
-	}
-
 	return nil
 }
 

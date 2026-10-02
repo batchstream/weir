@@ -18,7 +18,7 @@ const (
 )
 
 func (cfg RoutingConfig) validateCredentialSources() error {
-	for _, service := range cfg.Services {
+	for _, service := range cfg.Stores {
 		if service.Local == nil {
 			continue
 		}
@@ -84,7 +84,7 @@ func (cfg RoutingConfig) resolveCredentials(directory string) error {
 	if err := cfg.validateCredentialSources(); err != nil {
 		return err
 	}
-	for _, service := range cfg.Services {
+	for _, service := range cfg.Stores {
 		if service.Local == nil {
 			continue
 		}

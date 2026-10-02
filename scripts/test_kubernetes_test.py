@@ -126,6 +126,20 @@ class CleanupTests(unittest.TestCase):
 
 @unittest.skipUnless(__debug__, "CLI explicitly rejects optimized Python; subprocess checks cover that refusal")
 class EntryTests(unittest.TestCase):
+    def test_store_configuration_uses_reachable_directory_and_sufficient_memory(self):
+        for concurrency in (1, 2):
+            cfg, stores = ENTRY.store_configuration(concurrency)
+            self.assertEqual(cfg["memory"], "768MiB")
+            self.assertEqual(cfg["listeners"]["peer"], "0.0.0.0:7448")
+            self.assertEqual(cfg["discovery"], {
+                "group": "records", "peer_address_env": "WEIR_PEER_ADDRESS",
+                "seeds": ["weir:7448"], "advertise": ["weir-headless:7447"],
+            })
+            self.assertEqual(stores["stores"][0]["name"], "records")
+            self.assertEqual(stores["stores"][0]["max_concurrency"], concurrency)
+            self.assertNotIn("services", stores)
+            self.assertNotIn("routes", stores)
+
     def invoke(self, root, owner="weir-m21-unit"):
         args = ["test-kubernetes.py", "--owner", owner, "--evidence", str(root)]
         with patch.object(sys, "argv", args), patch.dict(os.environ, {"WEIR_KUBE_INTEGRATION": "1"}):

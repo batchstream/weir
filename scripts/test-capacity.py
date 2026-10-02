@@ -126,20 +126,14 @@ def prepare(f, plan, artifact):
         "memory": "768MiB",
     }
     routes = {
-        "services": [
-            {
-                "name": "database",
-                "local": {
-                    "max_concurrency": 4,
-                    "max_batch_operations": 16,
-                    "search": {
-                        "url": "http://elasticsearch:9200",
-                    },
-                },
-            }
-        ],
-        "routes": [{"store": "records", "service": "database"}],
+        "stores": [{
+            "name": "records",
+            "max_concurrency": 4,
+            "max_batch_operations": 16,
+            "search": {"url": "http://elasticsearch:9200"},
+        }],
     }
+    cfg["discovery"] = {"group": "records", "advertise": ["weir:7447"]}
     f.save("node.yaml", config_yaml.dumps(cfg))
     f.save("routes.yaml", config_yaml.dumps(routes))
     run_options = dict(env=env)

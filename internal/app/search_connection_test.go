@@ -25,12 +25,12 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		Connection: c,
 	}
 	local := &Local{Search: backend}
-	definition := Service{Name: "search", Local: local}
-	route := Route{Store: "records", Service: "search"}
+	definition := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{definition}
-	cfg.Routing.Routes = []Route{route}
+	cfg.Routing.Stores = []StoreConfig{definition}
+
 	raw, err := yaml.Marshal(cfg.Routing)
 	if err != nil {
 		t.Fatal(err)
@@ -41,8 +41,8 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	// Even an invalid later service must be rejected before the first connection.
 	backend.URL = endpoint.URL
 	backend.Connection = nil
-	invalid := Service{Name: "bad"}
-	cfg.Routing.Services = append(cfg.Routing.Services, invalid)
+	invalid := StoreConfig{Name: "bad"}
+	cfg.Routing.Stores = append(cfg.Routing.Stores, invalid)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal("preflight bound listener")
 	}
 	_ = listener.Close()
-	cfg.Routing.Services = cfg.Routing.Services[:1]
+	cfg.Routing.Stores = cfg.Routing.Stores[:1]
 	backend.URL = "http://host:80"
 	backend.Connection = c
 	node, err = Open(context.Background(), cfg)
@@ -91,12 +91,12 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 		Connection: connection,
 	}
 	local := &Local{Search: backend}
-	service := Service{Name: "catalog", Local: local}
-	route := Route{Store: "records", Service: service.Name}
+	service := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service}
+
 	node, err := Open(context.Background(), cfg)
 	if node != nil ||
 		err == nil ||
@@ -160,12 +160,12 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 
 			backend := &Search{URL: endpoint.URL}
 			local := &Local{Search: backend}
-			service := Service{Name: "server", Local: local}
-			route := Route{Store: "records", Service: service.Name}
+			service := StoreConfig{Name: "records", Local: local}
+
 			cfg := DefaultConfig()
 			cfg.Basic.Listeners.Application = "127.0.0.1:0"
-			cfg.Routing.Services = []Service{service}
-			cfg.Routing.Routes = []Route{route}
+			cfg.Routing.Stores = []StoreConfig{service}
+
 			if tc.rejection != "" {
 				// An occupied listener catches any assembly attempted after rejection.
 				cfg.Basic.Listeners.Application = strings.TrimPrefix(endpoint.URL, "http://")

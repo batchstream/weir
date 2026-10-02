@@ -40,14 +40,13 @@ func serveControl(ctx context.Context, config, routes string, suppress bool) err
 	if err != nil {
 		return err
 	}
-	if len(cfg.Routing.Services) != 1 ||
-		cfg.Routing.Services[0].Local == nil ||
-		cfg.Routing.Services[0].Local.Search == nil ||
-		len(cfg.Routing.Routes) != 1 ||
-		cfg.Routing.Routes[0].Store != "records" {
+	if len(cfg.Routing.Stores) != 1 ||
+		cfg.Routing.Stores[0].Local == nil ||
+		cfg.Routing.Stores[0].Local.Search == nil ||
+		cfg.Routing.Stores[0].Name != "records" {
 		return errors.New("control server requires one owned search Store")
 	}
-	local := cfg.Routing.Services[0].Local
+	local := cfg.Routing.Stores[0].Local
 	limits := store.DefaultLimits()
 	if local.MaxConcurrency != 0 {
 		limits.Concurrency = local.MaxConcurrency
@@ -104,8 +103,8 @@ func serveControl(ctx context.Context, config, routes string, suppress bool) err
 	if err != nil {
 		return err
 	}
-	service := server.Service{LocalStore: runtime}
-	optionsServer := server.Config{Routes: map[string]server.Service{"records": service}, Limits: transport, Admission: admission}
+	stores := map[string]*store.Runtime{"records": runtime}
+	optionsServer := server.Config{Stores: stores, Limits: transport, Admission: admission}
 	s, err := server.New(optionsServer)
 	if err != nil {
 		return err

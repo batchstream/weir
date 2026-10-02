@@ -1,92 +1,52 @@
 # Weir
 
-Weir routes finite database batches through one bidirectional gRPC RPC, `Route`.
-Each RPC fixes one logical Store. Forwarding nodes relay bounded opaque envelopes
-to one downstream instance; the final node validates a versioned protobuf Call,
-admits it to one bounded scheduler and safely batches compatible database work
-across RPCs. Record reads/mutations, scans, native exchanges and atomic Lua
-transforms use that same execution boundary. Lua runs in the Weir process.
+Weir discovers logical Stores and executes finite database batches. Clients initialize
+through any Weir node with `Resolve`, then connect directly to the returned business
+targets. Nodes synchronize their Store directory through bounded periodic peer
+exchanges. Business `Route` streams execute only local Stores.
 
-This is a breaking protocol change. The former Read, Mutate, Bulk, Native and Scan
-RPCs and their stream control frames are removed. The repository's
-[`routeclient`](routeclient/client.go) runs synchronous finite batches with bounded
-parallel sending and consumption; the [basic](examples/basic/main.go) and
-[native](examples/native/main.go) examples show incremental use. Connections are
-reused between batches. Client libraries and deployment configuration must use
-the new protocol and `transport.timeouts.route` setting.
+Each finite bidirectional Route RPC selects one Store and one instance. Record
+reads/mutations, scans, native exchanges and atomic Lua transforms share the
+bounded Store scheduler. Compatible operations batch across RPCs. Lua runs inside
+the single Weir process. Uncompleted writes remain indeterminate after transport
+failure and are never automatically replayed.
 
-See [architecture](docs/architecture.md) for semantics and resource budgets,
-[test coverage](docs/route-test-coverage.md) for acceptance mapping and
-[Route verification](docs/route-validation.md) for current measured evidence.
-Historical load reports describe the protocol and commit tested at that time.
+This is a breaking routing/configuration refactor. Configuration declares local
+`stores` and peer discovery; there are no remote services, static remote route
+mappings, forwarding budgets or business relays. URI affinity is not implemented.
 
-Scan returns a finite page, with 128 documents by default and at most 256.
-Continue with `ScanEnd.next_continuation_token` in a new Route RPC; that RPC may
-reach another Weir instance. A successful page has either a continuation token
-or `exhausted=true`. Commit the token only after the matching document count,
-request end frame and final gRPC OK. An interrupted page can be read again from
-the previous token; consumers must handle repeated documents.
-
-This scan contract replaces the previous full traversal in one RPC. MongoDB uses
-ascending `_id` index pagination without a retained session or cursor; it does not
-provide a snapshot across pages. Search retains its snapshot in a backend PIT,
-which expires after 60 seconds without a successful fetch. All executors, relays
-and clients must use the updated schema. See the [payload contract](docs/route-payloads.md)
-for selector restrictions and continuation rules. The [scan example](examples/scan/main.go)
-uses `routeclient.ScanPage` to consume documents incrementally and commit a token
-only after complete page delivery.
+See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
+and [payload contracts](docs/route-payloads.md). See [current verification](docs/discovery-validation.md)
+for direct discovery evidence. Historical load reports describe
+the protocol and commit tested at that time.
 
 ## Build and run
 
-Requires Go **1.27.1**. Local backend routes require pre-created collections or
-indices. MongoDB program transforms require transactions on a replica set.
+Requires Go **1.27.1**. Backend collections/indices must already exist; MongoDB
+program transforms require a replica set with transactions.
 
 ```sh
 go build -o bin/weir ./cmd/weir
-bin/weir version
 bin/weir check --config config/weir.yaml --routes config/routes.yaml
+bin/weir serve --config config/weir.yaml --routes config/routes.yaml
 ```
 
-Keep the [basic configuration](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
-and [routing configuration](https://github.com/batchstream/weir/blob/main/config/routes.yaml)
-in the `config/` directory. Set backend addresses, resource names,
-credentials and CA paths in the routing file, and remove services/routes you do
-not need.
-Start with `bin/weir serve --config config/weir.yaml --routes config/routes.yaml`;
-`bin/weir serve` and `bin/weir check` default to `./weir.yaml` in the current
-directory. `--routes` defaults to empty: no routing file is loaded and no backend
-is assembled. Pass `--routes` to enable your routes. Both CLI paths resolve from
-the working directory; neither file is automatically discovered elsewhere.
-Lua program transforms run inside the Weir process; no additional executable or
-runtime path configuration is required.
-The application listener uses plaintext gRPC; deploy it on an isolated network.
-Lua programs must be trusted: each evaluation has a fresh restricted Lua state,
-a 500ms execution deadline (including admission), bounded source and typed values,
-and stack limits. At most four evaluations run concurrently in the process.
-Lua allocation has no hard per-evaluation memory limit.
+The basic process configuration and optional local Store document are separate.
+Both CLI paths resolve from the working directory. `--config` defaults to
+`./weir.yaml`; an omitted `--routes` assembles no backend. Nodes without local
+Stores can participate in discovery and answer Resolve for learned Stores.
 
-## Configuration
-
-Configuration follows the separation between startup settings and routing used by
-[Traefik](https://doc.traefik.io/traefik/getting-started/configuration-overview/).
-The basic file groups application and peer addresses under `listeners`, diagnostic
-HTTP settings under `diagnostics`, connection/session limits and readable timeouts
-under `transport`, and the hop budget under `forwarding`. The optional `--routes`
-argument selects a separate file containing `services` and `routes`.
-
-The [config/weir.yaml reference](https://github.com/batchstream/weir/blob/main/config/weir.yaml)
-documents every basic field. The separate
-[config/routes.yaml reference](https://github.com/batchstream/weir/blob/main/config/routes.yaml)
-documents every routing field, including MongoDB, Search, HTTPS authentication
-and peer forwarding. Both files contain actual YAML settings with comments for
-each field's purpose, required status, default, allowed values and relationships.
-All declared services and routes are active configuration.
-
-For example, `config/weir.yaml`:
+A process file:
 
 ```yaml
 listeners:
   application: "127.0.0.1:7447"
+  peer: "127.0.0.1:7448"
+discovery:
+  group: "catalog"
+  peer_address: "127.0.0.1:7448"
+  seeds: ["127.0.0.1:7548"]
+  advertise: ["127.0.0.1:7447"]
 diagnostics:
   address: "127.0.0.1:7449"
 memory: "1GiB"
@@ -96,152 +56,134 @@ transport:
   timeouts:
     route: "15m"
     stall: "30s"
-forwarding:
-  hop_limit: 4
 ```
 
-And `config/routes.yaml`:
+The local Store file:
 
 ```yaml
-services:
-  - name: "database"
-    local:
-      max_concurrency: 2
-      max_batch_operations: 32
-      batch_collect: "5ms"
-      max_read_size: "16KiB"
-      mongodb:
-        uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-routes:
-  - store: "mongo"
-    service: "database"
+stores:
+  - name: "mongo"
+    mongodb:
+      uri: "mongodb://127.0.0.1:27028/?directConnection=true"
+    max_concurrency: 2
+    max_batch_operations: 32
+    batch_collect: "5ms"
+    max_read_size: "16KiB"
 ```
 
-Both `--config` and `--routes` resolve relative paths from the working directory;
-absolute paths are also supported. An omitted `--routes`, an empty routing mapping
-(`{}`), or two empty `services`/`routes` lists produces an empty graph. Both lists
-can be omitted or null when empty. A partially populated graph is rejected.
-Services contain `local` or `remote` settings in the routing file. MongoDB and
-Search credentials can be configured as `username`/`password`
-values or read from `username_file`/`password_file` paths. Each credential must
-use only one source; inline and file sources can be mixed across the pair.
-Each local service connects to one backend server. The Call resource selects the
-MongoDB database and collection (`example/records/s:one`) or Search
-index (`records/s:one`); these targets are not configuration fields.
-Local services default to 2 concurrent backend executions, 32 operations per batch,
-a `5ms` collection window and a `16KiB` ordinary-read source limit. This small-document
-starting point follows the [resource tuning tests](docs/resource-refinement-test-2026-10-02.md).
-It reserves less space per read so more small reads fit into each bounded batch.
-Sources exceeding `local.max_read_size` return `RESOURCE_EXHAUSTED`; increase it
-explicitly, up to `2MiB`, for larger documents. Writes, Scan, Native and
-Lua/expression operations keep their existing limits.
-`local.batch_collect` accepts `0ms` through `10ms`; collection adds latency at low
-traffic. MongoDB read-heavy workloads can try `10ms` for more batching, while
-latency-sensitive workloads can reduce it to `1ms` or `0ms`. Tune against completed
-throughput, database CPU and tail latency; these defaults are not universal optima.
-The scheduler reduces concurrency for repeated slow successful batches as well
-as explicit database congestion, and recovers within `max_concurrency`.
-Latency pressure requires at least three comparable slow saturated batch or
-Scan-page completions over 100ms in a bounded interval of at most one second,
-comprising at least 10% of that profile's healthy completions. Tails below these
-thresholds do not keep extending the recovery hold.
-See [the architecture](docs/architecture.md) and
-[replica and connection budgets](deploy/kubernetes/scaling.md) before scaling.
-Weir identifies Elasticsearch or OpenSearch during startup, without a configured
-product profile or version allowlist. MongoDB connections also have no version
-allowlist. Required server and resource capabilities are checked before use.
-For example, a MongoDB service can use an inline username and a mounted password:
+`discovery.group` identifies the replica group providing those Stores.
+`peer_address` is the node's reachable peer address; seeds are bootstrap peer
+addresses, not remote Store mappings. `advertise` contains reachable business
+IP/DNS addresses with explicit ports. Replicas may publish one shared multi-address
+DNS name or their individual business addresses. Wildcard listener addresses need
+explicit reachable advertisements. Concrete standalone listeners can advertise
+their bound addresses automatically.
+For dynamic instance addresses, `peer_address_env` can name one environment variable
+containing the complete peer host:port; it is mutually exclusive with `peer_address`.
+Only this explicit address source is expanded during configuration loading.
 
-```yaml
-services:
-  - name: "database"
-    local:
-      mongodb:
-        uri: "mongodb://mongo.example.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
-        username: "weir"
-        password_file: "/run/secrets/mongo-password"
-routes:
-  - store: "mongo"
-    service: "database"
+The [process reference](config/weir.yaml) and [Store reference](config/routes.yaml)
+list the field bounds and defaults. Both files use strict single-document YAML:
+unknown/duplicate fields, anchors, aliases, explicit tags and documents over
+128 KiB are rejected. `weir check` validates configuration without connecting to
+peers or backends. Configuration changes take effect after a restart.
+
+Store defaults are two concurrent backend executions, 32 operations per batch,
+a `5ms` collection window and a `16KiB` ordinary-read limit. Tune against completed
+throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
+or container limit for a hard memory boundary. The adaptive scheduler and backend
+connection budgets remain independent of peer discovery.
+
+MongoDB and Search authentication can use explicit `username`/`password` fields
+or `username_file`/`password_file`; each credential has exactly one source. Search
+credentials belong under `search.connection`. Files resolve relative to the Store
+document, contain UTF-8 text and permit one final LF/CRLF. Usernames are limited to
+128 bytes and passwords to 256 bytes. URI userinfo is rejected. Authentication and
+backend configuration stay local and are never distributed in the Store directory.
+
+Application and peer listeners use plaintext gRPC on an isolated network. Peer
+metadata is not authentication. Lua programs must be trusted: a fresh restricted
+VM, execution/source/value/stack limits and bounded concurrency do not impose a
+hard allocation limit on arbitrary Lua objects.
+
+## Client initialization and business calls
+
+The high-level client resolves every requested Store before exposing business
+methods. It reuses round-robin channels, refreshes directory mappings and DNS,
+and drains retired connections without moving an active Route to another instance.
+Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
+addresses. Refresh runs at the earlier of the configured interval and one third of
+the remaining Resolve TTL.
+
+```go
+options := routeclient.OpenOptions{
+    Seed: "127.0.0.1:7447",
+    Stores: []string{"mongo"},
+}
+client, err := routeclient.Open(ctx, options)
+if err != nil {
+    return err
+}
+defer client.Close()
+// client.Record, client.Run and client.ScanPage connect to the resolved Store.
 ```
 
-Search supports the same credential sources inside `connection`:
+The [basic](examples/basic/main.go), [native](examples/native/main.go) and
+[scan](examples/scan/main.go) examples initialize through a seed. Low-level
+`Dial` and finite `Run`/`Record`/`ScanPage` helpers remain available for callers
+that already hold a direct generated gRPC client.
 
-```yaml
-connection:
-  username_file: "/run/secrets/search-username"
-  password_file: "/run/secrets/search-password"
-```
+A Route succeeds only after every request's business terminal and end frame,
+input half-close and final gRPC OK. A finite scan page returns a continuation
+checkpoint or exhaustion; commit its checkpoint only after complete delivery.
+A later page can use another instance. MongoDB scans paginate by ascending `_id`
+without a retained cursor; Search continuations carry the backend PIT snapshot.
+Consumers must tolerate repeated documents when restarting an interrupted page.
 
-Credential files contain plain UTF-8 text. One final LF or CRLF is removed;
-spaces are preserved. Usernames are limited to 128 bytes and passwords to 256
-bytes after that removal; empty values and control characters are rejected.
-File paths resolve from the routing file's directory, or can be absolute.
-Weir reads ordinary files and follows symbolic links, so credentials mounted from
-[Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-files-from-a-pod)
-can use this mechanism. Credentials are read by `check` and at startup; restart
-Weir after changing a credential file. MongoDB URIs contain the endpoint and
-connection options; configure credentials in the separate fields rather than URI
-userinfo. Credentials are passed directly to the database client.
+## Deployment
 
-Configure at least one application or peer listener. Both YAML configuration files
-are strict single-document YAML mappings with exact lowercase field names.
-Unknown fields, duplicate keys, anchors, aliases, merge keys, explicit tags,
-trailing documents and YAML files over 128 KiB are rejected. Weir validates both
-YAML files, credential sources and the complete route graph before opening
-listeners or backend connections.
-Changes take effect after a restart.
+The same discovery and client protocols support local processes, VMs, containers
+and Kubernetes. Every instance publishes its own peer address and Store targets.
+A seed can be an individual node, ordinary DNS name or load-balanced service.
 
-Memory is a string containing an integer and `B`, `KiB`, `MiB` or `GiB`, such as
-`"512MiB"` or `"1GiB"`; the allowed process budget is 64 MiB through 64 GiB.
-Timeouts use duration strings such as `"500ms"`, `"30s"` and `"5m"`. Omitted
-memory, transport and forwarding settings use the defaults shown above.
-Diagnostics are enabled by setting an address. Memory is an admission budget;
-use the deployment's memory limit to enforce an OS boundary.
+In Kubernetes, each Store group can use its own Deployment, HPA and headless
+business Service. A normal ClusterIP Service S1 selecting all Weir groups exposes
+application Resolve and peer bootstrap ports. A client connects to S1, resolves
+its Store to that group's headless DNS, then load-balances directly across the
+group's Ready Pods. S1 need not be headless. Scaling changes the DNS instance set;
+Store reassignment changes the directory mapping.
 
-The CLI uses Cobra commands:
-
-| Command | Purpose |
-| --- | --- |
-| `weir serve --config config/weir.yaml --routes config/routes.yaml` | Load process settings and routes, then start the server. |
-| `weir check --config config/weir.yaml --routes config/routes.yaml` | Validate settings, routes and credential files without backend or listener access. |
-| `weir version` | Print build identity. |
-| `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
-| `weir --help` | Show commands; each command also accepts `--help`. |
-
-`serve` and `check` accept `-c` as the short form of `--config` and optional
-`--routes` (default empty); `probe` accepts `--address` for a custom loopback
-diagnostic address. Backend, batching, listener and memory settings belong in
-the configuration files. Every compared binary in
-the load-comparison tool uses this same configuration layout.
-
-The peer examples require their routing files explicitly:
-
-```sh
-weir serve --config examples/peer-a.yaml --routes examples/peer-a.routes.yaml
-weir serve --config examples/peer-b.yaml --routes examples/peer-b.routes.yaml
-```
+See [Kubernetes scaling](deploy/kubernetes/scaling.md) for aggregate backend
+connection budgets. Adding Weir replicas does not increase the database's capacity.
 
 ## Development
 
 ```sh
 go test ./...
+go test -race ./...
 go vet ./...
 python3 -m unittest discover -s scripts -p '*_test.py'
 ```
 
-Default tests run without live backends. Live integration tests are opt-in through
-`scripts/test-integration.sh` and require locally prepared fixtures.
-Build reproducible release archives from a clean commit with
+Default tests use owned offline/loopback fixtures. Live backend and process tests
+are explicit opt-ins through `scripts/test-integration.sh`. Compile tagged helpers
+and run real backend profiles separately; tagged compilation is not live coverage.
+Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
 
-## Layout
+## CLI
 
-- `api/`: protocol definitions and generated Go types.
-- `cmd/weir/`: the single Weir server executable.
-- `internal/`: implementation and test helpers.
-- `config/`: complete basic and routing configuration references.
-- `examples/`: basic and native clients, plus peer configurations.
-- `deploy/`: Docker assets, third-party licenses and Kubernetes manifests.
-- `scripts/`: development, CI, release and opt-in local qualification tools.
-- `docs/architecture.md`: architecture and protocol contract.
+| Command | Purpose |
+| --- | --- |
+| `weir serve --config config/weir.yaml --routes config/routes.yaml` | Start discovery and configured local Stores. |
+| `weir check --config config/weir.yaml --routes config/routes.yaml` | Validate process settings, Stores and credential files. |
+| `weir version` | Print build identity. |
+| `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
+
+`serve` and `check` accept `-c` for `--config`. `probe --address` selects a loopback
+diagnostic address. The peer examples use their explicit local Store files:
+
+```sh
+weir serve --config examples/peer-a.yaml --routes examples/peer-a.routes.yaml
+weir serve --config examples/peer-b.yaml --routes examples/peer-b.routes.yaml
+```
