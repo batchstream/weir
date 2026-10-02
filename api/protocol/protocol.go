@@ -1,4 +1,5 @@
-// Package protocol validates wire envelopes without interpreting document fields.
+// Package protocol provides shared client and server validation of public wire
+// envelopes without interpreting document fields.
 package protocol
 
 import (

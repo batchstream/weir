@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/batchstream/weir/api/protocol"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 )

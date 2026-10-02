@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/batchstream/weir/api/netlimit"
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/netlimit"
-	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/balancer/roundrobin"
 	"google.golang.org/grpc/codes"

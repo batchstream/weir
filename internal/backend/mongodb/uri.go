@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/api/protocol"
 )
 
 const maxMongoURIBytes = 4096

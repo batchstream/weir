@@ -8,9 +8,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/batchstream/weir/api/netlimit"
+	"github.com/batchstream/weir/api/protocol"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
-	"github.com/batchstream/weir/internal/netlimit"
-	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

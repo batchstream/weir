@@ -1,5 +1,5 @@
-// Package netlimit owns bounded standard Go DNS I/O shared by backend and peer
-// connections. Callers retain lifecycle, concurrency and address selection.
+// Package netlimit provides bounded standard Go DNS I/O for clients and servers.
+// Callers retain lifecycle, concurrency and address selection.
 package netlimit
 
 import (

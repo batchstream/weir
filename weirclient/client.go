@@ -13,8 +13,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )

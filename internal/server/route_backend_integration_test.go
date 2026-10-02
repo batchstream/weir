@@ -20,12 +20,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir/api/protocol"
 	searchpb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
