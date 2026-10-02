@@ -3,7 +3,7 @@ module github.com/batchstream/weir
 go 1.27.1
 
 require (
-	github.com/batchstream/weir-go v0.1.2-0.20261002223424-e0c765b33cb4
+	github.com/batchstream/weir-go v0.1.2-0.20261002224656-a61189910fea
 	github.com/ebitengine/purego v0.10.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2

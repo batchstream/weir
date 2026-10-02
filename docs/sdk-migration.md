@@ -2,7 +2,7 @@
 
 The client is maintained in [weir-go](https://github.com/batchstream/weir-go),
 module `github.com/batchstream/weir-go`, package `weir`. The SDK migration source
-is `e0c765b33cb45dedfd15642b6c272c600d3596dc`. The server removes its
+is `a61189910fea1dc6e4dd9d621ba661e2f5267a53`. The server removes its
 `weirclient` package and Go client examples. Existing server acceptance tests use
 the external SDK; `cmd/weir` has no SDK package in its production dependency graph.
 
@@ -28,7 +28,11 @@ checks and eight Python helper tests pass with `GOWORK=off`. A separate consumer
 module installs the published SDK commit and executes a public-API smoke check.
 The real ingress regression remains in `internal/server`: connection budgets of
 1 and 16 support initialization and public reads beyond the initial two-second
-TTL without borrowing an extra connection.
+TTL without borrowing an extra connection. SDK fairness regressions explicitly
+control real ResolveStore admission and round deadlines, rather than combining
+short TTLs with large business-response throughput. A dual-core race/coverage
+stress run passes ten consecutive iterations, including failure priority, actual
+renewal/reads and cancellation/join.
 
 Task-owned loopback MongoDB 8.0.32 and Elasticsearch 8.19.22 profiles passed under
 race. SDK lifecycle coverage includes initialization, create/duplicate precondition,
