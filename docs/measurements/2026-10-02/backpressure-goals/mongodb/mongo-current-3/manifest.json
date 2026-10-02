@@ -1,0 +1,92 @@
+{
+  "tag": "mongo-current-3",
+  "mode": "current",
+  "rate": 2500,
+  "write_every": 10,
+  "healthy_cpu_m": 500,
+  "slow_cpu_m": 50,
+  "batch_operations": 8,
+  "client_queue": 32,
+  "measure_seconds": 90,
+  "transitions": [
+    {
+      "phase": "healthy",
+      "resize": {
+        "requested_wall_time": 1790897520.370966,
+        "confirmed": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790897526.8246095,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        },
+        "before": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790897518.3670447,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        }
+      }
+    },
+    {
+      "phase": "slow",
+      "resize": {
+        "requested_wall_time": 1790897601.2466729,
+        "confirmed": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "5000 100000",
+          "wall_time": 1790897608.0152066,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        },
+        "before": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790897599.3842754,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        }
+      }
+    },
+    {
+      "phase": "recovery",
+      "resize": {
+        "requested_wall_time": 1790897644.007149,
+        "confirmed": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790897650.3546383,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        },
+        "before": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "5000 100000",
+          "wall_time": 1790897642.216457,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        }
+      }
+    }
+  ],
+  "raw_sha256": "3d21c4ba584b32a0b46adbd2268623ee59cb0f12ea6e467351c677a9832145ef",
+  "database_identity": {
+    "comm": "mongod",
+    "start_ticks": 18298,
+    "cpu_max": "50000 100000",
+    "wall_time": 1790897707.9441497,
+    "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+    "restart_count": 0
+  },
+  "binary_hashes": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f  /bench/weir-final\n2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1  /bench/baseline-weir\naaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad  /bench/client-final\n06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f  /bench/sampler\nfa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d  /bench/sampler-metrics",
+  "database_fixed_request_cpu_m": 50,
+  "weir_request_cpu_m": 250,
+  "client_request_cpu_m": 50
+}

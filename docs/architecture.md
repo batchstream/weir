@@ -43,7 +43,8 @@ no batch Open, batch End or whole-stream result table.
 
 Backend failures are typed business results; route/envelope/transport failures are
 gRPC status. A mutation is NOT_STARTED only with evidence that no backend attempt
-started, NOT_APPLIED only with definite rejection, APPLIED only with a validated
+started, NOT_APPLIED only with definite rejection or definite evidence that the
+request was not sent, APPLIED only with a validated
 acknowledgement, otherwise UNKNOWN. A late protocol error or disconnect does not
 roll back preceding writes. Uncompleted writes are indeterminate. Weir never
 replays a possible mutation. Received acknowledged outcomes remain evidence even
@@ -120,10 +121,49 @@ It must not be described as an allocation sandbox.
 
 One Store scheduler admits every Call with input, output and workspace charges.
 It selects compatible adapter batch keys under count/input/result/workspace bounds,
-and waits at most 1 ms (maximum configurable collect window 10 ms). A near-deadline
+and waits at most `local.batch_collect` (default 1 ms, configurable 0–10 ms). A near-deadline
 item dispatches without waiting to fill the batch. Ordinary MongoDB requests batch
 by namespace; Search requests batch by concrete index. Options and transaction
 semantics are validated by the adapter; incompatible work executes singly.
+
+Ordinary Record Read reserves `local.max_read_size` source bytes (default 2 MiB,
+configurable 1 KiB–2 MiB). Smaller declarations allow more small reads within the
+same bounded batch result budget. An oversized source fails with
+`RESOURCE_EXHAUSTED`; this setting does not constrain writes, Scan, Native or
+Lua/expression results. Search bounds each multi-get response by these source
+reservations. MongoDB qualifies a namespace once within a compatible mixed
+physical batch, then performs the read and write phases; the next batch qualifies
+again so metadata and permissions are not retained across executions.
+
+Each Store maintains one adaptive execution window, bounded by `max_concurrency`.
+Explicit database congestion or an owned backend timeout halves the window and
+pauses dispatch for 100–300 ms. Successful record batches and Scan pages also
+train at most 64 latency profiles, grouped by target, operation kind, operation
+count and average input size. Four healthy samples establish a mean baseline;
+ordinary successful completions then update it in both directions with a 1/8
+EWMA. Queued slow work does not raise the baseline, so sustained pressure cannot
+become normal merely through continued observation. Three
+slow saturated samples within one second spanning at least 100 ms, exceeding
+twice that baseline plus 2 ms and representing at least 10% of comparable healthy
+batch or Scan-page completions in that profile, reduce the window by one when
+compatible work is waiting. Healthy completions without queue pressure also
+count in that denominator. This is a bounded evidence interval that resets on
+confirmation or after one second, rather than a full sliding-second record ratio. Saturation includes
+workspace pressure that prevents the next independent batch from fitting.
+Successful slow work continues at window one; repeated explicit congestion can
+still pause dispatch there. Recovery requires healthy saturated work and at
+least 250 ms between increases, with one second free of confirmed latency
+pressure before recovery. Fast quota bursts preserve recent slow evidence;
+tails below the confirmation thresholds cannot renew the shared recovery hold. Confirmed pressure
+on another target still blocks Store recovery.
+Native streaming and Lua execution do not train
+these latency profiles; complete MongoDB `ok: 1` replies and Search GET 2xx
+replies can probe one additional slot per second. Opaque Search POST replies
+are neutral. Successful work from an older window contributes comparable
+latency statistics but cannot change the new window or renew its recovery hold.
+Canceled callers and partial canceled batches cannot train latency, erase
+independent pressure evidence or trigger recovery. Slow successful responses are an overload signal, rather than a direct
+measurement of database CPU: Weir CPU pressure can also increase adapter latency.
 
 Responses for different IDs can interleave and arrive out of order, including
 responses for the same record; fragments within one ID stay in order. Within one RPC,
@@ -138,6 +178,16 @@ without canceling other interested callers. When all abandon a batch, backend wo
 is canceled. Record results are published through independently bounded ticket
 publishers after the execution permit is released, so a slow RPC does not block
 other RPCs in the same physical batch.
+
+Search records can prove a failed bulk write was not applied when the standard
+HTTP transport never acquired a connection, or execution stopped before the HTTP
+attempt. After connection acquisition, an incomplete acknowledgement remains
+UNKNOWN; writes are not replayed. A received valid mutation result remains
+evidence even when a later RPC end frame or trailer is lost.
+
+Canceling a blocked response interrupts that HTTP/2 stream through its owned
+deadlines. A transport stall watchdog can still close the shared connection to
+bound an unresponsive peer. Cancellation alone does not close sibling streams.
 
 Scan is a continuation of the same admitted ticket: one bounded page per scheduler
 step, no prefetch, FIFO continuation after publication, with cursor/PIT owned by the

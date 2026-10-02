@@ -1,0 +1,25 @@
+{
+  "operation": "archive-only",
+  "regular_member_count": 451,
+  "archive_sha256": "abc3b93785bfbb1c5f942ea02d5f0af085ed11a5888374f77e68bf1215d65bc5",
+  "archive_bytes": 2162420,
+  "all_member_sha256_match_sealed_inventory": true,
+  "all_prearchive_outputs_byte_identical": true,
+  "preserved_prearchive_output_sha256": {
+    "report.md": "42eaab8de81da4a890733a8e6e3fa85e79a8e023d4278d6a2c4eddefeb9c9a21",
+    "results.json": "db056e5d63c2cc0278d6fe68b7579e83acf45513e703f590cc16461ba5aee739",
+    "failed-case.json": "4fb5823a86ceb998331e0cf68ece5037c0b68492860fb6df54471e2f588ac73c",
+    "cleanup-independent.json": "4ec0dabe475c87712573317b22d220a9945c3c07f7995b86296d07265450b3e6",
+    "cleanup.json": "ccfcdac41900a60eb0f1d41547d56017ed920c8f9b43593d9547b5334c77b7b3",
+    "findings.json": "ee69e127f7bcdb3e7d6c707950d974973f211e402974e32bfa9cec02f3ec3be3",
+    "node-after-failure-summary.json": "1112d86ef0df93e96f5396ab7e49724e78e946681c2ed142532ce05341c2811d",
+    "cleanup-local.json": "ca3f66631b7ed427b2f8e28933fd0d3af1cc4f6f2b0531266a92b6f3767a3690",
+    "raw-member-manifest.json": "6f656ca58c51fb3060af2eb2fef3ac092fa53b615ce5d73408d9c3feb72eef02",
+    "events-after-failure.json": "08f102cf2f98920fe513e91b26e9b050be053f6e680363bf4b054c8ea492d740",
+    "findings.md": "42eaab8de81da4a890733a8e6e3fa85e79a8e023d4278d6a2c4eddefeb9c9a21",
+    "bundle-provenance.json": "50c18e084754258edc2cb62085838e3b5a597c09c423a110d64682cd5bdef425"
+  },
+  "input_manifest_sha256": "6f656ca58c51fb3060af2eb2fef3ac092fa53b615ce5d73408d9c3feb72eef02",
+  "inventory_archive_pending_flag_preserved": true,
+  "inventory_flag_explanation": "raw-member-manifest.json retains its historical generation state. sha256.json records the completed archive; the sealed inventory and results were not regenerated."
+}

@@ -1,0 +1,17 @@
+{
+  "owner": "weir-v3-749e6a245d9a",
+  "namespace_uid": "11295fb2-6a4b-4535-a4c6-788122e2c79a",
+  "pod_uid": "89485e71-5c8b-4b8d-9c73-191879214752",
+  "time_utc": "2026-10-02T01:06:48.582698+00:00",
+  "namespace_probe": {
+    "exit": 1,
+    "stderr": "Error from server (NotFound): namespaces \"weir-v3-749e6a245d9a\" not found\n",
+    "stdout": ""
+  },
+  "namespace_deleted": true,
+  "port_forward_session": 80074,
+  "port_forward_exit_code": 0,
+  "port_18089_closed": true,
+  "owned_forward_processes": [],
+  "errors": []
+}

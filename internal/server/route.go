@@ -448,7 +448,12 @@ func (s *Server) sendRoute(ctx context.Context, stream grpc.BidiStreamingServer[
 	timer := time.AfterFunc(s.limits.Stall, func() { s.metrics.watchdogs.WithLabelValues("output").Inc(); s.abortPeer(stream.Context()) })
 	stop := context.AfterFunc(ctx, func() {
 		if stream.Context().Err() == nil {
-			s.abortPeer(stream.Context())
+			// Cancellation belongs to this RPC. Keep other streams on the
+			// same connection alive; the separate stall watchdog still closes
+			// a peer whose transport cannot make progress.
+			if state, ok := ctx.Value(deliveryKey).(*delivery); ok {
+				state.shorten(time.Now())
+			}
 		}
 	})
 	err := stream.Send(frame)

@@ -45,7 +45,11 @@ func (a *Adapter) PrepareCall(id uint64, input *pb.Call) (*execution.Plan, *pb.F
 	work.Call = call
 	work.ID = id
 	work.Bytes = max(work.Bytes, 2*proto.Size(input)+4096)
-	work.WorkingBytes = max(work.WorkingBytes, 24<<20)
+	if call.GetRead() != nil {
+		work.WorkingBytes = max(work.WorkingBytes, a.readWorkingBytes())
+	} else {
+		work.WorkingBytes = max(work.WorkingBytes, 24<<20)
+	}
 	if !work.Singleton {
 		native := work.Backend.(*plan)
 		work.BatchKey = native.target.String()

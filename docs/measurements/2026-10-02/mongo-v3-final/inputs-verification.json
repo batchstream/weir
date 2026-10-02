@@ -1,0 +1,4 @@
+{
+  "sha256": "2d351b66947d8ce40e58dbeca800ed503cdb80f067d28617d8ce15d59369061f",
+  "remote_verification": "runner.launch_suite compares uploaded archive sha256 against the local hash before extraction/launch; successful exit is present in task tool results"
+}

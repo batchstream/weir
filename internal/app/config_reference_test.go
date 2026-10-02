@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/batchstream/weir/internal/testutil"
 )
@@ -44,7 +45,7 @@ func TestRoutingConfigurationFile(t *testing.T) {
 		t.Fatal("routing file must declare a local MongoDB service")
 	}
 	limits := service.Local.runtimeLimits()
-	if limits.Concurrency != 4 || limits.BatchOperations != 16 {
+	if limits.Concurrency != 4 || limits.BatchOperations != 16 || limits.Collect != time.Millisecond {
 		t.Fatal("local scheduler limits differ from their documented defaults")
 	}
 	if cfg.Routes[0].Store != "mongo" || cfg.Routes[0].Service != service.Name {

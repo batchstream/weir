@@ -1,0 +1,14 @@
+{
+  "command": [
+    "kubectl",
+    "get",
+    "namespace",
+    "weir-equal-v4-deb1a95584f0",
+    "-o",
+    "json"
+  ],
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "Error from server (NotFound): namespaces \"weir-equal-v4-deb1a95584f0\" not found\n",
+  "NotFound": true
+}

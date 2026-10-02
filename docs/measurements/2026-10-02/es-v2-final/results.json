@@ -1,0 +1,1020 @@
+{
+  "version": "v2 final CFS hold fix",
+  "provenance": {
+    "base_head": "614eb443e298ffc531507a32743b15f5a4baea00",
+    "dirty_files": [
+      " M README.md",
+      " M config/routes.yaml",
+      " M deploy/kubernetes/config_test.go",
+      " M docs/architecture.md",
+      " M internal/app/config.go",
+      " M internal/app/config_reference_test.go",
+      " M internal/backend/mongodb/adapter.go",
+      " M internal/backend/mongodb/batch.go",
+      " M internal/backend/mongodb/native.go",
+      " M internal/backend/mongodb/native_test.go",
+      " M internal/backend/mongodb/route.go",
+      " M internal/backend/mongodb/target.go",
+      " M internal/backend/mongodb/uri.go",
+      " M internal/backend/search/adapter.go",
+      " M internal/backend/search/batch.go",
+      " M internal/backend/search/bulk.go",
+      " M internal/backend/search/connection.go",
+      " M internal/backend/search/json.go",
+      " M internal/backend/search/native.go",
+      " M internal/backend/search/native_test.go",
+      " M internal/backend/search/route.go",
+      " M internal/execution/adapter.go",
+      " M internal/store/metrics.go",
+      " M internal/store/metrics_test.go",
+      " M internal/store/runtime.go",
+      " M internal/store/runtime_test.go",
+      " M internal/testutil/testcapacity/audit.go",
+      " M internal/testutil/testcapacity/client.go",
+      " M internal/testutil/testcapacity/client_test.go",
+      " M internal/testutil/testcapacity/main.go",
+      " M scripts/compare-load.py",
+      " M scripts/compare_load_test.py",
+      "?? deploy/kubernetes/hpa.json",
+      "?? deploy/kubernetes/scaling.md",
+      "?? docs/measurements/2026-10-01/resource-comparison/",
+      "?? docs/measurements/2026-10-02/",
+      "?? docs/resource-load-test-2026-10-01.md",
+      "?? internal/app/config_collect_test.go",
+      "?? internal/app/config_read_size_test.go",
+      "?? internal/backend/mongodb/batch_efficiency_test.go",
+      "?? internal/backend/mongodb/read_limit.go",
+      "?? internal/backend/mongodb/read_limit_test.go",
+      "?? internal/backend/search/json_efficiency_test.go",
+      "?? internal/backend/search/read_limit.go",
+      "?? internal/backend/search/read_limit_test.go",
+      "?? internal/store/controller.go",
+      "?? internal/store/controller_cancellation_test.go",
+      "?? internal/store/controller_capacity_test.go",
+      "?? internal/store/controller_completed_test.go",
+      "?? internal/store/controller_quota_test.go",
+      "?? internal/store/controller_test.go",
+      "?? internal/testutil/testcapacity/connections.go",
+      "?? internal/testutil/testcapacity/connections_test.go",
+      "?? internal/testutil/testcapacity/mongo.go",
+      "?? internal/testutil/testcapacity/mongo_test.go",
+      "?? internal/testutil/testcapacity/profile_integration.go",
+      "?? scripts/connection-fixture.py",
+      "?? scripts/connection-load.py",
+      "?? scripts/connection_load_test.py"
+    ],
+    "binary_sha256": {
+      "client": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+      "weir": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f",
+      "baseline": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1"
+    },
+    "declared_binary_sources": {
+      "client": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "weir": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "baseline": "614eb443e298ffc531507a32743b15f5a4baea00"
+    },
+    "es_image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+    "backend": "elasticsearch",
+    "database_image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+    "host": "Darwin arm64",
+    "docker": "29.7.2",
+    "vm": {
+      "cpus": 8,
+      "memory_bytes": 8319770624,
+      "kernel": "7.0.12-linuxkit",
+      "arch": "aarch64"
+    },
+    "resources": {
+      "database": {
+        "cpu": 0.25,
+        "memory_mib": 1536,
+        "cpuset": "0",
+        "write_threads": 1,
+        "write_queue": 200
+      },
+      "weir": {
+        "cpu": 2,
+        "memory_mib": 2304,
+        "cpuset": "3,4"
+      },
+      "client": {
+        "cpu": 2,
+        "memory_mib": 2048,
+        "cpuset": "1,2"
+      }
+    },
+    "options": {
+      "client": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/bin/client-v2",
+      "weir": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/bin/weir-v2",
+      "baseline_weir": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/bin/baseline-weir",
+      "baseline_source": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "client_source": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "weir_source": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "output": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/es-v2-matrix",
+      "rates": "800,3200",
+      "write_every": "10,1",
+      "modes": "direct,baseline,weir",
+      "repetitions": 3,
+      "seconds": 20,
+      "warm": 10,
+      "recovery_rate": 0,
+      "recovery_seconds": 20,
+      "pool": 4,
+      "direct_pool": 4,
+      "batch_operations": 32,
+      "collect_ms": null,
+      "max_read_size": null,
+      "db_cpu": 0.25,
+      "backend": "elasticsearch",
+      "mongo_image": "unused",
+      "weir_cpu": 2,
+      "workers": 32,
+      "db_queue": 200,
+      "prewarm": true,
+      "es_image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160"
+    }
+  },
+  "selected_tuning": {
+    "pool": 2,
+    "collect_ms": 5,
+    "max_read_size": "16KiB",
+    "workers": 64,
+    "batch": 32
+  },
+  "experiment": {
+    "version": "v2 final CFS hold fix",
+    "reference_raw": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/es-final-matrix",
+    "reference_source": "v1 separately timed fixture; no direct pairing claimed",
+    "started": 1790897512.761228,
+    "per_run_profile_is_canonical": true,
+    "controlled_stop_after_complete_formal_matrix": {
+      "action": "stop unused old-parameter phase after all 24 formal cases audited",
+      "pid": 25496,
+      "last": {
+        "event": "v2_complete",
+        "prefix": "r026",
+        "variant": "new-tuned",
+        "profile": {
+          "store_concurrency": 2,
+          "batch_operations": 32,
+          "batch_collect_ms": 5,
+          "max_read_size": "16KiB",
+          "workers": 64,
+          "max_sessions": 64,
+          "weir_cpu": 2,
+          "weir_memory_mib": 4608,
+          "direct_http_pool": 4,
+          "database_cpu": 0.25,
+          "database_memory_mib": 1536
+        }
+      },
+      "wall_time": 1790898524.9238
+    },
+    "optional_old_parameter_phase_not_executed": true
+  },
+  "cells": [
+    {
+      "variant": "matched-direct",
+      "write_every": 10,
+      "rate": 800,
+      "repetitions": 3,
+      "prefixes": [
+        "r003",
+        "r006",
+        "r007"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 800.0,
+        "minimum": 800.0,
+        "maximum": 800.0
+      },
+      "p95_ms": {
+        "median": 1.7,
+        "minimum": 1.4,
+        "maximum": 3.6
+      },
+      "p99_ms": {
+        "median": 51.0,
+        "minimum": 9.7,
+        "maximum": 59.0
+      },
+      "database_cpu_cores": {
+        "median": 0.09525683709112603,
+        "minimum": 0.09295947093999386,
+        "maximum": 0.10305754279384222
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.11344910050816649,
+        "minimum": 0.11120931536199244,
+        "maximum": 0.12159461415665794
+      },
+      "database_rss_mib": {
+        "median": 889.98828125,
+        "minimum": 883.65625,
+        "maximum": 890.07421875
+      },
+      "database_cgroup_memory_mib": {
+        "median": 952.89453125,
+        "minimum": 946.87109375,
+        "maximum": 953.0078125
+      },
+      "weir_cpu_cores": {
+        "median": 0,
+        "minimum": 0,
+        "maximum": 0
+      },
+      "weir_rss_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "batch_mean": {
+        "median": 1,
+        "minimum": 1,
+        "maximum": 1
+      },
+      "client_cpu_cores": {
+        "median": 0.11524926408229617,
+        "minimum": 0.11438162557501769,
+        "maximum": 0.11530902430407282
+      },
+      "client_rss_mib": {
+        "median": 26.44140625,
+        "minimum": 24.48046875,
+        "maximum": 26.4921875
+      },
+      "totals": {
+        "planned": 48000,
+        "started": 48000,
+        "success": 48000,
+        "client_drop": 0,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 7200,
+        "found_version1": 7200,
+        "unknown_found": 0,
+        "absent": 0
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "new-tuned",
+      "write_every": 10,
+      "rate": 800,
+      "repetitions": 3,
+      "prefixes": [
+        "r004",
+        "r005",
+        "r008"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 800.0,
+        "minimum": 800.0,
+        "maximum": 800.0
+      },
+      "p95_ms": {
+        "median": 7.5,
+        "minimum": 7.5,
+        "maximum": 7.8
+      },
+      "p99_ms": {
+        "median": 48.0,
+        "minimum": 29.0,
+        "maximum": 108.0
+      },
+      "database_cpu_cores": {
+        "median": 0.06912325989303407,
+        "minimum": 0.06570572248617919,
+        "maximum": 0.0717315036048901
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.08733125507026078,
+        "minimum": 0.08285501952865068,
+        "maximum": 0.08912159354758473
+      },
+      "database_rss_mib": {
+        "median": 889.890625,
+        "minimum": 885.8984375,
+        "maximum": 892.3515625
+      },
+      "database_cgroup_memory_mib": {
+        "median": 952.6328125,
+        "minimum": 948.6875,
+        "maximum": 955.30859375
+      },
+      "weir_cpu_cores": {
+        "median": 0.21247481285189748,
+        "minimum": 0.2119682966374589,
+        "maximum": 0.216761813573851
+      },
+      "weir_rss_mib": {
+        "median": 25.7421875,
+        "minimum": 25.62109375,
+        "maximum": 26.73828125
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 14.15234375,
+        "minimum": 14.03125,
+        "maximum": 15.98046875
+      },
+      "batch_mean": {
+        "median": 4.5704995566065625,
+        "minimum": 4.550176056338028,
+        "maximum": 4.616063279586249
+      },
+      "client_cpu_cores": {
+        "median": 0.11100183918655432,
+        "minimum": 0.110063868949203,
+        "maximum": 0.11477386033504273
+      },
+      "client_rss_mib": {
+        "median": 28.140625,
+        "minimum": 27.72265625,
+        "maximum": 28.95703125
+      },
+      "totals": {
+        "planned": 48000,
+        "started": 48000,
+        "success": 48000,
+        "client_drop": 0,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 7200,
+        "found_version1": 7200,
+        "unknown_found": 0,
+        "absent": 0
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "matched-direct",
+      "write_every": 10,
+      "rate": 3200,
+      "repetitions": 3,
+      "prefixes": [
+        "r009",
+        "r012",
+        "r013"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 3155.6,
+        "minimum": 3106.4,
+        "maximum": 3167.15
+      },
+      "p95_ms": {
+        "median": 74.0,
+        "minimum": 48.0,
+        "maximum": 87.0
+      },
+      "p99_ms": {
+        "median": 144.0,
+        "minimum": 113.0,
+        "maximum": 184.0
+      },
+      "database_cpu_cores": {
+        "median": 0.20934373406163526,
+        "minimum": 0.20252974876853155,
+        "maximum": 0.21181923541749278
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.22623707392253883,
+        "minimum": 0.22088893966122788,
+        "maximum": 0.22941535474889313
+      },
+      "database_rss_mib": {
+        "median": 899.53125,
+        "minimum": 897.49609375,
+        "maximum": 900.66015625
+      },
+      "database_cgroup_memory_mib": {
+        "median": 970.3984375,
+        "minimum": 966.8828125,
+        "maximum": 976.94921875
+      },
+      "weir_cpu_cores": {
+        "median": 0,
+        "minimum": 0,
+        "maximum": 0
+      },
+      "weir_rss_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "batch_mean": {
+        "median": 1,
+        "minimum": 1,
+        "maximum": 1
+      },
+      "client_cpu_cores": {
+        "median": 0.21158885390856966,
+        "minimum": 0.21001840892264803,
+        "maximum": 0.2171250972089311
+      },
+      "client_rss_mib": {
+        "median": 26.15625,
+        "minimum": 26.08203125,
+        "maximum": 26.51171875
+      },
+      "totals": {
+        "planned": 192000,
+        "started": 188583,
+        "success": 188583,
+        "client_drop": 3417,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 27991,
+        "found_version1": 27991,
+        "unknown_found": 0,
+        "absent": 809
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "new-tuned",
+      "write_every": 10,
+      "rate": 3200,
+      "repetitions": 3,
+      "prefixes": [
+        "r010",
+        "r011",
+        "r014"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 3150.7,
+        "minimum": 3056.05,
+        "maximum": 3184.3
+      },
+      "p95_ms": {
+        "median": 21.0,
+        "minimum": 12.0,
+        "maximum": 38.0
+      },
+      "p99_ms": {
+        "median": 139.0,
+        "minimum": 97.0,
+        "maximum": 284.0
+      },
+      "database_cpu_cores": {
+        "median": 0.12114676766787175,
+        "minimum": 0.11116306090271956,
+        "maximum": 0.12276824977516812
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.13912973277808677,
+        "minimum": 0.12881899070636063,
+        "maximum": 0.1406792242650941
+      },
+      "database_rss_mib": {
+        "median": 898.7734375,
+        "minimum": 898.27734375,
+        "maximum": 908.078125
+      },
+      "database_cgroup_memory_mib": {
+        "median": 973.140625,
+        "minimum": 968.53125,
+        "maximum": 977.9375
+      },
+      "weir_cpu_cores": {
+        "median": 0.5412408494907469,
+        "minimum": 0.5153024016908311,
+        "maximum": 0.5443120448323521
+      },
+      "weir_rss_mib": {
+        "median": 27.38671875,
+        "minimum": 26.0,
+        "maximum": 27.578125
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 16.85546875,
+        "minimum": 15.35546875,
+        "maximum": 16.875
+      },
+      "batch_mean": {
+        "median": 17.32412204951065,
+        "minimum": 17.292517006802722,
+        "maximum": 17.324558947073648
+      },
+      "client_cpu_cores": {
+        "median": 0.2450886136424668,
+        "minimum": 0.23641642352531816,
+        "maximum": 0.25126392721425944
+      },
+      "client_rss_mib": {
+        "median": 29.1953125,
+        "minimum": 29.1015625,
+        "maximum": 29.8515625
+      },
+      "totals": {
+        "planned": 192000,
+        "started": 187821,
+        "success": 187821,
+        "client_drop": 4179,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 28366,
+        "found_version1": 28366,
+        "unknown_found": 0,
+        "absent": 434
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "matched-direct",
+      "write_every": 1,
+      "rate": 800,
+      "repetitions": 3,
+      "prefixes": [
+        "r015",
+        "r018",
+        "r019"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 800.0,
+        "minimum": 800.0,
+        "maximum": 800.0
+      },
+      "p95_ms": {
+        "median": 9.8,
+        "minimum": 1.4,
+        "maximum": 17.0
+      },
+      "p99_ms": {
+        "median": 60.0,
+        "minimum": 3.3,
+        "maximum": 68.0
+      },
+      "database_cpu_cores": {
+        "median": 0.1043007262881602,
+        "minimum": 0.09239861076338673,
+        "maximum": 0.10664830027839366
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.12305129854752417,
+        "minimum": 0.11040915330363224,
+        "maximum": 0.12477378307595455
+      },
+      "database_rss_mib": {
+        "median": 936.96484375,
+        "minimum": 935.99609375,
+        "maximum": 937.3359375
+      },
+      "database_cgroup_memory_mib": {
+        "median": 1022.328125,
+        "minimum": 1022.08203125,
+        "maximum": 1022.4140625
+      },
+      "weir_cpu_cores": {
+        "median": 0,
+        "minimum": 0,
+        "maximum": 0
+      },
+      "weir_rss_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "batch_mean": {
+        "median": 1,
+        "minimum": 1,
+        "maximum": 1
+      },
+      "client_cpu_cores": {
+        "median": 0.11577641462095653,
+        "minimum": 0.11539913287482112,
+        "maximum": 0.11713233289222416
+      },
+      "client_rss_mib": {
+        "median": 24.5,
+        "minimum": 24.4296875,
+        "maximum": 26.703125
+      },
+      "totals": {
+        "planned": 48000,
+        "started": 48000,
+        "success": 48000,
+        "client_drop": 0,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 72000,
+        "found_version1": 72000,
+        "unknown_found": 0,
+        "absent": 0
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "new-tuned",
+      "write_every": 1,
+      "rate": 800,
+      "repetitions": 3,
+      "prefixes": [
+        "r016",
+        "r017",
+        "r020"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 800.0,
+        "minimum": 800.0,
+        "maximum": 800.0
+      },
+      "p95_ms": {
+        "median": 7.4,
+        "minimum": 7.4,
+        "maximum": 7.6
+      },
+      "p99_ms": {
+        "median": 20.0,
+        "minimum": 16.0,
+        "maximum": 76.0
+      },
+      "database_cpu_cores": {
+        "median": 0.05794406303227312,
+        "minimum": 0.05670936657017201,
+        "maximum": 0.06078059942469481
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.07577759008894872,
+        "minimum": 0.07440820521481385,
+        "maximum": 0.07849608290188242
+      },
+      "database_rss_mib": {
+        "median": 925.0859375,
+        "minimum": 924.921875,
+        "maximum": 926.13671875
+      },
+      "database_cgroup_memory_mib": {
+        "median": 1015.4609375,
+        "minimum": 1013.10546875,
+        "maximum": 1016.00390625
+      },
+      "weir_cpu_cores": {
+        "median": 0.21518871108751084,
+        "minimum": 0.2129482109141393,
+        "maximum": 0.217048706090385
+      },
+      "weir_rss_mib": {
+        "median": 25.88671875,
+        "minimum": 25.30859375,
+        "maximum": 26.40625
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 13.6875,
+        "minimum": 13.3984375,
+        "maximum": 15.96875
+      },
+      "batch_mean": {
+        "median": 4.630428271937706,
+        "minimum": 4.585697399527187,
+        "maximum": 4.671913580246914
+      },
+      "client_cpu_cores": {
+        "median": 0.1213632255624787,
+        "minimum": 0.11703733820339424,
+        "maximum": 0.12266669693389261
+      },
+      "client_rss_mib": {
+        "median": 27.703125,
+        "minimum": 27.56640625,
+        "maximum": 28.91796875
+      },
+      "totals": {
+        "planned": 48000,
+        "started": 48000,
+        "success": 48000,
+        "client_drop": 0,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 72000,
+        "found_version1": 72000,
+        "unknown_found": 0,
+        "absent": 0
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "matched-direct",
+      "write_every": 1,
+      "rate": 3200,
+      "repetitions": 3,
+      "prefixes": [
+        "r021",
+        "r024",
+        "r025"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 3119.6,
+        "minimum": 3101.2,
+        "maximum": 3141.1
+      },
+      "p95_ms": {
+        "median": 84.0,
+        "minimum": 67.0,
+        "maximum": 85.0
+      },
+      "p99_ms": {
+        "median": 158.0,
+        "minimum": 158.0,
+        "maximum": 181.0
+      },
+      "database_cpu_cores": {
+        "median": 0.21801817334906579,
+        "minimum": 0.2150570443328947,
+        "maximum": 0.21947589140384605
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.2354503128255475,
+        "minimum": 0.2323036190230704,
+        "maximum": 0.23658190405926924
+      },
+      "database_rss_mib": {
+        "median": 941.67578125,
+        "minimum": 941.59375,
+        "maximum": 966.68359375
+      },
+      "database_cgroup_memory_mib": {
+        "median": 1087.328125,
+        "minimum": 1081.56640625,
+        "maximum": 1093.95703125
+      },
+      "weir_cpu_cores": {
+        "median": 0,
+        "minimum": 0,
+        "maximum": 0
+      },
+      "weir_rss_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 0.0,
+        "minimum": 0.0,
+        "maximum": 0.0
+      },
+      "batch_mean": {
+        "median": 1,
+        "minimum": 1,
+        "maximum": 1
+      },
+      "client_cpu_cores": {
+        "median": 0.20199475893229235,
+        "minimum": 0.20185080012547757,
+        "maximum": 0.20825000977501057
+      },
+      "client_rss_mib": {
+        "median": 27.9453125,
+        "minimum": 26.1640625,
+        "maximum": 28.25
+      },
+      "totals": {
+        "planned": 192000,
+        "started": 187238,
+        "success": 187238,
+        "client_drop": 4762,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 282280,
+        "found_version1": 282280,
+        "unknown_found": 0,
+        "absent": 5720
+      },
+      "oom_kills": 0
+    },
+    {
+      "variant": "new-tuned",
+      "write_every": 1,
+      "rate": 3200,
+      "repetitions": 3,
+      "prefixes": [
+        "r022",
+        "r023",
+        "r026"
+      ],
+      "profile": {
+        "store_concurrency": 2,
+        "batch_operations": 32,
+        "batch_collect_ms": 5,
+        "max_read_size": "16KiB",
+        "workers": 64,
+        "max_sessions": 64,
+        "weir_cpu": 2,
+        "weir_memory_mib": 4608,
+        "direct_http_pool": 4,
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536
+      },
+      "success_rps": {
+        "median": 3167.95,
+        "minimum": 3127.4,
+        "maximum": 3192.9
+      },
+      "p95_ms": {
+        "median": 17.0,
+        "minimum": 9.5,
+        "maximum": 36.0
+      },
+      "p99_ms": {
+        "median": 116.0,
+        "minimum": 71.0,
+        "maximum": 196.0
+      },
+      "database_cpu_cores": {
+        "median": 0.11086728645445748,
+        "minimum": 0.10531713192075311,
+        "maximum": 0.1214356425265942
+      },
+      "database_cgroup_cpu_cores": {
+        "median": 0.12870385493094905,
+        "minimum": 0.12387487548849545,
+        "maximum": 0.13985421502498813
+      },
+      "database_rss_mib": {
+        "median": 947.01171875,
+        "minimum": 942.72265625,
+        "maximum": 948.1484375
+      },
+      "database_cgroup_memory_mib": {
+        "median": 1090.69140625,
+        "minimum": 1090.34375,
+        "maximum": 1093.265625
+      },
+      "weir_cpu_cores": {
+        "median": 0.5747383059784242,
+        "minimum": 0.5582207598191548,
+        "maximum": 0.5901470445650278
+      },
+      "weir_rss_mib": {
+        "median": 27.56640625,
+        "minimum": 26.734375,
+        "maximum": 27.83203125
+      },
+      "weir_cgroup_memory_mib": {
+        "median": 16.49609375,
+        "minimum": 16.49609375,
+        "maximum": 16.60546875
+      },
+      "batch_mean": {
+        "median": 18.555658627087197,
+        "minimum": 18.386170524465278,
+        "maximum": 18.97645979822684
+      },
+      "client_cpu_cores": {
+        "median": 0.27880276908945545,
+        "minimum": 0.2714450030072126,
+        "maximum": 0.2806369788727967
+      },
+      "client_rss_mib": {
+        "median": 29.37890625,
+        "minimum": 27.65234375,
+        "maximum": 29.65234375
+      },
+      "totals": {
+        "planned": 192000,
+        "started": 189765,
+        "success": 189765,
+        "client_drop": 2235,
+        "unknown": 0,
+        "api_errors": 0
+      },
+      "audit": {
+        "applied": 285016,
+        "found_version1": 285016,
+        "unknown_found": 0,
+        "absent": 2984
+      },
+      "oom_kills": 0
+    }
+  ],
+  "backpressure": [],
+  "cleanup": {
+    "pass": true,
+    "errors": [],
+    "inventory_restored": true,
+    "non_default_inventory_restored": true,
+    "default_bridge_id_changed": false,
+    "remaining_owned_containers": [],
+    "remaining_owned_networks": []
+  },
+  "raw_run_count": 27
+}

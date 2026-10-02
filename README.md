@@ -92,6 +92,8 @@ services:
     local:
       max_concurrency: 4
       max_batch_operations: 16
+      batch_collect: "1ms"
+      max_read_size: "2MiB"
       mongodb:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
 routes:
@@ -110,6 +112,21 @@ use only one source; inline and file sources can be mixed across the pair.
 Each local service connects to one backend server. The Call resource selects the
 MongoDB database and collection (`example/records/s:one`) or Search
 index (`records/s:one`); these targets are not configuration fields.
+For small source documents, set `local.max_read_size` to a suitable upper bound
+(for example `16KiB`) to reserve less space and collect more ordinary reads into
+each batch. Sources exceeding that declaration return `RESOURCE_EXHAUSTED`;
+writes, Scan, Native and Lua/expression operations keep their existing limits.
+`local.batch_collect` accepts `0ms` through `10ms` and defaults to `1ms`.
+Tune these settings against completed throughput, database CPU and tail latency;
+the safe `2MiB` read default cannot assume that every dataset contains small records.
+The scheduler reduces concurrency for repeated slow successful batches as well
+as explicit database congestion, and recovers within `max_concurrency`.
+Latency pressure requires at least three comparable slow saturated batch or
+Scan-page completions over 100ms in a bounded interval of at most one second,
+comprising at least 10% of that profile's healthy completions. Tails below these
+thresholds do not keep extending the recovery hold.
+See [the architecture](docs/architecture.md) and
+[replica and connection budgets](deploy/kubernetes/scaling.md) before scaling.
 Weir identifies Elasticsearch or OpenSearch during startup, without a configured
 product profile or version allowlist. MongoDB connections also have no version
 allowlist. Required server and resource capabilities are checked before use.

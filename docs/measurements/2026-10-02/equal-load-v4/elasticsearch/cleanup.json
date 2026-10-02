@@ -1,0 +1,69 @@
+{
+  "main": {
+    "pass": true,
+    "errors": [],
+    "inventory_restored": true,
+    "non_default_inventory_restored": true,
+    "default_bridge_id_changed": false,
+    "remaining_owned_containers": [],
+    "remaining_owned_networks": []
+  },
+  "main_volume": {
+    "name": "weir-load-a05b8570df11-data",
+    "errors": [],
+    "remaining_owned_volumes": []
+  },
+  "preceding_attempts": [
+    {
+      "raw_directory": "owned",
+      "cleanup": {
+        "pass": true,
+        "errors": [],
+        "inventory_restored": false,
+        "non_default_inventory_restored": true,
+        "default_bridge_id_changed": true,
+        "remaining_owned_containers": [],
+        "remaining_owned_networks": []
+      },
+      "volume_cleanup": {
+        "name": "weir-load-ed1d27bd4e90-data",
+        "errors": [],
+        "remaining_owned_volumes": []
+      }
+    },
+    {
+      "raw_directory": "owned-retry1",
+      "cleanup": {
+        "pass": true,
+        "errors": [],
+        "inventory_restored": true,
+        "non_default_inventory_restored": true,
+        "default_bridge_id_changed": false,
+        "remaining_owned_containers": [],
+        "remaining_owned_networks": []
+      },
+      "volume_cleanup": {
+        "name": "weir-load-f39f1b69e30c-data",
+        "errors": [],
+        "remaining_owned_volumes": []
+      }
+    },
+    {
+      "raw_directory": "owned-retry2",
+      "cleanup": {
+        "pass": true,
+        "errors": [],
+        "inventory_restored": true,
+        "non_default_inventory_restored": true,
+        "default_bridge_id_changed": false,
+        "remaining_owned_containers": [],
+        "remaining_owned_networks": []
+      },
+      "volume_cleanup": {
+        "name": "weir-load-87023c8376a3-data",
+        "errors": [],
+        "remaining_owned_volumes": []
+      }
+    }
+  ]
+}

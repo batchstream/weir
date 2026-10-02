@@ -1,0 +1,22 @@
+{
+  "services": [
+    {
+      "name": "database",
+      "local": {
+        "max_concurrency": 4,
+        "max_batch_operations": 8,
+        "mongodb": {
+          "uri": "mongodb://127.0.0.1:27017/?directConnection=true"
+        },
+        "batch_collect": "3ms",
+        "max_read_size": "16KiB"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "store": "records",
+      "service": "database"
+    }
+  ]
+}

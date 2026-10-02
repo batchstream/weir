@@ -1,0 +1,99 @@
+Name:               ip-172-31-191-104.us-west-1.compute.internal
+Roles:              <none>
+Labels:             beta.kubernetes.io/arch=arm64
+                    beta.kubernetes.io/instance-type=m8g.2xlarge
+                    beta.kubernetes.io/os=linux
+                    eks.amazonaws.com/capacityType=SPOT
+                    eks.amazonaws.com/nodegroup=spot-8c-32g-arm64-v1
+                    eks.amazonaws.com/nodegroup-image=ami-0c338228a70512865
+                    failure-domain.beta.kubernetes.io/region=us-west-1
+                    failure-domain.beta.kubernetes.io/zone=us-west-1a
+                    k8s.io/cloud-provider-aws=e58816c058476295ed42f5d3d84f4ecb
+                    kubernetes.io/arch=arm64
+                    kubernetes.io/hostname=ip-172-31-191-104.us-west-1.compute.internal
+                    kubernetes.io/os=linux
+                    node.kubernetes.io/instance-type=m8g.2xlarge
+                    role=spot-arm
+                    topology.ebs.csi.aws.com/zone=us-west-1a
+                    topology.k8s.aws/zone-id=usw1-az3
+                    topology.kubernetes.io/region=us-west-1
+                    topology.kubernetes.io/zone=us-west-1a
+                    type=spot-arm
+Annotations:        alpha.kubernetes.io/provided-node-ip: 172.31.191.104
+                    csi.volume.kubernetes.io/nodeid: {"ebs.csi.aws.com":"i-02b5a25ccb59e30ba"}
+                    node.alpha.kubernetes.io/ttl: 0
+                    volumes.kubernetes.io/controller-managed-attach-detach: true
+CreationTimestamp:  Fri, 02 Oct 2026 08:29:11 +0800
+Taints:             <none>
+Unschedulable:      false
+Lease:
+  HolderIdentity:  ip-172-31-191-104.us-west-1.compute.internal
+  AcquireTime:     <unset>
+  RenewTime:       Fri, 02 Oct 2026 08:37:22 +0800
+Conditions:
+  Type             Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----             ------  -----------------                 ------------------                ------                       -------
+  MemoryPressure   False   Fri, 02 Oct 2026 08:37:11 +0800   Fri, 02 Oct 2026 08:29:08 +0800   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure     False   Fri, 02 Oct 2026 08:37:11 +0800   Fri, 02 Oct 2026 08:29:08 +0800   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure      False   Fri, 02 Oct 2026 08:37:11 +0800   Fri, 02 Oct 2026 08:29:08 +0800   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready            True    Fri, 02 Oct 2026 08:37:11 +0800   Fri, 02 Oct 2026 08:29:20 +0800   KubeletReady                 kubelet is posting ready status
+Addresses:
+  InternalIP:   172.31.191.104
+  ExternalIP:   54.193.55.202
+  InternalDNS:  ip-172-31-191-104.us-west-1.compute.internal
+  Hostname:     ip-172-31-191-104.us-west-1.compute.internal
+  ExternalDNS:  ec2-54-193-55-202.us-west-1.compute.amazonaws.com
+Capacity:
+  cpu:                8
+  ephemeral-storage:  20894700Ki
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  hugepages-32Mi:     0
+  hugepages-64Ki:     0
+  memory:             32249696Ki
+  pods:               58
+Allocatable:
+  cpu:                7910m
+  ephemeral-storage:  18182813665
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  hugepages-32Mi:     0
+  hugepages-64Ki:     0
+  memory:             31232864Ki
+  pods:               58
+System Info:
+  Machine ID:                 ec2ed4caf244985d22d79344af11b4c0
+  System UUID:                ec2ed4ca-f244-985d-22d7-9344af11b4c0
+  Boot ID:                    e348fd4a-6677-4920-a5f2-6591d3cb6916
+  Kernel Version:             6.12.77-99.140.amzn2023.aarch64
+  OS Image:                   Amazon Linux 2023.11.20260406
+  Operating System:           linux
+  Architecture:               arm64
+  Container Runtime Version:  containerd://2.2.1+unknown
+  Kubelet Version:            v1.35.3-eks-bbe087e
+  Kube-Proxy Version:         
+ProviderID:                   aws:///us-west-1a/i-02b5a25ccb59e30ba
+Non-terminated Pods:          (5 in total)
+  Namespace                   Name                                                CPU Requests  CPU Limits  Memory Requests  Memory Limits  Age
+  ---------                   ----                                                ------------  ----------  ---------------  -------------  ---
+  kube-system                 aws-node-7t2gb                                      50m (0%)      0 (0%)      0 (0%)           0 (0%)         8m17s
+  kube-system                 ebs-csi-node-2hpxk                                  30m (0%)      0 (0%)      104Mi (0%)       320Mi (1%)     8m17s
+  kube-system                 kube-proxy-9kwp5                                    100m (1%)     0 (0%)      0 (0%)           0 (0%)         8m16s
+  videoflow                   videoflow-worker-profile-task-575cc7d7bf-7mf8c      580m (7%)     580m (7%)   1Gi (3%)         1Gi (3%)       91s
+  videoflow                   videoflow-worker-video-job-slow-5bdc77899d-krfcm    2 (25%)       2 (25%)     2736Mi (8%)      2736Mi (8%)    5m38s
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                2760m (34%)   2580m (32%)
+  memory             3864Mi (12%)  4080Mi (13%)
+  ephemeral-storage  1Gi (5%)      6Gi (35%)
+  hugepages-1Gi      0 (0%)        0 (0%)
+  hugepages-2Mi      0 (0%)        0 (0%)
+  hugepages-32Mi     0 (0%)        0 (0%)
+  hugepages-64Ki     0 (0%)        0 (0%)
+Events:
+  Type    Reason          Age    From                   Message
+  ----    ------          ----   ----                   -------
+  Normal  Synced          8m16s  cloud-node-controller  Node synced successfully
+  Normal  RegisteredNode  8m16s  node-controller        Node ip-172-31-191-104.us-west-1.compute.internal event: Registered Node ip-172-31-191-104.us-west-1.compute.internal in Controller

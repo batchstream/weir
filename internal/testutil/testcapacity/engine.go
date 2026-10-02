@@ -33,6 +33,7 @@ type Operation struct {
 type Result struct {
 	Outcome byte
 	Class   string
+	Message string
 }
 
 type Metrics struct {
@@ -53,6 +54,7 @@ type Metrics struct {
 	Handoff         Histogram         `json:"handoff"`
 	WorkerStart     Histogram         `json:"worker_start"`
 	Failures        map[string]uint64 `json:"failures"`
+	ErrorMessages   map[string]uint64 `json:"error_messages,omitempty"`
 	SuccessArrival  Histogram         `json:"success_arrival"`
 	SuccessDispatch Histogram         `json:"success_dispatch"`
 	Arrival         Histogram         `json:"arrival"`
@@ -106,6 +108,17 @@ func (m *Metrics) finish(r Result, op Operation, dispatch, end time.Time) {
 			m.Failures = map[string]uint64{}
 		}
 		m.Failures[r.Class]++
+		if r.Message != "" {
+			if m.ErrorMessages == nil {
+				m.ErrorMessages = map[string]uint64{}
+			}
+			message := r.Message
+			// Keep at most 16 distinct diagnostics plus one overflow counter.
+			if m.ErrorMessages[message] == 0 && len(m.ErrorMessages) >= 16 {
+				message = "other"
+			}
+			m.ErrorMessages[message]++
+		}
 	}
 	if r.Outcome == unknown {
 		m.Unknown++

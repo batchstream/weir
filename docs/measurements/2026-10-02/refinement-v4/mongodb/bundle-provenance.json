@@ -1,0 +1,23 @@
+{
+  "frozen_source_archive": "v4-binaries.tar.gz",
+  "frozen_source_sha256": "038bca362c0ffac8bd18ef9fad6963be660bca84a8021a0063383f9f4d3450eb",
+  "derived_archive": "frozen-binaries.tar.gz",
+  "derived_sha256": "cce46336f9628c0052d078c907246f735c7a165e8514579dea18154aac0e3170",
+  "canonical_name_mapping": {
+    "weir": "weir-v4",
+    "weir-v3": "weir-v3",
+    "client": "client-final",
+    "sampler-io": "sampler-io"
+  },
+  "content_sha256": {
+    "weir-v4": "7b9d159a46ec82c3377302ea6d582ea161c2e99ca51d4e65844b4967c2628dcf",
+    "weir-v3": "4054ca6a7ef9d12886566124bb5153591d7beacb5cf83949de34fe6a058eee87",
+    "client-final": "8b63c1fe3f512652b069ef623fd46b86bbd9807fb4661dc25ef6a4f7cd33503b",
+    "sampler-io": "c2e3df6fb12414a81f69a2581725ded028341568604d7451c2381568266f5a73"
+  },
+  "unused_source_binaries": [
+    "sampler",
+    "sampler-metrics"
+  ],
+  "reason": "both versions use the same updated helper and IO sampler; only filenames changed"
+}

@@ -1,0 +1,42 @@
+{
+  "owner": "weir-bp-v3-f53d66750b94",
+  "do_not_create_until": "root frozen-v3 linux-arm64 binaries.tar confirmation",
+  "database": {
+    "cpu_request_m": 50,
+    "healthy_limit_m": 500,
+    "slow_limit_m": 50,
+    "memory_mib": 1536,
+    "data_empty_dir": "ordinary disk4Gi",
+    "wired_tiger_cache_gib": 0.25,
+    "oplog_mib": 64
+  },
+  "trials": [
+    {
+      "tag": "mongo-v3-1",
+      "rate": 2500,
+      "workers": 32,
+      "sessions": 32,
+      "pool": 4,
+      "batch": 8,
+      "collect": "3ms",
+      "read_max": "16KiB",
+      "queue": 32,
+      "warm_seconds": 20,
+      "measure_seconds": 90,
+      "slow_phase_confirmed_seconds_min": 30
+    },
+    {
+      "tag": "mongo-v3-2",
+      "same_parameters": true
+    }
+  ],
+  "phase_contract": "slow request after20s healthy warm; recovery request >=30s after slow actual cgroup confirmation; record2s settle then full10s windows, retain crossing windows",
+  "acceptance": [
+    "same mongod pid/start_ticks/containerID/restart0",
+    "quota50000\u21925000\u219250000 /100000 with fixed request50m",
+    "sustained slow-stage low window, recovery throughput/latency healthy, window bounded rise; cap4 not mandatory",
+    "drop/API/UNKNOWN distinct; every write ledger audited",
+    "process CPU/RSS, cgroup, OOM,hold metric/raw traces retained"
+  ],
+  "cleanup": "owned label+UID checks; final namespaceNotFound and precisely managed localPF terminated; export raw archives before cleanup"
+}

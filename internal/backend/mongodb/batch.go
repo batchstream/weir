@@ -34,8 +34,11 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 		return results, execution.Neutral
 	}
 	type targetBatch struct {
+		plans                         []*execution.Plan
+		positions                     []int
 		reads, writes                 []*execution.Plan
 		readPositions, writePositions []int
+		qualified                     bool
 	}
 	groups := make([]targetBatch, 0)
 	positions := make(map[namespace]int)
@@ -54,6 +57,8 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 			groups = append(groups, group)
 		}
 		group := &groups[position]
+		group.plans = append(group.plans, p)
+		group.positions = append(group.positions, i)
 		if native.action == "read" {
 			group.reads = append(group.reads, p)
 			group.readPositions = append(group.readPositions, i)
@@ -64,7 +69,16 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 	}
 
 	signal := execution.Healthy
-	for _, group := range groups {
+	for position := range groups {
+		group := &groups[position]
+		if replies, sample := a.qualifyRecordBatch(ctx, group.plans); replies != nil {
+			for i, reply := range replies {
+				results[group.positions[i]] = reply
+			}
+			signal = batchFeedback(signal, sample)
+			continue
+		}
+		group.qualified = true
 		if len(group.reads) != 0 {
 			replies, sample := a.executeReads(ctx, group.reads)
 			for i, reply := range replies {
@@ -74,7 +88,7 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 		}
 	}
 	for _, group := range groups {
-		if len(group.writes) != 0 {
+		if group.qualified && len(group.writes) != 0 {
 			replies, sample := a.executeWrites(ctx, group.writes)
 			for i, reply := range replies {
 				results[group.writePositions[i]] = reply
@@ -122,9 +136,6 @@ func unstarted(ctx context.Context, p *execution.Plan) *pb.Result {
 }
 
 func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
-	if results, signal := a.qualifyRecordBatch(ctx, plans); results != nil {
-		return results, signal
-	}
 	results := make([]*pb.Result, len(plans))
 	skipped := make([]bool, len(plans))
 	ids := make(bson.A, 0, len(plans))
@@ -147,8 +158,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 		return results, execution.Neutral
 	}
 
-	selector := bson.D{{Key: "$in", Value: ids}}
-	filter := bson.D{{Key: "_id", Value: selector}}
+	filter := bson.D{{Key: "_id", Value: ids[0]}}
+	if len(ids) > 1 {
+		selector := bson.D{{Key: "$in", Value: ids}}
+		filter[0].Value = selector
+	}
 	command := bson.D{
 		{Key: "find", Value: target.collection},
 		{Key: "filter", Value: filter},
@@ -203,7 +217,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 					break
 				}
 				var reply *pb.ReadResult
-				if len(raw) > protocol.MaxDocument {
+				if len(raw) > a.maxReadSize() {
 					reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
 				} else {
 					nodes := 65536
@@ -286,9 +300,6 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 }
 
 func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
-	if results, signal := a.qualifyRecordBatch(ctx, plans); results != nil {
-		return results, signal
-	}
 	results := make([]*pb.Result, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))

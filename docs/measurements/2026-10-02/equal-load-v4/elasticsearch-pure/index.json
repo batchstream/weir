@@ -1,0 +1,66 @@
+{
+  "main_raw": "owned-pure-final",
+  "all_completed_trials": 26,
+  "formal_trials": 6,
+  "formal_pairs": 3,
+  "groups": [
+    {
+      "workload": "pure",
+      "selected_jointly_qualified_pairs": 0,
+      "planned_pairs": 3,
+      "complete": false,
+      "pairs": []
+    }
+  ],
+  "stage_counts": {
+    "common-prewarm": 2,
+    "calibration": 18,
+    "formal": 6
+  },
+  "safety_by_stage": [
+    {
+      "stage": "calibration",
+      "completed_trials": 18,
+      "applied_audited_including_warm": 627021,
+      "measurement_applied": 374874,
+      "unknown_found_all_trial": 0,
+      "applied_with_rpc_error_all_trial": 0,
+      "measurement_api_errors": 0,
+      "measurement_unknown": 0,
+      "measurement_client_drop": 5226
+    },
+    {
+      "stage": "common-prewarm",
+      "completed_trials": 2,
+      "applied_audited_including_warm": 24211,
+      "measurement_applied": 24211,
+      "unknown_found_all_trial": 4031,
+      "applied_with_rpc_error_all_trial": 0,
+      "measurement_api_errors": 10390,
+      "measurement_unknown": 7513,
+      "measurement_client_drop": 13399
+    },
+    {
+      "stage": "formal",
+      "completed_trials": 6,
+      "applied_audited_including_warm": 378999,
+      "measurement_applied": 284199,
+      "unknown_found_all_trial": 0,
+      "applied_with_rpc_error_all_trial": 0,
+      "measurement_api_errors": 0,
+      "measurement_unknown": 0,
+      "measurement_client_drop": 201
+    }
+  ],
+  "interrupted_trials": [],
+  "archive_pending": false,
+  "failed_trials": [],
+  "idle_client_restarts": 2,
+  "archive_directories": [
+    "main",
+    "progress"
+  ],
+  "note": "Every previous failure and unmatched pair retained. APPLIED safety counts only completed audited trials, no claim for interrupted r008.",
+  "raw_member_manifest_is_frozen_precompression_inventory": true,
+  "seal_receipt": "seal-receipt.json"
+}

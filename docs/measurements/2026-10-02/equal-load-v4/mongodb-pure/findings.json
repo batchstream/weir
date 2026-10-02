@@ -1,0 +1,522 @@
+{
+  "formal_pairs": [
+    {
+      "workload": "pure",
+      "pair_index": 1,
+      "cohort": 0,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-pure-1-direct",
+        "weir": "formal-pure-1-weir"
+      },
+      "rates": {
+        "direct": 338,
+        "weir": 482
+      },
+      "DB_CPU": {
+        "direct": 0.12898319366178296,
+        "weir": 0.11525418419362328
+      },
+      "cpu_relative_mean_difference": 0.11242349216742367,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 338.0,
+        "weir": 482.0
+      },
+      "RPS_ratio_weir_to_direct": 1.4260355029585798,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": false,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 2,
+      "cohort": 0,
+      "order": [
+        "weir",
+        "direct"
+      ],
+      "tags": {
+        "weir": "formal-pure-2-weir",
+        "direct": "formal-pure-2-direct"
+      },
+      "rates": {
+        "direct": 338,
+        "weir": 482
+      },
+      "DB_CPU": {
+        "direct": 0.11288114154081617,
+        "weir": 0.11508414537772614
+      },
+      "cpu_relative_mean_difference": 0.019327537685131468,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "weir": 482.0,
+        "direct": 338.0
+      },
+      "RPS_ratio_weir_to_direct": 1.4260355029585798,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": true,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 3,
+      "cohort": 0,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-pure-3-direct",
+        "weir": "formal-pure-3-weir"
+      },
+      "rates": {
+        "direct": 338,
+        "weir": 482
+      },
+      "DB_CPU": {
+        "direct": 0.10559358004953087,
+        "weir": 0.10949211477625928
+      },
+      "cpu_relative_mean_difference": 0.03625099037744978,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 338.0,
+        "weir": 482.0
+      },
+      "RPS_ratio_weir_to_direct": 1.4260355029585798,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": true,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 1,
+      "cohort": 1,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-pure-1-direct-r1",
+        "weir": "formal-pure-1-weir-r1"
+      },
+      "rates": {
+        "direct": 320,
+        "weir": 410
+      },
+      "DB_CPU": {
+        "direct": 0.08881294561589369,
+        "weir": 0.09694984911592018
+      },
+      "cpu_relative_mean_difference": 0.08760530882164815,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 320.0,
+        "weir": 410.0
+      },
+      "RPS_ratio_weir_to_direct": 1.28125,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": false,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 2,
+      "cohort": 1,
+      "order": [
+        "weir",
+        "direct"
+      ],
+      "tags": {
+        "weir": "formal-pure-2-weir-r1",
+        "direct": "formal-pure-2-direct-r1"
+      },
+      "rates": {
+        "direct": 320,
+        "weir": 410
+      },
+      "DB_CPU": {
+        "direct": 0.09254367354318886,
+        "weir": 0.0979656591027192
+      },
+      "cpu_relative_mean_difference": 0.0569209443361808,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "weir": 410.0,
+        "direct": 320.0
+      },
+      "RPS_ratio_weir_to_direct": 1.28125,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": false,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 3,
+      "cohort": 1,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-pure-3-direct-r1",
+        "weir": "formal-pure-3-weir-r1"
+      },
+      "rates": {
+        "direct": 320,
+        "weir": 410
+      },
+      "DB_CPU": {
+        "direct": 0.09152469031503284,
+        "weir": 0.09118574903920162
+      },
+      "cpu_relative_mean_difference": 0.0037101467987177613,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 320.0,
+        "weir": 410.0
+      },
+      "RPS_ratio_weir_to_direct": 1.28125,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": true,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    }
+  ],
+  "totals": {
+    "formal": {
+      "measure": {
+        "planned": 279000,
+        "started": 279000,
+        "success": 279000,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 93000,
+        "started": 93000,
+        "success": 93000,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 372000,
+      "ledger_counts": {
+        "0": 0,
+        "1": 372000,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 372000,
+      "audit_found_documents": 372000,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    },
+    "calibration": {
+      "measure": {
+        "planned": 359190,
+        "started": 359128,
+        "success": 359128,
+        "client_drop": 62,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 239460,
+        "started": 239460,
+        "success": 239460,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 598650,
+      "ledger_counts": {
+        "0": 62,
+        "1": 598588,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 598588,
+      "audit_found_documents": 598588,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    },
+    "common": {
+      "measure": {
+        "planned": 16000,
+        "started": 16000,
+        "success": 16000,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 8000,
+        "started": 8000,
+        "success": 8000,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 24000,
+      "ledger_counts": {
+        "0": 0,
+        "1": 24000,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 24000,
+      "audit_found_documents": 24000,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    },
+    "all": {
+      "measure": {
+        "planned": 654190,
+        "started": 654128,
+        "success": 654128,
+        "client_drop": 62,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 340460,
+        "started": 340460,
+        "success": 340460,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 994650,
+      "ledger_counts": {
+        "0": 62,
+        "1": 994588,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 994588,
+      "audit_found_documents": 994588,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    }
+  },
+  "idle": {
+    "samples": 25,
+    "seconds": 24.00031852722168,
+    "process_cpu_cores": 0.006666578188057152,
+    "cgroup_cpu_cores": 0.006844909154587681,
+    "rss_median_mib": 253.921875,
+    "rss_peak_mib": 254.0703125,
+    "cgroup_memory_peak_mib": 260.65234375,
+    "oom_kill_delta": 0,
+    "process_start_ticks": [
+      72212972
+    ],
+    "io": {
+      "seconds": 24.000318361,
+      "process_counter_delta": {
+        "cancelled_write_bytes": 184320,
+        "rchar": 470512,
+        "read_bytes": 0,
+        "syscr": 826,
+        "syscw": 157,
+        "wchar": 4258011,
+        "write_bytes": 4337664
+      },
+      "per_device_counter_delta": {
+        "259:0": {
+          "dbytes": 0,
+          "dios": 0,
+          "rbytes": 0,
+          "rios": 0,
+          "wbytes": 4300800,
+          "wios": 52
+        }
+      },
+      "psi_total_usec_delta": {
+        "some": 12694,
+        "full": 12690
+      },
+      "psi_stall_fraction": {
+        "some": 0.0005289096506581127,
+        "full": 0.000528742986202257
+      },
+      "blockdelay_ms": 0,
+      "blockdelay_field_available": true,
+      "limitations": "IOcounter/PSIstall is not percommand latency; availablezero blockdelay may reflect disabled kernel accounting"
+    },
+    "cfs_nr_periods_delta": 113,
+    "cfs_nr_throttled_delta": 0,
+    "cfs_throttled_usec_delta": 0
+  },
+  "attempted_formal_pairs": 6,
+  "cpu_matched_pairs": 0,
+  "healthy_qualified_pairs": 0,
+  "secondary_nearby_CPU_healthy_pairs": [
+    {
+      "workload": "pure",
+      "pair_index": 2,
+      "cohort": 0,
+      "order": [
+        "weir",
+        "direct"
+      ],
+      "tags": {
+        "weir": "formal-pure-2-weir",
+        "direct": "formal-pure-2-direct"
+      },
+      "rates": {
+        "direct": 338,
+        "weir": 482
+      },
+      "DB_CPU": {
+        "direct": 0.11288114154081617,
+        "weir": 0.11508414537772614
+      },
+      "cpu_relative_mean_difference": 0.019327537685131468,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "weir": 482.0,
+        "direct": 338.0
+      },
+      "RPS_ratio_weir_to_direct": 1.4260355029585798,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": true,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 3,
+      "cohort": 0,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-pure-3-direct",
+        "weir": "formal-pure-3-weir"
+      },
+      "rates": {
+        "direct": 338,
+        "weir": 482
+      },
+      "DB_CPU": {
+        "direct": 0.10559358004953087,
+        "weir": 0.10949211477625928
+      },
+      "cpu_relative_mean_difference": 0.03625099037744978,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 338.0,
+        "weir": 482.0
+      },
+      "RPS_ratio_weir_to_direct": 1.4260355029585798,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": true,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    },
+    {
+      "workload": "pure",
+      "pair_index": 3,
+      "cohort": 1,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-pure-3-direct-r1",
+        "weir": "formal-pure-3-weir-r1"
+      },
+      "rates": {
+        "direct": 320,
+        "weir": 410
+      },
+      "DB_CPU": {
+        "direct": 0.09152469031503284,
+        "weir": 0.09118574903920162
+      },
+      "cpu_relative_mean_difference": 0.0037101467987177613,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 320.0,
+        "weir": 410.0
+      },
+      "RPS_ratio_weir_to_direct": 1.28125,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true,
+      "same_initial_database_and_pod": true,
+      "whole_measurement_healthy_without_CPU_target": true,
+      "secondary_nearby_CPU_healthy_observation": true,
+      "secondary_scope": "full60s healthy observations at actual nearby CPU points; does not satisfy fixed0.10target repeated comparison or maximum capacity"
+    }
+  ],
+  "limits": {
+    "cpu_matched": "both full measurement CPU0.095..0.105 with coverage nominal-3s and each boundarygap<=2s, pair difference to mean<=5%; all 1Hz samples, actual span",
+    "healthy_qualified": "CPUmatched and valid audit/identity/hash/conservation/coverage, OOM/API/UNKNOWN0, total measurementdrop<=0.1% and fewer than2 highdrop10s buckets, client/WeirprocessCPU below90%of2/4core and client CFS<=10%periods",
+    "timing": "sampler-io timestamps collect start and sequentially reads local proc/cgroup files; frozen sampler has no end-of-collect bracket. Client helper supplies own duration/end bracket. Not all fields exact same instant"
+  }
+}

@@ -25,6 +25,7 @@ type nativeCapture struct {
 	body              bytes.Buffer
 	chunks            int
 	headErr, chunkErr error
+	cancelAfterHead   context.CancelFunc
 }
 
 func (c *nativeCapture) Head(h *pb.NativeHead) error {
@@ -32,6 +33,9 @@ func (c *nativeCapture) Head(h *pb.NativeHead) error {
 		return c.headErr
 	}
 	c.head = h
+	if c.cancelAfterHead != nil {
+		c.cancelAfterHead()
+	}
 	return nil
 }
 func (c *nativeCapture) Chunk(b []byte) error {
@@ -227,20 +231,28 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 
 func TestNativeHTTPExplicitCongestion(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		status     int
-		body       string
-		truncated  bool
-		oversized  bool
-		failHead   bool
-		failChunk  bool
-		completion pb.NativeCompletion
-		feedback   execution.Feedback
+		name            string
+		method          string
+		status          int
+		body            string
+		truncated       bool
+		oversized       bool
+		failHead        bool
+		failChunk       bool
+		cancelAfterHead bool
+		completion      pb.NativeCompletion
+		feedback        execution.Feedback
 	}{
+		{name: "complete_get", status: 200, body: `{"_index":"records","_id":"x","found":true}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Completed},
+		{name: "empty_get", status: 204, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Completed},
+		{name: "complete_bulk", method: "POST", status: 200, body: `{"errors":false,"items":[]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
 		{name: "capacity", status: 429, body: "opaque capacity response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
 		{name: "unavailable", status: 503, body: "opaque unavailable response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
 		{name: "native_bad_request", status: 400, body: `{"error":"native request"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "mixed_bulk", status: 200, body: `{"errors":true,"items":[{"index":{"status":429}}]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "mixed_bulk", method: "POST", status: 200, body: `{"errors":true,"items":[{"index":{"status":429}}]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "unknown_http_error", status: 500, body: `{"error":"unknown"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "redirect", status: 307, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
+		{name: "canceled_get", status: 200, body: "reply", cancelAfterHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 		{name: "truncated_capacity", status: 429, body: "short", truncated: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 		{name: "oversized_capacity", status: 429, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
 		{name: "head_failure", status: 503, body: "unavailable", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
@@ -272,7 +284,12 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{Store: "search", URL: backend.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
-			open := nativeOpen(t, "records", "GET", "/_doc/x")
+			method, path, input := http.MethodGet, "/_doc/x", ""
+			if test.method == http.MethodPost {
+				method, path = http.MethodPost, "/_bulk"
+				input = "{\"index\":{\"_index\":\"records\",\"_id\":\"x\"}}\n{}\n"
+			}
+			open := nativeOpen(t, "records", method, path)
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -284,9 +301,13 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			if test.failChunk {
 				capture.chunkErr = errors.New("output unavailable")
 			}
-			exchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: capture}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
+			if test.cancelAfterHead {
+				capture.cancelAfterHead = cancel
+			}
+			source := io.NopCloser(strings.NewReader(input))
+			exchange := &execution.NativeExchange{Source: source, Sink: capture}
 			end, feedback := a.executeNative(ctx, plan, exchange)
 			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
 				t.Fatal(end, feedback, calls.Load())

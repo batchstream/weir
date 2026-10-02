@@ -1,0 +1,22 @@
+{
+  "apiVersion": "v1",
+  "kind": "Namespace",
+  "metadata": {
+    "creationTimestamp": "2026-10-01T22:43:17Z",
+    "labels": {
+      "kubernetes.io/metadata.name": "weir-bp-9282b4b43a1e",
+      "weir.load-comparison.owner": "weir-bp-9282b4b43a1e"
+    },
+    "name": "weir-bp-9282b4b43a1e",
+    "resourceVersion": "1111553691",
+    "uid": "aa430ac8-e524-4d80-8a40-3968fb5cc109"
+  },
+  "spec": {
+    "finalizers": [
+      "kubernetes"
+    ]
+  },
+  "status": {
+    "phase": "Active"
+  }
+}

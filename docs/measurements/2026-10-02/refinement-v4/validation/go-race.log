@@ -1,0 +1,7 @@
+ok  	github.com/batchstream/weir/internal/store	2.707s
+ok  	github.com/batchstream/weir/internal/app	6.475s
+ok  	github.com/batchstream/weir/internal/backend/mongodb	(cached)
+ok  	github.com/batchstream/weir/internal/backend/search	14.517s
+ok  	github.com/batchstream/weir/internal/server	26.175s
+ok  	github.com/batchstream/weir/routeclient	(cached)
+ok  	github.com/batchstream/weir/internal/testutil/testresource	3.781s

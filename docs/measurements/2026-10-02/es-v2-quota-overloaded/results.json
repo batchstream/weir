@@ -1,0 +1,5194 @@
+{
+  "version": "v2 final CFS hold fix",
+  "provenance": {
+    "base_head": "614eb443e298ffc531507a32743b15f5a4baea00",
+    "dirty_files": [
+      " M README.md",
+      " M config/routes.yaml",
+      " M deploy/kubernetes/config_test.go",
+      " M docs/architecture.md",
+      " M internal/app/config.go",
+      " M internal/app/config_reference_test.go",
+      " M internal/backend/mongodb/adapter.go",
+      " M internal/backend/mongodb/batch.go",
+      " M internal/backend/mongodb/native.go",
+      " M internal/backend/mongodb/native_test.go",
+      " M internal/backend/mongodb/route.go",
+      " M internal/backend/mongodb/target.go",
+      " M internal/backend/mongodb/uri.go",
+      " M internal/backend/search/adapter.go",
+      " M internal/backend/search/batch.go",
+      " M internal/backend/search/bulk.go",
+      " M internal/backend/search/connection.go",
+      " M internal/backend/search/json.go",
+      " M internal/backend/search/native.go",
+      " M internal/backend/search/native_test.go",
+      " M internal/backend/search/route.go",
+      " M internal/execution/adapter.go",
+      " M internal/store/metrics.go",
+      " M internal/store/metrics_test.go",
+      " M internal/store/runtime.go",
+      " M internal/store/runtime_test.go",
+      " M internal/testutil/testcapacity/audit.go",
+      " M internal/testutil/testcapacity/client.go",
+      " M internal/testutil/testcapacity/client_test.go",
+      " M internal/testutil/testcapacity/main.go",
+      " M scripts/compare-load.py",
+      " M scripts/compare_load_test.py",
+      "?? deploy/kubernetes/hpa.json",
+      "?? deploy/kubernetes/scaling.md",
+      "?? docs/measurements/2026-10-01/resource-comparison/",
+      "?? docs/measurements/2026-10-02/",
+      "?? docs/resource-goals-test-2026-10-02.md",
+      "?? docs/resource-load-test-2026-10-01.md",
+      "?? internal/app/config_collect_test.go",
+      "?? internal/app/config_read_size_test.go",
+      "?? internal/backend/mongodb/batch_efficiency_test.go",
+      "?? internal/backend/mongodb/read_limit.go",
+      "?? internal/backend/mongodb/read_limit_test.go",
+      "?? internal/backend/search/json_efficiency_test.go",
+      "?? internal/backend/search/read_limit.go",
+      "?? internal/backend/search/read_limit_test.go",
+      "?? internal/store/controller.go",
+      "?? internal/store/controller_cancellation_test.go",
+      "?? internal/store/controller_capacity_test.go",
+      "?? internal/store/controller_completed_test.go",
+      "?? internal/store/controller_quota_test.go",
+      "?? internal/store/controller_test.go",
+      "?? internal/testutil/testcapacity/connections.go",
+      "?? internal/testutil/testcapacity/connections_test.go",
+      "?? internal/testutil/testcapacity/mongo.go",
+      "?? internal/testutil/testcapacity/mongo_test.go",
+      "?? internal/testutil/testcapacity/profile_integration.go",
+      "?? scripts/connection-fixture.py",
+      "?? scripts/connection-load.py",
+      "?? scripts/connection_load_test.py"
+    ],
+    "binary_sha256": {
+      "client": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+      "weir": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f",
+      "baseline": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1"
+    },
+    "declared_binary_sources": {
+      "client": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "weir": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "baseline": "614eb443e298ffc531507a32743b15f5a4baea00"
+    },
+    "es_image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+    "backend": "elasticsearch",
+    "database_image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+    "host": "Darwin arm64",
+    "docker": "29.7.2",
+    "vm": {
+      "cpus": 8,
+      "memory_bytes": 8319770624,
+      "kernel": "7.0.12-linuxkit",
+      "arch": "aarch64"
+    },
+    "resources": {
+      "database": {
+        "cpu": 0.25,
+        "memory_mib": 1536,
+        "cpuset": "0",
+        "write_threads": 1,
+        "write_queue": 200
+      },
+      "weir": {
+        "cpu": 2,
+        "memory_mib": 2304,
+        "cpuset": "3,4"
+      },
+      "client": {
+        "cpu": 2,
+        "memory_mib": 2048,
+        "cpuset": "1,2"
+      }
+    },
+    "options": {
+      "client": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/bin/client-v2",
+      "weir": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/bin/weir-v2",
+      "baseline_weir": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/bin/baseline-weir",
+      "baseline_source": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "client_source": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "weir_source": "614eb443e298ffc531507a32743b15f5a4baea00",
+      "output": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/es-v2-quota-phases",
+      "rates": "3200",
+      "write_every": "10",
+      "modes": "direct,weir",
+      "repetitions": 3,
+      "seconds": 90,
+      "warm": 0,
+      "recovery_rate": 0,
+      "recovery_seconds": 0,
+      "pool": 4,
+      "direct_pool": 4,
+      "batch_operations": 8,
+      "collect_ms": 3,
+      "max_read_size": "16KiB",
+      "db_cpu": 0.25,
+      "backend": "elasticsearch",
+      "mongo_image": "unused",
+      "weir_cpu": 2,
+      "workers": 32,
+      "db_queue": 200,
+      "prewarm": true,
+      "es_image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+      "client_queue": 32
+    }
+  },
+  "selected_tuning": null,
+  "experiment": {
+    "version": "v2 final CFS hold fix",
+    "kind": "quota-phase-only",
+    "reference_raw": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/es-v2-matrix",
+    "started": 1790898624.4828548,
+    "profile": {
+      "store_concurrency": 4,
+      "batch_operations": 8,
+      "batch_collect_ms": 3,
+      "max_read_size": "16KiB",
+      "workers": 32,
+      "max_sessions": 32,
+      "weir_cpu": 2,
+      "weir_memory_mib": 2304,
+      "direct_http_pool": 4,
+      "database_cpu": 0.25,
+      "database_memory_mib": 1536,
+      "client_queue": 32
+    },
+    "phase_schedule": "first actual Execute: .25CPU20s -> .08CPU30s -> .25CPU30s; continuous90s",
+    "learning_note": "Common JVM prewarm uses this fixed read/batch profile. Each measured Weir starts fresh; its first20s .25CPU baseline is the controller learning interval. Report readiness before limited phase; no baseline is presumed.",
+    "completed": 1790898862.60499
+  },
+  "cells": [],
+  "backpressure": [
+    {
+      "prefix": "r000",
+      "repetition": 0,
+      "audit": {
+        "planned_writes": 28800,
+        "found_version1": 11467,
+        "applied": 11458,
+        "unknown_found": 9,
+        "absent": 17333,
+        "pages": 288
+      },
+      "measure": {
+        "all": {
+          "planned": 288000,
+          "started": 116070,
+          "completed": 116070,
+          "success": 114630,
+          "client_drop": 171930,
+          "client_late": 0,
+          "unknown": 152,
+          "due": 288000,
+          "cancelled_future": 0,
+          "worker_expired": 0,
+          "drop_reasons": {
+            "client_queue_full": 171930
+          },
+          "wake": {
+            "p50_us": 600,
+            "p95_us": 1300,
+            "p99_us": 1600,
+            "max_ns": 25742575
+          },
+          "decision": {
+            "p50_us": 600,
+            "p95_us": 1300,
+            "p99_us": 1600,
+            "max_ns": 25749700
+          },
+          "construct": {
+            "p50_us": 100,
+            "p95_us": 100,
+            "p99_us": 100,
+            "max_ns": 4991209
+          },
+          "handoff": {
+            "p50_us": 100,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 812487792
+          },
+          "worker_start": {
+            "p50_us": 700,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 813318973
+          },
+          "failures": {
+            "transport_DeadlineExceeded": 1307,
+            "transport_Internal": 114,
+            "transport_ResourceExhausted": 19
+          },
+          "success_arrival": {
+            "p50_us": 3900,
+            "p95_us": 94000,
+            "p99_us": 163000,
+            "max_ns": 1000713263
+          },
+          "success_dispatch": {
+            "p50_us": 3300,
+            "p95_us": 84000,
+            "p99_us": 92000,
+            "max_ns": 811579542
+          },
+          "arrival": {
+            "p50_us": 3900,
+            "p95_us": 95000,
+            "p99_us": 1010000,
+            "max_ns": 1011909813
+          },
+          "dispatch": {
+            "p50_us": 3300,
+            "p95_us": 85000,
+            "p99_us": 404000,
+            "max_ns": 919133042
+          },
+          "lag": {
+            "p50_us": 700,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 813325098
+          }
+        },
+        "read": {
+          "planned": 259200,
+          "started": 104460,
+          "completed": 104460,
+          "success": 103172,
+          "client_drop": 154740,
+          "client_late": 0,
+          "unknown": 0,
+          "due": 259200,
+          "cancelled_future": 0,
+          "worker_expired": 0,
+          "drop_reasons": {
+            "client_queue_full": 154740
+          },
+          "wake": {
+            "p50_us": 600,
+            "p95_us": 1300,
+            "p99_us": 1600,
+            "max_ns": 25440200
+          },
+          "decision": {
+            "p50_us": 600,
+            "p95_us": 1300,
+            "p99_us": 1600,
+            "max_ns": 25440700
+          },
+          "construct": {
+            "p50_us": 100,
+            "p95_us": 100,
+            "p99_us": 100,
+            "max_ns": 4991209
+          },
+          "handoff": {
+            "p50_us": 100,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 812487792
+          },
+          "worker_start": {
+            "p50_us": 700,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 813318973
+          },
+          "failures": {
+            "transport_DeadlineExceeded": 1162,
+            "transport_Internal": 108,
+            "transport_ResourceExhausted": 18
+          },
+          "success_arrival": {
+            "p50_us": 3900,
+            "p95_us": 94000,
+            "p99_us": 163000,
+            "max_ns": 1000713263
+          },
+          "success_dispatch": {
+            "p50_us": 3300,
+            "p95_us": 84000,
+            "p99_us": 92000,
+            "max_ns": 811579542
+          },
+          "arrival": {
+            "p50_us": 3900,
+            "p95_us": 95000,
+            "p99_us": 1010000,
+            "max_ns": 1011909813
+          },
+          "dispatch": {
+            "p50_us": 3300,
+            "p95_us": 85000,
+            "p99_us": 403000,
+            "max_ns": 919133042
+          },
+          "lag": {
+            "p50_us": 700,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 813325098
+          }
+        },
+        "put": {
+          "planned": 28800,
+          "started": 11610,
+          "completed": 11610,
+          "success": 11458,
+          "client_drop": 17190,
+          "client_late": 0,
+          "unknown": 152,
+          "due": 28800,
+          "cancelled_future": 0,
+          "worker_expired": 0,
+          "drop_reasons": {
+            "client_queue_full": 17190
+          },
+          "wake": {
+            "p50_us": 600,
+            "p95_us": 1300,
+            "p99_us": 1600,
+            "max_ns": 25742575
+          },
+          "decision": {
+            "p50_us": 600,
+            "p95_us": 1300,
+            "p99_us": 1600,
+            "max_ns": 25749700
+          },
+          "construct": {
+            "p50_us": 100,
+            "p95_us": 100,
+            "p99_us": 100,
+            "max_ns": 364000
+          },
+          "handoff": {
+            "p50_us": 100,
+            "p95_us": 81000,
+            "p99_us": 402000,
+            "max_ns": 808342417
+          },
+          "worker_start": {
+            "p50_us": 700,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 808370557
+          },
+          "failures": {
+            "transport_DeadlineExceeded": 145,
+            "transport_Internal": 6,
+            "transport_ResourceExhausted": 1
+          },
+          "success_arrival": {
+            "p50_us": 4100,
+            "p95_us": 94000,
+            "p99_us": 172000,
+            "max_ns": 999323805
+          },
+          "success_dispatch": {
+            "p50_us": 3400,
+            "p95_us": 84000,
+            "p99_us": 92000,
+            "max_ns": 811233834
+          },
+          "arrival": {
+            "p50_us": 4100,
+            "p95_us": 96000,
+            "p99_us": 1010000,
+            "max_ns": 1005948521
+          },
+          "dispatch": {
+            "p50_us": 3400,
+            "p95_us": 85000,
+            "p99_us": 491000,
+            "max_ns": 889256418
+          },
+          "lag": {
+            "p50_us": 700,
+            "p95_us": 82000,
+            "p99_us": 403000,
+            "max_ns": 808371974
+          }
+        }
+      },
+      "windows": [
+        {
+          "all": {
+            "planned": 32000,
+            "started": 11983,
+            "completed": 11983,
+            "success": 11983,
+            "client_drop": 20017,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 20017
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8530544
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8532460
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 589167
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 74000,
+              "p99_us": 87000,
+              "max_ns": 302429583
+            },
+            "worker_start": {
+              "p50_us": 1100,
+              "p95_us": 74000,
+              "p99_us": 88000,
+              "max_ns": 302657378
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 20000,
+              "p95_us": 91000,
+              "p99_us": 265000,
+              "max_ns": 332099045
+            },
+            "success_dispatch": {
+              "p50_us": 5000,
+              "p95_us": 84000,
+              "p99_us": 94000,
+              "max_ns": 312390792
+            },
+            "arrival": {
+              "p50_us": 20000,
+              "p95_us": 91000,
+              "p99_us": 265000,
+              "max_ns": 332099045
+            },
+            "dispatch": {
+              "p50_us": 5000,
+              "p95_us": 84000,
+              "p99_us": 94000,
+              "max_ns": 312390792
+            },
+            "lag": {
+              "p50_us": 1100,
+              "p95_us": 74000,
+              "p99_us": 88000,
+              "max_ns": 302659420
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 10777,
+            "completed": 10777,
+            "success": 10777,
+            "client_drop": 18023,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 18023
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8530544
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8532460
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 589167
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 74000,
+              "p99_us": 87000,
+              "max_ns": 302429583
+            },
+            "worker_start": {
+              "p50_us": 1100,
+              "p95_us": 74000,
+              "p99_us": 87000,
+              "max_ns": 302657378
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 20000,
+              "p95_us": 91000,
+              "p99_us": 265000,
+              "max_ns": 332099045
+            },
+            "success_dispatch": {
+              "p50_us": 5000,
+              "p95_us": 84000,
+              "p99_us": 94000,
+              "max_ns": 312390792
+            },
+            "arrival": {
+              "p50_us": 20000,
+              "p95_us": 91000,
+              "p99_us": 265000,
+              "max_ns": 332099045
+            },
+            "dispatch": {
+              "p50_us": 5000,
+              "p95_us": 84000,
+              "p99_us": 94000,
+              "max_ns": 312390792
+            },
+            "lag": {
+              "p50_us": 1100,
+              "p95_us": 74000,
+              "p99_us": 87000,
+              "max_ns": 302659420
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 1206,
+            "completed": 1206,
+            "success": 1206,
+            "client_drop": 1994,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1994
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8220835
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8221960
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 36583
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 74000,
+              "p99_us": 87000,
+              "max_ns": 297097958
+            },
+            "worker_start": {
+              "p50_us": 1100,
+              "p95_us": 74000,
+              "p99_us": 88000,
+              "max_ns": 297297128
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 21000,
+              "p95_us": 92000,
+              "p99_us": 266000,
+              "max_ns": 316278795
+            },
+            "success_dispatch": {
+              "p50_us": 5300,
+              "p95_us": 84000,
+              "p99_us": 95000,
+              "max_ns": 306712542
+            },
+            "arrival": {
+              "p50_us": 21000,
+              "p95_us": 92000,
+              "p99_us": 266000,
+              "max_ns": 316278795
+            },
+            "dispatch": {
+              "p50_us": 5300,
+              "p95_us": 84000,
+              "p99_us": 95000,
+              "max_ns": 306712542
+            },
+            "lag": {
+              "p50_us": 1100,
+              "p95_us": 74000,
+              "p99_us": 88000,
+              "max_ns": 297298587
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 20164,
+            "completed": 20164,
+            "success": 20164,
+            "client_drop": 11836,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 11836
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1628964
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1631131
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 207250
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 72000,
+              "p99_us": 85000,
+              "max_ns": 91864500
+            },
+            "worker_start": {
+              "p50_us": 700,
+              "p95_us": 72000,
+              "p99_us": 85000,
+              "max_ns": 92160005
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3800,
+              "p95_us": 92000,
+              "p99_us": 98000,
+              "max_ns": 160997130
+            },
+            "success_dispatch": {
+              "p50_us": 3200,
+              "p95_us": 81000,
+              "p99_us": 88000,
+              "max_ns": 94353333
+            },
+            "arrival": {
+              "p50_us": 3800,
+              "p95_us": 92000,
+              "p99_us": 98000,
+              "max_ns": 160997130
+            },
+            "dispatch": {
+              "p50_us": 3200,
+              "p95_us": 81000,
+              "p99_us": 88000,
+              "max_ns": 94353333
+            },
+            "lag": {
+              "p50_us": 700,
+              "p95_us": 72000,
+              "p99_us": 85000,
+              "max_ns": 92161296
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 18153,
+            "completed": 18153,
+            "success": 18153,
+            "client_drop": 10647,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 10647
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1628964
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1631131
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 207250
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 72000,
+              "p99_us": 85000,
+              "max_ns": 91864500
+            },
+            "worker_start": {
+              "p50_us": 700,
+              "p95_us": 73000,
+              "p99_us": 85000,
+              "max_ns": 92160005
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3800,
+              "p95_us": 92000,
+              "p99_us": 98000,
+              "max_ns": 154233796
+            },
+            "success_dispatch": {
+              "p50_us": 3200,
+              "p95_us": 81000,
+              "p99_us": 88000,
+              "max_ns": 94353333
+            },
+            "arrival": {
+              "p50_us": 3800,
+              "p95_us": 92000,
+              "p99_us": 98000,
+              "max_ns": 154233796
+            },
+            "dispatch": {
+              "p50_us": 3200,
+              "p95_us": 81000,
+              "p99_us": 88000,
+              "max_ns": 94353333
+            },
+            "lag": {
+              "p50_us": 700,
+              "p95_us": 73000,
+              "p99_us": 85000,
+              "max_ns": 92161296
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 2011,
+            "completed": 2011,
+            "success": 2011,
+            "client_drop": 1189,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1189
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1591462
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1593712
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 28667
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 71000,
+              "p99_us": 84000,
+              "max_ns": 90834708
+            },
+            "worker_start": {
+              "p50_us": 700,
+              "p95_us": 71000,
+              "p99_us": 85000,
+              "max_ns": 91057088
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 4000,
+              "p95_us": 92000,
+              "p99_us": 97000,
+              "max_ns": 160997130
+            },
+            "success_dispatch": {
+              "p50_us": 3400,
+              "p95_us": 82000,
+              "p99_us": 88000,
+              "max_ns": 91271333
+            },
+            "arrival": {
+              "p50_us": 4000,
+              "p95_us": 92000,
+              "p99_us": 97000,
+              "max_ns": 160997130
+            },
+            "dispatch": {
+              "p50_us": 3400,
+              "p95_us": 82000,
+              "p99_us": 88000,
+              "max_ns": 91271333
+            },
+            "lag": {
+              "p50_us": 700,
+              "p95_us": 71000,
+              "p99_us": 85000,
+              "max_ns": 91057546
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 2303,
+            "completed": 2303,
+            "success": 1940,
+            "client_drop": 29697,
+            "client_late": 0,
+            "unknown": 35,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 29697
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3200,
+              "max_ns": 15217845
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3200,
+              "max_ns": 15225762
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 281333
+            },
+            "handoff": {
+              "p50_us": 3900,
+              "p95_us": 685000,
+              "p99_us": 795000,
+              "max_ns": 796342000
+            },
+            "worker_start": {
+              "p50_us": 4300,
+              "p95_us": 686000,
+              "p99_us": 797000,
+              "max_ns": 803681971
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 317,
+              "transport_Internal": 37,
+              "transport_ResourceExhausted": 9
+            },
+            "success_arrival": {
+              "p50_us": 8500,
+              "p95_us": 797000,
+              "p99_us": 993000,
+              "max_ns": 1000713263
+            },
+            "success_dispatch": {
+              "p50_us": 4400,
+              "p95_us": 400000,
+              "p99_us": 601000,
+              "max_ns": 700062334
+            },
+            "arrival": {
+              "p50_us": 38000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1011089512
+            },
+            "dispatch": {
+              "p50_us": 6700,
+              "p95_us": 699000,
+              "p99_us": 798000,
+              "max_ns": 898771375
+            },
+            "lag": {
+              "p50_us": 4300,
+              "p95_us": 686000,
+              "p99_us": 797000,
+              "max_ns": 803685471
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 2072,
+            "completed": 2072,
+            "success": 1744,
+            "client_drop": 26728,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 26728
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3100,
+              "max_ns": 15217845
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3100,
+              "max_ns": 15225762
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 281333
+            },
+            "handoff": {
+              "p50_us": 4000,
+              "p95_us": 692000,
+              "p99_us": 795000,
+              "max_ns": 796342000
+            },
+            "worker_start": {
+              "p50_us": 4300,
+              "p95_us": 692000,
+              "p99_us": 797000,
+              "max_ns": 803681971
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 286,
+              "transport_Internal": 34,
+              "transport_ResourceExhausted": 8
+            },
+            "success_arrival": {
+              "p50_us": 8600,
+              "p95_us": 796000,
+              "p99_us": 993000,
+              "max_ns": 1000713263
+            },
+            "success_dispatch": {
+              "p50_us": 4400,
+              "p95_us": 399000,
+              "p99_us": 601000,
+              "max_ns": 700062334
+            },
+            "arrival": {
+              "p50_us": 38000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1011089512
+            },
+            "dispatch": {
+              "p50_us": 6700,
+              "p95_us": 692000,
+              "p99_us": 798000,
+              "max_ns": 898771375
+            },
+            "lag": {
+              "p50_us": 4300,
+              "p95_us": 692000,
+              "p99_us": 797000,
+              "max_ns": 803685471
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 231,
+            "completed": 231,
+            "success": 196,
+            "client_drop": 2969,
+            "client_late": 0,
+            "unknown": 35,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 2969
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3500,
+              "max_ns": 12852511
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3500,
+              "max_ns": 12871345
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 80750
+            },
+            "handoff": {
+              "p50_us": 3600,
+              "p95_us": 599000,
+              "p99_us": 702000,
+              "max_ns": 796052167
+            },
+            "worker_start": {
+              "p50_us": 4300,
+              "p95_us": 600000,
+              "p99_us": 702000,
+              "max_ns": 796074595
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 31,
+              "transport_Internal": 3,
+              "transport_ResourceExhausted": 1
+            },
+            "success_arrival": {
+              "p50_us": 8000,
+              "p95_us": 805000,
+              "p99_us": 998000,
+              "max_ns": 999323805
+            },
+            "success_dispatch": {
+              "p50_us": 4400,
+              "p95_us": 504000,
+              "p99_us": 603000,
+              "max_ns": 686500708
+            },
+            "arrival": {
+              "p50_us": 38000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1003416805
+            },
+            "dispatch": {
+              "p50_us": 6100,
+              "p95_us": 702000,
+              "p99_us": 797000,
+              "max_ns": 889256418
+            },
+            "lag": {
+              "p50_us": 4300,
+              "p95_us": 600000,
+              "p99_us": 702000,
+              "max_ns": 796078804
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 687,
+            "completed": 687,
+            "success": 98,
+            "client_drop": 31313,
+            "client_late": 0,
+            "unknown": 66,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 31313
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 12602766
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 12619599
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 4991209
+            },
+            "handoff": {
+              "p50_us": 495000,
+              "p95_us": 721000,
+              "p99_us": 810000,
+              "max_ns": 812487792
+            },
+            "worker_start": {
+              "p50_us": 496000,
+              "p95_us": 721000,
+              "p99_us": 811000,
+              "max_ns": 813318973
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 545,
+              "transport_Internal": 38,
+              "transport_ResourceExhausted": 6
+            },
+            "success_arrival": {
+              "p50_us": 593000,
+              "p95_us": 998000,
+              "p99_us": 1000000,
+              "max_ns": 999547682
+            },
+            "success_dispatch": {
+              "p50_us": 390000,
+              "p95_us": 712000,
+              "p99_us": 812000,
+              "max_ns": 811579542
+            },
+            "arrival": {
+              "p50_us": 1010000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1005421933
+            },
+            "dispatch": {
+              "p50_us": 496000,
+              "p95_us": 722000,
+              "p99_us": 813000,
+              "max_ns": 919133042
+            },
+            "lag": {
+              "p50_us": 496000,
+              "p95_us": 721000,
+              "p99_us": 811000,
+              "max_ns": 813325098
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 612,
+            "completed": 612,
+            "success": 89,
+            "client_drop": 28188,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 28188
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 12602766
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 12619599
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 4991209
+            },
+            "handoff": {
+              "p50_us": 495000,
+              "p95_us": 721000,
+              "p99_us": 810000,
+              "max_ns": 812487792
+            },
+            "worker_start": {
+              "p50_us": 496000,
+              "p95_us": 721000,
+              "p99_us": 811000,
+              "max_ns": 813318973
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 480,
+              "transport_Internal": 37,
+              "transport_ResourceExhausted": 6
+            },
+            "success_arrival": {
+              "p50_us": 601000,
+              "p95_us": 998000,
+              "p99_us": 1000000,
+              "max_ns": 999547682
+            },
+            "success_dispatch": {
+              "p50_us": 392000,
+              "p95_us": 712000,
+              "p99_us": 812000,
+              "max_ns": 811579542
+            },
+            "arrival": {
+              "p50_us": 1010000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1005421933
+            },
+            "dispatch": {
+              "p50_us": 496000,
+              "p95_us": 722000,
+              "p99_us": 813000,
+              "max_ns": 919133042
+            },
+            "lag": {
+              "p50_us": 496000,
+              "p95_us": 721000,
+              "p99_us": 811000,
+              "max_ns": 813325098
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 75,
+            "completed": 75,
+            "success": 9,
+            "client_drop": 3125,
+            "client_late": 0,
+            "unknown": 66,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 3125
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3800,
+              "max_ns": 11970097
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3800,
+              "max_ns": 11991764
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 364000
+            },
+            "handoff": {
+              "p50_us": 495000,
+              "p95_us": 719000,
+              "p99_us": 809000,
+              "max_ns": 808342417
+            },
+            "worker_start": {
+              "p50_us": 496000,
+              "p95_us": 721000,
+              "p99_us": 809000,
+              "max_ns": 808370557
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 65,
+              "transport_Internal": 1
+            },
+            "success_arrival": {
+              "p50_us": 494000,
+              "p95_us": 990000,
+              "p99_us": 990000,
+              "max_ns": 989743181
+            },
+            "success_dispatch": {
+              "p50_us": 294000,
+              "p95_us": 812000,
+              "p99_us": 812000,
+              "max_ns": 811233834
+            },
+            "arrival": {
+              "p50_us": 1010000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1004404515
+            },
+            "dispatch": {
+              "p50_us": 497000,
+              "p95_us": 724000,
+              "p99_us": 813000,
+              "max_ns": 812644251
+            },
+            "lag": {
+              "p50_us": 496000,
+              "p95_us": 721000,
+              "p99_us": 809000,
+              "max_ns": 808371974
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 681,
+            "completed": 681,
+            "success": 211,
+            "client_drop": 31319,
+            "client_late": 0,
+            "unknown": 49,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 31319
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 15595229
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 15613229
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 486458
+            },
+            "handoff": {
+              "p50_us": 494000,
+              "p95_us": 707000,
+              "p99_us": 710000,
+              "max_ns": 794461876
+            },
+            "worker_start": {
+              "p50_us": 496000,
+              "p95_us": 708000,
+              "p99_us": 713000,
+              "max_ns": 795824895
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 430,
+              "transport_Internal": 37,
+              "transport_ResourceExhausted": 3
+            },
+            "success_arrival": {
+              "p50_us": 801000,
+              "p95_us": 997000,
+              "p99_us": 1000000,
+              "max_ns": 1000379352
+            },
+            "success_dispatch": {
+              "p50_us": 305000,
+              "p95_us": 702000,
+              "p99_us": 709000,
+              "max_ns": 709183459
+            },
+            "arrival": {
+              "p50_us": 1010000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1011909813
+            },
+            "dispatch": {
+              "p50_us": 499000,
+              "p95_us": 709000,
+              "p99_us": 796000,
+              "max_ns": 798388167
+            },
+            "lag": {
+              "p50_us": 496000,
+              "p95_us": 708000,
+              "p99_us": 713000,
+              "max_ns": 795829061
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 609,
+            "completed": 609,
+            "success": 188,
+            "client_drop": 28191,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 28191
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 15595229
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3900,
+              "max_ns": 15613229
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 486458
+            },
+            "handoff": {
+              "p50_us": 495000,
+              "p95_us": 707000,
+              "p99_us": 710000,
+              "max_ns": 794412750
+            },
+            "worker_start": {
+              "p50_us": 496000,
+              "p95_us": 708000,
+              "p99_us": 712000,
+              "max_ns": 795281769
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 383,
+              "transport_Internal": 35,
+              "transport_ResourceExhausted": 3
+            },
+            "success_arrival": {
+              "p50_us": 801000,
+              "p95_us": 997000,
+              "p99_us": 1000000,
+              "max_ns": 1000379352
+            },
+            "success_dispatch": {
+              "p50_us": 305000,
+              "p95_us": 702000,
+              "p99_us": 710000,
+              "max_ns": 709183459
+            },
+            "arrival": {
+              "p50_us": 1010000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1011909813
+            },
+            "dispatch": {
+              "p50_us": 499000,
+              "p95_us": 709000,
+              "p99_us": 795000,
+              "max_ns": 798388167
+            },
+            "lag": {
+              "p50_us": 496000,
+              "p95_us": 708000,
+              "p99_us": 712000,
+              "max_ns": 795288686
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 72,
+            "completed": 72,
+            "success": 23,
+            "client_drop": 3128,
+            "client_late": 0,
+            "unknown": 49,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 3128
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3700,
+              "max_ns": 13751687
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 3700,
+              "max_ns": 13754896
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 131667
+            },
+            "handoff": {
+              "p50_us": 485000,
+              "p95_us": 709000,
+              "p99_us": 795000,
+              "max_ns": 794461876
+            },
+            "worker_start": {
+              "p50_us": 486000,
+              "p95_us": 709000,
+              "p99_us": 796000,
+              "max_ns": 795824895
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 47,
+              "transport_Internal": 2
+            },
+            "success_arrival": {
+              "p50_us": 802000,
+              "p95_us": 997000,
+              "p99_us": 998000,
+              "max_ns": 997084272
+            },
+            "success_dispatch": {
+              "p50_us": 395000,
+              "p95_us": 697000,
+              "p99_us": 702000,
+              "max_ns": 701444959
+            },
+            "arrival": {
+              "p50_us": 1010000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1005948521
+            },
+            "dispatch": {
+              "p50_us": 496000,
+              "p95_us": 708000,
+              "p99_us": 798000,
+              "max_ns": 797409668
+            },
+            "lag": {
+              "p50_us": 486000,
+              "p95_us": 709000,
+              "p99_us": 796000,
+              "max_ns": 795829061
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 13954,
+            "completed": 13954,
+            "success": 13936,
+            "client_drop": 18046,
+            "client_late": 0,
+            "unknown": 2,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 18046
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8641940
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8649148
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 280542
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 83000,
+              "p99_us": 87000,
+              "max_ns": 795226376
+            },
+            "worker_start": {
+              "p50_us": 1000,
+              "p95_us": 83000,
+              "p99_us": 87000,
+              "max_ns": 795863856
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 15,
+              "transport_Internal": 2,
+              "transport_ResourceExhausted": 1
+            },
+            "success_arrival": {
+              "p50_us": 6100,
+              "p95_us": 96000,
+              "p99_us": 99000,
+              "max_ns": 999834606
+            },
+            "success_dispatch": {
+              "p50_us": 4100,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 323866334
+            },
+            "arrival": {
+              "p50_us": 6100,
+              "p95_us": 96000,
+              "p99_us": 100000,
+              "max_ns": 1001059440
+            },
+            "dispatch": {
+              "p50_us": 4100,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 695364042
+            },
+            "lag": {
+              "p50_us": 1000,
+              "p95_us": 83000,
+              "p99_us": 87000,
+              "max_ns": 795871231
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 12573,
+            "completed": 12573,
+            "success": 12557,
+            "client_drop": 16227,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 16227
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8641940
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8649148
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 280542
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 83000,
+              "p99_us": 87000,
+              "max_ns": 795226376
+            },
+            "worker_start": {
+              "p50_us": 1000,
+              "p95_us": 83000,
+              "p99_us": 87000,
+              "max_ns": 795863856
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 13,
+              "transport_Internal": 2,
+              "transport_ResourceExhausted": 1
+            },
+            "success_arrival": {
+              "p50_us": 6100,
+              "p95_us": 96000,
+              "p99_us": 99000,
+              "max_ns": 999834606
+            },
+            "success_dispatch": {
+              "p50_us": 4100,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 323866334
+            },
+            "arrival": {
+              "p50_us": 6200,
+              "p95_us": 96000,
+              "p99_us": 100000,
+              "max_ns": 1001059440
+            },
+            "dispatch": {
+              "p50_us": 4100,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 695364042
+            },
+            "lag": {
+              "p50_us": 1000,
+              "p95_us": 83000,
+              "p99_us": 87000,
+              "max_ns": 795871231
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 1381,
+            "completed": 1381,
+            "success": 1379,
+            "client_drop": 1819,
+            "client_late": 0,
+            "unknown": 2,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1819
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8339231
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8341231
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 179291
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 82000,
+              "p99_us": 86000,
+              "max_ns": 701350376
+            },
+            "worker_start": {
+              "p50_us": 900,
+              "p95_us": 82000,
+              "p99_us": 87000,
+              "max_ns": 702174773
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 2
+            },
+            "success_arrival": {
+              "p50_us": 6000,
+              "p95_us": 95000,
+              "p99_us": 99000,
+              "max_ns": 998611065
+            },
+            "success_dispatch": {
+              "p50_us": 4000,
+              "p95_us": 86000,
+              "p99_us": 90000,
+              "max_ns": 304020125
+            },
+            "arrival": {
+              "p50_us": 6000,
+              "p95_us": 95000,
+              "p99_us": 99000,
+              "max_ns": 1000503023
+            },
+            "dispatch": {
+              "p50_us": 4000,
+              "p95_us": 86000,
+              "p99_us": 90000,
+              "max_ns": 304020125
+            },
+            "lag": {
+              "p50_us": 900,
+              "p95_us": 82000,
+              "p99_us": 87000,
+              "max_ns": 702178064
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 14954,
+            "completed": 14954,
+            "success": 14954,
+            "client_drop": 17046,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 17046
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1876820
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1878278
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 125042
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 84000,
+              "p99_us": 86000,
+              "max_ns": 89842167
+            },
+            "worker_start": {
+              "p50_us": 1000,
+              "p95_us": 84000,
+              "p99_us": 87000,
+              "max_ns": 89879362
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 6700,
+              "p95_us": 97000,
+              "p99_us": 100000,
+              "max_ns": 177732655
+            },
+            "success_dispatch": {
+              "p50_us": 4200,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 95821250
+            },
+            "arrival": {
+              "p50_us": 6700,
+              "p95_us": 97000,
+              "p99_us": 100000,
+              "max_ns": 177732655
+            },
+            "dispatch": {
+              "p50_us": 4200,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 95821250
+            },
+            "lag": {
+              "p50_us": 1000,
+              "p95_us": 84000,
+              "p99_us": 87000,
+              "max_ns": 89880570
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 13458,
+            "completed": 13458,
+            "success": 13458,
+            "client_drop": 15342,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 15342
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1876820
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1878278
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 125042
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 84000,
+              "p99_us": 86000,
+              "max_ns": 89842167
+            },
+            "worker_start": {
+              "p50_us": 1000,
+              "p95_us": 84000,
+              "p99_us": 87000,
+              "max_ns": 89879362
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 6700,
+              "p95_us": 97000,
+              "p99_us": 100000,
+              "max_ns": 177732655
+            },
+            "success_dispatch": {
+              "p50_us": 4200,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 95821250
+            },
+            "arrival": {
+              "p50_us": 6700,
+              "p95_us": 97000,
+              "p99_us": 100000,
+              "max_ns": 177732655
+            },
+            "dispatch": {
+              "p50_us": 4200,
+              "p95_us": 86000,
+              "p99_us": 89000,
+              "max_ns": 95821250
+            },
+            "lag": {
+              "p50_us": 1000,
+              "p95_us": 84000,
+              "p99_us": 87000,
+              "max_ns": 89880570
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 1496,
+            "completed": 1496,
+            "success": 1496,
+            "client_drop": 1704,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1704
+            },
+            "wake": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1577280
+            },
+            "decision": {
+              "p50_us": 600,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 1578988
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 49083
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 84000,
+              "p99_us": 86000,
+              "max_ns": 88511917
+            },
+            "worker_start": {
+              "p50_us": 1000,
+              "p95_us": 84000,
+              "p99_us": 87000,
+              "max_ns": 89782322
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 6800,
+              "p95_us": 97000,
+              "p99_us": 99000,
+              "max_ns": 171206153
+            },
+            "success_dispatch": {
+              "p50_us": 4300,
+              "p95_us": 87000,
+              "p99_us": 89000,
+              "max_ns": 93037541
+            },
+            "arrival": {
+              "p50_us": 6800,
+              "p95_us": 97000,
+              "p99_us": 99000,
+              "max_ns": 171206153
+            },
+            "dispatch": {
+              "p50_us": 4300,
+              "p95_us": 87000,
+              "p99_us": 89000,
+              "max_ns": 93037541
+            },
+            "lag": {
+              "p50_us": 1000,
+              "p95_us": 84000,
+              "p99_us": 87000,
+              "max_ns": 89783989
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 24905,
+            "completed": 24905,
+            "success": 24905,
+            "client_drop": 7095,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 7095
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 25742575
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 25749700
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 56541
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 143842001
+            },
+            "worker_start": {
+              "p50_us": 600,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 144442367
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3300,
+              "p95_us": 76000,
+              "p99_us": 96000,
+              "max_ns": 154635992
+            },
+            "success_dispatch": {
+              "p50_us": 2900,
+              "p95_us": 33000,
+              "p99_us": 87000,
+              "max_ns": 154380667
+            },
+            "arrival": {
+              "p50_us": 3300,
+              "p95_us": 76000,
+              "p99_us": 96000,
+              "max_ns": 154635992
+            },
+            "dispatch": {
+              "p50_us": 2900,
+              "p95_us": 33000,
+              "p99_us": 87000,
+              "max_ns": 154380667
+            },
+            "lag": {
+              "p50_us": 600,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 144445325
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 22415,
+            "completed": 22415,
+            "success": 22415,
+            "client_drop": 6385,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 6385
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 25440200
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 25440700
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 56541
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 143830709
+            },
+            "worker_start": {
+              "p50_us": 600,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 144442367
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3300,
+              "p95_us": 76000,
+              "p99_us": 96000,
+              "max_ns": 154635992
+            },
+            "success_dispatch": {
+              "p50_us": 2800,
+              "p95_us": 32000,
+              "p99_us": 87000,
+              "max_ns": 154380667
+            },
+            "arrival": {
+              "p50_us": 3300,
+              "p95_us": 76000,
+              "p99_us": 96000,
+              "max_ns": 154635992
+            },
+            "dispatch": {
+              "p50_us": 2800,
+              "p95_us": 32000,
+              "p99_us": 87000,
+              "max_ns": 154380667
+            },
+            "lag": {
+              "p50_us": 600,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 144445325
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 2490,
+            "completed": 2490,
+            "success": 2490,
+            "client_drop": 710,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 710
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 25742575
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1600,
+              "max_ns": 25749700
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 47125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 22000,
+              "p99_us": 82000,
+              "max_ns": 143842001
+            },
+            "worker_start": {
+              "p50_us": 600,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 143993492
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3500,
+              "p95_us": 77000,
+              "p99_us": 97000,
+              "max_ns": 153453367
+            },
+            "success_dispatch": {
+              "p50_us": 3000,
+              "p95_us": 35000,
+              "p99_us": 87000,
+              "max_ns": 152962292
+            },
+            "arrival": {
+              "p50_us": 3500,
+              "p95_us": 77000,
+              "p99_us": 97000,
+              "max_ns": 153453367
+            },
+            "dispatch": {
+              "p50_us": 3000,
+              "p95_us": 35000,
+              "p99_us": 87000,
+              "max_ns": 152962292
+            },
+            "lag": {
+              "p50_us": 600,
+              "p95_us": 23000,
+              "p99_us": 83000,
+              "max_ns": 143994742
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 26439,
+            "completed": 26439,
+            "success": 26439,
+            "client_drop": 5561,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 5561
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2098703
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2100078
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 83125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 11000,
+              "p99_us": 81000,
+              "max_ns": 98609417
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 11000,
+              "p99_us": 82000,
+              "max_ns": 98827953
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3200,
+              "p95_us": 61000,
+              "p99_us": 95000,
+              "max_ns": 169383453
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 16000,
+              "p99_us": 85000,
+              "max_ns": 99203750
+            },
+            "arrival": {
+              "p50_us": 3200,
+              "p95_us": 61000,
+              "p99_us": 95000,
+              "max_ns": 169383453
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 16000,
+              "p99_us": 85000,
+              "max_ns": 99203750
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 11000,
+              "p99_us": 82000,
+              "max_ns": 98828995
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 23791,
+            "completed": 23791,
+            "success": 23791,
+            "client_drop": 5009,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 5009
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2098703
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2100078
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 83125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 11000,
+              "p99_us": 81000,
+              "max_ns": 98609417
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 11000,
+              "p99_us": 82000,
+              "max_ns": 98827953
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3100,
+              "p95_us": 60000,
+              "p99_us": 95000,
+              "max_ns": 169383453
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 16000,
+              "p99_us": 85000,
+              "max_ns": 99203750
+            },
+            "arrival": {
+              "p50_us": 3100,
+              "p95_us": 60000,
+              "p99_us": 95000,
+              "max_ns": 169383453
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 16000,
+              "p99_us": 85000,
+              "max_ns": 99203750
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 11000,
+              "p99_us": 82000,
+              "max_ns": 98828995
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 2648,
+            "completed": 2648,
+            "success": 2648,
+            "client_drop": 552,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 552
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1400,
+              "max_ns": 1583245
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1400,
+              "max_ns": 1589495
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 48125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 11000,
+              "p99_us": 81000,
+              "max_ns": 93548500
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 11000,
+              "p99_us": 81000,
+              "max_ns": 93896703
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3400,
+              "p95_us": 61000,
+              "p99_us": 95000,
+              "max_ns": 108826453
+            },
+            "success_dispatch": {
+              "p50_us": 2900,
+              "p95_us": 13000,
+              "p99_us": 85000,
+              "max_ns": 98892042
+            },
+            "arrival": {
+              "p50_us": 3400,
+              "p95_us": 61000,
+              "p99_us": 95000,
+              "max_ns": 108826453
+            },
+            "dispatch": {
+              "p50_us": 2900,
+              "p95_us": 13000,
+              "p99_us": 85000,
+              "max_ns": 98892042
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 11000,
+              "p99_us": 81000,
+              "max_ns": 93897203
+            }
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "baseline",
+          "cpu_quota": 0.25,
+          "wall_start": 1790898673.676669,
+          "wall_end": 1790898693.676669,
+          "database_pid": "61",
+          "database_container": "6b339bcc253a82f36f07a3b8296a2f8361cda2f63d1789f65e1f6cbe24f268a3",
+          "limits": [
+            "250000000",
+            "0",
+            "1610612736",
+            "0"
+          ],
+          "database": {
+            "sample_count": 29,
+            "sample_seconds": 18.92536387499422,
+            "cpu_cores_mean": 0.21981083309560784,
+            "cpu_quota_percent": 87.92433323824314,
+            "cgroup_cpu_cores_mean": 0.236169567439895,
+            "throttled_seconds": 10.148834,
+            "rss_max": 925278208,
+            "cgroup_memory_max": 987652096,
+            "cgroup_memory_peak_lifetime": 987852800,
+            "oom_kills": 0
+          },
+          "window": {
+            "start": 4.0,
+            "end": 1.0,
+            "minimum": 1.0,
+            "maximum": 4.0
+          },
+          "latency_ratio_max": 201.88207789511924,
+          "latency_ready_profiles_max": 4.0,
+          "cooldown_samples": 1,
+          "pending_max": 31.0,
+          "recovery_hold_samples": 26,
+          "actual_cpu_max": "25000 100000",
+          "database_start_ticks": 402714,
+          "backpressure_events": {
+            "backend": 0.0,
+            "latency": 3.0
+          },
+          "window_changes": {
+            "increase": 0.0,
+            "decrease": 3.0
+          }
+        },
+        {
+          "name": "limited",
+          "cpu_quota": 0.08,
+          "wall_start": 1790898694.49317,
+          "wall_end": 1790898724.49317,
+          "database_pid": "61",
+          "database_container": "6b339bcc253a82f36f07a3b8296a2f8361cda2f63d1789f65e1f6cbe24f268a3",
+          "limits": [
+            "80000000",
+            "0",
+            "1610612736",
+            "0"
+          ],
+          "database": {
+            "sample_count": 10,
+            "sample_seconds": 27.607145417016,
+            "cpu_cores_mean": 0.06628718660901671,
+            "cpu_quota_percent": 82.8589832612709,
+            "cgroup_cpu_cores_mean": 0.07966314397157673,
+            "throttled_seconds": 25.291596,
+            "rss_max": 927363072,
+            "cgroup_memory_max": 982286336,
+            "cgroup_memory_peak_lifetime": 993783808,
+            "oom_kills": 0
+          },
+          "window": {
+            "start": 1.0,
+            "end": 1.0,
+            "minimum": 1.0,
+            "maximum": 1.0
+          },
+          "latency_ratio_max": 754.3366461182926,
+          "latency_ready_profiles_max": 4.0,
+          "cooldown_samples": 0,
+          "pending_max": 29.0,
+          "recovery_hold_samples": 3,
+          "actual_cpu_max": "8000 100000",
+          "database_start_ticks": 402714,
+          "backpressure_events": {
+            "backend": 0.0,
+            "latency": 0.0
+          },
+          "window_changes": {
+            "increase": 0.0,
+            "decrease": 0.0
+          }
+        },
+        {
+          "name": "restored",
+          "cpu_quota": 0.25,
+          "wall_start": 1790898724.874665,
+          "wall_end": 1790898754.874665,
+          "database_pid": "61",
+          "database_container": "6b339bcc253a82f36f07a3b8296a2f8361cda2f63d1789f65e1f6cbe24f268a3",
+          "limits": [
+            "250000000",
+            "0",
+            "1610612736",
+            "0"
+          ],
+          "database": {
+            "sample_count": 46,
+            "sample_seconds": 28.940938582993113,
+            "cpu_cores_mean": 0.21561152835820194,
+            "cpu_quota_percent": 86.24461134328078,
+            "cgroup_cpu_cores_mean": 0.2331372211945102,
+            "throttled_seconds": 13.52098,
+            "rss_max": 936726528,
+            "cgroup_memory_max": 1003245568,
+            "cgroup_memory_peak_lifetime": 1003339776,
+            "oom_kills": 0
+          },
+          "window": {
+            "start": 1.0,
+            "end": 1.0,
+            "minimum": 1.0,
+            "maximum": 1.0
+          },
+          "latency_ratio_max": 184.89927847300743,
+          "latency_ready_profiles_max": 4.0,
+          "cooldown_samples": 0,
+          "pending_max": 24.0,
+          "recovery_hold_samples": 46,
+          "actual_cpu_max": "25000 100000",
+          "database_start_ticks": 402714,
+          "backpressure_events": {
+            "backend": 0.0,
+            "latency": 0.0
+          },
+          "window_changes": {
+            "increase": 0.0,
+            "decrease": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "prefix": "r001",
+      "repetition": 1,
+      "audit": {
+        "planned_writes": 28800,
+        "found_version1": 17710,
+        "applied": 17693,
+        "unknown_found": 17,
+        "absent": 11090,
+        "pages": 288
+      },
+      "measure": {
+        "all": {
+          "planned": 288000,
+          "started": 177657,
+          "completed": 177657,
+          "success": 176987,
+          "client_drop": 110343,
+          "client_late": 0,
+          "unknown": 73,
+          "due": 288000,
+          "cancelled_future": 0,
+          "worker_expired": 0,
+          "drop_reasons": {
+            "client_queue_full": 110343
+          },
+          "wake": {
+            "p50_us": 500,
+            "p95_us": 1300,
+            "p99_us": 1500,
+            "max_ns": 26047140
+          },
+          "decision": {
+            "p50_us": 500,
+            "p95_us": 1300,
+            "p99_us": 1500,
+            "max_ns": 26058932
+          },
+          "construct": {
+            "p50_us": 100,
+            "p95_us": 100,
+            "p99_us": 100,
+            "max_ns": 7847458
+          },
+          "handoff": {
+            "p50_us": 100,
+            "p95_us": 5000,
+            "p99_us": 209000,
+            "max_ns": 806682833
+          },
+          "worker_start": {
+            "p50_us": 500,
+            "p95_us": 5700,
+            "p99_us": 209000,
+            "max_ns": 807008554
+          },
+          "failures": {
+            "transport_DeadlineExceeded": 610,
+            "transport_Internal": 46,
+            "transport_ResourceExhausted": 14
+          },
+          "success_arrival": {
+            "p50_us": 3100,
+            "p95_us": 27000,
+            "p99_us": 302000,
+            "max_ns": 1001984933
+          },
+          "success_dispatch": {
+            "p50_us": 2700,
+            "p95_us": 8900,
+            "p99_us": 103000,
+            "max_ns": 807310208
+          },
+          "arrival": {
+            "p50_us": 3100,
+            "p95_us": 34000,
+            "p99_us": 595000,
+            "max_ns": 1004017645
+          },
+          "dispatch": {
+            "p50_us": 2700,
+            "p95_us": 11000,
+            "p99_us": 209000,
+            "max_ns": 903668375
+          },
+          "lag": {
+            "p50_us": 500,
+            "p95_us": 5700,
+            "p99_us": 209000,
+            "max_ns": 807013346
+          }
+        },
+        "read": {
+          "planned": 259200,
+          "started": 159891,
+          "completed": 159891,
+          "success": 159294,
+          "client_drop": 99309,
+          "client_late": 0,
+          "unknown": 0,
+          "due": 259200,
+          "cancelled_future": 0,
+          "worker_expired": 0,
+          "drop_reasons": {
+            "client_queue_full": 99309
+          },
+          "wake": {
+            "p50_us": 500,
+            "p95_us": 1300,
+            "p99_us": 1500,
+            "max_ns": 26047140
+          },
+          "decision": {
+            "p50_us": 500,
+            "p95_us": 1300,
+            "p99_us": 1500,
+            "max_ns": 26058932
+          },
+          "construct": {
+            "p50_us": 100,
+            "p95_us": 100,
+            "p99_us": 100,
+            "max_ns": 549667
+          },
+          "handoff": {
+            "p50_us": 100,
+            "p95_us": 5000,
+            "p99_us": 209000,
+            "max_ns": 806682833
+          },
+          "worker_start": {
+            "p50_us": 500,
+            "p95_us": 5700,
+            "p99_us": 209000,
+            "max_ns": 807008554
+          },
+          "failures": {
+            "transport_DeadlineExceeded": 548,
+            "transport_Internal": 39,
+            "transport_ResourceExhausted": 10
+          },
+          "success_arrival": {
+            "p50_us": 3000,
+            "p95_us": 27000,
+            "p99_us": 302000,
+            "max_ns": 1001984933
+          },
+          "success_dispatch": {
+            "p50_us": 2700,
+            "p95_us": 8800,
+            "p99_us": 103000,
+            "max_ns": 807310208
+          },
+          "arrival": {
+            "p50_us": 3000,
+            "p95_us": 34000,
+            "p99_us": 595000,
+            "max_ns": 1004017645
+          },
+          "dispatch": {
+            "p50_us": 2700,
+            "p95_us": 10000,
+            "p99_us": 208000,
+            "max_ns": 903668375
+          },
+          "lag": {
+            "p50_us": 500,
+            "p95_us": 5700,
+            "p99_us": 209000,
+            "max_ns": 807013346
+          }
+        },
+        "put": {
+          "planned": 28800,
+          "started": 17766,
+          "completed": 17766,
+          "success": 17693,
+          "client_drop": 11034,
+          "client_late": 0,
+          "unknown": 73,
+          "due": 28800,
+          "cancelled_future": 0,
+          "worker_expired": 0,
+          "drop_reasons": {
+            "client_queue_full": 11034
+          },
+          "wake": {
+            "p50_us": 500,
+            "p95_us": 1300,
+            "p99_us": 1500,
+            "max_ns": 25441057
+          },
+          "decision": {
+            "p50_us": 500,
+            "p95_us": 1300,
+            "p99_us": 1500,
+            "max_ns": 25442682
+          },
+          "construct": {
+            "p50_us": 100,
+            "p95_us": 100,
+            "p99_us": 100,
+            "max_ns": 7847458
+          },
+          "handoff": {
+            "p50_us": 100,
+            "p95_us": 5000,
+            "p99_us": 292000,
+            "max_ns": 801985292
+          },
+          "worker_start": {
+            "p50_us": 500,
+            "p95_us": 5600,
+            "p99_us": 293000,
+            "max_ns": 801989641
+          },
+          "failures": {
+            "transport_DeadlineExceeded": 62,
+            "transport_Internal": 7,
+            "transport_ResourceExhausted": 4
+          },
+          "success_arrival": {
+            "p50_us": 3300,
+            "p95_us": 27000,
+            "p99_us": 302000,
+            "max_ns": 999892185
+          },
+          "success_dispatch": {
+            "p50_us": 2800,
+            "p95_us": 9400,
+            "p99_us": 104000,
+            "max_ns": 802071750
+          },
+          "arrival": {
+            "p50_us": 3300,
+            "p95_us": 35000,
+            "p99_us": 597000,
+            "max_ns": 1002397641
+          },
+          "dispatch": {
+            "p50_us": 2800,
+            "p95_us": 11000,
+            "p99_us": 293000,
+            "max_ns": 895491376
+          },
+          "lag": {
+            "p50_us": 500,
+            "p95_us": 5600,
+            "p99_us": 293000,
+            "max_ns": 801992016
+          }
+        }
+      },
+      "windows": [
+        {
+          "all": {
+            "planned": 32000,
+            "started": 30848,
+            "completed": 30848,
+            "success": 30848,
+            "client_drop": 1152,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1152
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2463836
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2467211
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 360459
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 21000,
+              "max_ns": 64277250
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 21000,
+              "max_ns": 64941917
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 7500,
+              "p99_us": 44000,
+              "max_ns": 78376876
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4800,
+              "p99_us": 31000,
+              "max_ns": 77792209
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 7500,
+              "p99_us": 44000,
+              "max_ns": 78376876
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4800,
+              "p99_us": 31000,
+              "max_ns": 77792209
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 21000,
+              "max_ns": 64943251
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 27761,
+            "completed": 27761,
+            "success": 27761,
+            "client_drop": 1039,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1039
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2463836
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2467211
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 360459
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 21000,
+              "max_ns": 64277250
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 21000,
+              "max_ns": 64941917
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 7400,
+              "p99_us": 44000,
+              "max_ns": 78376876
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4800,
+              "p99_us": 31000,
+              "max_ns": 77792209
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 7400,
+              "p99_us": 44000,
+              "max_ns": 78376876
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4800,
+              "p99_us": 31000,
+              "max_ns": 77792209
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 21000,
+              "max_ns": 64943251
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 3087,
+            "completed": 3087,
+            "success": 3087,
+            "client_drop": 113,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 113
+            },
+            "wake": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1561292
+            },
+            "decision": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1566583
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 30958
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 21000,
+              "max_ns": 63001667
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 22000,
+              "max_ns": 63524209
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3200,
+              "p95_us": 7900,
+              "p99_us": 46000,
+              "max_ns": 76022792
+            },
+            "success_dispatch": {
+              "p50_us": 2800,
+              "p95_us": 5100,
+              "p99_us": 31000,
+              "max_ns": 75818166
+            },
+            "arrival": {
+              "p50_us": 3200,
+              "p95_us": 7900,
+              "p99_us": 46000,
+              "max_ns": 76022792
+            },
+            "dispatch": {
+              "p50_us": 2800,
+              "p95_us": 5100,
+              "p99_us": 31000,
+              "max_ns": 75818166
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 22000,
+              "max_ns": 63524917
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 30238,
+            "completed": 30238,
+            "success": 30238,
+            "client_drop": 1762,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1762
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1500,
+              "max_ns": 23879007
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1500,
+              "max_ns": 23886299
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 190084
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 33000,
+              "max_ns": 80394292
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 34000,
+              "max_ns": 84215674
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 9800,
+              "p99_us": 52000,
+              "max_ns": 101207632
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 5300,
+              "p99_us": 44000,
+              "max_ns": 94413459
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 9800,
+              "p99_us": 52000,
+              "max_ns": 101207632
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 5300,
+              "p99_us": 44000,
+              "max_ns": 94413459
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 34000,
+              "max_ns": 84219882
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 27217,
+            "completed": 27217,
+            "success": 27217,
+            "client_drop": 1583,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 1583
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1500,
+              "max_ns": 23879007
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1500,
+              "max_ns": 23886299
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 190084
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 33000,
+              "max_ns": 80394292
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 34000,
+              "max_ns": 84215674
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 9700,
+              "p99_us": 52000,
+              "max_ns": 101207632
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 5300,
+              "p99_us": 43000,
+              "max_ns": 93467459
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 9700,
+              "p99_us": 52000,
+              "max_ns": 101207632
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 5300,
+              "p99_us": 43000,
+              "max_ns": 93467459
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 34000,
+              "max_ns": 84219882
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 3021,
+            "completed": 3021,
+            "success": 3021,
+            "client_drop": 179,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 179
+            },
+            "wake": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1500,
+              "max_ns": 22954091
+            },
+            "decision": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1500,
+              "max_ns": 22956507
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 82166
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 33000,
+              "max_ns": 79958916
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 33000,
+              "max_ns": 82514966
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3200,
+              "p95_us": 11000,
+              "p99_us": 52000,
+              "max_ns": 99936674
+            },
+            "success_dispatch": {
+              "p50_us": 2800,
+              "p95_us": 5700,
+              "p99_us": 45000,
+              "max_ns": 94413459
+            },
+            "arrival": {
+              "p50_us": 3200,
+              "p95_us": 11000,
+              "p99_us": 52000,
+              "max_ns": 99936674
+            },
+            "dispatch": {
+              "p50_us": 2800,
+              "p95_us": 5700,
+              "p99_us": 45000,
+              "max_ns": 94413459
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1400,
+              "p99_us": 33000,
+              "max_ns": 82515424
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 2113,
+            "completed": 2113,
+            "success": 1906,
+            "client_drop": 29887,
+            "client_late": 0,
+            "unknown": 22,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 29887
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1300,
+              "p99_us": 1700,
+              "max_ns": 10294012
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1300,
+              "p99_us": 1700,
+              "max_ns": 10320054
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 2480250
+            },
+            "handoff": {
+              "p50_us": 25000,
+              "p95_us": 595000,
+              "p99_us": 788000,
+              "max_ns": 806682833
+            },
+            "worker_start": {
+              "p50_us": 27000,
+              "p95_us": 596000,
+              "p99_us": 788000,
+              "max_ns": 807008554
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 183,
+              "transport_Internal": 21,
+              "transport_ResourceExhausted": 3
+            },
+            "success_arrival": {
+              "p50_us": 5100,
+              "p95_us": 805000,
+              "p99_us": 990000,
+              "max_ns": 999916930
+            },
+            "success_dispatch": {
+              "p50_us": 4200,
+              "p95_us": 503000,
+              "p99_us": 699000,
+              "max_ns": 807310208
+            },
+            "arrival": {
+              "p50_us": 100000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1003930262
+            },
+            "dispatch": {
+              "p50_us": 42000,
+              "p95_us": 599000,
+              "p99_us": 795000,
+              "max_ns": 807829417
+            },
+            "lag": {
+              "p50_us": 27000,
+              "p95_us": 596000,
+              "p99_us": 788000,
+              "max_ns": 807013346
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 1893,
+            "completed": 1893,
+            "success": 1708,
+            "client_drop": 26907,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 26907
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1300,
+              "p99_us": 1700,
+              "max_ns": 10294012
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1300,
+              "p99_us": 1700,
+              "max_ns": 10320054
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 549667
+            },
+            "handoff": {
+              "p50_us": 5000,
+              "p95_us": 596000,
+              "p99_us": 788000,
+              "max_ns": 806682833
+            },
+            "worker_start": {
+              "p50_us": 6200,
+              "p95_us": 596000,
+              "p99_us": 789000,
+              "max_ns": 807008554
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 165,
+              "transport_Internal": 18,
+              "transport_ResourceExhausted": 2
+            },
+            "success_arrival": {
+              "p50_us": 5000,
+              "p95_us": 805000,
+              "p99_us": 909000,
+              "max_ns": 999916930
+            },
+            "success_dispatch": {
+              "p50_us": 4100,
+              "p95_us": 503000,
+              "p99_us": 699000,
+              "max_ns": 807310208
+            },
+            "arrival": {
+              "p50_us": 100000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1003930262
+            },
+            "dispatch": {
+              "p50_us": 40000,
+              "p95_us": 599000,
+              "p99_us": 795000,
+              "max_ns": 807829417
+            },
+            "lag": {
+              "p50_us": 6200,
+              "p95_us": 596000,
+              "p99_us": 789000,
+              "max_ns": 807013346
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 220,
+            "completed": 220,
+            "success": 198,
+            "client_drop": 2980,
+            "client_late": 0,
+            "unknown": 22,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 2980
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 1600,
+              "max_ns": 10020554
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 1600,
+              "max_ns": 10024262
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 2480250
+            },
+            "handoff": {
+              "p50_us": 89000,
+              "p95_us": 594000,
+              "p99_us": 702000,
+              "max_ns": 800566834
+            },
+            "worker_start": {
+              "p50_us": 89000,
+              "p95_us": 596000,
+              "p99_us": 703000,
+              "max_ns": 800903679
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 18,
+              "transport_Internal": 3,
+              "transport_ResourceExhausted": 1
+            },
+            "success_arrival": {
+              "p50_us": 37000,
+              "p95_us": 804000,
+              "p99_us": 997000,
+              "max_ns": 998490513
+            },
+            "success_dispatch": {
+              "p50_us": 4800,
+              "p95_us": 503000,
+              "p99_us": 796000,
+              "max_ns": 801249042
+            },
+            "arrival": {
+              "p50_us": 129000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1001115722
+            },
+            "dispatch": {
+              "p50_us": 98000,
+              "p95_us": 597000,
+              "p99_us": 796000,
+              "max_ns": 802274083
+            },
+            "lag": {
+              "p50_us": 89000,
+              "p95_us": 596000,
+              "p99_us": 703000,
+              "max_ns": 800906304
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 1136,
+            "completed": 1136,
+            "success": 839,
+            "client_drop": 30864,
+            "client_late": 0,
+            "unknown": 36,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 30864
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2300,
+              "max_ns": 26047140
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2300,
+              "max_ns": 26058932
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 722042
+            },
+            "handoff": {
+              "p50_us": 292000,
+              "p95_us": 685000,
+              "p99_us": 797000,
+              "max_ns": 801985292
+            },
+            "worker_start": {
+              "p50_us": 292000,
+              "p95_us": 686000,
+              "p99_us": 798000,
+              "max_ns": 802776766
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 272,
+              "transport_Internal": 17,
+              "transport_ResourceExhausted": 8
+            },
+            "success_arrival": {
+              "p50_us": 298000,
+              "p95_us": 987000,
+              "p99_us": 1000000,
+              "max_ns": 1001984933
+            },
+            "success_dispatch": {
+              "p50_us": 100000,
+              "p95_us": 598000,
+              "p99_us": 798000,
+              "max_ns": 803912792
+            },
+            "arrival": {
+              "p50_us": 601000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1002397641
+            },
+            "dispatch": {
+              "p50_us": 292000,
+              "p95_us": 688000,
+              "p99_us": 798000,
+              "max_ns": 903668375
+            },
+            "lag": {
+              "p50_us": 292000,
+              "p95_us": 686000,
+              "p99_us": 798000,
+              "max_ns": 802785266
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 1015,
+            "completed": 1015,
+            "success": 754,
+            "client_drop": 27785,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 27785
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2300,
+              "max_ns": 26047140
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2300,
+              "max_ns": 26058932
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 163542
+            },
+            "handoff": {
+              "p50_us": 292000,
+              "p95_us": 685000,
+              "p99_us": 708000,
+              "max_ns": 801873125
+            },
+            "worker_start": {
+              "p50_us": 292000,
+              "p95_us": 686000,
+              "p99_us": 709000,
+              "max_ns": 802776766
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 243,
+              "transport_Internal": 13,
+              "transport_ResourceExhausted": 5
+            },
+            "success_arrival": {
+              "p50_us": 298000,
+              "p95_us": 986000,
+              "p99_us": 1000000,
+              "max_ns": 1001984933
+            },
+            "success_dispatch": {
+              "p50_us": 100000,
+              "p95_us": 598000,
+              "p99_us": 798000,
+              "max_ns": 803912792
+            },
+            "arrival": {
+              "p50_us": 600000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1002212642
+            },
+            "dispatch": {
+              "p50_us": 292000,
+              "p95_us": 688000,
+              "p99_us": 797000,
+              "max_ns": 903668375
+            },
+            "lag": {
+              "p50_us": 292000,
+              "p95_us": 686000,
+              "p99_us": 709000,
+              "max_ns": 802785266
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 121,
+            "completed": 121,
+            "success": 85,
+            "client_drop": 3079,
+            "client_late": 0,
+            "unknown": 36,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 3079
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2700,
+              "max_ns": 25441057
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2700,
+              "max_ns": 25442682
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 722042
+            },
+            "handoff": {
+              "p50_us": 296000,
+              "p95_us": 696000,
+              "p99_us": 798000,
+              "max_ns": 801985292
+            },
+            "worker_start": {
+              "p50_us": 296000,
+              "p95_us": 697000,
+              "p99_us": 798000,
+              "max_ns": 801989641
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 29,
+              "transport_Internal": 4,
+              "transport_ResourceExhausted": 3
+            },
+            "success_arrival": {
+              "p50_us": 301000,
+              "p95_us": 995000,
+              "p99_us": 1000000,
+              "max_ns": 999865350
+            },
+            "success_dispatch": {
+              "p50_us": 102000,
+              "p95_us": 596000,
+              "p99_us": 803000,
+              "max_ns": 802071750
+            },
+            "arrival": {
+              "p50_us": 602000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1002397641
+            },
+            "dispatch": {
+              "p50_us": 293000,
+              "p95_us": 688000,
+              "p99_us": 803000,
+              "max_ns": 802639625
+            },
+            "lag": {
+              "p50_us": 296000,
+              "p95_us": 697000,
+              "p99_us": 798000,
+              "max_ns": 801992016
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 988,
+            "completed": 988,
+            "success": 822,
+            "client_drop": 31012,
+            "client_late": 0,
+            "unknown": 15,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 31012
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2400,
+              "max_ns": 11886687
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2400,
+              "max_ns": 11888896
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 7847458
+            },
+            "handoff": {
+              "p50_us": 302000,
+              "p95_us": 602000,
+              "p99_us": 697000,
+              "max_ns": 702383292
+            },
+            "worker_start": {
+              "p50_us": 303000,
+              "p95_us": 602000,
+              "p99_us": 698000,
+              "max_ns": 702475561
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 155,
+              "transport_Internal": 8,
+              "transport_ResourceExhausted": 3
+            },
+            "success_arrival": {
+              "p50_us": 600000,
+              "p95_us": 901000,
+              "p99_us": 998000,
+              "max_ns": 999892185
+            },
+            "success_dispatch": {
+              "p50_us": 295000,
+              "p95_us": 600000,
+              "p99_us": 697000,
+              "max_ns": 796086917
+            },
+            "arrival": {
+              "p50_us": 694000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1004017645
+            },
+            "dispatch": {
+              "p50_us": 303000,
+              "p95_us": 605000,
+              "p99_us": 703000,
+              "max_ns": 895491376
+            },
+            "lag": {
+              "p50_us": 303000,
+              "p95_us": 602000,
+              "p99_us": 698000,
+              "max_ns": 702477936
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 902,
+            "completed": 902,
+            "success": 751,
+            "client_drop": 27898,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 27898
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2400,
+              "max_ns": 11886687
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2400,
+              "max_ns": 11888896
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 364541
+            },
+            "handoff": {
+              "p50_us": 302000,
+              "p95_us": 602000,
+              "p99_us": 697000,
+              "max_ns": 702383292
+            },
+            "worker_start": {
+              "p50_us": 303000,
+              "p95_us": 602000,
+              "p99_us": 697000,
+              "max_ns": 702475561
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 140,
+              "transport_Internal": 8,
+              "transport_ResourceExhausted": 3
+            },
+            "success_arrival": {
+              "p50_us": 599000,
+              "p95_us": 901000,
+              "p99_us": 998000,
+              "max_ns": 999445356
+            },
+            "success_dispatch": {
+              "p50_us": 295000,
+              "p95_us": 600000,
+              "p99_us": 697000,
+              "max_ns": 796086917
+            },
+            "arrival": {
+              "p50_us": 694000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1004017645
+            },
+            "dispatch": {
+              "p50_us": 302000,
+              "p95_us": 604000,
+              "p99_us": 702000,
+              "max_ns": 809686625
+            },
+            "lag": {
+              "p50_us": 303000,
+              "p95_us": 602000,
+              "p99_us": 697000,
+              "max_ns": 702477936
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 86,
+            "completed": 86,
+            "success": 71,
+            "client_drop": 3114,
+            "client_late": 0,
+            "unknown": 15,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 3114
+            },
+            "wake": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2500,
+              "max_ns": 11265729
+            },
+            "decision": {
+              "p50_us": 700,
+              "p95_us": 1400,
+              "p99_us": 2600,
+              "max_ns": 11267146
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 7847458
+            },
+            "handoff": {
+              "p50_us": 304000,
+              "p95_us": 602000,
+              "p99_us": 701000,
+              "max_ns": 700565375
+            },
+            "worker_start": {
+              "p50_us": 304000,
+              "p95_us": 603000,
+              "p99_us": 702000,
+              "max_ns": 701591228
+            },
+            "failures": {
+              "transport_DeadlineExceeded": 15
+            },
+            "success_arrival": {
+              "p50_us": 602000,
+              "p95_us": 997000,
+              "p99_us": 1000000,
+              "max_ns": 999892185
+            },
+            "success_dispatch": {
+              "p50_us": 302000,
+              "p95_us": 603000,
+              "p99_us": 697000,
+              "max_ns": 696872167
+            },
+            "arrival": {
+              "p50_us": 697000,
+              "p95_us": 1010000,
+              "p99_us": 1010000,
+              "max_ns": 1001608478
+            },
+            "dispatch": {
+              "p50_us": 310000,
+              "p95_us": 693000,
+              "p99_us": 896000,
+              "max_ns": 895491376
+            },
+            "lag": {
+              "p50_us": 304000,
+              "p95_us": 603000,
+              "p99_us": 702000,
+              "max_ns": 701597103
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 26272,
+            "completed": 26272,
+            "success": 26272,
+            "client_drop": 5728,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 5728
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 8853107
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 8861023
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 117459
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 5400,
+              "p99_us": 65000,
+              "max_ns": 495327916
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 5800,
+              "p99_us": 66000,
+              "max_ns": 495352231
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3100,
+              "p95_us": 40000,
+              "p99_us": 91000,
+              "max_ns": 504038606
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 8400,
+              "p99_us": 73000,
+              "max_ns": 95115833
+            },
+            "arrival": {
+              "p50_us": 3100,
+              "p95_us": 40000,
+              "p99_us": 91000,
+              "max_ns": 504038606
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 8400,
+              "p99_us": 73000,
+              "max_ns": 95115833
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 5800,
+              "p99_us": 66000,
+              "max_ns": 495354565
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 23644,
+            "completed": 23644,
+            "success": 23644,
+            "client_drop": 5156,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 5156
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 8853107
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 8861023
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 117459
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 5300,
+              "p99_us": 65000,
+              "max_ns": 495327916
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 5800,
+              "p99_us": 66000,
+              "max_ns": 495352231
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3100,
+              "p95_us": 40000,
+              "p99_us": 91000,
+              "max_ns": 504038606
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 8400,
+              "p99_us": 73000,
+              "max_ns": 95115833
+            },
+            "arrival": {
+              "p50_us": 3100,
+              "p95_us": 40000,
+              "p99_us": 91000,
+              "max_ns": 504038606
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 8400,
+              "p99_us": 73000,
+              "max_ns": 95115833
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 5800,
+              "p99_us": 66000,
+              "max_ns": 495354565
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 2628,
+            "completed": 2628,
+            "success": 2628,
+            "client_drop": 572,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 572
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 6379357
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 6381148
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 28125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 5400,
+              "p99_us": 65000,
+              "max_ns": 494013834
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 6100,
+              "p99_us": 66000,
+              "max_ns": 494033940
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3300,
+              "p95_us": 39000,
+              "p99_us": 90000,
+              "max_ns": 500656481
+            },
+            "success_dispatch": {
+              "p50_us": 2900,
+              "p95_us": 8300,
+              "p99_us": 73000,
+              "max_ns": 94901083
+            },
+            "arrival": {
+              "p50_us": 3300,
+              "p95_us": 39000,
+              "p99_us": 90000,
+              "max_ns": 500656481
+            },
+            "dispatch": {
+              "p50_us": 2900,
+              "p95_us": 8300,
+              "p99_us": 73000,
+              "max_ns": 94901083
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 6100,
+              "p99_us": 66000,
+              "max_ns": 494034523
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 28612,
+            "completed": 28612,
+            "success": 28612,
+            "client_drop": 3388,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 3388
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2255779
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2258113
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 68125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 1300,
+              "p99_us": 65000,
+              "max_ns": 181957917
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1600,
+              "p99_us": 65000,
+              "max_ns": 182582488
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 18000,
+              "p99_us": 85000,
+              "max_ns": 268972404
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 7000,
+              "p99_us": 75000,
+              "max_ns": 192220417
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 18000,
+              "p99_us": 85000,
+              "max_ns": 268972404
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 7000,
+              "p99_us": 75000,
+              "max_ns": 192220417
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1600,
+              "p99_us": 65000,
+              "max_ns": 182584238
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 25749,
+            "completed": 25749,
+            "success": 25749,
+            "client_drop": 3051,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 3051
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2255779
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 2258113
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 68125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 1300,
+              "p99_us": 65000,
+              "max_ns": 181917542
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1600,
+              "p99_us": 66000,
+              "max_ns": 182582488
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 18000,
+              "p99_us": 85000,
+              "max_ns": 268972404
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 7000,
+              "p99_us": 75000,
+              "max_ns": 192220417
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 18000,
+              "p99_us": 85000,
+              "max_ns": 268972404
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 7000,
+              "p99_us": 75000,
+              "max_ns": 192220417
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1600,
+              "p99_us": 66000,
+              "max_ns": 182584238
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 2863,
+            "completed": 2863,
+            "success": 2863,
+            "client_drop": 337,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 337
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1634946
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1636113
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 46958
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 1400,
+              "p99_us": 64000,
+              "max_ns": 181957917
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1700,
+              "p99_us": 65000,
+              "max_ns": 182071071
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3200,
+              "p95_us": 17000,
+              "p99_us": 86000,
+              "max_ns": 268333863
+            },
+            "success_dispatch": {
+              "p50_us": 2800,
+              "p95_us": 7100,
+              "p99_us": 77000,
+              "max_ns": 190699542
+            },
+            "arrival": {
+              "p50_us": 3200,
+              "p95_us": 17000,
+              "p99_us": 86000,
+              "max_ns": 268333863
+            },
+            "dispatch": {
+              "p50_us": 2800,
+              "p95_us": 7100,
+              "p99_us": 77000,
+              "max_ns": 190699542
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1700,
+              "p99_us": 65000,
+              "max_ns": 182072404
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 31506,
+            "completed": 31506,
+            "success": 31506,
+            "client_drop": 494,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 494
+            },
+            "wake": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1590616
+            },
+            "decision": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1592158
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 80666
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 6400,
+              "max_ns": 64967417
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 7000,
+              "max_ns": 66034367
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3000,
+              "p95_us": 5600,
+              "p99_us": 23000,
+              "max_ns": 77081825
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4300,
+              "p99_us": 17000,
+              "max_ns": 76114625
+            },
+            "arrival": {
+              "p50_us": 3000,
+              "p95_us": 5600,
+              "p99_us": 23000,
+              "max_ns": 77081825
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4300,
+              "p99_us": 17000,
+              "max_ns": 76114625
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 7000,
+              "max_ns": 66035867
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 28355,
+            "completed": 28355,
+            "success": 28355,
+            "client_drop": 445,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 445
+            },
+            "wake": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1575742
+            },
+            "decision": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1576825
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 80666
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 6400,
+              "max_ns": 64967167
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 7000,
+              "max_ns": 66034367
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 2900,
+              "p95_us": 5600,
+              "p99_us": 23000,
+              "max_ns": 77081825
+            },
+            "success_dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4300,
+              "p99_us": 17000,
+              "max_ns": 76114625
+            },
+            "arrival": {
+              "p50_us": 2900,
+              "p95_us": 5600,
+              "p99_us": 23000,
+              "max_ns": 77081825
+            },
+            "dispatch": {
+              "p50_us": 2600,
+              "p95_us": 4300,
+              "p99_us": 17000,
+              "max_ns": 76114625
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 7000,
+              "max_ns": 66035867
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 3151,
+            "completed": 3151,
+            "success": 3151,
+            "client_drop": 49,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 49
+            },
+            "wake": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1590616
+            },
+            "decision": {
+              "p50_us": 400,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 1592158
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 34458
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 6200,
+              "max_ns": 64967417
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 6900,
+              "max_ns": 65137992
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3100,
+              "p95_us": 5700,
+              "p99_us": 23000,
+              "max_ns": 74550658
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 4500,
+              "p99_us": 17000,
+              "max_ns": 74542250
+            },
+            "arrival": {
+              "p50_us": 3100,
+              "p95_us": 5700,
+              "p99_us": 23000,
+              "max_ns": 74550658
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 4500,
+              "p99_us": 17000,
+              "max_ns": 74542250
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 6900,
+              "max_ns": 65138533
+            }
+          }
+        },
+        {
+          "all": {
+            "planned": 32000,
+            "started": 25944,
+            "completed": 25944,
+            "success": 25944,
+            "client_drop": 6056,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 32000,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 6056
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 9153329
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 9160246
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 132125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 9200,
+              "p99_us": 84000,
+              "max_ns": 88543167
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 9600,
+              "p99_us": 85000,
+              "max_ns": 88954289
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3100,
+              "p95_us": 83000,
+              "p99_us": 97000,
+              "max_ns": 175299164
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 12000,
+              "p99_us": 87000,
+              "max_ns": 94950167
+            },
+            "arrival": {
+              "p50_us": 3100,
+              "p95_us": 83000,
+              "p99_us": 97000,
+              "max_ns": 175299164
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 12000,
+              "p99_us": 87000,
+              "max_ns": 94950167
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 9600,
+              "p99_us": 85000,
+              "max_ns": 88955789
+            }
+          },
+          "read": {
+            "planned": 28800,
+            "started": 23355,
+            "completed": 23355,
+            "success": 23355,
+            "client_drop": 5445,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 28800,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 5445
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 9153329
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1200,
+              "p99_us": 1400,
+              "max_ns": 9160246
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 132125
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 9200,
+              "p99_us": 84000,
+              "max_ns": 88543167
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 9600,
+              "p99_us": 85000,
+              "max_ns": 88954289
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3100,
+              "p95_us": 83000,
+              "p99_us": 97000,
+              "max_ns": 175299164
+            },
+            "success_dispatch": {
+              "p50_us": 2700,
+              "p95_us": 12000,
+              "p99_us": 87000,
+              "max_ns": 94950167
+            },
+            "arrival": {
+              "p50_us": 3100,
+              "p95_us": 83000,
+              "p99_us": 97000,
+              "max_ns": 175299164
+            },
+            "dispatch": {
+              "p50_us": 2700,
+              "p95_us": 12000,
+              "p99_us": 87000,
+              "max_ns": 94950167
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 9600,
+              "p99_us": 85000,
+              "max_ns": 88955789
+            }
+          },
+          "put": {
+            "planned": 3200,
+            "started": 2589,
+            "completed": 2589,
+            "success": 2589,
+            "client_drop": 611,
+            "client_late": 0,
+            "unknown": 0,
+            "due": 3200,
+            "cancelled_future": 0,
+            "worker_expired": 0,
+            "drop_reasons": {
+              "client_queue_full": 611
+            },
+            "wake": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8539371
+            },
+            "decision": {
+              "p50_us": 500,
+              "p95_us": 1300,
+              "p99_us": 1500,
+              "max_ns": 8540954
+            },
+            "construct": {
+              "p50_us": 100,
+              "p95_us": 100,
+              "p99_us": 100,
+              "max_ns": 29375
+            },
+            "handoff": {
+              "p50_us": 100,
+              "p95_us": 9100,
+              "p99_us": 84000,
+              "max_ns": 86645250
+            },
+            "worker_start": {
+              "p50_us": 500,
+              "p95_us": 9800,
+              "p99_us": 84000,
+              "max_ns": 87152789
+            },
+            "failures": null,
+            "success_arrival": {
+              "p50_us": 3300,
+              "p95_us": 85000,
+              "p99_us": 97000,
+              "max_ns": 162407998
+            },
+            "success_dispatch": {
+              "p50_us": 2900,
+              "p95_us": 14000,
+              "p99_us": 87000,
+              "max_ns": 93249209
+            },
+            "arrival": {
+              "p50_us": 3300,
+              "p95_us": 85000,
+              "p99_us": 97000,
+              "max_ns": 162407998
+            },
+            "dispatch": {
+              "p50_us": 2900,
+              "p95_us": 14000,
+              "p99_us": 87000,
+              "max_ns": 93249209
+            },
+            "lag": {
+              "p50_us": 500,
+              "p95_us": 9800,
+              "p99_us": 84000,
+              "max_ns": 87153289
+            }
+          }
+        }
+      ],
+      "phases": [
+        {
+          "name": "baseline",
+          "cpu_quota": 0.25,
+          "wall_start": 1790898769.265677,
+          "wall_end": 1790898789.265677,
+          "database_pid": "61",
+          "database_container": "6b339bcc253a82f36f07a3b8296a2f8361cda2f63d1789f65e1f6cbe24f268a3",
+          "limits": [
+            "250000000",
+            "0",
+            "1610612736",
+            "0"
+          ],
+          "database": {
+            "sample_count": 36,
+            "sample_seconds": 19.734660667018034,
+            "cpu_cores_mean": 0.1656983140057258,
+            "cpu_quota_percent": 66.27932560229031,
+            "cgroup_cpu_cores_mean": 0.18343517839402493,
+            "throttled_seconds": 1.342974,
+            "rss_max": 936071168,
+            "cgroup_memory_max": 1005355008,
+            "cgroup_memory_peak_lifetime": 1015934976,
+            "oom_kills": 0
+          },
+          "window": {
+            "start": 4.0,
+            "end": 4.0,
+            "minimum": 4.0,
+            "maximum": 4.0
+          },
+          "latency_ratio_max": 195.40693240408712,
+          "latency_ready_profiles_max": 5.0,
+          "cooldown_samples": 0,
+          "pending_max": 7.0,
+          "recovery_hold_samples": 14,
+          "actual_cpu_max": "25000 100000",
+          "database_start_ticks": 402714,
+          "backpressure_events": {
+            "backend": 0.0,
+            "latency": 0.0
+          },
+          "window_changes": {
+            "increase": 0.0,
+            "decrease": 0.0
+          }
+        },
+        {
+          "name": "limited",
+          "cpu_quota": 0.08,
+          "wall_start": 1790898789.88169,
+          "wall_end": 1790898819.88169,
+          "database_pid": "61",
+          "database_container": "6b339bcc253a82f36f07a3b8296a2f8361cda2f63d1789f65e1f6cbe24f268a3",
+          "limits": [
+            "80000000",
+            "0",
+            "1610612736",
+            "0"
+          ],
+          "database": {
+            "sample_count": 16,
+            "sample_seconds": 27.703541416907683,
+            "cpu_cores_mean": 0.06389074860009614,
+            "cpu_quota_percent": 79.86343575012017,
+            "cgroup_cpu_cores_mean": 0.0809365115548567,
+            "throttled_seconds": 25.656512,
+            "rss_max": 939859968,
+            "cgroup_memory_max": 1007857664,
+            "cgroup_memory_peak_lifetime": 1021353984,
+            "oom_kills": 0
+          },
+          "window": {
+            "start": 3.0,
+            "end": 1.0,
+            "minimum": 1.0,
+            "maximum": 3.0
+          },
+          "latency_ratio_max": 1058.8166656898215,
+          "latency_ready_profiles_max": 5.0,
+          "cooldown_samples": 0,
+          "pending_max": 28.0,
+          "recovery_hold_samples": 14,
+          "actual_cpu_max": "8000 100000",
+          "database_start_ticks": 402714,
+          "backpressure_events": {
+            "backend": 0.0,
+            "latency": 3.0
+          },
+          "window_changes": {
+            "increase": 0.0,
+            "decrease": 3.0
+          }
+        },
+        {
+          "name": "restored",
+          "cpu_quota": 0.25,
+          "wall_start": 1790898820.089519,
+          "wall_end": 1790898850.089519,
+          "database_pid": "61",
+          "database_container": "6b339bcc253a82f36f07a3b8296a2f8361cda2f63d1789f65e1f6cbe24f268a3",
+          "limits": [
+            "250000000",
+            "0",
+            "1610612736",
+            "0"
+          ],
+          "database": {
+            "sample_count": 53,
+            "sample_seconds": 29.90726566698868,
+            "cpu_cores_mean": 0.1621679512264265,
+            "cpu_quota_percent": 64.8671804905706,
+            "cgroup_cpu_cores_mean": 0.17940209110865993,
+            "throttled_seconds": 2.910838,
+            "rss_max": 951234560,
+            "cgroup_memory_max": 1022775296,
+            "cgroup_memory_peak_lifetime": 1022976000,
+            "oom_kills": 0
+          },
+          "window": {
+            "start": 1.0,
+            "end": 1.0,
+            "minimum": 1.0,
+            "maximum": 1.0
+          },
+          "latency_ratio_max": 113.69630770259049,
+          "latency_ready_profiles_max": 6.0,
+          "cooldown_samples": 0,
+          "pending_max": 24.0,
+          "recovery_hold_samples": 53,
+          "actual_cpu_max": "25000 100000",
+          "database_start_ticks": 402714,
+          "backpressure_events": {
+            "backend": 0.0,
+            "latency": 0.0
+          },
+          "window_changes": {
+            "increase": 0.0,
+            "decrease": 0.0
+          }
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "pass": true,
+    "errors": [],
+    "inventory_restored": true,
+    "non_default_inventory_restored": true,
+    "default_bridge_id_changed": false,
+    "remaining_owned_containers": [],
+    "remaining_owned_networks": []
+  },
+  "raw_run_count": 2,
+  "selected_offered_rate": null,
+  "health_pilots": []
+}

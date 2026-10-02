@@ -1,0 +1,512 @@
+{
+  "status": "only one repetition before owned tmpfs volume NoSpace; case15 excluded from performance/correctness conclusions due DB crash and failed audit; pending48/12matrix never completed",
+  "runs": [
+    {
+      "case": {
+        "mode": "direct",
+        "path": "direct",
+        "rate": 800,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-0"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 2400,
+        "found_version1": 0,
+        "found_documents": 2400,
+        "applied": 2400,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 24
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "baseline",
+        "path": "baseline",
+        "rate": 800,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-1"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 2400,
+        "found_version1": 0,
+        "found_documents": 2400,
+        "applied": 2400,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 24
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "default",
+        "rate": 800,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-2"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 2400,
+        "found_version1": 0,
+        "found_documents": 2400,
+        "applied": 2400,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 24
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "tuned",
+        "rate": 800,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 2,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "collect": 1,
+        "read_limit": "16KiB",
+        "prefix": "formal-3"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 2400,
+        "found_version1": 0,
+        "found_documents": 2400,
+        "applied": 2400,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 24
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "direct",
+        "path": "direct",
+        "rate": 3200,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-4"
+      },
+      "success_rps": 3048.95,
+      "client_drop": 3021,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 9600,
+        "found_version1": 0,
+        "found_documents": 9129,
+        "applied": 9129,
+        "unknown_found": 0,
+        "absent": 471,
+        "pages": 96
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "baseline",
+        "path": "baseline",
+        "rate": 3200,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-5"
+      },
+      "success_rps": 2525.2,
+      "client_drop": 13496,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 9600,
+        "found_version1": 0,
+        "found_documents": 7606,
+        "applied": 7606,
+        "unknown_found": 0,
+        "absent": 1994,
+        "pages": 96
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "default",
+        "rate": 3200,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-6"
+      },
+      "success_rps": 2652.55,
+      "client_drop": 10949,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 9600,
+        "found_version1": 0,
+        "found_documents": 7961,
+        "applied": 7961,
+        "unknown_found": 0,
+        "absent": 1639,
+        "pages": 96
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "tuned",
+        "rate": 3200,
+        "write_every": 10,
+        "workers": 32,
+        "pool": 2,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "collect": 1,
+        "read_limit": "16KiB",
+        "prefix": "formal-7"
+      },
+      "success_rps": 3200.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 9600,
+        "found_version1": 0,
+        "found_documents": 9600,
+        "applied": 9600,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 96
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "direct",
+        "path": "direct",
+        "rate": 800,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-8"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 24000,
+        "found_version1": 0,
+        "found_documents": 24000,
+        "applied": 24000,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 240
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "baseline",
+        "path": "baseline",
+        "rate": 800,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-9"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 24000,
+        "found_version1": 0,
+        "found_documents": 24000,
+        "applied": 24000,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 240
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "default",
+        "rate": 800,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-10"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 24000,
+        "found_version1": 0,
+        "found_documents": 24000,
+        "applied": 24000,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 240
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "tuned",
+        "rate": 800,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 2,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "collect": 1,
+        "read_limit": "16KiB",
+        "prefix": "formal-11"
+      },
+      "success_rps": 800.0,
+      "client_drop": 0,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 24000,
+        "found_version1": 0,
+        "found_documents": 24000,
+        "applied": 24000,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 240
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "direct",
+        "path": "direct",
+        "rate": 3200,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-12"
+      },
+      "success_rps": 1319.1,
+      "client_drop": 37618,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 96000,
+        "found_version1": 0,
+        "found_documents": 40036,
+        "applied": 40036,
+        "unknown_found": 0,
+        "absent": 55964,
+        "pages": 960
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "baseline",
+        "path": "baseline",
+        "rate": 3200,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-13"
+      },
+      "success_rps": 3081.65,
+      "client_drop": 2367,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 96000,
+        "found_version1": 0,
+        "found_documents": 92534,
+        "applied": 92534,
+        "unknown_found": 0,
+        "absent": 3466,
+        "pages": 960
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "default",
+        "rate": 3200,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 4,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "prefix": "formal-14"
+      },
+      "success_rps": 3098.95,
+      "client_drop": 2021,
+      "api_failures": null,
+      "unknown": 0,
+      "audit": {
+        "planned_writes": 96000,
+        "found_version1": 0,
+        "found_documents": 93297,
+        "applied": 93297,
+        "unknown_found": 0,
+        "absent": 2703,
+        "pages": 960
+      },
+      "audit_error": "<nil>",
+      "qualified": true
+    },
+    {
+      "case": {
+        "mode": "weir",
+        "path": "tuned",
+        "rate": 3200,
+        "write_every": 1,
+        "workers": 32,
+        "pool": 2,
+        "batch": 32,
+        "direct_pool": 4,
+        "warm": 10,
+        "seconds": 20,
+        "repetition": 1,
+        "collect": 1,
+        "read_limit": "16KiB",
+        "prefix": "formal-15"
+      },
+      "success_rps": 2657.25,
+      "client_drop": 9990,
+      "api_failures": {
+        "transport_DeadlineExceeded": 801,
+        "transport_Internal": 32,
+        "transport_ResourceExhausted": 32
+      },
+      "unknown": 865,
+      "audit": {
+        "planned_writes": 96000,
+        "found_version1": 0,
+        "applied": 0,
+        "unknown_found": 0,
+        "absent": 0,
+        "pages": 0
+      },
+      "audit_error": "server selection error: context deadline exceeded, current topology: { Type: Single, Servers: [{ Addr: 127.0.0.1:27017, Type: Unknown }, ] }",
+      "qualified": false
+    }
+  ]
+}

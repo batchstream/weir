@@ -29,6 +29,8 @@ type Config struct {
 	Username string
 	Password string
 	Pool     uint64
+	// MaxReadSize bounds ordinary Record Read only; zero uses the 2 MiB protocol limit.
+	MaxReadSize int
 }
 
 type Adapter struct {
@@ -50,6 +52,9 @@ type plan struct {
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
+	}
+	if cfg.MaxReadSize == 0 {
+		cfg.MaxReadSize = protocol.MaxDocument
 	}
 	dialer := newBoundedDialer(int(cfg.Pool)+1, mongoMaxConnecting+1)
 	complete := false
@@ -162,7 +167,7 @@ func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure)
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
 		native.action = "read"
-		p.ResultBytes += protocol.MaxDocument
+		p.ResultBytes += a.maxReadSize()
 	} else {
 		m := op.GetMutate()
 		if m.AdapterOptions != nil {

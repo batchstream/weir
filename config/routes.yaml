@@ -35,6 +35,18 @@ services:
       # Required: no. Default: 16. Allowed: 0 (use default) or integer 1..128.
       max_batch_operations: 16
 
+      # Maximum time spent collecting a compatible batch before dispatch.
+      # Required: no. Default: 1ms. Allowed: duration 0ms..10ms; explicit 0ms
+      # dispatches immediately. Near-deadline work bypasses collection.
+      batch_collect: "1ms"
+
+      # Source-document size allowed for ordinary Record Read operations.
+      # Required: no. Default: 2MiB. Allowed: byte size 1KiB..2MiB.
+      # A smaller declaration reserves less result/workspace per read and can
+      # collect more small reads. A larger source returns RESOURCE_EXHAUSTED.
+      # This does not limit writes, Scan, Native or Lua/expression operations.
+      max_read_size: "2MiB"
+
       # MongoDB adapter; mutually exclusive with local.search.
       # Required: exactly one local adapter. Default: absent.
       # Allowed: uri and credential fields below. This service connects to one
@@ -102,6 +114,8 @@ services:
       # These local scheduler fields use the same defaults/bounds as above.
       max_concurrency: 4
       max_batch_operations: 16
+      batch_collect: "1ms"
+      max_read_size: "2MiB"
 
       # Elasticsearch/OpenSearch adapter; mutually exclusive with mongodb.
       # Required: exactly one local adapter. Default: absent.

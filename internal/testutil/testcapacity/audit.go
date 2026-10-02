@@ -10,6 +10,19 @@ import (
 // Every trial recreates only records in the exclusively owned ES container.
 // All operations, including setup and audit, are single attempts.
 func (c *Client) setup(ctx context.Context, encoder *json.Encoder) error {
+	if c.MongoBackend && c.Mongo == nil {
+		direct, err := newClient(c.Backend, "", 4)
+		if err != nil {
+			return err
+		}
+		defer direct.Close()
+		err = direct.setupMongo(ctx, encoder)
+		c.MutationsStarted.Add(direct.MutationsStarted.Load())
+		return err
+	}
+	if c.Mongo != nil {
+		return c.setupMongo(ctx, encoder)
+	}
 	code, _, err := c.request(ctx, "DELETE", "/records", nil)
 	if err != nil || (code != 200 && code != 404) {
 		return fmt.Errorf("reset status=%d: %w", code, err)
@@ -42,15 +55,28 @@ func (c *Client) setup(ctx context.Context, encoder *json.Encoder) error {
 }
 
 type Audit struct {
-	Planned      int `json:"planned_writes"`
-	Found        int `json:"found_version1"`
-	Applied      int `json:"applied"`
-	UnknownFound int `json:"unknown_found"`
-	Absent       int `json:"absent"`
-	Pages        int `json:"pages"`
+	Planned        int `json:"planned_writes"`
+	Found          int `json:"found_version1"`
+	FoundDocuments int `json:"found_documents,omitempty"`
+	Applied        int `json:"applied"`
+	UnknownFound   int `json:"unknown_found"`
+	Absent         int `json:"absent"`
+	Pages          int `json:"pages"`
 }
 
 func (c *Client) audit(ctx context.Context, t *Trial) (Audit, error) {
+	if c.MongoBackend && c.Mongo == nil {
+		direct, err := newClient(c.Backend, "", 4)
+		if err != nil {
+			empty := Audit{}
+			return empty, err
+		}
+		defer direct.Close()
+		return direct.auditMongo(ctx, t)
+	}
+	if c.Mongo != nil {
+		return c.auditMongo(ctx, t)
+	}
 	a := Audit{Planned: len(t.Ledger)}
 	for start := 0; start < len(t.Ledger); start += 100 {
 		end := min(start+100, len(t.Ledger))

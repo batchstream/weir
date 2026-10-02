@@ -1,0 +1,74 @@
+{
+  "client_processes": 1,
+  "offered_rps_total": 800,
+  "measurement_seconds": 20,
+  "planned": 16000,
+  "success": 15775,
+  "client_drop": 225,
+  "api_failures": 0,
+  "qualified": false,
+  "observed_database_process": "61",
+  "observed_process_start_ticks": 34555,
+  "sampled_established_peak": 4,
+  "phases": {
+    "baseline": {
+      "sample_count": 10,
+      "min": 0,
+      "median": 0.0,
+      "max": 0,
+      "last": 0,
+      "fd_close_races": 0
+    },
+    "active": {
+      "sample_count": 94,
+      "min": 4,
+      "median": 4.0,
+      "max": 4,
+      "last": 4,
+      "fd_close_races": 0
+    },
+    "idle_clients_open": {
+      "sample_count": 57,
+      "min": 0,
+      "median": 4,
+      "max": 4,
+      "last": 0,
+      "fd_close_races": 0
+    },
+    "clients_closed_weir_retained": {
+      "sample_count": 33,
+      "min": 0,
+      "median": 0,
+      "max": 0,
+      "last": 0,
+      "fd_close_races": 0
+    }
+  },
+  "clients": [
+    {
+      "type": "connection_probe",
+      "pid": 52,
+      "start": "2026-10-01T22:18:37.786831Z",
+      "end": "2026-10-01T22:18:57.786306719Z",
+      "idle_end": "2026-10-01T22:19:09.794412043Z",
+      "closed": "2026-10-01T22:19:09.794418168Z",
+      "rate": 800,
+      "planned": 16000,
+      "started": 15775,
+      "success": 15775,
+      "client_drop": 225,
+      "failures": {},
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "",
+        "pool": 4,
+        "workers": 8,
+        "rate": 800,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:18:37.786831Z"
+      }
+    }
+  ],
+  "scope": "Sampled database-owned ESTABLISHED TCP sockets; not configured pool sizes. Weir remains running after clients close."
+}

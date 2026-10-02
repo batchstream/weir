@@ -1,0 +1,19 @@
+{
+  "source_bundle_sha256": "038bca362c0ffac8bd18ef9fad6963be660bca84a8021a0063383f9f4d3450eb",
+  "derived_archive_sha256": "c4a5d09b87f43b9d72f5009724bddb939dd087ad202cf6a1ee8ffd9a6857767e",
+  "binary_sha256": {
+    "weir-v4": "7b9d159a46ec82c3377302ea6d582ea161c2e99ca51d4e65844b4967c2628dcf",
+    "client-final": "8b63c1fe3f512652b069ef623fd46b86bbd9807fb4661dc25ef6a4f7cd33503b",
+    "sampler-io": "c2e3df6fb12414a81f69a2581725ded028341568604d7451c2381568266f5a73"
+  },
+  "mapping": {
+    "weir": "weir-v4",
+    "client": "client-final",
+    "sampler-io": "sampler-io"
+  },
+  "unused": [
+    "weir-v3",
+    "sampler",
+    "sampler-metrics"
+  ]
+}

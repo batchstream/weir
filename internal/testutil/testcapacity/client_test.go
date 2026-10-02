@@ -96,3 +96,15 @@ func TestDeadlineBeforeDispatchNotUnknown(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+
+func TestWeirMongoClientDoesNotOpenDatabasePool(t *testing.T) {
+	// The unusable Mongo URI must never reach the driver on a Weir-only path.
+	c, err := newClient("mongodb://not a valid authority", "127.0.0.1:1", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if !c.MongoBackend || c.Mongo != nil || len(c.RPC) != 4 {
+		t.Fatal("Weir caller retained a direct database client")
+	}
+}
