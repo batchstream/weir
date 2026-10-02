@@ -3,8 +3,8 @@ package execution
 import (
 	"strings"
 
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/protocol"
 )
 
 // NormalizeCall adds the configured Store only after verifying the wire target.

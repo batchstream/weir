@@ -1,4 +1,4 @@
-package weirclient
+package server_test
 
 import (
 	"context"
@@ -8,19 +8,20 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/protobuf/proto"
 )
 
-type ingressReadAdapter struct{}
+type sdkIngressReadAdapter struct{}
 
-func (a *ingressReadAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
+func (a *sdkIngressReadAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
 	request := call.GetRead()
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
@@ -31,7 +32,7 @@ func (a *ingressReadAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.P
 	return plan, nil
 }
 
-func (a *ingressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
 	for _, plan := range plans {
 		read := protocol.Missing()
 		variant := &pb.Result_Read{Read: read}
@@ -45,8 +46,8 @@ func (a *ingressReadAdapter) Execute(_ context.Context, plans []*execution.Plan,
 	return execution.Healthy
 }
 
-func (a *ingressReadAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
-func (a *ingressReadAdapter) Close() error                                           { return nil }
+func (a *sdkIngressReadAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
+func (a *sdkIngressReadAdapter) Close() error                                           { return nil }
 
 func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 	for _, count := range []int{1, 16} {
@@ -68,7 +69,7 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 			for i := range names {
 				name := fmt.Sprintf("records-%02d", i)
 				names[i] = name
-				adapter := &ingressReadAdapter{}
+				adapter := &sdkIngressReadAdapter{}
 				limits := store.DefaultLimits()
 				limits.Collect = 0
 				runtime, err := store.New(adapter, limits)
@@ -143,113 +144,38 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			options := OpenOptions{Seed: address, Stores: names, RefreshInterval: 50 * time.Millisecond}
-			client := openDiscovery(t, options)
-			original := make(map[string]time.Time, count)
-			until := time.Now()
-			for name, entry := range client.stores {
-				entry.mu.RLock()
-				original[name] = entry.expires
-				if entry.expires.After(until) {
-					until = entry.expires
-				}
-				entry.mu.RUnlock()
+			options := weirclient.OpenOptions{Seed: address, Stores: names, RefreshInterval: 50 * time.Millisecond}
+			initialize, initializeCancel := context.WithTimeout(t.Context(), 5*time.Second)
+			client, err := weirclient.Open(initialize, options)
+			initializeCancel()
+			if err != nil {
+				t.Fatal(err)
 			}
-			until = until.Add(300 * time.Millisecond)
+			t.Cleanup(func() { _ = client.Close() })
+			// Every initial ResolveStore response has at most a two-second TTL.
+			// Public reads beyond that boundary prove the occupied business
+			// connections continue serving control refresh without a spare slot.
+			until := time.Now().Add(2300 * time.Millisecond)
 			for time.Now().Before(until) {
 				for _, name := range names {
-					discoveryRead(t, client, name)
+					sdkIngressRead(t, client, name)
 				}
 				time.Sleep(25 * time.Millisecond)
-			}
-			for name, entry := range client.stores {
-				entry.mu.RLock()
-				refreshed := entry.expires.After(original[name])
-				entry.mu.RUnlock()
-				if !refreshed {
-					t.Fatalf("Store %s failed to refresh with %d occupied application connections", name, count)
-				}
 			}
 		})
 	}
 }
 
-func TestRefreshPrioritizesUnrenewedStoresAfterRoundDeadline(t *testing.T) {
-	business := &clientTestPeer{mode: "normal"}
-	peer := &discoveryPeer{business: business}
-	listener := listenDiscovery(t, peer, "127.0.0.1:0")
-	names := make([]string, 16)
-	for i := range names {
-		name := fmt.Sprintf("records-%02d", i)
-		names[i] = name
-		response := discoveryRecord(name, listener.address)
-		response.CacheTtlMs = 5000
-		peer.set(name, response)
-	}
-	options := OpenOptions{Seed: listener.address, Stores: names, RefreshInterval: 50 * time.Millisecond, ResolveTimeout: 2 * time.Second}
-	client := openDiscovery(t, options)
-	original := make(map[string]time.Time, len(names))
-	for name, entry := range client.stores {
-		entry.mu.RLock()
-		original[name] = entry.expires
-		entry.mu.RUnlock()
-	}
-	peer.mu.Lock()
-	peer.delay = 300 * time.Millisecond
-	peer.mu.Unlock()
-	until := time.Now().Add(6 * time.Second)
-	for time.Now().Before(until) {
-		for _, name := range names {
-			discoveryRead(t, client, name)
-		}
-		time.Sleep(75 * time.Millisecond)
-	}
-	for name, entry := range client.stores {
-		entry.mu.RLock()
-		refreshed := entry.expires.After(original[name])
-		entry.mu.RUnlock()
-		if !refreshed {
-			t.Fatalf("deadline repeatedly starved Store %s", name)
-		}
-	}
-	started := time.Now()
-	if err := client.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if time.Since(started) > 500*time.Millisecond {
-		t.Fatal("Close did not cancel active bounded refresh round")
-	}
-}
-
-func TestRefreshFailuresCannotStarveHealthyTail(t *testing.T) {
-	business := &clientTestPeer{mode: "normal"}
-	peer := &discoveryPeer{business: business}
-	listener := listenDiscovery(t, peer, "127.0.0.1:0")
-	names := []string{"abandoned-a", "abandoned-b", "abandoned-c", "abandoned-d", "records"}
-	for _, name := range names {
-		response := discoveryRecord(name, listener.address)
-		response.CacheTtlMs = 5000
-		peer.set(name, response)
-	}
-	options := OpenOptions{Seed: listener.address, Stores: names, RefreshInterval: 50 * time.Millisecond, ResolveTimeout: 2 * time.Second}
-	client := openDiscovery(t, options)
-	peer.mu.Lock()
-	peer.delays = make(map[string]time.Duration)
-	for _, name := range names[:4] {
-		peer.records[name] = nil
-		peer.delays[name] = time.Second
-	}
-	peer.mu.Unlock()
-	until := time.Now().Add(6 * time.Second)
-	for time.Now().Before(until) {
-		discoveryRead(t, client, "records")
-		time.Sleep(75 * time.Millisecond)
-	}
-	entry := client.stores["records"]
-	entry.mu.RLock()
-	valid := time.Now().Before(entry.expires)
-	entry.mu.RUnlock()
-	if !valid {
-		t.Fatal("repeated failing control lookups starved the healthy Store")
+func sdkIngressRead(t *testing.T, client *weirclient.Client, storeName string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	request := &pb.ReadRequest{Resource: "records/s:key"}
+	variant := &pb.Call_Read{Read: request}
+	call := &pb.Call{Version: 1, Operation: variant}
+	options := weirclient.RecordOptions{StoreName: storeName, Call: call}
+	result, err := client.Record(ctx, options)
+	if err != nil || result.GetRead().GetMissing() == nil {
+		t.Fatalf("Store %s direct read failed across directory refresh: result=%v error=%v", storeName, result, err)
 	}
 }

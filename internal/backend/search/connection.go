@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/api/protocol"
 )
 
 // Connection is static backend client configuration, never caller identity.

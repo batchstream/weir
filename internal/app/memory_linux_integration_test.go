@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
-	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"

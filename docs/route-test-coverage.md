@@ -1,16 +1,21 @@
 # Execute verification coverage
 
+SDK test pointers refer to the independent [weir-go repository](https://github.com/batchstream/weir-go).
+`TestOpenAndRefreshAtApplicationConnectionLimit` stays in the server repository
+because it verifies real application admission with the external SDK.
+
 Coverage spans direct discovery, Execute envelopes, the shared scheduler, typed
 adapter Events and private backend conformance suites. Relay-only tests are
 retired because peers no longer carry business traffic. Local transport and
 backend execution coverage remains applicable. A test appearing below is a coverage pointer,
 not a claim that its integration profile was executed in this change. Actual runs
-and measurements are recorded separately in the PR verification report.
+and measurements are recorded separately in the [SDK migration report](sdk-migration.md)
+and prior PR verification reports.
 
 | Previous acceptance concern | Current executable coverage |
 | --- | --- |
 | Public/peer schemas, field semantics and RPC listener isolation | Public/peer descriptor contract tests; `TestDiscoveryIngressRolesAndIndependentAdmission`; SDK `TestResolveStorePublicResponseContract` |
-| Point read/write, backend failures, missing records | `route_acceptance_test.go`, `weirclient/client_test.go`, MongoDB/Search record and batch conformance suites |
+| Point read/write, backend failures, missing records | `route_acceptance_test.go`, SDK `client_test.go`, MongoDB/Search record and batch conformance suites |
 | Large valid documents and request half-close | `TestRouteAcceptanceLargeResponseAndHalfClose`; `TestExecuteConsumesFragmentedFiniteBatch` |
 | Store-name mismatch, illegal IDs, malformed payload, no rollback of earlier writes | `TestRouteAcceptanceProtocolFailureDoesNotRollback`; `TestExecuteEnvelopeIDsStoreNamesAndFragments`; `TestCallVersionUnknownFieldsAndRelativeTarget` |
 | Missing/duplicate terminal response, unknown ID, non-OK after terminal | `TestRecordRejectsIncompleteAndInvalidResponses` |
@@ -26,7 +31,7 @@ and measurements are recorded separately in the PR verification report.
 | HTTP completion and gRPC completion jointly own session credits | Retained `TestDeliverySlotRequiresBothCompletions`; connection-bound single-close test |
 | Physical connection budgets and fair, bounded directory refresh | `TestOpenAndRefreshAtApplicationConnectionLimit`; `TestRefreshPrioritizesUnrenewedStoresAfterRoundDeadline`; `TestRefreshFailuresCannotStarveHealthyTail` |
 | Portable endpoint validation, direct balancing, socket ownership and cleanup | `TestPortableEndpointValidation`; `TestOpenResolvesMultipleStoresAndBalancesDirectStreams`; `TestConnectionBoundAndSingleClose`; `TestOpenCancellationAndCloseJoinDiscovery` |
-| DNS A/AAAA, answer bounds, active refresh, replacement and deadline | `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; `internal/netlimit/dns_test.go`; `TestEndpointDNSAcrossProcesses` |
+| DNS A/AAAA, answer bounds, active refresh, replacement and deadline | `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; `api/netlimit/dns_test.go`; `TestEndpointDNSAcrossProcesses` |
 | Record batch item errors, typed ID correspondence, write concern and acknowledged-reply loss | MongoDB/Search batch, fault and runtime integration suites, retained after replacing execution DTOs |
 | Native request exact bounds, errors and response loss | MongoDB/Search native conformance suites; native requests now enter the same Execute scheduler with one complete bounded input Call |
 | Finite Scan pages, cross-instance continuation, mixed BSON IDs, PIT expiry, cancellation and cleanup | MongoDB/Search scan conformance suites; Execute continuation tests; unified Store streaming reservation/cancellation tests |

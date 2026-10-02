@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

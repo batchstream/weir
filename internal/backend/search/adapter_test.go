@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/protocol"
 )
 
 func TestJSONBoundsAndExactNumbers(t *testing.T) {

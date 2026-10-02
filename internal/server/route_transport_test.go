@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
-	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"

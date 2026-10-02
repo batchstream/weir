@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/batchstream/weir/api/protocol"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
-	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"

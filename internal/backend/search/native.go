@@ -15,10 +15,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/batchstream/weir/api/protocol"
 	spb "github.com/batchstream/weir/api/weir/search/v1"
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/protocol"
 	"google.golang.org/protobuf/proto"
 )
 

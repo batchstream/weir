@@ -2,8 +2,8 @@ package app
 
 import (
 	"context"
+	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"net"

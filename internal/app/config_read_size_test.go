@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/api/protocol"
 	"go.yaml.in/yaml/v3"
 )
 

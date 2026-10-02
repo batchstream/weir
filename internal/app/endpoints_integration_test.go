@@ -5,7 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/batchstream/weir/weirclient"
+	weirclient "github.com/batchstream/weir-go"
 	"net"
 	"net/netip"
 	"os/exec"

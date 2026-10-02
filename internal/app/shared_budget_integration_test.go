@@ -5,8 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/weirclient"
 	"io"
 	"os"
 	"strings"

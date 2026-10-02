@@ -1,8 +1,8 @@
 package search
 
 import (
+	"github.com/batchstream/weir/api/protocol"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/protocol"
 )
 
 func (a *Adapter) maxReadSize() int {

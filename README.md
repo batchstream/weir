@@ -111,19 +111,22 @@ services. The public schema is suitable for future language-specific bindings.
 
 ## Client initialization and business calls
 
-The high-level client resolves every requested Store before exposing business
-methods. It reuses round-robin channels, refreshes directory mappings and DNS,
+The Go SDK lives in the independent [weir-go](https://github.com/batchstream/weir-go)
+repository and module `github.com/batchstream/weir-go` (package `weir`). It resolves
+every requested Store before exposing business methods. It reuses round-robin
+channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active Execute to another instance.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
 
 ```go
-options := weirclient.OpenOptions{
+// import weir "github.com/batchstream/weir-go"
+options := weir.OpenOptions{
     Seed: "127.0.0.1:7447",
     Stores: []string{"mongo"},
 }
-client, err := weirclient.Open(ctx, options)
+client, err := weir.Open(ctx, options)
 if err != nil {
     return err
 }
@@ -131,8 +134,10 @@ defer client.Close()
 // client.Record, client.Execute and client.ScanPage connect to the resolved Store.
 ```
 
-The [basic](examples/basic/main.go), [native](examples/native/main.go) and
-[scan](examples/scan/main.go) examples initialize through a seed. Low-level
+The SDK [basic](https://github.com/batchstream/weir-go/tree/main/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/main/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/main/examples/scan) examples
+initialize through a seed. Low-level
 `Dial` and finite `Execute`/`Record`/`ScanPage` helpers remain available for callers
 that already hold a direct generated gRPC client.
 

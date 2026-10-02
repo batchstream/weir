@@ -255,7 +255,9 @@ retain their per-request evidence.
 
 ## Clients and validation
 
-`weirclient.Execute` accepts an incremental producer and consumer and synchronously
+The independent [Go SDK](https://github.com/batchstream/weir-go)
+(`github.com/batchstream/weir-go`, package `weir`) provides `weir.Execute`, which
+accepts an incremental producer and consumer and synchronously
 returns after all request ends and final status. It sends and receives concurrently
 with eight input slots/16 MiB charges. Complete observes each validated request end;
 Consume exposes bounded incremental Events. Callbacks must honor context and release
