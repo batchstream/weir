@@ -35,7 +35,7 @@ func NormalizeCall(call *pb.Call, store string) (*pb.Call, *pb.Failure) {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing scan")
 		}
 		resource = value.Scan.Resource
-		request := &pb.ScanRequest{Resource: "weir://" + store + "/" + resource, Selector: value.Scan.Selector, ReadMediaType: value.Scan.ReadMediaType}
+		request := &pb.ScanRequest{Resource: "weir://" + store + "/" + resource, Selector: value.Scan.Selector, ReadMediaType: value.Scan.ReadMediaType, PageSize: value.Scan.PageSize, ContinuationToken: value.Scan.ContinuationToken}
 		normalized.Operation = &pb.Call_Scan{Scan: request}
 	case *pb.Call_Native:
 		if value.Native == nil || value.Native.Open == nil {

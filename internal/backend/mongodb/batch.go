@@ -170,7 +170,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 		{Key: "batchSize", Value: int32(len(ids))},
 		{Key: "allowPartialResults", Value: false},
 	}
-	state := &scanPlan{target: target, items: len(ids)}
+	state := &recordCursor{target: target, items: len(ids)}
 	session, err := a.client.StartSession()
 	valid := err == nil
 	received := 0
@@ -411,7 +411,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 type writeBatch struct {
 	plans           []*execution.Plan
 	results         []*pb.MutationResult
-	cursor          scanPlan
+	cursor          recordCursor
 	received        int
 	concern         bool
 	counts          [6]int64
@@ -419,11 +419,10 @@ type writeBatch struct {
 	uncertainCounts bool
 }
 
-func (a *Adapter) closeRecordCursor(state *scanPlan) {
-	work := &execution.Plan{Backend: state}
+func (a *Adapter) closeRecordCursor(state *recordCursor) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	_ = a.closeScan(ctx, work)
+	_ = a.closeRecordCursorState(ctx, state)
 }
 
 func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
@@ -542,7 +541,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 
 // The array walker allocates at most one raw reference per qualified operation.
 // Raw command execution avoids the driver's cursor document materialization.
-func cursorDocuments(fields map[string]bson.RawValue, state *scanPlan, namespace string, first bool) ([]bson.Raw, bool) {
+func cursorDocuments(fields map[string]bson.RawValue, state *recordCursor, namespace string, first bool) ([]bson.Raw, bool) {
 	cursor, valid := fields["cursor"].DocumentOK()
 	if !valid {
 		return nil, false

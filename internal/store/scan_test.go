@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,8 @@ type scanTestAdapter struct {
 	fetches, cleanups atomic.Int32
 	pages             int
 	started           chan struct{}
+	nextToken         []byte
+	cleanupFailure    *pb.Failure
 }
 
 func (a *scanTestAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
@@ -45,7 +48,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 	_ = emit(work, event)
 	work.Continue = int(count) < pages
 	if !work.Continue {
-		end := &pb.ScanEnd{DocumentCount: uint64(pages)}
+		end := &pb.ScanEnd{DocumentCount: uint64(pages), Exhausted: len(a.nextToken) == 0, NextContinuationToken: bytes.Clone(a.nextToken)}
 		variant := &pb.Event_ScanEnd{ScanEnd: end}
 		terminal := &pb.Event{Version: 1, Value: variant}
 		_ = emit(work, terminal)
@@ -54,7 +57,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 }
 func (a *scanTestAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure {
 	a.cleanups.Add(1)
-	return nil
+	return a.cleanupFailure
 }
 func (*scanTestAdapter) Close() error { return nil }
 
@@ -75,6 +78,83 @@ func waitReleased(t *testing.T, runtime *Runtime) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("reservations did not release", runtime.Snapshot())
+}
+
+func TestScanPageCompletionAndCleanupFailureReleaseReservations(t *testing.T) {
+	cleanupFailure := &pb.Failure{Code: pb.FailureCode_UNAVAILABLE, Message: "scan cleanup failed"}
+	cases := []struct {
+		name    string
+		token   []byte
+		failure *pb.Failure
+	}{
+		{name: "exhausted"},
+		{name: "resumable", token: []byte("continuation")},
+		{name: "exhausted cleanup failure", failure: cleanupFailure},
+		{name: "resumable cleanup failure", token: []byte("continuation"), failure: cleanupFailure},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := &scanTestAdapter{pages: 1, nextToken: test.token, cleanupFailure: test.failure}
+			limits := DefaultLimits()
+			runtime, err := New(adapter, limits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Close(context.Background())
+			session := runtime.NewSession()
+			defer session.Close()
+			work, failure := runtime.PrepareCall(1, scanCall())
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			ticket, failure, _ := runtime.Submit(context.Background(), work, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			var end *pb.ScanEnd
+			documents := 0
+			for {
+				select {
+				case emission := <-session.Events:
+					if emission.End {
+						emission.Release()
+						ticket.Ack()
+						goto finished
+					}
+					if emission.Event.GetDocument() != nil {
+						documents++
+					}
+					if terminal := emission.Event.GetScanEnd(); terminal != nil {
+						end = terminal
+						_, err := protocol.MarshalEvent(emission.Event)
+						if err != nil {
+							emission.Release()
+							t.Fatal("cleanup result cannot be sent through Route", err, terminal)
+						}
+					}
+					emission.Release()
+				case <-time.After(time.Second):
+					t.Fatal("completed scan page retained its session")
+				}
+			}
+		finished:
+			if end == nil || end.DocumentCount != 1 || documents != 1 || adapter.cleanups.Load() != 1 {
+				t.Fatal("scan page lost its terminal event or cleanup", end, documents, adapter.cleanups.Load())
+			}
+			if test.failure != nil {
+				if end.GetFailure().GetCode() != test.failure.Code || end.Exhausted || len(end.NextContinuationToken) != 0 {
+					t.Fatal("cleanup failure retained a success continuation", end)
+				}
+			} else if end.Failure != nil || end.Exhausted != (len(test.token) == 0) || !bytes.Equal(end.NextContinuationToken, test.token) {
+				t.Fatal("completed scan page lost its continuation", end)
+			}
+			session.Close()
+			waitReleased(t, runtime)
+			if snapshot := runtime.Snapshot(); snapshot.Pending != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
+				t.Fatal("completed scan page retained memory or backend work", snapshot)
+			}
+		})
+	}
 }
 
 func TestUnifiedStreamingBackpressureAndReservation(t *testing.T) {

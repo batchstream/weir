@@ -20,6 +20,22 @@ See [architecture](docs/architecture.md) for semantics and resource budgets,
 [Route verification](docs/route-validation.md) for current measured evidence.
 Historical load reports describe the protocol and commit tested at that time.
 
+Scan returns a finite page, with 128 documents by default and at most 256.
+Continue with `ScanEnd.next_continuation_token` in a new Route RPC; that RPC may
+reach another Weir instance. A successful page has either a continuation token
+or `exhausted=true`. Commit the token only after the matching document count,
+request end frame and final gRPC OK. An interrupted page can be read again from
+the previous token; consumers must handle repeated documents.
+
+This scan contract replaces the previous full traversal in one RPC. MongoDB uses
+ascending `_id` index pagination without a retained session or cursor; it does not
+provide a snapshot across pages. Search retains its snapshot in a backend PIT,
+which expires after 60 seconds without a successful fetch. All executors, relays
+and clients must use the updated schema. See the [payload contract](docs/route-payloads.md)
+for selector restrictions and continuation rules. The [scan example](examples/scan/main.go)
+uses `routeclient.ScanPage` to consume documents incrementally and commit a token
+only after complete page delivery.
+
 ## Build and run
 
 Requires Go **1.27.1**. Local backend routes require pre-created collections or

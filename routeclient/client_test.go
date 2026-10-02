@@ -29,6 +29,9 @@ type clientTestPeer struct {
 }
 
 func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
+	if strings.HasPrefix(p.mode, "scan_") {
+		return p.scanRoute(stream)
+	}
 	if p.mode == "reject_early" {
 		return status.Error(codes.InvalidArgument, "fixture header rejection")
 	}
@@ -400,5 +403,87 @@ func TestRunOversizedInputDoesNotAllocateEncodedCopy(t *testing.T) {
 	}
 	if after.TotalAlloc-before.TotalAlloc >= uint64(protocol.MaxPayload) {
 		t.Fatal("SDK encoded an oversized input before rejecting it", after.TotalAlloc-before.TotalAlloc)
+	}
+}
+
+func (p *clientTestPeer) scanRoute(stream pb.Weir_RouteServer) error {
+	request, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
+		return errors.New("expected scan half close")
+	}
+	send := func(event *pb.Event) error {
+		var raw bytes.Buffer
+		if _, err := protodelim.MarshalTo(&raw, event); err != nil {
+			return err
+		}
+		frame := &pb.Response{Id: request.Id, Payload: raw.Bytes()}
+		return stream.Send(frame)
+	}
+	count := uint64(1)
+	if p.mode == "scan_overbound" {
+		count = 2
+	}
+	for i := uint64(0); i < count; i++ {
+		document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
+		value := &pb.Event_Document{Document: document}
+		event := &pb.Event{Version: 1, Value: value}
+		if err := send(event); err != nil {
+			return err
+		}
+	}
+	if p.mode == "scan_missing_business_end" {
+		return nil
+	}
+	end := &pb.ScanEnd{DocumentCount: count, NextContinuationToken: []byte("checkpoint")}
+	if p.mode == "scan_invalid_end" {
+		end.Exhausted = true
+	}
+	value := &pb.Event_ScanEnd{ScanEnd: end}
+	event := &pb.Event{Version: 1, Value: value}
+	if err := send(event); err != nil {
+		return err
+	}
+	if p.mode == "scan_missing_request_end" {
+		return nil
+	}
+	frame := &pb.Response{Id: request.Id, End: true}
+	if err := stream.Send(frame); err != nil {
+		return err
+	}
+	if p.mode == "scan_non_ok" {
+		return status.Error(codes.Unavailable, "fixture status after page")
+	}
+	return nil
+}
+
+func TestScanPageCommitsOnlyCompleteBoundedPage(t *testing.T) {
+	for _, mode := range []string{"scan_normal", "scan_missing_business_end", "scan_missing_request_end", "scan_non_ok", "scan_overbound", "scan_invalid_end", "scan_consumer_failure"} {
+		t.Run(mode, func(t *testing.T) {
+			peer := &clientTestPeer{mode: mode}
+			client := clientTestConnection(t, peer)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			request := &pb.ScanRequest{Resource: "records", PageSize: 1}
+			consumed := 0
+			opts := ScanPageOptions{Destination: "search", Request: request}
+			opts.Consume = func(context.Context, *pb.Document) error {
+				consumed++
+				if mode == "scan_consumer_failure" {
+					return errors.New("fixture consumer failed")
+				}
+				return nil
+			}
+			end, err := ScanPage(ctx, client, opts)
+			if mode == "scan_normal" {
+				if err != nil || end == nil || end.DocumentCount != 1 || string(end.NextContinuationToken) != "checkpoint" || end.Exhausted || consumed != 1 {
+					t.Fatal("complete page was not committed", end, err, consumed)
+				}
+			} else if err == nil || end != nil {
+				t.Fatal("incomplete or invalid page exposed checkpoint", end, err)
+			}
+		})
 	}
 }

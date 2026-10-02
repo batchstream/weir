@@ -108,8 +108,12 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 		}
 		state.count++
 	}
-	if page.Failure != nil || page.Exhausted {
+	if page.Failure != nil || page.Exhausted || page.Complete {
 		end := &pb.ScanEnd{DocumentCount: state.count, Failure: page.Failure}
+		if page.Failure == nil {
+			end.Exhausted = page.Exhausted
+			end.NextContinuationToken = page.NextContinuationToken
+		}
 		value := &pb.Event_ScanEnd{ScanEnd: end}
 		event := &pb.Event{Version: 1, Value: value}
 		_ = emit(work, event)

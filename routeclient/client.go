@@ -25,7 +25,7 @@ type Options struct {
 	// a time and at most eight calls are retained, regardless of total batch size.
 	Produce func(context.Context) (*pb.Call, error)
 	// Consume receives one complete bounded business Event, not a transport chunk.
-	// A scan or native exchange can produce arbitrarily many sequential Events.
+	// A scan produces a bounded page; native exchanges produce sequential Events.
 	Consume func(context.Context, uint64, *pb.Event) error
 	// Complete runs after one request has a validated terminal business Event and
 	// empty end frame. Other requests and the RPC can still fail later.
@@ -38,6 +38,7 @@ type pending struct {
 	data           []byte
 	terminal, head bool
 	documents      uint64
+	pageSize       uint64
 }
 
 type ledger struct {
@@ -252,6 +253,12 @@ func produce(ctx context.Context, stream grpc.BidiStreamingClient[pb.Request, pb
 			return err
 		}
 		entry := &pending{bytes: len(data), kind: callKind(call)}
+		if request := call.GetScan(); request != nil {
+			if request.PageSize > protocol.MaxScanPageSize || len(request.ContinuationToken) > protocol.MaxScanToken {
+				return errors.New("Scan page size or continuation exceeds bound")
+			}
+			entry.pageSize = protocol.ScanPageSize(request)
+		}
 		if err := l.register(ctx, id, entry); err != nil {
 			return err
 		}
@@ -297,6 +304,9 @@ func validateEvent(p *pending, id uint64, e *pb.Event) error {
 			return errors.New("unexpected scan document")
 		}
 		p.documents++
+		if p.documents > p.pageSize {
+			return errors.New("Scan exceeded requested page size")
+		}
 	case *pb.Event_ScanEnd:
 		if p.kind != "scan" || value.ScanEnd == nil || value.ScanEnd.DocumentCount != p.documents {
 			return errors.New("invalid scan completion")
@@ -357,4 +367,46 @@ func Record(ctx context.Context, client pb.WeirClient, opts RecordOptions) (*pb.
 		return nil, errors.New("missing record result")
 	}
 	return result, nil
+}
+
+// ScanPage executes one finite page and consumes each document incrementally.
+// Only a successful Route end and final gRPC OK expose its next checkpoint.
+// Retrying an interrupted page uses the previous checkpoint and may redeliver
+// documents; the caller owns deduplication and committing consumed output.
+type ScanPageOptions struct {
+	Destination string
+	Request     *pb.ScanRequest
+	Consume     func(context.Context, *pb.Document) error
+}
+
+func ScanPage(ctx context.Context, client pb.WeirClient, opts ScanPageOptions) (*pb.ScanEnd, error) {
+	if opts.Request == nil || opts.Consume == nil {
+		return nil, errors.New("ScanPage requires a request and document consumer")
+	}
+	variant := &pb.Call_Scan{Scan: opts.Request}
+	call := &pb.Call{Version: 1, Operation: variant}
+	produced := false
+	var end *pb.ScanEnd
+	batch := Options{Destination: opts.Destination}
+	batch.Produce = func(context.Context) (*pb.Call, error) {
+		if produced {
+			return nil, io.EOF
+		}
+		produced = true
+		return call, nil
+	}
+	batch.Consume = func(ctx context.Context, _ uint64, event *pb.Event) error {
+		if document := event.GetDocument(); document != nil {
+			return opts.Consume(ctx, document)
+		}
+		end = event.GetScanEnd()
+		return nil
+	}
+	if err := Run(ctx, client, batch); err != nil {
+		return nil, err
+	}
+	if end == nil {
+		return nil, errors.New("missing Scan completion")
+	}
+	return end, nil
 }
