@@ -1,0 +1,5 @@
+ok  	github.com/batchstream/weir/internal/store	(cached)
+ok  	github.com/batchstream/weir/internal/app	(cached)
+ok  	github.com/batchstream/weir/internal/backend/mongodb	(cached)
+ok  	github.com/batchstream/weir/internal/backend/search	(cached)
+?   	github.com/batchstream/weir/internal/execution	[no test files]

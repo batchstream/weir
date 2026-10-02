@@ -1,0 +1,159 @@
+{
+  "owner": "weir-connection-43d3712f76b8",
+  "inventory_before": {
+    "containers": [
+      "4ee25580553f70a1303d8ae538e2588d779e9e939f7c5436f5378c76d81b20d9",
+      "83796abe2fb18a680eb4cc1abcb9752f7be1bddf484659c058d8f2b28f53abf9",
+      "cbbcab5f88e8a54049b4ee4c7045c2e42464a5a5e4b3f9de41a60cc4b71f387b",
+      "d4ef5776014de4b036472fdab332efdf19a068b2bcb695955e09e75378680cc1"
+    ],
+    "networks": [
+      "bridge d361b24b5c7b0b6fcfaeb50081122f7723ac6ef0a8329cae445113fa78f9db8d",
+      "host a663de6675f668670d9e954439967e34a02032daebb83b5b6908ed2777ef1f54",
+      "none c5ddc79db2ef694f9375ef616508ebfcb0d21642f75a84cd4c98e23bf944b625",
+      "redis_default 9005b30ec1bc1ac5c9a34e4706c09f50357a9c7fbaee9196aa0589017387dc49"
+    ],
+    "images": [
+      "sha256:50cdaceb6d3d368ecc6c6285a54a00e728c6c0e7622531e7d5ff9c9c7ce1e912",
+      "sha256:6ae0125f6be37567821ba89ed892ceb90a4fc33172ad1b94917b084d04990840",
+      "sha256:7aee4dc69de67d072209218647c40c3af0c16e109cf5aed4b7a6f2892ae4b29d",
+      "sha256:8c7deda128b6921817c9d3cd7aff682f7f5941e2d79fe620b6eedb9c07ef00f5",
+      "sha256:8ecd0ba71a367784d2ea7e8296e0969d4713480a130ca3de43137866a1a4a7a4",
+      "sha256:90a7280bf50e2d2fdd371cd3ab647ea8185f1e50f9889216df2fabebb08f4a15",
+      "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c",
+      "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+      "sha256:af49237e1db47c8ab51524862947cfa65fb49aa5f5c9db36f7c2d022e193163e",
+      "sha256:b119fdac2479dcccf923f54943a355e743d3d5dd068baa4757772055cf9f3b32",
+      "sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9"
+    ],
+    "volumes": []
+  },
+  "runs": [
+    {
+      "client_processes": 1,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 6049,
+      "client_drop": 9951,
+      "api_failures": 0,
+      "qualified": false,
+      "observed_database_process": "61",
+      "observed_process_start_ticks": 14434,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 57,
+          "min": 0,
+          "median": 4,
+          "max": 4,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 0,
+          "median": 0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "clients": [
+        {
+          "type": "connection_probe",
+          "pid": 26,
+          "start": "2026-10-01T22:14:27.824759Z",
+          "end": "2026-10-01T22:14:47.824191256Z",
+          "idle_end": "2026-10-01T22:14:59.835045261Z",
+          "closed": "2026-10-01T22:14:59.835051386Z",
+          "rate": 800,
+          "planned": 16000,
+          "started": 6049,
+          "success": 6049,
+          "client_drop": 9951,
+          "failures": {},
+          "options": {
+            "backend": "http://elasticsearch:9200",
+            "target": "",
+            "pool": 4,
+            "workers": 4,
+            "rate": 800,
+            "seconds": 20,
+            "idle_seconds": 12,
+            "start_at": "2026-10-01T22:14:27.824759Z"
+          }
+        }
+      ],
+      "scope": "Sampled database-owned ESTABLISHED TCP sockets; not configured pool sizes. Weir remains running after clients close.",
+      "name": "direct-1",
+      "weir_instances": 0
+    }
+  ],
+  "binary_sha256": {
+    "client": "73e9760b84b23c394a944a559653db506ee0bf4180f076ef1f9217d373f73ae7",
+    "weir": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1"
+  },
+  "image": "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+  "host": "{\"kernel\":\"7.0.12-linuxkit\",\"cpus\":8,\"memory\":8319770624,\"architecture\":\"aarch64\"}",
+  "resources": {
+    "database_cpu": 0.25,
+    "database_memory_mib": 1536,
+    "weir_cpu_total": 2,
+    "weir_memory_mib_each": 2560,
+    "client_cpu_total": 2,
+    "client_memory_mib_total": 2048,
+    "store_concurrency_each": 4,
+    "raw_owner_limit_each": 5,
+    "transport_max_connections_each": 64,
+    "transport_max_sessions_each": 32
+  },
+  "cleanup": {
+    "inventory_after": {
+      "containers": [
+        "4ee25580553f70a1303d8ae538e2588d779e9e939f7c5436f5378c76d81b20d9",
+        "83796abe2fb18a680eb4cc1abcb9752f7be1bddf484659c058d8f2b28f53abf9",
+        "cbbcab5f88e8a54049b4ee4c7045c2e42464a5a5e4b3f9de41a60cc4b71f387b",
+        "d4ef5776014de4b036472fdab332efdf19a068b2bcb695955e09e75378680cc1"
+      ],
+      "networks": [
+        "bridge d361b24b5c7b0b6fcfaeb50081122f7723ac6ef0a8329cae445113fa78f9db8d",
+        "host a663de6675f668670d9e954439967e34a02032daebb83b5b6908ed2777ef1f54",
+        "none c5ddc79db2ef694f9375ef616508ebfcb0d21642f75a84cd4c98e23bf944b625",
+        "redis_default 9005b30ec1bc1ac5c9a34e4706c09f50357a9c7fbaee9196aa0589017387dc49"
+      ],
+      "images": [
+        "sha256:50cdaceb6d3d368ecc6c6285a54a00e728c6c0e7622531e7d5ff9c9c7ce1e912",
+        "sha256:6ae0125f6be37567821ba89ed892ceb90a4fc33172ad1b94917b084d04990840",
+        "sha256:7aee4dc69de67d072209218647c40c3af0c16e109cf5aed4b7a6f2892ae4b29d",
+        "sha256:8c7deda128b6921817c9d3cd7aff682f7f5941e2d79fe620b6eedb9c07ef00f5",
+        "sha256:8ecd0ba71a367784d2ea7e8296e0969d4713480a130ca3de43137866a1a4a7a4",
+        "sha256:90a7280bf50e2d2fdd371cd3ab647ea8185f1e50f9889216df2fabebb08f4a15",
+        "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c",
+        "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+        "sha256:af49237e1db47c8ab51524862947cfa65fb49aa5f5c9db36f7c2d022e193163e",
+        "sha256:b119fdac2479dcccf923f54943a355e743d3d5dd068baa4757772055cf9f3b32",
+        "sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9"
+      ],
+      "volumes": []
+    },
+    "restored": true,
+    "errors": []
+  }
+}

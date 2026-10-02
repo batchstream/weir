@@ -1,0 +1,12 @@
+{
+  "owner": "weir-bp-v3-f53d66750b94",
+  "created": true,
+  "planned_node": {
+    "kubernetes.io/hostname": "ip-172-31-191-104.us-west-1.compute.internal"
+  },
+  "db_fixed_request_cpu_m": 50,
+  "version": "frozen-v3",
+  "create_attempted": true,
+  "namespace_uid": "8c755cef-7f36-4da4-bd84-278ab16ccc9a",
+  "cleanup_completed": true
+}

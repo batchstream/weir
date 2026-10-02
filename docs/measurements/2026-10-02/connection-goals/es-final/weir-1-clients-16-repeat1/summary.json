@@ -1,0 +1,482 @@
+{
+  "client_processes": 16,
+  "offered_rps_total": 800,
+  "measurement_seconds": 20,
+  "planned": 16000,
+  "success": 15794,
+  "client_drop": 0,
+  "api_failures": 206,
+  "qualified": false,
+  "observed_database_process": "61",
+  "observed_process_start_ticks": 351,
+  "sampled_established_peak": 4,
+  "phases": {
+    "baseline": {
+      "sample_count": 10,
+      "min": 1,
+      "median": 1.0,
+      "max": 1,
+      "last": 1,
+      "fd_close_races": 0
+    },
+    "active": {
+      "sample_count": 93,
+      "min": 4,
+      "median": 4,
+      "max": 4,
+      "last": 4,
+      "fd_close_races": 0
+    },
+    "idle_clients_open": {
+      "sample_count": 57,
+      "min": 4,
+      "median": 4,
+      "max": 4,
+      "last": 4,
+      "fd_close_races": 0
+    },
+    "clients_closed_weir_retained": {
+      "sample_count": 34,
+      "min": 4,
+      "median": 4.0,
+      "max": 4,
+      "last": 4,
+      "fd_close_races": 0
+    }
+  },
+  "clients": [
+    {
+      "type": "connection_probe",
+      "pid": 255,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449996085Z",
+      "idle_end": "2026-10-01T22:45:34.468063049Z",
+      "closed": "2026-10-01T22:45:34.468279716Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 986,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 14
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 261,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449456585Z",
+      "idle_end": "2026-10-01T22:45:34.468819841Z",
+      "closed": "2026-10-01T22:45:34.469049841Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 988,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 12
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 306,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450813627Z",
+      "idle_end": "2026-10-01T22:45:34.466031841Z",
+      "closed": "2026-10-01T22:45:34.467988258Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 988,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 12
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 312,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449635252Z",
+      "idle_end": "2026-10-01T22:45:34.467474008Z",
+      "closed": "2026-10-01T22:45:34.467708174Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 987,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 13
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 311,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450908585Z",
+      "idle_end": "2026-10-01T22:45:34.468168258Z",
+      "closed": "2026-10-01T22:45:34.468394258Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 988,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 12
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 327,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450681377Z",
+      "idle_end": "2026-10-01T22:45:34.467893424Z",
+      "closed": "2026-10-01T22:45:34.468083674Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 988,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 12
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 313,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450237543Z",
+      "idle_end": "2026-10-01T22:45:34.468592674Z",
+      "closed": "2026-10-01T22:45:34.468793633Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 987,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 13
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 328,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450374877Z",
+      "idle_end": "2026-10-01T22:45:34.465904383Z",
+      "closed": "2026-10-01T22:45:34.466326633Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 987,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 13
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 266,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449373877Z",
+      "idle_end": "2026-10-01T22:45:34.468522049Z",
+      "closed": "2026-10-01T22:45:34.468734174Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 987,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 13
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 273,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449576085Z",
+      "idle_end": "2026-10-01T22:45:34.466854424Z",
+      "closed": "2026-10-01T22:45:34.467299133Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 988,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 12
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 267,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450570127Z",
+      "idle_end": "2026-10-01T22:45:34.466441799Z",
+      "closed": "2026-10-01T22:45:34.466970049Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 988,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 12
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 272,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449719835Z",
+      "idle_end": "2026-10-01T22:45:34.465953258Z",
+      "closed": "2026-10-01T22:45:34.467677674Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 986,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 14
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 274,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450569168Z",
+      "idle_end": "2026-10-01T22:45:34.466112049Z",
+      "closed": "2026-10-01T22:45:34.466659674Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 986,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 14
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 277,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.449319585Z",
+      "idle_end": "2026-10-01T22:45:34.465872758Z",
+      "closed": "2026-10-01T22:45:34.468529966Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 987,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 13
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 276,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450416418Z",
+      "idle_end": "2026-10-01T22:45:34.467129174Z",
+      "closed": "2026-10-01T22:45:34.467365841Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 987,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 13
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    },
+    {
+      "type": "connection_probe",
+      "pid": 291,
+      "start": "2026-10-01T22:45:02.464291Z",
+      "end": "2026-10-01T22:45:22.450298668Z",
+      "idle_end": "2026-10-01T22:45:34.468868383Z",
+      "closed": "2026-10-01T22:45:34.469082008Z",
+      "rate": 50,
+      "planned": 1000,
+      "started": 1000,
+      "success": 986,
+      "client_drop": 0,
+      "failures": {
+        "transport_ResourceExhausted": 14
+      },
+      "options": {
+        "backend": "http://elasticsearch:9200",
+        "target": "weir-0:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 50,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T22:45:02.464291Z"
+      }
+    }
+  ],
+  "scope": "Sampled database-owned ESTABLISHED TCP sockets; not configured pool sizes. Weir remains running after clients close."
+}

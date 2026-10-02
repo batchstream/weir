@@ -1,0 +1,16 @@
+{
+  "command": [
+    "kubectl",
+    "get",
+    "events",
+    "--all-namespaces",
+    "--field-selector",
+    "involvedObject.name=fixture,involvedObject.namespace=weir-equal-v4-deb1a95584f0",
+    "-o",
+    "json"
+  ],
+  "exit_code": 0,
+  "stdout": "{\n    \"apiVersion\": \"v1\",\n    \"items\": [],\n    \"kind\": \"List\",\n    \"metadata\": {\n        \"resourceVersion\": \"\"\n    }\n}\n",
+  "stderr": "",
+  "limitation": "owned Pod/namespace already deleted; absent events do not prove absence of earlier Pod/DB failures"
+}

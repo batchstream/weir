@@ -1,0 +1,2971 @@
+{
+  "scratch": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned",
+  "regular_members": [
+    {
+      "name": "main/metadata/analyze.py",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/analyze.py",
+      "size": 11781,
+      "sha256": "19be6915f2f504929fc745d6560bbe573c7cae474f8f1c2f6e372c5d384b0928"
+    },
+    {
+      "name": "main/metadata/bundle-provenance.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/bundle-provenance.json",
+      "size": 649,
+      "sha256": "50c18e084754258edc2cb62085838e3b5a597c09c423a110d64682cd5bdef425"
+    },
+    {
+      "name": "main/metadata/cal-mixed-direct-r0-1-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1-client.sh",
+      "size": 753,
+      "sha256": "f329d21a69cbfdd2fcd288046ce584982b60514240783c73891cfabbcb942861"
+    },
+    {
+      "name": "main/metadata/cal-mixed-direct-r0-1-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-direct-r0-1-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-direct-r1-1-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1-client.sh",
+      "size": 753,
+      "sha256": "554060264ad592b9efeaad1a63eeb225c23ba50462cacf76c6ecb0c24aa146cd"
+    },
+    {
+      "name": "main/metadata/cal-mixed-direct-r1-1-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-direct-r1-1-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-1-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1-client.sh",
+      "size": 741,
+      "sha256": "fa1e34278031b3d4b7609583c512d0df06294bcd8926373f9e666a1baa9a66bf"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-1-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-1-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-2-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2-client.sh",
+      "size": 741,
+      "sha256": "4d7a257fe7c1d1a31f0fd1e0f25f053fca729d9982de1f23d277125bd2be694a"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-2-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-2-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-3-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3-client.sh",
+      "size": 741,
+      "sha256": "928caddbf063ab307cd20735f372e3907a6e297b365b106b6456998d42716a1d"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-3-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-3-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-4-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4-client.sh",
+      "size": 741,
+      "sha256": "973c836f5f51f0445166ecad01aca69e54edd520eb889918a2a873932e247fcb"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-4-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-4-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-5-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5-client.sh",
+      "size": 740,
+      "sha256": "4b24bc28e6d023dc630568f57f7212cb6d13ac3cdaee77d296413a2e6b330410"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-5-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-5-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-6-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6-client.sh",
+      "size": 741,
+      "sha256": "2d62407433039c914758d448193178941991715fe350df109bcbc78d345b01d1"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-6-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r0-6-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-1-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1-client.sh",
+      "size": 740,
+      "sha256": "fdbcfd517054e002a2f9b2b64077cd067e19c9ad1a057d59825f19c0d8942701"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-1-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-1-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-2-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2-client.sh",
+      "size": 740,
+      "sha256": "26fbd0d6daa11a10b32348d5281f8ce30d3e508492542faa96aeb26474db5895"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-2-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-2-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-3-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3-client.sh",
+      "size": 740,
+      "sha256": "f28daf03633123df35bf9e0a94b61c54ce430cd724efb3bbd4985853da8de539"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-3-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-3-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-4-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-4-client.sh",
+      "size": 740,
+      "sha256": "070414440318ed82892981fed188f2ac61aab3c832ceba869e17142cfabd07d5"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-4-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-4-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/cal-mixed-weir-r1-4-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-4-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/cleanup-independent.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cleanup-independent.json",
+      "size": 273,
+      "sha256": "4ec0dabe475c87712573317b22d220a9945c3c07f7995b86296d07265450b3e6"
+    },
+    {
+      "name": "main/metadata/cleanup-local.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cleanup-local.json",
+      "size": 272,
+      "sha256": "ca3f66631b7ed427b2f8e28933fd0d3af1cc4f6f2b0531266a92b6f3767a3690"
+    },
+    {
+      "name": "main/metadata/cleanup.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cleanup.json",
+      "size": 530,
+      "sha256": "ccfcdac41900a60eb0f1d41547d56017ed920c8f9b43593d9547b5334c77b7b3"
+    },
+    {
+      "name": "main/metadata/common-idle-database.jsonl",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-idle-database.jsonl",
+      "size": 21291,
+      "sha256": "1357a41f93157980d0d2bd50f513cfa5343259770944a0475ce558a9e2a98d59"
+    },
+    {
+      "name": "main/metadata/common-idle-disk.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-idle-disk.txt",
+      "size": 171,
+      "sha256": "dcbce724423a40daf39b2b189993645b325b1e50f51ef52609d2e6317b10f110"
+    },
+    {
+      "name": "main/metadata/common-idle.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-idle.json",
+      "size": 611,
+      "sha256": "fd1f44e8a17da949bf9b15ededa23a00b5a50e4fc3b1c80fba23f5feed69fbc9"
+    },
+    {
+      "name": "main/metadata/common-prewarm-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm-client.sh",
+      "size": 662,
+      "sha256": "7e41e231ae3899607c8ca0e24dbad72b1e518932f45d6ee1ac3aa770d75daf63"
+    },
+    {
+      "name": "main/metadata/common-prewarm-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/common-prewarm-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/database-bootstrap.jsonl",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/database-bootstrap.jsonl",
+      "size": 1095,
+      "sha256": "848f58b00d5ab439b41e51f59925a3e296c4c707cf4b61d2162e0ec865765f9c"
+    },
+    {
+      "name": "main/metadata/database-identity.jsonl",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/database-identity.jsonl",
+      "size": 23720,
+      "sha256": "dca1ab1d4551d5cfd941df7d908f7b60b3f3dea589722a8a3456ad74e1c44cf4"
+    },
+    {
+      "name": "main/metadata/database-io-before.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/database-io-before.txt",
+      "size": 282,
+      "sha256": "9763f564aaca7791b88c9175f47688edf0df1594cb63295f9493270ba77a9ff5"
+    },
+    {
+      "name": "main/metadata/equal-analysis.py",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/equal-analysis.py",
+      "size": 8038,
+      "sha256": "a54d0299964b55da28c290b15e17819896749f95c24de2d9c8d2b65b60685258"
+    },
+    {
+      "name": "main/metadata/equal-case.py",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/equal-case.py",
+      "size": 8759,
+      "sha256": "c3aa8870614756606b22e3ce27292fddf485371ca3c78ec34da71f4298cb16ba"
+    },
+    {
+      "name": "main/metadata/equal-suite.py",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/equal-suite.py",
+      "size": 9341,
+      "sha256": "3539cdff82001f2afe257b30cef3e280620b94d9cfa5290cf228f761248a461b"
+    },
+    {
+      "name": "main/metadata/equal-suite.py.loaded",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/equal-suite.py.loaded",
+      "size": 9149,
+      "sha256": "a5829f0dd475307d642b6a9562b55c8dd828eaef0f3c135186562d2fc422f7f8"
+    },
+    {
+      "name": "main/metadata/events-after-failure.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/events-after-failure.json",
+      "size": 529,
+      "sha256": "08f102cf2f98920fe513e91b26e9b050be053f6e680363bf4b054c8ea492d740"
+    },
+    {
+      "name": "main/metadata/execution.log",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/execution.log",
+      "size": 28135,
+      "sha256": "84c157ecc841db6c1fb0de00442c3eb2834d3f82fe05aff3cf39fd3efc62200e"
+    },
+    {
+      "name": "main/metadata/expected-hashes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/expected-hashes.json",
+      "size": 253,
+      "sha256": "c3ef4240617c1fdcfcbd566e318f0ed1de51d1976a4e16f949b7cfce4af74bd0"
+    },
+    {
+      "name": "main/metadata/export.py",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/export.py",
+      "size": 15614,
+      "sha256": "72e645ed796777795c5eea844839a88608a67c1eb5bbd20561fecfd476ac7f36"
+    },
+    {
+      "name": "main/metadata/failed-case.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/failed-case.json",
+      "size": 1517,
+      "sha256": "4fb5823a86ceb998331e0cf68ece5037c0b68492860fb6df54471e2f588ac73c"
+    },
+    {
+      "name": "main/metadata/fixture-runner.py",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/fixture-runner.py",
+      "size": 12183,
+      "sha256": "096863e59c8824e6abc28960eb7c9b4b4671c5d44e819ebf422740e4b4c6201e"
+    },
+    {
+      "name": "main/metadata/formal-mixed-1-direct-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct-client.sh",
+      "size": 753,
+      "sha256": "3a7eb6538b1cf7fda473596fc4eff27f28432d6b4c776d702ea9f2f06a1c7877"
+    },
+    {
+      "name": "main/metadata/formal-mixed-1-direct-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/formal-mixed-1-direct-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/formal-mixed-1-weir-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir-client.sh",
+      "size": 741,
+      "sha256": "3508630b2fd1e9645f18364d89fe9d9cc4e646df2983a89ea33058f30486fc10"
+    },
+    {
+      "name": "main/metadata/formal-mixed-1-weir-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/formal-mixed-1-weir-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/formal-mixed-2-direct-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct-client.sh",
+      "size": 753,
+      "sha256": "c8a23f7620d56c7b9beea5921cb83d65f2db1143ebf253fd6cb4eb1f7256f02f"
+    },
+    {
+      "name": "main/metadata/formal-mixed-2-direct-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/formal-mixed-2-direct-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/formal-mixed-2-weir-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir-client.sh",
+      "size": 741,
+      "sha256": "bc9e6319a6f2dffa6540965719cb3e37d1a368d9e76f0b1d74ca8bfc225a6923"
+    },
+    {
+      "name": "main/metadata/formal-mixed-2-weir-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/formal-mixed-2-weir-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/formal-mixed-3-direct-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct-client.sh",
+      "size": 753,
+      "sha256": "a417ef70a013071dbc7f55bdd2664a87256e43ab22ac359b0a1dd36d3d7f3226"
+    },
+    {
+      "name": "main/metadata/formal-mixed-3-direct-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/formal-mixed-3-direct-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/formal-mixed-3-weir-client.sh",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir-client.sh",
+      "size": 741,
+      "sha256": "f70a873817bb27d3131e97298bc72d53b8adae4b7f5a89cb066f4f99d95e3d1e"
+    },
+    {
+      "name": "main/metadata/formal-mixed-3-weir-node.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/metadata/formal-mixed-3-weir-routes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/metadata/instrumentation-error.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/instrumentation-error.json",
+      "size": 240,
+      "sha256": "732616fedd0c38097018719e97a073b397ea0ddb2a4aab7d2bb8455be13c06eb"
+    },
+    {
+      "name": "main/metadata/namespace.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/namespace.json",
+      "size": 197,
+      "sha256": "318f836c04b3cc4a2e5e89b2106c477f77ea6671a01be54019823f17dd36d4ee"
+    },
+    {
+      "name": "main/metadata/node-after-failure-summary.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-after-failure-summary.json",
+      "size": 1331,
+      "sha256": "1112d86ef0df93e96f5396ab7e49724e78e946681c2ed142532ce05341c2811d"
+    },
+    {
+      "name": "main/metadata/node-after-failure.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-after-failure.json",
+      "size": 12776,
+      "sha256": "861d9c5bc15a83112e9817bcfda83339de61eb6e4df1bfff95a714b4865060cd"
+    },
+    {
+      "name": "main/metadata/node-before-describe.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-before-describe.txt",
+      "size": 5762,
+      "sha256": "aaa76e71254235e38a0ba46a591dafecb264e928caecc3cb1dc6575833951eab"
+    },
+    {
+      "name": "main/metadata/node-before-top.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-before-top.txt",
+      "size": 194,
+      "sha256": "7b79149eec6ec40aa0455ff966f440792b2c53728cf38d788d1c0b2ec9e56f5f"
+    },
+    {
+      "name": "main/metadata/node-before.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-before.json",
+      "size": 12776,
+      "sha256": "2101db88ca7e5d677b1ee7bd5777c59830300b7593a85363af7d5e839c8d0d43"
+    },
+    {
+      "name": "main/metadata/node-during-top.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-during-top.txt",
+      "size": 194,
+      "sha256": "e4455b137891fde40cf73f929f6b7583f7d2f2568e59ac011ef1ffbb47ef1ffe"
+    },
+    {
+      "name": "main/metadata/node-preflight-describe.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-preflight-describe.txt",
+      "size": 5762,
+      "sha256": "ff0a4b1d394d04df603336f4a2b2525959ed5021813ffab3025d4b6fb1d15137"
+    },
+    {
+      "name": "main/metadata/node-preflight-top.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-preflight-top.txt",
+      "size": 194,
+      "sha256": "42256c06fe64995c159876d1090a525d044718ca08ef0d61c808db23e6426480"
+    },
+    {
+      "name": "main/metadata/node-preflight.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/node-preflight.json",
+      "size": 12776,
+      "sha256": "609d996b338e9a315ea753668936d38b120a1d8fbcd322c57e2eb6bba78c0197"
+    },
+    {
+      "name": "main/metadata/owned-fixtures-before.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/owned-fixtures-before.txt",
+      "size": 26,
+      "sha256": "97216801274f9bdd4c68136342bbdacd66e35c80bab533cfc35b52f52ed76917"
+    },
+    {
+      "name": "main/metadata/plan-proposal.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/plan-proposal.json",
+      "size": 2706,
+      "sha256": "e9a27044ba3a9f13fc5b8bec05fbf38929fd53d6ce4a9d83194f046dd1aaafef"
+    },
+    {
+      "name": "main/metadata/plan.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/plan.json",
+      "size": 4070,
+      "sha256": "63f93b0ba1e0637e9ce6ce75b3eb23a6c19ea3f5313222b51a7b63703392b9d7"
+    },
+    {
+      "name": "main/metadata/pod-before-trials.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/pod-before-trials.json",
+      "size": 12806,
+      "sha256": "16710aa3a4f45439b8d71d28fc5a48dfc0a33208872a68c3a911a70825d002ce"
+    },
+    {
+      "name": "main/metadata/pod.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/pod.json",
+      "size": 3354,
+      "sha256": "51f7c1829fef621cb36566e9de77d729294b0f4606af67bb5db3fb0928b64194"
+    },
+    {
+      "name": "main/metadata/policy.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/policy.json",
+      "size": 487,
+      "sha256": "e6d261b14267ce7e238434ce88987da6c8a9821169ef7d0825059f81d92175d1"
+    },
+    {
+      "name": "main/metadata/portforward.log",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/portforward.log",
+      "size": 27016,
+      "sha256": "b146800a09b682f0d731bcb63e54f1bc68b7ed1b3f43605afba05ce9b3a0dd0e"
+    },
+    {
+      "name": "main/metadata/portforward.pid",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/portforward.pid",
+      "size": 5,
+      "sha256": "a35279baeb45e6978b34604bf17b91ef9e80543e534b68f2c6ba0d820499f2cc"
+    },
+    {
+      "name": "main/metadata/rate-freeze-mixed.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/rate-freeze-mixed.json",
+      "size": 172,
+      "sha256": "48c9b71897ad7f68436a2f8d6743d2fd7e89506d4d7e703cc5dee657562fd499"
+    },
+    {
+      "name": "main/metadata/remote-binary-hashes.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/remote-binary-hashes.json",
+      "size": 253,
+      "sha256": "f9c63927ac6d0c0fb6297f3ceecd2a0e989d40f04863ca2b00370124422ab5ea"
+    },
+    {
+      "name": "main/metadata/sampler-units.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/sampler-units.json",
+      "size": 91,
+      "sha256": "ed9eb9f0e967e4967e194a68d218bc16ec73e097e85a8d6df4dd080ed1be2418"
+    },
+    {
+      "name": "main/metadata/scheduled-pod.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/scheduled-pod.json",
+      "size": 9615,
+      "sha256": "385ea8f1e9c462a0c49638ae910eb5b0e07c2d7dcedb5e873d77e8d5d53ef4ef"
+    },
+    {
+      "name": "main/metadata/state.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/state.json",
+      "size": 479,
+      "sha256": "039e223ecac8bc7f450f83bf097a8d452a21f5cc8b6c47a4e4d01ee75c71970b"
+    },
+    {
+      "name": "main/metadata/suite-progress.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/suite-progress.json",
+      "size": 796229,
+      "sha256": "de4afde79bf53d429296e70577b27bd449b33f312e04b891c9f487c37f6614d1"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r0-1/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/analysis.json",
+      "size": 30194,
+      "sha256": "204102965b0940578fe328bf86cb55fa7ebc8b6daef80324be89be2c699ead18"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r0-1/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/disk-after.txt",
+      "size": 171,
+      "sha256": "74a9d5580c8d08e2a0bbae312e6957c3e0571596d895e129fe8f3927f744c124"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r0-1/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/manifest.json",
+      "size": 1775,
+      "sha256": "ee35ab4e234c295ad0642d5140208efe7e66ad6875b393b1e002af081d687ad7"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "size": 30433,
+      "sha256": "900c1b69b7ec8f07e4f5dc4355bad7f71e5fc870b51d7a82233228cf37b06fcf"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r0-1/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-weir-sampler.pid",
+      "size": 3,
+      "sha256": "2115cdb6bfcfb008eb2bab2bb79347cb064a48e4e7c4115ccbe4469c787bb6c4"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-weir.jsonl",
+      "size": 67633,
+      "sha256": "0cf94b0948c8fb10d90bab692b7f0202f798053012b133e907b37430a72aa02d"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-database-sampler.pid",
+      "size": 4,
+      "sha256": "fc68f3b1c9b809ce39d3142d79d18a22df73914008f0378eb23a487f12c895de"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-database.jsonl",
+      "size": 66737,
+      "sha256": "077c07e30301c823499d6a8a0994a09302a89b9e5fc373465d4de3adb3359fa2"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client.sh",
+      "size": 753,
+      "sha256": "f329d21a69cbfdd2fcd288046ce584982b60514240783c73891cfabbcb942861"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client.jsonl",
+      "size": 361801,
+      "sha256": "85e430092413a8c08e144ee5dfbc344d6d0c5ebf3a1b8886cbf161b02aeca0da"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1/cal-mixed-direct-r0-1.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r0-1/cal-mixed-direct-r0-1.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r1-1/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/analysis.json",
+      "size": 30182,
+      "sha256": "3fffb6e96ec0aef4936e587f49f8a6a6fad8a2e055bdcb695b76d7b2e9e4ec4d"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r1-1/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/disk-after.txt",
+      "size": 171,
+      "sha256": "d8168a43fee65085f30d0ab4b0da36a72bd063f6177413badf61a09d7f90c20d"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r1-1/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/manifest.json",
+      "size": 1776,
+      "sha256": "fa89ec052bacd87c68fe38090167e2e469633077061432d3b6af13f044a015ca"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "size": 30508,
+      "sha256": "d15a96988a6e9f33d35748660e934cffbcd7d0484fbb3f5f8d307c2478410c0a"
+    },
+    {
+      "name": "main/cases/cal-mixed-direct-r1-1/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-weir-sampler.pid",
+      "size": 4,
+      "sha256": "8f486466e805c0cb797622e5b8e9a0dcd8bc2d465acdae84850bd91c16c3804e"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-weir.jsonl",
+      "size": 70272,
+      "sha256": "8ced5e80a8271de5b1b42c45edc0b236f782f74aafa95ec4db2f50808fe76fa4"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-database-sampler.pid",
+      "size": 4,
+      "sha256": "612a79399e60304a9f701c1ecac7956bf2f1b046e6c6f0d6c29b3fe3a29bad76"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-database.jsonl",
+      "size": 68737,
+      "sha256": "6504529704a9f0607d39a22674c8c075bf2856f8f0535b1758a102892b7fcf84"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client.sh",
+      "size": 753,
+      "sha256": "554060264ad592b9efeaad1a63eeb225c23ba50462cacf76c6ecb0c24aa146cd"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client.jsonl",
+      "size": 364529,
+      "sha256": "91699bc46de4fe02e131210fa66d1a679f23bb7a88e7be9911463a434cd622bf"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1/cal-mixed-direct-r1-1.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-direct-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-direct-r1-1/cal-mixed-direct-r1-1.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-1/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/analysis.json",
+      "size": 35508,
+      "sha256": "91f36e5c0ae1ff81d916da6f0d0da2e6d356b2046d0f454de61796c73d5a8f05"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-1/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/disk-after.txt",
+      "size": 171,
+      "sha256": "1672cea17d96aeb633b1f6bba7b0d56a7c4eaf351487c704fa2ef51fd806f17a"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-1/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/manifest.json",
+      "size": 1761,
+      "sha256": "bb2e78cea747ed459e82246b6a5c4540d9b195a6dc33d653a4753d9bb9c9ad1b"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "size": 117502,
+      "sha256": "49d79a1c68474c2fed6029ab63818d4f98e4123bb60e6effa7f57876d60073cc"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-1/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir.pid",
+      "size": 3,
+      "sha256": "9e62e6489fcc4bc58be7cb23e74d25cbfcc3732c1f70e8c37f12a756d1db9381"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir.log",
+      "size": 269,
+      "sha256": "1071ebfae86772adea251e06e35e1ce322a71f5044c9c5c523eb90d329059840"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir-sampler.pid",
+      "size": 3,
+      "sha256": "c6ebc76be5dc1f8b433f8d6fd9bd85cd9325086038442db8614bb799fec6fd85"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-weir.jsonl",
+      "size": 2547562,
+      "sha256": "6d15ae7492652d5b657106ebc401ae37c3d23e86cfa3aad350f3052abb7080ad"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-database-sampler.pid",
+      "size": 4,
+      "sha256": "309df7146066039424ec4267e9301dec379e48551a52fcb85118fb0e2fd3f098"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-database.jsonl",
+      "size": 66888,
+      "sha256": "13fdd7b0852fdd658532b30376b5408d1ecda62e8a20f5fe2105b474edf69535"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client.sh",
+      "size": 741,
+      "sha256": "fa1e34278031b3d4b7609583c512d0df06294bcd8926373f9e666a1baa9a66bf"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client.jsonl",
+      "size": 708532,
+      "sha256": "5371198c46f197e3f9aa3d81151e3cee9df6ac9f1ca182e263066f8c2c410686"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1/cal-mixed-weir-r0-1.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-1/cal-mixed-weir-r0-1.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-2/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/analysis.json",
+      "size": 35520,
+      "sha256": "9f21fc9c24f5e7929302784ce2b82c076b310777a924c7753d33109a1d8788b7"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-2/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/disk-after.txt",
+      "size": 171,
+      "sha256": "dce1aa9aa977d2d7fde23d014b2373d181cf3e2709e9dfd7efdcde118be66a0a"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-2/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/manifest.json",
+      "size": 1759,
+      "sha256": "6011f9022e1def847f130d1d9e3436aba7cb0eac8e0c2cd9e7687eb22995f99b"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "size": 97531,
+      "sha256": "34b76b87ec47ba3a40214e67329e82bdaa833bf48e35be282e87882c3086ccb6"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-2/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir.pid",
+      "size": 4,
+      "sha256": "79f0cdc11a64b21e76816c25cc0d066a873134770fba891b54e01445c2620c4c"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir.log",
+      "size": 269,
+      "sha256": "deec8af9479e273c606f8e391398fc3abec9d17411e731638a9442ddf7c602ba"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir-sampler.pid",
+      "size": 4,
+      "sha256": "56292515f7d3a7110811eb8de26b3f75f82a0766aa5a1fd66ebcfcb84fe6d5ff"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-weir.jsonl",
+      "size": 2516355,
+      "sha256": "ba9250b36d5804d5f136b3acbe822b4b7641d2f10fcd9f3744fafec2c6a92385"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-database-sampler.pid",
+      "size": 4,
+      "sha256": "df9c6aa675bfefd74781b9ca97d089dbb1d632a2e8a2d22f0a7bc8dbc0bc9315"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-database.jsonl",
+      "size": 66042,
+      "sha256": "a812f945df417a36f317423b02365f4c8550c2805c4bd0143e5c803af502883e"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client.sh",
+      "size": 741,
+      "sha256": "4d7a257fe7c1d1a31f0fd1e0f25f053fca729d9982de1f23d277125bd2be694a"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client.jsonl",
+      "size": 498704,
+      "sha256": "41b2291c59c5d1dc0eff1d0723da91a57507fec256d150f60c9b241a6f6b7fee"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2/cal-mixed-weir-r0-2.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-2/cal-mixed-weir-r0-2.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-3/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/analysis.json",
+      "size": 35556,
+      "sha256": "b97f8f1e74a10df9a1086affa1f20ce2cce5961beb9884fe9e8068e2427f0f68"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-3/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/disk-after.txt",
+      "size": 171,
+      "sha256": "44faf9d1f1c6bfc0135f96cdaa933e3a0c2c1903b336a96580df0a6614c9ef3e"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-3/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/manifest.json",
+      "size": 1760,
+      "sha256": "0f7d329684bd4eaee47c5a3d6a5882897d8a69947ef493a1b962c4b19904b082"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "size": 96235,
+      "sha256": "29f8643c2b8373764fde195673c43cd798fe9cfdf1f3e7151305ccdfa167dc53"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-3/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir.pid",
+      "size": 4,
+      "sha256": "fe8a828c249caec301b343481e1f1adc16d2e81668a84eb4022977339e4e5924"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir.log",
+      "size": 269,
+      "sha256": "0ac41b1131640e648db8778e3c322b6e8c1c397748efe74ac5dc3e419caab741"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir-sampler.pid",
+      "size": 4,
+      "sha256": "58f324108d121cf6db3f474460cddae0deb18ed351e863a00cf32b39c20387cd"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-weir.jsonl",
+      "size": 2516546,
+      "sha256": "d7fec7b9f1c5f78ce122434f17460143e5f7102fb0b95c0ccbd8eba2ff7f6397"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-database-sampler.pid",
+      "size": 4,
+      "sha256": "b61ebd7ef23174f2864dc981387601e9d06df48c9694e53d365f1889cc379bd3"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-database.jsonl",
+      "size": 66084,
+      "sha256": "fcd51cbc837b447c878a4a7cd77102ed00a852fdfea28f7527d647d4cf2883c2"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client.sh",
+      "size": 741,
+      "sha256": "928caddbf063ab307cd20735f372e3907a6e297b365b106b6456998d42716a1d"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client.jsonl",
+      "size": 486765,
+      "sha256": "5d611a94431dcdc5b4c049292d83ab7c651c61cba8cff04f5004fdd623262cfe"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3/cal-mixed-weir-r0-3.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-3/cal-mixed-weir-r0-3.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-4/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/analysis.json",
+      "size": 35502,
+      "sha256": "5a0fa4037b2b7f37a030b033a3b9ec7a4874775a081c09b4b8f890b5188914cd"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-4/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/disk-after.txt",
+      "size": 171,
+      "sha256": "c667ef9e730f7e5f30aaf044077675308c50ecf8f92e3b3eff03e47ce22c15a0"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-4/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/manifest.json",
+      "size": 1760,
+      "sha256": "d0314565473d5df452b9f32a6fb3018d914c73814606c4a4403e63fe1384e986"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "size": 95819,
+      "sha256": "9b27ad85c460ab009d4415c360fb4cf7878ca8a41597368b2a69b9fa913f786e"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-4/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir.pid",
+      "size": 4,
+      "sha256": "2fa7660fa51eaa80d3212ae92ef3e870b6d246404eb81efabda68d5319c7d07b"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir.log",
+      "size": 269,
+      "sha256": "8454b1f3e0604a4807be4f7fd9d49e8caa3ab54af12d4e89203ef01765cc17c0"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir-sampler.pid",
+      "size": 4,
+      "sha256": "8828148e53801a6c341c4eed6549ebbf34555a0bb2e371ef5eed8fbfdc3ad06b"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-weir.jsonl",
+      "size": 2547245,
+      "sha256": "924395daa26fa690825e2be54c9412ecbaeb1941aade79275e563f32907e200a"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-database-sampler.pid",
+      "size": 4,
+      "sha256": "ab16147fdae6b952e586cd7634a0c82517751faca08c9a6bd38a2831fd04511a"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-database.jsonl",
+      "size": 66997,
+      "sha256": "52aa0caf58a45b714b26aaeb01129d6ae2f16d3f928692cbb8d81c4b8d728483"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client.sh",
+      "size": 741,
+      "sha256": "973c836f5f51f0445166ecad01aca69e54edd520eb889918a2a873932e247fcb"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client.jsonl",
+      "size": 480753,
+      "sha256": "f984f49c115954422ad22c127c099be10e8c95c54314d04b86e6b4279dd15363"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4/cal-mixed-weir-r0-4.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-4/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-4/cal-mixed-weir-r0-4.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-5/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/analysis.json",
+      "size": 35515,
+      "sha256": "52acbddaf95ba7469ed7af1a28e08efeaf237a0d4454ae521fdc540bcc259a06"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-5/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/disk-after.txt",
+      "size": 171,
+      "sha256": "87c695827dc8fdb4a4c15e17994bb6957ca7a530556fb0897b82754c0622819b"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-5/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/manifest.json",
+      "size": 1761,
+      "sha256": "c6afd1f9863da3482e49abe60689be4c9f7063abe0f7c75793f1f9cc7673cf22"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "size": 95293,
+      "sha256": "2aea769761d021360dd89d143e511029d7652b7aa31e6afa6e065604f39f9503"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-5/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir.pid",
+      "size": 4,
+      "sha256": "9c28e139406c5971229e4b43ecef6f88fd0b3c743e4294734bd2d303957e9de3"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir.log",
+      "size": 269,
+      "sha256": "ba3d4158ffaa3eaae0fba25f8241732af49ee4914bd82080635975ac834a5f7a"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir-sampler.pid",
+      "size": 4,
+      "sha256": "fbdc36696a4da1e76493c51bde0d67878dd3a7845771fb5b1af54645210f74de"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-weir.jsonl",
+      "size": 2516610,
+      "sha256": "47b44de72a6ea845869bbf4812660a6d90530892f4dfe0df2a76c9873cb2573d"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-database-sampler.pid",
+      "size": 4,
+      "sha256": "572dfda82a3c25e0f43215aef98806ded43ad5a8a5a274f927c1406016eae0e7"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-database.jsonl",
+      "size": 66126,
+      "sha256": "ffe04384079e67cbd750131d3b0f723e360da0b05874dc2649337196c90f3e9f"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client.sh",
+      "size": 740,
+      "sha256": "4b24bc28e6d023dc630568f57f7212cb6d13ac3cdaee77d296413a2e6b330410"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client.jsonl",
+      "size": 480801,
+      "sha256": "320dc2975ca40b07bbbf26636172dd12f461ae987ae68511efe245d9f8b0f2b1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5/cal-mixed-weir-r0-5.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-5/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-5/cal-mixed-weir-r0-5.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-6/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/analysis.json",
+      "size": 35485,
+      "sha256": "82865561c5cb200e8dde11e8df41edac58b718365b4546fbafc9a2b78982fdcb"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-6/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/disk-after.txt",
+      "size": 171,
+      "sha256": "2220623e0a874b1a3e0e716341620ad251360cf065e51fcd66c2aa31c0782fd9"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-6/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/manifest.json",
+      "size": 1761,
+      "sha256": "8a37e1160871b664537804cb37002cf88eb4783612b9689daa06b918169f633a"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "size": 95707,
+      "sha256": "200d6f19f14ac66ea3268a5ece30da0a510dd8a61e79fcb79b62e57ba8d55092"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r0-6/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir.pid",
+      "size": 4,
+      "sha256": "13a57a1832cfa5c92e7f46e6832f88c96d0fef54383f12574cb1dbff17e7cb50"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir.log",
+      "size": 269,
+      "sha256": "68502f461f66c5b69e48f2b076c120bccac6861cebfb10006dd03243ccd7ab8f"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir-sampler.pid",
+      "size": 4,
+      "sha256": "def320d779b5e2a5a6e071146cebcb70465b32dc57beef2a22059aabb0f0c8fb"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-weir.jsonl",
+      "size": 2547299,
+      "sha256": "b9688cd82c34dde1953fd5a672ec2f4fcaaa96ff922875853800d9d82b97b03e"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-database-sampler.pid",
+      "size": 4,
+      "sha256": "f502b50b5699bc6b011d3ad1ee8892e5a44c2c5533fbade44d98404e352c83ec"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-database.jsonl",
+      "size": 67173,
+      "sha256": "045d00dba736aff75a14d5ece4133b7f85740aaf9c1d6396e66069935bd693ee"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client.sh",
+      "size": 741,
+      "sha256": "2d62407433039c914758d448193178941991715fe350df109bcbc78d345b01d1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client.jsonl",
+      "size": 478804,
+      "sha256": "06f9548dfcdf4142aa760dd48e5d53cedd5961a4d325adf980b7f9517bc752fe"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6/cal-mixed-weir-r0-6.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r0-6/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r0-6/cal-mixed-weir-r0-6.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-1/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/analysis.json",
+      "size": 35499,
+      "sha256": "39fc7e2595ece99dcb95f1a70072fa7b4704aa5c64089208d650e5e28f2867bb"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-1/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/disk-after.txt",
+      "size": 171,
+      "sha256": "d0e49df6f89da1c30651e6f97760ffae2399ab154256303238ff81b59f64209e"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-1/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/manifest.json",
+      "size": 1760,
+      "sha256": "92ade0bfc5a3e4332d63a1478f3b93e368e9d9b6854b0f14a1d154c66ce81934"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "size": 95782,
+      "sha256": "7e782d09064e9d0435f630da473955d5169a2e98528be31197bfbaa321af52a6"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-1/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir.pid",
+      "size": 4,
+      "sha256": "5eac2d898682427b63fa106d573be06d9da64e8c42e6c8260e577521cdde9808"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir.log",
+      "size": 269,
+      "sha256": "00c6e536de22271e7007359ba13bb62cee5903889a3bc8f36884854f70f653eb"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir-sampler.pid",
+      "size": 4,
+      "sha256": "4114b0a30886c59a27c101d2280dd71b51b66450fa468de8766bb022adac15ec"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-weir.jsonl",
+      "size": 2577718,
+      "sha256": "07a87841250f169e0e57f8f4c82aa400a58c37727ed873e2b6bc14c3885e7849"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-database-sampler.pid",
+      "size": 4,
+      "sha256": "8147f0bb4eb5b339f9bfbe1ff3491a7e4232027e874184887de25b602370c273"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-database.jsonl",
+      "size": 67842,
+      "sha256": "2f73cde4ebb3bb4da8743a99fa84bd6ea88ccee72c3a8e344c693df9742ab84a"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client.sh",
+      "size": 740,
+      "sha256": "fdbcfd517054e002a2f9b2b64077cd067e19c9ad1a057d59825f19c0d8942701"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client.jsonl",
+      "size": 481020,
+      "sha256": "cb78016792fc2e4e0d75b4d5d9479fa15194264258f07d72846005cb1b554f33"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1/cal-mixed-weir-r1-1.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-1/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-1/cal-mixed-weir-r1-1.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-2/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/analysis.json",
+      "size": 35471,
+      "sha256": "8cfacf779eb365b1d0d11099b1ea858375f7480522c187a67a2125f0549a701d"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-2/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/disk-after.txt",
+      "size": 171,
+      "sha256": "34fb7deb052158ac7d0db5b33df22fae72b1ef83d49926b617b09b8895d53a45"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-2/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/manifest.json",
+      "size": 1761,
+      "sha256": "1288c9deb04fb108fd59868c5770fb5002270556d9c4c65d9efa6cd73a75c330"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "size": 95415,
+      "sha256": "b656f3a1a3aba67e7aa58e6c9cacae8d73898bbf182dce9b767a0bc39b97e62b"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-2/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir.pid",
+      "size": 4,
+      "sha256": "f9f0fd5abfed174f0ee1966779a3f5a2af7a43b2b09af6260768adeb356d850d"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir.log",
+      "size": 269,
+      "sha256": "d8adc078600c7e1407bf7e5c23b25b878d195c0792a95f734b05eb2ea4ba62d4"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir-sampler.pid",
+      "size": 4,
+      "sha256": "f3951978da9fd0d44978efafd20f9ce909a7566f387209cf6edc5f7a5fa79b6b"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-weir.jsonl",
+      "size": 2546960,
+      "sha256": "cc58300862a5f0c57b7f2ef2b5b96a291ab8fc96ffd6b598ae857d6c2832144b"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-database-sampler.pid",
+      "size": 4,
+      "sha256": "2649652ba6d846c2bde52e24d1e59cd3a80d9f29477c91d65b3a88468f06eb28"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-database.jsonl",
+      "size": 67842,
+      "sha256": "a2bd2caf1bcecf19a097de6dfcb7261ea90d02eea681457a30c90ba689fe9ef3"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client.sh",
+      "size": 740,
+      "sha256": "26fbd0d6daa11a10b32348d5281f8ce30d3e508492542faa96aeb26474db5895"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client.jsonl",
+      "size": 481102,
+      "sha256": "5bf00174c5ae9bd254a79a73556166218b94a051f77d019f7cebb4c8e6fd128c"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2/cal-mixed-weir-r1-2.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-2/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-2/cal-mixed-weir-r1-2.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-3/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/analysis.json",
+      "size": 35450,
+      "sha256": "d2723f457fbc5f6bed4d0ab9b93ffda4064f17af1d5fd86002d9bffa45e1dc29"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-3/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/disk-after.txt",
+      "size": 171,
+      "sha256": "aeecf28c07b57e65f5d4f2564688e5c078d656ae08f29d1719ce788cfdf62b2f"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-3/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/manifest.json",
+      "size": 1761,
+      "sha256": "8bdb550c908c98addab4ea1c7f680f50cb99bbbcb1dd736bc43c2fe46dd7c02a"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "size": 94820,
+      "sha256": "d9be1d074813b87881a53a856340f4ed9dea0ff6ee8069fd60e93a11569fe399"
+    },
+    {
+      "name": "main/cases/cal-mixed-weir-r1-3/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir.pid",
+      "size": 4,
+      "sha256": "8b43e07955cc3a9e17d74b960abf019bca14a764c87faa83fca03c00020683ee"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir.log",
+      "size": 269,
+      "sha256": "846fe01f10fe8bdff03c3a9d9b86dda678656040e8d88d66f22e002f24eab236"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir-sampler.pid",
+      "size": 4,
+      "sha256": "b8cea0faf937fa0456d3a3c267395b5e52261ec1fe5bf3592fcbd05890436199"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-weir.jsonl",
+      "size": 2516476,
+      "sha256": "62d690fbe6df562946bf8561c003bf590038b6399ec4ed38f9cc9509e9b5be47"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-database-sampler.pid",
+      "size": 5,
+      "sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-database.jsonl",
+      "size": 66930,
+      "sha256": "be24182f8db247babe2b5aa3db24d4144ea57085d80612aedd9766ee5fb45a50"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client.sh",
+      "size": 740,
+      "sha256": "f28daf03633123df35bf9e0a94b61c54ce430cd724efb3bbd4985853da8de539"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client.jsonl",
+      "size": 477357,
+      "sha256": "a78e88aefdc2d9baeb5eb209e5e055580becfff94732308ac32dcb7aaf81bddf"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3/cal-mixed-weir-r1-3.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/cal-mixed-weir-r1-3/raw.tar.gz",
+      "source_member": "cal-mixed-weir-r1-3/cal-mixed-weir-r1-3.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/common-prewarm/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/analysis.json",
+      "size": 34153,
+      "sha256": "4f00f209106bf4e161030f4cac0626567759bd61423865190661eba80397ea57"
+    },
+    {
+      "name": "main/cases/common-prewarm/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/disk-after.txt",
+      "size": 171,
+      "sha256": "7bcd1b0a571abbfeaa335bb5e898aad585049e5208dad8a8df712cfe7752b88f"
+    },
+    {
+      "name": "main/cases/common-prewarm/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/manifest.json",
+      "size": 1698,
+      "sha256": "2cecbd18d01aa0ea9d1706a7704bc9b2b3bb54bba39bc78d76b8c90ddf3e10a1"
+    },
+    {
+      "name": "main/cases/common-prewarm/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "size": 33548,
+      "sha256": "83fd4c4df1bfab3a40d8ed9bfcc40496b0193ea903dbcf208fb2e7458b58a785"
+    },
+    {
+      "name": "main/cases/common-prewarm/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-weir-sampler.pid",
+      "size": 3,
+      "sha256": "1a252402972f6057fa53cc172b52b9ffca698e18311facd0f3b06ecaaef79e17"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-weir.jsonl",
+      "size": 74839,
+      "sha256": "e3011497d193688135fd1a47681e201b50470bc3944d236d85d0aae268e413da"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-database-sampler.pid",
+      "size": 4,
+      "sha256": "5c862790153d23a72dd410bb8b36819d51ac248cbaec4f6742efd8e75f20b175"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-database.jsonl",
+      "size": 74133,
+      "sha256": "aab0e86c32d8bedc424421c406430e5019e0986b3eceac4ce278afdc59e81dc2"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-client.sh",
+      "size": 662,
+      "sha256": "7e41e231ae3899607c8ca0e24dbad72b1e518932f45d6ee1ac3aa770d75daf63"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-client.jsonl",
+      "size": 417929,
+      "sha256": "74ea86108bc5f837e2154805417e6089f047686ea152a4372c33d19f37b969e1"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/common-prewarm/common-prewarm/common-prewarm.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/common-prewarm/raw.tar.gz",
+      "source_member": "common-prewarm/common-prewarm.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-direct/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/analysis.json",
+      "size": 42119,
+      "sha256": "11c0debb21dd193046d6530f3535835246517bc0366842b6f72994238df124b6"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-direct/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/disk-after.txt",
+      "size": 171,
+      "sha256": "cce02e8fa883b1c1e3dec5b4e46504c8457bed24c6326d36bf61e4fe7fd0935a"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-direct/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/manifest.json",
+      "size": 1748,
+      "sha256": "e8b842a38b9f9bdf7cae0f9d19fbd1af343719f07b68d708074df274d1a32927"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-direct/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "size": 40570,
+      "sha256": "2179a339c74babfc57790e8ec213ab60d14c5c82f154f31a3bed831a36571436"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-direct/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-weir-sampler.pid",
+      "size": 4,
+      "sha256": "579c81f568f7c29e169413de59514e21afa79aa0787df62272e11a71fd42dabc"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-weir.jsonl",
+      "size": 95373,
+      "sha256": "82b59dbcb590f7595aa59a84a446124fb8b2ca7fae9288a638a0f365d2f9fa64"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-database-sampler.pid",
+      "size": 4,
+      "sha256": "4fb12c534a9b274ff67e758738696bcfde34f208e6ab2b81317d489eb02638fc"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-database.jsonl",
+      "size": 95228,
+      "sha256": "f78c259131f358e6623462c7e8bbd95b0e2b47f47218e018cc99ec0fe0557f19"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-client.sh",
+      "size": 753,
+      "sha256": "3a7eb6538b1cf7fda473596fc4eff27f28432d6b4c776d702ea9f2f06a1c7877"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-client.jsonl",
+      "size": 535929,
+      "sha256": "6c94cc554346c2f48f8c0423d7f316c7b99c18f4b26d16412b4d688330a6529a"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-direct/formal-mixed-1-direct/formal-mixed-1-direct.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-direct/raw.tar.gz",
+      "source_member": "formal-mixed-1-direct/formal-mixed-1-direct.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-weir/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/analysis.json",
+      "size": 48955,
+      "sha256": "62a2e69d75068d3b374f014ba237b8f310c436d4c90729cfbe1f3d906b0b9257"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-weir/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/disk-after.txt",
+      "size": 171,
+      "sha256": "1b64f149e099445f6f0bc93048a641861bedfa36e879d7ffe2adadafd94db442"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-weir/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/manifest.json",
+      "size": 1735,
+      "sha256": "2a1e6061f2479c9c7787937c652e04113936c49b839c538300b82a0d118a3787"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-weir/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "size": 133605,
+      "sha256": "ebf300213b972903e03e58dce8b46d032154f6f89c2dad549e51ab6f067ba9ea"
+    },
+    {
+      "name": "main/cases/formal-mixed-1-weir/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-weir.pid",
+      "size": 4,
+      "sha256": "97a58cc66d1cd6b51466af8ed52d6a38053b5572fee09a0ae8859c26b82bdf67"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-weir.log",
+      "size": 269,
+      "sha256": "c7b98dfbda709c99500345023d8d478ee6db5bfab9ca4ed0d782f3fa7bdef4cc"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-weir-sampler.pid",
+      "size": 4,
+      "sha256": "6ee6fa88334530ea71fbdb83d523b6e7468d23ed97ad51d6418d82a873d8e20a"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-weir.jsonl",
+      "size": 3470082,
+      "sha256": "e8442291b58f6b9f189b87c1e9b52bb4af8bbf8b080ea7a877334a37ba1ef49c"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-database-sampler.pid",
+      "size": 4,
+      "sha256": "858330c1a39fdc51dec55fc80a4ee41ce50ccdabc6e07aab1c9ec549038be70e"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-database.jsonl",
+      "size": 94346,
+      "sha256": "d3434184bb0cbc9cbaaa393ec9ead892c759c636f77a8af9119f7c22fc2f9805"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-client.sh",
+      "size": 741,
+      "sha256": "3508630b2fd1e9645f18364d89fe9d9cc4e646df2983a89ea33058f30486fc10"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-client.jsonl",
+      "size": 726487,
+      "sha256": "cec1e8bb700f14a1ef70fe7eb0e7b222f806bd107a99704295b29d5cb1c2cf4c"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-1-weir/formal-mixed-1-weir/formal-mixed-1-weir.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-1-weir/raw.tar.gz",
+      "source_member": "formal-mixed-1-weir/formal-mixed-1-weir.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-direct/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/analysis.json",
+      "size": 42114,
+      "sha256": "33de5a2e67ea13b677addc26492dce42d0e7dbb074f479d11b28b5d138bac7d3"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-direct/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/disk-after.txt",
+      "size": 171,
+      "sha256": "54550e5368654fcc251b11c28980ca4b3c8ea660f6acde22af3382f500881037"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-direct/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/manifest.json",
+      "size": 1751,
+      "sha256": "80de4d0bbf63dd4e40eddf96be7aed24476ecdb6f2ec14a03f362519e2cc6a5e"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-direct/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "size": 40485,
+      "sha256": "7d1d435d610a57e7779913010591f92a19bb41424380ddb874f953d199bf1bca"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-direct/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-weir-sampler.pid",
+      "size": 4,
+      "sha256": "a696266b0be392342a68fdf9385b46d3e9795d178f1537185c19172fcce7fb3f"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-weir.jsonl",
+      "size": 95370,
+      "sha256": "5aefc22dc7e362a5a09cdc2c3fa89c60c1c0e9e7967b31056466e7101a899cf3"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-database-sampler.pid",
+      "size": 4,
+      "sha256": "d38072cfa9a552b0c6f495fe07c1f56a07ef8eda73774c05892136ad553362f0"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-database.jsonl",
+      "size": 95358,
+      "sha256": "47c95ca38557e908fc973a5c12708e0fe10d9b09829d9fe0e411f233785223b5"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-client.sh",
+      "size": 753,
+      "sha256": "c8a23f7620d56c7b9beea5921cb83d65f2db1143ebf253fd6cb4eb1f7256f02f"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-client.jsonl",
+      "size": 536208,
+      "sha256": "665e7d7e27fe9a05c2b867ec5a435fc7ee07ff8ed5c7f88228b334ff82a45dce"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-direct/formal-mixed-2-direct/formal-mixed-2-direct.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-direct/raw.tar.gz",
+      "source_member": "formal-mixed-2-direct/formal-mixed-2-direct.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-weir/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/analysis.json",
+      "size": 48984,
+      "sha256": "203978b73a1bad6d594f43ffbb0ea9c5ffc0791adf436488597ee1583aaae498"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-weir/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/disk-after.txt",
+      "size": 171,
+      "sha256": "2f1f7784567b90c20d8e339eef1338359f47d0a4b07980946082f918626ec669"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-weir/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/manifest.json",
+      "size": 1734,
+      "sha256": "246c91ab81a897a09b57040f607341df513a8a6c03b3cfa7ebcbe6878297f867"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-weir/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "size": 134055,
+      "sha256": "7de05ad3abbdce112fe71ae011d7dcaca68f3e2a7fca173b42f259a5ca1606d9"
+    },
+    {
+      "name": "main/cases/formal-mixed-2-weir/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-weir.pid",
+      "size": 4,
+      "sha256": "9bea2229d7b87b9ec122b7c1629ce40a3c61220035c0acf119c6aa446c958df6"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-weir.log",
+      "size": 269,
+      "sha256": "8e003f2f3e0c194c2dde2230ec849b486241ecafcba10469e21ef16f5fee48c1"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-weir-sampler.pid",
+      "size": 4,
+      "sha256": "66c342932aa7c18f7bf1fa212aa011069fc2e50e0c7e9e4c73fcaa6851854c47"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-weir.jsonl",
+      "size": 3500537,
+      "sha256": "d1a1bd200fcdcbe9314ecb40ee2494960f641a662edd5d621941bfe27921a23c"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-database-sampler.pid",
+      "size": 4,
+      "sha256": "054071ccab67fb8dc30d3a0d83122c29cb25ced9864380815fce35d65a155d94"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-database.jsonl",
+      "size": 95359,
+      "sha256": "8ab8c9ab1423009036523cd556e9f060feb5ff64ed2c47e6cf9bcdd8114a7687"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-client.sh",
+      "size": 741,
+      "sha256": "bc9e6319a6f2dffa6540965719cb3e37d1a368d9e76f0b1d74ca8bfc225a6923"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-client.jsonl",
+      "size": 722102,
+      "sha256": "8474432088184b48e9dbca3bb8ce9e775b241b677c46f164135f68ba3c04c0a0"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-2-weir/formal-mixed-2-weir/formal-mixed-2-weir.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-2-weir/raw.tar.gz",
+      "source_member": "formal-mixed-2-weir/formal-mixed-2-weir.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-direct/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/analysis.json",
+      "size": 42145,
+      "sha256": "e7ff8d1287cc9a004692cebad3ce11f0eb1ce85026a4f23c3c54938cc0ef6d21"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-direct/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/disk-after.txt",
+      "size": 171,
+      "sha256": "ac1fc61e739dc65b9012d0f1dfad9d109423f2d6caf086a7c70d40a672600bd7"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-direct/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/manifest.json",
+      "size": 1751,
+      "sha256": "cbe35322ef8d1aaadb27aa048e0838f8966154c8a9f89de2c68e307e89a77c52"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-direct/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "size": 41358,
+      "sha256": "2dc6a297ad3f676fa351e33c6968f329f0e70f642845c0ac52ad3891827465a5"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-direct/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-weir-sampler.pid",
+      "size": 4,
+      "sha256": "ffcbfa87eb58761c6ceac95238670c2e9d6db0c573bc817041951df3d5baaadb"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-weir.jsonl",
+      "size": 93710,
+      "sha256": "8829b3ba7fd6953157a6f3a99e8f007cdde5f27dd1b10b6d5e08f915a4e76b72"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-database-sampler.pid",
+      "size": 4,
+      "sha256": "0cd36aa5e203e290e0a0ccacc9eed1f1d1bd686fd7225b2bf074d89af09cd28f"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-database.jsonl",
+      "size": 93648,
+      "sha256": "a735fe03e07f89d5987abe8401627485a967f62d7bbbfb8ceede8e48c7dddda2"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-client.sh",
+      "size": 753,
+      "sha256": "a417ef70a013071dbc7f55bdd2664a87256e43ab22ac359b0a1dd36d3d7f3226"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-client.jsonl",
+      "size": 546622,
+      "sha256": "9c3c36f96cf757a5e60ef7d05cd6f9239538f1263e21089a860fc6d356830fc7"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-direct/formal-mixed-3-direct/formal-mixed-3-direct.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-direct/raw.tar.gz",
+      "source_member": "formal-mixed-3-direct/formal-mixed-3-direct.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-weir/analysis.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/analysis.json",
+      "size": 48993,
+      "sha256": "8fbede499ab0efd68dd01c4e4b02f2068a33201c6026ca2d9e50d380cfebc17b"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-weir/disk-after.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/disk-after.txt",
+      "size": 171,
+      "sha256": "eedc0ea4d5a365eabea1e8f6b36141071e9264b8ab93f49322009e0c1bc74d77"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-weir/manifest.json",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/manifest.json",
+      "size": 1736,
+      "sha256": "47f06bd819bf542b22991e9d10be62fc1cba423f9eda89e513fc9726efcdc595"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-weir/raw.tar.gz",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "size": 135220,
+      "sha256": "745693d6185733aa52b773d83cb5d1180872cd3bc3303b7464ffdc1bb3943fb6"
+    },
+    {
+      "name": "main/cases/formal-mixed-3-weir/remote-binary-hashes.txt",
+      "source_file": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/remote-binary-hashes.txt",
+      "size": 251,
+      "sha256": "d010ef1f0be411ec7e6ffaf6ccc2015b3c094f05ca3161085a6fa63b13f34fd1"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-weir.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-weir.pid",
+      "size": 4,
+      "sha256": "4e53f5ceaea891c052b031485883dee8e62e3b1438285a3feb3bfc371e54ec25"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-weir.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-weir.log",
+      "size": 269,
+      "sha256": "f0436dc1691ec91e8466fe6cccf097091089201852819e9fabea9b0e8297e2e1"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-weir-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-weir-sampler.pid",
+      "size": 4,
+      "sha256": "8dcb6add5f6aa489a85a0535bf7d8ec66fe54b7d5c4f6868122c5d2d475e8586"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-weir-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-weir-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-weir.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-weir.jsonl",
+      "size": 3500876,
+      "sha256": "0c04a1cc74fdfb118c41455cfed7031e782d0b7f4707ac185044cc86b939a88b"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-database-sampler.pid",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-database-sampler.pid",
+      "size": 4,
+      "sha256": "f512fdfb0cc74c1a8549f1474c5f5a2aef149a30d405e60de4904dc085870c24"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-database-sampler.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-database-sampler.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-database.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-database.jsonl",
+      "size": 95732,
+      "sha256": "6c792cebfa30d93cdff743ab0ffd46f78aaa4292d362d593f3ecbaca998da99b"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-node.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-node.json",
+      "size": 211,
+      "sha256": "e7c368322779e2c4d3df631547afc11b437c80b33357b1dc76bd58074d8fa279"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-routes.json",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-routes.json",
+      "size": 403,
+      "sha256": "812a81fde254df35db4e4acb4c4d34d9bb81333827fddd25e9126a62dac17934"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-client.sh",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-client.sh",
+      "size": 741,
+      "sha256": "f70a873817bb27d3131e97298bc72d53b8adae4b7f5a89cb066f4f99d95e3d1e"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-client-launch.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-client-launch.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-client.jsonl",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-client.jsonl",
+      "size": 735504,
+      "sha256": "f914eb9f40d90e9dea37976c146d99e0ae181c5c318cc2337c84d1887c722f28"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir-client-stderr.log",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir-client-stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "main/raw/formal-mixed-3-weir/formal-mixed-3-weir/formal-mixed-3-weir.done",
+      "source_archive": "/private/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-refine-v4-t0f0tf4d/mongo-equal-load-owned/formal-mixed-3-weir/raw.tar.gz",
+      "source_member": "formal-mixed-3-weir/formal-mixed-3-weir.done",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "archive_pending": true,
+  "member_count": 451
+}

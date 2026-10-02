@@ -1,0 +1,26 @@
+{
+  "namespace": "weir-equal-pure-v4-1e1d1e912d43",
+  "namespace_uid": "2869d7f5-9cbe-41a2-9e49-f3d0c4e37419",
+  "pod_uid": "126ad86e-9188-419e-a4a5-0baba3830852",
+  "independent_notfound": true,
+  "namespace_get_exit": 1,
+  "namespace_get_stdout": "",
+  "namespace_get_stderr": "Error from server (NotFound): namespaces \"weir-equal-pure-v4-1e1d1e912d43\" not found\n",
+  "exact_port_forward_pid": 1980,
+  "recorded_command": [
+    "kubectl",
+    "-n",
+    "weir-equal-pure-v4-1e1d1e912d43",
+    "port-forward",
+    "pod/fixture",
+    "19188:8080"
+  ],
+  "port_forward_exit": -15,
+  "ps_exit": 1,
+  "ps_stdout": "",
+  "pid_absent": true,
+  "port": 19188,
+  "connect_ex": 61,
+  "port_closed": true,
+  "owned_cleanup_errors": []
+}

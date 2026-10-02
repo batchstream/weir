@@ -1,0 +1,37 @@
+{
+  "wall_time": 1790902327.528404,
+  "namespace_probe": {
+    "argv": [
+      "kubectl",
+      "get",
+      "namespace",
+      "weir-bp-v3-f53d66750b94"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "Error from server (NotFound): namespaces \"weir-bp-v3-f53d66750b94\" not found\n"
+  },
+  "port_forward_probe": {
+    "argv": [
+      "ps",
+      "-p",
+      "32579",
+      "-o",
+      "pid=,args="
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  "node_after_cleanup": {
+    "argv": [
+      "kubectl",
+      "top",
+      "node",
+      "ip-172-31-191-104.us-west-1.compute.internal"
+    ],
+    "exit": 0,
+    "stdout": "NAME                                           CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   \nip-172-31-191-104.us-west-1.compute.internal   3339m        42%      7788Mi          25%         \n",
+    "stderr": ""
+  }
+}

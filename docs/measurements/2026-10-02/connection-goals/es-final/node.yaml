@@ -1,0 +1,9 @@
+"listeners":
+  "application": "0.0.0.0:7447"
+"diagnostics":
+  "address": "0.0.0.0:7449"
+  "allow_intranet": true
+"memory": "2560MiB"
+"transport":
+  "max_connections": 64
+  "max_sessions": 32

@@ -1,0 +1,45 @@
+{
+  "spec": {
+    "containers": [
+      {
+        "name": "database",
+        "resources": {
+          "limits": {
+            "cpu": "500m",
+            "memory": "1536Mi"
+          },
+          "requests": {
+            "cpu": "50m",
+            "memory": "1536Mi"
+          }
+        }
+      },
+      {
+        "name": "client",
+        "resources": {
+          "limits": {
+            "cpu": "2",
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "50m",
+            "memory": "256Mi"
+          }
+        }
+      },
+      {
+        "name": "weir",
+        "resources": {
+          "limits": {
+            "cpu": "2",
+            "memory": "2304Mi"
+          },
+          "requests": {
+            "cpu": "250m",
+            "memory": "256Mi"
+          }
+        }
+      }
+    ]
+  }
+}

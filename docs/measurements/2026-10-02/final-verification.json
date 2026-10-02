@@ -1,0 +1,25 @@
+{
+  "time_utc": "2026-10-02T01:26:18.292542+00:00",
+  "pass": true,
+  "errors": [],
+  "hash_counts": {
+    "frozen_source_files": 252,
+    "mongo-v3-final": 22,
+    "backpressure-goals/mongodb-v3": 50,
+    "ES_archive_members": 289,
+    "ES_output_files": 4,
+    "connection_files": 638
+  },
+  "production_source_frozen": true,
+  "report_links_resolved": true,
+  "performance_cells": 48,
+  "performance_applied_audited": 1388304,
+  "performance_api_unknown_oom": 0,
+  "limits": [
+    "ES performance client drops remain at 3200/s",
+    "ES .08 quota phase has API failures and UNKNOWN",
+    "Mongo restored throughput and window still fluctuate",
+    "Connection probes use v2 Mongo and earlier ES; connection code unchanged in v3",
+    "HPA example not deployed"
+  ]
+}

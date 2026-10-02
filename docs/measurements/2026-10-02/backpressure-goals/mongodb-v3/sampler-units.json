@@ -1,0 +1,5 @@
+{
+  "clock_ticks_per_second": 100,
+  "page_size_bytes": 4096,
+  "database_pid1": "mongod"
+}

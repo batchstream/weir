@@ -1,0 +1,88 @@
+{
+  "tag": "mongo-current-pilot",
+  "mode": "current",
+  "batch_operations": 32,
+  "rate": 2500,
+  "write_every": 10,
+  "healthy_cpu_m": 500,
+  "slow_cpu_m": 50,
+  "transitions": [
+    {
+      "phase": "healthy",
+      "resize": {
+        "requested_wall_time": 1790895588.204421,
+        "confirmed": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790895594.7137413,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        },
+        "before": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790895586.4038787,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        }
+      }
+    },
+    {
+      "phase": "slow",
+      "resize": {
+        "requested_wall_time": 1790895667.566388,
+        "confirmed": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "5000 100000",
+          "wall_time": 1790895673.817135,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        },
+        "before": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790895665.6665893,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        }
+      }
+    },
+    {
+      "phase": "recovery",
+      "resize": {
+        "requested_wall_time": 1790895698.205339,
+        "confirmed": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "50000 100000",
+          "wall_time": 1790895801.9039242,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        },
+        "before": {
+          "comm": "mongod",
+          "start_ticks": 18298,
+          "cpu_max": "5000 100000",
+          "wall_time": 1790895696.3141947,
+          "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+          "restart_count": 0
+        }
+      }
+    }
+  ],
+  "raw_sha256": "052db986c640b46936fb5b8289bc5b394f9e501047868ea072e9146cdde305d2",
+  "database_identity": {
+    "comm": "mongod",
+    "start_ticks": 18298,
+    "cpu_max": "50000 100000",
+    "wall_time": 1790895883.653773,
+    "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+    "restart_count": 0
+  },
+  "qualification": "pilot only: batch saturation absent and recovery quota deferred beyond load end; stopped Weir zombie corrected in runner",
+  "binary_hashes": "{\n  \"client-final\": \"baaa8df8832eacc1ae8692f89c985bf25e18ad0f777558d89001fdf9e4de5574\",\n  \"weir-final\": \"ff00f5367c070eb4310f69a5275ec92a7388267f94dc284d8e3e8fca60688262\",\n  \"baseline-weir\": \"2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1\",\n  \"sampler\": \"06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f\",\n  \"sampler-metrics\": \"fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d\"\n}"
+}

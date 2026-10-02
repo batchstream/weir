@@ -1,0 +1,14 @@
+{
+  "database": "PID COMMAND         STAT\n      1 mongod          Ssl\n    140 sampler         Z\n    473 sampler         Z\n    907 sampler         Z\n   1398 sampler         Z\n   1486 sampler         Z\n   1569 sampler         Z\n   1671 sampler         Z\n   1754 sampler         Z\n   1835 sh              Ss\n   1841 ps              R\n50000 100000",
+  "client": "PID   COMMAND          STAT\n    1 sleep            S  \n   34 busybox          S  \n   83 sh               Z  \n  169 sh               Z  \n  263 sh               Z  \n  356 sh               Z  \n  496 sh               Z  \n  607 sh               Z  \n  712 sh               Z  \n  820 sh               Z  \n  872 sh               S  \n  878 ps               R  \n200000 100000",
+  "weir": "PID   COMMAND          STAT\n    1 sleep            S  \n   13 weir-final       Z  \n   33 sampler-metrics  Z  \n   67 weir-final       Z  \n   88 sampler-metrics  Z  \n  114 baseline-weir    Z  \n  134 sampler-metrics  Z  \n  159 baseline-weir    Z  \n  180 sampler-metrics  Z  \n  206 weir-final       Z  \n  226 sampler-metrics  Z  \n  252 baseline-weir    Z  \n  272 sampler-metrics  Z  \n  298 weir-final       Z  \n  318 sampler-metrics  Z  \n  344 baseline-weir    Z  \n  365 sampler-metrics  Z  \n  384 sh               S  \n  390 ps               R  \n200000 100000",
+  "database_identity": {
+    "comm": "mongod",
+    "start_ticks": 18298,
+    "cpu_max": "50000 100000",
+    "wall_time": 1790898098.0338216,
+    "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+    "restart_count": 0
+  },
+  "node": "NAME                                           CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   \nip-172-31-159-242.us-west-1.compute.internal   40m          0%       3143Mi          10%         \n"
+}

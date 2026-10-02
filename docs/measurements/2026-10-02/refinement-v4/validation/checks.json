@@ -1,0 +1,9 @@
+{
+  "go test ./...": "PASS",
+  "go vet ./...": "PASS",
+  "go test -race ./internal/store ./internal/app ./internal/backend/mongodb ./internal/backend/search ./internal/server ./routeclient ./internal/testutil/testresource": "PASS",
+  "go test -tags integration ./internal/testutil/testcapacity": "PASS - helper tests, live measurements separate",
+  "go test -race ./internal/server -run cancellation and stalled send -count=10": "PASS - fidelity-corrected deadline fixture",
+  "git diff --check": "PASS",
+  "focused helper race": "PASS - agent verified loopback result+err evidence and bounded diagnostic messages before freeze"
+}

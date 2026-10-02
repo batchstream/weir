@@ -1,0 +1,144 @@
+{
+  "client_processes": 1,
+  "offered_rps_total": 200,
+  "measurement_seconds": 20,
+  "planned": 4000,
+  "success": 4000,
+  "client_drop": 0,
+  "api_failures": 0,
+  "qualified": true,
+  "observed_database_process": "1",
+  "observed_process_start_ticks": 18298,
+  "sampled_established_peak": 2,
+  "phases": {
+    "baseline": {
+      "sample_count": 10,
+      "min": 2,
+      "median": 2.0,
+      "max": 2,
+      "last": 2,
+      "fd_close_races": 0
+    },
+    "active": {
+      "sample_count": 94,
+      "min": 2,
+      "median": 2.0,
+      "max": 2,
+      "last": 2,
+      "fd_close_races": 0
+    },
+    "idle_clients_open": {
+      "sample_count": 58,
+      "min": 2,
+      "median": 2.0,
+      "max": 2,
+      "last": 2,
+      "fd_close_races": 0
+    },
+    "clients_closed_weir_retained": {
+      "sample_count": 53,
+      "min": 2,
+      "median": 2,
+      "max": 2,
+      "last": 2,
+      "fd_close_races": 0
+    }
+  },
+  "clients": [
+    {
+      "type": "connection_probe",
+      "pid": 1194,
+      "start": "2026-10-01T23:48:38.49712Z",
+      "end": "2026-10-01T23:48:58.497576009Z",
+      "idle_end": "2026-10-01T23:49:10.508677102Z",
+      "closed": "2026-10-01T23:49:10.509251084Z",
+      "rate": 200,
+      "planned": 4000,
+      "started": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "failures": {},
+      "options": {
+        "backend": "mongodb://127.0.0.1:27017/?directConnection=true",
+        "target": "127.0.0.1:7447",
+        "pool": 4,
+        "workers": 8,
+        "queue": 256,
+        "rate": 200,
+        "seconds": 20,
+        "idle_seconds": 12,
+        "start_at": "2026-10-01T23:48:38.49712Z"
+      }
+    }
+  ],
+  "scope": "Sampled database-owned ESTABLISHED TCP sockets; not configured pool sizes. Weir remains running after clients close.",
+  "process_resources": {
+    "database": {
+      "samples": 20,
+      "sample_seconds": 18.999972027000002,
+      "cpu_cores": 0.07631590183077483,
+      "rss_max": 344002560,
+      "cgroup_memory_max": 577126400,
+      "oom_kills": 0
+    },
+    "weir": {
+      "samples": 20,
+      "sample_seconds": 18.999882349999996,
+      "cpu_cores": 0.23473829562949902,
+      "rss_max": 25788416,
+      "cgroup_memory_max": 50241536,
+      "oom_kills": 0
+    }
+  },
+  "name": "weir-1-clients-1",
+  "weir_instances": 1,
+  "database_identity": {
+    "comm": "mongod",
+    "start_ticks": 18298,
+    "cpu_max": "50000 100000",
+    "ticks_per_second": 100,
+    "page_size": 4096,
+    "wall_time": 1790898460.9748917,
+    "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+    "restart_count": 0,
+    "node": "ip-172-31-159-242.us-west-1.compute.internal"
+  },
+  "workers_each": 8,
+  "pool_each": 4,
+  "corpus_size": 1000,
+  "distinct_keys_planned": 1000,
+  "payload_bytes": 1024,
+  "mutation_operations": 0,
+  "owner_after_clients_closed": {
+    "owned": 2,
+    "peak": 2,
+    "limit": 5,
+    "acquired": 2,
+    "released": 0
+  },
+  "admission_rejections_full_trial": {
+    "connections": 0,
+    "draining": 0,
+    "hop": 0,
+    "ingress": 0,
+    "method": 0,
+    "operation": 0,
+    "overload": 0,
+    "route": 0,
+    "sessions": 0
+  },
+  "closed_owner": {
+    "owned": 0,
+    "peak": 2,
+    "limit": 5,
+    "acquired": 2,
+    "released": 2
+  },
+  "weir_shutdown_last_five": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}

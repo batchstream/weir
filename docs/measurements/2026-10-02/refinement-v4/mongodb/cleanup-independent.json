@@ -1,0 +1,16 @@
+{
+  "wall_time": 1790908878.183611,
+  "independent_namespace_get": {
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "Error from server (NotFound): namespaces \"weir-recovery-508aefc218c7\" not found\n"
+  },
+  "exact_port_forward_ps": {
+    "returncode": 1,
+    "stdout": "",
+    "stderr": ""
+  },
+  "loopback_port_19186_connect_ex": 61,
+  "node_after_top": "NAME                                          CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   \nip-172-31-12-243.us-west-1.compute.internal   146m         1%       1225Mi          4%          \n",
+  "pass": true
+}

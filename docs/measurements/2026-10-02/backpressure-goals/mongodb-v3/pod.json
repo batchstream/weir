@@ -1,0 +1,150 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fixture",
+    "namespace": "weir-bp-v3-f53d66750b94",
+    "labels": {
+      "weir.load-comparison.owner": "weir-bp-v3-f53d66750b94"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "automountServiceAccountToken": false,
+    "securityContext": {
+      "fsGroup": 65532
+    },
+    "nodeSelector": {
+      "kubernetes.io/hostname": "ip-172-31-191-104.us-west-1.compute.internal"
+    },
+    "containers": [
+      {
+        "name": "database",
+        "image": "mongo@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2",
+        "command": [
+          "mongod",
+          "--bind_ip",
+          "127.0.0.1",
+          "--replSet",
+          "weir_load_test",
+          "--wiredTigerCacheSizeGB",
+          "0.25",
+          "--oplogSize",
+          "64"
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "50m",
+            "memory": "1536Mi"
+          },
+          "limits": {
+            "cpu": "500m",
+            "memory": "1536Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "data",
+            "mountPath": "/data/db"
+          },
+          {
+            "name": "binaries",
+            "mountPath": "/bench"
+          }
+        ],
+        "resizePolicy": [
+          {
+            "resourceName": "cpu",
+            "restartPolicy": "NotRequired"
+          }
+        ]
+      },
+      {
+        "name": "client",
+        "image": "busybox:1.37.0",
+        "command": [
+          "sh",
+          "-c",
+          "exec sleep 21600"
+        ],
+        "securityContext": {
+          "runAsUser": 65532,
+          "runAsGroup": 65532,
+          "allowPrivilegeEscalation": false
+        },
+        "resources": {
+          "requests": {
+            "cpu": "50m",
+            "memory": "256Mi"
+          },
+          "limits": {
+            "cpu": "2",
+            "memory": "2048Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "binaries",
+            "mountPath": "/bench"
+          }
+        ],
+        "resizePolicy": [
+          {
+            "resourceName": "cpu",
+            "restartPolicy": "NotRequired"
+          }
+        ]
+      },
+      {
+        "name": "weir",
+        "image": "busybox:1.37.0",
+        "command": [
+          "sh",
+          "-c",
+          "exec sleep 21600"
+        ],
+        "securityContext": {
+          "runAsUser": 65532,
+          "runAsGroup": 65532,
+          "allowPrivilegeEscalation": false
+        },
+        "resources": {
+          "requests": {
+            "cpu": "250m",
+            "memory": "256Mi"
+          },
+          "limits": {
+            "cpu": "2",
+            "memory": "2304Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "binaries",
+            "mountPath": "/bench"
+          }
+        ],
+        "resizePolicy": [
+          {
+            "resourceName": "cpu",
+            "restartPolicy": "NotRequired"
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "data",
+        "emptyDir": {
+          "sizeLimit": "4Gi"
+        }
+      },
+      {
+        "name": "binaries",
+        "emptyDir": {
+          "sizeLimit": "256Mi"
+        }
+      }
+    ]
+  }
+}

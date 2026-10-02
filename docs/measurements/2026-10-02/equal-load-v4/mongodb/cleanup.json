@@ -1,0 +1,18 @@
+{
+  "owner": "weir-equal-v4-deb1a95584f0",
+  "namespace_uid": "9e2468ba-bdfd-4910-bb35-c3f397610d2e",
+  "port_forward_pid": 44530,
+  "delete": "namespace \"weir-equal-v4-deb1a95584f0\" deleted",
+  "namespace_not_found": "Error from server (NotFound): namespaces \"weir-equal-v4-deb1a95584f0\" not found",
+  "port_forward_exit": 1,
+  "port_forward_command": [
+    "kubectl",
+    "-n",
+    "weir-equal-v4-deb1a95584f0",
+    "port-forward",
+    "pod/fixture",
+    "19187:8080"
+  ],
+  "port_forward_pid_absent": true,
+  "errors": []
+}

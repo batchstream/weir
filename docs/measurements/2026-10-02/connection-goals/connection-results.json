@@ -1,0 +1,1940 @@
+{
+  "scope": "Actual connection concentration tests: earlier ES baseline and first newer v1 binaries on DB.25CPU1536MiB; final v2 Mongo on DB.5CPU1536MiB. Same total offered read rate distributed over real processes, exact1KiB response validation; synchronize process read IDs. pool4/workers8/queue256,1s planned-arrival deadline,no retries. Raw database-owned sockets and final owner lifetime conservation; see each run resources and exact binary hashes.",
+  "runs": [
+    {
+      "name": "direct-1",
+      "client_processes": 1,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 16000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 0,
+          "median": 4.0,
+          "max": 4,
+          "last": 0,
+          "fd_close_races": 1
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 0,
+          "median": 0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-queued",
+      "weir_instances": 0,
+      "owner_metrics_after_clients_closed": [],
+      "weir_shutdown": null,
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {}
+    },
+    {
+      "name": "direct-16",
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 16000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 64,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 64,
+          "median": 64.0,
+          "max": 64,
+          "last": 64,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 0,
+          "median": 39.0,
+          "max": 64,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 0,
+          "median": 0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-queued",
+      "weir_instances": 0,
+      "owner_metrics_after_clients_closed": [],
+      "weir_shutdown": null,
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {}
+    },
+    {
+      "name": "weir-1-clients-16",
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 15713,
+      "client_drop": 0,
+      "api_failures": 287,
+      "qualified": false,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 1,
+          "median": 1.0,
+          "max": 1,
+          "last": 1,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 57,
+          "min": 4,
+          "median": 4,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 34,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-queued",
+      "weir_instances": 1,
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 4,
+        "peak": 4,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 287
+      }
+    },
+    {
+      "name": "direct-1",
+      "client_processes": 1,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 57,
+          "min": 0,
+          "median": 4,
+          "max": 4,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 0,
+          "median": 0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-stable",
+      "weir_instances": 0,
+      "owner_metrics_after_clients_closed": [],
+      "weir_shutdown": null,
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {}
+    },
+    {
+      "name": "direct-16",
+      "client_processes": 16,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 32,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 16,
+          "median": 16.0,
+          "max": 32,
+          "last": 32,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 0,
+          "median": 16.0,
+          "max": 32,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 0,
+          "median": 0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-stable",
+      "weir_instances": 0,
+      "owner_metrics_after_clients_closed": [],
+      "weir_shutdown": null,
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {}
+    },
+    {
+      "name": "weir-1-clients-16",
+      "client_processes": 16,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 1,
+          "median": 1.0,
+          "max": 1,
+          "last": 1,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 4,
+          "median": 4,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-stable",
+      "weir_instances": 1,
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 4,
+        "peak": 4,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 0
+      }
+    },
+    {
+      "name": "weir-2-clients-16",
+      "client_processes": 16,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 8,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 2,
+          "median": 2.0,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 8,
+          "median": 8.0,
+          "max": 8,
+          "last": 8,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 8,
+          "median": 8.0,
+          "max": 8,
+          "last": 8,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 34,
+          "min": 8,
+          "median": 8.0,
+          "max": 8,
+          "last": 8,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-stable",
+      "weir_instances": 2,
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        },
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 8,
+        "peak": 8,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          },
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 0
+      }
+    },
+    {
+      "name": "weir-2-clients-16-rate800",
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 16000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "sampled_established_peak": 8,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 2,
+          "median": 2.0,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 93,
+          "min": 8,
+          "median": 8,
+          "max": 8,
+          "last": 8,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 57,
+          "min": 8,
+          "median": 8,
+          "max": 8,
+          "last": 8,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 34,
+          "min": 8,
+          "median": 8.0,
+          "max": 8,
+          "last": 8,
+          "fd_close_races": 0
+        }
+      },
+      "fixture": "es-stable",
+      "weir_instances": 2,
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        },
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 8,
+        "peak": 8,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          },
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "weir_binary_sha256": "2c17c1a698833ba8d4584bd0c4e360e6b6f2c70984f6119fff6bb206fe1d31e1",
+      "client_binary_sha256": "e31624eb12b06d2b034a0bc605b4c0c9446bdb199bc029ea4e5154efdd6684e8",
+      "cleanup_restored": true,
+      "admission_rejections": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 0
+      }
+    },
+    {
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 14740,
+      "client_drop": 0,
+      "api_failures": 1260,
+      "qualified": false,
+      "observed_database_process": "61",
+      "observed_process_start_ticks": 351,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 1,
+          "median": 1.0,
+          "max": 1,
+          "last": 1,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 34,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        }
+      },
+      "name": "weir-1-clients-16-repeat0",
+      "weir_instances": 1,
+      "process_resources": {
+        "sample_count": 18,
+        "sample_seconds": 18.459822458098643,
+        "database_cpu_cores": 0.15763965263508442,
+        "database_rss_max": 909176832,
+        "database_cgroup_memory_max": 1232588800,
+        "database_oom_kills": 0,
+        "weir": [
+          {
+            "cpu_cores": 0.3206964754638143,
+            "rss_max": 33533952.0,
+            "admission_rejections": {
+              "connections": 0,
+              "draining": 0,
+              "hop": 0,
+              "ingress": 0,
+              "method": 0,
+              "operation": 0,
+              "overload": 0,
+              "route": 0,
+              "sessions": 1127
+            }
+          }
+        ]
+      },
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 4,
+        "peak": 4,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "fixture": "es-final",
+      "resources": {
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536,
+        "weir_cpu_total": 2,
+        "weir_memory_mib_each": 2560,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "store_concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "transport_max_connections_each": 64,
+        "transport_max_sessions_each": 32,
+        "max_read_size": "16KiB",
+        "collect_ms": 3
+      },
+      "binary_sha256": {
+        "client": "baaa8df8832eacc1ae8692f89c985bf25e18ad0f777558d89001fdf9e4de5574",
+        "weir": "ff00f5367c070eb4310f69a5275ec92a7388267f94dc284d8e3e8fca60688262"
+      },
+      "cleanup": {
+        "inventory_after": {
+          "containers": [
+            "4ee25580553f70a1303d8ae538e2588d779e9e939f7c5436f5378c76d81b20d9",
+            "83796abe2fb18a680eb4cc1abcb9752f7be1bddf484659c058d8f2b28f53abf9",
+            "cbbcab5f88e8a54049b4ee4c7045c2e42464a5a5e4b3f9de41a60cc4b71f387b",
+            "d4ef5776014de4b036472fdab332efdf19a068b2bcb695955e09e75378680cc1"
+          ],
+          "networks": [
+            "bridge b295b3569e26391cb4a6fd5cfc3f170b6ef9d64c6d11cef713e335ebd99585af",
+            "host a663de6675f668670d9e954439967e34a02032daebb83b5b6908ed2777ef1f54",
+            "none c5ddc79db2ef694f9375ef616508ebfcb0d21642f75a84cd4c98e23bf944b625",
+            "redis_default 9005b30ec1bc1ac5c9a34e4706c09f50357a9c7fbaee9196aa0589017387dc49"
+          ],
+          "images": [
+            "sha256:50cdaceb6d3d368ecc6c6285a54a00e728c6c0e7622531e7d5ff9c9c7ce1e912",
+            "sha256:6ae0125f6be37567821ba89ed892ceb90a4fc33172ad1b94917b084d04990840",
+            "sha256:7aee4dc69de67d072209218647c40c3af0c16e109cf5aed4b7a6f2892ae4b29d",
+            "sha256:8c7deda128b6921817c9d3cd7aff682f7f5941e2d79fe620b6eedb9c07ef00f5",
+            "sha256:8ecd0ba71a367784d2ea7e8296e0969d4713480a130ca3de43137866a1a4a7a4",
+            "sha256:90a7280bf50e2d2fdd371cd3ab647ea8185f1e50f9889216df2fabebb08f4a15",
+            "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c",
+            "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+            "sha256:af49237e1db47c8ab51524862947cfa65fb49aa5f5c9db36f7c2d022e193163e",
+            "sha256:b119fdac2479dcccf923f54943a355e743d3d5dd068baa4757772055cf9f3b32",
+            "sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9"
+          ],
+          "volumes": []
+        },
+        "restored": false,
+        "errors": []
+      },
+      "workers_each": 8,
+      "maximum_client_rpc_inflight": 128,
+      "admission_rejections_full_trial": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 1260
+      },
+      "backend_batch_operations_sum": 14740.0,
+      "backend_batch_operations_count": 14175.0,
+      "backend_batch_operations_mean": 1.0398589065255732,
+      "cleanup_all_owned_removed": true
+    },
+    {
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 15794,
+      "client_drop": 0,
+      "api_failures": 206,
+      "qualified": false,
+      "observed_database_process": "61",
+      "observed_process_start_ticks": 351,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 1,
+          "median": 1.0,
+          "max": 1,
+          "last": 1,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 93,
+          "min": 4,
+          "median": 4,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 57,
+          "min": 4,
+          "median": 4,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 34,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        }
+      },
+      "name": "weir-1-clients-16-repeat1",
+      "weir_instances": 1,
+      "process_resources": {
+        "sample_count": 19,
+        "sample_seconds": 19.099104958004318,
+        "database_cpu_cores": 0.13246694049606195,
+        "database_rss_max": 909459456,
+        "database_cgroup_memory_max": 1234989056,
+        "database_oom_kills": 0,
+        "weir": [
+          {
+            "cpu_cores": 0.3371885758081577,
+            "rss_max": 33533952.0,
+            "admission_rejections": {
+              "connections": 0,
+              "draining": 0,
+              "hop": 0,
+              "ingress": 0,
+              "method": 0,
+              "operation": 0,
+              "overload": 0,
+              "route": 0,
+              "sessions": 206
+            }
+          }
+        ]
+      },
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 4,
+        "peak": 4,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "fixture": "es-final",
+      "resources": {
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536,
+        "weir_cpu_total": 2,
+        "weir_memory_mib_each": 2560,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "store_concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "transport_max_connections_each": 64,
+        "transport_max_sessions_each": 32,
+        "max_read_size": "16KiB",
+        "collect_ms": 3
+      },
+      "binary_sha256": {
+        "client": "baaa8df8832eacc1ae8692f89c985bf25e18ad0f777558d89001fdf9e4de5574",
+        "weir": "ff00f5367c070eb4310f69a5275ec92a7388267f94dc284d8e3e8fca60688262"
+      },
+      "cleanup": {
+        "inventory_after": {
+          "containers": [
+            "4ee25580553f70a1303d8ae538e2588d779e9e939f7c5436f5378c76d81b20d9",
+            "83796abe2fb18a680eb4cc1abcb9752f7be1bddf484659c058d8f2b28f53abf9",
+            "cbbcab5f88e8a54049b4ee4c7045c2e42464a5a5e4b3f9de41a60cc4b71f387b",
+            "d4ef5776014de4b036472fdab332efdf19a068b2bcb695955e09e75378680cc1"
+          ],
+          "networks": [
+            "bridge b295b3569e26391cb4a6fd5cfc3f170b6ef9d64c6d11cef713e335ebd99585af",
+            "host a663de6675f668670d9e954439967e34a02032daebb83b5b6908ed2777ef1f54",
+            "none c5ddc79db2ef694f9375ef616508ebfcb0d21642f75a84cd4c98e23bf944b625",
+            "redis_default 9005b30ec1bc1ac5c9a34e4706c09f50357a9c7fbaee9196aa0589017387dc49"
+          ],
+          "images": [
+            "sha256:50cdaceb6d3d368ecc6c6285a54a00e728c6c0e7622531e7d5ff9c9c7ce1e912",
+            "sha256:6ae0125f6be37567821ba89ed892ceb90a4fc33172ad1b94917b084d04990840",
+            "sha256:7aee4dc69de67d072209218647c40c3af0c16e109cf5aed4b7a6f2892ae4b29d",
+            "sha256:8c7deda128b6921817c9d3cd7aff682f7f5941e2d79fe620b6eedb9c07ef00f5",
+            "sha256:8ecd0ba71a367784d2ea7e8296e0969d4713480a130ca3de43137866a1a4a7a4",
+            "sha256:90a7280bf50e2d2fdd371cd3ab647ea8185f1e50f9889216df2fabebb08f4a15",
+            "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c",
+            "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+            "sha256:af49237e1db47c8ab51524862947cfa65fb49aa5f5c9db36f7c2d022e193163e",
+            "sha256:b119fdac2479dcccf923f54943a355e743d3d5dd068baa4757772055cf9f3b32",
+            "sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9"
+          ],
+          "volumes": []
+        },
+        "restored": false,
+        "errors": []
+      },
+      "workers_each": 8,
+      "maximum_client_rpc_inflight": 128,
+      "admission_rejections_full_trial": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 206
+      },
+      "backend_batch_operations_sum": 15794.0,
+      "backend_batch_operations_count": 15660.0,
+      "backend_batch_operations_mean": 1.0085568326947638,
+      "cleanup_all_owned_removed": true
+    },
+    {
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 15733,
+      "client_drop": 0,
+      "api_failures": 267,
+      "qualified": false,
+      "observed_database_process": "61",
+      "observed_process_start_ticks": 351,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 1,
+          "median": 1.0,
+          "max": 1,
+          "last": 1,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 34,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        }
+      },
+      "name": "weir-1-clients-16-repeat2",
+      "weir_instances": 1,
+      "process_resources": {
+        "sample_count": 19,
+        "sample_seconds": 19.107047499972396,
+        "database_cpu_cores": 0.13659881255875722,
+        "database_rss_max": 909725696,
+        "database_cgroup_memory_max": 1233231872,
+        "database_oom_kills": 0,
+        "weir": [
+          {
+            "cpu_cores": 0.3496092214147503,
+            "rss_max": 33181696.0,
+            "admission_rejections": {
+              "connections": 0,
+              "draining": 0,
+              "hop": 0,
+              "ingress": 0,
+              "method": 0,
+              "operation": 0,
+              "overload": 0,
+              "route": 0,
+              "sessions": 110
+            }
+          }
+        ]
+      },
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 4,
+        "peak": 4,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "fixture": "es-final",
+      "resources": {
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536,
+        "weir_cpu_total": 2,
+        "weir_memory_mib_each": 2560,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "store_concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "transport_max_connections_each": 64,
+        "transport_max_sessions_each": 32,
+        "max_read_size": "16KiB",
+        "collect_ms": 3
+      },
+      "binary_sha256": {
+        "client": "baaa8df8832eacc1ae8692f89c985bf25e18ad0f777558d89001fdf9e4de5574",
+        "weir": "ff00f5367c070eb4310f69a5275ec92a7388267f94dc284d8e3e8fca60688262"
+      },
+      "cleanup": {
+        "inventory_after": {
+          "containers": [
+            "4ee25580553f70a1303d8ae538e2588d779e9e939f7c5436f5378c76d81b20d9",
+            "83796abe2fb18a680eb4cc1abcb9752f7be1bddf484659c058d8f2b28f53abf9",
+            "cbbcab5f88e8a54049b4ee4c7045c2e42464a5a5e4b3f9de41a60cc4b71f387b",
+            "d4ef5776014de4b036472fdab332efdf19a068b2bcb695955e09e75378680cc1"
+          ],
+          "networks": [
+            "bridge b295b3569e26391cb4a6fd5cfc3f170b6ef9d64c6d11cef713e335ebd99585af",
+            "host a663de6675f668670d9e954439967e34a02032daebb83b5b6908ed2777ef1f54",
+            "none c5ddc79db2ef694f9375ef616508ebfcb0d21642f75a84cd4c98e23bf944b625",
+            "redis_default 9005b30ec1bc1ac5c9a34e4706c09f50357a9c7fbaee9196aa0589017387dc49"
+          ],
+          "images": [
+            "sha256:50cdaceb6d3d368ecc6c6285a54a00e728c6c0e7622531e7d5ff9c9c7ce1e912",
+            "sha256:6ae0125f6be37567821ba89ed892ceb90a4fc33172ad1b94917b084d04990840",
+            "sha256:7aee4dc69de67d072209218647c40c3af0c16e109cf5aed4b7a6f2892ae4b29d",
+            "sha256:8c7deda128b6921817c9d3cd7aff682f7f5941e2d79fe620b6eedb9c07ef00f5",
+            "sha256:8ecd0ba71a367784d2ea7e8296e0969d4713480a130ca3de43137866a1a4a7a4",
+            "sha256:90a7280bf50e2d2fdd371cd3ab647ea8185f1e50f9889216df2fabebb08f4a15",
+            "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c",
+            "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+            "sha256:af49237e1db47c8ab51524862947cfa65fb49aa5f5c9db36f7c2d022e193163e",
+            "sha256:b119fdac2479dcccf923f54943a355e743d3d5dd068baa4757772055cf9f3b32",
+            "sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9"
+          ],
+          "volumes": []
+        },
+        "restored": false,
+        "errors": []
+      },
+      "workers_each": 8,
+      "maximum_client_rpc_inflight": 128,
+      "admission_rejections_full_trial": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 267
+      },
+      "backend_batch_operations_sum": 15733.0,
+      "backend_batch_operations_count": 15571.0,
+      "backend_batch_operations_mean": 1.0104039560721856,
+      "cleanup_all_owned_removed": true
+    },
+    {
+      "client_processes": 16,
+      "offered_rps_total": 800,
+      "measurement_seconds": 20,
+      "planned": 16000,
+      "success": 15559,
+      "client_drop": 0,
+      "api_failures": 441,
+      "qualified": false,
+      "observed_database_process": "61",
+      "observed_process_start_ticks": 39643,
+      "sampled_established_peak": 4,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 1,
+          "median": 1.0,
+          "max": 1,
+          "last": 1,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 1
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 4,
+          "median": 4.0,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 33,
+          "min": 4,
+          "median": 4,
+          "max": 4,
+          "last": 4,
+          "fd_close_races": 0
+        }
+      },
+      "name": "weir-1-clients-16",
+      "weir_instances": 1,
+      "process_resources": {
+        "sample_count": 18,
+        "sample_seconds": 18.372133582946844,
+        "database_cpu_cores": 0.16383508134264302,
+        "database_rss_max": 915308544,
+        "database_cgroup_memory_max": 981164032,
+        "database_oom_kills": 0,
+        "weir": [
+          {
+            "cpu_cores": 0.29610061212756744,
+            "rss_max": 32751616.0,
+            "admission_rejections": {
+              "connections": 0,
+              "draining": 0,
+              "hop": 0,
+              "ingress": 0,
+              "method": 0,
+              "operation": 0,
+              "overload": 0,
+              "route": 0,
+              "sessions": 382
+            }
+          }
+        ]
+      },
+      "owner_metrics_after_clients_closed": [
+        {
+          "owned": 4,
+          "peak": 4,
+          "limit": 5,
+          "acquired": 4,
+          "released": 0
+        }
+      ],
+      "weir_shutdown": {
+        "initial": 4,
+        "peak": 4,
+        "final": 0,
+        "last_five_samples": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "closed_owners": [
+          {
+            "owned": 0,
+            "peak": 4,
+            "limit": 5,
+            "acquired": 4,
+            "released": 4
+          }
+        ]
+      },
+      "fixture": "es-final-sessions64",
+      "resources": {
+        "database_cpu": 0.25,
+        "database_memory_mib": 1536,
+        "weir_cpu_total": 2,
+        "weir_memory_mib_each": 4608,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "store_concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "transport_max_connections_each": 64,
+        "transport_max_sessions_each": 64,
+        "max_read_size": "16KiB",
+        "collect_ms": 3
+      },
+      "binary_sha256": {
+        "client": "baaa8df8832eacc1ae8692f89c985bf25e18ad0f777558d89001fdf9e4de5574",
+        "weir": "ff00f5367c070eb4310f69a5275ec92a7388267f94dc284d8e3e8fca60688262"
+      },
+      "cleanup": {
+        "inventory_after": {
+          "containers": [
+            "4ee25580553f70a1303d8ae538e2588d779e9e939f7c5436f5378c76d81b20d9",
+            "83796abe2fb18a680eb4cc1abcb9752f7be1bddf484659c058d8f2b28f53abf9",
+            "cbbcab5f88e8a54049b4ee4c7045c2e42464a5a5e4b3f9de41a60cc4b71f387b",
+            "d4ef5776014de4b036472fdab332efdf19a068b2bcb695955e09e75378680cc1"
+          ],
+          "networks": [
+            "bridge b295b3569e26391cb4a6fd5cfc3f170b6ef9d64c6d11cef713e335ebd99585af",
+            "host a663de6675f668670d9e954439967e34a02032daebb83b5b6908ed2777ef1f54",
+            "none c5ddc79db2ef694f9375ef616508ebfcb0d21642f75a84cd4c98e23bf944b625",
+            "redis_default 9005b30ec1bc1ac5c9a34e4706c09f50357a9c7fbaee9196aa0589017387dc49"
+          ],
+          "images": [
+            "sha256:50cdaceb6d3d368ecc6c6285a54a00e728c6c0e7622531e7d5ff9c9c7ce1e912",
+            "sha256:6ae0125f6be37567821ba89ed892ceb90a4fc33172ad1b94917b084d04990840",
+            "sha256:7aee4dc69de67d072209218647c40c3af0c16e109cf5aed4b7a6f2892ae4b29d",
+            "sha256:8c7deda128b6921817c9d3cd7aff682f7f5941e2d79fe620b6eedb9c07ef00f5",
+            "sha256:8ecd0ba71a367784d2ea7e8296e0969d4713480a130ca3de43137866a1a4a7a4",
+            "sha256:90a7280bf50e2d2fdd371cd3ab647ea8185f1e50f9889216df2fabebb08f4a15",
+            "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c",
+            "sha256:a1cc67962f24c058c854acc6aab0d0adaefefc945c0bfaaebb52aba6129de160",
+            "sha256:af49237e1db47c8ab51524862947cfa65fb49aa5f5c9db36f7c2d022e193163e",
+            "sha256:b119fdac2479dcccf923f54943a355e743d3d5dd068baa4757772055cf9f3b32",
+            "sha256:ef36debc338afa91481a64a435dbe23400f6252742ff63aaca45cfeedcaebdd9"
+          ],
+          "volumes": []
+        },
+        "restored": true,
+        "errors": []
+      },
+      "workers_each": 8,
+      "maximum_client_rpc_inflight": 128,
+      "admission_rejections_full_trial": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 441
+      },
+      "backend_batch_operations_sum": 15559.0,
+      "backend_batch_operations_count": 13801.0,
+      "backend_batch_operations_mean": 1.1273820737627709,
+      "cleanup_all_owned_removed": true
+    },
+    {
+      "client_processes": 1,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "observed_database_process": "1",
+      "observed_process_start_ticks": 18298,
+      "sampled_established_peak": 5,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 5,
+          "median": 5.0,
+          "max": 5,
+          "last": 5,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 57,
+          "min": 5,
+          "median": 5,
+          "max": 5,
+          "last": 5,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 53,
+          "min": 0,
+          "median": 0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "scope": "Database-owned established27017 sockets, including monitoring. baseline includes a started Weir only in Weir cells; final shutdown baseline is separately verified0. No seed/audit pools active.",
+      "process_resources": {
+        "database": {
+          "samples": 20,
+          "sample_seconds": 19.000017210000003,
+          "cpu_cores": 0.053157846587024216,
+          "rss_max": 344907776,
+          "cgroup_memory_max": 573689856,
+          "oom_kills": 0
+        }
+      },
+      "name": "direct-1",
+      "weir_instances": 0,
+      "database_identity": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "ticks_per_second": 100,
+        "page_size": 4096,
+        "wall_time": 1790898267.754765,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0,
+        "node": "ip-172-31-159-242.us-west-1.compute.internal"
+      },
+      "workers_each": 8,
+      "pool_each": 4,
+      "corpus_size": 1000,
+      "distinct_keys_planned": 1000,
+      "payload_bytes": 1024,
+      "mutation_operations": 0,
+      "fixture": "mongo-final-v2",
+      "version": "final-controller-v2-production-cmd-weir",
+      "binary_hashes": {
+        "client-final": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+        "weir-final": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f",
+        "sampler": "06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f",
+        "sampler-metrics": "fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d"
+      },
+      "resources": {
+        "database_cpu": 0.5,
+        "database_memory_mib": 1536,
+        "weir_cpu_each": 2,
+        "weir_memory_mib_each": 2304,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "sessions_each": 32,
+        "connections_each": 64,
+        "max_read_size": "16KiB",
+        "collect_ms": 3,
+        "max_batch_operations": 16,
+        "active_seconds": 20,
+        "idle_seconds": 12,
+        "sampler_interval_ms": 200
+      },
+      "cleanup": {
+        "deleted": "namespace \"weir-bp-9282b4b43a1e\" deleted",
+        "namespace_not_found": "Error from server (NotFound): namespaces \"weir-bp-9282b4b43a1e\" not found",
+        "namespace_uid": "aa430ac8-e524-4d80-8a40-3968fb5cc109",
+        "pod_uid": "7cf12535-cef8-4c08-993b-67a5cec0ca2b",
+        "ownership_label": "weir.load-comparison.owner",
+        "namespace": "weir-bp-9282b4b43a1e",
+        "initial_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "final_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "original_owner_local_port_forward_pid": 20664,
+        "original_owner_local_port_forward_pid_absent": true,
+        "original_owner_confirmation": "Owner verified exact kubectl -n weir-bp-9282b4b43a1e port-forward pod/fixture19183:8080, SIGTERM, original exec session24917 exit143; independent ps exit1/no output and namespaceNotFound. Parent connection checker also observed PID absent."
+      }
+    },
+    {
+      "client_processes": 16,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "observed_database_process": "1",
+      "observed_process_start_ticks": 18298,
+      "sampled_established_peak": 32,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 32,
+          "median": 32.0,
+          "max": 32,
+          "last": 32,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 32,
+          "median": 32.0,
+          "max": 32,
+          "last": 32,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 62,
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "last": 0,
+          "fd_close_races": 0
+        }
+      },
+      "scope": "Database-owned established27017 sockets, including monitoring. baseline includes a started Weir only in Weir cells; final shutdown baseline is separately verified0. No seed/audit pools active.",
+      "process_resources": {
+        "database": {
+          "samples": 20,
+          "sample_seconds": 19.000626565999998,
+          "cpu_cores": 0.05420873866565523,
+          "rss_max": 343609344,
+          "cgroup_memory_max": 577908736,
+          "oom_kills": 0
+        }
+      },
+      "name": "direct-16",
+      "weir_instances": 0,
+      "database_identity": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "ticks_per_second": 100,
+        "page_size": 4096,
+        "wall_time": 1790898363.4649866,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0,
+        "node": "ip-172-31-159-242.us-west-1.compute.internal"
+      },
+      "workers_each": 8,
+      "pool_each": 4,
+      "corpus_size": 1000,
+      "distinct_keys_planned": 260,
+      "payload_bytes": 1024,
+      "mutation_operations": 0,
+      "fixture": "mongo-final-v2",
+      "version": "final-controller-v2-production-cmd-weir",
+      "binary_hashes": {
+        "client-final": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+        "weir-final": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f",
+        "sampler": "06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f",
+        "sampler-metrics": "fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d"
+      },
+      "resources": {
+        "database_cpu": 0.5,
+        "database_memory_mib": 1536,
+        "weir_cpu_each": 2,
+        "weir_memory_mib_each": 2304,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "sessions_each": 32,
+        "connections_each": 64,
+        "max_read_size": "16KiB",
+        "collect_ms": 3,
+        "max_batch_operations": 16,
+        "active_seconds": 20,
+        "idle_seconds": 12,
+        "sampler_interval_ms": 200
+      },
+      "cleanup": {
+        "deleted": "namespace \"weir-bp-9282b4b43a1e\" deleted",
+        "namespace_not_found": "Error from server (NotFound): namespaces \"weir-bp-9282b4b43a1e\" not found",
+        "namespace_uid": "aa430ac8-e524-4d80-8a40-3968fb5cc109",
+        "pod_uid": "7cf12535-cef8-4c08-993b-67a5cec0ca2b",
+        "ownership_label": "weir.load-comparison.owner",
+        "namespace": "weir-bp-9282b4b43a1e",
+        "initial_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "final_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "original_owner_local_port_forward_pid": 20664,
+        "original_owner_local_port_forward_pid_absent": true,
+        "original_owner_confirmation": "Owner verified exact kubectl -n weir-bp-9282b4b43a1e port-forward pod/fixture19183:8080, SIGTERM, original exec session24917 exit143; independent ps exit1/no output and namespaceNotFound. Parent connection checker also observed PID absent."
+      }
+    },
+    {
+      "client_processes": 1,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "observed_database_process": "1",
+      "observed_process_start_ticks": 18298,
+      "sampled_established_peak": 2,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 2,
+          "median": 2.0,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 2,
+          "median": 2.0,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 2,
+          "median": 2.0,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 53,
+          "min": 2,
+          "median": 2,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        }
+      },
+      "scope": "Database-owned established27017 sockets, including monitoring. baseline includes a started Weir only in Weir cells; final shutdown baseline is separately verified0. No seed/audit pools active.",
+      "process_resources": {
+        "database": {
+          "samples": 20,
+          "sample_seconds": 18.999972027000002,
+          "cpu_cores": 0.07631590183077483,
+          "rss_max": 344002560,
+          "cgroup_memory_max": 577126400,
+          "oom_kills": 0
+        },
+        "weir": {
+          "samples": 20,
+          "sample_seconds": 18.999882349999996,
+          "cpu_cores": 0.23473829562949902,
+          "rss_max": 25788416,
+          "cgroup_memory_max": 50241536,
+          "oom_kills": 0
+        }
+      },
+      "name": "weir-1-clients-1",
+      "weir_instances": 1,
+      "database_identity": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "ticks_per_second": 100,
+        "page_size": 4096,
+        "wall_time": 1790898460.9748917,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0,
+        "node": "ip-172-31-159-242.us-west-1.compute.internal"
+      },
+      "workers_each": 8,
+      "pool_each": 4,
+      "corpus_size": 1000,
+      "distinct_keys_planned": 1000,
+      "payload_bytes": 1024,
+      "mutation_operations": 0,
+      "owner_after_clients_closed": {
+        "owned": 2,
+        "peak": 2,
+        "limit": 5,
+        "acquired": 2,
+        "released": 0
+      },
+      "admission_rejections_full_trial": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 0
+      },
+      "closed_owner": {
+        "owned": 0,
+        "peak": 2,
+        "limit": 5,
+        "acquired": 2,
+        "released": 2
+      },
+      "weir_shutdown_last_five": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "backend_batch_operations_sum": 4000.0,
+      "backend_batch_operations_count": 3996.0,
+      "backend_batch_operations_mean": 1.001001001001001,
+      "fixture": "mongo-final-v2",
+      "version": "final-controller-v2-production-cmd-weir",
+      "binary_hashes": {
+        "client-final": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+        "weir-final": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f",
+        "sampler": "06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f",
+        "sampler-metrics": "fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d"
+      },
+      "resources": {
+        "database_cpu": 0.5,
+        "database_memory_mib": 1536,
+        "weir_cpu_each": 2,
+        "weir_memory_mib_each": 2304,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "sessions_each": 32,
+        "connections_each": 64,
+        "max_read_size": "16KiB",
+        "collect_ms": 3,
+        "max_batch_operations": 16,
+        "active_seconds": 20,
+        "idle_seconds": 12,
+        "sampler_interval_ms": 200
+      },
+      "cleanup": {
+        "deleted": "namespace \"weir-bp-9282b4b43a1e\" deleted",
+        "namespace_not_found": "Error from server (NotFound): namespaces \"weir-bp-9282b4b43a1e\" not found",
+        "namespace_uid": "aa430ac8-e524-4d80-8a40-3968fb5cc109",
+        "pod_uid": "7cf12535-cef8-4c08-993b-67a5cec0ca2b",
+        "ownership_label": "weir.load-comparison.owner",
+        "namespace": "weir-bp-9282b4b43a1e",
+        "initial_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "final_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "original_owner_local_port_forward_pid": 20664,
+        "original_owner_local_port_forward_pid_absent": true,
+        "original_owner_confirmation": "Owner verified exact kubectl -n weir-bp-9282b4b43a1e port-forward pod/fixture19183:8080, SIGTERM, original exec session24917 exit143; independent ps exit1/no output and namespaceNotFound. Parent connection checker also observed PID absent."
+      }
+    },
+    {
+      "client_processes": 16,
+      "offered_rps_total": 200,
+      "measurement_seconds": 20,
+      "planned": 4000,
+      "success": 4000,
+      "client_drop": 0,
+      "api_failures": 0,
+      "qualified": true,
+      "observed_database_process": "1",
+      "observed_process_start_ticks": 18298,
+      "sampled_established_peak": 5,
+      "phases": {
+        "baseline": {
+          "sample_count": 10,
+          "min": 2,
+          "median": 2.0,
+          "max": 2,
+          "last": 2,
+          "fd_close_races": 0
+        },
+        "active": {
+          "sample_count": 94,
+          "min": 5,
+          "median": 5.0,
+          "max": 5,
+          "last": 5,
+          "fd_close_races": 0
+        },
+        "idle_clients_open": {
+          "sample_count": 58,
+          "min": 5,
+          "median": 5.0,
+          "max": 5,
+          "last": 5,
+          "fd_close_races": 0
+        },
+        "clients_closed_weir_retained": {
+          "sample_count": 60,
+          "min": 5,
+          "median": 5.0,
+          "max": 5,
+          "last": 5,
+          "fd_close_races": 0
+        }
+      },
+      "scope": "Database-owned established27017 sockets, including monitoring. baseline includes a started Weir only in Weir cells; final shutdown baseline is separately verified0. No seed/audit pools active.",
+      "process_resources": {
+        "database": {
+          "samples": 20,
+          "sample_seconds": 18.999605144,
+          "cpu_cores": 0.07684370222088864,
+          "rss_max": 345378816,
+          "cgroup_memory_max": 578715648,
+          "oom_kills": 0
+        },
+        "weir": {
+          "samples": 20,
+          "sample_seconds": 19.000330397,
+          "cpu_cores": 0.16052352439521633,
+          "rss_max": 29495296,
+          "cgroup_memory_max": 56242176,
+          "oom_kills": 0
+        }
+      },
+      "name": "weir-1-clients-16",
+      "weir_instances": 1,
+      "database_identity": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "ticks_per_second": 100,
+        "page_size": 4096,
+        "wall_time": 1790898610.0951428,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0,
+        "node": "ip-172-31-159-242.us-west-1.compute.internal"
+      },
+      "workers_each": 8,
+      "pool_each": 4,
+      "corpus_size": 1000,
+      "distinct_keys_planned": 260,
+      "payload_bytes": 1024,
+      "mutation_operations": 0,
+      "owner_after_clients_closed": {
+        "owned": 5,
+        "peak": 5,
+        "limit": 5,
+        "acquired": 5,
+        "released": 0
+      },
+      "admission_rejections_full_trial": {
+        "connections": 0,
+        "draining": 0,
+        "hop": 0,
+        "ingress": 0,
+        "method": 0,
+        "operation": 0,
+        "overload": 0,
+        "route": 0,
+        "sessions": 0
+      },
+      "closed_owner": {
+        "owned": 0,
+        "peak": 5,
+        "limit": 5,
+        "acquired": 5,
+        "released": 5
+      },
+      "weir_shutdown_last_five": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "backend_batch_operations_sum": 4000.0,
+      "backend_batch_operations_count": 3848.0,
+      "backend_batch_operations_mean": 1.0395010395010396,
+      "fixture": "mongo-final-v2",
+      "version": "final-controller-v2-production-cmd-weir",
+      "binary_hashes": {
+        "client-final": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+        "weir-final": "100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f",
+        "sampler": "06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f",
+        "sampler-metrics": "fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d"
+      },
+      "resources": {
+        "database_cpu": 0.5,
+        "database_memory_mib": 1536,
+        "weir_cpu_each": 2,
+        "weir_memory_mib_each": 2304,
+        "client_cpu_total": 2,
+        "client_memory_mib_total": 2048,
+        "concurrency_each": 4,
+        "raw_owner_limit_each": 5,
+        "sessions_each": 32,
+        "connections_each": 64,
+        "max_read_size": "16KiB",
+        "collect_ms": 3,
+        "max_batch_operations": 16,
+        "active_seconds": 20,
+        "idle_seconds": 12,
+        "sampler_interval_ms": 200
+      },
+      "cleanup": {
+        "deleted": "namespace \"weir-bp-9282b4b43a1e\" deleted",
+        "namespace_not_found": "Error from server (NotFound): namespaces \"weir-bp-9282b4b43a1e\" not found",
+        "namespace_uid": "aa430ac8-e524-4d80-8a40-3968fb5cc109",
+        "pod_uid": "7cf12535-cef8-4c08-993b-67a5cec0ca2b",
+        "ownership_label": "weir.load-comparison.owner",
+        "namespace": "weir-bp-9282b4b43a1e",
+        "initial_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "final_connections_last_five": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "original_owner_local_port_forward_pid": 20664,
+        "original_owner_local_port_forward_pid_absent": true,
+        "original_owner_confirmation": "Owner verified exact kubectl -n weir-bp-9282b4b43a1e port-forward pod/fixture19183:8080, SIGTERM, original exec session24917 exit143; independent ps exit1/no output and namespaceNotFound. Parent connection checker also observed PID absent."
+      }
+    }
+  ],
+  "excluded_attempts": {
+    "preflight": "same-UID ES fd reads rejected; failed before valid observation; owned resources cleaned, Docker Desktop builtin bridge ID changed independently while all other inventories matched",
+    "es-baseline": "cold, queue8 direct probe dropped 9951/16000, 0API errors",
+    "es-prewarmed": "queue8 prewarmed direct probe dropped 225/16000, 0API errors"
+  },
+  "connection_budget": "Each LocalStore has max_concurrency+1 raw TCP owner credits. Sum stores targeting same backend across max replicas, surge and assumed terminating overlap, plus other clients. Global backend concurrency doubles from4 to8 in the 2Weir fixture, so this is connection verification rather than a fixed-global-concurrency throughput claim.",
+  "pending": "New production Weir with max_read_size16KiB and batch_collect3ms will be validated separately when binary and Docker window are supplied.",
+  "final_800_scope": "No final32 or final64 single-Weir 800/s probe was fully qualified. All failures match sessions admission; workers8 ×16 allows128 in-flight RPCs versus32/64 session capacities. Different RPCs with same key are not globally serialized; duplicate keys excluded within one backend batch. This test proves connection concentration under synchronized same-key bursts, not general dispersed-key batching capacity.",
+  "resource_scope": "Process CPU is delta CPU seconds/elapsed over18-19 active samples covering18.4-19.1s; RSS active max. Resource-subwindow admission deltas can differ from full-trial before/after deltas; use admission_rejections_full_trial.",
+  "es_final_version_boundary": "es-final and es-final-sessions64 used the first frozen newer v1 production binary before controller v2 changes. These are not final v2 capacity evidence. Final v2 Mongo4-cell connection validation is complete and hashes retained.",
+  "mongo_final_version": "v2 hashes: weir100ae61e752c312ed22382ce53536a0dfb8572c4a22c56bd643b5b12152c4d8f; clientaaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad. All4 cells4000/4000,0drop,0API. DB.5CPU1536MiB/Weir2CPU2304MiB. Multi-process direct32 to Weir5 observed connections, including monitors. No proof of lower database CPU here (.0542 to.0768 core) or real max-connection exhaustion/HPA.",
+  "mongo_cleanup": {
+    "deleted": "namespace \"weir-bp-9282b4b43a1e\" deleted",
+    "namespace_not_found": "Error from server (NotFound): namespaces \"weir-bp-9282b4b43a1e\" not found",
+    "namespace_uid": "aa430ac8-e524-4d80-8a40-3968fb5cc109",
+    "pod_uid": "7cf12535-cef8-4c08-993b-67a5cec0ca2b",
+    "ownership_label": "weir.load-comparison.owner",
+    "namespace": "weir-bp-9282b4b43a1e",
+    "initial_connections_last_five": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "final_connections_last_five": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "original_owner_local_port_forward_pid": 20664,
+    "original_owner_local_port_forward_pid_absent": true,
+    "original_owner_confirmation": "Owner verified exact kubectl -n weir-bp-9282b4b43a1e port-forward pod/fixture19183:8080, SIGTERM, original exec session24917 exit143; independent ps exit1/no output and namespaceNotFound. Parent connection checker also observed PID absent."
+  },
+  "mongodb_evidence": "mongo-final-v2/fixture-summary.json"
+}

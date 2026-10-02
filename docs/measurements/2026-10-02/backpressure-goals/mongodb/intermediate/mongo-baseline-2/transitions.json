@@ -1,0 +1,68 @@
+[
+  {
+    "phase": "healthy",
+    "resize": {
+      "requested_wall_time": 1790896741.227656,
+      "confirmed": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "wall_time": 1790896747.903882,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0
+      },
+      "before": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "wall_time": 1790896739.3149467,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0
+      }
+    }
+  },
+  {
+    "phase": "slow",
+    "resize": {
+      "requested_wall_time": 1790896822.19931,
+      "confirmed": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "5000 100000",
+        "wall_time": 1790896829.6164103,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0
+      },
+      "before": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "wall_time": 1790896820.3748338,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0
+      }
+    }
+  },
+  {
+    "phase": "recovery",
+    "resize": {
+      "requested_wall_time": 1790896866.791081,
+      "confirmed": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "50000 100000",
+        "wall_time": 1790896873.2197626,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0
+      },
+      "before": {
+        "comm": "mongod",
+        "start_ticks": 18298,
+        "cpu_max": "5000 100000",
+        "wall_time": 1790896864.8142507,
+        "container_id": "containerd://cc0053627c7be7b8aa452388b5ea936171f2cc540824688ceb9b7ef9e9e99d8c",
+        "restart_count": 0
+      }
+    }
+  }
+]

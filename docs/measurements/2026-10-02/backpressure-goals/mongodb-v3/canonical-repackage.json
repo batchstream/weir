@@ -1,0 +1,12 @@
+{
+  "source_archive": "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-goals-n3vnh2vv/v3-binaries.tar.gz",
+  "source_archive_sha256": "f08e5257bcf11c11370402c4b15e5b1e422307822e3c3552b285ec7d84e68e9d",
+  "canonical_archive_sha256": "064abbcb114840137f6afd557fb9bac8f28884186d2e0f3401b12822c5f0e499",
+  "binary_sha256": {
+    "weir-final": "4054ca6a7ef9d12886566124bb5153591d7beacb5cf83949de34fe6a058eee87",
+    "client-final": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
+    "sampler": "06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f",
+    "sampler-metrics": "fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d"
+  },
+  "controller_source_sha256": "c2986947c939ade6fe2e5f513cc3b24dd4002a78444dbe489f0961d2c97f07d0"
+}

@@ -1,0 +1,286 @@
+{
+  "formal_pairs": [
+    {
+      "workload": "mixed",
+      "pair_index": 1,
+      "cohort": 0,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-mixed-1-direct",
+        "weir": "formal-mixed-1-weir"
+      },
+      "rates": {
+        "direct": 900,
+        "weir": 1745
+      },
+      "DB_CPU": {
+        "direct": 0.1023720498496387,
+        "weir": 0.10440736653702483
+      },
+      "cpu_relative_mean_difference": 0.019685873216512276,
+      "CPU_target_pass": true,
+      "all_cell_qualification_pass": true,
+      "matched": true,
+      "successful_RPS": {
+        "direct": 900.0,
+        "weir": 1745.0
+      },
+      "RPS_ratio_weir_to_direct": 1.9388888888888889,
+      "cpu_matched": true,
+      "healthy_qualified": true,
+      "all_evidence_valid": true
+    },
+    {
+      "workload": "mixed",
+      "pair_index": 2,
+      "cohort": 0,
+      "order": [
+        "weir",
+        "direct"
+      ],
+      "tags": {
+        "weir": "formal-mixed-2-weir",
+        "direct": "formal-mixed-2-direct"
+      },
+      "rates": {
+        "direct": 900,
+        "weir": 1745
+      },
+      "DB_CPU": {
+        "direct": 0.10118677147403864,
+        "weir": 0.10423777043717251
+      },
+      "cpu_relative_mean_difference": 0.029704327776498916,
+      "CPU_target_pass": true,
+      "all_cell_qualification_pass": true,
+      "matched": true,
+      "successful_RPS": {
+        "weir": 1745.0,
+        "direct": 900.0
+      },
+      "RPS_ratio_weir_to_direct": 1.9388888888888889,
+      "cpu_matched": true,
+      "healthy_qualified": true,
+      "all_evidence_valid": true
+    },
+    {
+      "workload": "mixed",
+      "pair_index": 3,
+      "cohort": 0,
+      "order": [
+        "direct",
+        "weir"
+      ],
+      "tags": {
+        "direct": "formal-mixed-3-direct",
+        "weir": "formal-mixed-3-weir"
+      },
+      "rates": {
+        "direct": 900,
+        "weir": 1745
+      },
+      "DB_CPU": {
+        "direct": 0.11288131351001321,
+        "weir": 0.10881274101891342
+      },
+      "cpu_relative_mean_difference": 0.03670438974779926,
+      "CPU_target_pass": false,
+      "all_cell_qualification_pass": false,
+      "matched": false,
+      "successful_RPS": {
+        "direct": 900.0,
+        "weir": 1745.0
+      },
+      "RPS_ratio_weir_to_direct": 1.9388888888888889,
+      "cpu_matched": false,
+      "healthy_qualified": false,
+      "all_evidence_valid": true
+    }
+  ],
+  "totals": {
+    "formal": {
+      "measure": {
+        "planned": 476100,
+        "started": 476100,
+        "success": 476100,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 158700,
+        "started": 158700,
+        "success": 158700,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 63480,
+      "ledger_counts": {
+        "0": 0,
+        "1": 63480,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 63480,
+      "audit_found_documents": 63480,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    },
+    "calibration": {
+      "measure": {
+        "planned": 584490,
+        "started": 584490,
+        "success": 584490,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 389660,
+        "started": 389660,
+        "success": 389660,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 97415,
+      "ledger_counts": {
+        "0": 0,
+        "1": 97415,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 97415,
+      "audit_found_documents": 97415,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    },
+    "common": {
+      "measure": {
+        "planned": 36000,
+        "started": 36000,
+        "success": 36000,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 18000,
+        "started": 18000,
+        "success": 18000,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 5400,
+      "ledger_counts": {
+        "0": 0,
+        "1": 5400,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 5400,
+      "audit_found_documents": 5400,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    },
+    "all": {
+      "measure": {
+        "planned": 1096590,
+        "started": 1096590,
+        "success": 1096590,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "warm": {
+        "planned": 566360,
+        "started": 566360,
+        "success": 566360,
+        "client_drop": 0,
+        "unknown": 0
+      },
+      "API_measure": 0,
+      "API_warm": 0,
+      "ledger_length": 166295,
+      "ledger_counts": {
+        "0": 0,
+        "1": 166295,
+        "2": 0,
+        "3": 0,
+        "4": 0
+      },
+      "audit_APPLIED": 166295,
+      "audit_found_documents": 166295,
+      "audit_UNKNOWN_found": 0,
+      "run_audit_errors_zero": true,
+      "all_checks": true
+    }
+  },
+  "idle": {
+    "samples": 24,
+    "seconds": 23.00084638595581,
+    "process_cpu_cores": 0.005651965924148656,
+    "cgroup_cpu_cores": 0.005832785357060458,
+    "rss_median_mib": 212.21875,
+    "rss_peak_mib": 212.21875,
+    "cgroup_memory_peak_mib": 158.1875,
+    "oom_kill_delta": 0,
+    "process_start_ticks": [
+      71758057
+    ],
+    "io": {
+      "seconds": 23.000846357,
+      "process_counter_delta": {
+        "cancelled_write_bytes": 0,
+        "rchar": 427843,
+        "read_bytes": 0,
+        "syscr": 799,
+        "syscw": 4,
+        "wchar": 71350,
+        "write_bytes": 81920
+      },
+      "per_device_counter_delta": {
+        "259:0": {
+          "dbytes": 0,
+          "dios": 0,
+          "rbytes": 0,
+          "rios": 0,
+          "wbytes": 217088,
+          "wios": 15
+        }
+      },
+      "psi_total_usec_delta": {
+        "some": 0,
+        "full": 0
+      },
+      "psi_stall_fraction": {
+        "some": 0.0,
+        "full": 0.0
+      },
+      "blockdelay_ms": 0,
+      "blockdelay_field_available": true,
+      "limitations": "IOcounter/PSIstall is not percommand latency; availablezero blockdelay may reflect disabled kernel accounting"
+    },
+    "cfs_nr_periods_delta": 91,
+    "cfs_nr_throttled_delta": 0,
+    "cfs_throttled_usec_delta": 0
+  },
+  "attempted_formal_pairs": 3,
+  "cpu_matched_pairs": 2,
+  "healthy_qualified_pairs": 2,
+  "limits": {
+    "cpu_matched": "both full measurement CPU0.095..0.105 with coverage nominal-3s and each boundarygap<=2s, pair difference to mean<=5%; all 1Hz samples, actual span",
+    "healthy_qualified": "CPUmatched and valid audit/identity/hash/conservation/coverage, OOM/API/UNKNOWN0, total measurementdrop<=0.1% and fewer than2 highdrop10s buckets, client/WeirprocessCPU below90%of2/4core and client CFS<=10%periods",
+    "timing": "sampler-io timestamps collect start and sequentially reads local proc/cgroup files; frozen sampler has no end-of-collect bracket. Client helper supplies own duration/end bracket. Not all fields exact same instant"
+  }
+}

@@ -1,0 +1,19 @@
+test_archive_and_provenance_include_each_production_binary (compare_load_test.PairedComparison.test_archive_and_provenance_include_each_production_binary) ... ok
+test_configured_client_queue_is_used_by_prewarm (compare_load_test.PairedComparison.test_configured_client_queue_is_used_by_prewarm) ... ok
+test_diagnostic_prewarm_uses_adaptive_path (compare_load_test.PairedComparison.test_diagnostic_prewarm_uses_adaptive_path) ... ok
+test_elasticsearch_rejects_untrusted_process_identifiers_before_client_start (compare_load_test.PairedComparison.test_elasticsearch_rejects_untrusted_process_identifiers_before_client_start) ... ok
+test_entrypoints_share_config_routes_and_resource_limits (compare_load_test.PairedComparison.test_entrypoints_share_config_routes_and_resource_limits) ... ok
+test_incomplete_paired_options_fail_before_fixture_creation (compare_load_test.PairedComparison.test_incomplete_paired_options_fail_before_fixture_creation) ... ok
+test_invalid_client_queue_fails_before_fixture_creation (compare_load_test.PairedComparison.test_invalid_client_queue_fails_before_fixture_creation) ... ok
+test_main_alternates_paired_trials_with_same_client (compare_load_test.PairedComparison.test_main_alternates_paired_trials_with_same_client) ... ok
+test_main_passes_explicit_client_queue (compare_load_test.PairedComparison.test_main_passes_explicit_client_queue) ... ok
+test_main_resolves_explicit_older_client_source (compare_load_test.PairedComparison.test_main_resolves_explicit_older_client_source) ... ok
+test_mongo_route_and_setup_use_the_same_owned_server (compare_load_test.PairedComparison.test_mongo_route_and_setup_use_the_same_owned_server) ... ok
+test_provenance_hashes_imported_bytes_when_binary_paths_change_during_startup (compare_load_test.PairedComparison.test_provenance_hashes_imported_bytes_when_binary_paths_change_during_startup) ... ok
+test_resource_units_exclude_other_container_processes (compare_load_test.PairedComparison.test_resource_units_exclude_other_container_processes) ... ok
+test_shared_prewarm_covers_both_production_paths_and_restores_cpu (compare_load_test.PairedComparison.test_shared_prewarm_covers_both_production_paths_and_restores_cpu) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.035s
+
+OK
