@@ -111,11 +111,23 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				case "_doc":
 					fmt.Fprintf(w, `{"_index":%q,"_id":"same","_source":{"target":%q}}`, index, index)
 				case "_bulk":
-					nativeWrites.Add(1)
+					decoder := json.NewDecoder(r.Body)
 					var metadata map[string]map[string]string
-					if err := json.NewDecoder(r.Body).Decode(&metadata); err != nil || metadata["index"]["_index"] != index {
+					if err := decoder.Decode(&metadata); err != nil || metadata["index"]["_index"] != index || metadata["index"]["_id"] != "same" {
 						t.Error("Native bulk crossed target", metadata, err)
+						return
 					}
+					var source map[string]json.RawMessage
+					if err := decoder.Decode(&source); err != nil || source == nil || len(source) != 0 {
+						t.Error("Native bulk source changed", source, err)
+						return
+					}
+					var extra json.RawMessage
+					if err := decoder.Decode(&extra); err != io.EOF {
+						t.Error("Native bulk upload did not end after one item", err)
+						return
+					}
+					nativeWrites.Add(1)
 					fmt.Fprint(w, `{"errors":false,"items":[]}`)
 				default:
 					t.Error("unexpected endpoint", r.URL.Path)
