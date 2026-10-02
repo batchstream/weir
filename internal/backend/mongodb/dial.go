@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/batchstream/weir/api/netlimit"
+	"github.com/batchstream/weir-protocol/api/netlimit"
 )
 
 const mongoMaxConnecting = 2

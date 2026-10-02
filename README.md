@@ -108,6 +108,10 @@ hard allocation limit on arbitrary Lua objects.
 
 The [public and peer protocols](docs/protocols.md) are independent schemas and
 services. The public schema is suitable for future language-specific bindings.
+The public contract and shared helpers live in
+[weir-protocol](https://github.com/batchstream/weir-protocol), an independent
+module consumed by both Weir and its SDK. The SDK does not depend on this server
+module; server acceptance tests can depend on the SDK without a dependency cycle.
 
 ## Client initialization and business calls
 

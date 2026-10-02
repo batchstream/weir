@@ -1,7 +1,7 @@
 package store
 
 import (
-	pb "github.com/batchstream/weir/api/weir/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"time"
 
 	"github.com/batchstream/weir/internal/execution"

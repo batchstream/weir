@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir/api/weir/search/v1"
-	pb "github.com/batchstream/weir/api/weir/v1"
+	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testsearch"

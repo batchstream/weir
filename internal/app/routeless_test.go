@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/batchstream/weir/api/weir/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"

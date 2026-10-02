@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](../api/weir/v1/store.proto), package
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/main/api/weir/v1/store.proto), package
 `weir.v1`. It contains only client discovery and business execution, with no
 dependency on the peer schema. A client initializes through any application
 endpoint, then sends business requests directly to the returned Store endpoints.
@@ -53,14 +53,16 @@ validation belongs to the public protocol helpers; the production Go client does
 not depend on the peer protocol or directory implementation.
 
 The [Go SDK](https://github.com/batchstream/weir-go) is an independent module,
-`github.com/batchstream/weir-go` (package `weir`). This server repository owns the
-canonical public schemas and generated Go bindings. Public Go helpers in
-`api/protocol` and `api/netlimit` share protocol validation and bounded DNS
-transport with the SDK; they depend only on public bindings and standard runtime
-libraries. The SDK imports no server internals or peer protocol.
+`github.com/batchstream/weir-go` (package `weir`). The independent
+[weir-protocol](https://github.com/batchstream/weir-protocol) repository owns the
+canonical public schemas, generated Go bindings and shared validation/DNS helpers.
+Both server and SDK depend on `github.com/batchstream/weir-protocol`; that module
+depends on neither. The SDK has no dependency on the Weir server module. Server
+acceptance tests consume the SDK without introducing a module cycle.
 
-The repository currently generates Go bindings for both schemas through
-`scripts/generate.sh`. Other language bindings and SDKs are deferred. Future SDKs
+This repository generates only internal peer bindings through `scripts/generate.sh`.
+Public bindings are generated in weir-protocol. Other language bindings and SDKs
+are deferred. Future SDKs
 can generate the public schema independently, then implement initialization,
 endpoint/DNS refresh, load balancing, Event framing and safe completion handling
 using this contract. No Kubernetes types or APIs appear in either schema.

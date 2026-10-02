@@ -1,7 +1,7 @@
 package search
 
 import (
-	"github.com/batchstream/weir/api/protocol"
+	"github.com/batchstream/weir-protocol/api/protocol"
 	"github.com/batchstream/weir/internal/execution"
 )
 

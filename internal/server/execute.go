@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/batchstream/weir/api/protocol"
-	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

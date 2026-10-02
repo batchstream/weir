@@ -37,7 +37,9 @@ jobs:
       - name: Prepare fixed native SDK and public modules
         run: python3 scripts/ci-tools.py test
       - name: Native CGO0 default tests
-        run: CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
+        run: |
+          python3 scripts/check_dependencies.py
+          CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
       - name: Static vet and isolated helper regressions

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	weirclient "github.com/batchstream/weir-go"
-	pb "github.com/batchstream/weir/api/weir/v1"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
