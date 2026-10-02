@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"net"
 	"net/url"
@@ -194,7 +194,7 @@ func TestPackagedArtifacts(t *testing.T) {
 		defer cancel()
 		request := budgetPut("weir://records/"+fixture.DB+"/records", "lost")
 		proxy.DropRemaining.Store(1)
-		routedResult196, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+		routedResult196, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 		result := routedResult196.GetMutation()
 		if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("dropped acknowledged reply must be UNKNOWN", result, err)
@@ -352,7 +352,7 @@ func packagedDocker(t *testing.T, args ...string) string {
 	return string(output)
 }
 
-func packagedCalls(t *testing.T, client pb.WeirClient, fixture *testmongo.SecureFixture) {
+func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmongo.SecureFixture) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -363,13 +363,13 @@ func packagedCalls(t *testing.T, client pb.WeirClient, fixture *testmongo.Secure
 		}
 	}
 	read := &pb.ReadRequest{Resource: request.Resource}
-	routedResult363, err := routeclient.Record(ctx, client, testutil.RecordCall(read))
+	routedResult363, err := weirclient.Record(ctx, client, testutil.RecordCall(read))
 	result := routedResult363.GetRead()
 	if err != nil || result.GetDocument() == nil {
 		t.Fatal("packaged readback", err)
 	}
 	invalid := &pb.MutateRequest{Resource: "weir://missing/db/records/s:artifact", Action: request.Action}
-	routedResult368, err := routeclient.Record(ctx, client, testutil.RecordCall(invalid))
+	routedResult368, err := weirclient.Record(ctx, client, testutil.RecordCall(invalid))
 	mutation := routedResult368.GetMutation()
 	if err != nil || mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal("preflight outcome", mutation, err)

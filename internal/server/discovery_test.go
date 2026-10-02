@@ -7,8 +7,10 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/store"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -46,22 +48,22 @@ func TestDiscoveryIngressRolesAndIndependentAdmission(t *testing.T) {
 	peerOpts := peerServerOptions{directory: d, listener: peer, peer: true, admission: admission, limits: limits}
 	peerServer, peerAddress := startPeerServer(t, peerOpts)
 	peerConn, peerWeir := peerClient(t, peerAddress)
-	peerDirectory := pb.NewDirectoryClient(peerConn)
+	peerDirectory := peerpb.NewPeerDiscoveryServiceClient(peerConn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	request := &pb.ResolveRequest{Store: "records"}
-	response, err := client.Resolve(ctx, request)
-	if err != nil || len(response.Targets) != 1 || response.Targets[0] != address {
+	request := &pb.ResolveStoreRequest{StoreName: "records"}
+	response, err := client.ResolveStore(ctx, request)
+	if err != nil || len(response.Endpoints) != 1 || response.Endpoints[0] != address {
 		t.Fatal(response, err)
 	}
 	for range cap(admission.slots) {
 		admission.slots <- struct{}{}
 	}
-	if _, err := client.Resolve(ctx, request); err != nil {
-		t.Fatal("business saturation blocked control Resolve", err)
+	if _, err := client.ResolveStore(ctx, request); err != nil {
+		t.Fatal("business saturation blocked control ResolveStore", err)
 	}
-	exchange := &pb.ExchangeRequest{}
-	if _, err := peerDirectory.Exchange(ctx, exchange); err != nil {
+	syncRequest := &peerpb.SyncDirectoryRequest{}
+	if _, err := peerDirectory.SyncDirectory(ctx, syncRequest); err != nil {
 		t.Fatal("business connection saturation blocked peer control", err)
 	}
 	for range cap(admission.slots) {
@@ -70,26 +72,38 @@ func TestDiscoveryIngressRolesAndIndependentAdmission(t *testing.T) {
 	if len(admission.connections) != 1 || len(peerServer.connectionSlots) != 1 {
 		t.Fatal("application and peer physical connections share capacity", len(admission.connections), len(peerServer.connectionSlots))
 	}
-	appDirectory := pb.NewDirectoryClient(appConn)
-	if _, err := appDirectory.Exchange(ctx, exchange); status.Code(err) != codes.Unimplemented {
-		t.Fatal("application exposes peer Exchange", err)
+	appDirectory := peerpb.NewPeerDiscoveryServiceClient(appConn)
+	if _, err := appDirectory.SyncDirectory(ctx, syncRequest); status.Code(err) != codes.Unimplemented {
+		t.Fatal("application exposes peer SyncDirectory", err)
 	}
-	if _, err := peerWeir.Resolve(ctx, request); status.Code(err) != codes.Unimplemented {
-		t.Fatal("peer exposes business Resolve", err)
+	if _, err := peerWeir.ResolveStore(ctx, request); status.Code(err) != codes.Unimplemented {
+		t.Fatal("peer exposes public ResolveStore", err)
 	}
 	if _, err := routeRead(peerWeir, ctx, testRequest()); status.Code(err) != codes.Unimplemented {
-		t.Fatal("peer exposes business Route", err)
+		t.Fatal("peer exposes public Execute", err)
 	}
-	unknown := &pb.ResolveRequest{Store: "unknown"}
-	if _, err := client.Resolve(ctx, unknown); status.Code(err) != codes.Unavailable {
+	for name, conn := range map[string]*grpc.ClientConn{"application": appConn, "peer": peerConn} {
+		for _, path := range []string{"/weir.v1.Weir/Resolve", "/weir.v1.Weir/Route", "/weir.v1.Directory/Exchange"} {
+			t.Run(name+path, func(t *testing.T) {
+				request := &pb.Empty{}
+				response := &pb.Empty{}
+				err := conn.Invoke(ctx, path, request, response)
+				if status.Code(err) != codes.Unimplemented {
+					t.Fatal("removed RPC path accepted", path, err)
+				}
+			})
+		}
+	}
+	unknown := &pb.ResolveStoreRequest{StoreName: "unknown"}
+	if _, err := client.ResolveStore(ctx, unknown); status.Code(err) != codes.Unavailable {
 		t.Fatal("unknown Store did not return retryable discovery error", err)
 	}
-	stream, err := client.Route(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	business := routeAcceptanceRead(1, "data/s:key")
-	business.Destination = "unknown"
+	business.StoreName = "unknown"
 	if err := stream.Send(business); err != nil {
 		t.Fatal(err)
 	}

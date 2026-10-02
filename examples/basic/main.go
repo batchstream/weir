@@ -1,4 +1,4 @@
-// Basic demonstrates one finite Route batch with incremental input and consumption.
+// Basic demonstrates one finite Execute batch with incremental input and consumption.
 package main
 
 import (
@@ -10,7 +10,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -21,18 +21,18 @@ func main() {
 }
 func run() error {
 	address := flag.String("address", "127.0.0.1:7447", "Weir initialization listener")
-	destination := flag.String("store", "mongo", "logical Store: mongo or search")
+	storeName := flag.String("store", "mongo", "logical Store: mongo or search")
 	database := flag.String("database", "weir_m1", "pre-created MongoDB database")
 	index := flag.String("index", "weir_m2_example", "pre-created Search index")
 	count := flag.Int("count", 100, "finite number of read requests")
 	flag.Parse()
-	if *destination != "mongo" && *destination != "search" || *count < 1 {
+	if *storeName != "mongo" && *storeName != "search" || *count < 1 {
 		return fmt.Errorf("invalid Store or count")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	openOptions := routeclient.OpenOptions{Seed: *address, Stores: []string{*destination}}
-	client, err := routeclient.Open(ctx, openOptions)
+	openOptions := weirclient.OpenOptions{Seed: *address, Stores: []string{*storeName}}
+	client, err := weirclient.Open(ctx, openOptions)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func run() error {
 		return err
 	}
 	document := &pb.Document{MediaType: "application/bson", Data: data}
-	if *destination == "search" {
+	if *storeName == "search" {
 		target = protocol.EncodeSegment(*index) + "/s:example"
 		document = &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 	}
@@ -52,7 +52,7 @@ func run() error {
 	mutation := &pb.MutateRequest{Resource: target, Action: action}
 	variant := &pb.Call_Mutate{Mutate: mutation}
 	call := &pb.Call{Version: 1, Operation: variant}
-	opts := routeclient.RecordOptions{Destination: *destination, Call: call}
+	opts := weirclient.RecordOptions{StoreName: *storeName, Call: call}
 	result, err := client.Record(ctx, opts)
 	if err != nil {
 		if result != nil {
@@ -64,7 +64,7 @@ func run() error {
 		return fmt.Errorf("write: %v", result)
 	}
 	produced := 0
-	batch := routeclient.Options{Destination: *destination}
+	batch := weirclient.Options{StoreName: *storeName}
 	batch.Produce = func(context.Context) (*pb.Call, error) {
 		if produced == *count {
 			return nil, io.EOF
@@ -84,7 +84,7 @@ func run() error {
 		// Consume and discard here: retaining Events would require the full batch memory.
 		return nil
 	}
-	if err := client.Run(ctx, batch); err != nil {
+	if err := client.Execute(ctx, batch); err != nil {
 		return err
 	}
 	fmt.Printf("completed %d reads with all request ends and final gRPC OK\n", *count)

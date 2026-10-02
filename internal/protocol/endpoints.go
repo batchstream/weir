@@ -1,6 +1,4 @@
-// Package directory synchronizes bounded, leased Store advertisements between
-// equal peers. It carries discovery data only; business RPCs never pass through it.
-package directory
+package protocol
 
 import (
 	"errors"
@@ -9,32 +7,35 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/batchstream/weir/internal/protocol"
+	"time"
 )
 
-const MaxTargets = 128
+const (
+	MaxDiscoveryEndpoints = 128
+	MaxDiscoveryCacheTTL  = 30 * time.Second
+)
 
-func ValidStore(name string) bool {
-	parsed, segments, err := protocol.ParseResource("weir://" + name)
+func ValidStoreName(name string) bool {
+	parsed, segments, err := ParseResource("weir://" + name)
 	return err == nil && parsed == name && len(segments) == 0
 }
 
-// CanonicalAddress accepts portable IP or DNS host:port addresses without I/O.
-func CanonicalAddress(value string) (string, error) {
+// CanonicalEndpoint accepts portable IP or DNS host:port addresses without I/O.
+func CanonicalEndpoint(value string) (string, error) {
 	if len(value) > 260 || strings.ContainsAny(value, "/@?#%\\ \t\r\n") {
-		return "", errors.New("invalid discovery address")
+		return "", errors.New("invalid discovery endpoint")
 	}
 	host, port, err := net.SplitHostPort(value)
 	number, portErr := strconv.Atoi(port)
 	if err != nil || portErr != nil || strings.Trim(port, "0123456789") != "" || number < 1 || number > 65535 {
-		return "", errors.New("discovery address requires host and explicit port 1-65535")
+		return "", errors.New("discovery endpoint requires host and explicit port 1-65535")
 	}
 	if ip, err := netip.ParseAddr(host); err == nil {
+		ip = ip.Unmap()
 		if ip.IsUnspecified() || ip.IsMulticast() || ip.Zone() != "" {
-			return "", errors.New("discovery address must be reachable unicast")
+			return "", errors.New("discovery endpoint must be reachable unicast")
 		}
-		host = ip.Unmap().String()
+		host = ip.String()
 	} else {
 		host = strings.TrimSuffix(strings.ToLower(host), ".")
 		if len(host) < 1 || len(host) > 253 || strings.Trim(host, "0123456789.") == "" || strings.ContainsAny(value, "[]") {
@@ -54,13 +55,13 @@ func CanonicalAddress(value string) (string, error) {
 	return net.JoinHostPort(host, strconv.Itoa(number)), nil
 }
 
-func CanonicalTargets(input []string) ([]string, error) {
-	if len(input) < 1 || len(input) > MaxTargets {
-		return nil, errors.New("discovery requires 1-128 targets")
+func CanonicalEndpoints(input []string) ([]string, error) {
+	if len(input) < 1 || len(input) > MaxDiscoveryEndpoints {
+		return nil, errors.New("discovery requires 1-128 endpoints")
 	}
 	out := make([]string, 0, len(input))
 	for _, value := range input {
-		address, err := CanonicalAddress(value)
+		address, err := CanonicalEndpoint(value)
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +69,7 @@ func CanonicalTargets(input []string) ([]string, error) {
 	}
 	slices.Sort(out)
 	if len(slices.Compact(slices.Clone(out))) != len(out) {
-		return nil, errors.New("duplicate discovery target")
+		return nil, errors.New("duplicate discovery endpoint")
 	}
 	return out, nil
 }

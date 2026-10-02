@@ -2,44 +2,38 @@ syntax = "proto3";
 package weir.v1;
 option go_package = "github.com/batchstream/weir/api/weir/v1;weirv1";
 
-// One finite stream fixes its logical Store on the first valid request.
-service Weir {
-  // Resolve discovers the group serving a Store before business data is sent.
-  rpc Resolve(ResolveRequest) returns (ResolveResponse);
-  rpc Route(stream Request) returns (stream Response);
+// StoreService is the public discovery and execution API. Initialize through
+// ResolveStore, then connect directly to a returned Store endpoint for execution.
+service StoreService {
+  rpc ResolveStore(ResolveStoreRequest) returns (ResolveStoreResponse);
+  // One finite stream selects a Store on its first valid request. The Store is
+  // fixed for that stream; closing input and receiving final gRPC OK is required
+  // for whole-stream success. The service never forwards business requests.
+  rpc Execute(stream ExecuteRequest) returns (stream ExecuteResponse);
 }
-// Directory is a peer-only control service. It never transports business data.
-service Directory {
-  rpc Exchange(ExchangeRequest) returns (ExchangeResponse);
+message ResolveStoreRequest { string store_name = 1; }
+message ResolveStoreResponse {
+  string store_name = 1;
+  // Portable IP or DNS host:port endpoints. DNS may identify several replicas.
+  repeated string endpoints = 2;
+  uint64 cache_ttl_ms = 3;
 }
-message ResolveRequest { string store = 1; }
-message ResolveResponse {
-  string store = 1;
-  string group = 2;
-  repeated string targets = 3;
-  uint64 cache_ttl_ms = 4;
+// request_id is nonzero and strictly increasing within one RPC; gaps are allowed.
+// call_payload is exactly one protobuf-encoded, versioned Call for store_name.
+message ExecuteRequest {
+  uint64 request_id = 1;
+  string store_name = 2;
+  bytes call_payload = 3;
 }
-// An incarnation is generated for each process. Only its owner increases the
-// sequence or renews its lease. Relays reduce, never renew, remaining_lease_ms.
-message NodeAdvertisement {
-  string node_id = 1;
-  uint64 sequence = 2;
-  string peer_address = 3;
-  string group = 4;
-  repeated string stores = 5;
-  repeated string targets = 6;
-  uint64 remaining_lease_ms = 7;
-  bool withdrawn = 8;
+// event_fragment carries a length-delimited protobuf Event sequence, split at
+// arbitrary byte boundaries. A separate empty request_complete frame completes
+// one request_id. An acknowledged write remains acknowledged if the stream fails;
+// incomplete writes are indeterminate and must never be automatically replayed.
+message ExecuteResponse {
+  uint64 request_id = 1;
+  bytes event_fragment = 2;
+  bool request_complete = 3;
 }
-message ExchangeRequest { repeated NodeAdvertisement nodes = 1; }
-message ExchangeResponse { repeated NodeAdvertisement nodes = 1; }
-// IDs are nonzero and strictly increasing within an RPC; gaps are allowed.
-// Payload is a versioned Call for the configured Store adapter.
-message Request { uint64 id = 1; string destination = 2; bytes payload = 3; }
-// Payload carries a length-delimited Event sequence, split at arbitrary byte
-// boundaries. A separate empty end frame completes one ID. RPC success also
-// requires the final gRPC OK status after the client half-closes.
-message Response { uint64 id = 1; bytes payload = 2; bool end = 3; }
 message Call {
   uint32 version = 1;
   oneof operation {

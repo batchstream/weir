@@ -1,4 +1,4 @@
-package routeclient
+package weirclient
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
@@ -85,10 +86,10 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 			}
 			// Short advertisements exercise refresh past the original cache lease
 			// using the actual directory protocol without a thirty-second test.
-			advertisement := &pb.NodeAdvertisement{NodeId: strings.Repeat("1", 32), Sequence: 1, Group: "records-group", Stores: names, Targets: []string{address}, RemainingLeaseMs: 2000}
+			advertisement := &peerpb.NodeAnnouncement{IncarnationId: strings.Repeat("1", 32), Revision: 1, ReplicaGroup: "records-group", StoreNames: names, StoreEndpoints: []string{address}, LeaseRemainingMs: 2000}
 			publish := func() error {
-				request := &pb.ExchangeRequest{Nodes: []*pb.NodeAdvertisement{advertisement}}
-				_, err := d.Exchange(context.Background(), request)
+				request := &peerpb.SyncDirectoryRequest{Announcements: []*peerpb.NodeAnnouncement{advertisement}}
+				_, err := d.SyncDirectory(context.Background(), request)
 				return err
 			}
 			if err := publish(); err != nil {
@@ -105,7 +106,7 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 						published <- nil
 						return
 					case <-ticker.C:
-						advertisement.Sequence++
+						advertisement.Revision++
 						if err := publish(); err != nil {
 							published <- err
 							return

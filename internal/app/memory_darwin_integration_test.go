@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"net/http"
 	"os"
@@ -49,7 +49,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 			defer producers.Done()
 			for ctx.Err() == nil {
 				call, stop := context.WithTimeout(ctx, 40*time.Millisecond)
-				_, _ = routeclient.Record(call, client, testutil.RecordCall(read))
+				_, _ = weirclient.Record(call, client, testutil.RecordCall(read))
 				stop()
 				time.Sleep(5 * time.Millisecond)
 			}
@@ -93,7 +93,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 		darwinMetrics(t, n.DiagnosticAddress())
 		if step.latched {
 			request := budgetPut("weir://records/"+fixture.DB+"/records", "refused")
-			routedResult94, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult94, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result := routedResult94.GetMutation()
 			if result != nil || status.Code(err) != codes.ResourceExhausted {
 				t.Fatal("unsafe overload admission", result, err)
@@ -148,14 +148,14 @@ func darwinMetrics(t *testing.T, address string) {
 	t.Logf("metrics darwin_phys_footprint=%g bytes; other sources=0, process_valid=1, unknown=0, cgroup=not_applicable", footprint)
 }
 
-func darwinUnknown(t *testing.T, client pb.WeirClient, fixture *testmongo.SecureFixture, proxy *testmongo.Proxy) {
+func darwinUnknown(t *testing.T, client pb.StoreServiceClient, fixture *testmongo.SecureFixture, proxy *testmongo.Proxy) {
 	t.Helper()
 	before := len(proxy.Events())
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	request := budgetPut("weir://records/"+fixture.DB+"/records", "lost")
 	proxy.DropRemaining.Store(1)
-	routedResult155, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+	routedResult155, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 	result := routedResult155.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("lost ACK", result, err)

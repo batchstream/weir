@@ -1,0 +1,23 @@
+syntax = "proto3";
+package weir.peer.v1;
+option go_package = "github.com/batchstream/weir/internal/api/peer/v1;peerv1";
+
+// PeerDiscoveryService is internal node-to-node control traffic. It contains no
+// public business DTOs and never carries a business request or response stream.
+service PeerDiscoveryService {
+  rpc SyncDirectory(SyncDirectoryRequest) returns (SyncDirectoryResponse);
+}
+message SyncDirectoryRequest { repeated NodeAnnouncement announcements = 1; }
+message SyncDirectoryResponse { repeated NodeAnnouncement announcements = 1; }
+// A fresh process creates an incarnation_id. Only its owner advances revision or
+// renews the lease. Peers reduce, never renew, lease_remaining_ms during sync.
+message NodeAnnouncement {
+  string incarnation_id = 1;
+  uint64 revision = 2;
+  string peer_endpoint = 3;
+  string replica_group = 4;
+  repeated string store_names = 5;
+  repeated string store_endpoints = 6;
+  uint64 lease_remaining_ms = 7;
+  bool withdrawn = 8;
+}

@@ -13,7 +13,7 @@ func (d *Directory) Collect(ch chan<- prometheus.Metric) {
 	live := 0
 	now := time.Now()
 	for _, owned := range d.records {
-		if !owned.advertisement.Withdrawn && now.Before(owned.expires) {
+		if !owned.announcement.Withdrawn && now.Before(owned.expires) {
 			live++
 		}
 	}
@@ -21,7 +21,7 @@ func (d *Directory) Collect(ch chan<- prometheus.Metric) {
 	d.mu.Unlock()
 	values := map[string]int{"live_nodes": live, "retained_nodes": records}
 	for name, value := range values {
-		desc := prometheus.NewDesc("weir_directory_"+name, "Bounded owner advertisements, including expired replay watermarks.", nil, nil)
+		desc := prometheus.NewDesc("weir_directory_"+name, "Bounded owner announcements, including expired replay watermarks.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
 	}
 }

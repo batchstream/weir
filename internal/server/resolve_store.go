@@ -8,9 +8,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *Server) Resolve(ctx context.Context, request *pb.ResolveRequest) (*pb.ResolveResponse, error) {
+func (s *Server) ResolveStore(ctx context.Context, request *pb.ResolveStoreRequest) (*pb.ResolveStoreResponse, error) {
 	if s.directory == nil {
 		return nil, status.Error(codes.Unavailable, "directory unavailable")
 	}
-	return s.directory.Resolve(ctx, request)
+	return s.directory.ResolveStore(ctx, request)
 }

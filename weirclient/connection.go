@@ -1,4 +1,4 @@
-package routeclient
+package weirclient
 
 import (
 	"github.com/batchstream/weir/internal/protocol"

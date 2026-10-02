@@ -22,7 +22,7 @@ import (
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -329,14 +329,14 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	memoryState(t, p, "high", true)
 	memoryState(t, front, "high-second", true)
 	read := &pb.ReadRequest{Resource: request.Resource}
-	if _, err := routeclient.Record(ctx, client, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
+	if _, err := weirclient.Record(ctx, client, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("Read not rejected", err)
 	}
 	refused := budgetPut(root, "refused")
-	if result, err := routeclient.Record(ctx, client, testutil.RecordCall(refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
+	if result, err := weirclient.Record(ctx, client, testutil.RecordCall(refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
 		t.Fatal("Mutate not safely rejected", result, err)
 	}
-	if _, err := routeclient.Record(ctx, frontClient, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
+	if _, err := weirclient.Record(ctx, frontClient, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("second executor admission", err)
 	}
 	// A new operation on the existing Bulk must not discard its admitted result.

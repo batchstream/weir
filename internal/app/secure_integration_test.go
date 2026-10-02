@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"os"
 	"path/filepath"
@@ -79,7 +79,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer conn.Close()
-			client := pb.NewWeirClient(conn)
+			client := pb.NewStoreServiceClient(conn)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			root := "weir://mongo/" + fixture.DB + "/records"
@@ -91,13 +91,13 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			doc := &pb.Document{MediaType: "application/bson", Data: raw}
 			put := &pb.MutateRequest_Put{Put: doc}
 			request := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-			routedResult97, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult97, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result := routedResult97.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
 			read := &pb.ReadRequest{Resource: request.Resource}
-			routedResult102, err := routeclient.Record(ctx, client, testutil.RecordCall(read))
+			routedResult102, err := weirclient.Record(ctx, client, testutil.RecordCall(read))
 			found := routedResult102.GetRead()
 			if err != nil || !bytes.Equal(found.GetDocument().GetData(), raw) {
 				t.Fatal("opaque BSON changed", err)
@@ -105,7 +105,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			create := &pb.MutateRequest_Create{Create: doc}
 			request.Action = create
 			var routedResult108 *pb.Result
-			routedResult108, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult108, err = weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result = routedResult108.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 				t.Fatal("duplicate not definite", result, err)
@@ -114,20 +114,20 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			remove := &pb.MutateRequest_Delete{Delete: empty}
 			request.Action = remove
 			var routedResult115 *pb.Result
-			routedResult115, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult115, err = weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result = routedResult115.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
 			var routedResult119 *pb.Result
-			routedResult119, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+			routedResult119, err = weirclient.Record(ctx, client, testutil.RecordCall(read))
 			found = routedResult119.GetRead()
 			if err != nil || found.GetMissing() == nil {
 				t.Fatal("missing contract", err)
 			}
 			request.Action = create
 			var routedResult124 *pb.Result
-			routedResult124, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult124, err = weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result = routedResult124.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
@@ -135,7 +135,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			replace := &pb.MutateRequest_Replace{Replace: doc}
 			request.Action = replace
 			var routedResult130 *pb.Result
-			routedResult130, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult130, err = weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result = routedResult130.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
@@ -148,7 +148,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			request.Action = action
 			var routedResult141 *pb.Result
-			routedResult141, err = routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult141, err = weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result = routedResult141.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
@@ -173,7 +173,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 				t.Fatal(err)
 			}
 			var routedResult176 *pb.Result
-			routedResult176, err = routeclient.Record(ctx, client, testutil.RecordCall(read))
+			routedResult176, err = weirclient.Record(ctx, client, testutil.RecordCall(read))
 			found = routedResult176.GetRead()
 			if err != nil || bson.Raw(found.GetDocument().GetData()).Lookup("n").AsInt64() != 9007199254740995 {
 				t.Fatal("expression replay/type change", err)

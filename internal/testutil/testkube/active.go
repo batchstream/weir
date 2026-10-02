@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClient, id string) error {
+func active(ctx context.Context, connection *grpc.ClientConn, client pb.StoreServiceClient, id string) error {
 	started := time.Now()
 	code, _, err := admin(ctx, "PUT", "/records/_settings", `{"index":{"refresh_interval":"-1"}}`)
 	if err != nil || code != 200 {
@@ -23,7 +23,7 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClie
 	// This separate live Route input keeps drain observable until the original
 	// 30-second input-stall deadline. It sends no mutation body and is not replayed.
 	description := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	partial, err := connection.NewStream(ctx, description, pb.Weir_Route_FullMethodName)
+	partial, err := connection.NewStream(ctx, description, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		return err
 	}
@@ -68,9 +68,9 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.WeirClie
 			break
 		}
 	}
-	var response pb.Response
+	var response pb.ExecuteResponse
 	err = partial.RecvMsg(&response)
-	fmt.Printf("partial Route elapsed=%s ended=%v\n", time.Since(started), err)
+	fmt.Printf("partial Execute elapsed=%s ended=%v\n", time.Since(started), err)
 	readback, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return persisted(readback, id)

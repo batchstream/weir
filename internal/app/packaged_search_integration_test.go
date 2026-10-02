@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"net"
 	"net/http"
@@ -256,7 +256,7 @@ func packagedSearchFiles(t *testing.T, directory string, cfg Config) {
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
 }
 
-func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.SecureFixture, proxy *searchBudgetProxy) {
+func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsearch.SecureFixture, proxy *searchBudgetProxy) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -267,7 +267,7 @@ func packagedSearchFaults(t *testing.T, client pb.WeirClient, f *testsearch.Secu
 		proxy.dropNext.Store(true)
 		if mode == "ordinary" {
 			request := searchBudgetPut(root, id)
-			routedResult268, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult268, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
 			result := routedResult268.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)

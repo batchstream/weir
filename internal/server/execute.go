@@ -17,22 +17,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type RouteSnapshot struct {
+type ExecutionSnapshot struct {
 	ActiveRPCs, Outstanding, OutstandingBytes int64
 	PeakOutstanding, PeakOutstandingBytes     int64
 }
 
-type routeCounters struct {
+type executionCounters struct {
 	outstanding, bytes, peakOutstanding, peakBytes atomic.Int64
 }
 
-func (s *Server) Snapshot() RouteSnapshot {
-	snapshot := RouteSnapshot{
+func (s *Server) Snapshot() ExecutionSnapshot {
+	snapshot := ExecutionSnapshot{
 		ActiveRPCs:           int64(len(s.slots)),
-		Outstanding:          s.routeStats.outstanding.Load(),
-		OutstandingBytes:     s.routeStats.bytes.Load(),
-		PeakOutstanding:      s.routeStats.peakOutstanding.Load(),
-		PeakOutstandingBytes: s.routeStats.peakBytes.Load(),
+		Outstanding:          s.executionStats.outstanding.Load(),
+		OutstandingBytes:     s.executionStats.bytes.Load(),
+		PeakOutstanding:      s.executionStats.peakOutstanding.Load(),
+		PeakOutstandingBytes: s.executionStats.peakBytes.Load(),
 	}
 	return snapshot
 }
@@ -47,7 +47,7 @@ func raisePeak(peak *atomic.Int64, value int64) {
 
 // The ledger retains only unfinished IDs and byte charges. It never holds a
 // request payload or historical ID set. A single uploader owns lastID.
-type routeLedger struct {
+type executionLedger struct {
 	mu           sync.Mutex
 	server       *Server
 	ids          map[uint64]int
@@ -61,16 +61,16 @@ type routeLedger struct {
 	changed      chan struct{}
 }
 
-func newRouteLedger(s *Server) *routeLedger {
-	ledger := &routeLedger{server: s, ids: make(map[uint64]int), changed: make(chan struct{})}
+func newExecutionLedger(s *Server) *executionLedger {
+	ledger := &executionLedger{server: s, ids: make(map[uint64]int), changed: make(chan struct{})}
 	return ledger
 }
 
-func (l *routeLedger) notify() { close(l.changed); l.changed = make(chan struct{}) }
+func (l *executionLedger) notify() { close(l.changed); l.changed = make(chan struct{}) }
 
 // Reserve room for a worst-case frame before calling Recv. This also accounts
 // for one decoded request waiting for scheduler admission or downstream Send.
-func (l *routeLedger) wait(ctx context.Context) error {
+func (l *executionLedger) wait(ctx context.Context) error {
 	for {
 		l.mu.Lock()
 		draining := l.draining
@@ -91,88 +91,88 @@ func (l *routeLedger) wait(ctx context.Context) error {
 	}
 }
 
-func (l *routeLedger) add(request *pb.Request) bool {
+func (l *executionLedger) add(request *pb.ExecuteRequest) bool {
 	size := proto.Size(request)
 	l.mu.Lock()
 	if l.stopped {
 		l.mu.Unlock()
 		return false
 	}
-	l.ids[request.Id] = size
+	l.ids[request.RequestId] = size
 	l.bytes += size
-	l.lastID = request.Id
+	l.lastID = request.RequestId
 	l.notify()
-	count := l.server.routeStats.outstanding.Add(1)
-	bytes := l.server.routeStats.bytes.Add(int64(size))
-	raisePeak(&l.server.routeStats.peakOutstanding, count)
-	raisePeak(&l.server.routeStats.peakBytes, bytes)
+	count := l.server.executionStats.outstanding.Add(1)
+	bytes := l.server.executionStats.bytes.Add(int64(size))
+	raisePeak(&l.server.executionStats.peakOutstanding, count)
+	raisePeak(&l.server.executionStats.peakBytes, bytes)
 	l.mu.Unlock()
 	return true
 }
 
-func (l *routeLedger) contains(id uint64) bool {
+func (l *executionLedger) contains(id uint64) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_, ok := l.ids[id]
 	return ok
 }
 
-func (l *routeLedger) release(id uint64) bool {
+func (l *executionLedger) release(id uint64) bool {
 	l.mu.Lock()
 	size, ok := l.ids[id]
 	if ok {
 		delete(l.ids, id)
 		l.bytes -= size
 		l.notify()
-		l.server.routeStats.outstanding.Add(-1)
-		l.server.routeStats.bytes.Add(-int64(size))
+		l.server.executionStats.outstanding.Add(-1)
+		l.server.executionStats.bytes.Add(-int64(size))
 	}
 	l.mu.Unlock()
 	return ok
 }
 
-func (l *routeLedger) finishInput() {
+func (l *executionLedger) finishInput() {
 	l.mu.Lock()
 	l.closed = true
 	l.clientClosed = true
 	l.notify()
 	l.mu.Unlock()
 }
-func (l *routeLedger) finishDrain() {
+func (l *executionLedger) finishDrain() {
 	l.mu.Lock()
 	l.closed = true
 	l.draining = true
 	l.notify()
 	l.mu.Unlock()
 }
-func (l *routeLedger) truncated() bool {
+func (l *executionLedger) truncated() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.draining && !l.clientClosed
 }
-func (l *routeLedger) complete() bool {
+func (l *executionLedger) complete() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.closed && len(l.ids) == 0
 }
-func (l *routeLedger) clear() {
+func (l *executionLedger) clear() {
 	l.mu.Lock()
 	l.stopped = true
 	count, bytes := len(l.ids), l.bytes
 	clear(l.ids)
 	l.bytes = 0
 	l.notify()
-	l.server.routeStats.outstanding.Add(-int64(count))
-	l.server.routeStats.bytes.Add(-int64(bytes))
+	l.server.executionStats.outstanding.Add(-int64(count))
+	l.server.executionStats.bytes.Add(-int64(bytes))
 	l.mu.Unlock()
 }
 
-func (l *routeLedger) startDrain()      { l.mu.Lock(); l.draining = true; l.notify(); l.mu.Unlock() }
-func (l *routeLedger) isDraining() bool { l.mu.Lock(); defer l.mu.Unlock(); return l.draining }
-func (l *routeLedger) empty() bool      { l.mu.Lock(); defer l.mu.Unlock(); return len(l.ids) == 0 }
+func (l *executionLedger) startDrain()      { l.mu.Lock(); l.draining = true; l.notify(); l.mu.Unlock() }
+func (l *executionLedger) isDraining() bool { l.mu.Lock(); defer l.mu.Unlock(); return l.draining }
+func (l *executionLedger) empty() bool      { l.mu.Lock(); defer l.mu.Unlock(); return len(l.ids) == 0 }
 
-func (l *routeLedger) fail(err error) { l.mu.Lock(); l.cause = err; l.mu.Unlock() }
-func (l *routeLedger) failure(err error) error {
+func (l *executionLedger) fail(err error) { l.mu.Lock(); l.cause = err; l.mu.Unlock() }
+func (l *executionLedger) failure(err error) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.cause != nil {
@@ -181,7 +181,7 @@ func (l *routeLedger) failure(err error) error {
 	return err
 }
 
-func (s *Server) Route(stream grpc.BidiStreamingServer[pb.Request, pb.Response]) error {
+func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 	delivery, ok := ctx.Value(deliveryKey).(*delivery)
@@ -197,14 +197,14 @@ func (s *Server) Route(stream grpc.BidiStreamingServer[pb.Request, pb.Response])
 	if err != nil {
 		return err
 	}
-	if err := protocol.ValidateRequest(first, "", 0); err != nil {
+	if err := protocol.ValidateExecuteRequest(first, "", 0); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	runtime, err := s.resolve(first.Destination)
+	runtime, err := s.hostedStore(first.StoreName)
 	if err != nil {
 		return err
 	}
-	ledger := newRouteLedger(s)
+	ledger := newExecutionLedger(s)
 	defer func() { cancel(); ledger.clear() }()
 	ledger.add(first)
 	watchDone := make(chan struct{})
@@ -218,32 +218,32 @@ func (s *Server) Route(stream grpc.BidiStreamingServer[pb.Request, pb.Response])
 		}
 	}()
 	defer func() { cancel(); <-watchDone }()
-	args := localRoute{ctx: ctx, cancel: cancel, stream: stream, first: first, runtime: runtime, ledger: ledger, delivery: delivery}
-	return s.localRoute(args)
+	args := localExecutionArgs{ctx: ctx, cancel: cancel, stream: stream, first: first, runtime: runtime, ledger: ledger, delivery: delivery}
+	return s.localExecution(args)
 }
 
-type routeFailure struct {
+type executionFailure struct {
 	id    uint64
 	event *pb.Event
 }
-type localRoute struct {
+type localExecutionArgs struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
-	stream   grpc.BidiStreamingServer[pb.Request, pb.Response]
-	first    *pb.Request
+	stream   grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]
+	first    *pb.ExecuteRequest
 	runtime  *store.Runtime
-	ledger   *routeLedger
+	ledger   *executionLedger
 	delivery *delivery
 }
 
-func (s *Server) localRoute(args localRoute) error {
+func (s *Server) localExecution(args localExecutionArgs) error {
 	session := args.runtime.NewSession()
 	defer session.Close()
-	invalid := make(chan routeFailure, 1)
+	invalid := make(chan executionFailure, 1)
 	uploaded := make(chan error, 1)
 	uploadDone := make(chan struct{})
 	args.delivery.setPump(uploadDone)
-	go func(upload localRoute) {
+	go func(upload localExecutionArgs) {
 		defer close(uploadDone)
 		err := s.uploadLocal(upload, session, invalid)
 		select {
@@ -297,8 +297,8 @@ func (s *Server) localRoute(args localRoute) error {
 			if err := s.sendEvent(args.ctx, args.stream, rejected.id, rejected.event); err != nil {
 				return err
 			}
-			end := &pb.Response{Id: rejected.id, End: true}
-			if err := s.sendRoute(args.ctx, args.stream, end); err != nil {
+			end := &pb.ExecuteResponse{RequestId: rejected.id, RequestComplete: true}
+			if err := s.sendExecutionResponse(args.ctx, args.stream, end); err != nil {
 				return err
 			}
 			args.ledger.release(rejected.id)
@@ -312,8 +312,8 @@ func (s *Server) localRoute(args localRoute) error {
 				return status.Error(codes.Internal, "uncorrelated execution emission")
 			}
 			if emission.End {
-				end := &pb.Response{Id: id, End: true}
-				if err := s.sendRoute(args.ctx, args.stream, end); err != nil {
+				end := &pb.ExecuteResponse{RequestId: id, RequestComplete: true}
+				if err := s.sendExecutionResponse(args.ctx, args.stream, end); err != nil {
 					return err
 				}
 				emission.Release()
@@ -329,19 +329,19 @@ func (s *Server) localRoute(args localRoute) error {
 	}
 }
 
-func (s *Server) uploadLocal(args localRoute, session *store.Session, invalid chan<- routeFailure) error {
+func (s *Server) uploadLocal(args localExecutionArgs, session *store.Session, invalid chan<- executionFailure) error {
 	request := args.first
-	destination := request.Destination
+	storeName := request.StoreName
 	args.first = nil
 	for {
 		if err := s.admission.check(); err != nil {
 			return err
 		}
-		call, err := protocol.DecodeCall(request.Payload)
+		call, err := protocol.DecodeCall(request.CallPayload)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
-		plan, failure := args.runtime.PrepareCall(request.Id, call)
+		plan, failure := args.runtime.PrepareCall(request.RequestId, call)
 		if failure == nil {
 			for {
 				var changed <-chan struct{}
@@ -359,8 +359,8 @@ func (s *Server) uploadLocal(args localRoute, session *store.Session, invalid ch
 			}
 		}
 		if failure != nil {
-			event := failedCall(request.Id, call, failure)
-			rejected := routeFailure{id: request.Id, event: event}
+			event := failedCall(request.RequestId, call, failure)
+			rejected := executionFailure{id: request.RequestId, event: event}
 			select {
 			case invalid <- rejected:
 			case <-args.ctx.Done():
@@ -384,7 +384,7 @@ func (s *Server) uploadLocal(args localRoute, session *store.Session, invalid ch
 		if err != nil {
 			return err
 		}
-		if err := protocol.ValidateRequest(request, destination, args.ledger.lastID); err != nil {
+		if err := protocol.ValidateExecuteRequest(request, storeName, args.ledger.lastID); err != nil {
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
 		if err := s.admission.check(); err != nil {
@@ -394,7 +394,7 @@ func (s *Server) uploadLocal(args localRoute, session *store.Session, invalid ch
 			return status.FromContextError(args.ctx.Err()).Err()
 		}
 		if !args.ledger.add(request) {
-			return status.Error(codes.Canceled, "route closed")
+			return status.Error(codes.Canceled, "execution closed")
 		}
 	}
 }
@@ -424,15 +424,15 @@ func failedCall(id uint64, call *pb.Call, failure *pb.Failure) *pb.Event {
 	return event
 }
 
-func (s *Server) sendEvent(ctx context.Context, stream grpc.BidiStreamingServer[pb.Request, pb.Response], id uint64, event *pb.Event) error {
+func (s *Server) sendEvent(ctx context.Context, stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], id uint64, event *pb.Event) error {
 	data, err := protocol.MarshalEvent(event)
 	if err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
 	for len(data) > 0 {
 		count := min(len(data), protocol.NativeChunk)
-		response := &pb.Response{Id: id, Payload: data[:count]}
-		if err := s.sendRoute(ctx, stream, response); err != nil {
+		response := &pb.ExecuteResponse{RequestId: id, EventFragment: data[:count]}
+		if err := s.sendExecutionResponse(ctx, stream, response); err != nil {
 			return err
 		}
 		data = data[count:]
@@ -440,7 +440,7 @@ func (s *Server) sendEvent(ctx context.Context, stream grpc.BidiStreamingServer[
 	return nil
 }
 
-func (s *Server) sendRoute(ctx context.Context, stream grpc.BidiStreamingServer[pb.Request, pb.Response], frame *pb.Response) error {
+func (s *Server) sendExecutionResponse(ctx context.Context, stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], frame *pb.ExecuteResponse) error {
 	timer := time.AfterFunc(s.limits.Stall, func() { s.metrics.watchdogs.WithLabelValues("output").Inc(); s.abortPeer(stream.Context()) })
 	stop := context.AfterFunc(ctx, func() {
 		if stream.Context().Err() == nil {

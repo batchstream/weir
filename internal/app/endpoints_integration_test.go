@@ -5,7 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"net"
 	"net/netip"
 	"os/exec"
@@ -60,7 +60,7 @@ func endpointProcessConfig(t *testing.T) (Config, map[string]string) {
 	return cfg, roots
 }
 
-func endpointProcessClient(t *testing.T, address string) pb.WeirClient {
+func endpointProcessClient(t *testing.T, address string) pb.StoreServiceClient {
 	t.Helper()
 	conn, err := grpc.NewClient(
 		"passthrough:///"+address,
@@ -74,16 +74,16 @@ func endpointProcessClient(t *testing.T, address string) pb.WeirClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewWeirClient(conn)
+	return pb.NewStoreServiceClient(conn)
 }
 
-func openDiscoveredClient(t *testing.T, seed string, stores []string) *routeclient.Client {
+func openDiscoveredClient(t *testing.T, seed string, stores []string) *weirclient.Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	options := routeclient.OpenOptions{Seed: seed, Stores: stores, RefreshInterval: 100 * time.Millisecond}
+	options := weirclient.OpenOptions{Seed: seed, Stores: stores, RefreshInterval: 100 * time.Millisecond}
 	for {
-		client, err := routeclient.Open(ctx, options)
+		client, err := weirclient.Open(ctx, options)
 		if err == nil {
 			t.Cleanup(func() { _ = client.Close() })
 			return client
@@ -117,9 +117,9 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	// Wait for a fresh Resolve to expose all same-group replicas before measuring distribution.
 	raw := endpointProcessClient(t, seed.address)
 	budgetWait(t, "all replicas discovered", func() bool {
-		request := &pb.ResolveRequest{Store: "mongo"}
-		response, err := raw.Resolve(ctx, request)
-		return err == nil && len(response.Targets) == 3
+		request := &pb.ResolveStoreRequest{StoreName: "mongo"}
+		response, err := raw.ResolveStore(ctx, request)
+		return err == nil && len(response.Endpoints) == 3
 	})
 	time.Sleep(200 * time.Millisecond)
 	for i := 0; i < 80; i++ {
@@ -144,9 +144,9 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	}
 	peers[0].stop(t)
 	budgetWait(t, "departed replica withdrawn", func() bool {
-		request := &pb.ResolveRequest{Store: "mongo"}
-		response, err := raw.Resolve(ctx, request)
-		return err == nil && len(response.Targets) == 2
+		request := &pb.ResolveStoreRequest{StoreName: "mongo"}
+		response, err := raw.ResolveStore(ctx, request)
+		return err == nil && len(response.Endpoints) == 2
 	})
 	time.Sleep(200 * time.Millisecond)
 	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
@@ -160,9 +160,9 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	cfg.Basic.Listeners.Application = peers[0].address
 	replacement := startProcess(t, binary, cfg)
 	budgetWait(t, "replacement advertised", func() bool {
-		request := &pb.ResolveRequest{Store: "mongo"}
-		response, err := raw.Resolve(ctx, request)
-		return err == nil && len(response.Targets) == 3
+		request := &pb.ResolveStoreRequest{StoreName: "mongo"}
+		response, err := raw.ResolveStore(ctx, request)
+		return err == nil && len(response.Endpoints) == 3
 	})
 	time.Sleep(200 * time.Millisecond)
 	until := time.Now().Add(5 * time.Second)
@@ -210,8 +210,8 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	options := routeclient.OpenOptions{Seed: first.address, Stores: []string{"mongo"}, Resolver: resolver, RefreshInterval: 100 * time.Millisecond}
-	client, err := routeclient.Open(ctx, options)
+	options := weirclient.OpenOptions{Seed: first.address, Stores: []string{"mongo"}, Resolver: resolver, RefreshInterval: 100 * time.Millisecond}
+	client, err := weirclient.Open(ctx, options)
 	if err != nil {
 		t.Fatal(err)
 	}

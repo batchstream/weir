@@ -1,17 +1,19 @@
-# Route architecture
+# Execute architecture
 
 Weir is a synchronous finite-batch database service with one process. Clients use
-`Resolve` to discover a logical Store and connect directly to its business targets.
-`Route(stream Request) returns (stream Response)` executes local Stores only.
+`ResolveStore` to discover a logical Store and connect directly to its business targets.
+`Execute(stream ExecuteRequest) returns (stream ExecuteResponse)` executes local Stores only.
 Equal peers synchronize a bounded in-memory directory through periodic unary
 exchanges. See [discovery design](discovery-design.md) for ownership, leases and
 client endpoint lifecycle. Lua evaluates inside the main process.
 
+Public and internal peer schemas are independent; see [protocols](protocols.md).
+
 ## Protocol and completion
 
-`Request{id,destination,payload}` carries one complete Call. The first valid
+`ExecuteRequest{request_id,store_name,call_payload}` carries one complete Call. The first valid
 request fixes the local Store and runtime; the client selects one instance. Every request repeats
-the same destination. IDs are positive, strictly increasing unsigned integers;
+the same store_name. IDs are positive, strictly increasing unsigned integers;
 gaps are legal, reuse and overflow are not. They associate results only: no durable
 deduplication or exactly-once guarantee exists.
 
@@ -28,7 +30,7 @@ MongoDB and `index/s:one` for Search. Full `weir://` wire resources are rejected
 The adapter converts a relative target to its private canonical identity. Same
 Store calls can select different collections/indices within a single RPC.
 
-`Response{id,payload,end}` carries arbitrarily split bytes of a length-delimited
+`ExecuteResponse{request_id,event_fragment,request_complete}` carries arbitrarily split bytes of a length-delimited
 sequence of Event version 1 protobuf messages. Individual Events are bounded;
 clients can decode one Event at a time. Record Events contain a read result or
 mutation outcome. Scans emit a finite page of document Events followed by ScanEnd with a page count,
@@ -36,7 +38,7 @@ failure, and either a next continuation token or explicit exhaustion. Native exc
 transport completeness; native errors remain backend data. The execution DTO
 Result index mirrors the outer ID for adapter result correlation.
 
-The final response for each ID is a separate empty `end=true` frame. It is valid
+The final response for each ID is a separate empty `request_complete=true` frame. It is valid
 only after a complete terminal business Event, with no undecoded bytes. Data or
 another end after completion is invalid. A finite RPC succeeds only after input
 half-close, completion of every submitted request and final gRPC OK/EOF. There is
@@ -55,21 +57,21 @@ replica confirmation; the failure does not erase positive application evidence.
 
 ## Discovery and direct transport
 
-Application listeners expose Resolve and Route. Peer listeners expose bounded
-Directory.Exchange controls. Each process owns one directory shared by its
+Application listeners expose ResolveStore and Execute. Peer listeners expose bounded
+PeerDiscoveryService.SyncDirectory controls. Each process owns one directory shared by its
 listeners. Control requests have separate finite admission and short deadlines;
 periodic peer synchronization cannot consume every business session slot.
 
 A Store group publishes reachable DNS/IP host:port targets. Client initialization
 resolves each requested Store through any seed node, then opens reusable
 round-robin channels to the returned business instances. Directory mapping
-refresh and proactive DNS refresh update new-RPC selection. An active Route
+refresh and proactive DNS refresh update new-RPC selection. An active Execute
 remains pinned to its original instance. No business payload crosses a peer
-Exchange or another Weir's Route. An unknown local destination is rejected before
+SyncDirectory or another Weir's Execute. An unknown local destination is rejected before
 Store execution.
 
 The existing finite lifetime, cancellation, half-close, bounded outstanding IDs
-and input/output flow control apply to direct Route. Input EOF stops new business
+and input/output flow control apply to direct Execute. Input EOF stops new business
 requests while remaining results drain. Shutdown stops new admission/input and
 lets admitted work drain within a bounded deadline. Cancellation and transport
 failure never prove an uncompleted write was not applied and never trigger
@@ -205,8 +207,8 @@ maximum is 256. Each scheduler step fetches at most one document, with no prefet
 and FIFO continuation after publication. Sending a document does not retain an
 execution permit, so a stalled scan at concurrency one permits short record work.
 
-The client starts a new finite Route RPC for each page and supplies the previous
-`next_continuation_token`. A live Route remains pinned to one business instance,
+The client starts a new finite Execute RPC for each page and supplies the previous
+`next_continuation_token`. A live Execute remains pinned to one business instance,
 but the next RPC can select any instance serving the same Store and backend. No
 Weir session, process registry or shared task storage survives between scan pages.
 A page succeeds only after its ScanEnd count, request end frame and final gRPC OK;
@@ -253,7 +255,7 @@ retain their per-request evidence.
 
 ## Clients and validation
 
-`routeclient.Run` accepts an incremental producer and consumer and synchronously
+`weirclient.Execute` accepts an incremental producer and consumer and synchronously
 returns after all request ends and final status. It sends and receives concurrently
 with eight input slots/16 MiB charges. Complete observes each validated request end;
 Consume exposes bounded incremental Events. Callbacks must honor context and release

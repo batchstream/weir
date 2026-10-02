@@ -222,7 +222,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	return node
 }
 
-func routeAcceptanceClient(t testing.TB, address string) pb.WeirClient {
+func routeAcceptanceClient(t testing.TB, address string) pb.StoreServiceClient {
 	t.Helper()
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
@@ -235,17 +235,17 @@ func routeAcceptanceClient(t testing.TB, address string) pb.WeirClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	return pb.NewWeirClient(connection)
+	return pb.NewStoreServiceClient(connection)
 }
 
-func routeAcceptanceServer(t testing.TB, adapter *routeAcceptanceAdapter) ([]*routeAcceptanceNode, pb.WeirClient) {
+func routeAcceptanceServer(t testing.TB, adapter *routeAcceptanceAdapter) ([]*routeAcceptanceNode, pb.StoreServiceClient) {
 	t.Helper()
 	opts := routeAcceptanceNodeOptions{adapter: adapter}
 	node := startRouteAcceptanceNode(t, opts)
 	return []*routeAcceptanceNode{node}, routeAcceptanceClient(t, node.address)
 }
 
-func routeAcceptanceRead(id uint64, key string) *pb.Request {
+func routeAcceptanceRead(id uint64, key string) *pb.ExecuteRequest {
 	read := &pb.ReadRequest{Resource: key}
 	variant := &pb.Call_Read{Read: read}
 	call := &pb.Call{Version: 1, Operation: variant}
@@ -253,11 +253,11 @@ func routeAcceptanceRead(id uint64, key string) *pb.Request {
 	if err != nil {
 		panic(err)
 	}
-	request := &pb.Request{Id: id, Destination: "records", Payload: raw}
+	request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CallPayload: raw}
 	return request
 }
 
-func routeAcceptancePut(id uint64, key, value string) *pb.Request {
+func routeAcceptancePut(id uint64, key, value string) *pb.ExecuteRequest {
 	document := &pb.Document{MediaType: "application/octet-stream", Data: []byte(value)}
 	action := &pb.MutateRequest_Put{Put: document}
 	mutate := &pb.MutateRequest{Resource: key, Action: action}
@@ -267,7 +267,7 @@ func routeAcceptancePut(id uint64, key, value string) *pb.Request {
 	if err != nil {
 		panic(err)
 	}
-	request := &pb.Request{Id: id, Destination: "records", Payload: raw}
+	request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CallPayload: raw}
 	return request
 }
 
@@ -285,36 +285,36 @@ func newRouteAcceptanceDecoder() *routeAcceptanceDecoder {
 	return d
 }
 
-func (d *routeAcceptanceDecoder) consume(response *pb.Response) (*pb.Event, error) {
-	if response.Id == 0 || len(response.Payload) > 64<<10 || response.End && len(response.Payload) != 0 {
+func (d *routeAcceptanceDecoder) consume(response *pb.ExecuteResponse) (*pb.Event, error) {
+	if response.RequestId == 0 || len(response.EventFragment) > 64<<10 || response.RequestComplete && len(response.EventFragment) != 0 {
 		return nil, errors.New("invalid response envelope")
 	}
 	d.frames++
-	buffer := d.partial[response.Id]
+	buffer := d.partial[response.RequestId]
 	if buffer == nil {
 		if len(d.partial) >= 8 {
 			return nil, errors.New("server exceeded eight active response IDs")
 		}
 		buffer = &bytes.Buffer{}
-		d.partial[response.Id] = buffer
+		d.partial[response.RequestId] = buffer
 	}
-	if buffer.Len()+len(response.Payload) > (2<<20)+4096 {
+	if buffer.Len()+len(response.EventFragment) > (2<<20)+4096 {
 		return nil, errors.New("response exceeded fixture record bound")
 	}
-	_, _ = buffer.Write(response.Payload)
-	if !response.End {
+	_, _ = buffer.Write(response.EventFragment)
+	if !response.RequestComplete {
 		return nil, nil
 	}
 	event := &pb.Event{}
 	if err := protodelim.UnmarshalFrom(buffer, event); err != nil {
 		return nil, fmt.Errorf("incomplete Event: %w", err)
 	}
-	if buffer.Len() != 0 || event.Version != 1 || event.GetResult().GetIndex() != response.Id {
+	if buffer.Len() != 0 || event.Version != 1 || event.GetResult().GetIndex() != response.RequestId {
 		return nil, errors.New("response Event cardinality/version/ID mismatch")
 	}
 	d.bytes += uint64(len(event.GetResult().GetRead().GetDocument().GetData()))
 	d.count++
-	delete(d.partial, response.Id)
+	delete(d.partial, response.RequestId)
 	return event, nil
 }
 
@@ -348,7 +348,7 @@ func TestRouteAcceptanceLargeResponseAndHalfClose(t *testing.T) {
 	nodes, client := routeAcceptanceServer(t, adapter)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	stream, err := client.Route(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestRouteAcceptanceProtocolFailureDoesNotRollback(t *testing.T) {
 			nodes, client := routeAcceptanceServer(t, adapter)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			stream, err := client.Route(ctx)
+			stream, err := client.Execute(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -425,13 +425,13 @@ func TestRouteAcceptanceProtocolFailureDoesNotRollback(t *testing.T) {
 			second := routeAcceptanceRead(9, "records/s:key")
 			switch invalid {
 			case "zero_id":
-				second.Id = 0
+				second.RequestId = 0
 			case "repeated_id":
-				second.Id = 4
+				second.RequestId = 4
 			case "decreasing_id":
-				second.Id = 3
+				second.RequestId = 3
 			case "destination":
-				second.Destination = "other"
+				second.StoreName = "other"
 			}
 			_ = stream.Send(second)
 			_ = stream.CloseSend()
@@ -450,7 +450,7 @@ func TestRouteAcceptanceProtocolFailureDoesNotRollback(t *testing.T) {
 	}
 }
 
-func routeAcceptanceDrain(stream pb.Weir_RouteClient) ([]uint64, error) {
+func routeAcceptanceDrain(stream pb.StoreService_ExecuteClient) ([]uint64, error) {
 	decoder := newRouteAcceptanceDecoder()
 	var ids []uint64
 	for {
@@ -488,11 +488,11 @@ func TestRouteAcceptanceIndependentCompletionAndSameRecordOrder(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	stream, err := client.Route(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests := []*pb.Request{routeAcceptancePut(1, adapter.waitKey, "first"), routeAcceptanceRead(2, "records/s:independent"), routeAcceptancePut(3, adapter.waitKey, "second")}
+	requests := []*pb.ExecuteRequest{routeAcceptancePut(1, adapter.waitKey, "first"), routeAcceptanceRead(2, "records/s:independent"), routeAcceptancePut(3, adapter.waitKey, "second")}
 	for _, request := range requests {
 		if err := stream.Send(request); err != nil {
 			t.Fatal(err)
@@ -623,11 +623,11 @@ func TestRouteAcceptanceCrossRPCBatchCancellationIsolation(t *testing.T) {
 	defer cancelFirst()
 	secondCtx, cancelSecond := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelSecond()
-	first, err := client.Route(firstCtx)
+	first, err := client.Execute(firstCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := client.Route(secondCtx)
+	second, err := client.Execute(secondCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -662,7 +662,7 @@ func TestRouteAcceptanceCrossRPCBatchCancellationIsolation(t *testing.T) {
 		t.Fatal("canceling one member canceled its active batch peer", ids, err)
 	}
 	adapter.mu.Lock()
-	value := string(adapter.values[secondRequest.GetDestination()+"/s:secondRPC"])
+	value := string(adapter.values[secondRequest.GetStoreName()+"/s:secondRPC"])
 	adapter.mu.Unlock()
 	if value != "two" {
 		t.Fatal("noncanceled peer mutation was not applied", value)

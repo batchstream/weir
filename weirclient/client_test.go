@@ -1,4 +1,4 @@
-package routeclient
+package weirclient
 
 import (
 	"bytes"
@@ -22,15 +22,15 @@ import (
 )
 
 type clientTestPeer struct {
-	pb.UnimplementedWeirServer
+	pb.UnimplementedStoreServiceServer
 	mode      string
 	completed atomic.Int64
 	canceled  chan struct{}
 }
 
-func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
+func (p *clientTestPeer) Execute(stream pb.StoreService_ExecuteServer) error {
 	if strings.HasPrefix(p.mode, "scan_") {
-		return p.scanRoute(stream)
+		return p.scanExecute(stream)
 	}
 	if p.mode == "reject_early" {
 		return status.Error(codes.InvalidArgument, "fixture header rejection")
@@ -58,7 +58,7 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 		readValue := &pb.ReadResult_Document{Document: document}
 		read := &pb.ReadResult{Result: readValue}
 		resultValue := &pb.Result_Read{Read: read}
-		result := &pb.Result{Index: request.Id, Result: resultValue}
+		result := &pb.Result{Index: request.RequestId, Result: resultValue}
 		value := &pb.Event_Result{Result: result}
 		event := &pb.Event{Version: 1, Value: value}
 		if p.mode == "write_reply_loss" || p.mode == "write_end_failure" {
@@ -76,13 +76,13 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 		if p.mode == "incomplete_event" {
 			raw = raw[:3]
 		}
-		id := request.Id
+		id := request.RequestId
 		if p.mode == "unknown_id" {
 			id++
 		}
 		for len(raw) > 0 {
 			size := min(len(raw), 19<<10)
-			response := &pb.Response{Id: id, Payload: raw[:size]}
+			response := &pb.ExecuteResponse{RequestId: id, EventFragment: raw[:size]}
 			if err := stream.Send(response); err != nil {
 				return err
 			}
@@ -94,7 +94,7 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 		if p.mode == "missing_end" {
 			return nil
 		}
-		end := &pb.Response{Id: id, End: true}
+		end := &pb.ExecuteResponse{RequestId: id, RequestComplete: true}
 		if err := stream.Send(end); err != nil {
 			return err
 		}
@@ -108,14 +108,14 @@ func (p *clientTestPeer) Route(stream pb.Weir_RouteServer) error {
 	}
 }
 
-func clientTestConnection(t *testing.T, peer *clientTestPeer) pb.WeirClient {
+func clientTestConnection(t *testing.T, peer *clientTestPeer) pb.StoreServiceClient {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(10 << 20))
-	pb.RegisterWeirServer(server, peer)
+	pb.RegisterStoreServiceServer(server, peer)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close(); <-done })
@@ -128,7 +128,7 @@ func clientTestConnection(t *testing.T, peer *clientTestPeer) pb.WeirClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	return pb.NewWeirClient(connection)
+	return pb.NewStoreServiceClient(connection)
 }
 
 func clientTestRead() *pb.Call {
@@ -138,13 +138,13 @@ func clientTestRead() *pb.Call {
 	return call
 }
 
-func TestRunConsumesFragmentedFiniteBatch(t *testing.T) {
+func TestExecuteConsumesFragmentedFiniteBatch(t *testing.T) {
 	peer := &clientTestPeer{mode: "normal"}
 	client := clientTestConnection(t, peer)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	produced, consumed := 0, 0
-	opts := Options{Destination: "records"}
+	opts := Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		if produced == 25 {
 			return nil, io.EOF
@@ -160,11 +160,11 @@ func TestRunConsumesFragmentedFiniteBatch(t *testing.T) {
 		consumed++
 		return nil
 	}
-	if err := Run(ctx, client, opts); err != nil {
+	if err := Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	if produced != 25 || consumed != 25 || peer.completed.Load() != 25 {
-		t.Fatal("finite Run failed to half-close and drain", produced, consumed, peer.completed.Load())
+		t.Fatal("finite Execute failed to half-close and drain", produced, consumed, peer.completed.Load())
 	}
 }
 
@@ -175,7 +175,7 @@ func TestRecordRejectsIncompleteAndInvalidResponses(t *testing.T) {
 			client := clientTestConnection(t, peer)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			opts := RecordOptions{Destination: "records", Call: clientTestRead()}
+			opts := RecordOptions{StoreName: "records", Call: clientTestRead()}
 			result, err := Record(ctx, client, opts)
 			if err == nil {
 				t.Fatal("invalid or incomplete RPC reported success", mode)
@@ -194,21 +194,21 @@ func TestRecordRejectsIncompleteAndInvalidResponses(t *testing.T) {
 	}
 }
 
-func TestRunProducerErrorCancelsAndJoins(t *testing.T) {
+func TestExecuteProducerErrorCancelsAndJoins(t *testing.T) {
 	peer := &clientTestPeer{mode: "normal", canceled: make(chan struct{})}
 	client := clientTestConnection(t, peer)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	failure := errors.New("producer source failed")
-	opts := Options{Destination: "records"}
+	opts := Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) { return nil, failure }
 	opts.Consume = func(context.Context, uint64, *pb.Event) error { return nil }
-	if err := Run(ctx, client, opts); !errors.Is(err, failure) {
+	if err := Execute(ctx, client, opts); !errors.Is(err, failure) {
 		t.Fatal("producer failure was masked", err)
 	}
 }
 
-func TestRunConsumerErrorJoinsBlockedProducer(t *testing.T) {
+func TestExecuteConsumerErrorJoinsBlockedProducer(t *testing.T) {
 	peer := &clientTestPeer{mode: "normal"}
 	client := clientTestConnection(t, peer)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -216,7 +216,7 @@ func TestRunConsumerErrorJoinsBlockedProducer(t *testing.T) {
 	failure := errors.New("consumer failed")
 	produced := false
 	joined := make(chan struct{})
-	opts := Options{Destination: "records"}
+	opts := Options{StoreName: "records"}
 	opts.Produce = func(ctx context.Context) (*pb.Call, error) {
 		if !produced {
 			produced = true
@@ -227,17 +227,17 @@ func TestRunConsumerErrorJoinsBlockedProducer(t *testing.T) {
 		return nil, ctx.Err()
 	}
 	opts.Consume = func(context.Context, uint64, *pb.Event) error { return failure }
-	if err := Run(ctx, client, opts); !errors.Is(err, failure) {
+	if err := Execute(ctx, client, opts); !errors.Is(err, failure) {
 		t.Fatal("consumer failure was masked", err)
 	}
 	select {
 	case <-joined:
 	default:
-		t.Fatal("Run returned before its canceled producer exited")
+		t.Fatal("Execute returned before its canceled producer exited")
 	}
 }
 
-func TestRunCanceledBlockedSendReleasesProducer(t *testing.T) {
+func TestExecuteCanceledBlockedSendReleasesProducer(t *testing.T) {
 	peer := &clientTestPeer{mode: "blocked_receive", canceled: make(chan struct{})}
 	client := clientTestConnection(t, peer)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -248,7 +248,7 @@ func TestRunCanceledBlockedSendReleasesProducer(t *testing.T) {
 	value := &pb.Call_Mutate{Mutate: mutation}
 	call := &pb.Call{Version: 1, Operation: value}
 	var active atomic.Int64
-	opts := Options{Destination: "records"}
+	opts := Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		active.Add(1)
 		defer active.Add(-1)
@@ -256,7 +256,7 @@ func TestRunCanceledBlockedSendReleasesProducer(t *testing.T) {
 	}
 	opts.Consume = func(context.Context, uint64, *pb.Event) error { return nil }
 	started := time.Now()
-	if err := Run(ctx, client, opts); err == nil {
+	if err := Execute(ctx, client, opts); err == nil {
 		t.Fatal("blocked transport completed after cancellation")
 	}
 	if active.Load() != 0 || time.Since(started) > time.Second {
@@ -264,7 +264,7 @@ func TestRunCanceledBlockedSendReleasesProducer(t *testing.T) {
 	}
 }
 
-func TestRunEarlyEOFJoinsWithoutWaitingForCallerDeadline(t *testing.T) {
+func TestExecuteEarlyEOFJoinsWithoutWaitingForCallerDeadline(t *testing.T) {
 	for _, mode := range []string{"early_eof", "early_eof_after_result"} {
 		t.Run(mode, func(t *testing.T) {
 			peer := &clientTestPeer{mode: mode}
@@ -273,7 +273,7 @@ func TestRunEarlyEOFJoinsWithoutWaitingForCallerDeadline(t *testing.T) {
 			defer cancel()
 			produced := false
 			joined := make(chan struct{})
-			opts := Options{Destination: "records"}
+			opts := Options{StoreName: "records"}
 			opts.Produce = func(ctx context.Context) (*pb.Call, error) {
 				if mode == "early_eof_after_result" && !produced {
 					produced = true
@@ -285,7 +285,7 @@ func TestRunEarlyEOFJoinsWithoutWaitingForCallerDeadline(t *testing.T) {
 			}
 			opts.Consume = func(context.Context, uint64, *pb.Event) error { return nil }
 			started := time.Now()
-			if err := Run(ctx, client, opts); err == nil {
+			if err := Execute(ctx, client, opts); err == nil {
 				t.Fatal("downstream early EOF was reported as finite batch success")
 			}
 			if time.Since(started) > 500*time.Millisecond {
@@ -300,7 +300,7 @@ func TestRunEarlyEOFJoinsWithoutWaitingForCallerDeadline(t *testing.T) {
 	}
 }
 
-func TestRunCompleteRequiresEmptyTransportEnd(t *testing.T) {
+func TestExecuteCompleteRequiresEmptyTransportEnd(t *testing.T) {
 	for _, mode := range []string{"normal", "missing_end", "non_ok_after_end"} {
 		t.Run(mode, func(t *testing.T) {
 			peer := &clientTestPeer{mode: mode}
@@ -308,7 +308,7 @@ func TestRunCompleteRequiresEmptyTransportEnd(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			produced, consumed, completed := false, 0, 0
-			opts := Options{Destination: "records"}
+			opts := Options{StoreName: "records"}
 			opts.Produce = func(context.Context) (*pb.Call, error) {
 				if produced {
 					return nil, io.EOF
@@ -324,7 +324,7 @@ func TestRunCompleteRequiresEmptyTransportEnd(t *testing.T) {
 				completed++
 				return nil
 			}
-			err := Run(ctx, client, opts)
+			err := Execute(ctx, client, opts)
 			if mode == "normal" && err != nil || mode != "normal" && err == nil {
 				t.Fatal("unexpected finite RPC status", mode, err)
 			}
@@ -351,7 +351,7 @@ func TestRecordPreservesAppliedEvidenceWithRPCError(t *testing.T) {
 			mutation := &pb.MutateRequest{Resource: "records/s:key", Action: action}
 			variant := &pb.Call_Mutate{Mutate: mutation}
 			call := &pb.Call{Version: 1, Operation: variant}
-			opts := RecordOptions{Destination: "records", Call: call}
+			opts := RecordOptions{StoreName: "records", Call: call}
 			result, err := Record(ctx, client, opts)
 			if status.Code(err) != codes.Unavailable || result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.Index != 1 {
 				t.Fatal("lost RPC terminal erased validated write evidence or reported success", result, err)
@@ -360,12 +360,12 @@ func TestRecordPreservesAppliedEvidenceWithRPCError(t *testing.T) {
 	}
 }
 
-func TestRunEarlyRejectionPreservesAuthoritativeStatus(t *testing.T) {
+func TestExecuteEarlyRejectionPreservesAuthoritativeStatus(t *testing.T) {
 	peer := &clientTestPeer{mode: "reject_early"}
 	client := clientTestConnection(t, peer)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	opts := Options{Destination: "records"}
+	opts := Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) {
 		// Bounded source work can finish after the peer rejects RPC headers.
 		// A subsequent Send EOF must not mask the authoritative receive status.
@@ -373,12 +373,12 @@ func TestRunEarlyRejectionPreservesAuthoritativeStatus(t *testing.T) {
 		return clientTestRead(), nil
 	}
 	opts.Consume = func(context.Context, uint64, *pb.Event) error { return errors.New("rejected RPC returned a result") }
-	if err := Run(ctx, client, opts); status.Code(err) != codes.InvalidArgument {
+	if err := Execute(ctx, client, opts); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("Send EOF or cancellation replaced peer rejection", err)
 	}
 }
 
-func TestRunOversizedInputDoesNotAllocateEncodedCopy(t *testing.T) {
+func TestExecuteOversizedInputDoesNotAllocateEncodedCopy(t *testing.T) {
 	peer := &clientTestPeer{mode: "normal"}
 	client := clientTestConnection(t, peer)
 	body := make([]byte, protocol.MaxPayload+1)
@@ -389,14 +389,14 @@ func TestRunOversizedInputDoesNotAllocateEncodedCopy(t *testing.T) {
 	call := &pb.Call{Version: 1, Operation: variant}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	opts := Options{Destination: "records"}
+	opts := Options{StoreName: "records"}
 	opts.Produce = func(context.Context) (*pb.Call, error) { return call, nil }
 	opts.Consume = func(context.Context, uint64, *pb.Event) error {
 		return errors.New("oversized input returned a response")
 	}
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	err := Run(ctx, client, opts)
+	err := Execute(ctx, client, opts)
 	runtime.ReadMemStats(&after)
 	if err == nil || peer.completed.Load() != 0 {
 		t.Fatal("oversized input was transmitted", err, peer.completed.Load())
@@ -406,7 +406,7 @@ func TestRunOversizedInputDoesNotAllocateEncodedCopy(t *testing.T) {
 	}
 }
 
-func (p *clientTestPeer) scanRoute(stream pb.Weir_RouteServer) error {
+func (p *clientTestPeer) scanExecute(stream pb.StoreService_ExecuteServer) error {
 	request, err := stream.Recv()
 	if err != nil {
 		return err
@@ -419,7 +419,7 @@ func (p *clientTestPeer) scanRoute(stream pb.Weir_RouteServer) error {
 		if _, err := protodelim.MarshalTo(&raw, event); err != nil {
 			return err
 		}
-		frame := &pb.Response{Id: request.Id, Payload: raw.Bytes()}
+		frame := &pb.ExecuteResponse{RequestId: request.RequestId, EventFragment: raw.Bytes()}
 		return stream.Send(frame)
 	}
 	count := uint64(1)
@@ -449,7 +449,7 @@ func (p *clientTestPeer) scanRoute(stream pb.Weir_RouteServer) error {
 	if p.mode == "scan_missing_request_end" {
 		return nil
 	}
-	frame := &pb.Response{Id: request.Id, End: true}
+	frame := &pb.ExecuteResponse{RequestId: request.RequestId, RequestComplete: true}
 	if err := stream.Send(frame); err != nil {
 		return err
 	}
@@ -468,7 +468,7 @@ func TestScanPageCommitsOnlyCompleteBoundedPage(t *testing.T) {
 			defer cancel()
 			request := &pb.ScanRequest{Resource: "records", PageSize: 1}
 			consumed := 0
-			opts := ScanPageOptions{Destination: "search", Request: request}
+			opts := ScanPageOptions{StoreName: "search", Request: request}
 			opts.Consume = func(context.Context, *pb.Document) error {
 				consumed++
 				if mode == "scan_consumer_failure" {

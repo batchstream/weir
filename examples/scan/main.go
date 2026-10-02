@@ -8,7 +8,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 
 func run() error {
 	address := flag.String("address", "127.0.0.1:7447", "Weir initialization listener")
-	destination := flag.String("store", "mongo", "logical Store")
+	storeName := flag.String("store", "mongo", "logical Store")
 	resource := flag.String("resource", "weir_m1/records", "relative collection or index")
 	pageSize := flag.Uint("page-size", 128, "documents per page, 1 to 256")
 	flag.Parse()
@@ -28,14 +28,14 @@ func run() error {
 	}
 	initialize, initializeCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer initializeCancel()
-	openOptions := routeclient.OpenOptions{Seed: *address, Stores: []string{*destination}}
-	client, err := routeclient.Open(initialize, openOptions)
+	openOptions := weirclient.OpenOptions{Seed: *address, Stores: []string{*storeName}}
+	client, err := weirclient.Open(initialize, openOptions)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 	request := &pb.ScanRequest{Resource: *resource, PageSize: uint32(*pageSize)}
-	options := routeclient.ScanPageOptions{Destination: *destination, Request: request}
+	options := weirclient.ScanPageOptions{StoreName: *storeName, Request: request}
 	options.Consume = func(ctx context.Context, document *pb.Document) error {
 		fmt.Printf("document: media=%s bytes=%d\n", document.MediaType, len(document.Data))
 		// Process and discard each document. Retrying a page can repeat documents,

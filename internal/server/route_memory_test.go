@@ -30,7 +30,7 @@ type routeMemorySnapshot struct {
 	Goroutines    int
 	RSS           uint64
 	CPUSeconds    float64
-	Route         RouteSnapshot
+	Route         ExecutionSnapshot
 	Store         store.Snapshot
 	PhysicalConns int
 	Executed      int64
@@ -337,7 +337,7 @@ func TestRouteMemory200MiBDirect(t *testing.T) {
 		}
 		run := routeMemoryRun{Records: count, RecordBytes: 2 << 20, ActiveRPCs: 1, Baseline: baseline, Peak: make(map[string]routeMemorySnapshot)}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		stream, err := client.Route(ctx)
+		stream, err := client.Execute(ctx)
 		if err != nil {
 			cancel()
 			t.Fatal(err)

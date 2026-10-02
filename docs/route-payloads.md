@@ -8,7 +8,7 @@ fallback. An incompatible adapter document/descriptor schema must use a new
 explicit media profile; its version is part of the media type below. Plain BSON
 and JSON retain their native format semantics within Call version 1.
 
-The outer destination selects the adapter. Call resources are canonical relative
+The outer store_name selects the adapter. Call resources are canonical relative
 paths: percent escaping must round-trip canonically, and a full `weir://` resource
 is invalid on the wire. A request cannot select a different Store inside its body.
 The proto source is the field schema; validation takes place before scheduling or

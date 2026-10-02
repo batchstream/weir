@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/batchstream/weir/internal/testutil"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"io"
 	"net"
 	"net/http"
@@ -604,7 +604,7 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 	defer cancel()
 
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	stream, err := conn.NewStream(ctx, desc, pb.Weir_Route_FullMethodName)
+	stream, err := conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,7 +697,7 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	}
 	defer conn.Close()
 
-	client := pb.NewWeirClient(conn)
+	client := pb.NewStoreServiceClient(conn)
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 	put := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: "weir://records/records/s:one", Action: put}
@@ -706,7 +706,7 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	var callErr error
 	go func() {
 		var routedResult711 *pb.Result
-		routedResult711, callErr = routeclient.Record(ctx, client, testutil.RecordCall(request))
+		routedResult711, callErr = weirclient.Record(ctx, client, testutil.RecordCall(request))
 		result = routedResult711.GetMutation()
 		close(done)
 	}()

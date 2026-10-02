@@ -1,4 +1,4 @@
-package routeclient
+package weirclient
 
 import (
 	"context"
@@ -17,30 +17,31 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type discoveryPeer struct {
-	pb.UnimplementedWeirServer
-	business *clientTestPeer
-	routes   atomic.Int64
-	resolves atomic.Int64
-	mu       sync.Mutex
-	records  map[string]*pb.ResolveResponse
-	err      error
-	delay    time.Duration
-	delays   map[string]time.Duration
+	pb.UnimplementedStoreServiceServer
+	business   *clientTestPeer
+	executions atomic.Int64
+	resolves   atomic.Int64
+	mu         sync.Mutex
+	records    map[string]*pb.ResolveStoreResponse
+	err        error
+	delay      time.Duration
+	delays     map[string]time.Duration
 }
 
-func (p *discoveryPeer) Resolve(ctx context.Context, request *pb.ResolveRequest) (*pb.ResolveResponse, error) {
+func (p *discoveryPeer) ResolveStore(ctx context.Context, request *pb.ResolveStoreRequest) (*pb.ResolveStoreResponse, error) {
 	p.resolves.Add(1)
 	p.mu.Lock()
 	err, delay := p.err, p.delay
-	if override, exists := p.delays[request.Store]; exists {
+	if override, exists := p.delays[request.StoreName]; exists {
 		delay = override
 	}
-	var response *pb.ResolveResponse
-	if record := p.records[request.Store]; record != nil {
-		response = proto.Clone(record).(*pb.ResolveResponse)
+	var response *pb.ResolveStoreResponse
+	if record := p.records[request.StoreName]; record != nil {
+		response = proto.Clone(record).(*pb.ResolveStoreResponse)
 	}
 	p.mu.Unlock()
 	if delay != 0 {
@@ -61,19 +62,19 @@ func (p *discoveryPeer) Resolve(ctx context.Context, request *pb.ResolveRequest)
 	return response, nil
 }
 
-func (p *discoveryPeer) Route(stream pb.Weir_RouteServer) error {
-	p.routes.Add(1)
+func (p *discoveryPeer) Execute(stream pb.StoreService_ExecuteServer) error {
+	p.executions.Add(1)
 	if p.business == nil {
 		return status.Error(codes.FailedPrecondition, "initialization node received business traffic")
 	}
-	return p.business.Route(stream)
+	return p.business.Execute(stream)
 }
 
-func (p *discoveryPeer) set(store string, response *pb.ResolveResponse) {
+func (p *discoveryPeer) set(store string, response *pb.ResolveStoreResponse) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.records == nil {
-		p.records = make(map[string]*pb.ResolveResponse)
+		p.records = make(map[string]*pb.ResolveStoreResponse)
 	}
 	p.records[store] = response
 }
@@ -90,7 +91,7 @@ func listenDiscovery(t *testing.T, peer *discoveryPeer, address string) *discove
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(10 << 20))
-	pb.RegisterWeirServer(server, peer)
+	pb.RegisterStoreServiceServer(server, peer)
 	done := make(chan struct{})
 	go func() { _ = server.Serve(listener); close(done) }()
 	var once sync.Once
@@ -102,8 +103,8 @@ func listenDiscovery(t *testing.T, peer *discoveryPeer, address string) *discove
 	return fixture
 }
 
-func discoveryRecord(store string, targets ...string) *pb.ResolveResponse {
-	response := &pb.ResolveResponse{Store: store, Group: "group-" + store, Targets: targets, CacheTtlMs: 30000}
+func discoveryRecord(store string, endpoints ...string) *pb.ResolveStoreResponse {
+	response := &pb.ResolveStoreResponse{StoreName: store, Endpoints: endpoints, CacheTtlMs: 30000}
 	return response
 }
 
@@ -123,10 +124,30 @@ func discoveryRead(t *testing.T, client *Client, store string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	options := RecordOptions{Destination: store, Call: clientTestRead()}
+	options := RecordOptions{StoreName: store, Call: clientTestRead()}
 	result, err := client.Record(ctx, options)
 	if err != nil || result == nil || result.GetRead() == nil {
 		t.Fatalf("direct Store read: result=%v error=%v", result, err)
+	}
+}
+
+func TestResolveStorePublicResponseContract(t *testing.T) {
+	response := &pb.ResolveStoreResponse{}
+	descriptor := response.ProtoReflect().Descriptor()
+	fields := descriptor.Fields()
+	names := []protoreflect.Name{"store_name", "endpoints", "cache_ttl_ms"}
+	if fields.Len() != len(names) {
+		t.Fatalf("public resolution exposes %d fields; only Store name, endpoints and cache TTL are allowed", fields.Len())
+	}
+	for i, name := range names {
+		field := fields.ByName(name)
+		if field == nil || field.Number() != protoreflect.FieldNumber(i+1) {
+			t.Fatalf("public resolution field %s changed its wire identity", name)
+		}
+	}
+	file := descriptor.ParentFile()
+	if file.Messages().ByName("NodeAnnouncement") != nil || file.Services().ByName("PeerDiscoveryService") != nil {
+		t.Fatal("public Store protocol contains internal peer discovery metadata")
 	}
 }
 
@@ -147,13 +168,13 @@ func TestOpenResolvesMultipleStoresAndBalancesDirectStreams(t *testing.T) {
 		discoveryRead(t, client, "records")
 	}
 	discoveryRead(t, client, "other")
-	if first.routes.Load() == 0 || second.routes.Load() == 0 || seed.routes.Load() != 0 {
-		t.Fatalf("business must balance direct replicas: first=%d second=%d seed=%d", first.routes.Load(), second.routes.Load(), seed.routes.Load())
+	if first.executions.Load() == 0 || second.executions.Load() == 0 || seed.executions.Load() != 0 {
+		t.Fatalf("business must balance direct replicas: first=%d second=%d seed=%d", first.executions.Load(), second.executions.Load(), seed.executions.Load())
 	}
 	if first.resolves.Load() != 0 || second.resolves.Load() != 0 {
 		t.Fatal("business replicas received initialization traffic")
 	}
-	unknown := RecordOptions{Destination: "uninitialized", Call: clientTestRead()}
+	unknown := RecordOptions{StoreName: "uninitialized", Call: clientTestRead()}
 	if _, err := client.Record(t.Context(), unknown); err == nil {
 		t.Fatal("uninitialized Store accepted")
 	}
@@ -183,11 +204,11 @@ func TestClientDNSDiscoversScaleAndDrainsRetiredReplica(t *testing.T) {
 	answer.Addresses = []netip.Addr{ipv4, ipv6}
 	dns.Set(name, answer)
 	deadline := time.Now().Add(3 * time.Second)
-	for second.routes.Load() == 0 && time.Now().Before(deadline) {
+	for second.executions.Load() == 0 && time.Now().Before(deadline) {
 		discoveryRead(t, client, "records")
 		time.Sleep(10 * time.Millisecond)
 	}
-	if second.routes.Load() == 0 {
+	if second.executions.Load() == 0 {
 		t.Fatal("healthy connection prevented discovery of scaled replica")
 	}
 	// Existing Store replicas remain discoverable while their directory lease
@@ -196,11 +217,11 @@ func TestClientDNSDiscoversScaleAndDrainsRetiredReplica(t *testing.T) {
 	answer.Addresses = []netip.Addr{ipv6}
 	dns.Set(name, answer)
 	time.Sleep(200 * time.Millisecond)
-	before := first.routes.Load()
+	before := first.executions.Load()
 	for range 12 {
 		discoveryRead(t, client, "records")
 	}
-	if first.routes.Load() != before || seed.routes.Load() != 0 {
+	if first.executions.Load() != before || seed.executions.Load() != 0 {
 		t.Fatal("retired DNS replica or seed still receives business RPCs")
 	}
 	if dns.Queries.Load() < 4 {
@@ -208,7 +229,7 @@ func TestClientDNSDiscoversScaleAndDrainsRetiredReplica(t *testing.T) {
 	}
 }
 
-func TestClientRefreshChangesGroupWithoutReplayingActiveStream(t *testing.T) {
+func TestClientRefreshChangesEndpointsWithoutReplayingActiveStream(t *testing.T) {
 	blocked := &clientTestPeer{mode: "blocked_receive", canceled: make(chan struct{})}
 	first := &discoveryPeer{business: blocked}
 	firstListener := listenDiscovery(t, first, "127.0.0.1:0")
@@ -224,30 +245,29 @@ func TestClientRefreshChangesGroupWithoutReplayingActiveStream(t *testing.T) {
 	defer cancel()
 	finished := make(chan error, 1)
 	go func() {
-		options := RecordOptions{Destination: "records", Call: clientTestRead()}
+		options := RecordOptions{StoreName: "records", Call: clientTestRead()}
 		_, err := client.Record(ctx, options)
 		finished <- err
 	}()
 	deadline := time.Now().Add(time.Second)
-	for first.routes.Load() == 0 && time.Now().Before(deadline) {
+	for first.executions.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if first.routes.Load() != 1 {
+	if first.executions.Load() != 1 {
 		t.Fatal("initial finite stream did not start")
 	}
 	response := discoveryRecord("records", secondListener.address)
-	response.Group = "replacement-group"
 	seed.set("records", response)
 	time.Sleep(200 * time.Millisecond)
 	discoveryRead(t, client, "records")
 	select {
 	case err := <-finished:
-		t.Fatalf("route migration interrupted active stream: %v", err)
+		t.Fatalf("endpoint migration interrupted active stream: %v", err)
 	case <-blocked.canceled:
 		t.Fatal("removed endpoint canceled an active stream")
 	default:
 	}
-	if first.routes.Load() != 1 || second.routes.Load() != 1 {
+	if first.executions.Load() != 1 || second.executions.Load() != 1 {
 		t.Fatal("active stream was replayed after directory migration")
 	}
 	cancel()
@@ -286,12 +306,12 @@ func TestClientLeaseExpiresAndConflictInvalidates(t *testing.T) {
 				wait = 400 * time.Millisecond
 			}
 			time.Sleep(wait)
-			before := target.routes.Load()
-			optionsRecord := RecordOptions{Destination: "records", Call: clientTestRead()}
+			before := target.executions.Load()
+			optionsRecord := RecordOptions{StoreName: "records", Call: clientTestRead()}
 			if _, err := client.Record(t.Context(), optionsRecord); err == nil {
 				t.Fatal("expired or conflicting mapping accepted business request")
 			}
-			if target.routes.Load() != before {
+			if target.executions.Load() != before {
 				t.Fatal("rejected request reached previous Store owner")
 			}
 		})
@@ -310,24 +330,24 @@ func TestOpenValidatesWholeMappingAndBoundsDeadTargets(t *testing.T) {
 	_ = dead.Close()
 	seed := &discoveryPeer{}
 	seedListener := listenDiscovery(t, seed, "127.0.0.1:0")
-	for _, invalid := range []string{"wrong-store", "bad-target", "duplicate-target", "empty-ttl", "overflow-ttl", "invalid-group", "dead-only"} {
+	for _, invalid := range []string{"wrong-store", "bad-target", "duplicate-target", "empty-ttl", "overflow-ttl", "unknown-field", "dead-only"} {
 		t.Run(invalid, func(t *testing.T) {
 			response := discoveryRecord("records", targetListener.address)
 			switch invalid {
 			case "wrong-store":
-				response.Store = "other"
+				response.StoreName = "other"
 			case "bad-target":
-				response.Targets = []string{"http://arbitrary.example:7447"}
+				response.Endpoints = []string{"http://arbitrary.example:7447"}
 			case "duplicate-target":
-				response.Targets = []string{targetListener.address, targetListener.address}
+				response.Endpoints = []string{targetListener.address, targetListener.address}
 			case "empty-ttl":
 				response.CacheTtlMs = 0
 			case "overflow-ttl":
 				response.CacheTtlMs = ^uint64(0)
-			case "invalid-group":
-				response.Group = "invalid group"
+			case "unknown-field":
+				response.ProtoReflect().SetUnknown([]byte{0x22, 0x01, 0x00})
 			case "dead-only":
-				response.Targets = []string{deadAddress}
+				response.Endpoints = []string{deadAddress}
 			}
 			seed.set("records", response)
 			options := OpenOptions{Seed: seedListener.address, Stores: []string{"records"}, ResolveTimeout: 100 * time.Millisecond}
@@ -348,7 +368,7 @@ func TestOpenValidatesWholeMappingAndBoundsDeadTargets(t *testing.T) {
 	options := OpenOptions{Seed: seedListener.address, Stores: []string{"records"}, ResolveTimeout: 100 * time.Millisecond}
 	client := openDiscovery(t, options)
 	discoveryRead(t, client, "records")
-	if seed.routes.Load() != 0 {
+	if seed.executions.Load() != 0 {
 		t.Fatal("initialization sent a business request")
 	}
 }
@@ -396,7 +416,7 @@ func TestOpenCancellationAndCloseJoinDiscovery(t *testing.T) {
 	if err := client.Close(); err != nil {
 		t.Fatal(err)
 	}
-	record := RecordOptions{Destination: "records", Call: clientTestRead()}
+	record := RecordOptions{StoreName: "records", Call: clientTestRead()}
 	if _, err := client.Record(t.Context(), record); !errors.Is(err, ErrClosed) {
 		t.Fatal("closed client admitted request", err)
 	}
@@ -421,11 +441,11 @@ func TestDiscoveredWriteLossIsNeverReplayed(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "records/s:key", Action: action}
 	variant := &pb.Call_Mutate{Mutate: mutation}
 	call := &pb.Call{Version: 1, Operation: variant}
-	record := RecordOptions{Destination: "records", Call: call}
+	record := RecordOptions{StoreName: "records", Call: call}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	result, err := client.Record(ctx, record)
-	if err == nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || target.routes.Load() != 1 || seed.routes.Load() != 0 {
-		t.Fatalf("write evidence/replay: result=%v error=%v direct=%d seed=%d", result, err, target.routes.Load(), seed.routes.Load())
+	if err == nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || target.executions.Load() != 1 || seed.executions.Load() != 0 {
+		t.Fatalf("write evidence/replay: result=%v error=%v direct=%d seed=%d", result, err, target.executions.Load(), seed.executions.Load())
 	}
 }

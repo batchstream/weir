@@ -4,14 +4,14 @@ import (
 	"strings"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/routeclient"
+	"github.com/batchstream/weir/weirclient"
 	"google.golang.org/protobuf/proto"
 )
 
-// RecordCall builds Route fixtures from the canonical resources also used by
+// RecordCall builds Execute fixtures from the canonical resources also used by
 // private backend conformance tests. The wire target is always Store-relative.
 // This helper is only for repository test harnesses; it is not a client API.
-func RecordCall(message proto.Message) routeclient.RecordOptions {
+func RecordCall(message proto.Message) weirclient.RecordOptions {
 	var resource string
 	call := &pb.Call{Version: 1}
 	switch request := proto.Clone(message).(type) {
@@ -32,6 +32,6 @@ func RecordCall(message proto.Message) routeclient.RecordOptions {
 	} else {
 		call.GetMutate().Resource = target
 	}
-	opts := routeclient.RecordOptions{Destination: destination, Call: call}
+	opts := weirclient.RecordOptions{StoreName: destination, Call: call}
 	return opts
 }

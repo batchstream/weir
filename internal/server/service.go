@@ -6,11 +6,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *Server) resolve(destination string) (*store.Runtime, error) {
-	runtime, ok := s.stores[destination]
+func (s *Server) hostedStore(storeName string) (*store.Runtime, error) {
+	runtime, ok := s.stores[storeName]
 	if !ok {
-		s.admission.rejections.WithLabelValues("route").Inc()
-		return nil, status.Error(codes.Unavailable, "Store is not hosted here; Resolve before sending business requests")
+		s.admission.rejections.WithLabelValues("execute").Inc()
+		return nil, status.Error(codes.Unavailable, "Store is not hosted here; ResolveStore before sending business requests")
 	}
 	return runtime, nil
 }

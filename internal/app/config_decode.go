@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/protocol"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -57,7 +57,7 @@ func Load(basicFilename, routingFilename string) (Config, error) {
 		if !exists {
 			return cfg, errors.New("advertised peer address environment value unavailable")
 		}
-		canonical, err := directory.CanonicalAddress(value)
+		canonical, err := protocol.CanonicalEndpoint(value)
 		if err != nil {
 			return cfg, errors.New("invalid advertised peer address environment value")
 		}

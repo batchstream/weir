@@ -7,6 +7,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
@@ -40,7 +41,7 @@ type Config struct {
 }
 
 type Server struct {
-	pb.UnimplementedWeirServer
+	pb.UnimplementedStoreServiceServer
 	stores          map[string]*store.Runtime
 	directory       *directory.Directory
 	admission       *Admission
@@ -55,7 +56,7 @@ type Server struct {
 	draining        chan struct{}
 	once            sync.Once
 	connections     sync.Map
-	routeStats      routeCounters
+	executionStats  executionCounters
 	metrics         transportMetrics
 	serving         chan struct{}
 }
@@ -84,12 +85,8 @@ func New(cfg Config) (*Server, error) {
 	stores := make(map[string]*store.Runtime, len(cfg.Stores))
 	seen := make(map[*store.Runtime]bool)
 	for name, runtime := range cfg.Stores {
-		parsed, segments, err := protocol.ParseResource("weir://" + name)
-		if err != nil ||
-			parsed != name ||
-			len(segments) != 0 ||
-			runtime == nil || seen[runtime] {
-			return nil, status.Error(codes.InvalidArgument, "invalid or aliased service")
+		if !protocol.ValidStoreName(name) || runtime == nil || seen[runtime] {
+			return nil, status.Error(codes.InvalidArgument, "invalid or aliased Store")
 		}
 		stores[name] = runtime
 		seen[runtime] = true
@@ -118,8 +115,8 @@ func New(cfg Config) (*Server, error) {
 		grpc.WaitForHandlers(true),
 	)
 	s.controlGRPC = grpc.NewServer(
-		grpc.MaxRecvMsgSize(directory.MaxExchangeBytes),
-		grpc.MaxSendMsgSize(directory.MaxExchangeBytes),
+		grpc.MaxRecvMsgSize(directory.MaxSyncBytes),
+		grpc.MaxSendMsgSize(directory.MaxSyncBytes),
 		grpc.StatsHandler(statistics),
 		grpc.WaitForHandlers(true),
 	)
@@ -147,11 +144,11 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.Peer {
 		if cfg.Directory != nil {
-			pb.RegisterDirectoryServer(s.controlGRPC, cfg.Directory)
+			peerpb.RegisterPeerDiscoveryServiceServer(s.controlGRPC, cfg.Directory)
 		}
 	} else {
-		pb.RegisterWeirServer(s.grpc, s)
-		pb.RegisterWeirServer(s.controlGRPC, s)
+		pb.RegisterStoreServiceServer(s.grpc, s)
+		pb.RegisterStoreServiceServer(s.controlGRPC, s)
 	}
 	return s, nil
 }
