@@ -16,10 +16,11 @@ func TestBatchCollectConfigurationDefaultExplicitZeroAndBounds(t *testing.T) {
 		field string
 		want  time.Duration
 	}{
-		{"", time.Millisecond},
+		{"", 5 * time.Millisecond},
 		{"      batch_collect: 0ms\n", 0},
 		{"      batch_collect: 1ms\n", time.Millisecond},
 		{"      batch_collect: 1.5ms\n", 1500 * time.Microsecond},
+		{"      batch_collect: 5ms\n", 5 * time.Millisecond},
 		{"      batch_collect: 10ms\n", 10 * time.Millisecond},
 	}
 	for _, tc := range cases {

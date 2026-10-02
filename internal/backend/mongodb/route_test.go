@@ -23,6 +23,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
 	replies := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
 	adapter := batchMockAdapter(t, replies, nil)
+	adapter.config.MaxReadSize = protocol.MaxDocument
 	request := &pb.ReadRequest{Resource: "db/records/s:a"}
 	variant := &pb.Call_Read{Read: request}
 	call := &pb.Call{Version: 1, Operation: variant}

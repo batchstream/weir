@@ -1,10 +1,10 @@
 package mongodb
 
-import "github.com/batchstream/weir/internal/protocol"
+import "github.com/batchstream/weir/internal/execution"
 
 func (a *Adapter) maxReadSize() int {
 	if a.config.MaxReadSize == 0 {
-		return protocol.MaxDocument
+		return execution.DefaultMaxReadSize
 	}
 	return a.config.MaxReadSize
 }

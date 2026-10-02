@@ -31,7 +31,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
+	config := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
 	variant := &pb.Call_Read{Read: request}

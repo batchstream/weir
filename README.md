@@ -106,10 +106,10 @@ And `config/routes.yaml`:
 services:
   - name: "database"
     local:
-      max_concurrency: 4
-      max_batch_operations: 16
-      batch_collect: "1ms"
-      max_read_size: "2MiB"
+      max_concurrency: 2
+      max_batch_operations: 32
+      batch_collect: "5ms"
+      max_read_size: "16KiB"
       mongodb:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
 routes:
@@ -128,13 +128,17 @@ use only one source; inline and file sources can be mixed across the pair.
 Each local service connects to one backend server. The Call resource selects the
 MongoDB database and collection (`example/records/s:one`) or Search
 index (`records/s:one`); these targets are not configuration fields.
-For small source documents, set `local.max_read_size` to a suitable upper bound
-(for example `16KiB`) to reserve less space and collect more ordinary reads into
-each batch. Sources exceeding that declaration return `RESOURCE_EXHAUSTED`;
-writes, Scan, Native and Lua/expression operations keep their existing limits.
-`local.batch_collect` accepts `0ms` through `10ms` and defaults to `1ms`.
-Tune these settings against completed throughput, database CPU and tail latency;
-the safe `2MiB` read default cannot assume that every dataset contains small records.
+Local services default to 2 concurrent backend executions, 32 operations per batch,
+a `5ms` collection window and a `16KiB` ordinary-read source limit. This small-document
+starting point follows the [resource tuning tests](docs/resource-refinement-test-2026-10-02.md).
+It reserves less space per read so more small reads fit into each bounded batch.
+Sources exceeding `local.max_read_size` return `RESOURCE_EXHAUSTED`; increase it
+explicitly, up to `2MiB`, for larger documents. Writes, Scan, Native and
+Lua/expression operations keep their existing limits.
+`local.batch_collect` accepts `0ms` through `10ms`; collection adds latency at low
+traffic. MongoDB read-heavy workloads can try `10ms` for more batching, while
+latency-sensitive workloads can reduce it to `1ms` or `0ms`. Tune against completed
+throughput, database CPU and tail latency; these defaults are not universal optima.
 The scheduler reduces concurrency for repeated slow successful batches as well
 as explicit database congestion, and recovers within `max_concurrency`.
 Latency pressure requires at least three comparable slow saturated batch or

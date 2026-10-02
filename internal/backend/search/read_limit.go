@@ -7,7 +7,7 @@ import (
 
 func (a *Adapter) maxReadSize() int {
 	if a.config.MaxReadSize == 0 {
-		return protocol.MaxDocument
+		return execution.DefaultMaxReadSize
 	}
 	return a.config.MaxReadSize
 }

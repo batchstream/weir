@@ -121,19 +121,25 @@ It must not be described as an allocation sandbox.
 
 One Store scheduler admits every Call with input, output and workspace charges.
 It selects compatible adapter batch keys under count/input/result/workspace bounds,
-and waits at most `local.batch_collect` (default 1 ms, configurable 0–10 ms). A near-deadline
+and waits at most `local.batch_collect` (default 5 ms, configurable 0–10 ms). A near-deadline
 item dispatches without waiting to fill the batch. Ordinary MongoDB requests batch
 by namespace; Search requests batch by concrete index. Options and transaction
 semantics are validated by the adapter; incompatible work executes singly.
 
-Ordinary Record Read reserves `local.max_read_size` source bytes (default 2 MiB,
+Ordinary Record Read reserves `local.max_read_size` source bytes (default 16 KiB,
 configurable 1 KiB–2 MiB). Smaller declarations allow more small reads within the
 same bounded batch result budget. An oversized source fails with
-`RESOURCE_EXHAUSTED`; this setting does not constrain writes, Scan, Native or
+`RESOURCE_EXHAUSTED`; datasets with larger sources must explicitly raise the limit.
+This setting does not constrain writes, Scan, Native or
 Lua/expression results. Search bounds each multi-get response by these source
 reservations. MongoDB qualifies a namespace once within a compatible mixed
 physical batch, then performs the read and write phases; the next batch qualifies
 again so metadata and permissions are not retained across executions.
+
+The defaults collect at most 32 operations per batch and allow at most 2 concurrent
+backend executions, following the small-document resource tuning tests. Collection
+can add 5 ms of latency at low traffic; operators should adjust the window and read
+limit for their workload. These are starting values, not a maximum-capacity claim.
 
 Each Store maintains one adaptive execution window, bounded by `max_concurrency`.
 Explicit database congestion or an owned backend timeout halves the window and

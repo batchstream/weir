@@ -18,7 +18,7 @@ func TestReadSizeConfigurationDefaultsBoundsAndAdapterMapping(t *testing.T) {
 		field string
 		want  int
 	}{
-		{"", protocol.MaxDocument},
+		{"", 16 << 10},
 		{"      max_read_size: 1KiB\n", 1024},
 		{"      max_read_size: 16KiB\n", 16 << 10},
 		{"      max_read_size: 2MiB\n", protocol.MaxDocument},
