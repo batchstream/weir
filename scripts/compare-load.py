@@ -510,30 +510,24 @@ class Fixture:
             "transport": {"max_connections": 16, "max_sessions": self.workers},
         }
         routes = {
-            "services": [
-                {
-                    "name": "database",
-                    "local": {
-                        "max_concurrency": self.args.pool,
-                        "max_batch_operations": self.args.batch_operations,
-                        "search": {
-                            "url": "http://elasticsearch:9200",
-                        },
-                    },
-                }
-            ],
-            "routes": [{"store": "records", "service": "database"}],
+            "stores": [{
+                "name": "records",
+                "max_concurrency": self.args.pool,
+                "max_batch_operations": self.args.batch_operations,
+                "search": {"url": "http://elasticsearch:9200"},
+            }],
         }
         if self.backend == "mongodb":
-            local = routes["services"][0]["local"]
+            local = routes["stores"][0]
             del local["search"]
             local["mongodb"] = {"uri": self.backend_url}
         collect_ms = getattr(self.args, "collect_ms", None)
         if mode != "baseline" and collect_ms is not None:
-            routes["services"][0]["local"]["batch_collect"] = str(collect_ms) + "ms"
+            routes["stores"][0]["batch_collect"] = str(collect_ms) + "ms"
         max_read_size = getattr(self.args, "max_read_size", None)
         if mode != "baseline" and max_read_size is not None:
-            routes["services"][0]["local"]["max_read_size"] = max_read_size
+            routes["stores"][0]["max_read_size"] = max_read_size
+        config["discovery"] = {"group": "records", "advertise": ["weir:7447"]}
         self.save("node.yaml", config_yaml.dumps(config))
         self.save("routes.yaml", config_yaml.dumps(routes))
         # Resource targets must exist before record operations; startup qualifies the server.

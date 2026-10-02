@@ -46,18 +46,14 @@ func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
 	basic := `listeners:
   application: 192.0.2.1:7447
 `
-	routing := `services:
+	routing := `stores:
   - name: search
-    local:
-      search:
-        url: https://unresolved.invalid:443
-        connection:
-          username_file: values/username
-          password_file: values/password
-          ca_file: /missing/ca-sentinel.pem
-routes:
-  - store: records
-    service: search
+    search:
+      url: https://unresolved.invalid:443
+      connection:
+        username_file: values/username
+        password_file: values/password
+        ca_file: /missing/ca-sentinel.pem
 `
 	if err := os.WriteFile(file, []byte(basic), 0600); err != nil {
 		t.Fatal(err)
@@ -96,7 +92,7 @@ routes:
 		reason   string
 	}{
 		{
-			strings.Replace(routing, "          username_file:", "          username: user-sentinel\n          username_file:", 1),
+			strings.Replace(routing, "        username_file:", "        username: user-sentinel\n        username_file:", 1),
 			"credential value and file are mutually exclusive",
 		},
 		{
@@ -104,7 +100,7 @@ routes:
 			"credential file unavailable",
 		},
 		{
-			strings.Replace(routing, "    local:", "    file: service-sentinel.yaml\n    local:", 1),
+			strings.Replace(routing, "    search:", "    file: service-sentinel.yaml\n    search:", 1),
 			"routing invalid configuration YAML or unknown field",
 		},
 	}
@@ -183,7 +179,7 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 			!strings.Contains(output.String(), `(default "weir.yaml")`) ||
 			!strings.Contains(output.String(), "basic YAML configuration file") ||
 			!strings.Contains(output.String(), "--routes string") ||
-			!strings.Contains(output.String(), "optional routing YAML configuration file") {
+			!strings.Contains(output.String(), "optional local Store YAML configuration file") {
 			t.Fatal("command help must document basic configuration and optional routes", command, err, output.String())
 		}
 	}
@@ -256,15 +252,7 @@ func TestCLIConfigurationPathsAreRelativeToWorkingDirectory(t *testing.T) {
 	basic := `listeners:
   application: 192.0.2.1:7447
 `
-	routing := `services:
-  - name: remote
-    remote:
-      endpoints:
-        - unresolved.invalid:7448
-      max_concurrency: 1
-routes:
-  - store: records
-    service: remote
+	routing := `stores: []
 `
 	if err := os.WriteFile(filepath.Join(basicDirectory, "weir.yaml"), []byte(basic), 0600); err != nil {
 		t.Fatal(err)
@@ -304,15 +292,7 @@ func TestCLIHasNoConfigurationFallback(t *testing.T) {
 			if filename == "weir.json" {
 				basic = `{"listeners":{"application":"127.0.0.1:0"}}`
 			}
-			routing := `services:
-  - name: remote
-    remote:
-      endpoints:
-        - unresolved.invalid:7448
-      max_concurrency: 1
-routes:
-  - store: records
-    service: remote
+			routing := `stores: []
 `
 			if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
 				t.Fatal(err)
@@ -374,15 +354,7 @@ func TestCLICommandStateIsFresh(t *testing.T) {
 	basic := `listeners:
   application: 192.0.2.1:7447
 `
-	routing := `services:
-  - name: remote
-    remote:
-      endpoints:
-        - unresolved.invalid:7448
-      max_concurrency: 1
-routes:
-  - store: records
-    service: remote
+	routing := `stores: []
 `
 	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
 		t.Fatal(err)

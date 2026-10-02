@@ -157,7 +157,6 @@ func (a *routeAcceptanceAdapter) ClosePlan(context.Context, *execution.Plan) *pb
 
 type routeAcceptanceNode struct {
 	server  *Server
-	remote  *RemoteWeir
 	runtime *store.Runtime
 	adapter *routeAcceptanceAdapter
 	address string
@@ -165,9 +164,6 @@ type routeAcceptanceNode struct {
 
 type routeAcceptanceNodeOptions struct {
 	adapter execution.Adapter
-	target  string
-	peer    bool
-	hops    int
 	limits  Limits
 	store   store.Limits
 }
@@ -180,19 +176,11 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	}
 	node := &routeAcceptanceNode{}
 	node.adapter, _ = opts.adapter.(*routeAcceptanceAdapter)
-	service := Service{}
-	var err error
-	if opts.target != "" {
-		remoteConfig := RemoteConfig{Endpoints: []string{opts.target}, Relays: 4}
-		node.remote, err = NewRemote(remoteConfig)
-		service.RemoteWeir = node.remote
-	} else {
-		if opts.store.Concurrency == 0 {
-			opts.store = store.DefaultLimits()
-		}
-		node.runtime, err = store.New(opts.adapter, opts.store)
-		service.LocalStore = node.runtime
+	if opts.store.Concurrency == 0 {
+		opts.store = store.DefaultLimits()
 	}
+	var err error
+	node.runtime, err = store.New(opts.adapter, opts.store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +188,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := Config{Routes: map[string]Service{"records": service}, Limits: opts.limits, Admission: admission, Peer: opts.peer, InitialForwards: opts.hops}
+	config := Config{Stores: map[string]*store.Runtime{"records": node.runtime}, Limits: opts.limits, Admission: admission}
 	node.server, err = New(config)
 	if err != nil {
 		t.Fatal(err)
@@ -221,11 +209,6 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 		_ = listener.Close()
 		if err := <-done; err != nil {
 			t.Error(err)
-		}
-		if node.remote != nil {
-			if err := node.remote.Close(); err != nil {
-				t.Error(err)
-			}
 		}
 		if node.runtime != nil {
 			if err := node.runtime.Close(ctx); err != nil {
@@ -255,19 +238,11 @@ func routeAcceptanceClient(t testing.TB, address string) pb.WeirClient {
 	return pb.NewWeirClient(connection)
 }
 
-func routeAcceptanceChain(t testing.TB, adapter *routeAcceptanceAdapter, hops int) ([]*routeAcceptanceNode, pb.WeirClient) {
+func routeAcceptanceServer(t testing.TB, adapter *routeAcceptanceAdapter) ([]*routeAcceptanceNode, pb.WeirClient) {
 	t.Helper()
-	opts := routeAcceptanceNodeOptions{adapter: adapter, hops: 4, peer: hops > 0}
-	executor := startRouteAcceptanceNode(t, opts)
-	nodes := []*routeAcceptanceNode{executor}
-	address := executor.address
-	for i := 0; i < hops; i++ {
-		opts := routeAcceptanceNodeOptions{target: address, hops: 4, peer: i < hops-1}
-		node := startRouteAcceptanceNode(t, opts)
-		nodes = append(nodes, node)
-		address = node.address
-	}
-	return nodes, routeAcceptanceClient(t, address)
+	opts := routeAcceptanceNodeOptions{adapter: adapter}
+	node := startRouteAcceptanceNode(t, opts)
+	return []*routeAcceptanceNode{node}, routeAcceptanceClient(t, node.address)
 }
 
 func routeAcceptanceRead(id uint64, key string) *pb.Request {
@@ -350,9 +325,6 @@ func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 		idle := true
 		for _, node := range nodes {
 			idle = idle && len(node.server.slots) == 0
-			if node.remote != nil {
-				idle = idle && len(node.remote.slots) == 0
-			}
 			if node.runtime != nil {
 				s := node.runtime.Snapshot()
 				idle = idle && s.Pending == 0 && s.Active == 0 && s.Retained == 0 && s.ResultBytes == 0 && s.WorkingBytes == 0 && s.Publishers == 0
@@ -368,12 +340,12 @@ func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 			t.Log("runtime after terminal:", node.runtime.Snapshot())
 		}
 	}
-	t.Fatal("Route terminal did not release sessions, relays, tasks and bytes")
+	t.Fatal("Route terminal did not release sessions, tasks and bytes")
 }
 
 func TestRouteAcceptanceLargeResponseAndHalfClose(t *testing.T) {
 	adapter := newRouteAcceptanceAdapter(2 << 20)
-	nodes, client := routeAcceptanceChain(t, adapter, 2)
+	nodes, client := routeAcceptanceServer(t, adapter)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	stream, err := client.Route(ctx)
@@ -425,7 +397,7 @@ func TestRouteAcceptanceProtocolFailureDoesNotRollback(t *testing.T) {
 	for _, invalid := range []string{"zero_id", "repeated_id", "decreasing_id", "destination"} {
 		t.Run(invalid, func(t *testing.T) {
 			adapter := newRouteAcceptanceAdapter(1024)
-			nodes, client := routeAcceptanceChain(t, adapter, 2)
+			nodes, client := routeAcceptanceServer(t, adapter)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			stream, err := client.Route(ctx)
@@ -478,80 +450,6 @@ func TestRouteAcceptanceProtocolFailureDoesNotRollback(t *testing.T) {
 	}
 }
 
-type routeAcceptanceBrokenPeer struct {
-	pb.UnimplementedWeirServer
-	mode string
-}
-
-func (p *routeAcceptanceBrokenPeer) Route(stream pb.Weir_RouteServer) error {
-	request, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-	response := &pb.Response{Id: request.Id, Payload: []byte{2, 8, 1}}
-	if p.mode == "unknown_id" {
-		response.Id++
-	}
-	if err := stream.Send(response); err != nil {
-		return err
-	}
-	if p.mode == "missing_end" {
-		return nil
-	}
-	end := &pb.Response{Id: request.Id, End: true}
-	if err := stream.Send(end); err != nil {
-		return err
-	}
-	if p.mode == "duplicate_end" {
-		return stream.Send(end)
-	}
-	if p.mode == "non_ok_after_end" {
-		return status.Error(codes.Unavailable, "fixture response lost after end")
-	}
-	return nil
-}
-
-func TestRouteAcceptanceRejectsIncompleteDownstream(t *testing.T) {
-	for _, mode := range []string{"missing_end", "unknown_id", "duplicate_end", "non_ok_after_end"} {
-		t.Run(mode, func(t *testing.T) {
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			peer := &routeAcceptanceBrokenPeer{mode: mode}
-			backend := grpc.NewServer()
-			pb.RegisterWeirServer(backend, peer)
-			done := make(chan error, 1)
-			go func() { done <- backend.Serve(listener) }()
-			t.Cleanup(func() { backend.Stop(); _ = listener.Close(); <-done })
-			opts := routeAcceptanceNodeOptions{target: listener.Addr().String(), hops: 4}
-			node := startRouteAcceptanceNode(t, opts)
-			client := routeAcceptanceClient(t, node.address)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			stream, err := client.Route(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			request := routeAcceptanceRead(1, "records/s:key")
-			if err := stream.Send(request); err != nil {
-				t.Fatal(err)
-			}
-			_ = stream.CloseSend()
-			for {
-				_, err = stream.Recv()
-				if err != nil {
-					break
-				}
-			}
-			if errors.Is(err, io.EOF) || err == nil {
-				t.Fatal("incomplete/invalid downstream was reported as complete", mode)
-			}
-			assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
-		})
-	}
-}
-
 func routeAcceptanceDrain(stream pb.Weir_RouteClient) ([]uint64, error) {
 	decoder := newRouteAcceptanceDecoder()
 	var ids []uint64
@@ -585,7 +483,7 @@ func TestRouteAcceptanceIndependentCompletionAndSameRecordOrder(t *testing.T) {
 	limits := store.DefaultLimits()
 	limits.BatchOperations = 1
 	limits.Collect = 0
-	opts := routeAcceptanceNodeOptions{adapter: adapter, hops: 4, store: limits}
+	opts := routeAcceptanceNodeOptions{adapter: adapter, store: limits}
 	node := startRouteAcceptanceNode(t, opts)
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -718,7 +616,7 @@ func TestRouteAcceptanceCrossRPCBatchCancellationIsolation(t *testing.T) {
 	adapter.block = release
 	limits := store.DefaultLimits()
 	limits.Collect = 10 * time.Millisecond
-	opts := routeAcceptanceNodeOptions{adapter: adapter, hops: 4, store: limits}
+	opts := routeAcceptanceNodeOptions{adapter: adapter, store: limits}
 	node := startRouteAcceptanceNode(t, opts)
 	client := routeAcceptanceClient(t, node.address)
 	firstCtx, cancelFirst := context.WithTimeout(context.Background(), 3*time.Second)

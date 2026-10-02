@@ -13,12 +13,13 @@ PATH="$PWD/.tools/bin:$PATH" .tools/protoc/bin/protoc --go_out=. --go_opt=module
 # Keep the repository's named-struct-literal convention reproducible, including generated code.
 awk '
  $0 == "\treturn &weirClient{cc}" { print "\tclient := &weirClient{cc}"; print "\treturn client"; count++; next }
+ $0 == "\treturn &directoryClient{cc}" { print "\tclient := &directoryClient{cc}"; print "\treturn client"; count++; next }
  index($0,"\treturn srv.(WeirServer).Route(&grpc.GenericServerStream") == 1 {
   print "\tserverStream := &grpc.GenericServerStream[Request, Response]{ServerStream: stream}"
   print "\treturn srv.(WeirServer).Route(serverStream)"; count++; next
  }
  { print }
- END { if (count != 2) exit 1 }
+ END { if (count != 3) exit 1 }
 ' api/weir/v1/weir_grpc.pb.go > .tools/weir_grpc.pb.go
 mv .tools/weir_grpc.pb.go api/weir/v1/weir_grpc.pb.go
 awk '

@@ -52,16 +52,17 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 		Connection: connection,
 	}
 	local := &Local{Search: backend, MaxConcurrency: opts.concurrency, MaxBatchOperations: 1}
-	service := Service{Name: "database", Local: local}
-	route := Route{Store: "records", Service: "database"}
+	service := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
-	cfg.Routing.Services, cfg.Routing.Routes = []Service{service}, []Route{route}
+	cfg.Basic.Discovery.Group = "records"
+	cfg.Routing.Stores = []StoreConfig{service}
 	if opts.extra {
-		second := Service{Name: "second", Local: local}
-		secondRoute := Route{Store: "extra", Service: "second"}
-		cfg.Routing.Services = append(cfg.Routing.Services, second)
-		cfg.Routing.Routes = append(cfg.Routing.Routes, secondRoute)
+		second := StoreConfig{Name: "extra", Local: local}
+
+		cfg.Routing.Stores = append(cfg.Routing.Stores, second)
+
 	}
 	p := startProcess(t, opts.binary, cfg)
 	e := &searchBudgetExecutor{
@@ -70,7 +71,7 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 		proxy:       proxy,
 		root:        "weir://records/" + b.Index,
 		concurrency: opts.concurrency,
-		locals:      len(cfg.Routing.Services),
+		locals:      len(cfg.Routing.Stores),
 	}
 	t.Logf(
 		"start time=%s PID=%d C=%d extra-local=%t application=%s diagnostics=%s",
@@ -213,12 +214,12 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	}
 	searchBudgetOverload(t, peers, observation)
 	searchBudgetMixed(t, peers, f)
-	forward := budgetForwardOptions{
+	discovery := budgetDiscoveryOptions{
 		binary:  binary,
 		peers:   []*process{peers[0].process, peers[1].process, peers[2].process},
-		request: searchBudgetPut(first.root, "forwarded"),
+		request: searchBudgetPut(first.root, "discovered"),
 	}
-	budgetForwarding(t, forward)
+	budgetDirectDiscovery(t, discovery)
 	opts.concurrency = 1
 	opts.extra = true
 	replacement := searchBudgetReplacement(t, peers, opts)

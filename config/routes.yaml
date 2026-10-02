@@ -1,208 +1,40 @@
-# Weir routing configuration reference
-#
-# Loaded only with --routes config/routes.yaml. All services/routes below
-# are active YAML configuration. Set backend addresses, resource names,
-# credentials and CA paths for your environment before running weir serve.
-# Keep only the services and routes you need; every service must have a route.
-# weir check --config config/weir.yaml --routes config/routes.yaml validates both
-# YAML files, reads credential files, and checks the graph without backend, DNS
-# or CA-file IO. Both CLI paths resolve from the process working directory.
-# --routes defaults to "": no routing file is loaded, and no backend is assembled.
-# A file containing {} or two empty lists is also valid. services/routes may be
-# omitted or null when both are empty; a partially populated graph is rejected.
-# Optional fields use their documented defaults when omitted. Strings are literal;
-# environment-variable substitution is not performed. Changes require a restart.
-
-# Named immutable services that execute locally or forward to another Weir.
-# Required: when routes is nonempty. Default: [] (no services).
-# Allowed: list containing 0..16 services, or null when the graph is empty.
-services:
-  # Service name used by routes.service.
-  # Required: yes. Default: none. Allowed: unique lowercase resource name,
-  # <= 63 bytes, matching ^[a-z](?:[a-z0-9]|-[a-z0-9]){0,62}$.
-  - name: "database"
-
-    # Local backend and scheduler settings.
-    # Required: exactly one of local/remote. Default: absent.
-    # Allowed: exactly one of mongodb/search plus the scheduler fields below.
-    # A local service must have exactly one route; local aliases are rejected.
-    local:
-      # Upper bound on adaptive concurrent backend execution.
-      # Required: no. Default: 2. Allowed: 0 (use default) or integer 1..32.
-      max_concurrency: 2
-
-      # Maximum number of operations collected into one physical batch.
-      # Required: no. Default: 32. Allowed: 0 (use default) or integer 1..128.
-      max_batch_operations: 32
-
-      # Maximum time spent collecting a compatible batch before dispatch.
-      # Required: no. Default: 5ms. Allowed: duration 0ms..10ms; explicit 0ms
-      # dispatches immediately. Near-deadline work bypasses collection.
-      batch_collect: "5ms"
-
-      # Source-document size allowed for ordinary Record Read operations.
-      # Required: no. Default: 16KiB. Allowed: byte size 1KiB..2MiB.
-      # The small-document default reserves less result/workspace per read.
-      # A larger source returns RESOURCE_EXHAUSTED; increase this value when
-      # your dataset contains larger documents (up to 2MiB).
-      # This does not limit writes, Scan, Native or Lua/expression operations.
-      max_read_size: "16KiB"
-
-      # MongoDB adapter; mutually exclusive with local.search.
-      # Required: exactly one local adapter. Default: absent.
-      # Allowed: uri and credential fields below. This service connects to one
-      # MongoDB server; Store-relative resources choose the database and collection.
-      # Records: <database>/<collection>/<typed-id>.
-      # Scan/Native: <database>/<collection>.
-      # IDs use s:<string>, i:<canonical-int64> or oid:<lowercase-ObjectID-hex>.
-      # Database and collection names match ^[A-Za-z][A-Za-z0-9_]{0,62}$.
-      # Targets must be pre-created, non-capped collections with
-      # simple collation. Program transforms require a replica set supporting
-      # transactions. Weir never creates collections or changes their layout.
-      mongodb:
-        # Explicit single-endpoint MongoDB connection URI.
-        # Required: yes. Default: none. Allowed: mongodb://host:port/ URI
-        # <= 4096 bytes; one DNS/IP host, explicit port 1..65535, no db path
-        # or userinfo. Configure username/password separately below.
-        # mongodb+srv, multiple hosts and replicaSet discovery are unsupported.
-        # Allowed query options ONLY:
-        #   directConnection=true (default forced true),
-        #   serverMonitoringMode=poll (default forced poll),
-        #   authSource, authMechanism=SCRAM-SHA-256, tls=true, tlsCAFile.
-        # Without credentials, authentication/TLS options must be absent.
-        # With credentials, a username/password pair, authSource, authMechanism
-        # and tls=true are all required. authSource must match
-        # ^[A-Za-z][A-Za-z0-9_]{0,62}$. Only SCRAM-SHA-256 is supported.
-        # tlsCAFile is optional: default system roots; a relative CA path
-        # resolves from the process working directory, not the routing file.
-        # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
-        # URI when a credential pair is configured:
-        # mongodb://db.example.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
-        uri: "mongodb://127.0.0.1:27017/?directConnection=true"
-
-        # MongoDB username supplied directly, without URI percent-encoding.
-        # Required: username or username_file if a password source is set.
-        # Default: "" (no authentication). Allowed: UTF-8 text <= 128 bytes,
-        # no control characters. A nonempty value conflicts with username_file.
-        username: ""
-
-        # MongoDB password supplied directly, without URI percent-encoding.
-        # Required: password or password_file if a username source is set.
-        # Default: "". Allowed: UTF-8 text <= 256 bytes, no control characters.
-        # A nonempty value conflicts with password_file; spaces are preserved.
-        password: ""
-
-        # Read the username value from a plain text file (e.g. a mounted secret).
-        # Required: no, alternative to username. Default: "" (use direct value).
-        # Allowed: "" or a nonblank UTF-8 path <= 2048 bytes, no controls,
-        # to a regular file; ordinary symbolic links are followed.
-        # Relative paths resolve from this routing file's directory; absolute
-        # paths can point to /run/secrets/mongo-username or another mount.
-        # File content must be nonempty UTF-8 text <= 128 bytes after removing
-        # one final LF or CRLF. Other control characters are rejected; spaces
-        # are preserved. Read once at startup or check; changes need a restart.
-        username_file: ""
-
-        # Read the password value from a plain text file.
-        # Required: no, alternative to password. Default: "" (use direct value).
-        # Allowed: same path/file rules as username_file; value <= 256 bytes
-        # after removing one final LF or CRLF. A nonempty path conflicts with
-        # password. Can be combined with an inline username or username_file.
-        password_file: ""
-
-  - name: "search"
-    local:
-      # These local scheduler fields use the same defaults/bounds as above.
-      max_concurrency: 2
-      max_batch_operations: 32
-      batch_collect: "5ms"
-      max_read_size: "16KiB"
-
-      # Elasticsearch/OpenSearch adapter; mutually exclusive with mongodb.
-      # Required: exactly one local adapter. Default: absent.
-      # Allowed: url and optional connection mapping below. This service connects
-      # to one Search server; Store-relative resources choose the concrete index.
-      # Records: <index>/s:<id> (exact string IDs only).
-      # Scan/Native: <index>.
-      search:
-        # One backend HTTP endpoint.
-        # Required: yes. Default: none. Allowed: http://host:port or
-        # https://host:port, <= 1024 bytes, port 1..65535.
-        # No userinfo, path, query, fragment, zones or unspecified/multicast IP.
-        url: "https://127.0.0.1:9200"
-
-        # Backend action.auto_create_index must be false. Record APIs require a
-        # pre-created concrete index, one primary shard and default routing;
-        # aliases/data streams are unsupported. The URI index must match
-        # ^[a-z][a-z0-9_-]{0,62}$.
-
-        # HTTPS authentication/trust options. Omit this block for HTTP.
-        # Required: no. Default: absent (system roots; no Basic credentials).
-        # Allowed: nonempty mapping below, only when url starts with https://.
-        # Set credentials and the CA path for your own backend before startup.
-        connection:
-          # HTTP Basic username supplied directly.
-          # Required: username or username_file if a password source is set.
-          # Default: "" (no Basic auth). Conflicts with nonempty username_file.
-          # Allowed: nonempty UTF-8 text <= 128 bytes, no colon/control chars.
-          username: "weir"
-
-          # HTTP Basic password supplied directly.
-          # Required: password or password_file if a username source is set.
-          # Default: "". Conflicts with nonempty password_file.
-          # Allowed: nonempty UTF-8 text <= 256 bytes, no control characters.
-          password: "change-me"
-
-          # Read the HTTP Basic username from a plain UTF-8 text file.
-          # Required: no, alternative to username. Default: "".
-          # Allowed: same path/file rules as mongodb.username_file above;
-          # value <= 128 bytes, no colon/control characters. One final LF or
-          # CRLF is removed; spaces are preserved. Conflicts with username.
-          username_file: ""
-
-          # Read the HTTP Basic password from a plain UTF-8 text file.
-          # Required: no, alternative to password. Default: "".
-          # Allowed: same path/file rules as mongodb.password_file above;
-          # value <= 256 bytes. Conflicts with password. Can be combined with
-          # an inline username or username_file. Changes need a restart.
-          password_file: ""
-
-          # PEM trust bundle read once at startup.
-          # Required: no. Default: "" (system trust roots).
-          # Allowed: path <= 2048 bytes to a regular PEM file <= 256 KiB.
-          # Relative paths resolve from the process working directory.
-          ca_file: "/etc/weir/ca.pem"
-
-  - name: "upstream"
-    # Remote service: forward requests to peer listeners.
-    # Required: exactly one of local/remote. Default: absent.
-    # Allowed: endpoints/max_concurrency mapping below.
-    remote:
-      # Alternate peer listener endpoints for the same logical service.
-      # Required: yes. Default: none. Allowed: list of 1..8 distinct DNS/IP
-      # host:port strings, <= 260 bytes each, port 1..65535; no URL syntax.
-      # Canonically equivalent endpoints are duplicates. List order is not a
-      # priority setting; use endpoints backed by the same intended service.
-      endpoints:
-        - "127.0.0.1:7448"
-
-      # Maximum concurrent forwarding operations for this remote service.
-      # Required: yes. Default: none. Allowed: integer 1..16.
-      max_concurrency: 8
-
-# Map public Store names to declared services.
-# Required: when services is nonempty. Default: [] (no routes).
-# Allowed: list containing 0..16 routes, or null when the graph is empty.
-# Each Store must be unique; every declared service must be referenced.
-routes:
-  # Logical Route destination, e.g. "mongo"
-  # Required: yes. Default: none. Allowed: unique resource name with the same
-  # lowercase grammar/63-byte bound as services.name.
-  - store: "mongo"
-    # Target services.name, not a URL or backend address.
-    # Required: yes. Default: none. Allowed: an existing service name.
-    service: "database"
-  - store: "search"
-    service: "search"
-  - store: "remote"
-    service: "upstream"
+# Local Store definitions. Select this file with --routes.
+# Remote Store addresses are learned through peer directory synchronization.
+# Backend database/collection/index targets come from each business request URI.
+# A node may host 0..16 Stores. Empty/missing stores is valid for discovery-only nodes.
+# name is a unique lowercase Store name, at most 63 bytes; exactly one backend
+# (mongodb or search) is required. No databases/collections/indexes are configured.
+# max_concurrency: default 2; explicit 0 selects default; effective range 1..32.
+# max_batch_operations: default 32; explicit 0 selects default; range 1..128.
+# batch_collect: default 5ms; range 0s..10ms; explicit zero disables collection wait.
+# max_read_size: default 16KiB; range 1KiB..2MiB; oversized records fail boundedly.
+# MongoDB URI: mongodb:// with one host and explicit port, without userinfo.
+# mongodb+srv, multi-host and replica-set topology discovery are unsupported.
+# Search URL: http:// or https:// server origin. Auth and CA require HTTPS.
+# Backend startup qualifies connectivity/product and supported server policy.
+# Both adapters accept separate username/password, or username_file/password_file.
+# Each value and its corresponding file are mutually exclusive; both username
+# and password sources must be supplied together. Text is bounded to 128/256 bytes.
+# Relative credential paths resolve from this file's directory; one final LF/CRLF
+# is removed. Files must be regular and are read only during explicit Load/check.
+# Search connection.ca_file is an optional PEM trust bundle used at startup;
+# omit it to use system trust, and never disable certificate/hostname verification.
+stores:
+  - name: mongo
+    mongodb:
+      uri: mongodb://127.0.0.1:27017/?directConnection=true
+    max_concurrency: 2
+    max_batch_operations: 32
+    batch_collect: 5ms
+    max_read_size: 16KiB
+  - name: search
+    search:
+      url: https://127.0.0.1:9200
+      connection:
+        username: weir
+        password: change-me
+        ca_file: /etc/weir/ca.pem
+    max_concurrency: 2
+    max_batch_operations: 32
+    batch_collect: 5ms
+    max_read_size: 16KiB

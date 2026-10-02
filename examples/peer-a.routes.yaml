@@ -1,10 +1,1 @@
-services:
-  - name: "mongo-peer"
-    remote:
-      endpoints:
-        - "127.0.0.1:7448"
-      max_concurrency: 8
-
-routes:
-  - store: "mongo"
-    service: "mongo-peer"
+stores: []

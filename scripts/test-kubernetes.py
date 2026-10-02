@@ -21,6 +21,26 @@ IMAGE_ID = "sha256:caa699e6ca172cbfa24ed4d311f4cb346817a354b05df52601abd954edcb4
 BINARY = "9def37fc9f4d552d35af552f87f86ba0b45bd2bdcf948114237fb5d312c97a32"
 
 
+def store_configuration(concurrency):
+    cfg = {
+        "listeners": {"application": "0.0.0.0:7447", "peer": "0.0.0.0:7448"},
+        "diagnostics": {"address": "127.0.0.1:7449"},
+        "memory": "768MiB",
+        "discovery": {
+            "group": "records", "peer_address_env": "WEIR_PEER_ADDRESS",
+            "seeds": ["weir:7448"], "advertise": ["weir-headless:7447"],
+        },
+    }
+    routes = {
+        "stores": [{
+            "name": "records", "max_concurrency": concurrency,
+            "max_batch_operations": 16,
+            "search": {"url": "http://elasticsearch:9200"},
+        }],
+    }
+    return cfg, routes
+
+
 def prepare(f, artifact, profile):
     if not f.preflight_complete:
         raise RuntimeError("fixture preflight required")
@@ -78,25 +98,7 @@ def prepare(f, artifact, profile):
         assert result.returncode == 0
 
     for concurrency in (1, 2):
-        cfg = {
-            "listeners": {"application": "0.0.0.0:7447"},
-            "diagnostics": {"address": "127.0.0.1:7449"},
-            "memory": "256MiB",
-        }
-        routes = {
-            "services": [
-                {
-                    "name": "database",
-                    "local": {
-                        "max_concurrency": concurrency,
-                        "search": {
-                            "url": "http://elasticsearch:9200",
-                        },
-                    },
-                }
-            ],
-            "routes": [{"store": "records", "service": "database"}],
-        }
+        cfg, routes = store_configuration(concurrency)
         directory = f.root / f"c{concurrency}"
         directory.mkdir()
         filename = directory / "node.yaml"
@@ -108,7 +110,7 @@ def prepare(f, artifact, profile):
                 "-validate", str(filename),
                 "-routes", str(directory / "routes.yaml"),
             ],
-            env=env,
+            env=dict(env, WEIR_PEER_ADDRESS="127.0.0.1:7448"),
             capture_output=True,
             text=True,
             timeout=10,
@@ -679,10 +681,10 @@ def workloads(f, images, artifact, profile):
     spec.update(patch["template"]["spec"])
     spec["containers"][0]["image"] = weir
     spec["containers"][0]["imagePullPolicy"] = "Never"
-    spec["containers"][0]["env"] = [{"name": "GODEBUG", "value": profile["diagnostics"]["GODEBUG"]}]
+    spec["containers"][0]["env"].append({"name": "GODEBUG", "value": profile["diagnostics"]["GODEBUG"]})
     spec["containers"][0]["resources"] = {
-        "requests": {"cpu": "100m", "memory": "384Mi"},
-        "limits": {"cpu": "500m", "memory": "384Mi"},
+        "requests": {"cpu": "100m", "memory": "1Gi"},
+        "limits": {"cpu": "500m", "memory": "1Gi"},
     }
     spec["volumes"][0]["secret"]["secretName"] = "weir-c2"
     f.save("weir.json", manifest)

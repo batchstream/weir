@@ -39,17 +39,17 @@ func credentialTestConfig(t *testing.T, backend string) Config {
 			Connection: connection,
 		}
 	}
-	service := Service{Name: backend, Local: local}
-	route := Route{Store: backend, Service: backend}
+	service := StoreConfig{Name: backend, Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service}
+
 	return cfg
 }
 
 func credentialFields(cfg *Config) credentialTestFields {
-	local := cfg.Routing.Services[0].Local
+	local := cfg.Routing.Stores[0].Local
 	if m := local.MongoDB; m != nil {
 		fields := credentialTestFields{
 			username:     &m.Username,
@@ -298,8 +298,8 @@ func TestLoadValidatesAllCredentialSourcesBeforeIO(t *testing.T) {
 	other := credentialTestConfig(t, "mongodb")
 	second := credentialFields(&other)
 	*second.passwordFile = "conflicting-secret-sentinel.txt"
-	cfg.Routing.Services = append(cfg.Routing.Services, other.Routing.Services[0])
-	cfg.Routing.Routes = append(cfg.Routing.Routes, other.Routing.Routes[0])
+	cfg.Routing.Stores = append(cfg.Routing.Stores, other.Routing.Stores[0])
+
 	basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
 	if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != "credential value and file are mutually exclusive" {
 		t.Fatal("all source conflicts must be rejected before opening the earlier missing credential file", err)
@@ -312,19 +312,18 @@ func TestLoadValidatesGraphBeforeCredentialIO(t *testing.T) {
 			cfg := credentialTestConfig(t, "search")
 			fields := credentialFields(&cfg)
 			*fields.username, *fields.usernameFile = "", "missing-secret-sentinel.txt"
-			want := "duplicate Store or invalid Service reference"
+			want := "invalid or duplicate Store"
 			switch mode {
 			case "unknown-service":
-				cfg.Routing.Routes[0].Service = "missing"
+				cfg.Routing.Stores[0].Name = "INVALID"
 			case "local-alias":
-				route := Route{Store: "alias", Service: "search"}
-				cfg.Routing.Routes = append(cfg.Routing.Routes, route)
-				want = "unused or aliased LocalStore"
+
+				cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
 			case "overflow":
-				for len(cfg.Routing.Services) <= 16 {
-					cfg.Routing.Services = append(cfg.Routing.Services, cfg.Routing.Services[0])
+				for len(cfg.Routing.Stores) <= 16 {
+					cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
 				}
-				want = "invalid static graph bounds"
+				want = "invalid local Store bounds"
 			}
 			basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
 			if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != want {
@@ -360,13 +359,13 @@ func TestUnresolvedCredentialFilesCannotOpen(t *testing.T) {
 
 func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	cfg := credentialTestConfig(t, "mongodb")
-	m := cfg.Routing.Services[0].Local.MongoDB
+	m := cfg.Routing.Stores[0].Local.MongoDB
 	m.Username = "user:name@/%?#+ 汉"
 	m.Password = " password:/@%#?+[]汉 "
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("special credential characters must be accepted without URI encoding", err)
 	}
-	backend := cfg.Routing.Services[0].Local.mongoConfig("mongodb")
+	backend := cfg.Routing.Stores[0].Local.mongoConfig("mongodb")
 	parsed, err := url.Parse(backend.URI)
 	if err != nil || parsed.User != nil || backend.URI != m.URI || backend.Username != m.Username || backend.Password != m.Password {
 		t.Fatal("MongoDB credentials must remain separate and unchanged in backend configuration", err)
@@ -386,8 +385,8 @@ func TestLoadLaterInvalidCredentialBeforeStartup(t *testing.T) {
 	other := credentialTestConfig(t, "mongodb")
 	fields := credentialFields(&other)
 	*fields.password, *fields.passwordFile = "", "invalid-secret-sentinel.txt"
-	cfg.Routing.Services = append(cfg.Routing.Services, other.Routing.Services[0])
-	cfg.Routing.Routes = append(cfg.Routing.Routes, other.Routing.Routes[0])
+	cfg.Routing.Stores = append(cfg.Routing.Stores, other.Routing.Stores[0])
+
 	basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
 	filename := filepath.Join(filepath.Dir(routingFilename), *fields.passwordFile)
 	if err := os.WriteFile(filename, []byte("bad\x00secret-sentinel"), 0600); err != nil {
@@ -440,7 +439,7 @@ func TestCredentialSourceYAMLFieldsAreStrict(t *testing.T) {
 
 func TestRemovedServiceFileFieldsAreUnknown(t *testing.T) {
 	for _, value := range []string{`""`, `"removed-secret-sentinel.yaml"`} {
-		input := "services:\n  - name: remote\n    file: " + value + `
+		input := "stores:\n  - name: remote\n    file: " + value + `
     remote:
       endpoints: [127.0.0.1:7448]
       max_concurrency: 2

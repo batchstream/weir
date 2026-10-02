@@ -1,5 +1,8 @@
 # Route validation report
 
+Historical report for the unified Route implementation. Current direct discovery
+verification is in [Resolve/direct-routing validation](discovery-validation.md).
+
 This report covers the breaking Route refactor on `randy/unified-route`. It is
 separate from the historical M-series measurements. Tests use owned loopback
 fixtures; no production service was contacted and no deployment was performed.

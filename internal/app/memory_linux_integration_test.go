@@ -277,14 +277,14 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	proxy.Monitor = monitor
 	backend := mongoFixtureConfig(t, proxy.URI())
 	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
-	service := Service{Name: "database", Local: local}
-	route := Route{Store: "records", Service: "database"}
+	service := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
 	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service}
+
 	cfg.Basic.Memory = 512 << 20
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
@@ -295,14 +295,10 @@ func TestLinuxMemoryCLI(t *testing.T) {
 			t.Fatal("pre-pressure Read/Mutate/Bulk", mode)
 		}
 	}
-	remote := &Remote{Endpoints: []string{p.addresses[1]}, MaxConcurrency: 2}
-	remoteService := Service{Name: "database", Remote: remote}
-	cfg.Routing.Services = []Service{remoteService}
-	cfg.Basic.Listeners.Peer = ""
 	front := startProcess(t, "/fixture/weir", cfg)
 	frontClient := endpointProcessClient(t, front.address)
 	if !budgetLoadCall(ctx, frontClient, request, 1) {
-		t.Fatal("forward before pressure")
+		t.Fatal("second executor before pressure")
 	}
 	helper := startMemoryPressure(t)
 	memoryState(t, p, "low", false)
@@ -331,7 +327,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	})
 	helper.target(t, 84)
 	memoryState(t, p, "high", true)
-	memoryState(t, front, "high-forward", true)
+	memoryState(t, front, "high-second", true)
 	read := &pb.ReadRequest{Resource: request.Resource}
 	if _, err := routeclient.Record(ctx, client, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("Read not rejected", err)
@@ -341,7 +337,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 		t.Fatal("Mutate not safely rejected", result, err)
 	}
 	if _, err := routeclient.Record(ctx, frontClient, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
-		t.Fatal("forward-only admission", err)
+		t.Fatal("second executor admission", err)
 	}
 	// A new operation on the existing Bulk must not discard its admitted result.
 	nextMutation := &pb.Operation_Mutate{Mutate: refused}
@@ -367,7 +363,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	memoryState(t, p, "middle", true)
 	helper.set(t, 0)
 	memoryState(t, p, "recovered", false)
-	memoryState(t, front, "recovered-forward", false)
+	memoryState(t, front, "recovered-second", false)
 	fresh := budgetPut(root, "after")
 	for mode := 0; mode < 3; mode++ {
 		if !budgetLoadCall(ctx, client, fresh, mode) {
@@ -375,7 +371,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 		}
 	}
 	if !budgetLoadCall(ctx, frontClient, fresh, 1) {
-		t.Fatal("forward recovery")
+		t.Fatal("second executor recovery")
 	}
 	filter := bson.D{{Key: "_id", Value: "refused"}}
 	if n, err := admin.Database(db).Collection("records").CountDocuments(ctx, filter); err != nil || n != 0 {

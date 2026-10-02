@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/store"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
 )
@@ -20,11 +21,10 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 	for _, peer := range []bool{false, true} {
 		for _, mode := range []string{"silent", "preface", "settings", "frame-header", "header-body", "continuations", "rpc-no-data", "rpc-prefix", "rpc-body"} {
 			t.Run(fmt.Sprintf("peer=%t/%s", peer, mode), func(t *testing.T) {
-				adapter, runtime := peerLocal(t, "records")
-				local := Service{LocalStore: runtime}
+				adapter, localRuntime := peerLocal(t, "records")
 				limits := DefaultLimits()
 				limits.Stall = 75 * time.Millisecond
-				opts := peerServerOptions{routes: map[string]Service{"records": local}, peer: peer, limits: limits}
+				opts := peerServerOptions{stores: map[string]*store.Runtime{"records": localRuntime}, peer: peer, limits: limits}
 				srv, address := startPeerServer(t, opts)
 				conn, err := net.DialTimeout("tcp", address, time.Second)
 				if err != nil {
@@ -49,9 +49,8 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					var block, encoded bytes.Buffer
 					encoder := hpack.NewEncoder(&block)
 					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.Weir_Route_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
-					hop := hpack.HeaderField{Name: HopMetadata, Value: "0"}
 					if peer {
-						fields = append(fields, hop)
+						fields[3].Value = pb.Directory_Exchange_FullMethodName
 					}
 					for _, field := range fields {
 						if err := encoder.WriteField(field); err != nil {

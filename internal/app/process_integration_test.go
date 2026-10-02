@@ -29,7 +29,9 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -125,6 +127,7 @@ type processSmokeOptions struct {
 	client      pb.WeirClient
 	store, root string
 	search      *testsearch.Backend
+	initialized bool
 }
 
 func processDocument(t *testing.T, store, id string, n int32) *pb.Document {
@@ -174,13 +177,13 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	routedResult173, err := routeclient.Record(ctx, opts.client, testutil.RecordCall(mutation))
 	result := routedResult173.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
-		t.Fatal("three-hop mutation", result, err)
+		t.Fatal("direct mutation", result, err)
 	}
 	read := &pb.ReadRequest{Resource: resource}
 	routedResult178, err := routeclient.Record(ctx, opts.client, testutil.RecordCall(read))
 	found := routedResult178.GetRead()
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
-		t.Fatal("three-hop read", found, err)
+		t.Fatal("direct read", found, err)
 	}
 	bulk := testutil.OpenEvents(ctx, opts.client, opts.store)
 	var frame *pb.Call
@@ -211,7 +214,7 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 			break
 		}
 		if err != nil {
-			t.Fatal("three-hop Route response", err)
+			t.Fatal("direct Route response", err)
 		}
 		result := frame.GetResult()
 		if result == nil || seen[result.Index] {
@@ -335,13 +338,17 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 		t.Fatal(err)
 	}
 	seen := make(map[string]bool)
+	expectedDocuments := uint64(2)
+	if opts.initialized {
+		expectedDocuments++
+	}
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
 			t.Fatal("Scan response", err)
 		}
 		if end := frame.GetScanEnd(); end != nil {
-			if end.Failure != nil || end.DocumentCount != 2 || len(seen) != 2 {
+			if end.Failure != nil || end.DocumentCount != expectedDocuments || len(seen) != int(expectedDocuments) {
 				t.Fatal("Scan terminal evidence", end, seen)
 			}
 			break
@@ -365,7 +372,7 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 			}
 			id, n = hit.ID, hit.Source.N
 		}
-		if seen[id] || id != "example" && id != "bulk-example" || id == "example" && n != 1 || id == "bulk-example" && n != 2 {
+		if seen[id] || id != "example" && id != "bulk-example" && !(opts.initialized && id == "initialized" && n == 7) || id == "example" && n != 1 || id == "bulk-example" && n != 2 {
 			t.Fatal("Scan repeated or changed records", id, n)
 		}
 		seen[id] = true
@@ -376,136 +383,76 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 }
 
 func TestIndependentWeirProcesses(t *testing.T) {
-	// testmongo.Open gates the entire smoke before starting child processes.
 	mongoFixture := testmongo.Open(t)
-	database := mongoFixture.DB
 	search := testsearch.Open(t)
-	binary := filepath.Join(t.TempDir(), "weir")
-	buildCtx, stopBuild := context.WithTimeout(context.Background(), 30*time.Second)
-	command := exec.CommandContext(buildCtx, "go", "build", "-race", "-o", binary, "./cmd/weir")
-	command.Dir = testutil.Root(t)
-	output, err := command.CombinedOutput()
-	stopBuild()
-	if err != nil {
-		t.Fatalf("build weir: %v %s", err, output)
-	}
+	binary := buildEndpointProcess(t)
 	mongo := mongoFixtureConfig(t, mongoFixture.URI)
 	mongoLocal := &Local{MongoDB: mongo}
 	backend := &Search{URL: search.URL}
 	searchLocal := &Local{Search: backend}
-	mongoService := Service{Name: "mongo", Local: mongoLocal}
-	searchService := Service{Name: "search", Local: searchLocal}
-	mongoRoute := Route{Store: "mongo", Service: "mongo"}
-	searchRoute := Route{Store: "search", Service: "search"}
-	c := DefaultConfig()
-	c.Basic.Diagnostics.Address = "127.0.0.1:0"
-	c.Basic.Listeners.Peer = "127.0.0.1:0"
-	c.Routing.Services = []Service{mongoService, searchService}
-	c.Routing.Routes = []Route{mongoRoute, searchRoute}
-	final := startProcess(t, binary, c)
-	b := DefaultConfig()
-	b.Basic.Diagnostics.Address = "127.0.0.1:0"
-	b.Basic.Listeners.Peer = "127.0.0.1:0"
-	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoints: []string{final.address}, MaxConcurrency: 4}
-		service := Service{Name: name, Remote: remote}
-		route := Route{Store: name, Service: name}
-		b.Routing.Services = append(b.Routing.Services, service)
-		b.Routing.Routes = append(b.Routing.Routes, route)
-	}
-	middle := startProcess(t, binary, b)
-	a := DefaultConfig()
-	a.Basic.Diagnostics.Address = "127.0.0.1:0"
-	a.Basic.Listeners.Application = "127.0.0.1:0"
-	for _, name := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoints: []string{middle.address}, MaxConcurrency: 4}
-		service := Service{Name: name, Remote: remote}
-		route := Route{Store: name, Service: name}
-		a.Routing.Services = append(a.Routing.Services, service)
-		a.Routing.Routes = append(a.Routing.Routes, route)
-	}
-	first := startProcess(t, binary, a)
-	conn, err := grpc.NewClient(
-		"passthrough:///"+first.address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithNoProxy(),
-		grpc.WithDisableRetry(),
-		grpc.WithDisableServiceConfig(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	client := pb.NewWeirClient(conn)
+	mongoStore := StoreConfig{Name: "mongo", Local: mongoLocal}
+	searchStore := StoreConfig{Name: "search", Local: searchLocal}
+	cfg := emptyConfig(t)
+	cfg.Basic.Diagnostics.Address, cfg.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
+	cfg.Basic.Discovery.Group = "data"
+	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
+	owner := startProcess(t, binary, cfg)
+	middleConfig := emptyConfig(t)
+	middleConfig.Basic.Diagnostics.Address, middleConfig.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
+	middleConfig.Basic.Discovery.Seeds = []string{owner.addresses[1]}
+	middle := startProcess(t, binary, middleConfig)
+	firstConfig := emptyConfig(t)
+	firstConfig.Basic.Diagnostics.Address, firstConfig.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
+	firstConfig.Basic.Discovery.Seeds = []string{middle.addresses[1]}
+	first := startProcess(t, binary, firstConfig)
+	discovered := openDiscoveredClient(t, first.address, []string{"mongo", "search"})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rawSeed := endpointProcessClient(t, first.address)
 	for _, kind := range []string{"mongo", "search"} {
-		root := "weir://mongo/" + database + "/records"
+		root := "weir://mongo/" + mongoFixture.DB + "/records"
 		if kind == "search" {
 			root = "weir://search/" + search.Index
 		}
-		opts := processSmokeOptions{client: client, store: kind, root: root, search: search}
-		processPublicSmoke(t, opts)
+		resolveRequest := &pb.ResolveRequest{Store: kind}
+		response, err := rawSeed.Resolve(ctx, resolveRequest)
+		if err != nil || len(response.Targets) != 1 || response.Targets[0] != owner.address {
+			t.Fatal("nonowner did not learn final business target", response, err)
+		}
+		doc := processDocument(t, kind, "initialized", 7)
+		put := &pb.MutateRequest_Put{Put: doc}
+		mutation := &pb.MutateRequest{Resource: root + "/s:initialized", Action: put}
+		applied, err := discovered.Record(ctx, testutil.RecordCall(mutation))
+		if err != nil || applied.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+			t.Fatal("initialized client direct mutation", applied, err)
+		}
+		read := &pb.ReadRequest{Resource: mutation.Resource}
+		found, err := discovered.Record(ctx, testutil.RecordCall(read))
+		if err != nil || processRecordNumber(t, found.GetRead().GetDocument()) != 7 {
+			t.Fatal("initialized client persisted read", found, err)
+		}
+		_, err = routeclient.Record(ctx, rawSeed, testutil.RecordCall(read))
+		if status.Code(err) != codes.Unavailable {
+			t.Fatal("nonowner business request was not rejected", err)
+		}
+		direct := endpointProcessClient(t, owner.address)
+		options := processSmokeOptions{client: direct, store: kind, root: root, search: search, initialized: true}
+		processPublicSmoke(t, options)
 	}
-	for _, node := range []*process{first, middle, final} {
-		families := testmetrics.Scrape(t, node.diagnostic)
-		if testmetrics.Sum(families, "weir_node_ready") != 1 {
+	for _, p := range []*process{first, middle, owner} {
+		metrics := testmetrics.Scrape(t, p.diagnostic)
+		if testmetrics.Sum(metrics, "weir_node_ready") != 1 {
 			t.Fatal("process not ready")
 		}
-		if node == final {
-			if testmetrics.Sum(families, "weir_store_records_total") != 8 {
-				t.Fatal("process local records count", testmetrics.Sum(families, "weir_store_records_total"))
+		if p != owner {
+			if metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+				t.Fatal("directory node executed or relayed business")
 			}
-			labels := map[string]string{"method": "Route", "status": "ok"}
-			if testmetrics.Sample(families, "weir_rpc_completions_total", labels).GetCounter().GetValue() != 10 {
-				t.Fatal("executor Route duplicated or incomplete")
-			}
-		} else if families["weir_store_executions_total"] != nil || testmetrics.Sum(families, "weir_relay_terminations_total") != 10 {
-			t.Fatal("forward process execution duplication")
-		} else {
-			for _, store := range []string{"mongo", "search"} {
-				labels := map[string]string{"service": store, "method": "Route", "status": "ok"}
-				if testmetrics.Sample(families, "weir_relay_terminations_total", labels).GetCounter().GetValue() != 5 {
-					t.Fatal("forward process Route duplicated or incomplete", store)
-				}
-			}
+		} else if testmetrics.Sum(metrics, "weir_store_records_total") != 12 {
+			t.Fatal("owner business operations duplicated", testmetrics.Sum(metrics, "weir_store_records_total"))
 		}
 	}
-	t.Log("real process HTTP scrapes: C logical records=8, completed Route=10; A/B relays=10 each, A/B have no local executions")
-	t.Log(fmt.Sprintf(
-		"process IDs A=%d B=%d C=%d; profile=%s; plaintext HTTP/2 on isolated loopback sockets",
-		first.command.Process.Pid,
-		middle.command.Process.Pid,
-		final.command.Process.Pid,
-		search.Profile,
-	))
-	c.Basic.Listeners.Peer, b.Basic.Listeners.Peer, a.Basic.Listeners.Application = final.address, middle.address, first.address
-	mongoRead := &pb.ReadRequest{Resource: "weir://mongo/" + database + "/records/s:example"}
-	searchRead := &pb.ReadRequest{Resource: "weir://search/" + search.Index + "/s:example"}
-	for _, node := range []struct {
-		name string
-		old  *process
-		cfg  Config
-	}{{"C", final, c}, {"B", middle, b}, {"A", first, a}} {
-		node.old.stop(t)
-		replacement := startProcess(t, binary, node.cfg)
-		for _, request := range []*pb.ReadRequest{mongoRead, searchRead} {
-			until := time.Now().Add(5 * time.Second)
-			for {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				routedResult516, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
-				result := routedResult516.GetRead()
-				cancel()
-				if err == nil && result.GetDocument() != nil && processRecordNumber(t, result.GetDocument()) == 1 {
-					break
-				}
-				if time.Now().After(until) {
-					t.Fatal("fresh Read did not recover after process replacement", node.name, request.Resource, err)
-				}
-				// Each probe is a distinct read-only call; no failed write is retried.
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-		t.Logf("%s drained and exited; replacement PID=%d; existing client recovered MongoDB and Search reads", node.name, replacement.command.Process.Pid)
-	}
+	t.Logf("independent processes A=%d B=%d C=%d: A learned both Store targets via B; initialized SDK persisted direct writes on C; nonowner rejects Route and has no business runtime", first.command.Process.Pid, middle.command.Process.Pid, owner.command.Process.Pid)
 }
 
 func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
@@ -519,7 +466,7 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err, string(output))
 	}
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Basic.Transport.Timeouts.Stall = Duration(time.Second)
 	p := startProcess(t, binary, cfg)

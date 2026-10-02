@@ -12,12 +12,12 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/proto"
 )
@@ -132,10 +132,10 @@ func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 
 type peerServerOptions struct {
 	observe   chan http.Header
-	routes    map[string]Service
+	stores    map[string]*store.Runtime
+	directory *directory.Directory
 	peer      bool
 	limits    Limits
-	budget    int
 	admission *Admission
 	listener  net.Listener
 }
@@ -153,7 +153,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 			t.Fatal(err)
 		}
 	}
-	cfg := Config{Routes: opts.routes, Limits: opts.limits, Admission: opts.admission, InitialForwards: opts.budget, Peer: opts.peer}
+	cfg := Config{Stores: opts.stores, Directory: opts.directory, Limits: opts.limits, Admission: opts.admission, Peer: opts.peer}
 	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -198,20 +198,6 @@ func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.WeirClient) 
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn, pb.NewWeirClient(conn)
 }
-func testRemote(t *testing.T, address string) *RemoteWeir {
-	t.Helper()
-	cfg := RemoteConfig{Endpoints: []string{address}, Relays: 8}
-	remote, err := NewRemote(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := remote.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	return remote
-}
 func testRequest() *pb.ReadRequest {
 	request := &pb.ReadRequest{Resource: "data/s:key"}
 	return request
@@ -221,11 +207,6 @@ func testMutation(value string) *pb.MutateRequest {
 	action := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: testRequest().Resource, Action: action}
 	return request
-}
-func peerContext(hops ...string) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	md := metadata.MD{HopMetadata: hops}
-	return metadata.NewOutgoingContext(ctx, md), cancel
 }
 func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()

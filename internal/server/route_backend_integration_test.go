@@ -25,6 +25,7 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
@@ -33,19 +34,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func routeBackendChain(t *testing.T, adapter execution.Adapter, hops int) ([]*routeAcceptanceNode, pb.WeirClient) {
+func routeBackendServer(t *testing.T, adapter execution.Adapter) ([]*routeAcceptanceNode, pb.WeirClient) {
 	t.Helper()
-	opts := routeAcceptanceNodeOptions{adapter: adapter, hops: 4, peer: hops > 0}
-	node := startRouteAcceptanceNode(t, opts)
-	nodes := []*routeAcceptanceNode{node}
-	address := node.address
-	for i := 0; i < hops; i++ {
-		opts := routeAcceptanceNodeOptions{target: address, hops: 4, peer: i < hops-1}
-		node := startRouteAcceptanceNode(t, opts)
-		nodes = append(nodes, node)
-		address = node.address
-	}
-	return nodes, routeAcceptanceClient(t, address)
+	opts := routeAcceptanceNodeOptions{adapter: adapter}
+	executor := startRouteAcceptanceNode(t, opts)
+	return []*routeAcceptanceNode{executor}, routeAcceptanceClient(t, executor.address)
 }
 
 func routeBackendEvents(t *testing.T, client pb.WeirClient, call *pb.Call) []*pb.Event {
@@ -103,12 +96,12 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	backend := testmongo.Open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4}
+	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4, MaxReadSize: protocol.MaxDocument}
 	adapter, err := mongodb.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, client := routeBackendChain(t, adapter, 2)
+	nodes, client := routeBackendServer(t, adapter)
 	base := bson.D{{Key: "_id", Value: "large"}, {Key: "blob", Value: []byte{}}}
 	raw, err := bson.Marshal(base)
 	if err != nil {
@@ -149,7 +142,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 		}
 	}
 	if decoder.bytes != 2<<20 || decoder.frames < 33 {
-		t.Fatal("real 2 MiB record did not cross two relays in legal fragments", decoder.bytes, decoder.frames)
+		t.Fatal("real 2 MiB record did not stream directly in legal fragments", decoder.bytes, decoder.frames)
 	}
 
 	counter := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int32(0)}}
@@ -244,7 +237,7 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			nodes, client := routeBackendChain(t, adapter, 2)
+			nodes, client := routeBackendServer(t, adapter)
 			document := bson.D{{Key: "_id", Value: "lost"}, {Key: "n", Value: int32(1)}}
 			raw, _ := bson.Marshal(document)
 			call := routeBackendMutation(backend.DB+"/records/s:lost", "put", "application/bson", raw)
@@ -302,12 +295,12 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	config := search.Config{Store: "records", URL: backend.URL, Pool: 4}
+	config := search.Config{Store: "records", URL: backend.URL, Pool: 4, MaxReadSize: protocol.MaxDocument}
 	adapter, err := search.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, client := routeBackendChain(t, adapter, 2)
+	nodes, client := routeBackendServer(t, adapter)
 	call := routeBackendRead(index + "/s:large")
 	events := routeBackendEvents(t, client, call)
 	if len(events) != 1 || !bytes.Equal(events[0].GetResult().GetRead().GetDocument().GetData(), []byte(body)) {
@@ -361,7 +354,7 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			nodes, client := routeBackendChain(t, adapter, 2)
+			nodes, client := routeBackendServer(t, adapter)
 			id := "lost_" + mode
 			call := routeBackendMutation(backend.Index+"/s:"+id, "put", "application/json", []byte(`{"n":1}`))
 			if mode == "native" {
@@ -404,12 +397,12 @@ func TestRouteMongoPerformance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4}
+	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4, MaxReadSize: protocol.MaxDocument}
 	adapter, err := mongodb.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, client := routeBackendChain(t, adapter, 0)
+	nodes, client := routeBackendServer(t, adapter)
 	const activeRPCs, recordsPerRPC = 4, 10000
 	limits := store.DefaultLimits()
 	var mem runtime.MemStats

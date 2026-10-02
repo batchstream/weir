@@ -1,5 +1,6 @@
 listeners:
-  application: "127.0.0.1:7447"
+  application: 127.0.0.1:7447
+  peer: 127.0.0.1:7457
 
-forwarding:
-  hop_limit: 4
+discovery:
+  seeds: [127.0.0.1:7448]

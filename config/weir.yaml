@@ -1,13 +1,13 @@
 # Weir basic configuration reference
 #
-# Program startup settings are configured here. Services, backend connections and
-# routes are configured in a separate file selected with --routes.
+# Program startup settings are configured here. Backend connections and
+# local Stores are configured in a separate file selected with --routes.
 # Both reference files contain real YAML with field documentation.
 # Validate before starting:
 #   weir check --config config/weir.yaml --routes config/routes.yaml
 #   weir serve --config config/weir.yaml --routes config/routes.yaml
 # The default CLI path is ./weir.yaml. Changes require a restart.
-# --routes defaults to "": no routing file is read and no backend is assembled.
+# --routes defaults to "": no local Store file is read and no backend is assembled.
 # Both CLI paths resolve from the working directory; files are not auto-discovered.
 
 # Syntax: one YAML mapping per file; keys are exact lowercase names shown here.
@@ -17,19 +17,20 @@
 # Omit optional fields to use defaults; an empty value is YAML null, not omission.
 # Basic fields must not be null. Optional routing adapter/connection blocks may
 # be null; required fields still have to satisfy the rules below.
-# Strings are literal: environment-variable substitution is not performed.
+# Strings are literal. Only discovery.peer_address_env reads the explicitly named
+# public-address environment variable during Load, never general substitution.
 
-# Application and peer gRPC listeners.
+# Application business/Resolve and peer directory listeners.
 # Required: yes, at least one child address must be nonempty. Default: both disabled.
 # Allowed: a mapping with application and/or peer.
 listeners:
-  # Address for SDK/application traffic; ingress receives forwarding.hop_limit.
+  # Address for SDK Resolve initialization and local business traffic.
   # Required: one of application/peer. Default: "" (disabled).
   # Allowed: explicit IPv4:port or [IPv6]:port, port 0..65535; no DNS/URL syntax.
   # Port 0 requests a random port. Use a fixed port for normal deployments.
   application: "127.0.0.1:7447"
 
-  # Address for requests forwarded by another Weir node.
+  # Address for directory synchronization between Weir nodes.
   # Required: one of application/peer. Default: "" (disabled).
   # Allowed: the same IP:port format as application. Nonzero listener addresses
   # must not overlap, including an unspecified address and a specific IP.
@@ -59,11 +60,11 @@ memory: "1GiB"
 # Shared ingress connection/session admission and RPC deadlines.
 # Required: no. Default: all child defaults below. Allowed: this mapping.
 transport:
-  # Maximum accepted data-plane connections shared by application and peer.
+  # Maximum accepted data-plane connections on application business ingress.
   # Required: no. Default: 16. Allowed: integer 1..64.
   max_connections: 16
 
-  # Maximum concurrent data-plane sessions shared by application and peer.
+  # Maximum concurrent data-plane sessions on application business ingress.
   # Required: no. Default: 4. Allowed: integer 1..64.
   max_sessions: 4
 
@@ -81,10 +82,20 @@ transport:
     # Required: no. Default: "30s". Allowed: duration > 0 and <= 30s.
     stall: "30s"
 
-# Forwarding budget for requests arriving through the application listener.
-# Required: no. Default: the child default below. Allowed: this mapping.
-forwarding:
-  # Initial remaining hop count; each peer forward consumes one hop.
-  # Required: no. Default: 4. Allowed: integer 0..8.
-  # 0 prevents forwarding; peer ingress uses the request's existing hop budget.
-  hop_limit: 4
+# Peer directory synchronization is optional for a standalone node.
+# All replicas serving the same Store definitions use the same group.
+# DNS names and IP host:port targets work on Kubernetes and ordinary servers.
+# Omit advertised addresses only when binding a concrete reachable IP.
+# discovery:
+#   group: catalog
+#   peer_address: node-a.example:7448
+#   seeds: [seed.example:7448]
+#   advertise: [catalog.example:7447]
+# peer_address_env: optional environment variable containing full host:port;
+# mutually exclusive with peer_address, variable name is 1..128 ASCII letters,
+# digits and underscore, beginning with a letter or underscore.
+# group: stable shared identity for equivalent Store replicas, 1..128 printable
+# ASCII bytes; omitted means a distinct random standalone group.
+# seeds/advertise: optional unique host:port lists, at most 16 entries each.
+# advertise is required for local Stores on a wildcard application bind.
+# peer_address or peer_address_env is required for a wildcard peer bind.

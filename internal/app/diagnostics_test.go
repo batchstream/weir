@@ -18,6 +18,7 @@ import (
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -25,7 +26,7 @@ import (
 
 func diagnosticNode(t *testing.T) *Node {
 	t.Helper()
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Basic.Transport.MaxSessions = 1
 	cfg.Basic.Transport.Timeouts.Stall = Duration(500 * time.Millisecond)
@@ -78,7 +79,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	read := &pb.ReadRequest{Resource: "weir://records/db/records/s:missing"}
 	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read)) // observed failed dial, no synthetic backend work
 	if health(t, n, "/readyz") != 200 {
-		t.Fatal("remote failure changed readiness")
+		t.Fatal("unknown Store changed readiness")
 	}
 	n.admission.SetOverloaded(true)
 	_, _ = routeclient.Record(ctx, client, testutil.RecordCall(read))
@@ -92,7 +93,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 			t.Fatal("scrape increased business counters")
 		}
 		if after["weir_store_executions_total"] != nil {
-			t.Fatal("forward-only created Runtime metrics")
+			t.Fatal("directory-only created Runtime metrics")
 		}
 	}
 	other := testmetrics.Scrape(t, second.DiagnosticAddress())
@@ -195,7 +196,7 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 
 func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 	for _, address := range []string{"localhost:1", ":0", "0.0.0.0:0", "[::]:0", "192.0.2.1:1"} {
-		cfg := remoteConfig(t)
+		cfg := emptyConfig(t)
 		cfg.Basic.Diagnostics.Address = address
 		if cfg.Validate() == nil {
 			t.Fatal("non-loopback", address)
@@ -270,7 +271,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Listeners.Application = first.Addr().String()
 	cfg.Basic.Diagnostics.Address = occupied.Addr().String()
 	_ = first.Close()
@@ -287,7 +288,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 }
 
 func TestIntranetDiagnosticsRequireExplicitOptIn(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Diagnostics.AllowIntranet = true
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("opt-in without diagnostic address accepted")
@@ -355,22 +356,23 @@ func (l *smallSendListener) Accept() (net.Conn, error) {
 }
 
 func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	definition := cfg.Routing.Services[0]
-	cfg.Routing.Services = nil
-	cfg.Routing.Routes = nil
-	for i := 0; i < 16; i++ {
-		definition.Name = fmt.Sprintf("%s%d", strings.Repeat("r", 58), i)
-		cfg.Routing.Services = append(cfg.Routing.Services, definition)
-		route := Route{Store: fmt.Sprintf("store%d", i), Service: definition.Name}
-		cfg.Routing.Routes = append(cfg.Routing.Routes, route)
-	}
 	n, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer n.Close(context.Background())
+	// A bounded test collector produces enough output to exercise blocked HTTP sends
+	// independently of the removed remote business runtime.
+	opts := prometheus.GaugeOpts{Name: "weir_test_scrape_padding", Help: "Test-only bounded scrape payload."}
+	padding := prometheus.NewGaugeVec(opts, []string{"entry"})
+	for i := 0; i < 128; i++ {
+		padding.WithLabelValues(fmt.Sprintf("%s%d", strings.Repeat("x", 512), i)).Set(1)
+	}
+	if err := n.registry.Register(padding); err != nil {
+		t.Fatal(err)
+	}
 	listener := &smallSendListener{Listener: n.diagnostics.listener}
 	n.diagnostics.listener = listener
 	n.Start(context.Background())
@@ -424,7 +426,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 }
 
 func TestDiagnosticsDisabledAndFatalListenerReadiness(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	disabled, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

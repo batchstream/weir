@@ -1,9 +1,4 @@
-services:
-  - name: "mongo-local"
-    local:
-      mongodb:
-        uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-
-routes:
-  - store: "mongo"
-    service: "mongo-local"
+stores:
+  - name: mongo
+    mongodb:
+      uri: mongodb://127.0.0.1:27028/?directConnection=true

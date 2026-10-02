@@ -200,7 +200,7 @@ func (s *Server) Route(stream grpc.BidiStreamingServer[pb.Request, pb.Response])
 	if err := protocol.ValidateRequest(first, "", 0); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	service, err := s.resolve(first.Destination)
+	runtime, err := s.resolve(first.Destination)
 	if err != nil {
 		return err
 	}
@@ -218,11 +218,7 @@ func (s *Server) Route(stream grpc.BidiStreamingServer[pb.Request, pb.Response])
 		}
 	}()
 	defer func() { cancel(); <-watchDone }()
-	if service.RemoteWeir != nil {
-		args := routeRelay{ctx: ctx, cancel: cancel, stream: stream, first: first, remote: service.RemoteWeir, ledger: ledger, delivery: delivery}
-		return s.remoteRoute(args)
-	}
-	args := localRoute{ctx: ctx, cancel: cancel, stream: stream, first: first, runtime: service.LocalStore, ledger: ledger, delivery: delivery}
+	args := localRoute{ctx: ctx, cancel: cancel, stream: stream, first: first, runtime: runtime, ledger: ledger, delivery: delivery}
 	return s.localRoute(args)
 }
 

@@ -4,8 +4,35 @@ option go_package = "github.com/batchstream/weir/api/weir/v1;weirv1";
 
 // One finite stream fixes its logical Store on the first valid request.
 service Weir {
+  // Resolve discovers the group serving a Store before business data is sent.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
   rpc Route(stream Request) returns (stream Response);
 }
+// Directory is a peer-only control service. It never transports business data.
+service Directory {
+  rpc Exchange(ExchangeRequest) returns (ExchangeResponse);
+}
+message ResolveRequest { string store = 1; }
+message ResolveResponse {
+  string store = 1;
+  string group = 2;
+  repeated string targets = 3;
+  uint64 cache_ttl_ms = 4;
+}
+// An incarnation is generated for each process. Only its owner increases the
+// sequence or renews its lease. Relays reduce, never renew, remaining_lease_ms.
+message NodeAdvertisement {
+  string node_id = 1;
+  uint64 sequence = 2;
+  string peer_address = 3;
+  string group = 4;
+  repeated string stores = 5;
+  repeated string targets = 6;
+  uint64 remaining_lease_ms = 7;
+  bool withdrawn = 8;
+}
+message ExchangeRequest { repeated NodeAdvertisement nodes = 1; }
+message ExchangeResponse { repeated NodeAdvertisement nodes = 1; }
 // IDs are nonzero and strictly increasing within an RPC; gaps are allowed.
 // Payload is a versioned Call for the configured Store adapter.
 message Request { uint64 id = 1; string destination = 2; bytes payload = 3; }

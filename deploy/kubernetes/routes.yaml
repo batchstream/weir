@@ -1,13 +1,8 @@
-services:
-  - name: "database"
-    local:
-      search:
-        url: "http://elasticsearch:9200"
-      max_concurrency: 2
-      max_batch_operations: 32
-      batch_collect: "5ms"
-      max_read_size: "16KiB"
-
-routes:
-  - store: "records"
-    service: "database"
+stores:
+  - name: records
+    search:
+      url: http://elasticsearch:9200
+    max_concurrency: 2
+    max_batch_operations: 32
+    batch_collect: 5ms
+    max_read_size: 16KiB

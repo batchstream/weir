@@ -18,6 +18,16 @@ const maxDNSReadBytes = 4098
 // LookupHost joins the pure-Go A/AAAA queries and closes all owned sockets before
 // returning. The caller must provide a deadline; there is no cache or worker.
 func LookupHost(ctx context.Context, base *net.Resolver, host string) ([]string, error) {
+	return LookupHostLimit(ctx, base, host, MaxDNSAddresses)
+}
+
+// LookupHostLimit uses the same owned DNS transport with an explicit answer
+// bound. Store discovery can accept larger replica sets without changing the
+// backend transports' eight-address budget.
+func LookupHostLimit(ctx context.Context, base *net.Resolver, host string, limit int) ([]string, error) {
+	if limit < 1 || limit > 128 {
+		return nil, errors.New("DNS answer bound requires 1-128")
+	}
 	if _, ok := ctx.Deadline(); !ok {
 		return nil, errors.New("DNS requires a deadline")
 	}
@@ -32,8 +42,8 @@ func LookupHost(ctx context.Context, base *net.Resolver, host string) ([]string,
 		host += "."
 	}
 	ips, err := native.LookupHost(ctx, host)
-	if err != nil || ctx.Err() != nil || transport.oversized.Load() || len(ips) == 0 || len(ips) > MaxDNSAddresses {
-		return nil, errors.New("DNS failed or answer count outside 1-8")
+	if err != nil || ctx.Err() != nil || transport.oversized.Load() || len(ips) == 0 || len(ips) > limit {
+		return nil, errors.New("DNS failed or answer count outside configured bound")
 	}
 	return ips, nil
 }

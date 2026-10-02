@@ -35,14 +35,13 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		otherConnection.Password = "wrong-owned-pair"
 		otherBackend.Connection = &otherConnection
 		other := &Local{Search: &otherBackend}
-		firstService := Service{Name: "first", Local: first}
-		otherService := Service{Name: "second", Local: other}
-		firstRoute := Route{Store: "first", Service: "first"}
-		otherRoute := Route{Store: "second", Service: "second"}
+		firstService := StoreConfig{Name: "first", Local: first}
+		otherService := StoreConfig{Name: "second", Local: other}
+
 		failed := DefaultConfig()
 		failed.Basic.Listeners.Application = "127.0.0.1:0"
-		failed.Routing.Services = []Service{firstService, otherService}
-		failed.Routing.Routes = []Route{firstRoute, otherRoute}
+		failed.Routing.Stores = []StoreConfig{firstService, otherService}
+
 		for i := 0; i < 3; i++ {
 			node, err := Open(context.Background(), failed)
 			if node != nil || err == nil {
@@ -62,20 +61,15 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		t.Log("three partial startup failures: native DB HTTP socket count returned to baseline")
 	})
 	local := &Local{Search: backend}
-	service := Service{Name: "database", Local: local}
-	route := Route{Store: "search", Service: "database"}
+	service := StoreConfig{Name: "search", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
 	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service}
+
 	node := secureNode(t, cfg)
-	remote := &Remote{Endpoints: []string{node.Addresses()[1]}, MaxConcurrency: 1}
-	service = Service{Name: "database", Remote: remote}
-	cfg.Routing.Services = []Service{service}
-	cfg.Basic.Listeners.Peer = ""
-	peer := secureNode(t, cfg)
-	for name, address := range map[string]string{"direct": node.Addresses()[0], "peer": peer.Addresses()[0]} {
+	for name, address := range map[string]string{"direct": node.Addresses()[0]} {
 		t.Run(name, func(t *testing.T) {
 			conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDisableRetry())
 			if err != nil {

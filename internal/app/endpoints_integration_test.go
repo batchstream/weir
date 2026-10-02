@@ -4,21 +4,16 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/batchstream/weir/routeclient"
 	"net"
 	"net/netip"
-	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testdns"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
@@ -50,15 +45,14 @@ func endpointProcessConfig(t *testing.T) (Config, map[string]string) {
 	mongoLocal := &Local{MongoDB: mongo}
 	backend := &Search{URL: search.URL}
 	searchLocal := &Local{Search: backend}
-	m := Service{Name: "mongo", Local: mongoLocal}
-	s := Service{Name: "search", Local: searchLocal}
-	mr := Route{Store: "mongo", Service: "mongo"}
-	sr := Route{Store: "search", Service: "search"}
+	m := StoreConfig{Name: "mongo", Local: mongoLocal}
+	s := StoreConfig{Name: "search", Local: searchLocal}
+
 	cfg := DefaultConfig()
-	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer = "127.0.0.1:0", "127.0.0.1:0"
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{m, s}
-	cfg.Routing.Routes = []Route{mr, sr}
+	cfg.Routing.Stores = []StoreConfig{m, s}
+
 	roots := map[string]string{
 		"mongo":  "weir://mongo/" + database + "/records",
 		"search": "weir://search/" + search.Index,
@@ -83,36 +77,56 @@ func endpointProcessClient(t *testing.T, address string) pb.WeirClient {
 	return pb.NewWeirClient(conn)
 }
 
+func openDiscoveredClient(t *testing.T, seed string, stores []string) *routeclient.Client {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	options := routeclient.OpenOptions{Seed: seed, Stores: stores, RefreshInterval: 100 * time.Millisecond}
+	for {
+		client, err := routeclient.Open(ctx, options)
+		if err == nil {
+			t.Cleanup(func() { _ = client.Close() })
+			return client
+		}
+		if ctx.Err() != nil {
+			t.Fatal("Store discovery did not converge", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	cfg, roots := endpointProcessConfig(t)
+	cfg.Basic.Discovery.Group = "executors"
 	binary := buildEndpointProcess(t)
 	var peers []*process
-	var addresses []string
 	for range 3 {
 		p := startProcess(t, binary, cfg)
 		peers = append(peers, p)
-		addresses = append(addresses, p.address)
+		cfg.Basic.Discovery.Seeds = []string{peers[0].addresses[1]}
 	}
-	front := DefaultConfig()
-	front.Basic.Listeners.Application = "127.0.0.1:0"
-	front.Basic.Diagnostics.Address = "127.0.0.1:0"
-	front.Routing.Routes = cfg.Routing.Routes
-	for _, kind := range []string{"mongo", "search"} {
-		remote := &Remote{Endpoints: addresses, MaxConcurrency: 4}
-		service := Service{Name: kind, Remote: remote}
-		front.Routing.Services = append(front.Routing.Services, service)
+	front := emptyConfig(t)
+	front.Basic.Listeners.Peer, front.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
+	for _, peer := range peers {
+		front.Basic.Discovery.Seeds = append(front.Basic.Discovery.Seeds, peer.addresses[1])
 	}
-	p := startProcess(t, binary, front)
-	client := endpointProcessClient(t, p.address)
+	seed := startProcess(t, binary, front)
+	client := openDiscoveredClient(t, seed.address, []string{"mongo", "search"})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	// Wait for a fresh Resolve to expose all same-group replicas before measuring distribution.
+	raw := endpointProcessClient(t, seed.address)
+	budgetWait(t, "all replicas discovered", func() bool {
+		request := &pb.ResolveRequest{Store: "mongo"}
+		response, err := raw.Resolve(ctx, request)
+		return err == nil && len(response.Targets) == 3
+	})
+	time.Sleep(200 * time.Millisecond)
 	for i := 0; i < 80; i++ {
 		for _, kind := range []string{"mongo", "search"} {
-			root := roots[kind]
-			req := &pb.ReadRequest{Resource: fmt.Sprintf("%s/s:process%d", root, i)}
-			routedResult112, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
-			result := routedResult112.GetRead()
-			if err != nil || result.GetMissing() == nil {
+			request := &pb.ReadRequest{Resource: fmt.Sprintf("%s/s:process%d", roots[kind], i)}
+			result, err := client.Record(ctx, testutil.RecordCall(request))
+			if err != nil || result.GetRead().GetMissing() == nil {
 				t.Fatal(result, err)
 			}
 		}
@@ -124,156 +138,104 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 			t.Fatal("no process distribution", n)
 		}
 		total += n
-		t.Logf("executor PID=%d records=%g", peer.command.Process.Pid, n)
 	}
 	if total != 160 {
 		t.Fatal("duplicated execution", total)
 	}
 	peers[0].stop(t)
-	req := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
+	budgetWait(t, "departed replica withdrawn", func() bool {
+		request := &pb.ResolveRequest{Store: "mongo"}
+		response, err := raw.Resolve(ctx, request)
+		return err == nil && len(response.Targets) == 2
+	})
+	time.Sleep(200 * time.Millisecond)
+	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
 	for range 20 {
-		routedResult133, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
-		result := routedResult133.GetRead()
-		if err != nil || result.GetMissing() == nil {
-			t.Fatal("healthy endpoints unavailable after peer SIGTERM", result, err)
+		result, err := client.Record(ctx, testutil.RecordCall(request))
+		if err != nil || result.GetRead().GetMissing() == nil {
+			t.Fatal("healthy replicas unavailable", result, err)
 		}
 	}
-	cfg.Basic.Listeners.Peer = addresses[0]
+	cfg.Basic.Discovery.Seeds = []string{peers[1].addresses[1]}
+	cfg.Basic.Listeners.Application = peers[0].address
 	replacement := startProcess(t, binary, cfg)
+	budgetWait(t, "replacement advertised", func() bool {
+		request := &pb.ResolveRequest{Store: "mongo"}
+		response, err := raw.Resolve(ctx, request)
+		return err == nil && len(response.Targets) == 3
+	})
+	time.Sleep(200 * time.Millisecond)
 	until := time.Now().Add(5 * time.Second)
 	for i := 0; ; i++ {
-		req.Resource = fmt.Sprintf("%s/s:replacement%d", roots["mongo"], i)
-		routedResult143, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
-		result := routedResult143.GetRead()
-		if err != nil || result.GetMissing() == nil {
+		request.Resource = fmt.Sprintf("%s/s:replacement%d", roots["mongo"], i)
+		result, err := client.Record(ctx, testutil.RecordCall(request))
+		if err != nil || result.GetRead().GetMissing() == nil {
 			t.Fatal(result, err)
 		}
 		if testmetrics.Sum(testmetrics.Scrape(t, replacement.diagnostic), "weir_store_records_total") > 0 {
 			break
 		}
 		if time.Now().After(until) {
-			t.Fatal("recovered endpoint never rejoined selection")
+			t.Fatal("replacement never rejoined selection")
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	t.Logf(
-		"three independent executors share one owned Mongo DB and Search index; stopped PID=%d, replacement PID=%d received new RPC",
-		peers[0].command.Process.Pid,
-		replacement.command.Process.Pid,
-	)
-}
-
-// Only this test child accepts the injected standard resolver dependency. The
-// shipped CLI has no DNS-server flag or alternate configuration model.
-func TestEndpointDNSProcessChild(t *testing.T) {
-	raw := os.Getenv("WEIR_M9_DNS_CHILD")
-	if raw == "" {
-		t.Skip("test subprocess entry")
+	metrics := testmetrics.Scrape(t, seed.diagnostic)
+	if metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+		t.Fatal("initialization node owns business execution")
 	}
-	var input struct{ Endpoint, DNS string }
-	if err := json.Unmarshal([]byte(raw), &input); err != nil {
-		t.Fatal(err)
-	}
-	dialer := net.Dialer{Timeout: time.Second}
-	native := &net.Resolver{PreferGo: true, StrictErrors: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return dialer.DialContext(ctx, network, input.DNS)
-	}}
-	cfg := server.RemoteConfig{Endpoints: []string{input.Endpoint}, Relays: 4, Resolver: native}
-	remote, err := server.NewRemote(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer remote.Close()
-	service := server.Service{RemoteWeir: remote}
-	limits := server.DefaultLimits()
-	admission, err := server.NewAdmission(limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	options := server.Config{
-		Routes:          map[string]server.Service{"mongo": service, "search": service},
-		Limits:          limits,
-		Admission:       admission,
-		InitialForwards: 4,
-	}
-	srv, err := server.New(options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(listener) }()
-	<-srv.Serving()
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	fmt.Printf("Weir listening on [%s]\n", listener.Addr())
-	<-ctx.Done()
-	drain, stop := context.WithTimeout(context.Background(), 5*time.Second)
-	defer stop()
-	if err := srv.Shutdown(drain); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+	t.Log("three independent same-group executors: direct client distribution, graceful withdrawal, restart and rejoin; seed owns only directory")
 }
 
 func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	cfg, roots := endpointProcessConfig(t)
+	cfg.Basic.Discovery.Group = "dns-executors"
+	cfg.Basic.Discovery.Advertise = []string{"executor.weir.test:7447"}
+	cfg.Basic.Listeners.Application = "127.0.0.1:0"
 	binary := buildEndpointProcess(t)
 	first := startProcess(t, binary, cfg)
 	_, port, _ := net.SplitHostPort(first.address)
-	cfg.Basic.Listeners.Peer = net.JoinHostPort("::1", port)
+	cfg.Basic.Discovery.Advertise = []string{"executor.weir.test:" + port}
+	// Restart first with its actual dynamic business port advertised through DNS.
+	first.stop(t)
+	cfg.Basic.Listeners.Application = first.address
+	first = startProcess(t, binary, cfg)
+	cfg.Basic.Listeners.Application = net.JoinHostPort("::1", port)
 	second := startProcess(t, binary, cfg)
 	dns := testdns.Start(t)
 	answer := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}
 	dns.Set("executor.weir.test", answer)
-	input := struct{ Endpoint, DNS string }{Endpoint: "executor.weir.test:" + port, DNS: dns.Address}
-	raw, err := json.Marshal(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command(executable, "-test.run=^TestEndpointDNSProcessChild$")
-	command.Env = append(os.Environ(), "WEIR_M9_DNS_CHILD="+string(raw))
-	front := watchProcess(t, command, false)
-	client := endpointProcessClient(t, front.address)
+	dialer := net.Dialer{Timeout: time.Second}
+	resolver := &net.Resolver{PreferGo: true, StrictErrors: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, dns.Address)
+	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	req := &pb.ReadRequest{Resource: roots["mongo"] + "/s:dns"}
-	if result, err := routeclient.Record(ctx, client, testutil.RecordCall(req)); err != nil || result.GetRead().GetMissing() == nil {
+	options := routeclient.OpenOptions{Seed: first.address, Stores: []string{"mongo"}, Resolver: resolver, RefreshInterval: 100 * time.Millisecond}
+	client, err := routeclient.Open(ctx, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:dns"}
+	result, err := client.Record(ctx, testutil.RecordCall(request))
+	if err != nil || result.GetRead().GetMissing() == nil {
 		t.Fatal(result, err)
 	}
 	answer.Addresses = []netip.Addr{netip.MustParseAddr("::1")}
 	dns.Set("executor.weir.test", answer)
 	first.stop(t)
-	var calls int
 	for {
-		calls++
-		routedResult255, err := routeclient.Record(ctx, client, testutil.RecordCall(req))
-		result := routedResult255.GetRead()
-		if err == nil && result.GetMissing() != nil {
+		result, err := client.Record(ctx, testutil.RecordCall(request))
+		if err == nil && result.GetRead().GetMissing() != nil {
 			break
 		}
 		if ctx.Err() != nil {
-			t.Fatal("DNS process replacement did not recover", err)
+			t.Fatal("client DNS refresh did not recover", err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if testmetrics.Sum(testmetrics.Scrape(t, second.diagnostic), "weir_store_records_total") != 1 || dns.AAAA.Load() < 2 || dns.Other.Load() != 0 {
 		t.Fatal("replacement not proven via DNS/second executor")
 	}
-	t.Logf(
-		"actual loopback DNS A to AAAA, forwarding PID=%d, executor PIDs=%d/%d, distinct new Read probes=%d; no system DNS changes",
-		front.command.Process.Pid,
-		first.command.Process.Pid,
-		second.command.Process.Pid,
-		calls,
-	)
+	t.Log("client DNS refresh changed direct traffic from IPv4 process to IPv6 process without system DNS changes")
 }

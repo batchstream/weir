@@ -128,9 +128,9 @@ class PackageTests(unittest.TestCase):
                     'scripts/qualification.Dockerfile': b'qualification Dockerfile',
                     'README.md': b'fixture docs',
                     'config/weir.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
-                    'config/routes.yaml': b'# Complete routing reference\nservices: []\nroutes: []\n',
+                    'config/routes.yaml': b'# Complete local Store reference\nstores: []\n',
                     'deploy/docker/weir.yaml': b'listeners:\n  application: 127.0.0.1:7447\n',
-                    'deploy/docker/routes.yaml': b'services: []\nroutes: []\n',
+                    'deploy/docker/routes.yaml': b'stores: []\n',
                 }
 
                 def run(args, *, cwd=None, env=None):

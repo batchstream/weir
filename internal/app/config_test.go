@@ -11,39 +11,30 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
-	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/testutil"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-func remoteConfig(t *testing.T) Config {
+func emptyConfig(t *testing.T) Config {
 	t.Helper()
-	remote := &Remote{Endpoints: []string{"127.0.0.1:1"}, MaxConcurrency: 2}
-	service := Service{Name: "remote", Remote: remote}
-	route := Route{Store: "records", Service: "remote"}
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
 	return cfg
 }
 
 func TestConfigurationValidation(t *testing.T) {
-	for _, mode := range []string{"duplicate-store", "unknown-service", "duplicate-service", "overflow", "zero-session"} {
+	for _, mode := range []string{"duplicate-store", "missing-backend", "overflow", "zero-session"} {
 		t.Run(mode, func(t *testing.T) {
-			cfg := remoteConfig(t)
+			cfg := credentialTestConfig(t, "search")
 			switch mode {
 			case "duplicate-store":
-				cfg.Routing.Routes = append(cfg.Routing.Routes, cfg.Routing.Routes[0])
-			case "unknown-service":
-				cfg.Routing.Routes[0].Service = "missing"
-			case "duplicate-service":
-				cfg.Routing.Services = append(cfg.Routing.Services, cfg.Routing.Services[0])
+				cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
+			case "missing-backend":
+				cfg.Routing.Stores[0].Local = nil
 			case "overflow":
 				cfg.Basic.Transport.Timeouts.Route = Duration(1<<63 - 1)
 			case "zero-session":
@@ -66,10 +57,10 @@ func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
 		Password: "password-sentinel",
 	}
 	local := &Local{MongoDB: mongo}
-	service := Service{Name: "catalog", Local: local}
-	route := Route{Store: "records", Service: service.Name}
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
+	service := StoreConfig{Name: "records", Local: local}
+
+	cfg.Routing.Stores = []StoreConfig{service}
+
 	err := cfg.Validate()
 	if err != nil {
 		t.Fatal("valid URI must be accepted without accessing missing CA or DNS", err)
@@ -98,12 +89,12 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 		Password: "password-sentinel",
 	}
 	local := &Local{MongoDB: mongo}
-	service := Service{Name: "database", Local: local}
-	route := Route{Store: "records", Service: service.Name}
+	service := StoreConfig{Name: "records", Local: local}
+
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	cfg.Routing.Services = []Service{service}
-	cfg.Routing.Routes = []Route{route}
+	cfg.Routing.Stores = []StoreConfig{service}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	node, err := Open(ctx, cfg)
@@ -117,14 +108,14 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 	}
 }
 
-func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
-	cfg := remoteConfig(t)
+func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
+	cfg := emptyConfig(t)
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(node.runtimes) != 0 || len(node.remotes) != 1 || len(node.targets) != 1 {
-		t.Fatal("forward-only created database state")
+	if len(node.runtimes) != 0 || len(node.targets) != 1 {
+		t.Fatal("directory-only created database state")
 	}
 	node.Start(context.Background())
 	var group sync.WaitGroup
@@ -147,7 +138,7 @@ func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 		}
 	}
 	// A valid graph with an occupied second listener unwinds the first listener
-	// and the already-created peer ClientConn, without a database adapter.
+	// without a database adapter.
 	occupied, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -174,12 +165,15 @@ func TestAssemblyForwardOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 
 func TestIntranetListenerConfiguration(t *testing.T) {
 	for _, listener := range []string{"127.0.0.1:0", "[::1]:7447", "10.20.30.40:7447", "0.0.0.0:7447", "[::]:7447"} {
-		cfg := remoteConfig(t)
+		cfg := emptyConfig(t)
 		cfg.Basic.Listeners.Application = listener
 		if err := cfg.Validate(); err != nil {
 			t.Fatal(listener, err)
 		}
 		cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer = "", listener
+		if strings.HasPrefix(listener, "0.0.0.0:") || strings.HasPrefix(listener, "[::]:") {
+			cfg.Basic.Discovery.PeerAddress = "peer.example:7448"
+		}
 		if err := cfg.Validate(); err != nil {
 			t.Fatal(listener, err)
 		}
@@ -193,7 +187,7 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 		"127.0.0.1:",
 		"[invalid]:7447",
 	} {
-		cfg := remoteConfig(t)
+		cfg := emptyConfig(t)
 		cfg.Basic.Listeners.Application = listener
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("invalid listener accepted", listener)
@@ -205,50 +199,49 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 		{"127.0.0.1:7447", "", "127.0.0.1:07447"},
 		{"0.0.0.0:7447", "127.0.0.1:7447", ""},
 	} {
-		cfg := remoteConfig(t)
+		cfg := emptyConfig(t)
 		cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = listeners[0], listeners[1], listeners[2]
 		if err := cfg.Validate(); err == nil {
 			t.Fatal("duplicate/overlapping listeners accepted", listeners)
 		}
 	}
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Application
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("independent ephemeral ports rejected", err)
 	}
 }
 
-func TestRemovedAuthenticationFieldsAreUnknown(t *testing.T) {
-	cfg := remoteConfig(t)
+func TestRemovedAuthenticationAndForwardingFieldsAreUnknown(t *testing.T) {
+	cfg := emptyConfig(t)
 	basic, err := yaml.Marshal(cfg.Basic)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"identity", "allow", "lua_worker"} {
+	for _, field := range []string{"identity", "allow", "lua_worker", "forwarding"} {
 		input := field + ": unknown\n" + string(basic)
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
 			t.Fatal("legacy field accepted", field)
 		}
 	}
-	routing, err := yaml.Marshal(cfg.Routing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input := strings.Replace(string(routing), "remote:\n", "remote:\n            server_name: obsolete\n", 1)
-	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-		t.Fatal("legacy remote identity accepted")
+	for _, input := range []string{"services: []\nroutes: []\n", "stores:\n  - name: records\n    remote:\n      endpoints: [peer:7447]\n"} {
+		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
+			t.Fatal("manual remote routing accepted")
+		}
 	}
 }
 
-func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
-	cfg := remoteConfig(t)
+func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
+	cfg := emptyConfig(t)
 	cfg.Basic.Listeners.Peer = cfg.Basic.Listeners.Application
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer node.Close(context.Background())
-	node.Start(context.Background())
+	if err := node.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	addresses := node.Addresses()
 	if len(addresses) != 2 || addresses[0] == addresses[1] {
 		t.Fatal("ephemeral listeners not distinct", addresses)
@@ -263,25 +256,13 @@ func TestEphemeralListenersKeepDistinctHopRules(t *testing.T) {
 		}
 		defer conn.Close()
 		client := pb.NewWeirClient(conn)
-		routedResult265, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
-		result := routedResult265.GetRead()
-		if i == 0 {
-			if status.Code(err) != codes.InvalidArgument || result != nil {
-				t.Fatal("application requires no peer metadata", result, err)
-			}
-		} else if status.Code(err) != codes.InvalidArgument {
-			t.Fatal("peer accepted missing hop", result, err)
+		result, err := routeclient.Record(ctx, client, testutil.RecordCall(request))
+		want := codes.Unavailable
+		if i == 1 {
+			want = codes.Unimplemented
 		}
-		peerCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(server.HopMetadata, "0"))
-		var routedResult274 *pb.Result
-		routedResult274, err = routeclient.Record(peerCtx, client, testutil.RecordCall(request))
-		result = routedResult274.GetRead()
-		if i == 0 {
-			if status.Code(err) != codes.InvalidArgument {
-				t.Fatal("application accepted client hop", result, err)
-			}
-		} else if status.Code(err) != codes.InvalidArgument || result != nil {
-			t.Fatal("peer accepted unknown Store or rejected canonical hop", result, err)
+		if status.Code(err) != want || result != nil {
+			t.Fatal("listener accepted unsupported business destination", i, result, err)
 		}
 	}
 }
@@ -296,34 +277,20 @@ func TestCurrentPeerExamples(t *testing.T) {
 	}
 }
 
-func TestRemoteEndpointListConfiguration(t *testing.T) {
-	cfg := remoteConfig(t)
-	input := `services:
-  - name: remote
-    remote:
-      endpoint: 127.0.0.1:1
-      max_concurrency: 2
-routes:
-  - store: records
-    service: remote
-`
-	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-		t.Fatal("legacy endpoint accepted", err)
-	}
-	for _, endpoints := range [][]string{
-		nil,
-		{},
-		{"peer:1", "PEER.:01"},
-		{"dns:///peer:1"},
-		{"a:1", "b:1", "c:1", "d:1", "e:1", "f:1", "g:1", "h:1", "i:1"},
-	} {
-		cfg.Routing.Services[0].Remote.Endpoints = endpoints
-		if err := cfg.Validate(); err == nil {
-			t.Fatal("invalid endpoint list accepted", endpoints)
-		}
-	}
-	cfg.Routing.Services[0].Remote.Endpoints = []string{"peer.example:1", "[::1]:1", "127.0.0.1:1"}
+func TestGenericDiscoveryConfiguration(t *testing.T) {
+	cfg := emptyConfig(t)
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Basic.Discovery.Group = "catalog"
+	cfg.Basic.Discovery.PeerAddress = "peer.example:7448"
+	cfg.Basic.Discovery.Seeds = []string{"seed.example:7448", "[::1]:7448"}
+	cfg.Basic.Discovery.Advertise = []string{"catalog.example:7447", "192.0.2.1:7447"}
 	if err := cfg.Validate(); err != nil {
-		t.Fatal(err)
+		t.Fatal("generic DNS/IP discovery rejected", err)
+	}
+	for _, targets := range [][]string{{"dns:///peer:7447"}, {"peer:0"}, {"peer:7447", "PEER.:07447"}} {
+		cfg.Basic.Discovery.Advertise = targets
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("invalid discovery addresses accepted", targets)
+		}
 	}
 }

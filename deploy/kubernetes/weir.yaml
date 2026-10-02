@@ -1,7 +1,14 @@
 listeners:
   application: "0.0.0.0:7447"
+  peer: "0.0.0.0:7448"
 
 diagnostics:
   address: "127.0.0.1:7449"
 
 memory: "768MiB"
+
+discovery:
+  group: records
+  peer_address_env: WEIR_PEER_ADDRESS
+  seeds: [weir:7448]
+  advertise: [weir-headless:7447]

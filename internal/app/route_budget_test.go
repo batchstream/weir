@@ -6,7 +6,7 @@ import (
 )
 
 func TestProcessBudgetCoversDeclaredRouteResources(t *testing.T) {
-	cfg := remoteConfig(t)
+	cfg := emptyConfig(t)
 	cfg.Basic.Memory = ByteSize(cfg.ReservedMemory())
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("exact declared envelope rejected", err)

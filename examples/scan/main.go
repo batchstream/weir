@@ -18,7 +18,7 @@ func main() {
 }
 
 func run() error {
-	address := flag.String("address", "127.0.0.1:7447", "Weir listener")
+	address := flag.String("address", "127.0.0.1:7447", "Weir initialization listener")
 	destination := flag.String("store", "mongo", "logical Store")
 	resource := flag.String("resource", "weir_m1/records", "relative collection or index")
 	pageSize := flag.Uint("page-size", 128, "documents per page, 1 to 256")
@@ -26,12 +26,14 @@ func run() error {
 	if *pageSize < 1 || *pageSize > 256 {
 		return fmt.Errorf("page-size must be between 1 and 256")
 	}
-	connection, err := routeclient.Dial(*address)
+	initialize, initializeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer initializeCancel()
+	openOptions := routeclient.OpenOptions{Seed: *address, Stores: []string{*destination}}
+	client, err := routeclient.Open(initialize, openOptions)
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
-	client := pb.NewWeirClient(connection)
+	defer client.Close()
 	request := &pb.ScanRequest{Resource: *resource, PageSize: uint32(*pageSize)}
 	options := routeclient.ScanPageOptions{Destination: *destination, Request: request}
 	options.Consume = func(ctx context.Context, document *pb.Document) error {
@@ -42,7 +44,7 @@ func run() error {
 	}
 	for page := uint64(1); ; page++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		end, err := routeclient.ScanPage(ctx, client, options)
+		end, err := client.ScanPage(ctx, options)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("page %d incomplete; previous checkpoint retained: %w", page, err)

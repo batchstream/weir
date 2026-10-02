@@ -5,131 +5,28 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
 	"github.com/batchstream/weir/internal/protocol"
+	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/routeclient"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-type opaqueDestination struct {
-	pb.UnimplementedWeirServer
-	seen    chan metadata.MD
-	calls   atomic.Int32
-	payload []byte
-}
-
-func (p *opaqueDestination) Route(stream grpc.BidiStreamingServer[pb.Request, pb.Response]) error {
-	p.calls.Add(1)
-	md, _ := metadata.FromIncomingContext(stream.Context())
-	p.seen <- md
-	for {
-		request, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(request.Payload, p.payload) {
-			return status.Error(codes.Internal, "relay interpreted payload")
-		}
-		response := &pb.Response{Id: request.Id, Payload: []byte("opaque response")}
-		if err := stream.Send(response); err != nil {
-			return err
-		}
-		end := &pb.Response{Id: request.Id, End: true}
-		if err := stream.Send(end); err != nil {
-			return err
-		}
-	}
-}
-func TestRouteTransparentRelayAndHopLimit(t *testing.T) {
-	fixture := &opaqueDestination{seen: make(chan metadata.MD, 4), payload: []byte{0xff, 0, 0xff}}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	downstream := grpc.NewServer()
-	pb.RegisterWeirServer(downstream, fixture)
-	go func() { _ = downstream.Serve(listener) }()
-	t.Cleanup(func() { downstream.Stop(); _ = listener.Close() })
-	remote := testRemote(t, listener.Addr().String())
-	service := Service{RemoteWeir: remote}
-	options := peerServerOptions{routes: map[string]Service{"records": service}, budget: 4}
-	srv, address := startPeerServer(t, options)
-	_, client := peerClient(t, address)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	stream, err := client.Route(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := &pb.Request{Id: 7, Destination: "records", Payload: fixture.payload}
-	if err := stream.Send(request); err != nil {
-		t.Fatal(err)
-	}
-	_ = stream.CloseSend()
-	response, err := stream.Recv()
-	if err != nil || string(response.Payload) != "opaque response" {
-		t.Fatal(response, err)
-	}
-	response, err = stream.Recv()
-	if err != nil || !response.End {
-		t.Fatal(response, err)
-	}
-	if _, err := stream.Recv(); err != io.EOF {
-		t.Fatal(err)
-	}
-	headers := <-fixture.seen
-	if got := headers.Get(HopMetadata); len(got) != 1 || got[0] != "3" {
-		t.Fatal("hop not decremented", got)
-	}
-	waitPeerIdle(t, srv)
-	options.budget = 0
-	blocked, address := startPeerServer(t, options)
-	_, client = peerClient(t, address)
-	stream, err = client.Route(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = stream.Send(request)
-	_ = stream.CloseSend()
-	if _, err := stream.Recv(); status.Code(err) != codes.ResourceExhausted {
-		t.Fatal("exhausted hops", err)
-	}
-	waitPeerIdle(t, blocked)
-	if fixture.calls.Load() != 1 {
-		t.Fatal("zero hops forwarded")
-	}
-}
-
-func TestRoutePeerMetadataDeadlineAndCancellation(t *testing.T) {
+func TestRouteDeadlineAndCancellation(t *testing.T) {
 	adapter, rt := peerLocal(t, "records")
 	release := make(chan struct{})
 	adapter.block = release
-	local := Service{LocalStore: rt}
-	options := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
+	options := peerServerOptions{stores: map[string]*store.Runtime{"records": rt}}
 	backend, address := startPeerServer(t, options)
-	_, trusted := peerClient(t, address)
+	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := routeRead(trusted, ctx, testRequest()); status.Code(err) != codes.InvalidArgument {
-		t.Fatal("peer accepted missing hop metadata", err)
-	}
-	remote := testRemote(t, address)
-	forward := Service{RemoteWeir: remote}
-	options = peerServerOptions{routes: map[string]Service{"records": forward}, budget: 2}
-	entry, address := startPeerServer(t, options)
-	_, client := peerClient(t, address)
 	requestCtx, stop := context.WithTimeout(ctx, 700*time.Millisecond)
 	original, _ := requestCtx.Deadline()
 	done := make(chan error, 1)
@@ -148,7 +45,6 @@ func TestRoutePeerMetadataDeadlineAndCancellation(t *testing.T) {
 		t.Fatal("cancel not propagated", err)
 	}
 	close(release)
-	waitPeerIdle(t, entry)
 	waitPeerIdle(t, backend)
 	until := time.Now().Add(time.Second)
 	for rt.Snapshot().Retained != 0 {
@@ -162,10 +58,9 @@ func TestRoutePeerMetadataDeadlineAndCancellation(t *testing.T) {
 func TestRouteSlowConsumerBackpressureAndShutdown(t *testing.T) {
 	adapter, rt := peerLocal(t, "records")
 	adapter.documents[testRequest().Resource] = &pb.Document{MediaType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), protocol.MaxDocument)}
-	local := Service{LocalStore: rt}
 	limits := DefaultLimits()
 	limits.Stall = 3 * time.Second
-	options := peerServerOptions{routes: map[string]Service{"records": local}, limits: limits}
+	options := peerServerOptions{stores: map[string]*store.Runtime{"records": rt}, limits: limits}
 	srv, address := startPeerServer(t, options)
 	_, client := peerClient(t, address)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -243,8 +138,7 @@ func TestRouteGracefulDrainPreservesAdmittedExecution(t *testing.T) {
 	adapter, rt := peerLocal(t, "records")
 	release := make(chan struct{})
 	adapter.block = release
-	local := Service{LocalStore: rt}
-	options := peerServerOptions{routes: map[string]Service{"records": local}}
+	options := peerServerOptions{stores: map[string]*store.Runtime{"records": rt}}
 	srv, address := startPeerServer(t, options)
 	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -283,18 +177,9 @@ func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) 
 	adapter, rt := peerLocal(t, "records")
 	adapter.ackFailureKey = "data/s:ack"
 	adapter.ackFailure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledged but replica acknowledgement failed")
-	local := Service{LocalStore: rt}
-	options := peerServerOptions{routes: map[string]Service{"records": local}, peer: true}
+	options := peerServerOptions{stores: map[string]*store.Runtime{"records": rt}}
 	backend, address := startPeerServer(t, options)
 	servers := []*Server{backend}
-	for hop := 0; hop < 2; hop++ {
-		remote := testRemote(t, address)
-		service := Service{RemoteWeir: remote}
-		options = peerServerOptions{routes: map[string]Service{"records": service}, budget: 4, peer: hop == 0}
-		relay, nextAddress := startPeerServer(t, options)
-		servers = append(servers, relay)
-		address = nextAddress
-	}
 	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

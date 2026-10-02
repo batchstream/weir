@@ -7,6 +7,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir/api/weir/v1"
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/protocol"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
@@ -30,23 +31,26 @@ func DefaultLimits() Limits {
 }
 
 type Config struct {
-	Routes    map[string]Service
+	Stores    map[string]*store.Runtime
+	Directory *directory.Directory
 	Limits    Limits
 	Admission *Admission
-	// Peer selects ingress that requires an existing forwarding budget.
-	Peer            bool
-	InitialForwards int
+	// Peer exposes the directory control service instead of business RPCs.
+	Peer bool
 }
 
 type Server struct {
 	pb.UnimplementedWeirServer
-	routes          map[string]Service
+	stores          map[string]*store.Runtime
+	directory       *directory.Directory
 	admission       *Admission
 	peer            bool
-	initialForwards int
+	control         chan struct{}
+	connectionSlots chan struct{}
 	limits          Limits
 	slots           chan struct{}
 	grpc            *grpc.Server
+	controlGRPC     *grpc.Server
 	http            *http.Server
 	draining        chan struct{}
 	once            sync.Once
@@ -71,44 +75,51 @@ func New(cfg Config) (*Server, error) {
 	if err := l.Validate(); err != nil {
 		return nil, err
 	}
-	if len(cfg.Routes) > 16 || cfg.Admission == nil ||
-		cfg.InitialForwards < 0 || cfg.InitialForwards > 8 {
-		return nil, status.Error(codes.InvalidArgument, "invalid routes or ingress bounds")
+	if len(cfg.Stores) > 16 || cfg.Admission == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid Stores or ingress bounds")
 	}
 	if cap(cfg.Admission.slots) != l.Sessions || cap(cfg.Admission.connections) != l.Connections {
 		return nil, status.Error(codes.InvalidArgument, "inconsistent shared admission bounds")
 	}
-	routes := make(map[string]Service, len(cfg.Routes))
+	stores := make(map[string]*store.Runtime, len(cfg.Stores))
 	seen := make(map[*store.Runtime]bool)
-	for name, service := range cfg.Routes {
+	for name, runtime := range cfg.Stores {
 		parsed, segments, err := protocol.ParseResource("weir://" + name)
 		if err != nil ||
 			parsed != name ||
 			len(segments) != 0 ||
-			(service.LocalStore == nil) == (service.RemoteWeir == nil) ||
-			service.LocalStore != nil && seen[service.LocalStore] {
+			runtime == nil || seen[runtime] {
 			return nil, status.Error(codes.InvalidArgument, "invalid or aliased service")
 		}
-		routes[name] = service
-		if service.LocalStore != nil {
-			seen[service.LocalStore] = true
-		}
+		stores[name] = runtime
+		seen[runtime] = true
 	}
 	s := &Server{
-		routes:          routes,
-		admission:       cfg.Admission,
-		peer:            cfg.Peer,
-		initialForwards: cfg.InitialForwards,
-		limits:          l,
-		slots:           cfg.Admission.slots,
-		draining:        cfg.Admission.draining,
+		stores:    stores,
+		directory: cfg.Directory,
+		admission: cfg.Admission,
+		peer:      cfg.Peer,
+		control:   make(chan struct{}, 2),
+		limits:    l,
+		slots:     cfg.Admission.slots,
+		draining:  cfg.Admission.draining,
 	}
 	s.metrics = newTransportMetrics()
+	s.connectionSlots = cfg.Admission.connections
+	if cfg.Peer {
+		s.connectionSlots = make(chan struct{}, 16)
+	}
 	s.serving = make(chan struct{})
 	statistics := deliveryStats{}
 	s.grpc = grpc.NewServer(
 		grpc.MaxRecvMsgSize(protocol.MaxFrame),
 		grpc.MaxSendMsgSize(protocol.MaxResponse),
+		grpc.StatsHandler(statistics),
+		grpc.WaitForHandlers(true),
+	)
+	s.controlGRPC = grpc.NewServer(
+		grpc.MaxRecvMsgSize(directory.MaxExchangeBytes),
+		grpc.MaxSendMsgSize(directory.MaxExchangeBytes),
 		grpc.StatsHandler(statistics),
 		grpc.WaitForHandlers(true),
 	)
@@ -134,6 +145,13 @@ func New(cfg Config) (*Server, error) {
 		MaxHeaderBytes:    16 << 10,
 		IdleTimeout:       time.Minute,
 	}
-	pb.RegisterWeirServer(s.grpc, s)
+	if cfg.Peer {
+		if cfg.Directory != nil {
+			pb.RegisterDirectoryServer(s.controlGRPC, cfg.Directory)
+		}
+	} else {
+		pb.RegisterWeirServer(s.grpc, s)
+		pb.RegisterWeirServer(s.controlGRPC, s)
+	}
 	return s, nil
 }

@@ -20,7 +20,7 @@ func main() {
 	}
 }
 func run() error {
-	address := flag.String("address", "127.0.0.1:7447", "Weir listener")
+	address := flag.String("address", "127.0.0.1:7447", "Weir initialization listener")
 	destination := flag.String("store", "mongo", "logical Store: mongo or search")
 	database := flag.String("database", "weir_m1", "pre-created MongoDB database")
 	index := flag.String("index", "weir_m2_example", "pre-created Search index")
@@ -29,14 +29,14 @@ func run() error {
 	if *destination != "mongo" && *destination != "search" || *count < 1 {
 		return fmt.Errorf("invalid Store or count")
 	}
-	conn, err := routeclient.Dial(*address)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	openOptions := routeclient.OpenOptions{Seed: *address, Stores: []string{*destination}}
+	client, err := routeclient.Open(ctx, openOptions)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	client := pb.NewWeirClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	defer client.Close()
 	target := protocol.EncodeSegment(*database) + "/records/s:example"
 	record := bson.D{{Key: "_id", Value: "example"}, {Key: "n", Value: int32(1)}}
 	data, err := bson.Marshal(record)
@@ -53,7 +53,7 @@ func run() error {
 	variant := &pb.Call_Mutate{Mutate: mutation}
 	call := &pb.Call{Version: 1, Operation: variant}
 	opts := routeclient.RecordOptions{Destination: *destination, Call: call}
-	result, err := routeclient.Record(ctx, client, opts)
+	result, err := client.Record(ctx, opts)
 	if err != nil {
 		if result != nil {
 			return fmt.Errorf("write RPC incomplete; backend evidence=%v: %w", result, err)
@@ -84,7 +84,7 @@ func run() error {
 		// Consume and discard here: retaining Events would require the full batch memory.
 		return nil
 	}
-	if err := routeclient.Run(ctx, client, batch); err != nil {
+	if err := client.Run(ctx, batch); err != nil {
 		return err
 	}
 	fmt.Printf("completed %d reads with all request ends and final gRPC OK\n", *count)

@@ -10,25 +10,25 @@ import (
 )
 
 func TestBatchCollectConfigurationDefaultExplicitZeroAndBounds(t *testing.T) {
-	prefix := "services:\n  - name: database\n    local:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n"
-	suffix := "routes:\n  - store: records\n    service: database\n"
+	prefix := "stores:\n  - name: database\n    mongodb:\n      uri: mongodb://127.0.0.1:27017\n"
+	suffix := ""
 	cases := []struct {
 		field string
 		want  time.Duration
 	}{
 		{"", 5 * time.Millisecond},
-		{"      batch_collect: 0ms\n", 0},
-		{"      batch_collect: 1ms\n", time.Millisecond},
-		{"      batch_collect: 1.5ms\n", 1500 * time.Microsecond},
-		{"      batch_collect: 5ms\n", 5 * time.Millisecond},
-		{"      batch_collect: 10ms\n", 10 * time.Millisecond},
+		{"    batch_collect: 0ms\n", 0},
+		{"    batch_collect: 1ms\n", time.Millisecond},
+		{"    batch_collect: 1.5ms\n", 1500 * time.Microsecond},
+		{"    batch_collect: 5ms\n", 5 * time.Millisecond},
+		{"    batch_collect: 10ms\n", 10 * time.Millisecond},
 	}
 	for _, tc := range cases {
 		cfg, err := DecodeRouting(strings.NewReader(prefix + tc.field + suffix))
 		if err != nil {
 			t.Fatal("valid collection interval rejected", tc.field, err)
 		}
-		local := cfg.Services[0].Local
+		local := cfg.Stores[0].Local
 		if got := local.runtimeLimits().Collect; got != tc.want {
 			t.Fatal("collection default or explicit value lost", got, tc.want)
 		}
@@ -37,7 +37,7 @@ func TestBatchCollectConfigurationDefaultExplicitZeroAndBounds(t *testing.T) {
 			t.Fatal(err)
 		}
 		roundTrip, err := DecodeRouting(strings.NewReader(string(raw)))
-		if err != nil || roundTrip.Services[0].Local.runtimeLimits().Collect != tc.want {
+		if err != nil || roundTrip.Stores[0].Local.runtimeLimits().Collect != tc.want {
 			t.Fatal("collection interval changed in routing round trip", err)
 		}
 		encoded, err := json.Marshal(local)
@@ -46,7 +46,7 @@ func TestBatchCollectConfigurationDefaultExplicitZeroAndBounds(t *testing.T) {
 		}
 	}
 	for _, value := range []string{"-1ns", "10.000001ms", "1s", "0", "true", "null", "{}", "[]", "\"\""} {
-		input := prefix + "      batch_collect: " + value + "\n" + suffix
+		input := prefix + "    batch_collect: " + value + "\n" + suffix
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 			t.Fatal("invalid collection interval accepted", value)
 		}

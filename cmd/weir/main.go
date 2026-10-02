@@ -39,7 +39,7 @@ func run(args []string, output io.Writer) error {
 	serveRoutes := ""
 	serveCommand := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the node using basic configuration and optional routes",
+		Short: "Start the node using process configuration and optional local Stores",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if serveConfig == "" {
@@ -65,7 +65,7 @@ func run(args []string, output io.Writer) error {
 		&serveRoutes,
 		"routes",
 		"",
-		"optional routing YAML configuration file",
+		"optional local Store YAML configuration file",
 	)
 
 	checkConfig := "weir.yaml"
@@ -98,7 +98,7 @@ func run(args []string, output io.Writer) error {
 		&checkRoutes,
 		"routes",
 		"",
-		"optional routing YAML configuration file",
+		"optional local Store YAML configuration file",
 	)
 
 	versionCommand := &cobra.Command{
@@ -174,7 +174,7 @@ func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr err
 	}
 	stop()
 
-	_, err = fmt.Fprintf(output, "Weir listening on %v; static local/peer profile, not production ready\n", node.Addresses())
+	_, err = fmt.Fprintf(output, "Weir listening on %v; local execution and peer directory discovery\n", node.Addresses())
 	if err != nil {
 		return errors.New("listener output failed")
 	}
