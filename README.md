@@ -94,8 +94,8 @@ collection delay; physical batches split by namespace, action, actual input byte
 and `max_batch_operations`. Read results reserve actual retained bytes, rather
 than the configured maximum size multiplied by the number of records. Tune against completed
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
-or container limit for a hard memory boundary. The adaptive scheduler and backend
-connection budgets remain independent of peer discovery.
+or container limit for a hard memory boundary. Execution concurrency and backend
+working budgets remain independent of peer discovery.
 
 MongoDB and Search authentication can use explicit `username`/`password` fields
 or `username_file`/`password_file`; each credential has exactly one source. Search

@@ -55,7 +55,6 @@ type Runtime struct {
 	wake, changed, done                     chan struct{}
 	closeOnce                               sync.Once
 	closeErr                                error
-	controller                              controller
 	metrics                                 runtimeMetrics
 }
 type Session struct {
@@ -90,7 +89,7 @@ type Ticket struct {
 	result               *pb.Result
 	ready                chan struct{}
 	sequence             string
-	eligible, queuedAt   time.Time
+	queuedAt             time.Time
 	state                uint8
 	abandoned, acked     bool
 	stopWatch            func() bool
@@ -99,30 +98,21 @@ type Ticket struct {
 	resultCharge         int
 }
 type batch struct {
-	ctx              context.Context
-	items            []*Ticket
-	cancel           context.CancelFunc
-	epoch            uint64
-	saturated        bool
-	lowDemand        bool
-	backendDeadline  time.Time
-	timeoutOwned     bool
-	workingBytes     int
-	latency          latencyClass
-	duration         time.Duration
-	latencyEligible  bool
-	recoveryEligible bool
+	ctx             context.Context
+	items           []*Ticket
+	cancel          context.CancelFunc
+	backendDeadline time.Time
+	timeoutOwned    bool
+	workingBytes    int
 }
 type Snapshot struct {
-	Ready, ReadyBytes                                                                      int
-	Cooldown                                                                               bool
-	Feedback                                                                               string
-	Pending, PendingBytes, Active, Retained, ResultBytes, WorkingBytes, Publishers, Window int
-	Draining, Closed, Overloaded                                                           bool
-	LatencyBaseline, LatencySample                                                         time.Duration
-	LatencyProfiles, LatencyReadyProfiles                                                  int
-	LatencyRatio                                                                           float64
-	LatencyRecoveryHold                                                                    bool
+	Ready, ReadyBytes                     int
+	Pending, PendingBytes                 int
+	Active, Retained                      int
+	ResultBytes, WorkingBytes, Publishers int
+	ConcurrencyLimit                      int
+	Draining, Closed, Overloaded          bool
+	Feedback                              string
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -139,7 +129,6 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 }
 func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
 	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[string]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
-	runtime.controller.window = limits.Concurrency
 	runtime.metrics = newRuntimeMetrics()
 	return runtime
 }
@@ -359,14 +348,9 @@ func (r *Runtime) cancelQueuedLocked() {
 	r.queue = keep
 }
 func (r *Runtime) loop() {
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
 	defer close(r.done)
 	for {
-		select {
-		case <-r.wake:
-		case <-ticker.C:
-		}
+		<-r.wake
 		r.mu.Lock()
 		r.cancelQueuedLocked()
 		for b := range r.batches {
@@ -378,7 +362,7 @@ func (r *Runtime) loop() {
 				b.cancel()
 			}
 		}
-		for !r.closed && r.active < r.controller.window && time.Now().After(r.controller.cooldown) {
+		for !r.closed {
 			b := r.selectLocked(time.Now())
 			if b == nil {
 				break
@@ -393,6 +377,9 @@ func (r *Runtime) loop() {
 	}
 }
 func (r *Runtime) selectLocked(now time.Time) *batch {
+	if r.active >= r.limits.Concurrency {
+		return nil
+	}
 	seen := make(map[string]bool)
 	records := make(map[string]bool)
 	selected := make(map[*Ticket]bool)
@@ -417,9 +404,6 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		}
 		if t.plan.WorkingBytes > r.limits.WorkingBytes-r.workingBytes {
 			continue
-		}
-		if t.eligible.IsZero() {
-			t.eligible = now
 		}
 		if seed == nil {
 			seed = t
@@ -478,9 +462,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			backendDeadline = deadline
 		}
 	}
-	b := &batch{ctx: ctx, items: items, cancel: cancel, epoch: r.controller.epoch, backendDeadline: backendDeadline, timeoutOwned: owned, workingBytes: workingBytes, recoveryEligible: true}
-	b.lowDemand = r.active == 0 && len(r.queue) == len(items)
-	b.latency, b.latencyEligible = classifyLatency(items)
+	b := &batch{ctx: ctx, items: items, cancel: cancel, backendDeadline: backendDeadline, timeoutOwned: owned, workingBytes: workingBytes}
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
@@ -500,47 +482,10 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	r.active++
 	r.workingBytes += workingBytes
 	r.batches[b] = struct{}{}
-	b.saturated = r.saturatedLocked()
 	r.notifyLocked()
 	return b
 }
 
-func (r *Runtime) saturatedLocked() bool {
-	if len(r.queue) == 0 {
-		return false
-	}
-	if r.active >= r.controller.window {
-		return true
-	}
-	remaining := r.limits.WorkingBytes - r.workingBytes
-	blocked := false
-	var seen map[string]struct{}
-	for _, ticket := range r.queue {
-		if ticket.state != 0 || ticket.ctx.Err() != nil || ticket.abandoned {
-			continue
-		}
-		if ticket.sequence != "" {
-			if r.keys[ticket.sequence] != nil {
-				continue
-			}
-			if _, duplicate := seen[ticket.sequence]; duplicate {
-				continue
-			}
-		}
-		working := ticket.workingReservation()
-		if working <= remaining {
-			return false
-		}
-		blocked = true
-		if ticket.sequence != "" {
-			if seen == nil {
-				seen = make(map[string]struct{})
-			}
-			seen[ticket.sequence] = struct{}{}
-		}
-	}
-	return blocked
-}
 func (t *Ticket) emit(event *pb.Event) error {
 	if t.session == nil {
 		return nil
@@ -592,7 +537,6 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 				t.publishing = false
 				r.publishers--
 				t.state = 0
-				t.eligible = time.Time{}
 				t.queuedAt = time.Now()
 				r.queue = append(r.queue, t)
 				r.notifyLocked()
@@ -680,20 +624,12 @@ func (r *Runtime) execute(b *batch) {
 	r.metrics.batch.Observe(float64(len(plans)))
 	started := time.Now()
 	feedback := r.adapter.Execute(b.ctx, plans, emit)
-	b.duration = time.Since(started)
-	r.metrics.duration.WithLabelValues("route").Observe(b.duration.Seconds())
+	r.metrics.duration.WithLabelValues("route").Observe(time.Since(started).Seconds())
 	interested := false
 	for _, ticket := range b.items {
 		if ticket.ctx.Err() == nil {
 			interested = true
-		} else {
-			b.latencyEligible = false
-			b.recoveryEligible = false
 		}
-	}
-	if b.ctx.Err() != nil {
-		b.latencyEligible = false
-		b.recoveryEligible = false
 	}
 	if !interested {
 		// A canceled caller is not evidence that the database lost capacity.
@@ -704,17 +640,11 @@ func (r *Runtime) execute(b *batch) {
 	b.cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Demand may arrive after dispatch. Judge pressure before releasing this
-	// execution's memory permit, including the lower memory-limited capacity.
-	b.saturated = b.saturated || r.saturatedLocked()
-	b.lowDemand = b.lowDemand && r.active == 1 && len(r.queue) == 0
 	r.active--
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	if r.closed {
 		feedback = execution.Neutral
-		b.latencyEligible = false
-		b.recoveryEligible = false
 	}
 	for index, ticket := range b.items {
 		ticket.plan.Continue = plans[index].Continue
@@ -733,25 +663,13 @@ func (r *Runtime) execute(b *batch) {
 			r.startPublisherLocked(ticket, events[ticket], ticket.plan.Continue)
 		}
 	}
-	r.observeLocked(b, feedback)
+	r.metrics.feedback, r.metrics.observed = feedback, true
 	r.notifyLocked()
 }
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, Window: r.controller.window, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Cooldown: time.Now().Before(r.controller.cooldown), Feedback: "unobserved"}
-	snapshot.LatencyBaseline = r.controller.baseline
-	snapshot.LatencySample = r.controller.sample
-	snapshot.LatencyRecoveryHold = time.Now().Before(r.controller.latencyHoldUntil)
-	snapshot.LatencyProfiles = len(r.controller.profiles)
-	for _, profile := range r.controller.profiles {
-		if profile.samples >= 4 {
-			snapshot.LatencyReadyProfiles++
-		}
-	}
-	if snapshot.LatencyBaseline > 0 {
-		snapshot.LatencyRatio = float64(snapshot.LatencySample) / float64(snapshot.LatencyBaseline)
-	}
+	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Feedback: "unobserved"}
 	if r.metrics.observed {
 		snapshot.Feedback = "neutral"
 		if r.metrics.feedback == execution.Healthy {
@@ -842,13 +760,6 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (t *Ticket) ID() uint64 {
 	return t.id
-}
-
-func (t *Ticket) workingReservation() int {
-	if t.bulk != nil {
-		return t.bulk.workingBytes
-	}
-	return t.plan.WorkingBytes
 }
 
 func (t *Ticket) resultReservation() int {

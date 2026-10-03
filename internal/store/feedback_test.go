@@ -44,11 +44,11 @@ func TestRuntimeCanceledCallDoesNotBecomeBackendCongestion(t *testing.T) {
 	cancel()
 	b.cancel()
 	runtime.execute(b)
-	if got := runtime.Snapshot(); got.Window != limits.Concurrency || got.Feedback != "neutral" || got.LatencyProfiles != 0 {
+	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "neutral" {
 		t.Fatal("caller cancellation reduced backend capacity", got)
 	}
 	if ticket.Result().GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
-		t.Fatal("controller changed uncertain write evidence")
+		t.Fatal("feedback changed uncertain write evidence")
 	}
 	ticket.Ack()
 }
@@ -71,21 +71,19 @@ func TestRuntimeOwnedBackendDeadlineRemainsCongestion(t *testing.T) {
 	b.cancel()
 	b.ctx, b.cancel = context.WithDeadline(context.Background(), time.Unix(1, 0))
 	runtime.execute(b)
-	if got := runtime.Snapshot(); got.Window != limits.Concurrency/2 || got.Feedback != "congested" {
-		t.Fatal("backend deadline failed to reduce pressure", got)
+	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "congested" {
+		t.Fatal("backend deadline lost its congestion evidence or changed configured capacity", got)
 	}
 	ticket.Ack()
 }
 
-func TestRuntimePartiallyCanceledHealthyBatchCannotRecoverConcurrency(t *testing.T) {
+func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchOperations = 2
 	gate := make(chan struct{})
 	close(gate)
 	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 1), gate: gate}
 	runtime := newRuntime(adapter, limits)
-	runtime.controller.window = 1
-	runtime.controller.credit = 3
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	canceled, stop := context.WithCancel(ctx)
@@ -101,13 +99,13 @@ func TestRuntimePartiallyCanceledHealthyBatchCannotRecoverConcurrency(t *testing
 	runtime.mu.Lock()
 	b := runtime.selectLocked(time.Now())
 	runtime.mu.Unlock()
-	if b == nil || len(b.items) != 2 || !b.saturated {
-		t.Fatal("missing shared saturated batch")
+	if b == nil || len(b.items) != 2 {
+		t.Fatal("missing shared batch")
 	}
 	stop()
 	runtime.execute(b)
-	if got := runtime.Snapshot(); got.Window != 1 || got.Feedback != "healthy" || got.LatencyProfiles != 0 || runtime.controller.credit != 0 || b.recoveryEligible {
-		t.Fatal("a partially canceled batch contributed recovery credit", got)
+	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "healthy" {
+		t.Fatal("a partially canceled batch changed configured capacity or feedback", got)
 	}
 	if tickets[0].Result().GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED || tickets[1].Result().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("cancellation leaked into the healthy caller's mutation evidence")

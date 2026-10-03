@@ -277,38 +277,6 @@ func TestSlowConsumerRetainedBound(t *testing.T) {
 		t.Fatal("result credits leaked")
 	}
 }
-func TestAIMDEpochAndFloor(t *testing.T) {
-	c := controller{window: 4}
-	b := &batch{epoch: 0, saturated: true, recoveryEligible: true}
-	now := time.Now()
-	opts := observation{batch: b, feedback: execution.Congested, maximum: 8, now: now}
-	c.observe(opts)
-	if c.window != 2 {
-		t.Fatal(c)
-	}
-	cooldown := c.cooldown
-	c.observe(opts)
-	if c.window != 2 || !c.cooldown.Equal(cooldown) {
-		t.Fatal("old flight counted twice")
-	}
-	for i := 0; i < 4; i++ {
-		b.epoch = c.epoch
-		c.observe(opts)
-	}
-	if c.window != 1 {
-		t.Fatal("Cmin")
-	}
-	b.epoch = c.epoch
-	opts.feedback = execution.Healthy
-	opts.now = now.Add(time.Second)
-	for i := 0; i < 4; i++ {
-		c.observe(opts)
-	}
-	if c.window != 2 {
-		t.Fatal("no healthy growth", c)
-	}
-}
-
 func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
 	limits := DefaultLimits()
 	adapter := &lifecycleAdapter{}

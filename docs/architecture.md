@@ -114,12 +114,10 @@ one check; failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 
-Each Store has an adaptive window bounded by max_concurrency and working bytes.
-Explicit backend congestion or an owned timeout reduces the window and briefly
-pauses dispatch. Comparable successful record/Scan latency profiles detect
-sustained queued pressure; healthy saturated work allows bounded recovery.
-Canceled callers do not train recovery. Weir CPU pressure can also increase
-adapter latency, so this signal does not claim to measure database CPU.
+Each Store dispatches while configured max_concurrency and backend working bytes
+permit. Database latency does not train a second concurrency controller. Backend
+failures are returned to callers without automatic retries; pending work remains
+bounded by queue bytes and deadlines.
 
 Scan fetches one bounded document step at a time and releases the execution permit
 before publication. A blocked scan at concurrency one allows independent record

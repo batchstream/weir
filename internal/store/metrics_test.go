@@ -29,13 +29,12 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 	}
 	return execution.Congested
 }
-func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
+func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
 	limits.PendingOperations = 4
 	limits.BatchOperations = 3
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
-	r.controller.window = 4
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var tickets []*Ticket
@@ -92,32 +91,16 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 			t.Fatal("ledger not released")
 		}
 	}
-	r.mu.Lock()
-	// An old epoch and a congestion signal at the minimum window are not actual reductions.
-	r.observeLocked(b, execution.Congested)
-	fresh := &batch{epoch: r.controller.epoch, recoveryEligible: true}
-	r.observeLocked(fresh, execution.Congested)
-	fresh.epoch = r.controller.epoch
-	r.observeLocked(fresh, execution.Congested)
-	fresh.epoch = r.controller.epoch
-	fresh.saturated = true
-	r.controller.cooldown = time.Time{}
-	r.controller.lastGrowth = time.Now().Add(-time.Second)
-	for range 4 {
-		r.observeLocked(fresh, execution.Healthy)
-	}
-	r.mu.Unlock()
 	families := testmetrics.Gather(t, r)
-	if testmetrics.Sample(families, "weir_store_window_changes_total", map[string]string{"direction": "decrease"}).GetCounter().GetValue() != 2 {
-		t.Fatal("counted ignored/minimum reductions")
+	if testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(limits.Concurrency) {
+		t.Fatal("configured concurrency metric changed")
 	}
-	if testmetrics.Sample(families, "weir_store_window_changes_total", map[string]string{"direction": "increase"}).GetCounter().GetValue() != 1 {
-		t.Fatal("growth count")
+	for _, obsolete := range []string{"weir_store_window", "weir_store_window_limit", "weir_store_cooldown", "weir_store_window_changes_total", "weir_store_backpressure_events_total", "weir_store_latency_baseline_seconds"} {
+		if families[obsolete] != nil {
+			t.Fatal("removed adaptive metric still exposed", obsolete)
+		}
 	}
-	if testmetrics.Sample(families, "weir_store_backpressure_events_total", map[string]string{"reason": "backend"}).GetCounter().GetValue() != 3 {
-		t.Fatal("backend cooldown at the minimum window was not observable")
-	}
-	if testmetrics.Series(families) != 75 {
+	if testmetrics.Series(families) != 63 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

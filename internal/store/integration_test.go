@@ -91,7 +91,7 @@ func warm(t *testing.T, f fixture) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	// Same-key requests stay in distinct physical batches but may overlap across
-	// independent callers. Their backlog gives the controller saturated demand.
+	// independent callers. Their backlog exercises configured concurrent dispatch.
 	p := readPlan(t, f, "warm")
 	for round := 0; round < 3; round++ {
 		var tickets []*Ticket
@@ -110,8 +110,8 @@ func warm(t *testing.T, f fixture) {
 			ticket.Ack()
 		}
 	}
-	if f.runtime.Snapshot().Window < 2 {
-		t.Fatal("AIMD did not grow on saturated demand", f.runtime.Snapshot())
+	if f.runtime.Snapshot().ConcurrencyLimit != 2 {
+		t.Fatal("configured concurrency changed", f.runtime.Snapshot())
 	}
 }
 func TestNativeIndependentReadsOverlap(t *testing.T) {
@@ -224,7 +224,6 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	f := setup(t)
 	f.runtime.mu.Lock()
-	f.runtime.controller.window = 1
 	f.runtime.limits.Concurrency = 1
 	f.runtime.mu.Unlock()
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}

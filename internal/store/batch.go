@@ -206,9 +206,7 @@ func (r *Runtime) selectBatchLocked(ticket *Ticket, now time.Time) *batch {
 	}
 	ctx, cancel := context.WithDeadline(ticket.ctx, deadline)
 	items := []*Ticket{ticket}
-	b := &batch{ctx: ctx, cancel: cancel, items: items, epoch: r.controller.epoch, backendDeadline: deadline, timeoutOwned: owned, workingBytes: ticket.bulk.workingBytes, recoveryEligible: true}
-	b.lowDemand = r.active == 0 && len(r.queue) == 1
-	b.latency, b.latencyEligible = classifyLatency(items)
+	b := &batch{ctx: ctx, cancel: cancel, items: items, backendDeadline: deadline, timeoutOwned: owned, workingBytes: ticket.bulk.workingBytes}
 	for i, queued := range r.queue {
 		if queued == ticket {
 			copy(r.queue[i:], r.queue[i+1:])
@@ -222,7 +220,6 @@ func (r *Runtime) selectBatchLocked(ticket *Ticket, now time.Time) *batch {
 	r.active++
 	r.workingBytes += b.workingBytes
 	r.batches[b] = struct{}{}
-	b.saturated = r.saturatedLocked()
 	r.notifyLocked()
 	return b
 }
@@ -231,15 +228,10 @@ func (r *Runtime) runBatch(b *batch) {
 	ticket := b.items[0]
 	started := time.Now()
 	feedback := r.executeBatch(b.ctx, ticket)
-	b.duration = time.Since(started)
-	r.metrics.duration.WithLabelValues("route").Observe(b.duration.Seconds())
+	r.metrics.duration.WithLabelValues("route").Observe(time.Since(started).Seconds())
 	if ticket.ctx.Err() != nil {
 		feedback = execution.Neutral
-		b.latencyEligible = false
-		b.recoveryEligible = false
 	} else if b.ctx.Err() != nil {
-		b.latencyEligible = false
-		b.recoveryEligible = false
 		if b.timeoutOwned {
 			feedback = execution.Congested
 		}
@@ -247,21 +239,17 @@ func (r *Runtime) runBatch(b *batch) {
 	b.cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	b.saturated = b.saturated || r.saturatedLocked()
-	b.lowDemand = b.lowDemand && r.active == 1 && len(r.queue) == 0
 	r.active--
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	if r.closed {
 		feedback = execution.Neutral
-		b.latencyEligible = false
-		b.recoveryEligible = false
 	}
 	var failure *pb.Failure
 	if ticket.ctx.Err() != nil {
 		failure = protocol.ContextFailure(ticket.ctx)
 	}
 	r.completeBatchLocked(ticket, failure)
-	r.observeLocked(b, feedback)
+	r.metrics.feedback, r.metrics.observed = feedback, true
 	r.notifyLocked()
 }

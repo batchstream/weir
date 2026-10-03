@@ -13,7 +13,6 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 	limits := DefaultLimits()
 	limits.WorkingBytes = 24 << 20
 	runtime := newRuntime(adapter, limits)
-	runtime.controller.window = 2
 	session := runtime.NewSession()
 	defer session.Close()
 	ctx, cancel := context.WithCancel(context.Background())

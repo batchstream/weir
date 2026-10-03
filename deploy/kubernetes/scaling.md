@@ -50,8 +50,8 @@ see the [Deployment rollout note](https://kubernetes.io/docs/concepts/workloads/
 
 Execution concurrency also multiplies with replicas. Independently controlled
 stores on four Pods can run four times the work of one Pod. Allocate the aggregate
-database work budget across all stores and the maximum active replicas, then let
-each controller reduce its own share under congestion. HPA adds Weir CPU; it does
+database work budget across all stores and the maximum active replicas, and
+configure each Store within that allocation. HPA adds Weir CPU; it does
 not increase the fixed database budget. No distributed coordinator is required
 for a conservative fixed allocation.
 

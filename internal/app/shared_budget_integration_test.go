@@ -126,6 +126,9 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
+	// The largest backend concurrency is four. Admit queued work as well as
+	// active calls so the overload phase exercises both ledgers independently.
+	cfg.Basic.Transport.MaxSessions = 8
 	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
 	cfg.Basic.Discovery.Group = "records"
 	cfg.Routing.Stores = []StoreConfig{service}
@@ -169,9 +172,9 @@ func budgetWait(t *testing.T, label string, predicate func() bool) {
 	}
 }
 
-func budgetWindow(t *testing.T, p *process) int {
+func budgetConcurrency(t *testing.T, p *process) int {
 	t.Helper()
-	return int(testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_store_window"))
+	return int(testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_store_concurrency_limit"))
 }
 
 func budgetFreshRead(t *testing.T, e *mongoBudgetExecutor, id string) {
@@ -211,8 +214,8 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 		peers = append(peers, startMongoBudgetExecutor(t, start))
 	}
 	t.Log("executor sequence 1 -> 3; all share one TLS/SCRAM database; capacities 1+2+4=7")
-	// Keep actual demand eligible across AIMD's 250ms growth interval. Each read
-	// remains independent; write/Bulk/stream coexistence is exercised below.
+	// Warm independent calls across all configured execution slots. Write,
+	// batch and stream coexistence is exercised below.
 	observation.hold(nil, 10*time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	var workers sync.WaitGroup
@@ -239,8 +242,8 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 		return a == 0
 	})
 	for _, e := range peers {
-		if window := budgetWindow(t, e.process); window != e.concurrency {
-			t.Fatal("AIMD failed to reach configured C", window, e.concurrency)
+		if capacity := budgetConcurrency(t, e.process); capacity != e.concurrency {
+			t.Fatal("configured concurrency changed", capacity, e.concurrency)
 		}
 	}
 	// A simultaneous wire barrier makes the 7 in-flight exchanges inspectable;
@@ -266,11 +269,11 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 			t.Fatal("Mongo local owner did not cover pool and polling monitor", owned)
 		}
 		families := testmetrics.Scrape(t, e.process.diagnostic)
-		if testmetrics.Sum(families, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(families, "weir_store_window_limit") != float64(e.concurrency) {
+		if testmetrics.Sum(families, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(e.concurrency) {
 			t.Fatal("runtime assembly cap")
 		}
 		t.Logf(
-			"barrier PID=%d active=window=C=%d upstream TCP current/peak=%d/%d (observer, independently of local owner)",
+			"barrier PID=%d active=C=%d upstream TCP current/peak=%d/%d (observer, independently of local owner)",
 			e.process.command.Process.Pid,
 			e.concurrency,
 			current,
@@ -288,12 +291,20 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	testmongo.FailCommand(t, fixture.Admin, data, 1)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	faultRead := &pb.ReadRequest{Resource: peers[2].root + "/s:congestion"}
-	_, _ = testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(faultRead))
+	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(faultRead))
 	stop()
-	if budgetWindow(t, peers[2].process) != 2 || budgetWindow(t, peers[1].process) != 2 {
-		t.Fatal("Mongo AIMD instances not independent")
+	if faultError != nil || faultResult.GetRead().GetFailure() == nil {
+		t.Fatal("Mongo congestion lost its read failure", faultError, faultResult)
 	}
-	t.Log("real failCommand 16500: C4 window 4->2, C2 stays 2; independent feedback")
+	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
+		t.Fatal("backend failure changed configured execution limits")
+	}
+	feedbackLabels := map[string]string{"feedback": "congested"}
+	feedback := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_feedback", feedbackLabels)
+	if feedback.GetGauge().GetValue() != 1 {
+		t.Fatal("Mongo backend congestion was not observable")
+	}
+	t.Log("real failCommand 16500: read failure and congestion feedback preserved; configured C4 and C2 unchanged")
 	mongoBudgetOverload(t, peers, observation)
 	mongoBudgetMixed(t, peers, fixture, observation)
 	discovery := budgetDiscoveryOptions{
@@ -334,7 +345,7 @@ func mongoBudgetOverload(t *testing.T, peers []*mongoBudgetExecutor, o *budgetOb
 	t.Helper()
 	expected := 0
 	for _, e := range peers {
-		expected += budgetWindow(t, e.process)
+		expected += budgetConcurrency(t, e.process)
 	}
 	gate := make(chan struct{})
 	o.hold(gate, 0)
@@ -589,7 +600,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 		old.process.command.Process.Pid,
 		replacement.process.command.Process.Pid,
 	)
-	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_window_limit") != 2 {
+	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_concurrency_limit") != 2 {
 		t.Fatal("two Local budgets merged")
 	}
 	budgetWait(t, "two independent Mongo pools", func() bool {
@@ -769,7 +780,7 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 		}
 	}
 	metrics := testmetrics.Scrape(t, seed.diagnostic)
-	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_window_limit"] != nil || metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_concurrency_limit"] != nil || metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
 		t.Fatal("initialization node owns execution or forwarding")
 	}
 	targets := 0
