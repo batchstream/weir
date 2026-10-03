@@ -431,8 +431,8 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		}
 		read := &pb.ReadRequest{Resource: mutation.Resource}
 		readRequest := &weirclient.ReadRequest{Resource: relative}
-		readOptions := weirclient.ReadOptions{StoreName: kind, Request: readRequest}
-		found, err := discovered.Read(ctx, readOptions)
+		readOptions := weirclient.ReadOneOptions{StoreName: kind, Request: readRequest}
+		found, err := discovered.ReadOne(ctx, readOptions)
 		if err != nil || processRecordNumber(t, found.GetDocument()) != 7 {
 			t.Fatal("initialized client persisted read", found, err)
 		}

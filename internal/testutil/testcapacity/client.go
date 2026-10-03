@@ -173,8 +173,8 @@ func (c *Client) Execute(ctx context.Context, op Operation) Result {
 	}
 	if !op.Write {
 		req := &weirclient.ReadRequest{Resource: resource, ReadMediaType: media}
-		opts := weirclient.ReadOptions{StoreName: "records", Request: req}
-		resp, err := weirclient.Read(ctx, client, opts)
+		opts := weirclient.ReadOneOptions{StoreName: "records", Request: req}
+		resp, err := weirclient.ReadOne(ctx, client, opts)
 		if err != nil {
 			r := failure("transport_"+status.Code(err).String(), false)
 			r.Message = failureMessage(err)

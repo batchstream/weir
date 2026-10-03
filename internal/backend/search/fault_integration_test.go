@@ -262,6 +262,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	if status != 200 {
 		t.Fatal(status)
 	}
+	a = reopenSearch(t, a)
 	for _, action := range []string{"put", "create", "replace"} {
 		assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, searchResource(b.Index, "direct"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 	}

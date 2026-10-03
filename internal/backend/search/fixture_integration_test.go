@@ -26,6 +26,23 @@ func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	t.Cleanup(func() { _ = adapter.Close(); _ = adapter.Close() })
 	return adapter, backend
 }
+
+func reopenSearch(t *testing.T, adapter *Adapter) *Adapter {
+	t.Helper()
+	config := adapter.config
+	if err := adapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reopened, err := Open(ctx, config)
+	if err != nil {
+		t.Fatal("reopen Store after changing target structure", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	return reopened
+}
+
 func searchResource(index, id string) string {
 	return "weir://search/" + index + "/" + protocol.EncodeSegment("s:"+id)
 }
