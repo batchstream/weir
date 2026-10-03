@@ -17,6 +17,9 @@ Their responses contain results in the same positions as inputs. All input is
 validated before effects; individual business failures remain positional results.
 Full encoded requests and responses are bounded to 32 MiB. Mutate is not an atomic
 transaction; same-resource mutations execute in input order.
+The server can combine compatible queued RPCs into one backend execution.
+Each RPC keeps independent positional results, cancellation and response budgets;
+this aggregation does not create a transaction across callers.
 
 ExecuteRequest contains store_name and one Command. ExecuteResponse contains one
 Event. Commands and Events use version 1; unknown fields/versions are rejected.

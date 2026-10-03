@@ -1,14 +1,17 @@
 # Weir
 
-Weir discovers logical Stores and executes finite database batches. Clients initialize
+Weir discovers logical Stores and combines concurrent client requests into finite
+database batches. Clients initialize
 through any Weir node with `ResolveStore`, then connect directly to the returned business
 targets. Nodes synchronize their Store directory through bounded periodic peer
 exchanges. Business requests execute only local Stores.
 
 `Read` and `Mutate` carry a complete batch in one unary RPC. `Execute` carries one
 Scan or Native command and streams its typed Events. All share the bounded Store
-scheduler. A client batch stays together through preparation, scheduling and
-backend grouping; same-URI mutations execute in input order. Lua runs inside the
+scheduler. Each client request completes its full preparation before admission.
+Queued single-record requests and compatible small client batches share backend
+executions while keeping their own ordered results and memory budgets. Same-URI
+mutations within one request execute in input order. Lua runs inside the
 single Weir process. Unconfirmed writes remain indeterminate after transport
 failure and are never automatically replayed.
 
@@ -90,8 +93,10 @@ peers or backends. Configuration changes take effect after a restart.
 
 Store defaults are two concurrent backend executions, 32 operations per batch,
 a `16KiB` ordinary-read limit and a `384MiB` backend working budget. There is no
-collection delay; physical batches split by namespace, action, actual input bytes
-and `max_batch_operations`. Read results reserve actual retained bytes, rather
+collection delay; queued RPCs combine by namespace, actual input bytes and
+`max_batch_operations`. Large client batches split into sequential bounded groups;
+singleton Lua operations remain separate. Adapters issue their native read and write
+commands for each group. Read results reserve actual retained bytes, rather
 than the configured maximum size multiplied by the number of records. Tune against completed
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
 or container limit for a hard memory boundary. Execution concurrency and backend

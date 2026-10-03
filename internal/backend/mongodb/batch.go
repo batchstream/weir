@@ -216,23 +216,33 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 					valid = false
 					break
 				}
-				var reply *pb.ReadResult
-				if len(raw) > a.maxReadSize() {
-					reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
-				} else if !plans[matches[0]].Results.Reserve(len(raw) * len(matches)) {
-					reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch result budget exhausted"))
-				} else {
+				oversized := len(raw) > a.maxReadSize()
+				if !oversized {
 					nodes := 65536
 					if !validScanBSON(raw, 0, &nodes) {
 						valid = false
 						break
 					}
-					d := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), raw...)}
-					reply = protocol.ReadDocument(d)
 				}
-				variant := &pb.Result_Read{Read: reply}
+				var document *pb.ReadResult
 				for _, i := range matches {
-					results[i] = &pb.Result{Index: plans[i].Operation.Index, Result: variant}
+					var reply *pb.ReadResult
+					if oversized {
+						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
+					} else if !plans[i].Results.Reserve(len(raw)) {
+						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch result budget exhausted"))
+					} else {
+						// Duplicate reads can share immutable data, but every RPC
+						// pays its own response budget before retaining that data.
+						if document == nil {
+							d := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), raw...)}
+							document = protocol.ReadDocument(d)
+						}
+						reply = document
+					}
+					variant := &pb.Result_Read{Read: reply}
+					result := &pb.Result{Index: plans[i].Operation.Index, Result: variant}
+					results[i] = result
 				}
 				received++
 			}

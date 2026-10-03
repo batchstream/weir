@@ -405,3 +405,58 @@ func TestMongoReadBatchAccepts513DistinctDocuments(t *testing.T) {
 		t.Fatal("batch split by an arbitrary item limit", finds)
 	}
 }
+
+func TestMongoDuplicateReadSeparatesRPCResultBudgets(t *testing.T) {
+	for _, mode := range []string{"first exhausted", "both retained", "first canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			document := bson.D{{Key: "_id", Value: "same"}, {Key: "value", Value: 123}}
+			cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
+			responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
+			adapter := batchMockAdapter(t, responses, nil)
+			var plans []*execution.Plan
+			charges := [2]int{}
+			firstContext, cancelFirst := context.WithCancel(t.Context())
+			defer cancelFirst()
+			for i := range 2 {
+				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:same", action: "read", index: 1}
+				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				budget := &execution.ResultBudget{Limit: protocol.MaxBatchResponseBytes, Retain: func(bytes int) bool {
+					charges[i] += bytes
+					return true
+				}}
+				if i == 0 {
+					work.Context = firstContext
+					if mode == "first exhausted" {
+						budget.Limit = 1
+					}
+				}
+				work.Results = budget
+				plans = append(plans, work)
+			}
+			if mode == "first canceled" {
+				cancelFirst()
+			}
+			replies, _ := adapter.executeRecords(t.Context(), plans)
+			raw := expressionBSON(t, document)
+			if len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].GetRead().GetDocument().GetData(), raw) || charges[1] != len(raw) {
+				t.Fatal("first RPC budget/cancellation poisoned same-ID peer", replies, charges)
+			}
+			if mode == "both retained" {
+				if replies[0].GetRead().GetDocument() != replies[1].GetRead().GetDocument() || charges[0] != len(raw) {
+					t.Fatal("immutable data was not shared with independent budget charges", replies, charges)
+				}
+			} else {
+				code := pb.FailureCode_RESOURCE_EXHAUSTED
+				if mode == "first canceled" {
+					code = pb.FailureCode_CANCELLED
+				}
+				if replies[0].GetRead().GetFailure().GetCode() != code || charges[0] != 0 {
+					t.Fatal("failed first RPC retained another caller's bytes", replies, charges)
+				}
+			}
+		})
+	}
+}

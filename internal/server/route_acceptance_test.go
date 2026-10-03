@@ -266,3 +266,92 @@ func TestBatchLargeDocumentsUseActualSharedResponseBudget(t *testing.T) {
 		t.Fatal("actual copied read bytes were not released")
 	}
 }
+
+func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T) {
+	const count = 512
+	gate := make(chan struct{})
+	defer func() {
+		select {
+		case <-gate:
+		default:
+			close(gate)
+		}
+	}()
+	adapter := newPeerAdapter("records")
+	adapter.block = gate
+	for i := range count {
+		key := fmt.Sprintf("data/s:%d", i)
+		document := &pb.Document{MediaType: "application/octet-stream", Data: []byte(key)}
+		adapter.documents[key] = document
+	}
+	limits := store.DefaultLimits()
+	limits.Concurrency = 1
+	limits.BackendTimeout = 5 * time.Second
+	transport := DefaultLimits()
+	transport.Sessions = count + 1
+	opts := routeAcceptanceNodeOptions{adapter: adapter, store: limits, limits: transport}
+	node := startRouteAcceptanceNode(t, opts)
+	clients := make([]pb.StoreServiceClient, 4)
+	for i := range clients {
+		clients[i] = routeAcceptanceClient(t, node.address)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	var workers sync.WaitGroup
+	failures := make(chan error, count+1)
+	workers.Go(func() {
+		read := &pb.ReadRequest{Resource: "data/s:blocker"}
+		request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
+		_, err := clients[0].Read(ctx, request)
+		if err != nil {
+			failures <- err
+		}
+	})
+	select {
+	case <-adapter.seen:
+	case <-ctx.Done():
+		t.Fatal("initial backend execution did not start")
+	}
+	for i := range count {
+		workers.Go(func() {
+			key := fmt.Sprintf("data/s:%d", i)
+			read := &pb.ReadRequest{Resource: key}
+			request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
+			response, err := clients[i%len(clients)].Read(ctx, request)
+			if err != nil {
+				failures <- err
+				return
+			}
+			if len(response.Results) != 1 || string(response.Results[0].GetDocument().GetData()) != key {
+				failures <- fmt.Errorf("RPC %d received another caller's response: %v", i, response)
+			}
+		})
+	}
+	for node.runtime.Snapshot().Pending != count {
+		select {
+		case <-ctx.Done():
+			close(gate)
+			workers.Wait()
+			t.Fatal("single-record RPCs did not reach queue", node.runtime.Snapshot())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	close(gate)
+	workers.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error(err)
+	}
+	adapter.mu.Lock()
+	sizes := append([]int(nil), adapter.batchSizes...)
+	adapter.mu.Unlock()
+	if len(sizes) != 1+count/limits.BatchOperations || sizes[0] != 1 {
+		t.Fatal("independent RPCs were not coalesced into bounded adapter executions", sizes)
+	}
+	for _, size := range sizes[1:] {
+		if size != limits.BatchOperations {
+			t.Fatal("single-record RPCs did not fill physical batches", sizes)
+		}
+	}
+	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
+}

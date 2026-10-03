@@ -65,8 +65,8 @@ contains only public ownership/address advertisements, never backend credentials
 | Ordinary Read source | Default 16 KiB; configurable 1 KiB–2 MiB |
 | Native body | MongoDB 4 MiB; Search 8 MiB |
 | Execute Event | 2 MiB plus bounded framing/metadata allowance |
-| Store pending requests | 256 entries / 32 MiB of prepared input |
-| Store retained results | 128 live entries / 32 MiB |
+| Store pending requests | 32 MiB of prepared input and request metadata |
+| Store retained results | 32 MiB of terminal metadata and actual read data |
 | Store backend workspace | 384 MiB; configurable with working_memory |
 | Physical batch input | 8 MiB / 32 operations, configurable |
 | Application admission | 4 business RPCs / 16 accepted connections |
@@ -90,7 +90,13 @@ small fixed charges. Read data reserves actual copied bytes before retention;
 max_read_size is an acceptance limit rather than a per-record reservation.
 Insufficient result credit produces an individual ResourceExhausted result instead
 of waiting while holding a partially filled response. Mutation acknowledgement
-and failure envelopes retain reserved space.
+and failure envelopes retain reserved space. Several RPCs can share a backend
+execution without sharing admission or response budgets. Duplicate reads may
+share immutable data, but every response owner retains its own byte charge until
+that RPC releases its results.
+There is no separate Store request-count cap: these byte budgets and the configured
+ingress RPC limit bound concurrent requests. Every record or command charges its
+retained metadata, including a nonzero ticket and terminal envelope.
 
 Backend working charges cover bounded native replies and decoding scratch.
 MongoDB uses its native bounded cursor reply; Search caps multi-get response bytes.
@@ -114,11 +120,24 @@ hard VM allocation sandbox.
 
 ## Scheduling and backend work
 
-A complete batch enters the Store scheduler directly; there is no collection
-window. Compatible items group by target namespace, action, actual input bytes
-and max_batch_operations. Repeated mutation keys start a new sequential wave.
-Incompatible operations execute separately. One adapter implementation handles
-both record groups and Scan/Native plans.
+A complete request enters the Store scheduler directly; there is no collection
+window or polling. When an execution permit becomes available, the scheduler
+combines already queued single-record RPCs and compatible complete small batches
+by target namespace, actual input bytes and max_batch_operations. One selected
+execution holds one working envelope sized for its largest operation. Large,
+multi-namespace and singleton client batches execute independently and split into
+sequential bounded groups. Repeated mutation keys start a new sequential wave.
+One adapter implementation handles both record groups and Scan/Native plans.
+
+Every record keeps its owning RPC context, result budget and ordinal. Backend
+results are assigned by dispatched plan identity, because different RPCs can use
+the same ordinal. The shared backend context uses the latest caller deadline,
+capped by the configured backend timeout. Canceling one caller does not interrupt
+its peers; when all callers stop waiting, the shared execution is canceled.
+Admission and working charges remain held until execution finishes. A confirmed
+write retains its actual outcome after cancellation; a missing acknowledgement
+for a dispatched write remains UNKNOWN. Different RPCs gain no additional
+transaction or ordering guarantee.
 
 MongoDB collections and Search indices receive a structural metadata check on
 first use, cached per Store for up to 64 targets. Concurrent cold requests share
