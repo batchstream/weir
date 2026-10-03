@@ -9,8 +9,8 @@ func (a *Adapter) maxReadSize() int {
 	return a.config.MaxReadSize
 }
 
-// The driver and the socket guard can each retain an 8 MiB reply even when a
-// stored record exceeds the declared read limit. Keep both buffers budgeted.
+// The driver and socket guard can each retain a native 16 MiB BSON reply plus
+// framing even when a record exceeds the declared read limit. Budget both buffers.
 func (a *Adapter) readWorkingBytes() int {
 	return 2*scanNativeLimit + max(1<<20, 4*a.maxReadSize())
 }

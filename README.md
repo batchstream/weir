@@ -123,7 +123,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.4.1`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.4.2`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -154,14 +154,14 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.4.1/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.4.1/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.4.1/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.4.2/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.4.2/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.4.2/examples/scan) examples
 initialize through a seed. Read and Mutate accept batches for one Store, each with
 one unary RPC and results in input order. Resources are canonical relative paths.
 There is no item-count limit in the public API; the complete protobuf request and
 response must each fit 32 MiB. The SDK also provides ReadOne, Create, Put, Replace,
-Delete, AtomicTransform, Scan and Native methods. It pins public protocol v0.2.0.
+Delete, AtomicTransform, Scan and Native methods. It pins public protocol v0.2.1.
 Advanced fixed-owner callers can use Dial and package-level business helpers.
 
 Batch requests are fully validated before backend work. Individual business
