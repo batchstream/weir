@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/main/api/weir/v1/store.proto), package
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.1.0/api/weir/v1/store.proto), package
 `weir.v1`. It contains only client discovery and business execution, with no
 dependency on the peer schema. A client initializes through any application
 endpoint, then sends business requests directly to the returned Store endpoints.
@@ -12,10 +12,10 @@ endpoint, then sends business requests directly to the returned Store endpoints.
 | `ResolveStoreResponse.store_name` | The resolved Store, matching the request |
 | `ResolveStoreResponse.endpoints` | IP or DNS host:port values; DNS may identify several replicas |
 | `ResolveStoreResponse.cache_ttl_ms` | Remaining time the mapping may be used |
-| `StoreService.Execute` | Execute a finite stream of Calls in one local Store |
+| `StoreService.Execute` | Execute a finite stream of Commands in one local Store |
 | `ExecuteRequest.request_id` | Positive, strictly increasing correlation ID within this RPC |
 | `ExecuteRequest.store_name` | Store fixed by the first valid request of the stream |
-| `ExecuteRequest.call_payload` | Exactly one protobuf-encoded, versioned `Call` |
+| `ExecuteRequest.command_payload` | Exactly one protobuf-encoded, versioned `Command` |
 | `ExecuteResponse.request_id` | Request whose output this frame carries |
 | `ExecuteResponse.event_fragment` | Fragment of a length-delimited protobuf `Event` sequence |
 | `ExecuteResponse.request_complete` | Separate empty frame ending that request's Events |

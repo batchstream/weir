@@ -20,8 +20,8 @@ type scanTestAdapter struct {
 	cleanupFailure    *pb.Failure
 }
 
-func (a *scanTestAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
-	work := &execution.Plan{ID: id, Call: call, Key: "scan", Singleton: true, CleanupRequired: true, Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, WorkingBytes: 24 << 20}
+func (a *scanTestAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
+	work := &execution.Plan{ID: id, Command: call, Key: "scan", Singleton: true, CleanupRequired: true, Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, WorkingBytes: 24 << 20}
 	return work, nil
 }
 func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) execution.Feedback {
@@ -61,10 +61,10 @@ func (a *scanTestAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failur
 }
 func (*scanTestAdapter) Close() error { return nil }
 
-func scanCall() *pb.Call {
+func scanCall() *pb.Command {
 	request := &pb.ScanRequest{Resource: "records"}
-	variant := &pb.Call_Scan{Scan: request}
-	call := &pb.Call{Version: 1, Operation: variant}
+	variant := &pb.Command_Scan{Scan: request}
+	call := &pb.Command{Version: 1, Operation: variant}
 	return call
 }
 func waitReleased(t *testing.T, runtime *Runtime) {
@@ -103,7 +103,7 @@ func TestScanPageCompletionAndCleanupFailureReleaseReservations(t *testing.T) {
 			defer runtime.Close(context.Background())
 			session := runtime.NewSession()
 			defer session.Close()
-			work, failure := runtime.PrepareCall(1, scanCall())
+			work, failure := runtime.PrepareCommand(1, scanCall())
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -168,7 +168,7 @@ func TestUnifiedStreamingBackpressureAndReservation(t *testing.T) {
 	defer runtime.Close(context.Background())
 	session := runtime.NewSession()
 	defer session.Close()
-	work, failure := runtime.PrepareCall(1, scanCall())
+	work, failure := runtime.PrepareCommand(1, scanCall())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -220,7 +220,7 @@ func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	defer runtime.Close(context.Background())
 	session := runtime.NewSession()
 	defer session.Close()
-	work, _ := runtime.PrepareCall(1, scanCall())
+	work, _ := runtime.PrepareCommand(1, scanCall())
 	_, failure, _ := runtime.Submit(context.Background(), work, session)
 	if failure != nil {
 		t.Fatal(failure)
@@ -259,7 +259,7 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 		}
 		session := runtime.NewSession()
 		ctx, cancel := context.WithCancel(context.Background())
-		work, _ := runtime.PrepareCall(1, scanCall())
+		work, _ := runtime.PrepareCommand(1, scanCall())
 		ticket, failure, _ := runtime.Submit(ctx, work, session)
 		if failure != nil {
 			t.Fatal(failure)

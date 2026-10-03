@@ -3,28 +3,27 @@ package testutil
 import (
 	"strings"
 
-	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"google.golang.org/protobuf/proto"
 )
 
-// RecordCall builds Execute fixtures from the canonical resources also used by
+// RecordCommand builds Execute fixtures from the canonical resources also used by
 // private backend conformance tests. The wire target is always Store-relative.
 // This helper is only for repository test harnesses; it is not a client API.
-func RecordCall(message proto.Message) weirclient.RecordOptions {
+func RecordCommand(message proto.Message) RecordFixture {
 	var resource string
-	call := &pb.Call{Version: 1}
+	call := &pb.Command{Version: 1}
 	switch request := proto.Clone(message).(type) {
 	case *pb.ReadRequest:
 		resource = request.Resource
-		variant := &pb.Call_Read{Read: request}
+		variant := &pb.Command_Read{Read: request}
 		call.Operation = variant
 	case *pb.MutateRequest:
 		resource = request.Resource
-		variant := &pb.Call_Mutate{Mutate: request}
+		variant := &pb.Command_Mutate{Mutate: request}
 		call.Operation = variant
 	default:
-		panic("RecordCall requires a record fixture")
+		panic("RecordCommand requires a record fixture")
 	}
 	destination, target, _ := strings.Cut(strings.TrimPrefix(resource, "weir://"), "/")
 	if read := call.GetRead(); read != nil {
@@ -32,6 +31,6 @@ func RecordCall(message proto.Message) weirclient.RecordOptions {
 	} else {
 		call.GetMutate().Resource = target
 	}
-	opts := weirclient.RecordOptions{StoreName: destination, Call: call}
+	opts := RecordFixture{StoreName: destination, Command: call}
 	return opts
 }

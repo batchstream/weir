@@ -5,25 +5,24 @@ import (
 	"io"
 	"strings"
 
-	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"google.golang.org/protobuf/proto"
 )
 
 // Events is a bounded typed Execute harness used by repository conformance tests.
-// It retains one input Call and one output Event, not a complete batch.
+// It retains one input Command and one output Event, not a complete batch.
 type Events struct {
 	ctx    context.Context
-	input  chan *pb.Call
+	input  chan *pb.Command
 	output chan *pb.Event
 	done   chan struct{}
 	err    error
 }
 
 func OpenEvents(ctx context.Context, client pb.StoreServiceClient, destination string) *Events {
-	stream := &Events{ctx: ctx, input: make(chan *pb.Call, 1), output: make(chan *pb.Event, 1), done: make(chan struct{})}
-	opts := weirclient.Options{StoreName: destination}
-	opts.Produce = func(ctx context.Context) (*pb.Call, error) {
+	stream := &Events{ctx: ctx, input: make(chan *pb.Command, 1), output: make(chan *pb.Event, 1), done: make(chan struct{})}
+	opts := ExecuteOptions{StoreName: destination}
+	opts.Produce = func(ctx context.Context) (*pb.Command, error) {
 		select {
 		case call, ok := <-stream.input:
 			if !ok {
@@ -42,11 +41,11 @@ func OpenEvents(ctx context.Context, client pb.StoreServiceClient, destination s
 			return ctx.Err()
 		}
 	}
-	go func() { stream.err = weirclient.Execute(ctx, client, opts); close(stream.output); close(stream.done) }()
+	go func() { stream.err = Execute(ctx, client, opts); close(stream.output); close(stream.done) }()
 	return stream
 }
 
-func (s *Events) Send(call *pb.Call) error {
+func (s *Events) Send(call *pb.Command) error {
 	select {
 	case s.input <- call:
 		return nil
@@ -69,18 +68,18 @@ func (s *Events) Recv() (*pb.Event, error) {
 	return nil, io.EOF
 }
 
-// FixtureCall converts backend conformance fixtures to a Store-relative Call.
-func FixtureCall(call *pb.Call) (string, *pb.Call) {
-	call = proto.Clone(call).(*pb.Call)
+// FixtureCommand converts backend conformance fixtures to a Store-relative Command.
+func FixtureCommand(call *pb.Command) (string, *pb.Command) {
+	call = proto.Clone(call).(*pb.Command)
 	var resource *string
 	switch v := call.Operation.(type) {
-	case *pb.Call_Read:
+	case *pb.Command_Read:
 		resource = &v.Read.Resource
-	case *pb.Call_Mutate:
+	case *pb.Command_Mutate:
 		resource = &v.Mutate.Resource
-	case *pb.Call_Scan:
+	case *pb.Command_Scan:
 		resource = &v.Scan.Resource
-	case *pb.Call_Native:
+	case *pb.Command_Native:
 		resource = &v.Native.Open.Resource
 	}
 	destination, target, _ := strings.Cut(strings.TrimPrefix(*resource, "weir://"), "/")
@@ -88,8 +87,8 @@ func FixtureCall(call *pb.Call) (string, *pb.Call) {
 	return destination, call
 }
 
-func OneEvents(ctx context.Context, client pb.StoreServiceClient, call *pb.Call) (*Events, error) {
-	destination, call := FixtureCall(call)
+func OneEvents(ctx context.Context, client pb.StoreServiceClient, call *pb.Command) (*Events, error) {
+	destination, call := FixtureCommand(call)
 	stream := OpenEvents(ctx, client, destination)
 	if err := stream.Send(call); err != nil {
 		return nil, err
@@ -100,14 +99,14 @@ func OneEvents(ctx context.Context, client pb.StoreServiceClient, call *pb.Call)
 	return stream, nil
 }
 
-func OperationCall(operation *pb.Operation) (string, *pb.Call) {
-	call := &pb.Call{Version: 1}
+func OperationCommand(operation *pb.Operation) (string, *pb.Command) {
+	call := &pb.Command{Version: 1}
 	if read := operation.GetRead(); read != nil {
-		variant := &pb.Call_Read{Read: read}
+		variant := &pb.Command_Read{Read: read}
 		call.Operation = variant
 	} else {
-		variant := &pb.Call_Mutate{Mutate: operation.GetMutate()}
+		variant := &pb.Command_Mutate{Mutate: operation.GetMutate()}
 		call.Operation = variant
 	}
-	return FixtureCall(call)
+	return FixtureCommand(call)
 }

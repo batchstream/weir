@@ -30,6 +30,16 @@ class DependencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'replacement hides'):
             dependencies.check_modules([module])
 
+    def test_project_dependencies_use_specific_stable_releases(self):
+        modules = [dict(Path=dependencies.SDK, Version='v0.2.0'), dict(Path=dependencies.PROTOCOL, Version='v0.1.0')]
+        dependencies.check_modules(modules)
+        for path in (dependencies.SDK, dependencies.PROTOCOL):
+            for version in ('', 'main', 'latest', 'v0.2.0-0.20261003000000-abcdef123456', 'v0.2.0-rc.1', 'v00.2.0'):
+                with self.subTest(path=path, version=version):
+                    module = dict(Path=path, Version=version)
+                    with self.assertRaisesRegex(ValueError, 'stable release'):
+                        dependencies.check_modules([module])
+
     def test_transitive_unused_and_test_edges_are_rejected(self):
         for source, target in (
             (dependencies.SDK, dependencies.SERVER),

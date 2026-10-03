@@ -1,14 +1,14 @@
 # Route payload contract
 
 Every configured MongoDB, Elasticsearch or OpenSearch Store accepts protobuf
-`weir.v1.Call` with `version=1` and emits length-delimited `weir.v1.Event` with
+`weir.v1.Command` with `version=1` and emits length-delimited `weir.v1.Event` with
 `version=1`. Unknown versions, unknown protobuf fields at any envelope depth and
 missing oneof variants fail validation. There is no version negotiation or legacy
 fallback. An incompatible adapter document/descriptor schema must use a new
 explicit media profile; its version is part of the media type below. Plain BSON
-and JSON retain their native format semantics within Call version 1.
+and JSON retain their native format semantics within Command version 1.
 
-The outer store_name selects the adapter. Call resources are canonical relative
+The outer store_name selects the adapter. Command resources are canonical relative
 paths: percent escaping must round-trip canonically, and a full `weir://` resource
 is invalid on the wire. A request cannot select a different Store inside its body.
 The proto source is the field schema; validation takes place before scheduling or
@@ -43,7 +43,7 @@ write and JavaScript options are rejected. Native replies are raw BSON, at most
 4 MiB, emitted as ordered chunks with a NativeEnd completion result.
 
 Search Native's descriptor is the explicit protobuf schema in
-[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/main/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
+[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.1.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
 `application/x-ndjson` and GET `/_doc/<unreserved-id>` with an empty body. Canonical
 query options are `refresh` for bulk or `realtime` for GET. Headers are restricted
 to `accept`, `content-type`, `x-opaque-id` with bounded values; they cannot override

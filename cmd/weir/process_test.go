@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net"
@@ -706,7 +705,7 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	var callErr error
 	go func() {
 		var routedResult711 *pb.Result
-		routedResult711, callErr = weirclient.Record(ctx, client, testutil.RecordCall(request))
+		routedResult711, callErr = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
 		result = routedResult711.GetMutation()
 		close(done)
 	}()

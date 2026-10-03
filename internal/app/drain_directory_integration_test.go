@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
@@ -74,7 +73,7 @@ func TestDirectoryWithdrawalDoesNotDelayAdmittedWriteDrain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	go func() {
-		response, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
+		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
 		result <- response
 		callErrors <- err
 	}()

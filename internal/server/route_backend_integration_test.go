@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir-protocol/api/protocol"
 	searchpb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -41,15 +41,15 @@ func routeBackendServer(t *testing.T, adapter execution.Adapter) ([]*routeAccept
 	return []*routeAcceptanceNode{executor}, routeAcceptanceClient(t, executor.address)
 }
 
-func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, call *pb.Call) []*pb.Event {
+func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, call *pb.Command) []*pb.Event {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	produced := false
 	var events []*pb.Event
 	bytes := 0
-	opts := weirclient.Options{StoreName: "records"}
-	opts.Produce = func(context.Context) (*pb.Call, error) {
+	opts := testutil.ExecuteOptions{StoreName: "records"}
+	opts.Produce = func(context.Context) (*pb.Command, error) {
 		if produced {
 			return nil, io.EOF
 		}
@@ -64,20 +64,20 @@ func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, call *pb.Cal
 		events = append(events, proto.Clone(event).(*pb.Event))
 		return nil
 	}
-	if err := weirclient.Execute(ctx, client, opts); err != nil {
+	if err := testutil.Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	return events
 }
 
-func routeBackendRead(key string) *pb.Call {
+func routeBackendRead(key string) *pb.Command {
 	read := &pb.ReadRequest{Resource: key}
-	value := &pb.Call_Read{Read: read}
-	call := &pb.Call{Version: 1, Operation: value}
+	value := &pb.Command_Read{Read: read}
+	call := &pb.Command{Version: 1, Operation: value}
 	return call
 }
 
-func routeBackendMutation(key, kind, media string, raw []byte) *pb.Call {
+func routeBackendMutation(key, kind, media string, raw []byte) *pb.Command {
 	document := &pb.Document{MediaType: media, Data: raw}
 	mutation := &pb.MutateRequest{Resource: key}
 	if kind == "create" {
@@ -87,8 +87,8 @@ func routeBackendMutation(key, kind, media string, raw []byte) *pb.Call {
 		value := &pb.MutateRequest_Put{Put: document}
 		mutation.Action = value
 	}
-	value := &pb.Call_Mutate{Mutate: mutation}
-	call := &pb.Call{Version: 1, Operation: value}
+	value := &pb.Command_Mutate{Mutate: mutation}
+	call := &pb.Command{Version: 1, Operation: value}
 	return call
 }
 
@@ -154,11 +154,11 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.DB + "/records/s:counter", Action: action}
-	value := &pb.Call_Mutate{Mutate: mutation}
-	call := &pb.Call{Version: 1, Operation: value}
+	value := &pb.Command_Mutate{Mutate: mutation}
+	call := &pb.Command{Version: 1, Operation: value}
 	produced, applied := 0, 0
-	opts := weirclient.Options{StoreName: "records"}
-	opts.Produce = func(context.Context) (*pb.Call, error) {
+	opts := testutil.ExecuteOptions{StoreName: "records"}
+	opts.Produce = func(context.Context) (*pb.Command, error) {
 		if produced == 12 {
 			return nil, io.EOF
 		}
@@ -173,7 +173,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 		applied++
 		return nil
 	}
-	if err := weirclient.Execute(ctx, client, opts); err != nil {
+	if err := testutil.Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	var observed struct{ N int32 }
@@ -185,8 +185,8 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	selectorRaw, _ := bson.Marshal(selector)
 	document := &pb.Document{MediaType: "application/bson", Data: selectorRaw}
 	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Selector: document}
-	scanValue := &pb.Call_Scan{Scan: scan}
-	scanCall := &pb.Call{Version: 1, Operation: scanValue}
+	scanValue := &pb.Command_Scan{Scan: scan}
+	scanCall := &pb.Command{Version: 1, Operation: scanValue}
 	events := routeBackendEvents(t, client, scanCall)
 	if len(events) != 2 || events[0].GetDocument() == nil || events[1].GetScanEnd().GetDocumentCount() != 1 || events[1].GetScanEnd().Failure != nil || !events[1].GetScanEnd().GetExhausted() || len(events[1].GetScanEnd().GetNextContinuationToken()) != 0 {
 		t.Fatal("Mongo scan did not report its exhausted page", events)
@@ -195,10 +195,10 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	rawCounter, _ := bson.Marshal(counter)
 	newDocument := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: int32(1)}}
 	rawNew, _ := bson.Marshal(newDocument)
-	calls := []*pb.Call{routeBackendMutation(backend.DB+"/records/s:counter", "create", "application/bson", rawCounter), routeBackendMutation(backend.DB+"/records/s:new", "put", "application/bson", rawNew)}
+	calls := []*pb.Command{routeBackendMutation(backend.DB+"/records/s:counter", "create", "application/bson", rawCounter), routeBackendMutation(backend.DB+"/records/s:new", "put", "application/bson", rawNew)}
 	produced = 0
 	results := make(map[uint64]*pb.MutationResult)
-	opts.Produce = func(context.Context) (*pb.Call, error) {
+	opts.Produce = func(context.Context) (*pb.Command, error) {
 		if produced == len(calls) {
 			return nil, io.EOF
 		}
@@ -210,7 +210,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 		results[id] = event.GetResult().GetMutation()
 		return nil
 	}
-	if err := weirclient.Execute(ctx, client, opts); err != nil {
+	if err := testutil.Execute(ctx, client, opts); err != nil {
 		t.Fatal(err)
 	}
 	if results[1].GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[1].GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[2].GetOutcome() != pb.MutationOutcome_APPLIED {
@@ -253,9 +253,9 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				body, _ := bson.Marshal(nativeCommand)
 				descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
 				open := &pb.NativeOpen{Resource: backend.DB + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
-				native := &pb.NativeCall{Open: open, Body: body}
-				value := &pb.Call_Native{Native: native}
-				call = &pb.Call{Version: 1, Operation: value}
+				native := &pb.NativeRequest{Open: open, Body: body}
+				value := &pb.Command_Native{Native: native}
+				call = &pb.Command{Version: 1, Operation: value}
 			}
 			events := routeBackendEvents(t, client, call)
 			if mode == "record" {
@@ -363,9 +363,9 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 				descriptor := &pb.Document{MediaType: search.NativeDescriptor, Data: rawDescriptor}
 				open := &pb.NativeOpen{Resource: backend.Index, Descriptor_: descriptor, BodyMediaType: "application/x-ndjson"}
 				body := []byte(fmt.Sprintf("{\"create\":{\"_id\":%q}}\n{\"n\":1}\n", id))
-				native := &pb.NativeCall{Open: open, Body: body}
-				value := &pb.Call_Native{Native: native}
-				call = &pb.Call{Version: 1, Operation: value}
+				native := &pb.NativeRequest{Open: open, Body: body}
+				value := &pb.Command_Native{Native: native}
+				call = &pb.Command{Version: 1, Operation: value}
 			}
 			events := routeBackendEvents(t, client, call)
 			if mode == "record" {
@@ -436,8 +436,8 @@ func TestRouteMongoPerformance(t *testing.T) {
 			produced := 0
 			var timesMu sync.Mutex
 			times := make(map[uint64]time.Time)
-			opts := weirclient.Options{StoreName: "records"}
-			opts.Produce = func(context.Context) (*pb.Call, error) {
+			opts := testutil.ExecuteOptions{StoreName: "records"}
+			opts.Produce = func(context.Context) (*pb.Command, error) {
 				if produced == recordsPerRPC {
 					return nil, io.EOF
 				}
@@ -462,7 +462,7 @@ func TestRouteMongoPerformance(t *testing.T) {
 				latenciesMu.Unlock()
 				return nil
 			}
-			errors <- weirclient.Execute(ctx, client, opts)
+			errors <- testutil.Execute(ctx, client, opts)
 		})
 	}
 	done := make(chan struct{})

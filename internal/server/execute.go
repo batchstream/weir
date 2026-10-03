@@ -337,11 +337,11 @@ func (s *Server) uploadLocal(args localExecutionArgs, session *store.Session, in
 		if err := s.admission.check(); err != nil {
 			return err
 		}
-		call, err := protocol.DecodeCall(request.CallPayload)
+		call, err := protocol.DecodeCommand(request.CommandPayload)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
-		plan, failure := args.runtime.PrepareCall(request.RequestId, call)
+		plan, failure := args.runtime.PrepareCommand(request.RequestId, call)
 		if failure == nil {
 			for {
 				var changed <-chan struct{}
@@ -359,7 +359,7 @@ func (s *Server) uploadLocal(args localExecutionArgs, session *store.Session, in
 			}
 		}
 		if failure != nil {
-			event := failedCall(request.RequestId, call, failure)
+			event := failedCommand(request.RequestId, call, failure)
 			rejected := executionFailure{id: request.RequestId, event: event}
 			select {
 			case invalid <- rejected:
@@ -367,7 +367,7 @@ func (s *Server) uploadLocal(args localExecutionArgs, session *store.Session, in
 				return status.FromContextError(args.ctx.Err()).Err()
 			}
 		}
-		// Drop the decoded Call and complete envelope before waiting or receiving.
+		// Drop the decoded Command and complete envelope before waiting or receiving.
 		call = nil
 		plan = nil
 		request = nil
@@ -399,23 +399,23 @@ func (s *Server) uploadLocal(args localExecutionArgs, session *store.Session, in
 	}
 }
 
-func failedCall(id uint64, call *pb.Call, failure *pb.Failure) *pb.Event {
+func failedCommand(id uint64, call *pb.Command, failure *pb.Failure) *pb.Event {
 	event := &pb.Event{Version: 1}
 	switch operation := call.Operation.(type) {
-	case *pb.Call_Read:
+	case *pb.Command_Read:
 		read := protocol.ReadFailure(failure)
 		value := &pb.Result_Read{Read: read}
 		result := &pb.Result{Index: id, Result: value}
 		event.Value = &pb.Event_Result{Result: result}
-	case *pb.Call_Mutate:
+	case *pb.Command_Mutate:
 		mutation := protocol.Mutation(pb.MutationOutcome_NOT_STARTED, failure)
 		value := &pb.Result_Mutation{Mutation: mutation}
 		result := &pb.Result{Index: id, Result: value}
 		event.Value = &pb.Event_Result{Result: result}
-	case *pb.Call_Scan:
+	case *pb.Command_Scan:
 		end := &pb.ScanEnd{Failure: failure}
 		event.Value = &pb.Event_ScanEnd{ScanEnd: end}
-	case *pb.Call_Native:
+	case *pb.Command_Native:
 		end := protocol.NativeFailure(false, failure)
 		event.Value = &pb.Event_NativeEnd{NativeEnd: end}
 	default:

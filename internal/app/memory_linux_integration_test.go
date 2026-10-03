@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
@@ -312,11 +311,11 @@ func TestLinuxMemoryCLI(t *testing.T) {
 		}
 	}()
 	stream := testutil.OpenEvents(ctx, client, "records")
-	var frame *pb.Call
+	var frame *pb.Command
 	admitted := budgetPut(root, "admitted")
 	mutation := &pb.Operation_Mutate{Mutate: admitted}
 	op := &pb.Operation{Index: 0, Operation: mutation}
-	_, variant := testutil.OperationCall(op)
+	_, variant := testutil.OperationCommand(op)
 	frame = variant
 	if err := stream.Send(frame); err != nil {
 		t.Fatal(err)
@@ -329,20 +328,20 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	memoryState(t, p, "high", true)
 	memoryState(t, front, "high-second", true)
 	read := &pb.ReadRequest{Resource: request.Resource}
-	if _, err := weirclient.Record(ctx, client, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
+	if _, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("Read not rejected", err)
 	}
 	refused := budgetPut(root, "refused")
-	if result, err := weirclient.Record(ctx, client, testutil.RecordCall(refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
+	if result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
 		t.Fatal("Mutate not safely rejected", result, err)
 	}
-	if _, err := weirclient.Record(ctx, frontClient, testutil.RecordCall(read)); status.Code(err) != codes.ResourceExhausted {
+	if _, err := testutil.ExecuteRecord(ctx, frontClient, testutil.RecordCommand(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("second executor admission", err)
 	}
 	// A new operation on the existing Bulk must not discard its admitted result.
 	nextMutation := &pb.Operation_Mutate{Mutate: refused}
 	next := &pb.Operation{Index: 1, Operation: nextMutation}
-	_, nextVariant := testutil.OperationCall(next)
+	_, nextVariant := testutil.OperationCommand(next)
 	nextFrame := nextVariant
 	_ = stream.Send(nextFrame)
 	close(gate)

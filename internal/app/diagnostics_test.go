@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"math/rand/v2"
@@ -77,12 +76,12 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	read := &pb.ReadRequest{Resource: "weir://records/db/records/s:missing"}
-	_, _ = weirclient.Record(ctx, client, testutil.RecordCall(read)) // observed failed dial, no synthetic backend work
+	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read)) // observed failed dial, no synthetic backend work
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("unknown Store changed readiness")
 	}
 	n.admission.SetOverloaded(true)
-	_, _ = weirclient.Record(ctx, client, testutil.RecordCall(read))
+	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("overload changed readiness")
 	}
@@ -119,7 +118,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	_, _ = weirclient.Record(ctx, client, testutil.RecordCall(read))
+	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("session capacity changed readiness")
 	}
@@ -169,7 +168,7 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, "weir-request-id", "secret-request-"+nonce)
 		req := &pb.ReadRequest{Resource: "weir://unknown" + nonce + "/private/s:document-secret"}
-		_, _ = weirclient.Record(ctx, client, testutil.RecordCall(req))
+		_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(req))
 		var output pb.ReadResult
 		_ = conn.Invoke(ctx, "/unknown"+nonce+"/Method", req, &output)
 		cancel()

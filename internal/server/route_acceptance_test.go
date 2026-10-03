@@ -47,7 +47,7 @@ func newRouteAcceptanceAdapter(recordBytes int) *routeAcceptanceAdapter {
 	return a
 }
 
-func (a *routeAcceptanceAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
+func (a *routeAcceptanceAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
 	key := ""
 	resultBytes := 512
 	if request := call.GetRead(); request != nil {
@@ -59,7 +59,7 @@ func (a *routeAcceptanceAdapter) PrepareCall(id uint64, call *pb.Call) (*executi
 		failure := &pb.Failure{Code: pb.FailureCode_UNSUPPORTED, Message: "acceptance fixture only accepts records"}
 		return nil, failure
 	}
-	p := &execution.Plan{ID: id, Call: call, Key: key, BatchKey: "records", Bytes: proto.Size(call) + 512, ResultBytes: resultBytes, WorkingBytes: resultBytes}
+	p := &execution.Plan{ID: id, Command: call, Key: key, BatchKey: "records", Bytes: proto.Size(call) + 512, ResultBytes: resultBytes, WorkingBytes: resultBytes}
 	op := &pb.Operation{Index: id}
 	if request := call.GetRead(); request != nil {
 		variant := &pb.Operation_Read{Read: request}
@@ -104,7 +104,7 @@ func (a *routeAcceptanceAdapter) Execute(ctx context.Context, plans []*execution
 			mutation := &pb.MutationResult{Outcome: pb.MutationOutcome_NOT_STARTED, Failure: failure}
 			variant := &pb.Result_Mutation{Mutation: mutation}
 			result.Result = variant
-		} else if request := p.Call.GetRead(); request != nil {
+		} else if request := p.Command.GetRead(); request != nil {
 			var data []byte
 			if strings.HasPrefix(request.Resource, "records/s:large") {
 				number, _ := strconv.Atoi(strings.TrimPrefix(request.Resource, "records/s:large"))
@@ -127,7 +127,7 @@ func (a *routeAcceptanceAdapter) Execute(ctx context.Context, plans []*execution
 			variant := &pb.Result_Read{Read: read}
 			result.Result = variant
 		} else {
-			request := p.Call.GetMutate()
+			request := p.Command.GetMutate()
 			a.mu.Lock()
 			a.values[request.Resource] = bytes.Clone(request.GetPut().GetData())
 			a.mu.Unlock()
@@ -247,13 +247,13 @@ func routeAcceptanceServer(t testing.TB, adapter *routeAcceptanceAdapter) ([]*ro
 
 func routeAcceptanceRead(id uint64, key string) *pb.ExecuteRequest {
 	read := &pb.ReadRequest{Resource: key}
-	variant := &pb.Call_Read{Read: read}
-	call := &pb.Call{Version: 1, Operation: variant}
+	variant := &pb.Command_Read{Read: read}
+	call := &pb.Command{Version: 1, Operation: variant}
 	raw, err := proto.Marshal(call)
 	if err != nil {
 		panic(err)
 	}
-	request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CallPayload: raw}
+	request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CommandPayload: raw}
 	return request
 }
 
@@ -261,13 +261,13 @@ func routeAcceptancePut(id uint64, key, value string) *pb.ExecuteRequest {
 	document := &pb.Document{MediaType: "application/octet-stream", Data: []byte(value)}
 	action := &pb.MutateRequest_Put{Put: document}
 	mutate := &pb.MutateRequest{Resource: key, Action: action}
-	variant := &pb.Call_Mutate{Mutate: mutate}
-	call := &pb.Call{Version: 1, Operation: variant}
+	variant := &pb.Command_Mutate{Mutate: mutate}
+	call := &pb.Command{Version: 1, Operation: variant}
 	raw, err := proto.Marshal(call)
 	if err != nil {
 		panic(err)
 	}
-	request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CallPayload: raw}
+	request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CommandPayload: raw}
 	return request
 }
 

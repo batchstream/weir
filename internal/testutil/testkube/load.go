@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
@@ -35,7 +34,7 @@ func mutation(ctx context.Context, client pb.StoreServiceClient, id string) erro
 	call, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	request := put(id)
-	result, err := weirclient.Record(call, client, testutil.RecordCall(request))
+	result, err := testutil.ExecuteRecord(call, client, testutil.RecordCommand(request))
 	reply := result.GetMutation()
 	outcome := "UNKNOWN"
 	if err == nil {
@@ -75,8 +74,8 @@ func verifyEffect(ctx context.Context, id, outcome string) error {
 
 func hold(ctx context.Context, client pb.StoreServiceClient, prefix string) error {
 	next := 0
-	opts := weirclient.Options{StoreName: "records"}
-	opts.Produce = func(ctx context.Context) (*pb.Call, error) {
+	opts := testutil.ExecuteOptions{StoreName: "records"}
+	opts.Produce = func(ctx context.Context) (*pb.Command, error) {
 		if next == 40 {
 			return nil, io.EOF
 		}
@@ -89,8 +88,8 @@ func hold(ctx context.Context, client pb.StoreServiceClient, prefix string) erro
 		}
 		id := fmt.Sprintf("%s-%03d", prefix, next)
 		next++
-		fixture := testutil.RecordCall(put(id))
-		return fixture.Call, nil
+		fixture := testutil.RecordCommand(put(id))
+		return fixture.Command, nil
 	}
 	opts.Consume = func(ctx context.Context, id uint64, event *pb.Event) error {
 		result := event.GetResult()
@@ -104,7 +103,7 @@ func hold(ctx context.Context, client pb.StoreServiceClient, prefix string) erro
 		fmt.Printf("HOLD id=%d APPLIED\n", id)
 		return nil
 	}
-	if err := weirclient.Execute(ctx, client, opts); err != nil {
+	if err := testutil.Execute(ctx, client, opts); err != nil {
 		return err
 	}
 	fmt.Println("HOLD all 40 request ends and final OK")

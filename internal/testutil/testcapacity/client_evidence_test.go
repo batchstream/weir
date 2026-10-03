@@ -98,7 +98,7 @@ func TestRPCFailureRetainsValidatedMutationEvidence(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				op := Operation{Write: true, ID: "evidence"}
-				result := client.Call(ctx, op)
+				result := client.Execute(ctx, op)
 				if result.Outcome != tc.ledger || result.Class != "transport_Unavailable" || peer.calls.Load() != 1 {
 					t.Fatal("RPC completion replaced write evidence or retried", result, peer.calls.Load())
 				}

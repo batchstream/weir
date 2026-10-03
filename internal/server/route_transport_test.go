@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/store"
@@ -71,8 +71,8 @@ func TestRouteSlowConsumerBackpressureAndShutdown(t *testing.T) {
 	}
 	read := testRequest()
 	read.AdapterOptions = &pb.Document{MediaType: "application/octet-stream", Data: bytes.Repeat([]byte("p"), 128<<10)}
-	value := &pb.Call_Read{Read: read}
-	call := &pb.Call{Version: 1, Operation: value}
+	value := &pb.Command_Read{Read: read}
+	call := &pb.Command{Version: 1, Operation: value}
 	payload, err := proto.Marshal(call)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestRouteSlowConsumerBackpressureAndShutdown(t *testing.T) {
 	go func() {
 		defer close(done)
 		for id := uint64(1); ; id++ {
-			request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CallPayload: payload}
+			request := &pb.ExecuteRequest{RequestId: id, StoreName: "records", CommandPayload: payload}
 			if stream.Send(request) != nil {
 				return
 			}
@@ -186,8 +186,8 @@ func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) 
 	var produced int
 	results := make(map[uint64]*pb.MutationResult)
 	completed := make(map[uint64]bool)
-	opts := weirclient.Options{StoreName: "records"}
-	opts.Produce = func(context.Context) (*pb.Call, error) {
+	opts := testutil.ExecuteOptions{StoreName: "records"}
+	opts.Produce = func(context.Context) (*pb.Command, error) {
 		if produced == 2 {
 			return nil, io.EOF
 		}
@@ -198,8 +198,8 @@ func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) 
 			request.Resource = "data/s:other"
 		}
 		produced++
-		value := &pb.Call_Mutate{Mutate: request}
-		call := &pb.Call{Version: 1, Operation: value}
+		value := &pb.Command_Mutate{Mutate: request}
+		call := &pb.Command{Version: 1, Operation: value}
 		return call, nil
 	}
 	opts.Consume = func(_ context.Context, id uint64, event *pb.Event) error {
@@ -211,7 +211,7 @@ func TestRouteAppliedWriteWithReplicaFailurePreservesItemEvidence(t *testing.T) 
 		return nil
 	}
 	opts.Complete = func(_ context.Context, id uint64) error { completed[id] = true; return nil }
-	if err := weirclient.Execute(ctx, client, opts); err != nil {
+	if err := testutil.Execute(ctx, client, opts); err != nil {
 		t.Fatal("valid acknowledgement truncated Route", err)
 	}
 	first := results[1]

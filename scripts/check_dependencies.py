@@ -3,12 +3,14 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 
 SERVER = 'github.com/batchstream/weir'
 SDK = 'github.com/batchstream/weir-go'
 PROTOCOL = 'github.com/batchstream/weir-protocol'
+STABLE_VERSION = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
 
 
 def objects(raw):
@@ -44,6 +46,8 @@ def check_modules(items):
     for module in items:
         if module.get('Replace'):
             raise ValueError('module replacement hides the published dependency graph: ' + module['Path'])
+        if module['Path'] in (SDK, PROTOCOL) and not STABLE_VERSION.fullmatch(module.get('Version', '')):
+            raise ValueError('project dependency must use a stable release: ' + module['Path'])
 
 
 def check_production(items):

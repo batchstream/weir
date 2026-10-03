@@ -17,8 +17,8 @@ and prior PR verification reports.
 | Public/peer schemas, field semantics and RPC listener isolation | Public/peer descriptor contract tests; `TestDiscoveryIngressRolesAndIndependentAdmission`; SDK `TestResolveStorePublicResponseContract` |
 | Point read/write, backend failures, missing records | `route_acceptance_test.go`, SDK `client_test.go`, MongoDB/Search record and batch conformance suites |
 | Large valid documents and request half-close | `TestRouteAcceptanceLargeResponseAndHalfClose`; `TestExecuteConsumesFragmentedFiniteBatch` |
-| Store-name mismatch, illegal IDs, malformed payload, no rollback of earlier writes | `TestRouteAcceptanceProtocolFailureDoesNotRollback`; `TestExecuteEnvelopeIDsStoreNamesAndFragments`; `TestCallVersionUnknownFieldsAndRelativeTarget` |
-| Missing/duplicate terminal response, unknown ID, non-OK after terminal | `TestRecordRejectsIncompleteAndInvalidResponses` |
+| Store-name mismatch, illegal IDs, malformed payload, no rollback of earlier writes | `TestRouteAcceptanceProtocolFailureDoesNotRollback`; `TestExecuteEnvelopeIDsStoreNamesAndFragments`; `TestCommandVersionUnknownFieldsAndRelativeTarget` |
+| Missing/duplicate terminal response, unknown ID, non-OK after terminal | `TestReadRejectsIncompleteAndInvalidResponses` |
 | Completion order and same-record execution order | `TestRouteAcceptanceIndependentCompletionAndSameRecordOrder`; `TestSameStreamOrderIndependentReadAndCancellation`; `TestMixedBatchRespectsBytesKeysAndSessionOrder` |
 | Cross-RPC batching and cancellation isolation | `TestRouteAcceptanceCrossRPCBatchCancellationIsolation`; `TestAbandonAndSessionCloseCancelFuturePhasesOnly`; adapter cancellation conformance suites |
 | Peer convergence, conflict, lease expiry and bounded atomic directory exchanges | `TestPeriodicSyncConvergesAcrossPeersAndStops`; `TestRelayLeaseCannotRenewOrResurrect`; `TestSameGroupUnionConflictAndWithdrawal`; `TestDirectoryBoundsAndAtomicValidation` |
@@ -31,16 +31,16 @@ and prior PR verification reports.
 | HTTP completion and gRPC completion jointly own session credits | Retained `TestDeliverySlotRequiresBothCompletions`; connection-bound single-close test |
 | Physical connection budgets and fair, bounded directory refresh | `TestOpenAndRefreshAtApplicationConnectionLimit`; `TestRefreshPrioritizesUnrenewedStoresAfterRoundDeadline`; `TestRefreshFailuresCannotStarveHealthyTail` |
 | Portable endpoint validation, direct balancing, socket ownership and cleanup | `TestPortableEndpointValidation`; `TestOpenResolvesMultipleStoresAndBalancesDirectStreams`; `TestConnectionBoundAndSingleClose`; `TestOpenCancellationAndCloseJoinDiscovery` |
-| DNS A/AAAA, answer bounds, active refresh, replacement and deadline | SDK `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; [protocol DNS bounds](https://github.com/batchstream/weir-protocol/blob/main/api/netlimit/dns_test.go); server `TestEndpointDNSAcrossProcesses` |
+| DNS A/AAAA, answer bounds, active refresh, replacement and deadline | SDK `TestClientDNSDiscoversScaleAndDrainsRetiredReplica`; [protocol DNS bounds](https://github.com/batchstream/weir-protocol/blob/v0.1.0/api/netlimit/dns_test.go); server `TestEndpointDNSAcrossProcesses` |
 | Record batch item errors, typed ID correspondence, write concern and acknowledged-reply loss | MongoDB/Search batch, fault and runtime integration suites, retained after replacing execution DTOs |
-| Native request exact bounds, errors and response loss | MongoDB/Search native conformance suites; native requests now enter the same Execute scheduler with one complete bounded input Call |
+| Native request exact bounds, errors and response loss | MongoDB/Search native conformance suites; native requests now enter the same Execute scheduler with one complete bounded input Command |
 | Finite Scan pages, cross-instance continuation, mixed BSON IDs, PIT expiry, cancellation and cleanup | MongoDB/Search scan conformance suites; Execute continuation tests; unified Store streaming reservation/cancellation tests |
 | Lua in the main process, transaction/CAS boundaries and ambiguous commit | `internal/luaengine` tests, MongoDB program commit/transaction tests, Search conditional-write program tests, adapter Execute preparation tests |
 | Application assembly, TLS/authentication configuration, startup cleanup, diagnostics and process lifecycle | `TestDiscoveryOnlyWildcardApplicationLearnsTargets`; existing application and CLI lifecycle tests; private backend connection qualification/TLS suites retained |
 
 The new protocol intentionally removes Native's fragmented upload and early reply
 before upload completion: one complete Native input body is capped at 8 MiB inside
-a Call capped at 9 MiB. It keeps backend-native response streaming and explicit
+a Command capped at 9 MiB. It keeps backend-native response streaming and explicit
 Native completion evidence. The deleted tests that required the old fragmented
 upload/Open protocol are no longer applicable. Native remains on the same bounded
 scheduler and result channel as records and scans.

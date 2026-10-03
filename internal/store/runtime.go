@@ -148,8 +148,8 @@ func (r *Runtime) NewSession() *Session {
 	session := &Session{runtime: r, id: r.nextSession, Events: make(chan *Emission, 1)}
 	return session
 }
-func (r *Runtime) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
-	plan, failure := r.adapter.PrepareCall(id, call)
+func (r *Runtime) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
+	plan, failure := r.adapter.PrepareCommand(id, call)
 	if failure != nil {
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
 	}
