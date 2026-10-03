@@ -35,7 +35,7 @@ func TestConfigurationValidation(t *testing.T) {
 			case "missing-backend":
 				cfg.Routing.Stores[0].Local = nil
 			case "overflow":
-				cfg.Basic.Transport.Timeouts.Route = Duration(1<<63 - 1)
+				cfg.Basic.Transport.MaxSessions = int(^uint(0) >> 1)
 			case "zero-session":
 				cfg.Basic.Transport.MaxSessions = 0
 			}

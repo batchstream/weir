@@ -163,7 +163,7 @@ func (p *searchBudgetProxy) relay(client net.Conn) {
 		if mutation {
 			p.mutations.Add(1)
 		}
-		if p.reject.Load() && strings.Contains(request.URL.Path, "/_doc/") {
+		if p.reject.Load() && strings.HasSuffix(request.URL.Path, "/_mget") {
 			_, _ = io.WriteString(client, "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
 			continue
 		}

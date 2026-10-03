@@ -10,6 +10,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"google.golang.org/protobuf/proto"
 )
 
 type scanTestAdapter struct {
@@ -34,7 +35,8 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 	work := works[0]
 	if work.Operation != nil {
 		result := protocol.ResultError(work.Operation, pb.MutationOutcome_APPLIED, nil)
-		_ = emit(work, resultEvent(result))
+		output := &execution.Output{Result: result}
+		_ = emit(work, output)
 		return execution.Healthy
 	}
 	count := a.fetches.Add(1)
@@ -45,13 +47,15 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"value":1}`)}
 	value := &pb.Event_Document{Document: document}
 	event := &pb.Event{Version: 1, Value: value}
-	_ = emit(work, event)
+	output := &execution.Output{Event: event}
+	_ = emit(work, output)
 	work.Continue = int(count) < pages
 	if !work.Continue {
 		end := &pb.ScanEnd{DocumentCount: uint64(pages), Exhausted: len(a.nextToken) == 0, NextContinuationToken: bytes.Clone(a.nextToken)}
 		variant := &pb.Event_ScanEnd{ScanEnd: end}
 		terminal := &pb.Event{Version: 1, Value: variant}
-		_ = emit(work, terminal)
+		terminalOutput := &execution.Output{Event: terminal}
+		_ = emit(work, terminalOutput)
 	}
 	return execution.Healthy
 }
@@ -126,7 +130,7 @@ func TestScanPageCompletionAndCleanupFailureReleaseReservations(t *testing.T) {
 					}
 					if terminal := emission.Event.GetScanEnd(); terminal != nil {
 						end = terminal
-						_, err := protocol.MarshalEvent(emission.Event)
+						_, err := proto.Marshal(emission.Event)
 						if err != nil {
 							emission.Release()
 							t.Fatal("cleanup result cannot be sent through Route", err, terminal)
@@ -291,4 +295,10 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 			t.Fatal("cancel/shutdown did not join streaming cleanup", shutdown, snapshot, adapter.cleanups.Load())
 		}
 	}
+}
+
+func (a *scanTestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
+	prepared := &execution.Plan{ID: operation.Index, Operation: operation, Key: protocol.Resource(operation), BatchKey: "records", Bytes: 1024, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
+	return prepared, nil
 }

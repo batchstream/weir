@@ -105,13 +105,14 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 		address = net.JoinHostPort(ips[rand.IntN(len(ips))], port)
 	}
 	dialer := net.Dialer{Timeout: SyncTimeout}
+	codec := peerCodec{}
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
 		grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", address)
 		}),
 		grpc.WithReadBufferSize(16 << 10), grpc.WithWriteBufferSize(16 << 10), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535),
-		grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallSendMsgSize(MaxSyncBytes), grpc.MaxCallRecvMsgSize(MaxSyncBytes)),
+		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallSendMsgSize(MaxSyncBytes), grpc.MaxCallRecvMsgSize(MaxSyncBytes)),
 	}
 	connection, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {

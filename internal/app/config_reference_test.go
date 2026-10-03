@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/batchstream/weir/internal/testutil"
 )
@@ -42,7 +41,7 @@ func TestRoutingConfigurationFile(t *testing.T) {
 	}
 	for _, definition := range cfg.Stores {
 		limits := definition.runtimeLimits()
-		if limits.Concurrency != 2 || limits.BatchOperations != 32 || limits.Collect != 5*time.Millisecond {
+		if limits.Concurrency != 2 || limits.BatchOperations != 32 {
 			t.Fatal("documented scheduler defaults differ")
 		}
 		if definition.Name == "mongo" {

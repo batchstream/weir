@@ -65,8 +65,8 @@ type Local struct {
 	Search             *Search   `json:"search" yaml:"search"`
 	MaxConcurrency     int       `json:"max_concurrency" yaml:"max_concurrency"`
 	MaxBatchOperations int       `json:"max_batch_operations" yaml:"max_batch_operations"`
-	BatchCollect       *Duration `json:"batch_collect,omitempty" yaml:"batch_collect,omitempty"`
 	MaxReadSize        *ByteSize `json:"max_read_size,omitempty" yaml:"max_read_size,omitempty"`
+	WorkingMemory      *ByteSize `json:"working_memory,omitempty" yaml:"working_memory,omitempty"`
 }
 
 type Mongo struct {
@@ -113,7 +113,7 @@ func DefaultConfig() Config {
 		Timeouts:       timeouts,
 	}
 	basic := BasicConfig{
-		Memory:    1 << 30,
+		Memory:    2 << 30,
 		Transport: transport,
 	}
 
@@ -167,13 +167,31 @@ func (cfg Config) Validate() error {
 // Runtime heap and RSS additionally include GC slack, stacks and driver/native
 // allocations; the overload guard enforces the configured process threshold.
 func (cfg Config) ReservedMemory() uint64 {
-	budget := uint64(64<<20) + uint64(cfg.Basic.Transport.MaxSessions)*(64<<20) + uint64(cfg.Basic.Transport.MaxConnections)*(256<<10)
+	if cfg.Basic.Transport.serverLimits().Validate() != nil {
+		return (64 << 30) + 1
+	}
+	transportCosts := []uint64{uint64(cfg.Basic.Transport.MaxSessions) * (96 << 20), uint64(cfg.Basic.Transport.MaxConnections) * (256 << 10)}
+	budget := addMemoryBudget(64<<20, transportCosts)
 	for _, service := range cfg.Routing.Stores {
 		if service.Local != nil {
 			limits := service.Local.runtimeLimits()
-			budget += uint64(limits.PendingBytes + limits.ResultBytes + limits.WorkingBytes)
-			budget += uint64(limits.Concurrency) * (2 << 20)
+			if limits.Validate() != nil {
+				return (64 << 30) + 1
+			}
+			costs := []uint64{uint64(limits.PendingBytes), uint64(limits.ResultBytes), uint64(limits.WorkingBytes), uint64(limits.Concurrency) * (2 << 20)}
+			budget = addMemoryBudget(budget, costs)
 		}
+	}
+	return budget
+}
+
+func addMemoryBudget(budget uint64, costs []uint64) uint64 {
+	const maximum = 64 << 30
+	for _, cost := range costs {
+		if budget > maximum || cost > maximum-budget {
+			return maximum + 1
+		}
+		budget += cost
 	}
 	return budget
 }
@@ -358,8 +376,11 @@ func (l *Local) runtimeLimits() store.Limits {
 	if l.MaxBatchOperations != 0 {
 		limits.BatchOperations = l.MaxBatchOperations
 	}
-	if l.BatchCollect != nil {
-		limits.Collect = time.Duration(*l.BatchCollect)
+	if l.WorkingMemory != nil {
+		limits.WorkingBytes = int(*l.WorkingMemory)
+		if uint64(*l.WorkingMemory) > uint64(^uint(0)>>1) {
+			limits.WorkingBytes = -1
+		}
 	}
 
 	return limits

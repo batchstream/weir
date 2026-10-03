@@ -10,8 +10,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-const batchBodyLimit = 8 << 20
-const batchOperationLimit = 128
+const batchBodyLimit = protocol.MaxBatchResponseBytes
 
 const getFramingLimit = 32 << 10
 const getBatchItems = (batchBodyLimit - getFramingLimit) / (protocol.MaxDocument + getFramingLimit)
@@ -61,8 +60,8 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 	for start := 0; start < len(works); {
 		end := start
 		bound := getFramingLimit
-		for end < len(works) && end-start < batchOperationLimit {
-			item := a.sourceLimit(works[end]) + getFramingLimit
+		for end < len(works) {
+			item := len(works[end].Backend.(*plan).id) + 16
 			if bound+item > batchBodyLimit {
 				break
 			}
@@ -87,7 +86,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 			group = append(group, work)
 			indexes = append(indexes, i)
 			ids = append(ids, work.Backend.(*plan).id)
-			bound += a.sourceLimit(work) + getFramingLimit
+			bound += len(work.Backend.(*plan).id) + 16
 		}
 		start = end
 		if len(group) == 0 {
@@ -97,7 +96,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		encoded, _ := json.Marshal(body)
 		call := exchange{
 			path: "/" + index + "/_mget?realtime=true", body: encoded,
-			contentType: "application/json", limit: bound,
+			contentType: "application/json", limit: batchBodyLimit,
 			jsonNodes: len(group)*(16384+32) + 1,
 		}
 		status, raw, err := a.request(ctx, call)
@@ -340,7 +339,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 	for _, work := range works {
 		totalBytes += work.Bytes
 	}
-	if len(works) > batchOperationLimit || totalBytes > batchBodyLimit {
+	if totalBytes > batchBodyLimit {
 		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "batch exceeds execution bounds")
 		for i, work := range works {
 			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)

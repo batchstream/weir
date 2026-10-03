@@ -1,0 +1,128 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil/testrecords"
+)
+
+type concurrencyAdapter struct {
+	lifecycleAdapter
+	started chan struct{}
+	finish  chan execution.Feedback
+}
+
+func (adapter *concurrencyAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	work, failure := adapter.lifecycleAdapter.PrepareRecord(record)
+	work.WorkingBytes = 16 << 20
+	return work, failure
+}
+
+func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+	adapter.started <- struct{}{}
+	feedback := execution.Neutral
+	select {
+	case feedback = <-adapter.finish:
+	case <-ctx.Done():
+	}
+	for _, work := range plans {
+		result := protocol.ResultError(work.Operation, pb.MutationOutcome_APPLIED, nil)
+		output := &execution.Output{Result: result}
+		_ = emit(work, output)
+	}
+	return feedback
+}
+
+func TestBackendFeedbackDoesNotReduceConfiguredDispatch(t *testing.T) {
+	for _, bulk := range []bool{false, true} {
+		for _, capacity := range []int{3, 4} {
+			name := fmt.Sprintf("bulk=%t/working_slots=%d", bulk, capacity)
+			t.Run(name, func(t *testing.T) {
+				limits := DefaultLimits()
+				limits.Concurrency = 4
+				limits.BatchOperations = 1
+				limits.WorkingBytes = capacity * (16 << 20)
+				adapter := &concurrencyAdapter{started: make(chan struct{}, 8), finish: make(chan execution.Feedback, 8)}
+				runtime, err := New(adapter, limits)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+				defer func() {
+					cancel()
+					closeContext, stop := context.WithTimeout(context.Background(), time.Second)
+					defer stop()
+					if err := runtime.Close(closeContext); err != nil {
+						t.Error(err)
+					}
+				}()
+				var tickets []*Ticket
+				for i := range 8 {
+					work := plan(1, fmt.Sprint(i), false)
+					work.WorkingBytes = 16 << 20
+					var ticket *Ticket
+					var failure *pb.Failure
+					if bulk {
+						record, recordFailure := testrecords.New("test", work.Operation)
+						if recordFailure != nil {
+							t.Fatal(recordFailure)
+						}
+						records := []*execution.Record{record}
+						prepared, prepareFailure := runtime.PrepareBatch(records)
+						if prepareFailure != nil {
+							t.Fatal(prepareFailure)
+						}
+						ticket, failure, _ = runtime.SubmitBatch(ctx, prepared)
+					} else {
+						ticket, failure, _ = runtime.Submit(ctx, work, nil)
+					}
+					if failure != nil {
+						t.Fatal(failure)
+					}
+					tickets = append(tickets, ticket)
+				}
+				for range capacity {
+					select {
+					case <-adapter.started:
+					case <-ctx.Done():
+						t.Fatal("configured capacity did not dispatch", runtime.Snapshot())
+					}
+				}
+				if snapshot := runtime.Snapshot(); snapshot.Active != capacity || snapshot.Pending != 8-capacity || snapshot.WorkingBytes != capacity*(16<<20) {
+					t.Fatal("execution exceeded configured or working-byte capacity", snapshot)
+				}
+				adapter.finish <- execution.Congested
+				// Other active calls remain blocked. A completed congested call
+				// must immediately admit the next queued batch at the same limit.
+				select {
+				case <-adapter.started:
+				case <-time.After(500 * time.Millisecond):
+					t.Fatal("backend feedback left configured capacity idle", runtime.Snapshot())
+				}
+				if snapshot := runtime.Snapshot(); snapshot.Active != capacity || snapshot.ConcurrencyLimit != limits.Concurrency {
+					t.Fatal("feedback changed dispatch capacity", snapshot)
+				}
+				for range 7 {
+					adapter.finish <- execution.Healthy
+				}
+				for _, ticket := range tickets {
+					if bulk {
+						_, err = ticket.WaitBatch(ctx)
+					} else {
+						_, err = ticket.Wait(ctx)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					ticket.Ack()
+				}
+			})
+		}
+	}
+}

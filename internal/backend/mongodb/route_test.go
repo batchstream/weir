@@ -25,9 +25,16 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	adapter := batchMockAdapter(t, replies, nil)
 	adapter.config.MaxReadSize = protocol.MaxDocument
 	request := &pb.ReadRequest{Resource: "db/records/s:a"}
-	variant := &pb.Command_Read{Read: request}
-	call := &pb.Command{Version: 1, Operation: variant}
-	work, failure := adapter.PrepareCommand(9, call)
+	items := make([]*pb.ReadRequest, 9)
+	for i := range items {
+		items[i] = request
+	}
+	batch := &pb.ReadBatchRequest{StoreName: "mongo", Requests: items}
+	records, failure := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work, failure := adapter.PrepareRecord(records[8])
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -35,10 +42,10 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("wire Command mutated or association lost", work)
 	}
 	events := 0
-	emit := func(plan *execution.Plan, event *pb.Event) error {
+	emit := func(plan *execution.Plan, output *execution.Output) error {
 		events++
-		if plan != work || event.Version != 1 || event.GetResult().Index != 9 || len(event.GetResult().GetRead().GetDocument().Data) != protocol.MaxDocument {
-			t.Fatal("large read/result framing failed", event.GetResult())
+		if plan != work || output.Result.Index != 9 || len(output.Result.GetRead().GetDocument().Data) != protocol.MaxDocument {
+			t.Fatal("large read/result framing failed", output.Result)
 		}
 		return nil
 	}
@@ -47,17 +54,13 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events, feedback)
 	}
 	request.Resource = "weir://mongo/db/records/s:a"
-	if _, failure := adapter.PrepareCommand(10, call); failure == nil {
+	if _, err := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes); err == nil {
 		t.Fatal("accepted obsolete absolute wire resource")
 	}
 	request.Resource = "db/records/s:a"
-	call.Version = 2
-	if _, failure := adapter.PrepareCommand(10, call); failure == nil {
-		t.Fatal("accepted unknown payload version")
-	}
-	call.Version = 1
-	if _, failure := adapter.PrepareCommand(0, call); failure == nil {
-		t.Fatal("accepted zero ID")
+	emptyRecord := &execution.Record{}
+	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
+		t.Fatal("accepted unconstructed record")
 	}
 }
 
@@ -68,9 +71,12 @@ func TestRouteLuaPlanKeepsIndependentTransaction(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "db/records/s:a", Action: action}
-	variant := &pb.Command_Mutate{Mutate: mutation}
-	call := &pb.Command{Version: 1, Operation: variant}
-	work, failure := adapter.PrepareCommand(1, call)
+	batch := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{mutation}}
+	records, failure := execution.NewMutationRecords(batch, protocol.MaxBatchRequestBytes)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work, failure := adapter.PrepareRecord(records[0])
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -99,7 +105,8 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	}
 	work.BackendTimeout = 50 * time.Millisecond
 	var end *pb.NativeEnd
-	emit := func(_ *execution.Plan, event *pb.Event) error {
+	emit := func(_ *execution.Plan, output *execution.Output) error {
+		event := output.Event
 		if event.GetHead() != nil || event.GetChunk() != nil {
 			time.Sleep(75 * time.Millisecond)
 		}

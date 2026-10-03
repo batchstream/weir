@@ -1,11 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"net"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,7 +15,6 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,34 +27,29 @@ type peerAdapter struct {
 	seen             chan context.Context
 	ackFailureKey    string
 	ackFailure       *pb.Failure
+	batchSizes       []int
 }
 
 func newPeerAdapter(name string) *peerAdapter {
 	adapter := &peerAdapter{name: name, documents: make(map[string]*pb.Document), seen: make(chan context.Context, 64)}
 	return adapter
 }
-func (a *peerAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
-	op := &pb.Operation{Index: id}
-	if request := call.GetRead(); request != nil {
-		op.Operation = &pb.Operation_Read{Read: request}
-	} else if request := call.GetMutate(); request != nil {
-		op.Operation = &pb.Operation_Mutate{Mutate: request}
-	} else {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
-	}
-	key := protocol.Resource(op)
-	_, segments, err := protocol.ParseResource("weir://" + a.name + "/" + key)
-	if err != nil || len(segments) == 0 {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid relative target")
-	}
-	resultBytes := protocol.ResultOverhead
-	if op.GetRead() != nil {
-		resultBytes += protocol.MaxDocument
-	}
-	plan := &execution.Plan{ID: id, Command: call, Operation: op, Key: key, BatchKey: "records", Bytes: proto.Size(call) + protocol.EntryOverhead, ResultBytes: resultBytes, WorkingBytes: resultBytes}
+
+func (*peerAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
+}
+
+func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
+	key := record.Key()
+	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: key, BatchKey: "records", Bytes: proto.Size(operation) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
 	return plan, nil
 }
+
 func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+	a.mu.Lock()
+	a.batchSizes = append(a.batchSizes, len(plans))
+	a.mu.Unlock()
 	select {
 	case a.seen <- ctx:
 	default:
@@ -72,17 +63,20 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 	}
 	for _, plan := range plans {
 		a.mu.Lock()
-		op := plan.Operation
 		result := &pb.Result{Index: plan.ID}
-		if op.GetRead() != nil {
+		if plan.Operation.GetRead() != nil {
 			read := protocol.Missing()
 			if document := a.documents[plan.Key]; document != nil {
-				read = protocol.ReadDocument(document)
+				if plan.Results.Reserve(len(document.Data)) {
+					read = protocol.ReadDocument(document)
+				} else {
+					read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record result budget exhausted"))
+				}
 			}
 			result.Result = &pb.Result_Read{Read: read}
 		} else {
 			a.commands.Add(1)
-			request := op.GetMutate()
+			request := plan.Operation.GetMutate()
 			document := request.GetPut()
 			if document == nil {
 				document = request.GetCreate()
@@ -102,36 +96,37 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 			result.Result = &pb.Result_Mutation{Mutation: protocol.Mutation(pb.MutationOutcome_APPLIED, failure)}
 		}
 		a.mu.Unlock()
-		event := &pb.Event{Version: 1, Value: &pb.Event_Result{Result: result}}
-		_ = emit(plan, event)
+		output := &execution.Output{Result: result}
+		_ = emit(plan, output)
 	}
 	return execution.Healthy
 }
-func (a *peerAdapter) Close() error                                           { a.closed.Add(1); return nil }
-func (a *peerAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
+
+func (a *peerAdapter) Close() error                                         { a.closed.Add(1); return nil }
+func (*peerAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
+
 func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	t.Helper()
 	adapter := newPeerAdapter(name)
 	limits := store.DefaultLimits()
-	runtime, err := store.New(adapter, limits)
+	local, err := store.New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if err := runtime.Close(ctx); err != nil {
+		if err := local.Close(ctx); err != nil {
 			t.Error(err)
 		}
 		if adapter.closed.Load() != 1 {
 			t.Error("adapter not closed once")
 		}
 	})
-	return adapter, runtime
+	return adapter, local
 }
 
 type peerServerOptions struct {
-	observe   chan http.Header
 	stores    map[string]*store.Runtime
 	directory *directory.Directory
 	peer      bool
@@ -165,16 +160,6 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 			t.Fatal(err)
 		}
 	}
-	if opts.observe != nil {
-		original := srv.http.Handler
-		srv.http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			select {
-			case opts.observe <- r.Header.Clone():
-			default:
-			}
-			original.ServeHTTP(w, r)
-		})
-	}
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(listener) }()
 	t.Cleanup(func() {
@@ -188,9 +173,10 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 	})
 	return srv, listener.Addr().String()
 }
+
 func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
 	t.Helper()
-	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxResponse), grpc.MaxCallSendMsgSize(protocol.MaxFrame))}
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxBatchResponseBytes), grpc.MaxCallSendMsgSize(protocol.MaxBatchRequestBytes))}
 	conn, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {
 		t.Fatal(err)
@@ -198,91 +184,44 @@ func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreService
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn, pb.NewStoreServiceClient(conn)
 }
+
 func testRequest() *pb.ReadRequest {
 	request := &pb.ReadRequest{Resource: "data/s:key"}
 	return request
 }
+
 func testMutation(value string) *pb.MutateRequest {
 	document := &pb.Document{MediaType: "application/octet-stream", Data: []byte(value)}
 	action := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: testRequest().Resource, Action: action}
 	return request
 }
+
 func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
-	for len(s.slots) != 0 || s.Snapshot().Outstanding != 0 {
+	for len(s.slots) != 0 || s.admission.wireBytes.Load() != 0 {
 		if time.Now().After(until) {
-			t.Fatal("route did not release", s.Snapshot())
+			t.Fatal("RPC transport credits did not release", s.Snapshot(), s.admission.wireBytes.Load())
 		}
 		time.Sleep(time.Millisecond)
 	}
 }
-func routeRecord(client pb.StoreServiceClient, ctx context.Context, call *pb.Command) (*pb.Result, error) {
-	data, err := proto.Marshal(call)
+
+func routeRead(client pb.StoreServiceClient, ctx context.Context, read *pb.ReadRequest) (*pb.ReadResult, error) {
+	request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
+	response, err := client.Read(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	stream, err := client.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-	request := &pb.ExecuteRequest{RequestId: 1, StoreName: "records", CommandPayload: data}
-	if err := stream.Send(request); err != nil {
-		return nil, err
-	}
-	if err := stream.CloseSend(); err != nil {
-		return nil, err
-	}
-	var encoded bytes.Buffer
-	ended := false
-	for {
-		response, err := stream.Recv()
-		if err != nil {
-			if err != io.EOF {
-				return nil, err
-			}
-			if !ended {
-				return nil, io.ErrUnexpectedEOF
-			}
-			break
-		}
-		if err := protocol.ValidateExecuteResponse(response); err != nil {
-			return nil, err
-		}
-		if response.RequestId != 1 || ended {
-			return nil, io.ErrUnexpectedEOF
-		}
-		if response.RequestComplete {
-			ended = true
-		} else {
-			_, _ = encoded.Write(response.EventFragment)
-		}
-	}
-	event := &pb.Event{}
-	if err := protodelim.UnmarshalFrom(&encoded, event); err != nil {
-		return nil, err
-	}
-	if encoded.Len() != 0 || event.GetResult() == nil {
-		return nil, io.ErrUnexpectedEOF
-	}
-	return event.GetResult(), nil
+	return response.Results[0], nil
 }
-func routeRead(client pb.StoreServiceClient, ctx context.Context, request *pb.ReadRequest) (*pb.ReadResult, error) {
-	value := &pb.Command_Read{Read: request}
-	call := &pb.Command{Version: 1, Operation: value}
-	result, err := routeRecord(client, ctx, call)
+
+func routeMutate(client pb.StoreServiceClient, ctx context.Context, mutation *pb.MutateRequest) (*pb.MutationResult, error) {
+	request := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}
+	response, err := client.Mutate(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	return result.GetRead(), nil
-}
-func routeMutate(client pb.StoreServiceClient, ctx context.Context, request *pb.MutateRequest) (*pb.MutationResult, error) {
-	value := &pb.Command_Mutate{Mutate: request}
-	call := &pb.Command{Version: 1, Operation: value}
-	result, err := routeRecord(client, ctx, call)
-	if err != nil {
-		return nil, err
-	}
-	return result.GetMutation(), nil
+	return response.Results[0], nil
 }

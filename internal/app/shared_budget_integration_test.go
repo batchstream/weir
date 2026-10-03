@@ -126,6 +126,9 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
+	// The largest backend concurrency is four. Admit queued work as well as
+	// active calls so the overload phase exercises both ledgers independently.
+	cfg.Basic.Transport.MaxSessions = 8
 	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
 	cfg.Basic.Discovery.Group = "records"
 	cfg.Routing.Stores = []StoreConfig{service}
@@ -169,9 +172,9 @@ func budgetWait(t *testing.T, label string, predicate func() bool) {
 	}
 }
 
-func budgetWindow(t *testing.T, p *process) int {
+func budgetConcurrency(t *testing.T, p *process) int {
 	t.Helper()
-	return int(testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_store_window"))
+	return int(testmetrics.Sum(testmetrics.Scrape(t, p.diagnostic), "weir_store_concurrency_limit"))
 }
 
 func budgetFreshRead(t *testing.T, e *mongoBudgetExecutor, id string) {
@@ -211,8 +214,8 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 		peers = append(peers, startMongoBudgetExecutor(t, start))
 	}
 	t.Log("executor sequence 1 -> 3; all share one TLS/SCRAM database; capacities 1+2+4=7")
-	// Keep actual demand eligible across AIMD's 250ms growth interval. Each read
-	// remains independent; write/Bulk/stream coexistence is exercised below.
+	// Warm independent calls across all configured execution slots. Write,
+	// batch and stream coexistence is exercised below.
 	observation.hold(nil, 10*time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	var workers sync.WaitGroup
@@ -239,8 +242,8 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 		return a == 0
 	})
 	for _, e := range peers {
-		if window := budgetWindow(t, e.process); window != e.concurrency {
-			t.Fatal("AIMD failed to reach configured C", window, e.concurrency)
+		if capacity := budgetConcurrency(t, e.process); capacity != e.concurrency {
+			t.Fatal("configured concurrency changed", capacity, e.concurrency)
 		}
 	}
 	// A simultaneous wire barrier makes the 7 in-flight exchanges inspectable;
@@ -266,11 +269,11 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 			t.Fatal("Mongo local owner did not cover pool and polling monitor", owned)
 		}
 		families := testmetrics.Scrape(t, e.process.diagnostic)
-		if testmetrics.Sum(families, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(families, "weir_store_window_limit") != float64(e.concurrency) {
+		if testmetrics.Sum(families, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(e.concurrency) {
 			t.Fatal("runtime assembly cap")
 		}
 		t.Logf(
-			"barrier PID=%d active=window=C=%d upstream TCP current/peak=%d/%d (observer, independently of local owner)",
+			"barrier PID=%d active=C=%d upstream TCP current/peak=%d/%d (observer, independently of local owner)",
 			e.process.command.Process.Pid,
 			e.concurrency,
 			current,
@@ -288,14 +291,22 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	testmongo.FailCommand(t, fixture.Admin, data, 1)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	faultRead := &pb.ReadRequest{Resource: peers[2].root + "/s:congestion"}
-	_, _ = testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(faultRead))
+	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(faultRead))
 	stop()
-	if budgetWindow(t, peers[2].process) != 2 || budgetWindow(t, peers[1].process) != 2 {
-		t.Fatal("Mongo AIMD instances not independent")
+	if faultError != nil || faultResult.GetRead().GetFailure() == nil {
+		t.Fatal("Mongo congestion lost its read failure", faultError, faultResult)
 	}
-	t.Log("real failCommand 16500: C4 window 4->2, C2 stays 2; independent feedback")
+	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
+		t.Fatal("backend failure changed configured execution limits")
+	}
+	feedbackLabels := map[string]string{"feedback": "congested"}
+	feedback := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_feedback", feedbackLabels)
+	if feedback.GetGauge().GetValue() != 1 {
+		t.Fatal("Mongo backend congestion was not observable")
+	}
+	t.Log("real failCommand 16500: read failure and congestion feedback preserved; configured C4 and C2 unchanged")
 	mongoBudgetOverload(t, peers, observation)
-	mongoBudgetMixed(t, peers, fixture)
+	mongoBudgetMixed(t, peers, fixture, observation)
 	discovery := budgetDiscoveryOptions{
 		binary:  binary,
 		peers:   []*process{peers[0].process, peers[1].process, peers[2].process},
@@ -334,7 +345,7 @@ func mongoBudgetOverload(t *testing.T, peers []*mongoBudgetExecutor, o *budgetOb
 	t.Helper()
 	expected := 0
 	for _, e := range peers {
-		expected += budgetWindow(t, e.process)
+		expected += budgetConcurrency(t, e.process)
 	}
 	gate := make(chan struct{})
 	o.hold(gate, 0)
@@ -386,7 +397,7 @@ func mongoBudgetOverload(t *testing.T, peers []*mongoBudgetExecutor, o *budgetOb
 	)
 }
 
-func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testmongo.SecureFixture) {
+func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testmongo.SecureFixture, observation *budgetObservation) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -436,34 +447,31 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	if err := fixture.Client.Database(fixture.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 49 {
 		t.Fatal("lost cross-process/native increment", observed.N, err)
 	}
-	// A live Bulk uses the production framing/ledger; every result is consumed.
+	// Each mutation batch shares one unary RPC; input-order results are all checked.
 	for _, e := range peers {
-		stream := testutil.OpenEvents(ctx, e.client, "records")
-		for i := 0; i < 4; i++ {
+		requests := make([]*pb.MutateRequest, 0, 4)
+		for i := range 4 {
 			request := budgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			mutation := &pb.Operation_Mutate{Mutate: request}
-			op := &pb.Operation{Index: uint64(i), Operation: mutation}
-			_, item := testutil.OperationCommand(op)
-			frame := item
-			if err := stream.Send(frame); err != nil {
-				t.Fatal(err)
+			fixture := testutil.RecordCommand(request)
+			requests = append(requests, fixture.Operation.GetMutate())
+		}
+		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
+		reply, err := e.client.Mutate(ctx, batch)
+		if err != nil || len(reply.GetResults()) != len(requests) {
+			t.Fatal("batch mutation", reply, err)
+		}
+		for i, result := range reply.Results {
+			if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
+				t.Fatal("batch mutation", i, result)
 			}
-		}
-		if err := stream.CloseSend(); err != nil {
-			t.Fatal(err)
-		}
-		for range 4 {
-			reply, err := stream.Recv()
-			if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal("Bulk", reply, err)
-			}
-		}
-		if _, err := stream.Recv(); err != io.EOF {
-			t.Fatal("Bulk EOF", err)
 		}
 	}
-	// Native and Scan share one live-session slot within each Store, so overlap
-	// them across executors while ordinary operations continue on all three.
+	// Inspect real admission while the owned wire proxy holds Native and Scan.
+	// Then overlap both streams with ordinary operations across three processes.
+	gate := make(chan struct{})
+	observation.hold(gate, 0)
+	var release sync.Once
+	defer release.Do(func() { close(gate) })
 	workers.Go(func() { mongoBudgetNative(t, peers[0]) })
 	workers.Go(func() {
 		request := &pb.ScanRequest{Resource: peers[1].root}
@@ -491,6 +499,11 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 			t.Error("Scan EOF", err)
 		}
 	})
+	budgetWait(t, "Native and Scan occupy runtime reservations", func() bool {
+		return budgetRuntimeOccupied(t, peers[0].process) && budgetRuntimeOccupied(t, peers[1].process)
+	})
+	release.Do(func() { close(gate) })
+	observation.hold(nil, 0)
 	for _, e := range peers {
 		workers.Go(func() {
 			for range 8 {
@@ -502,16 +515,18 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	if t.Failed() {
 		t.Fatal("mixed operations failed")
 	}
-	budgetWait(t, "Scan session released", func() bool {
-		return testmetrics.Sum(testmetrics.Scrape(t, peers[1].process.diagnostic), "weir_store_live_sessions") == 0
+	budgetWait(t, "completed Native and Scan reservations released", func() bool {
+		return budgetRuntimeReleased(t, peers[0].process) && budgetRuntimeReleased(t, peers[1].process)
 	})
-	beforeCleanup := 0
-	for _, event := range peers[1].proxy.Events() {
-		if event.Command == "killCursors" {
-			beforeCleanup++
-		}
-	}
+	// Mongo's Scan uses singleBatch reads and owns no persistent database cursor.
+	// Hold the first read to prove ownership, then cancel while further reads
+	// are delayed and verify the actual pending/execution/result ledgers clear.
+	cancelGate := make(chan struct{})
+	observation.hold(cancelGate, 0)
+	var releaseCancel sync.Once
+	defer releaseCancel.Do(func() { close(cancelGate) })
 	scanCtx, stopScan := context.WithCancel(ctx)
+	defer stopScan()
 	request := &pb.ScanRequest{Resource: peers[1].root}
 	scanVariant := &pb.Command_Scan{Scan: request}
 	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
@@ -519,21 +534,24 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	if err != nil {
 		t.Fatal(err)
 	}
+	budgetWait(t, "cancelled Scan first read holds reservations", func() bool {
+		return budgetRuntimeOccupied(t, peers[1].process)
+	})
+	observation.hold(nil, 50*time.Millisecond)
+	releaseCancel.Do(func() { close(cancelGate) })
 	if frame, err := scan.Recv(); err != nil || frame.GetDocument() == nil {
 		t.Fatal("cancel Scan first page", err)
 	}
+	if !budgetRuntimeOccupied(t, peers[1].process) {
+		t.Fatal("Scan completed before cancellation evidence")
+	}
 	stopScan()
-	budgetWait(t, "real Mongo cursor cleanup", func() bool {
-		n := 0
-		for _, event := range peers[1].proxy.Events() {
-			if event.Command == "killCursors" && event.Acknowledged {
-				n++
-			}
-		}
-		return n > beforeCleanup
-	})
-	budgetWait(t, "cancelled Scan ledger empty", func() bool {
-		return testmetrics.Sum(testmetrics.Scrape(t, peers[1].process.diagnostic), "weir_store_live_sessions") == 0
+	observation.hold(nil, 0)
+	if _, err := scan.Recv(); err == nil || err == io.EOF {
+		t.Fatal("cancelled Scan unexpectedly completed", err)
+	}
+	budgetWait(t, "cancelled Scan reservations released", func() bool {
+		return budgetRuntimeReleased(t, peers[1].process)
 	})
 	t.Log("Read/Mutate/Bulk/Native/Scan completed; three executor increments 36 + independent native writer 12 + seed 1 = 49; database atomicity, no global Weir ordering claim")
 }
@@ -582,7 +600,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 		old.process.command.Process.Pid,
 		replacement.process.command.Process.Pid,
 	)
-	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_window_limit") != 2 {
+	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_concurrency_limit") != 2 {
 		t.Fatal("two Local budgets merged")
 	}
 	budgetWait(t, "two independent Mongo pools", func() bool {
@@ -741,33 +759,28 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 	client := openDiscoveredClient(t, seed.address, []string{"records"})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	produced, completed := 0, 0
-	options := weirclient.ExecuteOptions{
-		StoreName: "records",
-		Produce: func(context.Context) (*weirclient.Command, error) {
-			if produced == 4 {
-				return nil, io.EOF
-			}
-			produced++
-			mutation := &pb.Command_Mutate{Mutate: opts.request}
-			call := &pb.Command{Version: 1, Operation: mutation}
-			return testutil.SDKCommand(call)
-		},
-		Consume: func(_ context.Context, id uint64, event *weirclient.Event) error {
-			if event.GetResult() != nil {
-				if id != uint64(completed+1) || event.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-					return fmt.Errorf("direct ordered batch invalid result %d", id)
-				}
-				completed++
-			}
-			return nil
-		},
+	fixture := testutil.RecordCommand(opts.request)
+	requests := make([]*weirclient.MutateRequest, 0, 4)
+	for range 4 {
+		request := &weirclient.MutateRequest{
+			Resource: fixture.Operation.GetMutate().Resource,
+			Action:   weirclient.MutationPut,
+			Document: fixture.Operation.GetMutate().GetPut(),
+		}
+		requests = append(requests, request)
 	}
-	if err := client.Execute(ctx, options); err != nil || completed != 4 {
-		t.Fatal("direct pinned batch", completed, err)
+	options := weirclient.MutateOptions{StoreName: "records", Requests: requests}
+	results, err := client.Mutate(ctx, options)
+	if err != nil || len(results) != len(requests) {
+		t.Fatal("direct pinned batch", results, err)
+	}
+	for i, result := range results {
+		if result == nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
+			t.Fatal("direct ordered batch", i, result)
+		}
 	}
 	metrics := testmetrics.Scrape(t, seed.diagnostic)
-	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_window_limit"] != nil || metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_concurrency_limit"] != nil || metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
 		t.Fatal("initialization node owns execution or forwarding")
 	}
 	targets := 0
@@ -776,43 +789,70 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 		if delta == 4 {
 			targets++
 		} else if delta != 0 {
-			t.Fatal("business stream migrated or replayed", delta)
+			t.Fatal("business batch migrated or replayed", delta)
 		}
 	}
 	if targets != 1 {
-		t.Fatal("business stream did not remain on one executor", targets)
+		t.Fatal("business batch did not remain on one executor", targets)
 	}
 	t.Logf("initialization-only PID=%d, direct ordered batch/4 writes; no relay or local pool", seed.command.Process.Pid)
 }
 
-// The same finite overload shape drives both real adapter profiles. Each Bulk
-// call checks result association and End/EOF; errors are counted, never replayed.
+// The same finite overload shape drives both real adapter profiles. Every batch
+// result is checked; errors are counted and mutations are never replayed.
 func budgetLoadCall(ctx context.Context, client pb.StoreServiceClient, request *pb.MutateRequest, mode int) bool {
 	switch mode {
 	case 0:
-		routedResult820, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
-		result := routedResult820.GetMutation()
+		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
+		result := response.GetMutation()
 		return err == nil && result.GetFailure() == nil && result.GetOutcome() == pb.MutationOutcome_APPLIED
 	case 1:
 		read := &pb.ReadRequest{Resource: request.Resource}
-		routedResult824, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
-		result := routedResult824.GetRead()
+		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
+		result := response.GetRead()
 		return err == nil && result.GetFailure() == nil
 	default:
-		stream := testutil.OpenEvents(ctx, client, "records")
-		var frame *pb.Command
-		variant := &pb.Operation_Mutate{Mutate: request}
-		operation := &pb.Operation{Operation: variant}
-		_, item := testutil.OperationCommand(operation)
-		frame = item
-		if stream.Send(frame) != nil || stream.CloseSend() != nil {
+		fixture := testutil.RecordCommand(request)
+		batch := &pb.MutateBatchRequest{StoreName: fixture.StoreName, Requests: []*pb.MutateRequest{fixture.Operation.GetMutate(), fixture.Operation.GetMutate()}}
+		response, err := client.Mutate(ctx, batch)
+		if err != nil || len(response.GetResults()) != len(batch.Requests) {
 			return false
 		}
-		reply, err := stream.Recv()
-		if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-			return false
+		for _, result := range response.Results {
+			if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
+				return false
+			}
 		}
-		_, err = stream.Recv()
-		return err == io.EOF
+		return true
 	}
+}
+
+func budgetRuntimeGauges(t *testing.T, p *process) map[string]float64 {
+	t.Helper()
+	families := testmetrics.Scrape(t, p.diagnostic)
+	values := make(map[string]float64)
+	for _, name := range []string{"pending_entries", "result_reserved_entries", "result_reserved_bytes", "active_executions", "working_reserved_bytes", "publishers"} {
+		metric := "weir_store_" + name
+		if families[metric] == nil {
+			t.Fatal("required runtime resource observation missing", metric)
+		}
+		values[name] = testmetrics.Sum(families, metric)
+	}
+	return values
+}
+
+func budgetRuntimeOccupied(t *testing.T, p *process) bool {
+	t.Helper()
+	values := budgetRuntimeGauges(t, p)
+	return values["result_reserved_entries"] > 0 && values["result_reserved_bytes"] > 0 && values["active_executions"] > 0 && values["working_reserved_bytes"] > 0
+}
+
+func budgetRuntimeReleased(t *testing.T, p *process) bool {
+	t.Helper()
+	for _, value := range budgetRuntimeGauges(t, p) {
+		if value != 0 {
+			return false
+		}
+	}
+	return true
 }

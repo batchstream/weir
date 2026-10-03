@@ -152,24 +152,11 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal(result, err)
 			}
-			bulk := testutil.OpenEvents(ctx, client, "mongo")
-			var frame *pb.Command
-			mutation := &pb.Operation_Mutate{Mutate: request}
-			operation := &pb.Operation{Operation: mutation}
-			_, item := testutil.OperationCommand(operation)
-			frame = item
-			if err := bulk.Send(frame); err != nil {
-				t.Fatal(err)
-			}
-			if err := bulk.CloseSend(); err != nil {
-				t.Fatal(err)
-			}
-			reply, err := bulk.Recv()
-			if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-				t.Fatal(reply, err)
-			}
-			if _, err := bulk.Recv(); err != io.EOF {
-				t.Fatal(err)
+			fixture := testutil.RecordCommand(request)
+			batch := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{fixture.Operation.GetMutate()}}
+			reply, err := client.Mutate(ctx, batch)
+			if err != nil || len(reply.GetResults()) != 1 || reply.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+				t.Fatal("batch mutation", reply, err)
 			}
 			var routedResult176 *pb.Result
 			routedResult176, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
@@ -232,7 +219,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
 				t.Fatal("Native lost response")
 			}
-			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, Bulk End/EOF, Scan End/EOF, Native End/EOF passed")
+			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Scan End/EOF, Native End/EOF passed")
 		})
 	}
 }

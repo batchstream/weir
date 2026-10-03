@@ -126,7 +126,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 		for _, kind := range []string{"mongo", "search"} {
 			request := &pb.ReadRequest{Resource: fmt.Sprintf("%s/s:process%d", roots[kind], i)}
 			fixture := testutil.RecordCommand(request)
-			readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Command.GetRead()}
+			readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.GetRead()}
 			result, err := client.ReadOne(ctx, readOptions)
 			if err != nil || !result.GetMissing() {
 				t.Fatal(result, err)
@@ -154,7 +154,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
 	for range 20 {
 		fixture := testutil.RecordCommand(request)
-		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Command.GetRead()}
+		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.GetRead()}
 		result, err := client.ReadOne(ctx, readOptions)
 		if err != nil || !result.GetMissing() {
 			t.Fatal("healthy replicas unavailable", result, err)
@@ -173,7 +173,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	for i := 0; ; i++ {
 		request.Resource = fmt.Sprintf("%s/s:replacement%d", roots["mongo"], i)
 		fixture := testutil.RecordCommand(request)
-		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Command.GetRead()}
+		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.GetRead()}
 		result, err := client.ReadOne(ctx, readOptions)
 		if err != nil || !result.GetMissing() {
 			t.Fatal(result, err)
@@ -224,7 +224,7 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	defer client.Close()
 	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:dns"}
 	fixture := testutil.RecordCommand(request)
-	readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Command.GetRead()}
+	readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.GetRead()}
 	result, err := client.ReadOne(ctx, readOptions)
 	if err != nil || !result.GetMissing() {
 		t.Fatal(result, err)
@@ -234,7 +234,7 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	first.stop(t)
 	for {
 		fixture := testutil.RecordCommand(request)
-		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Command.GetRead()}
+		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.GetRead()}
 		result, err := client.ReadOne(ctx, readOptions)
 		if err == nil && result.GetMissing() {
 			break

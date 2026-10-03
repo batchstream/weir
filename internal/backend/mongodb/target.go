@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"regexp"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -16,10 +15,25 @@ type namespace struct {
 	collection string
 }
 
-var namespacePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
-
 func validNamespace(parts []string) bool {
-	return len(parts) >= 2 && namespacePattern.MatchString(parts[0]) && namespacePattern.MatchString(parts[1])
+	return len(parts) >= 2 && validNamespaceName(parts[0]) && validNamespaceName(parts[1])
+}
+
+func validNamespaceName(name string) bool {
+	if len(name) == 0 || len(name) > 63 || !namespaceLetter(name[0]) {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		b := name[i]
+		if !namespaceLetter(b) && (b < '0' || b > '9') && b != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func namespaceLetter(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 func (n namespace) String() string {

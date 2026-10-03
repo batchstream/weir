@@ -2,32 +2,27 @@ package store
 
 import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"time"
 
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 type runtimeMetrics struct {
-	executions, rejections, changes, records *prometheus.CounterVec
-	backpressure                             *prometheus.CounterVec
-	queue, duration                          *prometheus.HistogramVec
-	batch                                    prometheus.Histogram
-	feedback                                 execution.Feedback
-	observed                                 bool
+	executions, rejections, records *prometheus.CounterVec
+	queue, duration                 *prometheus.HistogramVec
+	batch                           prometheus.Histogram
+	feedback                        execution.Feedback
+	observed                        bool
 }
 
 func newRuntimeMetrics() runtimeMetrics {
 	recordOptions := prometheus.CounterOpts{Name: "weir_store_records_total", Help: "Per-record backend terminal evidence; not delivery acknowledgements."}
 	execOptions := prometheus.CounterOpts{Name: "weir_store_executions_total", Help: "Physical unified adapter invocations."}
 	rejectOptions := prometheus.CounterOpts{Name: "weir_store_rejections_total", Help: "Preparation and admission denials."}
-	changeOptions := prometheus.CounterOpts{Name: "weir_store_window_changes_total", Help: "Actual adaptive concurrency changes."}
-	backpressureOptions := prometheus.CounterOpts{Name: "weir_store_backpressure_events_total", Help: "Backpressure actions: concurrency reductions or dispatch cooldown after explicit backend congestion, including at the window floor."}
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from admission to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration including bounded streaming output.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per bounded invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
-	metrics := runtimeMetrics{records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), changes: prometheus.NewCounterVec(changeOptions, []string{"direction"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
-	metrics.backpressure = prometheus.NewCounterVec(backpressureOptions, []string{"reason"})
+	metrics := runtimeMetrics{records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
 	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown", "invalid"} {
 		metrics.records.WithLabelValues("mutate", outcome)
 	}
@@ -40,12 +35,6 @@ func newRuntimeMetrics() runtimeMetrics {
 	for _, reason := range []string{"prepare", "capacity", "budget", "draining", "overload", "canceled", "session"} {
 		metrics.rejections.WithLabelValues(reason)
 	}
-	for _, direction := range []string{"increase", "decrease"} {
-		metrics.changes.WithLabelValues(direction)
-	}
-	for _, reason := range []string{"backend", "latency"} {
-		metrics.backpressure.WithLabelValues(reason)
-	}
 	return metrics
 }
 func (r *Runtime) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(r, ch) }
@@ -55,26 +44,14 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		"pending_entries": float64(snapshot.Pending), "pending_reserved_bytes": float64(snapshot.PendingBytes),
 		"result_reserved_entries": float64(snapshot.Retained), "result_reserved_bytes": float64(snapshot.ResultBytes),
 		"working_reserved_bytes": float64(snapshot.WorkingBytes), "retained_results": float64(snapshot.Ready), "retained_result_reserved_bytes": float64(snapshot.ReadyBytes),
-		"active_executions": float64(snapshot.Active), "publishers": float64(snapshot.Publishers), "window": float64(snapshot.Window),
+		"active_executions": float64(snapshot.Active), "publishers": float64(snapshot.Publishers),
 		"pending_entries_limit": float64(r.limits.PendingOperations), "pending_reserved_bytes_limit": float64(r.limits.PendingBytes),
 		"result_reserved_entries_limit": float64(r.limits.ResultOperations), "result_reserved_bytes_limit": float64(r.limits.ResultBytes),
-		"working_reserved_bytes_limit": float64(r.limits.WorkingBytes), "batch_result_reserved_bytes_limit": float64(r.limits.BatchResultBytes),
-		"window_limit": float64(r.limits.Concurrency), "cooldown": boolValue(snapshot.Cooldown), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
+		"working_reserved_bytes_limit": float64(r.limits.WorkingBytes),
+		"concurrency_limit":            float64(snapshot.ConcurrencyLimit), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
 	}
 	for name, value := range values {
 		description := prometheus.NewDesc("weir_store_"+name, "Bounded local admission reservations; bytes do not represent heap or RSS.", nil, nil)
-		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
-	}
-	latencyValues := map[string]float64{
-		"baseline_seconds": snapshot.LatencyBaseline.Seconds(),
-		"sample_seconds":   snapshot.LatencySample.Seconds(),
-		"ratio":            snapshot.LatencyRatio,
-		"profiles":         float64(snapshot.LatencyProfiles),
-		"ready_profiles":   float64(snapshot.LatencyReadyProfiles),
-		"recovery_hold":    boolValue(snapshot.LatencyRecoveryHold),
-	}
-	for name, value := range latencyValues {
-		description := prometheus.NewDesc("weir_store_latency_"+name, "Last eligible comparable-batch latency evidence; duration is normalized to the operation-count bucket upper bound.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
 	}
 	description := prometheus.NewDesc("weir_store_feedback", "Last observed execution feedback.", []string{"feedback"}, nil)
@@ -84,7 +61,7 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 	if collector, ok := r.adapter.(prometheus.Collector); ok {
 		collector.Collect(ch)
 	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.changes, r.metrics.backpressure, r.metrics.queue, r.metrics.duration, r.metrics.batch}
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.queue, r.metrics.duration, r.metrics.batch}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}
@@ -95,27 +72,15 @@ func boolValue(value bool) float64 {
 	}
 	return 0
 }
-func (r *Runtime) observeLocked(b *batch, feedback execution.Feedback) {
-	before := r.controller.window
-	opts := observation{batch: b, feedback: feedback, maximum: r.limits.Concurrency, now: time.Now()}
-	reason := r.controller.observe(opts)
-	if reason != "" {
-		r.metrics.backpressure.WithLabelValues(reason).Inc()
-	}
-	r.metrics.feedback, r.metrics.observed = feedback, true
-	if r.controller.window > before {
-		r.metrics.changes.WithLabelValues("increase").Inc()
-	}
-	if r.controller.window < before {
-		r.metrics.changes.WithLabelValues("decrease").Inc()
-	}
+func (r *Runtime) terminalLocked(t *Ticket, result *pb.Result) {
+	r.terminalResultLocked(t.plan, result)
 }
 
-func (r *Runtime) terminalLocked(t *Ticket, result *pb.Result) {
-	if t.plan.Operation == nil {
+func (r *Runtime) terminalResultLocked(plan *execution.Plan, result *pb.Result) {
+	if plan.Operation == nil {
 		return
 	}
-	if t.plan.Operation.GetRead() != nil {
+	if plan.Operation.GetRead() != nil {
 		label := "success"
 		if result.GetRead().GetFailure() != nil {
 			label = "failure"

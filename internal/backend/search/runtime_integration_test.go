@@ -74,7 +74,6 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 				t.Fatal(err)
 			}
 			limits := store.DefaultLimits()
-			limits.Collect = 10 * time.Millisecond
 			limits.BatchOperations = 2
 			runtime, err := store.New(adapter, limits)
 			if err != nil {
@@ -95,11 +94,11 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 			second := searchPlan(t, adapter, "put", searchResource(b.Index, "long"))
 			if expression {
 				var failure *pb.Failure
-				first, failure = adapter.prepareRecord(expressionOperation("weir://search/"+b.Index+"/s:short", `{"doc":{"n":1}}`))
+				first, failure = prepareTestRecord(adapter, expressionOperation("weir://search/"+b.Index+"/s:short", `{"doc":{"n":1}}`))
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				second, failure = adapter.prepareRecord(expressionOperation("weir://search/"+b.Index+"/s:long", `{"doc":{"n":1}}`))
+				second, failure = prepareTestRecord(adapter, expressionOperation("weir://search/"+b.Index+"/s:long", `{"doc":{"n":1}}`))
 				if failure != nil {
 					t.Fatal(failure)
 				}

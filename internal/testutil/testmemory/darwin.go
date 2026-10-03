@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const Budget = 256 << 20
+const Budget = 2 << 30
 const Tolerance = 8 << 20
 
 type Pressure struct {
@@ -33,7 +33,7 @@ func Open(t *testing.T) *Pressure {
 	}
 	pressure := &Pressure{base: base}
 	t.Cleanup(func() { pressure.Set(t, 0) })
-	t.Logf("owned pressure PID=%d baseline=%d budget=%d extra allocation ceiling=256MiB", os.Getpid(), base, Budget)
+	t.Logf("owned pressure PID=%d baseline=%d budget=%d extra allocation ceiling=2GiB", os.Getpid(), base, Budget)
 	return pressure
 }
 
@@ -44,7 +44,7 @@ func (p *Pressure) Set(t *testing.T, percent uint64) {
 	if target > p.base {
 		count = int((target - p.base) / (1 << 20))
 	}
-	if count > 256 {
+	if count > Budget/(1<<20) {
 		t.Fatal("frozen extra allocation ceiling", count)
 	}
 	for len(p.pages) > count {

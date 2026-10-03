@@ -72,6 +72,10 @@ func run() (runErrFinal error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if *mode == "profile-node" {
+		opts := ProfileNodeOptions{Config: *config, Routes: *routes, Output: *cpuProfile}
+		return profiledNode(ctx, opts)
+	}
 	stdout, err := evidencePipe(os.Stdout)
 	if err != nil {
 		return err
@@ -82,10 +86,6 @@ func run() (runErrFinal error) {
 		output.SingleWriteLimit = 32 << 20
 	}
 	encoder := json.NewEncoder(output)
-	if *mode == "profile-node" {
-		opts := ProfileNodeOptions{Config: *config, Routes: *routes, Output: *cpuProfile}
-		return profiledNode(ctx, opts)
-	}
 	if *mode == "connection-observe" {
 		opts := ConnectionObserveOptions{
 			PID: *pid, Port: *connectionPort, Seconds: *seconds, IntervalMS: *connectionIntervalMS,

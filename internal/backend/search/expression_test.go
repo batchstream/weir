@@ -25,7 +25,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	allowed := []string{`{"doc":{}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
 	for _, raw := range allowed {
-		p, f := a.prepareRecord(expressionOperation("weir://search/records/s:a", raw))
+		p, f := prepareTestRecord(a, expressionOperation("weir://search/records/s:a", raw))
 		if f != nil || string(p.Backend.(*plan).source) != raw {
 			t.Fatal(p, f)
 		}
@@ -35,13 +35,13 @@ func TestSearchExpressionValidation(t *testing.T) {
 		denied = append(denied, fmt.Sprintf(`{"doc":{},%q:{}}`, option))
 	}
 	for _, raw := range denied {
-		if _, f := a.prepareRecord(expressionOperation("weir://search/records/s:a", raw)); f == nil {
+		if _, f := prepareTestRecord(a, expressionOperation("weir://search/records/s:a", raw)); f == nil {
 			t.Fatal("accepted", raw)
 		}
 	}
 	op := expressionOperation("weir://search/records/s:a", `{"doc":{}}`)
 	op.GetMutate().GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
-	if _, f := a.prepareRecord(op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
+	if _, f := prepareTestRecord(a, op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal(f)
 	}
 }

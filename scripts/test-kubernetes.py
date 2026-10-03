@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Explicit, bounded M21 fixture. Creates three owned kind nodes; always cleans them."""
+"""Historical M21 fixture for its exact locked artifact and source inputs.
+
+This three-node kind run is not a regression test for the current protocol.
+"""
 
 if not __debug__:
     raise RuntimeError("optimized Python is unsupported; evidence assertions are required")

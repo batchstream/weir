@@ -28,7 +28,8 @@ func mongoFinitePage(t *testing.T, adapter *Adapter, request *pb.ScanRequest) ([
 	defer adapter.closeScan(ctx, work)
 	var documents []*pb.Document
 	var end *pb.ScanEnd
-	emit := func(_ *execution.Plan, event *pb.Event) error {
+	emit := func(_ *execution.Plan, output *execution.Output) error {
+		event := output.Event
 		if document := event.GetDocument(); document != nil {
 			documents = append(documents, document)
 		}

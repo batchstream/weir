@@ -4,9 +4,11 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location("connection_load", Path(__file__).with_name("connection-load.py"))
 LOAD = importlib.util.module_from_spec(SPEC)
@@ -17,6 +19,32 @@ FIXTURE_SPEC.loader.exec_module(FIXTURE)
 
 
 class ConnectionLoadTests(unittest.TestCase):
+    def test_fixture_rejects_memory_shortfall_before_inventory_or_directory_creation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "fresh"
+            values = dict(max_sessions=32, max_connections=64, weir_memory_mib=2560, output=root)
+            options = SimpleNamespace(**values)
+            with patch.object(FIXTURE, "inventory") as inventory:
+                with self.assertRaisesRegex(ValueError, "memory cannot cover"):
+                    FIXTURE.Fixture(options)
+            inventory.assert_not_called()
+            self.assertFalse(root.exists())
+
+    def test_fixture_configuration_uses_current_batch_fields_and_sufficient_memory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            values = dict(max_sessions=32, max_connections=64, weir_memory_mib=4096,
+                          max_read_size=None, output=Path(temporary) / "fresh")
+            options = SimpleNamespace(**values)
+            completed = subprocess.CompletedProcess([], 0, "127.0.0.1:9000", "")
+            with patch.object(FIXTURE, "inventory", return_value={}), patch.object(FIXTURE, "run", return_value=completed), \
+                    patch.object(FIXTURE, "http", return_value="ready"), patch.object(FIXTURE.Fixture, "create", return_value="owned-node"):
+                fixture = FIXTURE.Fixture(options)
+                fixture.start_weir(0, 2)
+            node = (fixture.root / "node.yaml").read_text()
+            routes = (fixture.root / "routes.yaml").read_text()
+            self.assertIn('"memory": "4096MiB"', node)
+            self.assertNotIn("batch_collect", routes)
+
     def test_fixed_total_rate_and_nondivisible_distribution(self):
         rates = LOAD.split_rates(803, 16)
         self.assertEqual(sum(rates), 803)

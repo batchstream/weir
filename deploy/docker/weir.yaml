@@ -1,4 +1,4 @@
 listeners:
   application: "127.0.0.1:7447"
 
-memory: "512MiB"
+memory: "2GiB"

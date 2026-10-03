@@ -5,7 +5,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
@@ -30,11 +32,21 @@ func profiledNode(ctx context.Context, opts ProfileNodeOptions) (result error) {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { result = errors.Join(result, file.Close()) }()
 	if err := pprof.StartCPUProfile(file); err != nil {
 		return err
 	}
-	defer pprof.StopCPUProfile()
+	previous := runtime.SetMutexProfileFraction(10)
+	defer runtime.SetMutexProfileFraction(previous)
+	defer func() {
+		pprof.StopCPUProfile()
+		mutex, err := os.OpenFile(opts.Output+".mutex.pprof", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			result = errors.Join(result, err)
+			return
+		}
+		result = errors.Join(result, pprof.Lookup("mutex").WriteTo(mutex, 0), mutex.Close())
+	}()
 	startup, stop := context.WithTimeout(ctx, 5*time.Second)
 	defer stop()
 	node, err := app.Open(startup, cfg)
@@ -50,6 +62,10 @@ func profiledNode(ctx context.Context, opts ProfileNodeOptions) (result error) {
 		return err
 	}
 	stop()
+	_, err = fmt.Fprintf(os.Stdout, "Weir listening on %v; local execution and peer directory discovery\nDiagnostics listening on %s\n", node.Addresses(), node.DiagnosticAddress())
+	if err != nil {
+		return err
+	}
 	select {
 	case <-ctx.Done():
 		return nil

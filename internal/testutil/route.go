@@ -7,30 +7,27 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// RecordCommand builds Execute fixtures from the canonical resources also used by
-// private backend conformance tests. The wire target is always Store-relative.
-// This helper is only for repository test harnesses; it is not a client API.
+// RecordFixture builds one Store-relative request for adapter conformance tests.
+type RecordFixture struct {
+	StoreName string
+	Operation *pb.Operation
+}
+
 func RecordCommand(message proto.Message) RecordFixture {
-	var resource string
-	call := &pb.Command{Version: 1}
+	operation := &pb.Operation{Index: 1}
+	var resource *string
 	switch request := proto.Clone(message).(type) {
 	case *pb.ReadRequest:
-		resource = request.Resource
-		variant := &pb.Command_Read{Read: request}
-		call.Operation = variant
+		resource = &request.Resource
+		operation.Operation = &pb.Operation_Read{Read: request}
 	case *pb.MutateRequest:
-		resource = request.Resource
-		variant := &pb.Command_Mutate{Mutate: request}
-		call.Operation = variant
+		resource = &request.Resource
+		operation.Operation = &pb.Operation_Mutate{Mutate: request}
 	default:
-		panic("RecordCommand requires a record fixture")
+		panic("record fixture requires a read or mutation request")
 	}
-	destination, target, _ := strings.Cut(strings.TrimPrefix(resource, "weir://"), "/")
-	if read := call.GetRead(); read != nil {
-		read.Resource = target
-	} else {
-		call.GetMutate().Resource = target
-	}
-	opts := RecordFixture{StoreName: destination, Command: call}
-	return opts
+	store, target, _ := strings.Cut(strings.TrimPrefix(*resource, "weir://"), "/")
+	*resource = target
+	fixture := RecordFixture{StoreName: store, Operation: operation}
+	return fixture
 }

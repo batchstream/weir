@@ -1,287 +1,162 @@
-# Execute architecture
+# Store execution architecture
 
-Weir is a synchronous finite-batch database service with one process. Clients use
-`ResolveStore` to discover a logical Store and connect directly to its business targets.
-`Execute(stream ExecuteRequest) returns (stream ExecuteResponse)` executes local Stores only.
-Equal peers synchronize a bounded in-memory directory through periodic unary
-exchanges. See [discovery design](discovery-design.md) for ownership, leases and
-client endpoint lifecycle. Lua evaluates inside the main process.
+Weir discovers logical Stores and executes database work in one process. Clients
+initialize with ResolveStore through any node, then connect directly to the
+returned business endpoints. Equal peers periodically synchronize a bounded
+in-memory directory. Business payloads never travel through another Weir node.
+Lua evaluates inside the main process. Public and private peer schemas are
+independent; see [protocols](protocols.md) and [discovery design](discovery-design.md).
 
-Public and internal peer schemas are independent; see [protocols](protocols.md).
+## Public requests and completion
 
-## Protocol and completion
+Read and Mutate are unary batch RPCs. Each request contains one Store name and an
+ordered list of canonical relative resources. Preparation validates every item
+before backend work. Results have the same length and position as the inputs.
+One batch can select several collections or indices within the same Store.
 
-`ExecuteRequest{request_id,store_name,command_payload}` carries one complete Command. The first valid
-request fixes the local Store and runtime; the client selects one instance. Every request repeats
-the same store_name. IDs are positive, strictly increasing unsigned integers;
-gaps are legal, reuse and overflow are not. They associate results only: no durable
-deduplication or exactly-once guarantee exists.
+A shared execution constructor validates the complete public batch once and
+borrows its immutable request fields. It decodes relative path segments into
+internal records before backend preparation. Adapters consume those prepared
+records and validate database-specific targets and documents; they do not copy
+request DTOs, build full Store URIs or repeat public protocol validation.
 
-The payload is protobuf `Command` version 1. Every adapter has one strict preparation
-entry, which rejects unknown fields recursively, missing operations and unknown
-versions. Adding incompatible semantics requires a new supported version; unknown
-versions fail, rather than being guessed from document contents. Configuration
-selects MongoDB, Elasticsearch or OpenSearch; the envelope has no backend selector.
+Mutate is not a transaction. Same-resource mutations execute in input order,
+including after a failed item; different keys can share a physical batch. Separate
+RPCs retain normal backend concurrency semantics. There is no durable request
+ID, deduplication or exactly-once guarantee.
 
-The [adapter payload contract](route-payloads.md) defines media profiles, targets
-and validation boundaries. A Command contains a read, mutation, scan or bounded native operation. Resource paths
-are relative to the Store and canonical, for example `db/collection/s:one` for
-MongoDB and `index/s:one` for Search. Full `weir://` wire resources are rejected.
-The adapter converts a relative target to its private canonical identity. Same
-Store calls can select different collections/indices within a single RPC.
+Execute accepts exactly one version-1 Scan or Native Command and streams typed
+version-1 Events. It has no input pump, correlation IDs, byte-fragment assembly
+or separate request-complete frame. A scan page emits documents then ScanEnd;
+a native operation emits metadata, ordered chunks and NativeEnd. Streaming
+success requires a validated terminal and final gRPC OK. A scan checkpoint also
+requires its terminal document count to match complete delivery.
 
-`ExecuteResponse{request_id,event_fragment,request_complete}` carries arbitrarily split bytes of a length-delimited
-sequence of Event version 1 protobuf messages. Individual Events are bounded;
-clients can decode one Event at a time. Record Events contain a read result or
-mutation outcome. Scans emit a finite page of document Events followed by ScanEnd with a page count,
-failure, and either a next continuation token or explicit exhaustion. Native exchanges emit response metadata, byte chunks and NativeEnd with
-transport completeness; native errors remain backend data. The execution DTO
-Result index mirrors the outer ID for adapter result correlation.
+Individual business failures are typed results or terminal Events. RPC failures
+are gRPC status. NOT_STARTED requires evidence of no backend attempt; NOT_APPLIED
+requires definite rejection or evidence of no send; APPLIED requires a validated
+acknowledgement; otherwise mutation outcome is UNKNOWN. APPLIED can include a
+failure of a later acknowledgement step without losing application evidence.
+A failed unary RPC or invalid batch response confirms none of its submitted
+mutations. Neither server nor SDK automatically replays possible writes.
+NativeEnd evidence can survive a later transport error, but that RPC still failed.
 
-The final response for each ID is a separate empty `request_complete=true` frame. It is valid
-only after a complete terminal business Event, with no undecoded bytes. Data or
-another end after completion is invalid. A finite RPC succeeds only after input
-half-close, completion of every submitted request and final gRPC OK/EOF. There is
-no batch Open, batch End or whole-stream result table.
+## Native gRPC ingress
 
-Backend failures are typed business results; route/envelope/transport failures are
-gRPC status. A mutation is NOT_STARTED only with evidence that no backend attempt
-started, NOT_APPLIED only with definite rejection or definite evidence that the
-request was not sent, APPLIED only with a validated
-acknowledgement, otherwise UNKNOWN. A late protocol error or disconnect does not
-roll back preceding writes. Uncompleted writes are indeterminate. Weir never
-replays a possible mutation. Received acknowledged outcomes remain evidence even
-if another request or final transport status fails.
-APPLIED can include a typed failure of a later acknowledgement step, such as
-replica confirmation; the failure does not erase positive application evidence.
+The server uses grpc.Server.Serve on a bounded listener. Application listeners
+serve only the public StoreService; peer listeners serve only SyncDirectory.
+Control calls have separate finite admission and short deadlines. InTapHandle
+reserves an RPC slot before DATA decoding. Request deadlines, cancellation and
+input-stall watchdogs apply to unary and streaming requests. An expired request
+that never reaches a handler still releases its slot.
 
-## Discovery and direct transport
+The SDK reuses round-robin channels with native adaptive HTTP/2 flow control.
+Directory and DNS refresh change selection for future RPCs without moving an
+active call. No custom HTTP ServeHTTP bridge or static 65-KiB flow-control window
+is retained. Both listeners require deployment-isolated networking; the directory
+contains only public ownership/address advertisements, never backend credentials.
 
-Application listeners expose ResolveStore and Execute. Peer listeners expose bounded
-PeerDiscoveryService.SyncDirectory controls. Each process owns one directory shared by its
-listeners. Control requests have separate finite admission and short deadlines;
-periodic peer synchronization cannot consume every business session slot.
+## Memory and admission
 
-A Store group publishes reachable DNS/IP host:port targets. Client initialization
-resolves each requested Store through any seed node, then opens reusable
-round-robin channels to the returned business instances. Directory mapping
-refresh and proactive DNS refresh update new-RPC selection. An active Execute
-remains pinned to its original instance. No business payload crosses a peer
-SyncDirectory or another Weir's Execute. An unknown local destination is rejected before
-Store execution.
-
-The existing finite lifetime, cancellation, half-close, bounded outstanding IDs
-and input/output flow control apply to direct Execute. Input EOF stops new business
-requests while remaining results drain. Shutdown stops new admission/input and
-lets admitted work drain within a bounded deadline. Cancellation and transport
-failure never prove an uncompleted write was not applied and never trigger
-business replay.
-
-Both plaintext listeners require deployment-isolated networking. The synchronized
-directory carries only public Store/group/peer/target advertisements, never
-backend connection configuration or credentials.
-
-## Memory and backpressure
-
-| Budget | Bound |
+| Budget | Default or bound |
 | --- | --- |
-| Complete Command | 9 MiB; gRPC Request limit adds 128 bytes envelope allowance |
-| Record | 2 MiB opaque document; typed Lua values remain limited to 256 KiB |
-| Native body | Mongo command 4 MiB; Search body 8 MiB |
-| Response frame | 64 KiB payload plus bounded protobuf overhead |
-| Event | 2 MiB plus 8 KiB metadata/framing allowance |
-| RPC correlation ledger | 8 unfinished IDs and 16 MiB request wire charges |
-| Store pending input | 256 operations / 32 MiB including prepared copies |
-| Store retained output | 128 operations / 32 MiB reservations |
-| Store backend workspace | 128 MiB; physical batch reserves 24 MiB scratch |
-| Physical batch output | 8 MiB worst-case reservations, so at most 3 maximum-size reads |
-| Physical batch input | 8 MiB charged bytes and configured operation cap (default 16) |
-| Default application ingress | 4 business RPCs, 16 accepted application connections |
-| Directory controls | 2 concurrent controls per listener, 16 independent peer connections; 2 MiB exchanges |
-| Process base reserve | 64 MiB including bounded directory/control workspace |
+| Complete Read/Mutate protobuf request or response | 32 MiB, including repeated-item envelope bytes |
+| Record document | 2 MiB; ordinary Read additionally obeys max_read_size |
+| Ordinary Read source | Default 16 KiB; configurable 1 KiB–2 MiB |
+| Native body | MongoDB 4 MiB; Search 8 MiB |
+| Execute Event | 2 MiB plus bounded framing/metadata allowance |
+| Store pending requests | 256 entries / 32 MiB of prepared input |
+| Store retained results | 128 live entries / 32 MiB |
+| Store backend workspace | 384 MiB; configurable with working_memory |
+| Physical batch input | 8 MiB / 32 operations, configurable |
+| Application admission | 4 business RPCs / 16 accepted connections |
+| Encoded native output queue | max_sessions × 32 MiB |
+| Directory controls | 2 concurrent controls per listener; bounded exchanges |
+| Process admission threshold | 2 GiB |
 
-A request credit is reserved before application Recv. The ledger stores only ID
-and byte charges and deletes them when the request end is sent. A single decoded
-input waiting for downstream/scheduler admission is included in the RPC envelope;
-no historical ID set, whole-batch buffering or unbounded application channel exists.
-Event queues contain one borrowed Event. The emitter retains its reservation until
-this node finishes sending that Event; Send is not acknowledgement of peer receipt.
+There is no public item-count limit. Complete encoded bytes, real backend limits
+and declared memory budgets determine capacity. Runtime counters, session counts
+and configured execution concurrency must fit the process memory envelope.
 
-`ServeHTTP` gRPC otherwise drains input eagerly: creditedBody explicitly bounds
-read-ahead to one maximum request frame. HTTP2 receive windows are 65535 bytes per
-stream/connection with 16 KiB frames. Client channels use static 65535-byte
-windows, 16 KiB read/write buffers, bounded sockets, zero retry history and bounded
-message/header sizes. The declared per-RPC 64 MiB envelope counts input read-ahead,
-protobuf decoding/encoding copies, one response encoding and transport buffers in
-addition to the application ledger. Result/backend reservations are separately
-bounded per Store. Increasing batch length does not increase these live budgets.
+Before protobuf object construction, a wire pre-scan checks repeated-item
+metadata against the same 32-MiB terminal-envelope budget. This prevents tiny
+encoded items from amplifying into unbounded decoded objects. A failure at this
+stage follows the native gRPC decoder status, with an explicit budget diagnostic.
+It allocates no item objects and performs no backend work.
 
-App configuration rejects a process memory threshold smaller than the conservative
-sum of RPC, connection, Store and directory/control envelopes. The default threshold is
-1 GiB. It is an admission/overload threshold, not an OS allocator/RSS limit: GC
-slack, native allocations and runtime overhead remain observable separately.
-Lua programs must be trusted: the in-process VM has source/value/stack limits,
-four concurrent evaluations and a 500 ms deadline, but no hard VM allocation cap.
-It must not be described as an allocation sandbox.
+A complete client batch owns one prepared request, one admission ticket, one
+cancellation watcher and one result table. Record terminal envelopes reserve
+small fixed charges. Read data reserves actual copied bytes before retention;
+max_read_size is an acceptance limit rather than a per-record reservation.
+Insufficient result credit produces an individual ResourceExhausted result instead
+of waiting while holding a partially filled response. Mutation acknowledgement
+and failure envelopes retain reserved space.
 
-## Execution and batching
+Backend working charges cover bounded native replies and decoding scratch.
+MongoDB uses its native bounded cursor reply; Search caps multi-get response bytes.
+Physical grouping does not multiply the maximum document size by the item count.
+`working_memory` is a byte budget, and `max_concurrency` is an independent upper
+bound. The smaller capacity applies. At `max_read_size: 2MiB`, a MongoDB read batch
+reserves 40.125MiB and a Search batch reserves 96MiB; the default workspace permits
+9 and 4 such batches respectively. Size the workspace for the required concurrency
+and increase process `memory` to cover it. Configuration rejects an insufficient
+process envelope before opening backends.
+Encoded response bytes remain charged until the native transport frees its final
+buffer reference, including after handler completion. Exhausted output capacity
+fails boundedly. Application result charges end after native serialization/enqueue.
 
-One Store scheduler admits every Command with input, output and workspace charges.
-It selects compatible adapter batch keys under count/input/result/workspace bounds,
-and waits at most `batch_collect` (default 5 ms, configurable 0–10 ms). A near-deadline
-item dispatches without waiting to fill the batch. Ordinary MongoDB requests batch
-by namespace; Search requests batch by concrete index. Options and transaction
-semantics are validated by the adapter; incompatible work executes singly.
+Configuration validates a conservative sum of connection, RPC, Store and control
+envelopes. This is admission accounting, not an allocator or RSS limit: GC slack,
+runtime stacks and native allocations remain observable separately. Deployments
+must set their OS/container limit and observe overload shedding. Lua is a trusted
+program facility with source/value/stack/concurrency/deadline limits, without a
+hard VM allocation sandbox.
 
-Ordinary Record Read reserves `max_read_size` source bytes (default 16 KiB,
-configurable 1 KiB–2 MiB). Smaller declarations allow more small reads within the
-same bounded batch result budget. An oversized source fails with
-`RESOURCE_EXHAUSTED`; datasets with larger sources must explicitly raise the limit.
-This setting does not constrain writes, Scan, Native or
-Lua/expression results. Search bounds each multi-get response by these source
-reservations. MongoDB collections and Search indexes are checked on first use.
-Each Store adapter retains up to 64 successful target metadata checks for its
-lifetime, so subsequent batches perform business I/O without repeating collection
-or index metadata queries. Concurrent cold requests on the same target share one
-check; failed or canceled checks are not retained. When full, the oldest completed
-target is evicted and checked again on its next use. If all 64 checks are pending,
-additional targets wait for a slot with their execution deadline.
+## Scheduling and backend work
 
-Target structure is a deployment prerequisite: collection type/collation and
-index routing, stored source and pipeline settings must stay stable while the
-Store is open. Recreating a collection/index or changing these settings requires
-reopening the Store or restarting its owning nodes before resuming traffic.
-The cache retains structural capabilities, not authorization: every actual
-backend read/write command still enforces current database permissions.
+A complete batch enters the Store scheduler directly; there is no collection
+window. Compatible items group by target namespace, action, actual input bytes
+and max_batch_operations. Repeated mutation keys start a new sequential wave.
+Incompatible operations execute separately. One adapter implementation handles
+both record groups and Scan/Native plans.
 
-The defaults collect at most 32 operations per batch and allow at most 2 concurrent
-backend executions, following the small-document resource tuning tests. Collection
-can add 5 ms of latency at low traffic; operators should adjust the window and read
-limit for their workload. These are starting values, not a maximum-capacity claim.
+MongoDB collections and Search indices receive a structural metadata check on
+first use, cached per Store for up to 64 targets. Concurrent cold requests share
+one check; failed checks are not cached. The oldest completed target is evicted
+when full. Structure must remain stable while the Store is open; changes require
+reopening the Store. Actual commands still enforce current database permissions.
 
-Each Store maintains one adaptive execution window, bounded by `max_concurrency`.
-Explicit database congestion or an owned backend timeout halves the window and
-pauses dispatch for 100–300 ms. Successful record batches and Scan pages also
-train at most 64 latency profiles, grouped by target, operation kind, operation
-count and average input size. Four healthy samples establish a mean baseline;
-ordinary successful completions then update it in both directions with a 1/8
-EWMA. Queued slow work does not raise the baseline, so sustained pressure cannot
-become normal merely through continued observation. Three
-slow saturated samples within one second spanning at least 100 ms, exceeding
-twice that baseline plus 2 ms and representing at least 10% of comparable healthy
-batch or Scan-page completions in that profile, reduce the window by one when
-compatible work is waiting. Healthy completions without queue pressure also
-count in that denominator. This is a bounded evidence interval that resets on
-confirmation or after one second, rather than a full sliding-second record ratio. Saturation includes
-workspace pressure that prevents the next independent batch from fitting.
-Successful slow work continues at window one; repeated explicit congestion can
-still pause dispatch there. Recovery requires healthy saturated work and at
-least 250 ms between increases, with one second free of confirmed latency
-pressure before recovery. Fast quota bursts preserve recent slow evidence;
-tails below the confirmation thresholds cannot renew the shared recovery hold. Confirmed pressure
-on another target still blocks Store recovery.
-Native streaming and Lua execution do not train
-these latency profiles; complete MongoDB `ok: 1` replies and Search GET 2xx
-replies can probe one additional slot per second. Opaque Search POST replies
-are neutral. Successful work from an older window contributes comparable
-latency statistics but cannot change the new window or renew its recovery hold.
-Canceled callers and partial canceled batches cannot train latency, erase
-independent pressure evidence or trigger recovery. Slow successful responses are an overload signal, rather than a direct
-measurement of database CPU: Weir CPU pressure can also increase adapter latency.
+Each Store dispatches while configured max_concurrency and backend working bytes
+permit. Database latency does not train a second concurrency controller. Backend
+failures are returned to callers without automatic retries; pending work remains
+bounded by queue bytes and deadlines.
 
-Responses for different IDs can interleave and arrive out of order, including
-responses for the same record; fragments within one ID stay in order. Within one RPC,
-requests targeting the same record execute in input order, including across
-physical batches; active keys are released after execution, without historical
-state. Separate RPCs and native requests retain backend concurrency semantics;
-request IDs do not serialize external writers or create transactions.
+Scan fetches one bounded document step at a time and releases the execution permit
+before publication. A blocked scan at concurrency one allows independent record
+work. Each new page is a new Execute RPC and can select another instance. MongoDB
+uses ascending original BSON _id keysets without a retained cursor or cross-page
+snapshot. Search carries the latest PIT and search_after values; the backend
+snapshot has a 60-second keep-alive. Expiration fails explicitly. A previously
+published PIT remains available after a later failed/exhausted page until expiry.
+Checkpoint tokens are bounded, opaque and tied to the target/selector/profile;
+the checksum detects corruption and is not authentication.
 
-A physical batch uses a shared bounded backend context and each plan retains its
-caller context. One expired/canceled item is skipped before its next attempt,
-without canceling other interested callers. When all abandon a batch, backend work
-is canceled. Record results are published through independently bounded ticket
-publishers after the execution permit is released, so a slow RPC does not block
-other RPCs in the same physical batch.
+Native execution is a singleton with bounded streaming and backend time. MongoDB
+qualification and native command share a deadline; Search counts actual backend
+I/O time and pauses that allowance during publication. Lua uses native MongoDB
+transactions or Search sequence/primary-term CAS. Transactions are not merged
+across requests, and ambiguous failures cannot start a new mutation attempt.
 
-Search records can prove a failed bulk write was not applied when the standard
-HTTP transport never acquired a connection, or execution stopped before the HTTP
-attempt. After connection acquisition, an incomplete acknowledgement remains
-UNKNOWN; writes are not replayed. A received valid mutation result remains
-evidence even when a later RPC end frame or trailer is lost.
+Shutdown refuses new admission and drains admitted work within a deadline.
+Cancellation stops owned work without claiming a write was not applied. Output
+stalls may close the affected transport; business writes are never replayed.
 
-Canceling a blocked response interrupts that HTTP/2 stream through its owned
-deadlines. A transport stall watchdog can still close the shared connection to
-bound an unresponsive peer. Cancellation alone does not close sibling streams.
+## Validation
 
-Scan admits one finite page per Command: `page_size=0` selects 128 documents, and the
-maximum is 256. Each scheduler step fetches at most one document, with no prefetch
-and FIFO continuation after publication. Sending a document does not retain an
-execution permit, so a stalled scan at concurrency one permits short record work.
-
-The client starts a new finite Execute RPC for each page and supplies the previous
-`next_continuation_token`. A live Execute remains pinned to one business instance,
-but the next RPC can select any instance serving the same Store and backend. No
-Weir session, process registry or shared task storage survives between scan pages.
-A page succeeds only after its ScanEnd count, request end frame and final gRPC OK;
-only then may the client commit its token. If delivery fails, the previous token
-remains the checkpoint. Replaying a page can repeat already consumed documents.
-
-MongoDB performs a bounded `find` with `singleBatch=true`, ascending `_id` sort
-and the `_id` index. The token carries the last original BSON `_id`; the next query
-uses an indexed `$expr` comparison with the last ID as a `$literal`. This preserves
-BSON cross-type ordering, including MinKey and MaxKey, without a retained MongoDB
-session or cursor. Projection must preserve the original `_id`, and alternate
-sort orders are rejected. Each query sees its own database state; concurrent inserts, deletes or filter changes
-can change the traversal. This is not a snapshot across pages.
-
-Search's token carries the latest backend PIT ID and `search_after` value. The PIT
-preserves the index snapshot and can be used by another Weir instance. Once a PIT
-has been passed to the client, later page failures and exhaustion leave it available
-until its 60-second keep-alive expires. This lets the client retry its last committed
-checkpoint when a terminal response is lost. A newly opened PIT that has never been
-passed to the client is cleaned up on failure or immediate exhaustion. An expired
-PIT fails rather than silently starting a different snapshot.
-
-Continuation tokens are bounded, versioned client inputs tied to the Store,
-resource, selector, representation and backend dialect. They are opaque to clients;
-their checksum detects corruption and is not authentication. Backend permissions
-remain the access boundary. This replaces the old whole-traversal Scan semantics;
-servers and clients must upgrade together because unknown fields fail
-strict validation.
-Native exchange is a singleton that can hold one execution permit during bounded
-backend streaming; slow output is canceled by the transport progress budget.
-The backend timeout defaults to 2 seconds. Native MongoDB qualification and command
-execution share one deadline; Search accumulates qualification, request and body
-read time, pausing its I/O allowance while publishing responses. Backpressure
-does not consume that allowance or grant a fresh allowance on the next read.
-Scan pages and Lua operations retain the scheduler's backend timeout; their
-publication starts after execution, outside that timeout.
-
-Lua runs in the main Weir process. MongoDB read-modify-write programs preserve
-independent transactions and same-transaction commit resolution; Search preserves
-native sequence/primary-term CAS. Arbitrary write failures cannot start a new
-mutation attempt. Lua transactions are never merged into one cross-request
-transaction merely to form a batch. Partial successes and unknown acknowledgements
-retain their per-request evidence.
-
-## Clients and validation
-
-The independent [Go SDK](https://github.com/batchstream/weir-go)
-(`github.com/batchstream/weir-go`, package `weir`) provides `weir.Execute`, which
-accepts an incremental producer and consumer and synchronously
-returns after all request ends and final status. It sends and receives concurrently
-with eight input slots/16 MiB charges. Complete observes each validated request end;
-Consume exposes bounded incremental Events. Callbacks must honor context and release
-Events on return. `Read` and mutation methods collect one bounded business result; collecting an
-entire batch in application callbacks requires memory for that entire batch.
-The SDK can return a validated result together with an RPC error after a lost
-end frame or failing final status. Preserve that result as backend evidence and
-check the error separately for complete RPC success.
-Reuse a connection across finite RPCs; a permanently open stream is unnecessary.
-Use static gRPC windows/buffers for the same client transport budget as the server.
-
-Default Go/Python tests are offline safe. Real MongoDB/Search suites use explicit
-integration flags and owned loopback fixtures. The coverage map and validation
-report distinguish mock/transport proof, actual database proof, current measurements
-and historical reports. Independent PR review runs against the current commit and
-must be repeated after confirmed fixes. This refactor does not authorize deployment.
+The versioned Go SDK exposes typed Read, Mutate, single-record helpers, Scan and
+Native. It depends on weir-protocol, not the Weir server module. Default Go/Python
+tests are offline safe. Real databases, process lifecycle, memory pressure and
+Kubernetes tests require explicit opt-ins. Standalone weir-tests verifies public
+behavior and measures matched direct/Weir workloads from immutable source and
+version pins. Compilation, local database execution and Linux capacity evidence
+are reported separately. Independent review is repeated after confirmed fixes.

@@ -23,7 +23,7 @@ const (
 	MaxSyncBytes      = 2 << 20
 	SyncTimeout       = 2 * time.Second
 	Lease             = 60 * time.Second
-	maxWatermarks     = 512
+	MaxAnnouncements  = 512
 	heartbeatInterval = 5 * time.Second
 	syncInterval      = time.Second
 )
@@ -193,7 +193,7 @@ func validateAnnouncement(ad *peerpb.NodeAnnouncement) error {
 }
 
 func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error {
-	if len(nodes) > maxWatermarks {
+	if len(nodes) > MaxAnnouncements {
 		return status.Error(codes.ResourceExhausted, "directory node bound exceeded")
 	}
 	seen := make(map[string]bool, len(nodes))
@@ -241,7 +241,7 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 			}
 		}
 	}
-	if len(d.records)+newRecords > maxWatermarks || live > MaxNodes {
+	if len(d.records)+newRecords > MaxAnnouncements || live > MaxNodes {
 		return status.Error(codes.ResourceExhausted, "directory capacity exhausted")
 	}
 	for _, ad := range nodes {

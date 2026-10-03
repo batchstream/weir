@@ -51,21 +51,21 @@ diagnostics:
   allow_intranet: false
 
 # Process admission/overload budget, not an OS-enforced memory limit.
-# Required: no. Default: "1GiB".
+# Required: no. Default: "2GiB".
 # Allowed: integer + B | KiB | MiB | GiB, from 64MiB through 64GiB inclusive.
 # Examples: "67108864B", "512MiB", "1GiB". Fractional sizes are not accepted.
 # Set the deployment/container memory limit separately.
-memory: "1GiB"
+memory: "2GiB"
 
 # Shared ingress connection/session admission and RPC deadlines.
 # Required: no. Default: all child defaults below. Allowed: this mapping.
 transport:
   # Maximum accepted data-plane connections on application business ingress.
-  # Required: no. Default: 16. Allowed: integer 1..64.
+  # Required: no. Default: 16. Allowed: positive integer; the declared memory budget must fit.
   max_connections: 16
 
-  # Maximum concurrent data-plane sessions on application business ingress.
-  # Required: no. Default: 4. Allowed: integer 1..64.
+  # Maximum concurrent business RPCs on application business ingress.
+  # Required: no. Default: 4. Allowed: positive integer; reserve 96 MiB per RPC.
   max_sessions: 4
 
   # Total RPC lifetimes and stream-progress timeout.
@@ -74,12 +74,12 @@ transport:
   # Supported units: ns, us/µs/μs, ms, s, m, h; combined forms such as "1m30s"
   # are accepted. Values must be positive and within each field's upper bound.
   timeouts:
-    # Maximum lifetime of one finite Route batch.
-    # Required: no. Default: "15m". Allowed: duration > 0 and <= 15m.
+    # Maximum lifetime of one business RPC.
+    # Required: no. Default: "15m". Allowed: positive duration.
     route: "15m"
 
     # Maximum wait for transport/stream progress.
-    # Required: no. Default: "30s". Allowed: duration > 0 and <= 30s.
+    # Required: no. Default: "30s". Allowed: positive duration.
     stall: "30s"
 
 # Peer directory synchronization is optional for a standalone node.

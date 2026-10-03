@@ -1,18 +1,16 @@
 package testutil
 
 import (
-	"testing"
-
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"testing"
 )
 
-func TestSDKCommandRejectsMissingTransform(t *testing.T) {
+func TestReadAndMutateFixturesValidateTypedBatchRequests(t *testing.T) {
 	action := &pb.MutateRequest_AtomicTransform{}
 	mutation := &pb.MutateRequest{Resource: "records/s:key", Action: action}
-	operation := &pb.Command_Mutate{Mutate: mutation}
-	command := &pb.Command{Version: 1, Operation: operation}
-	result, err := SDKCommand(command)
-	if err == nil || result != nil {
-		t.Fatal("missing transform was accepted by the SDK fixture bridge", result, err)
+	request := &pb.MutateBatchRequest{StoreName: "store", Requests: []*pb.MutateRequest{mutation}}
+	if err := protocol.ValidateMutateBatchRequest(request); err == nil {
+		t.Fatal("missing transform accepted")
 	}
 }

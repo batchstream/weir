@@ -54,6 +54,9 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
+	// Keep transport admission above the largest backend concurrency so the
+	// overload phase observes queued work as well as transport rejections.
+	cfg.Basic.Transport.MaxSessions = 8
 	cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0", "127.0.0.1:0"
 	cfg.Basic.Discovery.Group = "records"
 	cfg.Routing.Stores = []StoreConfig{service}
@@ -156,8 +159,8 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 		return a == 0
 	})
 	for _, e := range peers {
-		if window := budgetWindow(t, e.process); window != e.concurrency {
-			t.Fatal("Search AIMD did not reach C", window, e.concurrency)
+		if capacity := budgetConcurrency(t, e.process); capacity != e.concurrency {
+			t.Fatal("Search configured concurrency changed", capacity, e.concurrency)
 		}
 	}
 	gate := make(chan struct{})
@@ -175,10 +178,10 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 		current, peak := e.proxy.sockets()
 		budgetOwner(t, e.process, e.locals, e.concurrency+1)
 		metrics := testmetrics.Scrape(t, e.process.diagnostic)
-		if testmetrics.Sum(metrics, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(metrics, "weir_store_window_limit") != float64(e.concurrency) {
+		if testmetrics.Sum(metrics, "weir_store_active_executions") != float64(e.concurrency) || testmetrics.Sum(metrics, "weir_store_concurrency_limit") != float64(e.concurrency) {
 			t.Fatal("Search runtime assembly")
 		}
-		t.Logf("barrier PID=%d active=window=C=%d upstream TCP=%d peak=%d", e.process.command.Process.Pid, e.concurrency, current, peak)
+		t.Logf("barrier PID=%d active=C=%d upstream TCP=%d peak=%d", e.process.command.Process.Pid, e.concurrency, current, peak)
 	}
 	close(gate)
 	observation.hold(nil, 0)
@@ -197,16 +200,24 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	close(nativeGate)
 	peers[2].proxy.observation.hold(nil, 0)
 	workers.Wait()
-	// A synthetic 429 on only one executor's proxy proves independent AIMD;
-	// the overload segment below is real admission pressure, not this fault.
+	// A synthetic 429 preserves backend failure feedback without changing
+	// configured execution capacity. The overload segment uses real admission.
 	peers[2].proxy.reject.Store(true)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	request := &pb.ReadRequest{Resource: peers[2].root + "/s:seed"}
-	_, _ = testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(request))
+	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(request))
 	stop()
 	peers[2].proxy.reject.Store(false)
-	if budgetWindow(t, peers[2].process) != 2 || budgetWindow(t, peers[1].process) != 2 {
-		t.Fatal("AIMD instances not independent")
+	if faultError != nil || faultResult.GetRead().GetFailure() == nil {
+		t.Fatal("Search congestion lost its read failure", faultError, faultResult)
+	}
+	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
+		t.Fatal("Search backend failure changed configured execution limits")
+	}
+	feedbackLabels := map[string]string{"feedback": "congested"}
+	feedback := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_feedback", feedbackLabels)
+	if feedback.GetGauge().GetValue() != 1 {
+		t.Fatal("Search backend congestion was not observable")
 	}
 	for _, e := range peers {
 		searchBudgetRead(t, e)
@@ -251,7 +262,7 @@ func searchBudgetOverload(t *testing.T, peers []*searchBudgetExecutor, o *budget
 	t.Helper()
 	expected := 0
 	for _, e := range peers {
-		expected += budgetWindow(t, e.process)
+		expected += budgetConcurrency(t, e.process)
 	}
 	gate := make(chan struct{})
 	o.hold(gate, 0)
@@ -330,6 +341,10 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 		status, _ := f.Backend.Do(t, "PUT", "/"+f.Backend.Index+"/_create/race-create", `{"n":1}`)
 		if status == 201 {
 			wins.Add(1)
+		} else if status == 429 {
+			// The owned backend deliberately has one write worker and one
+			// queue entry. A capacity rejection cannot count as a Create win.
+			t.Log("native Create rejected at the configured backend capacity")
 		} else if status != 409 {
 			t.Error("native create", status)
 		}
@@ -340,45 +355,31 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 		t.Fatal("atomic create winner", wins.Load())
 	}
 	for _, e := range peers {
-		stream := testutil.OpenEvents(ctx, e.client, "records")
-		for i := 0; i < 4; i++ {
+		requests := make([]*pb.MutateRequest, 0, 4)
+		for i := range 4 {
 			request := searchBudgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			mutation := &pb.Operation_Mutate{Mutate: request}
-			op := &pb.Operation{Index: uint64(i), Operation: mutation}
-			_, item := testutil.OperationCommand(op)
-			frame := item
-			if err := stream.Send(frame); err != nil {
-				t.Fatal(err)
-			}
+			fixture := testutil.RecordCommand(request)
+			requests = append(requests, fixture.Operation.GetMutate())
 		}
-		if err := stream.CloseSend(); err != nil {
-			t.Fatal(err)
+		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
+		reply, err := e.client.Mutate(ctx, batch)
+		if err != nil || len(reply.GetResults()) != len(requests) {
+			t.Fatal("Search batch association", reply, err)
 		}
-		seen := make(map[uint64]bool)
-		for range 4 {
-			reply, err := stream.Recv()
-			item := reply.GetResult()
-			if err != nil || item == nil || item.Index >= 4 || seen[item.Index] {
-				t.Fatal("Search Bulk association", reply, err)
-			}
-			seen[item.Index] = true
-			result := item.GetMutation()
-			status, _ := f.Admin.Do(t, "GET", fmt.Sprintf("/%s/_doc/bulk%d-%d", f.Backend.Index, e.concurrency, item.Index), "")
+		for i, result := range reply.Results {
+			status, _ := f.Admin.Do(t, "GET", fmt.Sprintf("/%s/_doc/bulk%d-%d", f.Backend.Index, e.concurrency, i), "")
 			switch result.GetOutcome() {
 			case pb.MutationOutcome_APPLIED:
 				if status != 200 {
-					t.Fatal("false applied Bulk", status)
+					t.Fatal("false applied batch", i, status)
 				}
 			case pb.MutationOutcome_NOT_APPLIED:
 				if status != 404 || result.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
-					t.Fatal("false not-applied Bulk", status, result)
+					t.Fatal("false not-applied batch", i, status, result)
 				}
 			default:
-				t.Fatal("unexpected Bulk evidence", result)
+				t.Fatal("unexpected batch evidence", i, result)
 			}
-		}
-		if _, err := stream.Recv(); err != io.EOF {
-			t.Fatal(err)
 		}
 	}
 	f.Admin.Do(t, "POST", "/"+f.Backend.Index+"/_refresh", "")
@@ -467,7 +468,7 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 		time.Now().UTC().Format(time.RFC3339Nano),
 		replacement.process.command.Process.Pid,
 	)
-	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_window_limit") != 2 {
+	if testmetrics.Sum(testmetrics.Scrape(t, replacement.process.diagnostic), "weir_store_concurrency_limit") != 2 {
 		t.Fatal("two Search Local budgets merged")
 	}
 	n, _ := replacement.proxy.sockets()

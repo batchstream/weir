@@ -131,7 +131,7 @@ func ownerMutation(t *testing.T, a *Adapter, database, id string) *execution.Pla
 	req := &pb.MutateRequest{Resource: "weir://mongo/" + database + "/records/s:" + id, Action: put}
 	mutation := &pb.Operation_Mutate{Mutate: req}
 	op := &pb.Operation{Operation: mutation}
-	plan, failure := a.prepareRecord(op)
+	plan, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}

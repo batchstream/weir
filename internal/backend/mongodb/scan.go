@@ -19,7 +19,7 @@ import (
 // cursor batch decoding. Reserve both wire buffers plus bounded metadata/framing;
 // this is separate from the one output-frame credit, not a claim about RSS.
 const scanPageBudget = 24 << 20
-const scanNativeLimit = 8 << 20
+const scanNativeLimit = (16 << 20) + (64 << 10)
 
 type scanPlan struct {
 	count             uint64

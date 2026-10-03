@@ -3,8 +3,8 @@ module github.com/batchstream/weir
 go 1.27.1
 
 require (
-	github.com/batchstream/weir-go v0.3.0
-	github.com/batchstream/weir-protocol v0.1.0
+	github.com/batchstream/weir-go v0.4.2
+	github.com/batchstream/weir-protocol v0.2.1
 	github.com/ebitengine/purego v0.10.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2

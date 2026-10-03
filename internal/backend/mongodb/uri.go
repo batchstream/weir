@@ -17,7 +17,7 @@ const maxMongoURIBytes = 4096
 // ValidateConfig is pure and accepts only the audited single-endpoint profiles.
 // Credentials are supplied separately; the URI never carries user information.
 func ValidateConfig(cfg Config) error {
-	if cfg.Pool < 1 || cfg.Pool > 32 {
+	if cfg.Pool < 1 {
 		return errors.New("invalid MongoDB configuration")
 	}
 	if cfg.MaxReadSize != 0 && (cfg.MaxReadSize < 1024 || cfg.MaxReadSize > protocol.MaxDocument) {
@@ -92,7 +92,7 @@ func ValidateConfig(cfg Config) error {
 		}
 		return nil
 	}
-	if options["authmechanism"] != "SCRAM-SHA-256" || !namespacePattern.MatchString(options["authsource"]) || options["tls"] != "true" {
+	if options["authmechanism"] != "SCRAM-SHA-256" || !validNamespaceName(options["authsource"]) || options["tls"] != "true" {
 		return errors.New("authenticated MongoDB connections require explicit SCRAM-SHA-256, authSource, and TLS")
 	}
 	if caFile, ok := options["tlscafile"]; ok && (caFile == "" || strings.ContainsAny(caFile, "\x00\r\n")) {

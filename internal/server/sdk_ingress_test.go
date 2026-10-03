@@ -21,14 +21,17 @@ import (
 
 type sdkIngressReadAdapter struct{}
 
-func (a *sdkIngressReadAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
-	request := call.GetRead()
+func (a *sdkIngressReadAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
+}
+
+func (a *sdkIngressReadAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
+	request := operation.GetRead()
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	}
-	variant := &pb.Operation_Read{Read: request}
-	operation := &pb.Operation{Index: id, Operation: variant}
-	plan := &execution.Plan{ID: id, Command: call, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: proto.Size(call) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: protocol.ResultOverhead}
+	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: proto.Size(operation) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: protocol.ResultOverhead}
 	return plan, nil
 }
 
@@ -37,9 +40,8 @@ func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Pl
 		read := protocol.Missing()
 		variant := &pb.Result_Read{Read: read}
 		result := &pb.Result{Index: plan.ID, Result: variant}
-		value := &pb.Event_Result{Result: result}
-		event := &pb.Event{Version: 1, Value: value}
-		if err := emit(plan, event); err != nil {
+		output := &execution.Output{Result: result}
+		if err := emit(plan, output); err != nil {
 			return execution.Neutral
 		}
 	}
@@ -71,7 +73,6 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 				names[i] = name
 				adapter := &sdkIngressReadAdapter{}
 				limits := store.DefaultLimits()
-				limits.Collect = 0
 				runtime, err := store.New(adapter, limits)
 				if err != nil {
 					t.Fatal(err)

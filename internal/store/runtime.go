@@ -14,28 +14,27 @@ import (
 
 type Limits struct {
 	PendingOperations, PendingBytes, ResultOperations, ResultBytes int
-	WorkingBytes, BatchResultBytes                                 int
-	Concurrency, BatchOperations, BatchBytes, SessionOutstanding   int
-	Collect, BackendTimeout                                        time.Duration
+	WorkingBytes                                                   int
+	Concurrency, BatchOperations, BatchBytes                       int
+	BackendTimeout                                                 time.Duration
 }
 
 func DefaultLimits() Limits {
 	limits := Limits{
 		PendingOperations: 256, PendingBytes: 32 << 20, ResultOperations: 128, ResultBytes: 32 << 20,
-		WorkingBytes: 128 << 20, BatchResultBytes: 8 << 20,
-		Concurrency: 2, BatchOperations: 32, BatchBytes: 8 << 20, SessionOutstanding: 8,
-		Collect: 5 * time.Millisecond, BackendTimeout: 2 * time.Second,
+		WorkingBytes: 384 << 20,
+		Concurrency:  2, BatchOperations: 32, BatchBytes: 8 << 20,
+		BackendTimeout: 2 * time.Second,
 	}
 	return limits
 }
 func (l Limits) Validate() error {
-	if l.PendingOperations < 1 || l.PendingOperations > 4096 || l.PendingBytes < protocol.MaxFrame ||
-		l.ResultOperations < 1 || l.ResultOperations > 4096 || l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
-		l.WorkingBytes < 24<<20 || l.BatchResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
-		l.Concurrency < 1 || l.Concurrency > 32 || l.BatchOperations < 1 || l.BatchOperations > 128 ||
+	if l.PendingOperations < 1 || l.PendingBytes < protocol.MaxFrame ||
+		l.ResultOperations < 1 || l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
+		l.WorkingBytes < 24<<20 ||
+		l.Concurrency < 1 || uint64(l.Concurrency) > (64<<30)/(2<<20) || l.BatchOperations < 1 ||
 		l.BatchBytes < protocol.MaxDocument+4096 || l.BatchBytes > 32<<20 ||
-		l.SessionOutstanding < 1 || l.SessionOutstanding > 32 || l.Collect < 0 || l.Collect > 10*time.Millisecond ||
-		l.BackendTimeout <= 0 || l.BackendTimeout > 10*time.Second {
+		l.BackendTimeout <= 0 {
 		return fmt.Errorf("invalid runtime bounds")
 	}
 	return nil
@@ -56,7 +55,6 @@ type Runtime struct {
 	wake, changed, done                     chan struct{}
 	closeOnce                               sync.Once
 	closeErr                                error
-	controller                              controller
 	metrics                                 runtimeMetrics
 }
 type Session struct {
@@ -91,36 +89,30 @@ type Ticket struct {
 	result               *pb.Result
 	ready                chan struct{}
 	sequence             string
-	eligible, queuedAt   time.Time
+	queuedAt             time.Time
 	state                uint8
 	abandoned, acked     bool
 	stopWatch            func() bool
+	bulk                 *PreparedBatch
+	results              []*pb.Result
+	resultCharge         int
 }
 type batch struct {
-	ctx              context.Context
-	items            []*Ticket
-	cancel           context.CancelFunc
-	epoch            uint64
-	saturated        bool
-	lowDemand        bool
-	backendDeadline  time.Time
-	timeoutOwned     bool
-	workingBytes     int
-	latency          latencyClass
-	duration         time.Duration
-	latencyEligible  bool
-	recoveryEligible bool
+	ctx             context.Context
+	items           []*Ticket
+	cancel          context.CancelFunc
+	backendDeadline time.Time
+	timeoutOwned    bool
+	workingBytes    int
 }
 type Snapshot struct {
-	Ready, ReadyBytes                                                                      int
-	Cooldown                                                                               bool
-	Feedback                                                                               string
-	Pending, PendingBytes, Active, Retained, ResultBytes, WorkingBytes, Publishers, Window int
-	Draining, Closed, Overloaded                                                           bool
-	LatencyBaseline, LatencySample                                                         time.Duration
-	LatencyProfiles, LatencyReadyProfiles                                                  int
-	LatencyRatio                                                                           float64
-	LatencyRecoveryHold                                                                    bool
+	Ready, ReadyBytes                     int
+	Pending, PendingBytes                 int
+	Active, Retained                      int
+	ResultBytes, WorkingBytes, Publishers int
+	ConcurrencyLimit                      int
+	Draining, Closed, Overloaded          bool
+	Feedback                              string
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -137,7 +129,6 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 }
 func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
 	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[string]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
-	runtime.controller.window = limits.Concurrency
 	runtime.metrics = newRuntimeMetrics()
 	return runtime
 }
@@ -174,10 +165,10 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if plan != nil && (plan.CleanupRequired || plan.Streaming) && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes <= 0 || plan.ResultBytes < 0 || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes || plan.ResultBytes > r.limits.BatchResultBytes)) {
+	if plan == nil || plan.Bytes <= 0 || plan.ResultBytes < 0 || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
 	}
-	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+plan.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+plan.ResultBytes > r.limits.ResultBytes || session != nil && session.outstanding >= r.limits.SessionOutstanding {
+	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+plan.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+plan.ResultBytes > r.limits.ResultBytes {
 		if session == nil {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
 		}
@@ -289,8 +280,15 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	}
 	t.released = true
 	delete(r.live, t)
-	r.pendingBytes -= t.plan.Bytes
-	r.resultBytes -= t.plan.ResultBytes
+	if t.bulk != nil {
+		r.pendingBytes -= t.bulk.bytes
+		r.resultBytes -= t.resultCharge
+		t.bulk = nil
+		t.results = nil
+	} else {
+		r.pendingBytes -= t.plan.Bytes
+		r.resultBytes -= t.plan.ResultBytes
+	}
 	if t.session != nil {
 		t.session.outstanding--
 	}
@@ -322,6 +320,10 @@ func (r *Runtime) cancelQueuedLocked() {
 			if r.closed {
 				failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
 			}
+			if t.bulk != nil {
+				r.completeBatchLocked(t, failure)
+				continue
+			}
 			var result *pb.Result
 			if t.plan.Operation != nil {
 				result = protocol.ResultError(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, failure)
@@ -333,9 +335,7 @@ func (r *Runtime) cancelQueuedLocked() {
 			}
 			if t.session != nil && !t.acked {
 				var events []*pb.Event
-				if result != nil {
-					events = []*pb.Event{resultEvent(result)}
-				}
+
 				r.startPublisherLocked(t, events, false)
 			}
 		} else {
@@ -348,14 +348,9 @@ func (r *Runtime) cancelQueuedLocked() {
 	r.queue = keep
 }
 func (r *Runtime) loop() {
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
 	defer close(r.done)
 	for {
-		select {
-		case <-r.wake:
-		case <-ticker.C:
-		}
+		<-r.wake
 		r.mu.Lock()
 		r.cancelQueuedLocked()
 		for b := range r.batches {
@@ -367,7 +362,7 @@ func (r *Runtime) loop() {
 				b.cancel()
 			}
 		}
-		for !r.closed && r.active < r.controller.window && time.Now().After(r.controller.cooldown) {
+		for !r.closed {
 			b := r.selectLocked(time.Now())
 			if b == nil {
 				break
@@ -382,14 +377,23 @@ func (r *Runtime) loop() {
 	}
 }
 func (r *Runtime) selectLocked(now time.Time) *batch {
+	if r.active >= r.limits.Concurrency {
+		return nil
+	}
 	seen := make(map[string]bool)
 	records := make(map[string]bool)
 	selected := make(map[*Ticket]bool)
 	var items []*Ticket
-	bytes, resultBytes := 0, 0
+	bytes := 0
 	var seed *Ticket
 	for _, t := range r.queue {
 		if t.state != 0 {
+			continue
+		}
+		if t.bulk != nil {
+			if len(items) == 0 && t.bulk.workingBytes <= r.limits.WorkingBytes-r.workingBytes {
+				return r.selectBatchLocked(t, now)
+			}
 			continue
 		}
 		if t.sequence != "" {
@@ -401,20 +405,16 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		if t.plan.WorkingBytes > r.limits.WorkingBytes-r.workingBytes {
 			continue
 		}
-		if t.eligible.IsZero() {
-			t.eligible = now
-		}
 		if seed == nil {
 			seed = t
 		}
-		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || records[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes || resultBytes+t.plan.ResultBytes > r.limits.BatchResultBytes) {
+		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || records[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes) {
 			continue
 		}
 		items = append(items, t)
 		selected[t] = true
 		records[t.plan.Key] = true
 		bytes += t.plan.Bytes
-		resultBytes += t.plan.ResultBytes
 		if len(items) >= r.limits.BatchOperations || seed.plan.Singleton {
 			break
 		}
@@ -434,16 +434,6 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			r.cancelQueuedLocked()
 			return nil
 		}
-	}
-	collect := !r.draining && !seed.plan.Singleton && len(items) < r.limits.BatchOperations && now.Sub(seed.eligible) < r.limits.Collect
-	for _, t := range items {
-		if deadline, ok := t.ctx.Deadline(); ok && deadline.Sub(now) <= r.limits.Collect {
-			collect = false
-			break
-		}
-	}
-	if collect {
-		return nil
 	}
 	latest := now
 	for _, t := range items {
@@ -472,9 +462,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			backendDeadline = deadline
 		}
 	}
-	b := &batch{ctx: ctx, items: items, cancel: cancel, epoch: r.controller.epoch, backendDeadline: backendDeadline, timeoutOwned: owned, workingBytes: workingBytes, recoveryEligible: true}
-	b.lowDemand = r.active == 0 && len(r.queue) == len(items)
-	b.latency, b.latencyEligible = classifyLatency(items)
+	b := &batch{ctx: ctx, items: items, cancel: cancel, backendDeadline: backendDeadline, timeoutOwned: owned, workingBytes: workingBytes}
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
@@ -494,54 +482,10 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	r.active++
 	r.workingBytes += workingBytes
 	r.batches[b] = struct{}{}
-	b.saturated = r.saturatedLocked()
 	r.notifyLocked()
 	return b
 }
 
-func (r *Runtime) saturatedLocked() bool {
-	if len(r.queue) == 0 {
-		return false
-	}
-	if r.active >= r.controller.window {
-		return true
-	}
-	remaining := r.limits.WorkingBytes - r.workingBytes
-	blocked := false
-	var seen map[string]struct{}
-	for _, ticket := range r.queue {
-		if ticket.state != 0 || ticket.ctx.Err() != nil || ticket.abandoned {
-			continue
-		}
-		if ticket.sequence != "" {
-			if r.keys[ticket.sequence] != nil {
-				continue
-			}
-			if _, duplicate := seen[ticket.sequence]; duplicate {
-				continue
-			}
-		}
-		if ticket.plan.WorkingBytes <= remaining {
-			return false
-		}
-		blocked = true
-		if ticket.sequence != "" {
-			if seen == nil {
-				seen = make(map[string]struct{})
-			}
-			seen[ticket.sequence] = struct{}{}
-		}
-	}
-	return blocked
-}
-func resultEvent(result *pb.Result) *pb.Event {
-	if result == nil {
-		return nil
-	}
-	value := &pb.Event_Result{Result: result}
-	event := &pb.Event{Version: 1, Value: value}
-	return event
-}
 func (t *Ticket) emit(event *pb.Event) error {
 	if t.session == nil {
 		return nil
@@ -593,7 +537,6 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 				t.publishing = false
 				r.publishers--
 				t.state = 0
-				t.eligible = time.Time{}
 				t.queuedAt = time.Now()
 				r.queue = append(r.queue, t)
 				r.notifyLocked()
@@ -635,6 +578,10 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 	}()
 }
 func (r *Runtime) execute(b *batch) {
+	if len(b.items) == 1 && b.items[0].bulk != nil {
+		r.runBatch(b)
+		return
+	}
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
 	events := make(map[*Ticket][]*pb.Event, len(b.items))
@@ -645,16 +592,21 @@ func (r *Runtime) execute(b *batch) {
 		plans[i] = &plan
 		positions[&plan] = t
 	}
-	emit := func(plan *execution.Plan, event *pb.Event) error {
+	emit := func(plan *execution.Plan, output *execution.Output) error {
 		ticket := positions[plan]
 		if ticket == nil {
 			return fmt.Errorf("adapter emitted unknown plan")
 		}
-		if event == nil {
+		if output == nil {
 			return fmt.Errorf("adapter emitted nil event")
 		}
-		if event.GetResult() != nil {
-			ticket.result = event.GetResult()
+		if output.Result != nil {
+			ticket.result = output.Result
+			return nil
+		}
+		event := output.Event
+		if event == nil {
+			return fmt.Errorf("adapter emitted no result or event")
 		}
 		if plan.Streaming {
 			return ticket.emit(event)
@@ -672,20 +624,12 @@ func (r *Runtime) execute(b *batch) {
 	r.metrics.batch.Observe(float64(len(plans)))
 	started := time.Now()
 	feedback := r.adapter.Execute(b.ctx, plans, emit)
-	b.duration = time.Since(started)
-	r.metrics.duration.WithLabelValues("route").Observe(b.duration.Seconds())
+	r.metrics.duration.WithLabelValues("route").Observe(time.Since(started).Seconds())
 	interested := false
 	for _, ticket := range b.items {
 		if ticket.ctx.Err() == nil {
 			interested = true
-		} else {
-			b.latencyEligible = false
-			b.recoveryEligible = false
 		}
-	}
-	if b.ctx.Err() != nil {
-		b.latencyEligible = false
-		b.recoveryEligible = false
 	}
 	if !interested {
 		// A canceled caller is not evidence that the database lost capacity.
@@ -696,17 +640,11 @@ func (r *Runtime) execute(b *batch) {
 	b.cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Demand may arrive after dispatch. Judge pressure before releasing this
-	// execution's memory permit, including the lower memory-limited capacity.
-	b.saturated = b.saturated || r.saturatedLocked()
-	b.lowDemand = b.lowDemand && r.active == 1 && len(r.queue) == 0
 	r.active--
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	if r.closed {
 		feedback = execution.Neutral
-		b.latencyEligible = false
-		b.recoveryEligible = false
 	}
 	for index, ticket := range b.items {
 		ticket.plan.Continue = plans[index].Continue
@@ -714,7 +652,7 @@ func (r *Runtime) execute(b *batch) {
 		if result == nil && ticket.plan.Operation != nil {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no result")
 			result = protocol.ResultError(ticket.plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
-			events[ticket] = []*pb.Event{resultEvent(result)}
+
 		}
 		if ticket.plan.Continue || ticket.plan.CleanupRequired {
 			ticket.state = 3
@@ -725,25 +663,13 @@ func (r *Runtime) execute(b *batch) {
 			r.startPublisherLocked(ticket, events[ticket], ticket.plan.Continue)
 		}
 	}
-	r.observeLocked(b, feedback)
+	r.metrics.feedback, r.metrics.observed = feedback, true
 	r.notifyLocked()
 }
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, Window: r.controller.window, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Cooldown: time.Now().Before(r.controller.cooldown), Feedback: "unobserved"}
-	snapshot.LatencyBaseline = r.controller.baseline
-	snapshot.LatencySample = r.controller.sample
-	snapshot.LatencyRecoveryHold = time.Now().Before(r.controller.latencyHoldUntil)
-	snapshot.LatencyProfiles = len(r.controller.profiles)
-	for _, profile := range r.controller.profiles {
-		if profile.samples >= 4 {
-			snapshot.LatencyReadyProfiles++
-		}
-	}
-	if snapshot.LatencyBaseline > 0 {
-		snapshot.LatencyRatio = float64(snapshot.LatencySample) / float64(snapshot.LatencyBaseline)
-	}
+	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Feedback: "unobserved"}
 	if r.metrics.observed {
 		snapshot.Feedback = "neutral"
 		if r.metrics.feedback == execution.Healthy {
@@ -759,7 +685,7 @@ func (r *Runtime) Snapshot() Snapshot {
 	for t := range r.live {
 		if t.state == 2 {
 			snapshot.Ready++
-			snapshot.ReadyBytes += t.plan.ResultBytes
+			snapshot.ReadyBytes += t.resultReservation()
 		}
 	}
 	return snapshot
@@ -834,4 +760,11 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (t *Ticket) ID() uint64 {
 	return t.id
+}
+
+func (t *Ticket) resultReservation() int {
+	if t.bulk != nil {
+		return t.resultCharge
+	}
+	return t.plan.ResultBytes
 }

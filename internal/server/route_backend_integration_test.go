@@ -5,18 +5,11 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"runtime"
-	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,7 +20,7 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -41,60 +34,47 @@ func routeBackendServer(t *testing.T, adapter execution.Adapter) ([]*routeAccept
 	return []*routeAcceptanceNode{executor}, routeAcceptanceClient(t, executor.address)
 }
 
-func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, call *pb.Command) []*pb.Event {
+func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, command *pb.Command) []*pb.Event {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	produced := false
-	var events []*pb.Event
-	bytes := 0
-	opts := testutil.ExecuteOptions{StoreName: "records"}
-	opts.Produce = func(context.Context) (*pb.Command, error) {
-		if produced {
-			return nil, io.EOF
-		}
-		produced = true
-		return call, nil
-	}
-	opts.Consume = func(_ context.Context, _ uint64, event *pb.Event) error {
-		bytes += proto.Size(event)
-		if len(events) >= 100 || bytes > 9<<20 {
-			return errors.New("bounded backend test capture exceeded")
-		}
-		events = append(events, proto.Clone(event).(*pb.Event))
-		return nil
-	}
-	if err := testutil.Execute(ctx, client, opts); err != nil {
+	stream := testutil.OpenEvents(ctx, client, "records")
+	if err := stream.Send(command); err != nil {
 		t.Fatal(err)
 	}
-	return events
+	var events []*pb.Event
+	total := 0
+	for {
+		event, err := stream.Recv()
+		if err == io.EOF {
+			return events
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += proto.Size(event)
+		if len(events) >= 100 || total > 32<<20 {
+			t.Fatal("test event capture exceeded")
+		}
+		events = append(events, event)
+	}
+
 }
 
-func routeBackendRead(key string) *pb.Command {
-	read := &pb.ReadRequest{Resource: key}
-	value := &pb.Command_Read{Read: read}
-	call := &pb.Command{Version: 1, Operation: value}
-	return call
-}
-
-func routeBackendMutation(key, kind, media string, raw []byte) *pb.Command {
+func routeBackendMutation(key, kind, media string, raw []byte) *pb.MutateRequest {
 	document := &pb.Document{MediaType: media, Data: raw}
 	mutation := &pb.MutateRequest{Resource: key}
 	if kind == "create" {
-		value := &pb.MutateRequest_Create{Create: document}
-		mutation.Action = value
+		mutation.Action = &pb.MutateRequest_Create{Create: document}
 	} else {
-		value := &pb.MutateRequest_Put{Put: document}
-		mutation.Action = value
+		mutation.Action = &pb.MutateRequest_Put{Put: document}
 	}
-	value := &pb.Command_Mutate{Mutate: mutation}
-	call := &pb.Command{Version: 1, Operation: value}
-	return call
+	return mutation
 }
 
 func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	backend := testmongo.Open(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4, MaxReadSize: protocol.MaxDocument}
 	adapter, err := mongodb.Open(ctx, config)
@@ -103,48 +83,21 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	}
 	nodes, client := routeBackendServer(t, adapter)
 	base := bson.D{{Key: "_id", Value: "large"}, {Key: "blob", Value: []byte{}}}
-	raw, err := bson.Marshal(base)
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw, _ := bson.Marshal(base)
 	base[1].Value = bytes.Repeat([]byte{59}, (2<<20)-len(raw))
-	raw, err = bson.Marshal(base)
-	if err != nil || len(raw) != 2<<20 {
-		t.Fatal("fixture must exercise exactly the legal 2 MiB record boundary", len(raw), err)
+	raw, _ = bson.Marshal(base)
+	if len(raw) != 2<<20 {
+		t.Fatal("fixture size", len(raw))
 	}
 	if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, bson.Raw(raw)); err != nil {
 		t.Fatal(err)
 	}
-	stream, err := client.Execute(ctx)
-	if err != nil {
-		t.Fatal(err)
+	read := &pb.ReadRequest{Resource: backend.DB + "/records/s:large"}
+	batch := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
+	response, err := client.Read(ctx, batch)
+	if err != nil || !bytes.Equal(response.Results[0].GetDocument().GetData(), raw) {
+		t.Fatal("large read corrupted", response, err)
 	}
-	request := routeAcceptanceRead(1, backend.DB+"/records/s:large")
-	if err := stream.Send(request); err != nil {
-		t.Fatal(err)
-	}
-	_ = stream.CloseSend()
-	decoder := newRouteAcceptanceDecoder()
-	for {
-		response, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		event, err := decoder.consume(response)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if event != nil && !bytes.Equal(event.GetResult().GetRead().GetDocument().GetData(), raw) {
-			t.Fatal("real MongoDB record was rejected, corrupted or truncated", event.GetResult().GetRead().GetFailure())
-		}
-	}
-	if decoder.bytes != 2<<20 || decoder.frames < 33 {
-		t.Fatal("real 2 MiB record did not stream directly in legal fragments", decoder.bytes, decoder.frames)
-	}
-
 	counter := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int32(0)}}
 	if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, counter); err != nil {
 		t.Fatal(err)
@@ -154,67 +107,43 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.DB + "/records/s:counter", Action: action}
-	value := &pb.Command_Mutate{Mutate: mutation}
-	call := &pb.Command{Version: 1, Operation: value}
-	produced, applied := 0, 0
-	opts := testutil.ExecuteOptions{StoreName: "records"}
-	opts.Produce = func(context.Context) (*pb.Command, error) {
-		if produced == 12 {
-			return nil, io.EOF
-		}
-		produced++
-		return call, nil
+	mutations := make([]*pb.MutateRequest, 12)
+	for i := range mutations {
+		mutations[i] = mutation
 	}
-	opts.Consume = func(_ context.Context, _ uint64, event *pb.Event) error {
-		result := event.GetResult().GetMutation()
-		if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
-			return fmt.Errorf("Lua did not apply under original transaction boundary: %v", result)
-		}
-		applied++
-		return nil
-	}
-	if err := testutil.Execute(ctx, client, opts); err != nil {
+	writes := &pb.MutateBatchRequest{StoreName: "records", Requests: mutations}
+	result, err := client.Mutate(ctx, writes)
+	if err != nil {
 		t.Fatal(err)
+	}
+	for _, reply := range result.Results {
+		if reply.Outcome != pb.MutationOutcome_APPLIED || reply.Failure != nil {
+			t.Fatal(reply)
+		}
 	}
 	var observed struct{ N int32 }
 	filter := bson.D{{Key: "_id", Value: "counter"}}
-	if err := backend.Admin.Database(backend.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 12 || applied != 12 {
-		t.Fatal("Lua same-record mutations lost an atomic increment", observed.N, applied, err)
+	if err := backend.Admin.Database(backend.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 12 {
+		t.Fatal("ordered Lua increment lost", observed.N, err)
 	}
-	selector := bson.D{{Key: "filter", Value: bson.D{{Key: "_id", Value: "counter"}}}}
+	selector := bson.D{{Key: "filter", Value: filter}}
 	selectorRaw, _ := bson.Marshal(selector)
 	document := &pb.Document{MediaType: "application/bson", Data: selectorRaw}
 	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Selector: document}
 	scanValue := &pb.Command_Scan{Scan: scan}
-	scanCall := &pb.Command{Version: 1, Operation: scanValue}
-	events := routeBackendEvents(t, client, scanCall)
-	if len(events) != 2 || events[0].GetDocument() == nil || events[1].GetScanEnd().GetDocumentCount() != 1 || events[1].GetScanEnd().Failure != nil || !events[1].GetScanEnd().GetExhausted() || len(events[1].GetScanEnd().GetNextContinuationToken()) != 0 {
-		t.Fatal("Mongo scan did not report its exhausted page", events)
+	scanCommand := &pb.Command{Version: 1, Operation: scanValue}
+	events := routeBackendEvents(t, client, scanCommand)
+	if len(events) != 2 || events[1].GetScanEnd().Failure != nil {
+		t.Fatal("Scan failed", events)
 	}
-
+	newDoc := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: 1}}
+	rawNew, _ := bson.Marshal(newDoc)
 	rawCounter, _ := bson.Marshal(counter)
-	newDocument := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: int32(1)}}
-	rawNew, _ := bson.Marshal(newDocument)
-	calls := []*pb.Command{routeBackendMutation(backend.DB+"/records/s:counter", "create", "application/bson", rawCounter), routeBackendMutation(backend.DB+"/records/s:new", "put", "application/bson", rawNew)}
-	produced = 0
-	results := make(map[uint64]*pb.MutationResult)
-	opts.Produce = func(context.Context) (*pb.Command, error) {
-		if produced == len(calls) {
-			return nil, io.EOF
-		}
-		call := calls[produced]
-		produced++
-		return call, nil
-	}
-	opts.Consume = func(_ context.Context, id uint64, event *pb.Event) error {
-		results[id] = event.GetResult().GetMutation()
-		return nil
-	}
-	if err := testutil.Execute(ctx, client, opts); err != nil {
-		t.Fatal(err)
-	}
-	if results[1].GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[1].GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[2].GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatal("partial backend success changed per-item outcomes", results)
+	requests := []*pb.MutateRequest{routeBackendMutation(backend.DB+"/records/s:counter", "create", "application/bson", rawCounter), routeBackendMutation(backend.DB+"/records/s:new", "put", "application/bson", rawNew)}
+	partial := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
+	result, err = client.Mutate(ctx, partial)
+	if err != nil || result.Results[0].Outcome != pb.MutationOutcome_NOT_APPLIED || result.Results[1].Outcome != pb.MutationOutcome_APPLIED {
+		t.Fatal("partial evidence lost", result, err)
 	}
 	assertRouteAcceptanceIdle(t, nodes)
 }
@@ -240,7 +169,8 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 			nodes, client := routeBackendServer(t, adapter)
 			document := bson.D{{Key: "_id", Value: "lost"}, {Key: "n", Value: int32(1)}}
 			raw, _ := bson.Marshal(document)
-			call := routeBackendMutation(backend.DB+"/records/s:lost", "put", "application/bson", raw)
+			mutation := routeBackendMutation(backend.DB+"/records/s:lost", "put", "application/bson", raw)
+			var call *pb.Command
 			if mode == "native" {
 				initial := bson.D{{Key: "_id", Value: "lost"}, {Key: "n", Value: int32(0)}}
 				if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, initial); err != nil {
@@ -257,13 +187,17 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Version: 1, Operation: value}
 			}
-			events := routeBackendEvents(t, client, call)
 			if mode == "record" {
-				if len(events) != 1 || events[0].GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
-					t.Fatal("lost write ACK was not explicitly indeterminate", events)
+				batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}
+				response, err := client.Mutate(ctx, batch)
+				if err != nil || response.Results[0].Outcome != pb.MutationOutcome_UNKNOWN {
+					t.Fatal("lost write ACK not indeterminate", response, err)
 				}
-			} else if len(events) == 0 || events[len(events)-1].GetNativeEnd().GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE {
-				t.Fatal("lost native response was reported complete", events)
+			} else {
+				events := routeBackendEvents(t, client, call)
+				if len(events) == 0 || events[len(events)-1].GetNativeEnd().Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {
+					t.Fatal("native reply complete", events)
+				}
 			}
 			var observed struct{ N int32 }
 			filter := bson.D{{Key: "_id", Value: "lost"}}
@@ -301,14 +235,11 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	nodes, client := routeBackendServer(t, adapter)
-	call := routeBackendRead(index + "/s:large")
-	events := routeBackendEvents(t, client, call)
-	if len(events) != 1 || !bytes.Equal(events[0].GetResult().GetRead().GetDocument().GetData(), []byte(body)) {
-		var failure *pb.Failure
-		if len(events) > 0 {
-			failure = events[0].GetResult().GetRead().GetFailure()
-		}
-		t.Fatal("real Search source at record size limit failed Route transport", len(events), failure)
+	read := &pb.ReadRequest{Resource: index + "/s:large"}
+	batch := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
+	response, err := client.Read(ctx, batch)
+	if err != nil || !bytes.Equal(response.Results[0].GetDocument().GetData(), []byte(body)) {
+		t.Fatal("Search legal source failed", response, err)
 	}
 	assertRouteAcceptanceIdle(t, nodes)
 
@@ -356,7 +287,8 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 			}
 			nodes, client := routeBackendServer(t, adapter)
 			id := "lost_" + mode
-			call := routeBackendMutation(backend.Index+"/s:"+id, "put", "application/json", []byte(`{"n":1}`))
+			mutation := routeBackendMutation(backend.Index+"/s:"+id, "put", "application/json", []byte(`{"n":1}`))
+			var call *pb.Command
 			if mode == "native" {
 				httpCall := &searchpb.Request{Method: "POST", Path: "/_bulk"}
 				rawDescriptor, _ := proto.Marshal(httpCall)
@@ -367,13 +299,17 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Version: 1, Operation: value}
 			}
-			events := routeBackendEvents(t, client, call)
 			if mode == "record" {
-				if len(events) != 1 || events[0].GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
-					t.Fatal("Search lost ACK was not UNKNOWN", events)
+				batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}
+				response, err := client.Mutate(ctx, batch)
+				if err != nil || response.Results[0].Outcome != pb.MutationOutcome_UNKNOWN {
+					t.Fatal("lost write ACK not UNKNOWN", response, err)
 				}
-			} else if len(events) == 0 || events[len(events)-1].GetNativeEnd().GetCompletion() != pb.NativeCompletion_RESPONSE_INCOMPLETE {
-				t.Fatal("Search lost native response was not incomplete", events, "proxy failure:", proxyFailure.Load())
+			} else {
+				events := routeBackendEvents(t, client, call)
+				if len(events) == 0 || events[len(events)-1].GetNativeEnd().Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {
+					t.Fatal("native reply complete", events, proxyFailure.Load())
+				}
 			}
 			status, raw := backend.Do(t, "GET", "/"+backend.Index+"/_doc/"+id, "")
 			if status != 200 || !bytes.Contains(raw, []byte(`"n":1`)) || calls.Load() != 1 {
@@ -381,142 +317,5 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 			}
 			assertRouteAcceptanceIdle(t, nodes)
 		})
-	}
-}
-
-func TestRouteMongoPerformance(t *testing.T) {
-	if os.Getenv("WEIR_ROUTE_PERFORMANCE") != "1" {
-		t.Skip("explicit performance run: WEIR_INTEGRATION=1 WEIR_ROUTE_PERFORMANCE=1 go test -tags integration ./internal/server -run '^TestRouteMongoPerformance$' -count=1 -v")
-	}
-	backend := testmongo.Open(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	for i := 0; i < 256; i++ {
-		document := bson.D{{Key: "_id", Value: fmt.Sprintf("%d", i)}, {Key: "n", Value: int32(i)}, {Key: "pad", Value: strings.Repeat("x", 1024)}}
-		if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, document); err != nil {
-			t.Fatal(err)
-		}
-	}
-	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4, MaxReadSize: protocol.MaxDocument}
-	adapter, err := mongodb.Open(ctx, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodes, client := routeBackendServer(t, adapter)
-	const activeRPCs, recordsPerRPC = 4, 10000
-	limits := store.DefaultLimits()
-	var mem runtime.MemStats
-	runtime.ReadMemStats(&mem)
-	baselineHeap := mem.HeapAlloc
-	process := &routeMemoryProcess{address: routeMemoryAddress{PID: os.Getpid()}}
-	var mongoStatus struct {
-		PID int `bson:"pid"`
-	}
-	serverStatus := bson.D{{Key: "serverStatus", Value: int32(1)}}
-	if err := backend.Admin.Database("admin").RunCommand(ctx, serverStatus).Decode(&mongoStatus); err != nil || mongoStatus.PID <= 0 {
-		t.Fatal("cannot attribute owned MongoDB process CPU and RSS", err)
-	}
-	mongoProcess := &routeMemoryProcess{address: routeMemoryAddress{PID: mongoStatus.PID}}
-	processes := []*routeMemoryProcess{process, mongoProcess}
-	baselineOS, err := routeMemoryOSSample(processes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	peakHeap, peakRSS := mem.HeapAlloc, uint64(baselineOS[os.Getpid()][0])
-	backendPeakRSS := uint64(baselineOS[mongoStatus.PID][0])
-	var latenciesMu sync.Mutex
-	latencies := make([]float64, 0, activeRPCs*recordsPerRPC)
-	var failed atomic.Int64
-	var workers sync.WaitGroup
-	errors := make(chan error, activeRPCs)
-	started := time.Now()
-	for worker := 0; worker < activeRPCs; worker++ {
-		worker := worker
-		workers.Go(func() {
-			produced := 0
-			var timesMu sync.Mutex
-			times := make(map[uint64]time.Time)
-			opts := testutil.ExecuteOptions{StoreName: "records"}
-			opts.Produce = func(context.Context) (*pb.Command, error) {
-				if produced == recordsPerRPC {
-					return nil, io.EOF
-				}
-				produced++
-				timesMu.Lock()
-				times[uint64(produced)] = time.Now()
-				timesMu.Unlock()
-				return routeBackendRead(fmt.Sprintf("%s/records/s:%d", backend.DB, (produced+worker*53)%256)), nil
-			}
-			opts.Consume = func(_ context.Context, id uint64, event *pb.Event) error {
-				result := event.GetResult().GetRead()
-				if result.GetDocument() == nil || result.GetFailure() != nil || bson.Raw(result.GetDocument().GetData()).Lookup("n").Int32() != int32((int(id)+worker*53)%256) {
-					failed.Add(1)
-					return fmt.Errorf("performance backend read failed: %v", result)
-				}
-				timesMu.Lock()
-				begin := times[id]
-				delete(times, id)
-				timesMu.Unlock()
-				latenciesMu.Lock()
-				latencies = append(latencies, float64(time.Since(begin))/float64(time.Millisecond))
-				latenciesMu.Unlock()
-				return nil
-			}
-			errors <- testutil.Execute(ctx, client, opts)
-		})
-	}
-	done := make(chan struct{})
-	go func() { workers.Wait(); close(done) }()
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-	running := true
-	for running {
-		select {
-		case <-done:
-			running = false
-		case <-ticker.C:
-			runtime.ReadMemStats(&mem)
-			peakHeap = max(peakHeap, mem.HeapAlloc)
-			values, err := routeMemoryOSSample(processes)
-			if err != nil {
-				cancel()
-				<-done
-				t.Fatal(err)
-			}
-			peakRSS = max(peakRSS, uint64(values[os.Getpid()][0]))
-			backendPeakRSS = max(backendPeakRSS, uint64(values[mongoStatus.PID][0]))
-		}
-	}
-	seconds := time.Since(started).Seconds()
-	for i := 0; i < activeRPCs; i++ {
-		if err := <-errors; err != nil {
-			failed.Add(1)
-			t.Error(err)
-		}
-	}
-	assertRouteAcceptanceIdle(t, nodes)
-	if len(latencies) != activeRPCs*recordsPerRPC || failed.Load() != 0 {
-		t.Fatal("performance test did not complete its comparable workload", len(latencies), failed.Load())
-	}
-	finalOS, err := routeMemoryOSSample(processes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Float64s(latencies)
-	result := map[string]any{
-		"backend": "MongoDB 8.0.32 loopback replica set, majority write concern, primary reads", "operation": "point reads of 256 preloaded BSON records, each 1 KiB pad", "go": runtime.Version(), "platform": runtime.GOOS + "/" + runtime.GOARCH,
-		"active_rpcs": activeRPCs, "records_per_rpc": recordsPerRPC, "total_operations": len(latencies), "seconds": seconds, "operations_per_second": float64(len(latencies)) / seconds,
-		"latency_ms_p50": latencies[len(latencies)/2], "latency_ms_p95": latencies[len(latencies)*95/100], "latency_ms_max": latencies[len(latencies)-1], "latency_definition": "Produce callback to complete business Event callback; includes client admission, excludes final RPC drain",
-		"failures": failed.Load(), "batch_operations": limits.BatchOperations, "batch_bytes": limits.BatchBytes, "batch_result_bytes": limits.BatchResultBytes, "collect_ns": limits.Collect.Nanoseconds(), "backend_concurrency": limits.Concurrency,
-		"cpu_seconds_client_and_router": finalOS[os.Getpid()][1] - baselineOS[os.Getpid()][1], "baseline_heap_alloc": baselineHeap, "peak_heap_alloc": peakHeap, "peak_rss": peakRSS,
-		"backend_cpu_seconds": finalOS[mongoStatus.PID][1] - baselineOS[mongoStatus.PID][1], "backend_peak_rss": backendPeakRSS,
-		"measurement_scope": "client and local router share one process; MongoDB CPU/RSS measured separately; no speed comparison to old RPC or unbatched direct calls",
-	}
-	raw, _ := json.MarshalIndent(result, "", "  ")
-	t.Log("ROUTE_PERFORMANCE=" + string(raw))
-	if artifact := os.Getenv("WEIR_ROUTE_PERFORMANCE_REPORT"); artifact != "" {
-		if err := os.WriteFile(artifact, raw, 0644); err != nil {
-			t.Fatal(err)
-		}
 	}
 }

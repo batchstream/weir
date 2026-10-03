@@ -111,6 +111,10 @@ def resource_summary(samples, report):
 
 class Fixture:
     def __init__(self, options):
+        reserved_bytes = ((64 + 96 * options.max_sessions + 448 + 8) * (1 << 20)
+                          + options.max_connections * (256 << 10))
+        if options.weir_memory_mib * (1 << 20) < reserved_bytes:
+            raise ValueError("Weir memory cannot cover configured transport and store reservations")
         self.options = options
         self.owner = "weir-connection-" + uuid.uuid4().hex[:12]
         self.root = options.output.resolve()
@@ -209,7 +213,7 @@ class Fixture:
             "client_cpu_total": 2, "client_memory_mib_total": 2048,
             "store_concurrency_each": 4, "raw_owner_limit_each": 5,
             "transport_max_connections_each": self.options.max_connections, "transport_max_sessions_each": self.options.max_sessions,
-            "max_read_size": self.options.max_read_size, "collect_ms": self.options.collect_ms,
+            "max_read_size": self.options.max_read_size,
         }
         self.save("fixture-summary.json", self.summary)
 
@@ -226,8 +230,6 @@ class Fixture:
             }],
         }
         local = routes["stores"][0]
-        if self.options.collect_ms is not None:
-            local["batch_collect"] = str(self.options.collect_ms) + "ms"
         if self.options.max_read_size is not None:
             local["max_read_size"] = self.options.max_read_size
         node["discovery"] = {"group": "records", "advertise": ["weir-" + str(index) + ":7447"]}
@@ -423,11 +425,10 @@ def main():
     parser.add_argument("--single-weir-only", action="store_true", help="only the 16-process / single-Weir measured case")
     parser.add_argument("--max-connections", type=int, default=64)
     parser.add_argument("--max-sessions", type=int, default=32)
-    parser.add_argument("--weir-memory-mib", type=int, default=2560)
+    parser.add_argument("--weir-memory-mib", type=int, default=4096)
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--keep-unqualified", action="store_true", help="record failed offered-work qualification without hiding it or retrying operations")
     parser.add_argument("--max-read-size", default=None)
-    parser.add_argument("--collect-ms", type=int, default=None)
     parser.add_argument("--output", type=Path, required=True)
     options = parser.parse_args()
     if not 1 <= options.repetitions <= 3:

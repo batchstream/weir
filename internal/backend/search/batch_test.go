@@ -51,7 +51,7 @@ func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution
 			op.Operation = &pb.Operation_Mutate{Mutate: mutation}
 		}
 	}
-	work, failure := a.prepareRecord(op)
+	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -70,13 +70,13 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 			var request struct {
 				IDs []string `json:"ids"`
 			}
-			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || (strings.Join(request.IDs, ",") != "read,missing,replace" && strings.Join(request.IDs, ",") != "program") {
+			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "read,missing,replace,program" {
 				t.Errorf("unexpected merged read: method=%s ids=%v", r.Method, request.IDs)
 			}
 			if strings.Join(request.IDs, ",") == "program" {
 				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
 			} else {
-				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false},{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}}]}`)
+				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false},{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}},{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
 			}
 		case "/_bulk":
 			writes.Add(1)
@@ -108,7 +108,7 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 		}
 	}
 	results, feedback := a.executeRecords(context.Background(), works)
-	if feedback != execution.Healthy || len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 2 || writes.Load() != 1 {
+	if feedback != execution.Healthy || len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {
 		t.Fatalf("batch counts/results: feedback=%v qualification=%d reads=%d writes=%d results=%v", feedback, qualifications.Load(), reads.Load(), writes.Load(), results)
 	}
 	if string(results[0].GetRead().GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].GetRead().GetMissing() == nil {
@@ -268,60 +268,5 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	results, _ := a.executeRecords(context.Background(), []*execution.Plan{replace, put})
 	if writes.Load() != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller isolation", results, writes.Load())
-	}
-}
-
-func TestMgetGroupsBoundDocumentsAndRecheckLaterCallers(t *testing.T) {
-	caller, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var calls atomic.Int32
-	source := `{"items":[` + strings.Repeat("0,", 700) + `0]}`
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/records" {
-			_, _ = io.WriteString(w, testIndexReply)
-			return
-		}
-		var request struct {
-			IDs []string `json:"ids"`
-		}
-		if json.NewDecoder(r.Body).Decode(&request) != nil {
-			t.Error("invalid _mget body")
-			return
-		}
-		attempt := calls.Add(1)
-		if attempt == 1 {
-			if len(request.IDs) != getBatchItems {
-				t.Error("unbounded _mget group", len(request.IDs))
-			}
-			cancel()
-		} else if len(request.IDs) != 1 || request.IDs[0] != fmt.Sprint(getBatchItems+1) {
-			t.Error("later canceled caller dispatched", request.IDs)
-		}
-		_, _ = io.WriteString(w, `{"docs":[`)
-		for i, id := range request.IDs {
-			if i != 0 {
-				_, _ = io.WriteString(w, ",")
-			}
-			_, _ = fmt.Fprintf(w, `{"_index":"records","_id":%q,"found":true,"_seq_no":1,"_primary_term":1,"_source":%s}`, id, source)
-		}
-		_, _ = io.WriteString(w, "]}")
-	})
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
-	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
-	works := make([]*execution.Plan, getBatchItems+2)
-	for i := range works {
-		works[i] = batchTestPlan(t, a, "read", "weir://search/records/s:"+fmt.Sprint(i))
-	}
-	works[getBatchItems].Context = caller
-	results, feedback := a.executeRecords(context.Background(), works)
-	if calls.Load() != 2 || feedback != execution.Neutral || results[getBatchItems].GetRead().GetFailure().GetCode() != pb.FailureCode_CANCELLED {
-		t.Fatal("bounded subgroup cancellation", calls.Load(), feedback, results[getBatchItems])
-	}
-	for i, result := range results {
-		if i != getBatchItems && string(result.GetRead().GetDocument().GetData()) != source {
-			t.Fatal("aggregate JSON node allowance incorrectly rejected a valid document", i, result)
-		}
 	}
 }

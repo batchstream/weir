@@ -304,7 +304,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		}
 	case "expression":
 		op := expressionOperation("weir://search/"+b.Index+"/s:"+id, `{"doc":{"n":2}}`)
-		p, f := a.prepareRecord(op)
+		p, f := prepareTestRecord(a, op)
 		if f != nil {
 			t.Fatal(f)
 		}

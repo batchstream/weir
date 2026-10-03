@@ -1,7 +1,7 @@
 # Store discovery and direct business traffic
 
 This breaking refactor separates Store discovery from business execution. The
-public StoreService exposes ResolveStore and finite Execute. The private
+public StoreService exposes ResolveStore, unary Read/Mutate and single-command streaming Execute. The private
 PeerDiscoveryService exchanges owner announcements with SyncDirectory. All run in the single Weir
 process. URI affinity and automatic business retries are intentionally absent.
 
@@ -13,7 +13,7 @@ Clients can initialize through any Weir application address. A normal load-balan
 seed service can select any group: every peer eventually learns the same Store
 ownership directory. ResolveStore returns the provider group's reachable host:port
 business targets, rather than a forwarding next hop. The client connects directly
-to those targets. Execute only accepts a locally configured Store; there is no
+to those targets. Business RPCs only accept a locally configured Store; there is no
 remote execution destination or fallback forwarding path.
 
 The protocol uses Store names, replica group identities, instance advertisements
@@ -84,13 +84,13 @@ last-good mapping. Ownership conflicts invalidate the cached mapping. Returned
 targets and DNS answer sets are validated and bounded before installation.
 
 DNS updates add/remove physical channels without migrating or replaying an active
-Execute. A drained/failed active connection leaves incomplete writes indeterminate.
+business RPC. A drained/failed active connection leaves incomplete writes indeterminate.
 The same rules cover finite native exchanges and scan pages. Explicit client Close
 cancels background work, closes owned channels and joins refresh/DNS work.
 
 ## Acceptance
 
-Default offline tests must cover arbitrary seed ResolveStore, direct-only Execute,
+Default offline tests must cover arbitrary seed ResolveStore, direct-only business RPCs,
 periodic peer convergence, same-group replicas, ownership conflicts, origin lease
 expiry without resurrection, withdrawal, malformed atomic exchange rejection,
 seed self-selection, bounded state and lifecycle cleanup. Client tests must prove

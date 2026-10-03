@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Explicit bounded first-reference calibration. No default test starts Docker."""
+"""Historical first-reference calibration for its exact locked artifact.
+
+The source receipt, resource plan and thresholds describe that historical run;
+they do not qualify the current architecture. Default tests never start Docker.
+"""
 
 if not __debug__:
     raise RuntimeError("optimized Python is unsupported")

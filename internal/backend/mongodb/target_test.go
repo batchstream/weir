@@ -21,7 +21,7 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			resource := "weir://mongo/" + database + "/" + collection
 			opts := batchOperationOptions{resource: resource + "/s:shared", action: "read"}
 			operation := batchOperation(t, opts)
-			work, failure := adapter.prepareRecord(operation)
+			work, failure := prepareTestRecord(adapter, operation)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -54,7 +54,7 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 		t.Run(target, func(t *testing.T) {
 			resource := "weir://mongo/" + target
 			opts := batchOperationOptions{resource: resource + "/s:id", action: "read"}
-			if _, failure := adapter.prepareRecord(batchOperation(t, opts)); failure == nil {
+			if _, failure := prepareTestRecord(adapter, batchOperation(t, opts)); failure == nil {
 				t.Fatal("invalid record target accepted")
 			}
 			request := &pb.ScanRequest{Resource: resource}
@@ -82,7 +82,7 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 	var plans []*execution.Plan
 	for i, target := range []string{"first/records", "second/other", "first/records"} {
 		opts := batchOperationOptions{resource: "weir://mongo/" + target + "/s:shared", action: "read", index: uint64(i + 8)}
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -145,7 +145,7 @@ func TestMongoQualificationFailureDoesNotAttemptWrites(t *testing.T) {
 			adapter := batchMockAdapter(t, []bson.D{qualification}, monitor)
 			document := bson.D{{Key: "_id", Value: "id"}}
 			opts := batchOperationOptions{resource: "weir://mongo/db/records/s:id", action: "put", document: document}
-			work, failure := adapter.prepareRecord(batchOperation(t, opts))
+			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -173,7 +173,7 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			document := bson.D{{Key: "_id", Value: "id"}}
 			opts := batchOperationOptions{resource: "weir://mongo/db/records/s:id", action: action, document: document}
-			work, failure := adapter.prepareRecord(batchOperation(t, opts))
+			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -201,7 +201,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	for _, action := range []string{"read", "put", "program"} {
 		document := bson.D{{Key: "_id", Value: "same"}}
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:same", action: action, document: document, program: "return weir.keep()"}
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}

@@ -284,7 +284,8 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Routing.Stores = []StoreConfig{service}
 
-	cfg.Basic.Memory = 512 << 20
+	// The declaration covers native buffers; cgroup pressure still uses its 512MiB limit.
+	cfg.Basic.Memory = 2 << 30
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
 	root := "weir://records/" + db + "/records"
@@ -301,7 +302,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	}
 	helper := startMemoryPressure(t)
 	memoryState(t, p, "low", false)
-	// Hold one admitted Bulk mutation at the owned proxy before the real DB write.
+	// Hold one admitted batch mutation at the owned proxy before the real DB write.
 	gate := make(chan struct{})
 	observer.hold(gate, 0)
 	released := false
@@ -310,17 +311,17 @@ func TestLinuxMemoryCLI(t *testing.T) {
 			close(gate)
 		}
 	}()
-	stream := testutil.OpenEvents(ctx, client, "records")
-	var frame *pb.Command
 	admitted := budgetPut(root, "admitted")
-	mutation := &pb.Operation_Mutate{Mutate: admitted}
-	op := &pb.Operation{Index: 0, Operation: mutation}
-	_, variant := testutil.OperationCommand(op)
-	frame = variant
-	if err := stream.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	budgetWait(t, "admitted Bulk", func() bool {
+	fixtureRequest := testutil.RecordCommand(admitted)
+	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.GetMutate()}}
+	responses := make(chan *pb.MutateBatchResponse, 1)
+	callErrors := make(chan error, 1)
+	go func() {
+		response, err := client.Mutate(ctx, batch)
+		responses <- response
+		callErrors <- err
+	}()
+	budgetWait(t, "admitted batch", func() bool {
 		active, _, _, _ := observer.snapshot()
 		return active == 1
 	})
@@ -338,21 +339,14 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	if _, err := testutil.ExecuteRecord(ctx, frontClient, testutil.RecordCommand(read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("second executor admission", err)
 	}
-	// A new operation on the existing Bulk must not discard its admitted result.
-	nextMutation := &pb.Operation_Mutate{Mutate: refused}
-	next := &pb.Operation{Index: 1, Operation: nextMutation}
-	_, nextVariant := testutil.OperationCommand(next)
-	nextFrame := nextVariant
-	_ = stream.Send(nextFrame)
+	// Refusing fresh RPCs must not discard a response from an admitted RPC.
 	close(gate)
 	released = true
 	observer.hold(nil, 0)
-	result, err := stream.Recv()
-	if err != nil || result.GetResult().GetIndex() != 1 || result.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatal("admitted Bulk result lost under overload", result, err)
-	}
-	if _, err := stream.Recv(); status.Code(err) != codes.ResourceExhausted {
-		t.Fatal("existing Bulk did not reject new operation", err)
+	response := <-responses
+	callErr := <-callErrors
+	if callErr != nil || len(response.GetResults()) != 1 || response.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("admitted batch result lost under overload", response, callErr)
 	}
 	if healthProcess(t, p, "/readyz") != 200 || healthProcess(t, p, "/livez") != 200 {
 		t.Fatal("overload changed health")
@@ -383,10 +377,10 @@ func TestLinuxMemoryCLI(t *testing.T) {
 			updates++
 		}
 	}
-	if updates != 5 {
+	if updates != 7 {
 		t.Fatal("unexpected replay/missing update", updates)
 	}
-	t.Log("real Mongo updates=5 (before unary+Bulk, admitted Bulk, after unary+Bulk); refused=0; no replay")
+	t.Log("real Mongo updates=7 (before one + two batch items, admitted one, after one + two batch items); refused=0; no replay")
 	helper.target(t, 84)
 	memoryState(t, p, "shutdown-high", true)
 	start := time.Now()

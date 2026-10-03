@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -368,22 +367,28 @@ func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 		t.Fatal("packaged readback", err)
 	}
 	invalid := &pb.MutateRequest{Resource: "weir://missing/db/records/s:artifact", Action: request.Action}
-	routedResult368, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(invalid))
-	mutation := routedResult368.GetMutation()
-	if err != nil || mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED {
-		t.Fatal("preflight outcome", mutation, err)
+	response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(invalid))
+	if status.Code(err) != codes.Unavailable || response != nil {
+		t.Fatal("unhosted Store request was not rejected", response, err)
 	}
 	cancelled, stop := context.WithCancel(ctx)
-	stream := testutil.OpenEvents(cancelled, client, "records")
+	cancelRequest := budgetPut("weir://records/"+fixture.DB+"/records", "cancelled-artifact")
+	fixtureRequest := testutil.RecordCommand(cancelRequest)
+	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.GetMutate()}}
 	stop()
-	_, err = stream.Recv()
-	if status.Code(err) != codes.Canceled && err != io.EOF {
-		t.Fatal("Bulk cancellation", err)
+	cancelResponse, err := client.Mutate(cancelled, batch)
+	if status.Code(err) != codes.Canceled || cancelResponse != nil {
+		t.Fatal("batch cancellation", cancelResponse, err)
 	}
 	filter := bson.D{{Key: "_id", Value: "artifact"}}
 	count, err := fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
 	if err != nil || count != 1 {
 		t.Fatal("independent backend read", count, err)
+	}
+	filter = bson.D{{Key: "_id", Value: "cancelled-artifact"}}
+	count, err = fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
+	if err != nil || count != 0 {
+		t.Fatal("cancelled batch reached database", count, err)
 	}
 }
 

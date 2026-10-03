@@ -7,7 +7,7 @@ Every Pod runs one Weir process; Lua runs inside that process.
 The bounded policies use the documented
 [HPA scaling behavior](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/#configurable-scaling-behavior).
 
-A CPU HPA responds to CPU utilization only. Route session admission can reach its
+A CPU HPA responds to CPU utilization only. Business RPC admission can reach its
 configured limit while CPU remains below the HPA target. Check
 `weir_admission_rejections_total{reason="sessions"}` and the ingress occupancy
 metrics alongside CPU; this example does not automatically scale on those
@@ -19,7 +19,7 @@ Each LocalStore owns a separate backend adapter. Its connection limit is
 credit covers polling/retiring MongoDB connections or the Search native transport
 and connection lifecycle. Raw ownership includes connections before pool
 insertion and during close. Several LocalStores targeting the same database add
-their limits; routing through another Weir does not reduce the final local owners.
+their limits; every replica contributes its own backend connection budget.
 
 For each database endpoint, reserve:
 
@@ -50,13 +50,13 @@ see the [Deployment rollout note](https://kubernetes.io/docs/concepts/workloads/
 
 Execution concurrency also multiplies with replicas. Independently controlled
 stores on four Pods can run four times the work of one Pod. Allocate the aggregate
-database work budget across all stores and the maximum active replicas, then let
-each controller reduce its own share under congestion. HPA adds Weir CPU; it does
+database work budget across all stores and the maximum active replicas, and
+configure each Store within that allocation. HPA adds Weir CPU; it does
 not increase the fixed database budget. No distributed coordinator is required
 for a conservative fixed allocation.
 
 gRPC connections usually pin clients to one Weir instance. Increasing replicas
-does not redistribute an existing long-lived Route. Use client-side distribution
+does not redistribute an active business RPC. Use client-side distribution
 across discovered instances, sufficient independent connections, or reconnect
 through the normal lifecycle, and measure per-instance load before interpreting
 HPA CPU averages.
@@ -88,8 +88,7 @@ Account for workers as well as processes: 16 processes with eight workers can
 have 128 RPCs in flight, independently of their connection pools. A Weir session
 limit of 32 or 64 can reject this workload before its CPU is saturated. The probe
 uses a shared arrival timestamp and the same read-ID sequence in every process,
-so equal-rate processes produce synchronized reads of the same key. Weir does
-not put duplicate keys in one backend batch; this is a connection and admission
+so equal-rate processes produce synchronized reads of the same key. This probe sends single-record RPCs and does not measure bulk API throughput; this is a connection and admission
 test, and dispersed-key load is needed to evaluate general batching throughput.
 
 After business clients close, Weir's backend pool may remain connected for reuse;

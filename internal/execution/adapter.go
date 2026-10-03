@@ -1,4 +1,4 @@
-// Package execution defines the single adapter boundary used by Execute.
+// Package execution defines the adapter boundary shared by record batches and streaming commands.
 package execution
 
 import (
@@ -23,6 +23,7 @@ type Plan struct {
 	Context                              context.Context
 	BackendTimeout                       time.Duration
 	Backend                              any
+	Results                              *ResultBudget
 }
 
 type Feedback uint8
@@ -38,10 +39,16 @@ const (
 
 // Emit borrows an event until it returns. Callers must not mutate its contents.
 // One caller's canceled emission does not cancel other members of a shared batch.
-type Emit func(*Plan, *pb.Event) error
+type Output struct {
+	Result *pb.Result
+	Event  *pb.Event
+}
+
+type Emit func(*Plan, *Output) error
 
 type Adapter interface {
 	PrepareCommand(uint64, *pb.Command) (*Plan, *pb.Failure)
+	PrepareRecord(*Record) (*Plan, *pb.Failure)
 	Execute(context.Context, []*Plan, Emit) Feedback
 	ClosePlan(context.Context, *Plan) *pb.Failure
 	Close() error

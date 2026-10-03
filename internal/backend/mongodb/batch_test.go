@@ -3,6 +3,7 @@ package mongodb
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -71,9 +72,13 @@ func batchMockAdapter(t *testing.T, responses []bson.D, monitor *event.CommandMo
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
 	config := Config{Store: "mongo"}
 	a := &Adapter{client: client, config: config}
+	t.Cleanup(func() {
+		if err := a.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return a
 }
 
@@ -106,7 +111,7 @@ func TestMongoPointReadRejectsMalformedCursorEvidence(t *testing.T) {
 			var plans []*execution.Plan
 			for _, name := range []string{"a", "b"} {
 				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + name, action: "read"}
-				p, failure := a.prepareRecord(batchOperation(t, opts))
+				p, failure := prepareTestRecord(a, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -136,7 +141,7 @@ func TestMongoPointReadMatchesTypedIDsAcrossPages(t *testing.T) {
 	var plans []*execution.Plan
 	for i, name := range []string{"s:a", "oid:" + objectID.Hex(), "i:42", "s:missing"} {
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/" + name, action: "read", index: uint64(i + 9)}
-		p, failure := a.prepareRecord(batchOperation(t, opts))
+		p, failure := prepareTestRecord(a, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -259,7 +264,7 @@ func TestMongoVerboseWriteCursorKeepsItemIndexesAndSessionAcrossPages(t *testing
 	for i, id := range []string{"a", "b"} {
 		document := bson.D{{Key: "_id", Value: id}}
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "create", index: uint64(i + 8), document: document}
-		p, failure := a.prepareRecord(batchOperation(t, opts))
+		p, failure := prepareTestRecord(a, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -294,7 +299,7 @@ func TestMongoReadContinuationStopsWhenItsCallersCancel(t *testing.T) {
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "read"}
-		p, failure := a.prepareRecord(batchOperation(t, opts))
+		p, failure := prepareTestRecord(a, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -344,7 +349,7 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
 	opts := batchOperationOptions{resource: "weir://mongo/db/records/s:a", action: "read"}
-	p, failure := a.prepareRecord(batchOperation(t, opts))
+	p, failure := prepareTestRecord(a, batchOperation(t, opts))
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -354,7 +359,7 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 			plans[i] = p
 		}
 		if count == 1 {
-			p.Bytes = 8<<20 + 1
+			p.Bytes = protocol.MaxBatchRequestBytes + 1
 		}
 		results, _ := a.executeRecords(context.Background(), plans)
 		for _, result := range results {
@@ -363,5 +368,40 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 			}
 		}
 		p.Bytes = protocol.MaxDocument
+	}
+}
+
+func TestMongoReadBatchAccepts513DistinctDocuments(t *testing.T) {
+	const count = 513
+	documents := make(bson.A, count)
+	plans := make([]*execution.Plan, count)
+	for i := range documents {
+		documents[i] = bson.D{{Key: "_id", Value: fmt.Sprintf("item-%d", i)}, {Key: "n", Value: i}}
+	}
+	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: documents}}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
+	finds := 0
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+		if e.CommandName == "find" {
+			finds++
+		}
+	}}
+	adapter := batchMockAdapter(t, responses, monitor)
+	for i := range plans {
+		opts := batchOperationOptions{resource: fmt.Sprintf("weir://mongo/db/records/s:item-%d", i), action: "read", index: uint64(i + 1)}
+		var failure *pb.Failure
+		plans[i], failure = prepareTestRecord(adapter, batchOperation(t, opts))
+		if failure != nil {
+			t.Fatal(failure)
+		}
+	}
+	replies, _ := adapter.executeRecords(t.Context(), plans)
+	for i, reply := range replies {
+		if reply.Index != uint64(i+1) || reply.GetRead().GetDocument() == nil {
+			t.Fatalf("record %d failed: %v", i, reply)
+		}
+	}
+	if finds != 1 {
+		t.Fatal("batch split by an arbitrary item limit", finds)
 	}
 }

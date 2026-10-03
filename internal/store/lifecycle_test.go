@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"github.com/batchstream/weir-protocol/api/protocol"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -55,3 +56,9 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 }
 
 func (*lifecycleAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
+
+func (a *lifecycleAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
+	prepared := &execution.Plan{ID: operation.Index, Operation: operation, Key: protocol.Resource(operation), BatchKey: "records", Bytes: 1024, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
+	return prepared, nil
+}

@@ -22,7 +22,7 @@ func mongoExpression(t *testing.T, a *Adapter, database string, doc bson.D) *exe
 	t.Helper()
 	raw := expressionBSON(t, doc)
 	op := expressionOperation("weir://mongo/"+database+"/records/s:counter", raw)
-	p, f := a.prepareRecord(op)
+	p, f := prepareTestRecord(a, op)
 	if f != nil {
 		t.Fatal(f)
 	}

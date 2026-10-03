@@ -280,8 +280,8 @@ func TestReplayWatermarksAreBoundedAndEventuallyCollected(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	d := newTestDirectory(t, cfg)
 	now := time.Now()
-	nodes := make([]*peerpb.NodeAnnouncement, 0, maxWatermarks-1)
-	for i := 1; i < maxWatermarks; i++ {
+	nodes := make([]*peerpb.NodeAnnouncement, 0, MaxAnnouncements-1)
+	for i := 1; i < MaxAnnouncements; i++ {
 		ad := announcement(i, "same", "127.0.0.1:7447")
 		ad.Withdrawn = true
 		ad.StoreNames = nil
@@ -291,11 +291,11 @@ func TestReplayWatermarksAreBoundedAndEventuallyCollected(t *testing.T) {
 	if err := d.merge(nodes, now); err != nil {
 		t.Fatal(err)
 	}
-	extra := announcement(maxWatermarks, "same", "127.0.0.1:7447")
+	extra := announcement(MaxAnnouncements, "same", "127.0.0.1:7447")
 	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("watermark capacity unbounded", err)
 	}
-	if len(d.records) != maxWatermarks {
+	if len(d.records) != MaxAnnouncements {
 		t.Fatal("bounded watermark store changed", len(d.records))
 	}
 	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now.Add(3*Lease)); err != nil {
@@ -387,11 +387,40 @@ func TestSyncDirectoryRejectsUnknownResponseBeforeMerge(t *testing.T) {
 	t.Cleanup(func() { server.Stop(); _ = listener.Close(); <-done })
 	cfg := Config{Group: "observer"}
 	d := newTestDirectory(t, cfg)
-	if err := d.syncPeer(context.Background(), listener.Addr().String()); status.Code(err) != codes.InvalidArgument {
+	if err := d.syncPeer(context.Background(), listener.Addr().String()); status.Code(err) != codes.Internal {
 		t.Fatal("unknown peer response accepted", err)
 	}
 	request := &pb.ResolveStoreRequest{StoreName: "data"}
 	if _, err := d.ResolveStore(context.Background(), request); status.Code(err) != codes.Unavailable {
 		t.Fatal("invalid response partially merged", err)
+	}
+}
+
+func TestSnapshotRetainsFullWithdrawalWatermarkCapacity(t *testing.T) {
+	cfg := Config{Group: "observer"}
+	source := newTestDirectory(t, cfg)
+	nodes := make([]*peerpb.NodeAnnouncement, MaxAnnouncements-1)
+	for i := range nodes {
+		node := announcement(i+1, "same", "127.0.0.1:7447")
+		node.Withdrawn = true
+		node.StoreNames = nil
+		nodes[i] = node
+	}
+	now := time.Now()
+	if err := source.merge(nodes, now); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := source.snapshot(now)
+	if len(snapshot) != MaxAnnouncements {
+		t.Fatal("withdrawal watermarks lost during sync", len(snapshot))
+	}
+	withdrawn := 0
+	for _, node := range snapshot {
+		if node.Withdrawn {
+			withdrawn++
+		}
+	}
+	if withdrawn != MaxAnnouncements-1 {
+		t.Fatal("withdrawals changed live node semantics", withdrawn)
 	}
 }

@@ -50,7 +50,7 @@ func prepareCounter(t *testing.T, a *Adapter, resource string) *execution.Plan {
 	r := &pb.ReadRequest{Resource: resource}
 	v := &pb.Operation_Read{Read: r}
 	op := &pb.Operation{Operation: v}
-	p, f := a.prepareRecord(op)
+	p, f := prepareTestRecord(a, op)
 	if f != nil {
 		t.Fatal(f)
 	}
