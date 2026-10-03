@@ -63,9 +63,9 @@ func setup(t *testing.T) fixture {
 func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	req := &pb.ReadRequest{Resource: f.db + "/records/s:" + key}
-	v := &pb.Call_Read{Read: req}
-	call := &pb.Call{Version: 1, Operation: v}
-	p, err := f.runtime.PrepareCall(1, call)
+	v := &pb.Command_Read{Read: req}
+	call := &pb.Command{Version: 1, Operation: v}
+	p, err := f.runtime.PrepareCommand(1, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +78,9 @@ func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	d := &pb.Document{MediaType: "application/bson", Data: raw}
 	v := &pb.MutateRequest_Create{Create: d}
 	m := &pb.MutateRequest{Resource: f.db + "/records/s:" + key, Action: v}
-	mv := &pb.Call_Mutate{Mutate: m}
-	call := &pb.Call{Version: 1, Operation: mv}
-	p, err := f.runtime.PrepareCall(1, call)
+	mv := &pb.Command_Mutate{Mutate: m}
+	call := &pb.Command{Version: 1, Operation: mv}
+	p, err := f.runtime.PrepareCommand(1, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,10 +414,10 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 			}
 			descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
 			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
-			native := &pb.NativeCall{Open: open, Body: raw}
-			variant := &pb.Call_Native{Native: native}
-			call := &pb.Call{Version: 1, Operation: variant}
-			work, failure := f.runtime.PrepareCall(1, call)
+			native := &pb.NativeRequest{Open: open, Body: raw}
+			variant := &pb.Command_Native{Native: native}
+			call := &pb.Command{Version: 1, Operation: variant}
+			work, failure := f.runtime.PrepareCommand(1, call)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -487,9 +487,9 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}
-			variant := &pb.Call_Mutate{Mutate: mutation}
-			call := &pb.Call{Version: 1, Operation: variant}
-			work, failure := f.runtime.PrepareCall(1, call)
+			variant := &pb.Command_Mutate{Mutate: mutation}
+			call := &pb.Command{Version: 1, Operation: variant}
+			work, failure := f.runtime.PrepareCommand(1, call)
 			if failure != nil {
 				t.Fatal(failure)
 			}

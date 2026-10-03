@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -115,7 +114,7 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 		}
 		client := pb.NewStoreServiceClient(connection)
 		requestContext := ctx
-		routedResult139, readErr := weirclient.Record(requestContext, client, testutil.RecordCall(request))
+		routedResult139, readErr := testutil.ExecuteRecord(requestContext, client, testutil.RecordCommand(request))
 		result := routedResult139.GetRead()
 		closeErr := connection.Close()
 		want := codes.Unavailable

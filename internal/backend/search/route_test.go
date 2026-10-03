@@ -34,14 +34,14 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	config := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
-	variant := &pb.Call_Read{Read: request}
-	call := &pb.Call{Version: 1, Operation: variant}
-	work, failure := adapter.PrepareCall(9, call)
+	variant := &pb.Command_Read{Read: request}
+	call := &pb.Command{Version: 1, Operation: variant}
+	work, failure := adapter.PrepareCommand(9, call)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	if request.Resource != "records/s:a" || work.Operation.Index != 9 || work.ID != 9 || work.BatchKey != "records" {
-		t.Fatal("wire Call mutated or association lost", work)
+		t.Fatal("wire Command mutated or association lost", work)
 	}
 	events := 0
 	emit := func(plan *execution.Plan, event *pb.Event) error {
@@ -56,16 +56,16 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events, feedback)
 	}
 	request.Resource = "weir://search/records/s:a"
-	if _, failure := adapter.PrepareCall(10, call); failure == nil {
+	if _, failure := adapter.PrepareCommand(10, call); failure == nil {
 		t.Fatal("accepted obsolete absolute wire resource")
 	}
 	request.Resource = "records/s:a"
 	call.Version = 2
-	if _, failure := adapter.PrepareCall(10, call); failure == nil {
+	if _, failure := adapter.PrepareCommand(10, call); failure == nil {
 		t.Fatal("accepted unknown payload version")
 	}
 	call.Version = 1
-	if _, failure := adapter.PrepareCall(0, call); failure == nil {
+	if _, failure := adapter.PrepareCommand(0, call); failure == nil {
 		t.Fatal("accepted zero ID")
 	}
 }
@@ -78,9 +78,9 @@ func TestRouteLuaUsesSingletonCASBoundary(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	variant := &pb.Call_Mutate{Mutate: mutation}
-	call := &pb.Call{Version: 1, Operation: variant}
-	work, failure := adapter.PrepareCall(1, call)
+	variant := &pb.Command_Mutate{Mutate: mutation}
+	call := &pb.Command{Version: 1, Operation: variant}
+	work, failure := adapter.PrepareCommand(1, call)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -135,10 +135,10 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: context.Background()}
 			open := nativeOpen(t, "records", "GET", "/_doc/x")
 			open.Resource = "records"
-			native := &pb.NativeCall{Open: open}
-			variant := &pb.Call_Native{Native: native}
-			call := &pb.Call{Version: 1, Operation: variant}
-			work, failure := adapter.PrepareCall(1, call)
+			native := &pb.NativeRequest{Open: open}
+			variant := &pb.Command_Native{Native: native}
+			call := &pb.Command{Version: 1, Operation: variant}
+			work, failure := adapter.PrepareCommand(1, call)
 			if failure != nil {
 				t.Fatal(failure)
 			}

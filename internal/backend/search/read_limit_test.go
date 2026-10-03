@@ -28,9 +28,9 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "records/s:id"}
-		variant := &pb.Call_Read{Read: request}
-		call := &pb.Call{Version: 1, Operation: variant}
-		work, failure := adapter.PrepareCall(1, call)
+		variant := &pb.Command_Read{Read: request}
+		call := &pb.Command{Version: 1, Operation: variant}
+		work, failure := adapter.PrepareCommand(1, call)
 		if failure != nil {
 			t.Fatal(failure)
 		}

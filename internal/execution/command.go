@@ -7,46 +7,46 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
-// NormalizeCall adds the configured Store only after verifying the wire target.
+// NormalizeCommand adds the configured Store only after verifying the wire target.
 // It copies envelopes while borrowing immutable document/body buffers.
-func NormalizeCall(call *pb.Call, store string) (*pb.Call, *pb.Failure) {
+func NormalizeCommand(call *pb.Command, store string) (*pb.Command, *pb.Failure) {
 	if call == nil || call.Version != 1 {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unsupported or missing Call version")
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unsupported or missing Command version")
 	}
-	normalized := &pb.Call{Version: 1}
+	normalized := &pb.Command{Version: 1}
 	var resource string
 	switch value := call.Operation.(type) {
-	case *pb.Call_Read:
+	case *pb.Command_Read:
 		if value.Read == nil {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing read")
 		}
 		resource = value.Read.Resource
 		request := &pb.ReadRequest{Resource: "weir://" + store + "/" + resource, ReadMediaType: value.Read.ReadMediaType, AdapterOptions: value.Read.AdapterOptions}
-		normalized.Operation = &pb.Call_Read{Read: request}
-	case *pb.Call_Mutate:
+		normalized.Operation = &pb.Command_Read{Read: request}
+	case *pb.Command_Mutate:
 		if value.Mutate == nil {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing mutation")
 		}
 		resource = value.Mutate.Resource
 		request := &pb.MutateRequest{Resource: "weir://" + store + "/" + resource, AdapterOptions: value.Mutate.AdapterOptions, Action: value.Mutate.Action}
-		normalized.Operation = &pb.Call_Mutate{Mutate: request}
-	case *pb.Call_Scan:
+		normalized.Operation = &pb.Command_Mutate{Mutate: request}
+	case *pb.Command_Scan:
 		if value.Scan == nil {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing scan")
 		}
 		resource = value.Scan.Resource
 		request := &pb.ScanRequest{Resource: "weir://" + store + "/" + resource, Selector: value.Scan.Selector, ReadMediaType: value.Scan.ReadMediaType, PageSize: value.Scan.PageSize, ContinuationToken: value.Scan.ContinuationToken}
-		normalized.Operation = &pb.Call_Scan{Scan: request}
-	case *pb.Call_Native:
+		normalized.Operation = &pb.Command_Scan{Scan: request}
+	case *pb.Command_Native:
 		if value.Native == nil || value.Native.Open == nil {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing native request")
 		}
 		resource = value.Native.Open.Resource
 		request := &pb.NativeOpen{Resource: "weir://" + store + "/" + resource, Descriptor_: value.Native.Open.Descriptor_, BodyMediaType: value.Native.Open.BodyMediaType}
-		native := &pb.NativeCall{Open: request, Body: value.Native.Body}
-		normalized.Operation = &pb.Call_Native{Native: native}
+		native := &pb.NativeRequest{Open: request, Body: value.Native.Body}
+		normalized.Operation = &pb.Command_Native{Native: native}
 	default:
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing Call operation")
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing Command operation")
 	}
 	if resource == "" || strings.HasPrefix(resource, "/") || strings.Contains(resource, "://") {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "target must be a canonical relative Store path")
@@ -58,7 +58,7 @@ func NormalizeCall(call *pb.Call, store string) (*pb.Call, *pb.Failure) {
 	return normalized, nil
 }
 
-func RecordOperation(id uint64, call *pb.Call) *pb.Operation {
+func RecordOperation(id uint64, call *pb.Command) *pb.Operation {
 	operation := &pb.Operation{Index: id}
 	if read := call.GetRead(); read != nil {
 		operation.Operation = &pb.Operation_Read{Read: read}

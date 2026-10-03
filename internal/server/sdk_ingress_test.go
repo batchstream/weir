@@ -21,14 +21,14 @@ import (
 
 type sdkIngressReadAdapter struct{}
 
-func (a *sdkIngressReadAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
+func (a *sdkIngressReadAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
 	request := call.GetRead()
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	}
 	variant := &pb.Operation_Read{Read: request}
 	operation := &pb.Operation{Index: id, Operation: variant}
-	plan := &execution.Plan{ID: id, Call: call, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: proto.Size(call) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: protocol.ResultOverhead}
+	plan := &execution.Plan{ID: id, Command: call, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: proto.Size(call) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: protocol.ResultOverhead}
 	return plan, nil
 }
 
@@ -170,12 +170,10 @@ func sdkIngressRead(t *testing.T, client *weirclient.Client, storeName string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	request := &pb.ReadRequest{Resource: "records/s:key"}
-	variant := &pb.Call_Read{Read: request}
-	call := &pb.Call{Version: 1, Operation: variant}
-	options := weirclient.RecordOptions{StoreName: storeName, Call: call}
-	result, err := client.Record(ctx, options)
-	if err != nil || result.GetRead().GetMissing() == nil {
+	request := &weirclient.ReadRequest{Resource: "records/s:key"}
+	options := weirclient.ReadOptions{StoreName: storeName, Request: request}
+	result, err := client.Read(ctx, options)
+	if err != nil || !result.GetMissing() {
 		t.Fatalf("Store %s direct read failed across directory refresh: result=%v error=%v", storeName, result, err)
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net"
 	"net/http"
@@ -267,7 +266,7 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 		proxy.dropNext.Store(true)
 		if mode == "ordinary" {
 			request := searchBudgetPut(root, id)
-			routedResult268, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
+			routedResult268, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
 			result := routedResult268.GetMutation()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)
@@ -280,9 +279,9 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 			}
 			doc := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
 			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
-			nativeCall := &pb.NativeCall{Open: open, Body: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
-			nativeVariant := &pb.Call_Native{Native: nativeCall}
-			call := &pb.Call{Version: 1, Operation: nativeVariant}
+			nativeCall := &pb.NativeRequest{Open: open, Body: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
+			nativeVariant := &pb.Command_Native{Native: nativeCall}
+			call := &pb.Command{Version: 1, Operation: nativeVariant}
 			stream, err := testutil.OneEvents(ctx, client, call)
 			if err != nil {
 				t.Fatal(err)

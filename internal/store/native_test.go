@@ -21,18 +21,18 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	open := &pb.NativeOpen{Resource: "records"}
-	native := &pb.NativeCall{Open: open}
-	variant := &pb.Call_Native{Native: native}
-	call := &pb.Call{Version: 1, Operation: variant}
-	first, _ := runtime.PrepareCall(1, call)
+	native := &pb.NativeRequest{Open: open}
+	variant := &pb.Command_Native{Native: native}
+	call := &pb.Command{Version: 1, Operation: variant}
+	first, _ := runtime.PrepareCommand(1, call)
 	ticket, failure, _ := runtime.Submit(ctx, first, session)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	scan := &pb.ScanRequest{Resource: "records"}
-	scanVariant := &pb.Call_Scan{Scan: scan}
-	scanCall := &pb.Call{Version: 1, Operation: scanVariant}
-	second, _ := runtime.PrepareCall(2, scanCall)
+	scanVariant := &pb.Command_Scan{Scan: scan}
+	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
+	second, _ := runtime.PrepareCommand(2, scanCall)
 	secondTicket, failure, _ := runtime.Submit(ctx, second, session)
 	if failure != nil {
 		t.Fatal(failure)

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	weirclient "github.com/batchstream/weir-go"
 	"net"
 	"path/filepath"
 	"strings"
@@ -256,7 +255,7 @@ func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
 		}
 		defer conn.Close()
 		client := pb.NewStoreServiceClient(conn)
-		result, err := weirclient.Record(ctx, client, testutil.RecordCall(request))
+		result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
 		want := codes.Unavailable
 		if i == 1 {
 			want = codes.Unimplemented

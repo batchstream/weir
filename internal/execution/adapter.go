@@ -14,7 +14,7 @@ const DefaultMaxReadSize = 16 << 10
 
 type Plan struct {
 	ID                                   uint64
-	Call                                 *pb.Call
+	Command                              *pb.Command
 	Operation                            *pb.Operation
 	Key, BatchKey                        string
 	Bytes, ResultBytes, WorkingBytes     int
@@ -41,7 +41,7 @@ const (
 type Emit func(*Plan, *pb.Event) error
 
 type Adapter interface {
-	PrepareCall(uint64, *pb.Call) (*Plan, *pb.Failure)
+	PrepareCommand(uint64, *pb.Command) (*Plan, *pb.Failure)
 	Execute(context.Context, []*Plan, Emit) Feedback
 	ClosePlan(context.Context, *Plan) *pb.Failure
 	Close() error

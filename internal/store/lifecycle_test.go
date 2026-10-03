@@ -13,7 +13,7 @@ import (
 
 type lifecycleAdapter struct{ closes atomic.Int32 }
 
-func (a *lifecycleAdapter) PrepareCall(uint64, *pb.Call) (*execution.Plan, *pb.Failure) {
+func (a *lifecycleAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, nil
 }
 func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) execution.Feedback {

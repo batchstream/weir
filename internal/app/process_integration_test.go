@@ -174,19 +174,19 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	document := processDocument(t, opts.store, "example", 1)
 	put := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: resource, Action: put}
-	routedResult173, err := weirclient.Record(ctx, opts.client, testutil.RecordCall(mutation))
+	routedResult173, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordCommand(mutation))
 	result := routedResult173.GetMutation()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
 		t.Fatal("direct mutation", result, err)
 	}
 	read := &pb.ReadRequest{Resource: resource}
-	routedResult178, err := weirclient.Record(ctx, opts.client, testutil.RecordCall(read))
+	routedResult178, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordCommand(read))
 	found := routedResult178.GetRead()
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
 		t.Fatal("direct read", found, err)
 	}
 	bulk := testutil.OpenEvents(ctx, opts.client, opts.store)
-	var frame *pb.Call
+	var frame *pb.Command
 	readVariant := &pb.Operation_Read{Read: read}
 	readOperation := &pb.Operation{Index: 0, Operation: readVariant}
 	document = processDocument(t, opts.store, "bulk-example", 2)
@@ -195,7 +195,7 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	mutationVariant := &pb.Operation_Mutate{Mutate: mutation}
 	mutationOperation := &pb.Operation{Index: 1, Operation: mutationVariant}
 	for _, operation := range []*pb.Operation{readOperation, mutationOperation} {
-		_, item := testutil.OperationCall(operation)
+		_, item := testutil.OperationCommand(operation)
 		frame = item
 		if err := bulk.Send(frame); err != nil {
 			t.Fatal(err)
@@ -269,9 +269,9 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	}
 	if len(body) != 0 {
 	}
-	nativeCall := &pb.NativeCall{Open: open, Body: body}
-	nativeVariant := &pb.Call_Native{Native: nativeCall}
-	call := &pb.Call{Version: 1, Operation: nativeVariant}
+	nativeCall := &pb.NativeRequest{Open: open, Body: body}
+	nativeVariant := &pb.Command_Native{Native: nativeCall}
+	call := &pb.Command{Version: 1, Operation: nativeVariant}
 	stream, err := testutil.OneEvents(ctx, opts.client, call)
 	if err != nil {
 		t.Fatal(err)
@@ -331,8 +331,8 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
 	t.Helper()
 	request := &pb.ScanRequest{Resource: opts.root}
-	scanVariant := &pb.Call_Scan{Scan: request}
-	scanCall := &pb.Call{Version: 1, Operation: scanVariant}
+	scanVariant := &pb.Command_Scan{Scan: request}
+	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
 	stream, err := testutil.OneEvents(ctx, opts.client, scanCall)
 	if err != nil {
 		t.Fatal(err)
@@ -422,16 +422,21 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		doc := processDocument(t, kind, "initialized", 7)
 		put := &pb.MutateRequest_Put{Put: doc}
 		mutation := &pb.MutateRequest{Resource: root + "/s:initialized", Action: put}
-		applied, err := discovered.Record(ctx, testutil.RecordCall(mutation))
-		if err != nil || applied.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		relative := strings.TrimPrefix(mutation.Resource, "weir://"+kind+"/")
+		writeRequest := &weirclient.WriteRequest{Resource: relative, Document: doc}
+		writeOptions := weirclient.WriteOptions{StoreName: kind, Request: writeRequest}
+		applied, err := discovered.Put(ctx, writeOptions)
+		if err != nil || applied.GetOutcome() != weirclient.MutationApplied {
 			t.Fatal("initialized client direct mutation", applied, err)
 		}
 		read := &pb.ReadRequest{Resource: mutation.Resource}
-		found, err := discovered.Record(ctx, testutil.RecordCall(read))
-		if err != nil || processRecordNumber(t, found.GetRead().GetDocument()) != 7 {
+		readRequest := &weirclient.ReadRequest{Resource: relative}
+		readOptions := weirclient.ReadOptions{StoreName: kind, Request: readRequest}
+		found, err := discovered.Read(ctx, readOptions)
+		if err != nil || processRecordNumber(t, found.GetDocument()) != 7 {
 			t.Fatal("initialized client persisted read", found, err)
 		}
-		_, err = weirclient.Record(ctx, rawSeed, testutil.RecordCall(read))
+		_, err = testutil.ExecuteRecord(ctx, rawSeed, testutil.RecordCommand(read))
 		if status.Code(err) != codes.Unavailable {
 			t.Fatal("nonowner business request was not rejected", err)
 		}

@@ -35,8 +35,8 @@ func assertRouteScanAcrossInstances(t *testing.T, opts routeScanAcrossInstancesO
 	readPage := func(t *testing.T, client pb.StoreServiceClient) *pb.ScanEnd {
 		t.Helper()
 		request := &pb.ScanRequest{Resource: opts.resource, PageSize: pageSize, ContinuationToken: bytes.Clone(token)}
-		variant := &pb.Call_Scan{Scan: request}
-		call := &pb.Call{Version: 1, Operation: variant}
+		variant := &pb.Command_Scan{Scan: request}
+		call := &pb.Command{Version: 1, Operation: variant}
 		events := routeBackendEvents(t, client, call)
 		if len(events) == 0 || len(events) > pageSize+1 {
 			t.Fatal("scan did not complete one bounded page", len(events))

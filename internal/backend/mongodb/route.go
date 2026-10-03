@@ -12,11 +12,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (a *Adapter) PrepareCall(id uint64, input *pb.Call) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan, *pb.Failure) {
 	if id == 0 || proto.Size(input) > protocol.MaxFrame {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ID or Call size")
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ID or Command size")
 	}
-	call, failure := execution.NormalizeCall(input, a.config.Store)
+	call, failure := execution.NormalizeCommand(input, a.config.Store)
 	if failure != nil {
 		return nil, failure
 	}
@@ -42,7 +42,7 @@ func (a *Adapter) PrepareCall(id uint64, input *pb.Call) (*execution.Plan, *pb.F
 	}
 	work.CleanupRequired = call.GetScan() != nil
 	work.Streaming = call.GetNative() != nil
-	work.Call = call
+	work.Command = call
 	work.ID = id
 	work.Bytes = max(work.Bytes, 2*proto.Size(input)+4096)
 	if call.GetRead() != nil {
@@ -65,7 +65,7 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		return execution.Neutral
 	}
 	work := works[0]
-	if !work.Singleton || work.Call == nil || work.Call.GetRead() != nil || work.Call.GetMutate() != nil {
+	if !work.Singleton || work.Command == nil || work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
 		results, feedback := a.executeRecords(ctx, works)
 		for i, result := range results {
 			value := &pb.Event_Result{Result: result}
@@ -74,10 +74,10 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		}
 		return feedback
 	}
-	if work.Call.GetScan() != nil {
+	if work.Command.GetScan() != nil {
 		return a.streamScan(ctx, work, emit)
 	}
-	native := work.Call.GetNative()
+	native := work.Command.GetNative()
 	source := io.NopCloser(bytes.NewReader(native.Body))
 	sink := &eventSink{work: work, emit: emit}
 	exchange := &execution.NativeExchange{Source: source, Sink: sink}

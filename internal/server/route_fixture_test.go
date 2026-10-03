@@ -37,7 +37,7 @@ func newPeerAdapter(name string) *peerAdapter {
 	adapter := &peerAdapter{name: name, documents: make(map[string]*pb.Document), seen: make(chan context.Context, 64)}
 	return adapter
 }
-func (a *peerAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *pb.Failure) {
+func (a *peerAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
 	op := &pb.Operation{Index: id}
 	if request := call.GetRead(); request != nil {
 		op.Operation = &pb.Operation_Read{Read: request}
@@ -55,7 +55,7 @@ func (a *peerAdapter) PrepareCall(id uint64, call *pb.Call) (*execution.Plan, *p
 	if op.GetRead() != nil {
 		resultBytes += protocol.MaxDocument
 	}
-	plan := &execution.Plan{ID: id, Call: call, Operation: op, Key: key, BatchKey: "records", Bytes: proto.Size(call) + protocol.EntryOverhead, ResultBytes: resultBytes, WorkingBytes: resultBytes}
+	plan := &execution.Plan{ID: id, Command: call, Operation: op, Key: key, BatchKey: "records", Bytes: proto.Size(call) + protocol.EntryOverhead, ResultBytes: resultBytes, WorkingBytes: resultBytes}
 	return plan, nil
 }
 func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
@@ -218,7 +218,7 @@ func waitPeerIdle(t *testing.T, s *Server) {
 		time.Sleep(time.Millisecond)
 	}
 }
-func routeRecord(client pb.StoreServiceClient, ctx context.Context, call *pb.Call) (*pb.Result, error) {
+func routeRecord(client pb.StoreServiceClient, ctx context.Context, call *pb.Command) (*pb.Result, error) {
 	data, err := proto.Marshal(call)
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func routeRecord(client pb.StoreServiceClient, ctx context.Context, call *pb.Cal
 	if err != nil {
 		return nil, err
 	}
-	request := &pb.ExecuteRequest{RequestId: 1, StoreName: "records", CallPayload: data}
+	request := &pb.ExecuteRequest{RequestId: 1, StoreName: "records", CommandPayload: data}
 	if err := stream.Send(request); err != nil {
 		return nil, err
 	}
@@ -269,8 +269,8 @@ func routeRecord(client pb.StoreServiceClient, ctx context.Context, call *pb.Cal
 	return event.GetResult(), nil
 }
 func routeRead(client pb.StoreServiceClient, ctx context.Context, request *pb.ReadRequest) (*pb.ReadResult, error) {
-	value := &pb.Call_Read{Read: request}
-	call := &pb.Call{Version: 1, Operation: value}
+	value := &pb.Command_Read{Read: request}
+	call := &pb.Command{Version: 1, Operation: value}
 	result, err := routeRecord(client, ctx, call)
 	if err != nil {
 		return nil, err
@@ -278,8 +278,8 @@ func routeRead(client pb.StoreServiceClient, ctx context.Context, request *pb.Re
 	return result.GetRead(), nil
 }
 func routeMutate(client pb.StoreServiceClient, ctx context.Context, request *pb.MutateRequest) (*pb.MutationResult, error) {
-	value := &pb.Call_Mutate{Mutate: request}
-	call := &pb.Call{Version: 1, Operation: value}
+	value := &pb.Command_Mutate{Mutate: request}
+	call := &pb.Command{Version: 1, Operation: value}
 	result, err := routeRecord(client, ctx, call)
 	if err != nil {
 		return nil, err

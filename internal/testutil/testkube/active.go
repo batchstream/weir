@@ -35,9 +35,9 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.StoreSer
 	doc := &pb.Document{MediaType: "application/vnd.weir.search-http.v1+protobuf", Data: raw}
 	open := &pb.NativeOpen{Resource: "weir://records/records", Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
 	body := []byte(fmt.Sprintf("{\"index\":{\"_id\":%q}}\n{\"n\":1}\n", id))
-	native := &pb.NativeCall{Open: open, Body: body}
-	variant := &pb.Call_Native{Native: native}
-	call := &pb.Call{Version: 1, Operation: variant}
+	native := &pb.NativeRequest{Open: open, Body: body}
+	variant := &pb.Command_Native{Native: native}
+	call := &pb.Command{Version: 1, Operation: variant}
 	stream, err := testutil.OneEvents(ctx, client, call)
 	if err != nil {
 		return err

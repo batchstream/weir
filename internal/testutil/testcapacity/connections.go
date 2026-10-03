@@ -224,7 +224,7 @@ func connectionProbe(ctx context.Context, encoder *json.Encoder, opts Connection
 			defer workers.Done()
 			for op := range jobs {
 				call, cancel := context.WithDeadline(ctx, op.Planned.Add(time.Second))
-				result := c.Call(call, op)
+				result := c.Execute(call, op)
 				cancel()
 				mu.Lock()
 				report.Started++

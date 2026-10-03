@@ -11,20 +11,20 @@ Public and internal peer schemas are independent; see [protocols](protocols.md).
 
 ## Protocol and completion
 
-`ExecuteRequest{request_id,store_name,call_payload}` carries one complete Call. The first valid
+`ExecuteRequest{request_id,store_name,command_payload}` carries one complete Command. The first valid
 request fixes the local Store and runtime; the client selects one instance. Every request repeats
 the same store_name. IDs are positive, strictly increasing unsigned integers;
 gaps are legal, reuse and overflow are not. They associate results only: no durable
 deduplication or exactly-once guarantee exists.
 
-The payload is protobuf `Call` version 1. Every adapter has one strict preparation
+The payload is protobuf `Command` version 1. Every adapter has one strict preparation
 entry, which rejects unknown fields recursively, missing operations and unknown
 versions. Adding incompatible semantics requires a new supported version; unknown
 versions fail, rather than being guessed from document contents. Configuration
 selects MongoDB, Elasticsearch or OpenSearch; the envelope has no backend selector.
 
 The [adapter payload contract](route-payloads.md) defines media profiles, targets
-and validation boundaries. A Call contains a read, mutation, scan or bounded native operation. Resource paths
+and validation boundaries. A Command contains a read, mutation, scan or bounded native operation. Resource paths
 are relative to the Store and canonical, for example `db/collection/s:one` for
 MongoDB and `index/s:one` for Search. Full `weir://` wire resources are rejected.
 The adapter converts a relative target to its private canonical identity. Same
@@ -85,7 +85,7 @@ backend connection configuration or credentials.
 
 | Budget | Bound |
 | --- | --- |
-| Complete Call | 9 MiB; gRPC Request limit adds 128 bytes envelope allowance |
+| Complete Command | 9 MiB; gRPC Request limit adds 128 bytes envelope allowance |
 | Record | 2 MiB opaque document; typed Lua values remain limited to 256 KiB |
 | Native body | Mongo command 4 MiB; Search body 8 MiB |
 | Response frame | 64 KiB payload plus bounded protobuf overhead |
@@ -126,7 +126,7 @@ It must not be described as an allocation sandbox.
 
 ## Execution and batching
 
-One Store scheduler admits every Call with input, output and workspace charges.
+One Store scheduler admits every Command with input, output and workspace charges.
 It selects compatible adapter batch keys under count/input/result/workspace bounds,
 and waits at most `batch_collect` (default 5 ms, configurable 0–10 ms). A near-deadline
 item dispatches without waiting to fill the batch. Ordinary MongoDB requests batch
@@ -202,7 +202,7 @@ Canceling a blocked response interrupts that HTTP/2 stream through its owned
 deadlines. A transport stall watchdog can still close the shared connection to
 bound an unresponsive peer. Cancellation alone does not close sibling streams.
 
-Scan admits one finite page per Call: `page_size=0` selects 128 documents, and the
+Scan admits one finite page per Command: `page_size=0` selects 128 documents, and the
 maximum is 256. Each scheduler step fetches at most one document, with no prefetch
 and FIFO continuation after publication. Sending a document does not retain an
 execution permit, so a stalled scan at concurrency one permits short record work.
@@ -261,9 +261,9 @@ accepts an incremental producer and consumer and synchronously
 returns after all request ends and final status. It sends and receives concurrently
 with eight input slots/16 MiB charges. Complete observes each validated request end;
 Consume exposes bounded incremental Events. Callbacks must honor context and release
-Events on return. `Record` collects one bounded read/write result; collecting an
+Events on return. `Read` and mutation methods collect one bounded business result; collecting an
 entire batch in application callbacks requires memory for that entire batch.
-`Record` can return a validated result together with an RPC error after a lost
+The SDK can return a validated result together with an RPC error after a lost
 end frame or failing final status. Preserve that result as backend evidence and
 check the error separately for complete RPC success.
 Reuse a connection across finite RPCs; a permanently open stream is unnecessary.

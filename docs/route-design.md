@@ -11,7 +11,7 @@ local Store. The first valid envelope fixes the Store runtime, and the client
 transport pins that RPC to one instance. Input half-close stops new requests while
 remaining responses drain. Directory or DNS changes affect subsequent RPCs.
 
-Call version 1 is a strict protobuf schema selected by Store configuration. Its
+Command version 1 is a strict protobuf schema selected by Store configuration. Its
 target is relative to the Store. Records, scans and bounded native exchanges share
 one admission and scheduler. Backend transaction/CAS and per-item outcome
 verification remain adapter responsibilities. Lua evaluates in the main process.
@@ -21,7 +21,7 @@ Responses form a length-delimited stream of version 1 Events. Frames carry at mo
 request terminals and final gRPC OK. Transport failure leaves unfinished writes
 indeterminate; IDs associate results and no business request is replayed.
 
-Bounds remain: a complete Call at most 9 MiB, native body at most 8 MiB, record at
+Bounds remain: a complete Command at most 9 MiB, native body at most 8 MiB, record at
 most 2 MiB, eight unfinished operations and 16 MiB input charges per RPC. Execution
 reserves bounded result and decoding workspace before dispatch. One read-ahead
 message, codec copies, HTTP/2 buffers and connections have separate accounting.

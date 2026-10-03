@@ -26,7 +26,7 @@ func TestFullResponseAndNoMutationRetry(t *testing.T) {
 	}
 	defer c.Close()
 	op := Operation{ID: "test", Write: true}
-	res := c.Call(context.Background(), op)
+	res := c.Execute(context.Background(), op)
 	if res.Outcome != unknown || calls.Load() != 1 {
 		t.Fatal(res, calls.Load())
 	}
@@ -91,7 +91,7 @@ func TestDeadlineBeforeDispatchNotUnknown(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	op := Operation{Write: true}
-	r := c.Call(ctx, op)
+	r := c.Execute(ctx, op)
 	if r.Outcome != notStarted {
 		t.Fatal(r)
 	}

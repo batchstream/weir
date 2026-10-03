@@ -77,7 +77,7 @@ func TestPeerDescriptorClosureExcludesBusinessDTOs(t *testing.T) {
 		if file.Package() == "weir.v1" || strings.HasPrefix(file.Path(), "api/weir/") {
 			t.Fatal("internal peer descriptor imports public business protocol", file.Path(), file.Package())
 		}
-		for _, name := range []protoreflect.Name{"Call", "Event", "Document", "Operation", "Result", "ResolveStoreRequest", "ResolveStoreResponse", "ExecuteRequest", "ExecuteResponse"} {
+		for _, name := range []protoreflect.Name{"Command", "NativeRequest", "Event", "Document", "Operation", "Result", "ResolveStoreRequest", "ResolveStoreResponse", "ExecuteRequest", "ExecuteResponse"} {
 			if file.Messages().ByName(name) != nil {
 				t.Fatal("business DTO exists in internal descriptor closure", file.Path(), name)
 			}

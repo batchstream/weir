@@ -151,7 +151,7 @@ func failureMessage(err error) string {
 	return "sha256:" + hex.EncodeToString(digest[:8])
 }
 
-func (c *Client) Call(ctx context.Context, op Operation) Result {
+func (c *Client) Execute(ctx context.Context, op Operation) Result {
 	if op.Write {
 		c.MutationsStarted.Add(1)
 	}
@@ -172,12 +172,9 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 		data = mongoPayload(op.ID)
 	}
 	if !op.Write {
-		req := &pb.ReadRequest{Resource: resource, ReadMediaType: media}
-		variant := &pb.Call_Read{Read: req}
-		call := &pb.Call{Version: 1, Operation: variant}
-		opts := weirclient.RecordOptions{StoreName: "records", Call: call}
-		result, err := weirclient.Record(ctx, client, opts)
-		resp := result.GetRead()
+		req := &weirclient.ReadRequest{Resource: resource, ReadMediaType: media}
+		opts := weirclient.ReadOptions{StoreName: "records", Request: req}
+		resp, err := weirclient.Read(ctx, client, opts)
 		if err != nil {
 			r := failure("transport_"+status.Code(err).String(), false)
 			r.Message = failureMessage(err)
@@ -192,14 +189,10 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 		r := Result{Class: "ok"}
 		return r
 	}
-	doc := &pb.Document{MediaType: media, Data: data}
-	action := &pb.MutateRequest_Put{Put: doc}
-	req := &pb.MutateRequest{Resource: resource, Action: action}
-	variant := &pb.Call_Mutate{Mutate: req}
-	call := &pb.Call{Version: 1, Operation: variant}
-	opts := weirclient.RecordOptions{StoreName: "records", Call: call}
-	result, err := weirclient.Record(ctx, client, opts)
-	resp := result.GetMutation()
+	doc := &weirclient.Document{MediaType: media, Data: data}
+	req := &weirclient.WriteRequest{Resource: resource, Document: doc}
+	opts := weirclient.WriteOptions{StoreName: "records", Request: req}
+	resp, err := weirclient.Put(ctx, client, opts)
 	r := Result{Outcome: unknown, Class: "ok"}
 	// Public enum and ledger encodings are deliberately different.
 	switch resp.GetOutcome() {
@@ -214,7 +207,7 @@ func (c *Client) Call(ctx context.Context, op Operation) Result {
 	default:
 		r.Class = "invalid_outcome"
 	}
-	// Record preserves a validated result even when its end frame or trailers
+	// Put preserves a validated result even when its end frame or trailers
 	// are lost. RPC failure is distinct from irreversible mutation evidence.
 	if err != nil {
 		r.Class = "transport_" + status.Code(err).String()

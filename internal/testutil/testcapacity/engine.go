@@ -237,7 +237,7 @@ func runTrial(ctx context.Context, client *Client, opts TrialOptions) (*Trial, e
 				expired := call.Err() != nil || !dispatch.Before(op.Planned.Add(callLifetime))
 				result := Result{Class: "ok", Outcome: applied}
 				if !expired && !opts.TimingOnly {
-					result = client.Call(call, op)
+					result = client.Execute(call, op)
 				}
 				end := time.Now()
 				cancel()
