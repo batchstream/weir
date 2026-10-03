@@ -9,6 +9,7 @@ import (
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/store"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
@@ -20,8 +21,8 @@ type rpcContextKey uint8
 
 const rpcKey rpcContextKey = 0
 
-// rpcState starts before gRPC reads or decodes DATA. It retains admission and
-// application response credits through gRPC's serialization and write enqueue.
+// rpcState admits input before gRPC reads or decodes DATA. Handler completion
+// releases that slot; result and encoded output have their own byte budgets.
 type rpcState struct {
 	mu       sync.Mutex
 	server   *Server
@@ -97,7 +98,7 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 }
 
 // The transport may abort an already expired tap before TagRPC/Stats.End.
-// Once dispatched, only Stats.End releases decode/handler admission credits.
+// Once dispatched, cancellation cannot release a still-running handler's slot.
 func (state *rpcState) cancelBeforeDispatch(err error) {
 	state.mu.Lock()
 	if state.started || state.finished {
@@ -123,6 +124,33 @@ func (state *rpcState) retain(ticket *store.Ticket) {
 	state.ticket = ticket
 }
 
+func (state *rpcState) releaseAdmission() {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.releaseAdmissionLocked()
+}
+
+func (state *rpcState) releaseAdmissionLocked() {
+	if state.slots != nil {
+		<-state.slots
+		state.slots = nil
+	}
+}
+
+func unaryRPC(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if state, ok := ctx.Value(rpcKey).(*rpcState); ok {
+		defer state.releaseAdmission()
+	}
+	return handler(ctx, request)
+}
+
+func streamRPC(server any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok {
+		defer state.releaseAdmission()
+	}
+	return handler(server, stream)
+}
+
 func (state *rpcState) finish(err error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -144,7 +172,7 @@ func (state *rpcState) finishLocked(err error) {
 		state.ticket.Ack()
 	}
 	state.server.metrics.rpcs.WithLabelValues(state.method, statusLabel(err)).Inc()
-	<-state.slots
+	state.releaseAdmissionLocked()
 	state.cancel()
 }
 

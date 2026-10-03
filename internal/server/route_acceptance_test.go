@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,6 +134,45 @@ func TestReadBatchKeepsPhysicalBatchAndAccepts513Records(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestContinuousBatchReadsAtSessionLimit(t *testing.T) {
+	adapter := newPeerAdapter("records")
+	limits := DefaultLimits()
+	limits.Sessions = 64
+	opts := routeAcceptanceNodeOptions{adapter: adapter, limits: limits}
+	node := startRouteAcceptanceNode(t, opts)
+	client := routeAcceptanceClient(t, node.address)
+	read := &pb.ReadRequest{Resource: "records/s:item"}
+	request := &pb.ReadBatchRequest{StoreName: "records", Requests: make([]*pb.ReadRequest, 32)}
+	for i := range request.Requests {
+		request.Requests[i] = read
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	failures := make(chan error, limits.Sessions)
+	var workers sync.WaitGroup
+	for range limits.Sessions {
+		workers.Go(func() {
+			for range 32 {
+				response, err := client.Read(ctx, request)
+				if err != nil {
+					failures <- err
+					return
+				}
+				if len(response.Results) != len(request.Requests) {
+					failures <- fmt.Errorf("batch result count changed: %d", len(response.Results))
+					return
+				}
+			}
+		})
+	}
+	workers.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error("legitimate continuous session boundary rejected", err)
+	}
+	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
 }
 
 func TestMutationBatchValidatesEntireInputAndOrdersDuplicateKeys(t *testing.T) {

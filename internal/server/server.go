@@ -117,6 +117,8 @@ func New(cfg Config) (*Server, error) {
 		grpc.MaxConcurrentStreams(uint32(l.Sessions + cap(s.control))),
 		grpc.MaxHeaderListSize(16 << 10),
 		grpc.InTapHandle(s.admitRPC),
+		grpc.UnaryInterceptor(unaryRPC),
+		grpc.StreamInterceptor(streamRPC),
 		grpc.StatsHandler(statistics),
 		grpc.ForceServerCodecV2(codec),
 		grpc.KeepaliveParams(keepaliveParameters),
