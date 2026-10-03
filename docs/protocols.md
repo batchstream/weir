@@ -53,4 +53,4 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. This change requires protocol v0.2.0 and Go SDK v0.4.0.
+safe typed completion. This change requires protocol v0.2.0 and Go SDK v0.4.1.
