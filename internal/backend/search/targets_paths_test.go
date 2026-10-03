@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
@@ -142,6 +143,13 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 			}
 			defer a.Close()
 			var scans sync.WaitGroup
+			scanContext, cancelScans := context.WithTimeout(context.Background(), 5*time.Second)
+			// Join even when a Native assertion calls Fatal. PIT cleanup needs
+			// the adapter and test server to remain open until the workers end.
+			defer func() {
+				cancelScans()
+				scans.Wait()
+			}()
 			for _, index := range []string{"left", "right"} {
 				request := &pb.ScanRequest{Resource: "weir://search/" + index}
 				work, failure := a.prepareScan(request)
@@ -150,12 +158,14 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				}
 				scans.Go(func() {
 					defer func() {
-						if failure := a.closeScan(context.Background(), work); failure != nil {
+						cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), callLimit)
+						defer cancelCleanup()
+						if failure := a.closeScan(cleanupContext, work); failure != nil {
 							t.Error(failure)
 						}
 					}()
 					for step := range 3 {
-						page, _ := a.fetchScan(context.Background(), work)
+						page, _ := a.fetchScan(scanContext, work)
 						if page.Failure != nil || page.Exhausted != (step == 2) {
 							t.Error("Scan target/PIT failure", index, step, page)
 							return
