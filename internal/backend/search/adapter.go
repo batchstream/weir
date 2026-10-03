@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
-	"google.golang.org/protobuf/proto"
 )
 
 const ElasticsearchProduct = "elasticsearch"
@@ -59,7 +57,18 @@ type plan struct {
 
 type capabilities struct{ source, write, nativeWrite bool }
 
-var indexPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+func validIndex(name string) bool {
+	if len(name) == 0 || len(name) > 63 || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		b := name[i]
+		if (b < 'a' || b > 'z') && (b < '0' || b > '9') && b != '_' && b != '-' {
+			return false
+		}
+	}
+	return true
+}
 
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
@@ -239,13 +248,10 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 	return caps, nil, execution.Neutral
 }
 
-func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure) {
-	if failure := protocol.Validate(op, a.config.Store); failure != nil {
-		return nil, failure
-	}
-	resource := protocol.Resource(op)
-	_, segments, err := protocol.ParseResource(resource)
-	if err != nil || len(segments) != 2 || !indexPattern.MatchString(segments[0]) {
+func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	op := record.Operation()
+	segments := record.Segments()
+	if len(segments) != 2 || !validIndex(segments[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "one concrete Search index and string ID required")
 	}
 	key := segments[1]
@@ -255,9 +261,9 @@ func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure)
 	native := &plan{index: segments[0], id: key[2:]}
 	work := &execution.Plan{
 		Operation:   op,
-		Key:         resource,
+		Key:         record.Key(),
 		Backend:     native,
-		Bytes:       proto.Size(op) + len(resource)*2 + 1024,
+		Bytes:       record.Bytes(),
 		ResultBytes: protocol.ResultOverhead,
 	}
 	if read := op.GetRead(); read != nil {
@@ -297,6 +303,7 @@ func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure)
 					if validateJSON(program.Input.Data, 4096) != nil {
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
 					}
+					var err error
 					input, err = value.DecodeJSON(program.Input.Data)
 					if err != nil {
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")

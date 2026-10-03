@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -201,6 +202,35 @@ func TestMutationBatchValidatesEntireInputAndOrdersDuplicateKeys(t *testing.T) {
 		t.Fatal("duplicate mutation keys executed out of input order", read, err)
 	}
 	waitPeerIdle(t, srv)
+}
+
+func TestReadBatchRejectsRetainedPathMetadataBeforeBackendWork(t *testing.T) {
+	adapter, local := peerLocal(t, "records")
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	srv, address := startPeerServer(t, opts)
+	_, client := peerClient(t, address)
+	read := &pb.ReadRequest{Resource: strings.Repeat("a/", 1500) + "a"}
+	items := make([]*pb.ReadRequest, 1200)
+	for i := range items {
+		items[i] = read
+	}
+	request := &pb.ReadBatchRequest{StoreName: "records", Requests: items}
+	if err := protocol.ValidateReadBatchRequest(request); err != nil {
+		t.Fatal("metadata fixture violates the public wire contract", err)
+	}
+	if _, err := client.Read(t.Context(), request); status.Code(err) != codes.ResourceExhausted {
+		t.Fatal("native RPC lost the preparation metadata error", err)
+	}
+	adapter.mu.Lock()
+	count := len(adapter.batchSizes)
+	adapter.mu.Unlock()
+	if count != 0 {
+		t.Fatal("oversized retained metadata reached backend execution", count)
+	}
+	waitPeerIdle(t, srv)
+	if snapshot := local.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
+		t.Fatal("rejected retained metadata reserved Store resources", snapshot)
+	}
 }
 
 func TestBatchLargeDocumentsUseActualSharedResponseBudget(t *testing.T) {

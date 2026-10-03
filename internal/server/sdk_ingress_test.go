@@ -25,7 +25,8 @@ func (a *sdkIngressReadAdapter) PrepareCommand(uint64, *pb.Command) (*execution.
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 }
 
-func (a *sdkIngressReadAdapter) PrepareOperation(operation *pb.Operation) (*execution.Plan, *pb.Failure) {
+func (a *sdkIngressReadAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
 	request := operation.GetRead()
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")

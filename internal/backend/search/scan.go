@@ -42,7 +42,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, f
 	}
 	_, parts, _ := protocol.ParseResource(req.Resource)
-	if len(parts) != 1 || !indexPattern.MatchString(parts[0]) {
+	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan requires one concrete Search index")
 	}
 	if req.ReadMediaType != "" && req.ReadMediaType != "application/json" {

@@ -35,7 +35,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 		read := &pb.ReadRequest{Resource: resource}
 		variant := &pb.Operation_Read{Read: read}
 		op := &pb.Operation{Operation: variant}
-		if _, failure := a.prepareRecord(op); failure == nil {
+		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Fatal("unsupported URI accepted", resource)
 		}
 	}
@@ -44,7 +44,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
 	variant := &pb.Operation_Mutate{Mutate: mutation}
 	op := &pb.Operation{Operation: variant}
-	work, failure := a.prepareRecord(op)
+	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -53,7 +53,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	}
 	options := &pb.Document{MediaType: "application/json", Data: []byte(`{"routing":"x"}`)}
 	mutation.AdapterOptions = options
-	if _, failure := a.prepareRecord(op); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
+	if _, failure := prepareTestRecord(a, op); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("options accepted")
 	}
 	mutation.AdapterOptions = nil
@@ -61,7 +61,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	programForm := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: programForm}
 	mutation.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	if _, failure := a.prepareRecord(op); failure != nil {
+	if _, failure := prepareTestRecord(a, op); failure != nil {
 		t.Fatal("built-in Lua program transform rejected", failure)
 	}
 }
@@ -108,7 +108,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
 	variant := &pb.Operation_Mutate{Mutate: mutation}
 	op := &pb.Operation{Operation: variant}
-	work, failure := a.prepareRecord(op)
+	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}

@@ -105,7 +105,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 	for i, target := range fixture.targets {
 		document := bson.D{{Key: "_id", Value: "shared"}, {Key: "n", Value: int32(i + 1)}}
 		opts := batchOperationOptions{resource: targetResource(target) + "/s:shared", action: "create", index: uint64(i + 12), document: document}
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -135,7 +135,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		for j, action := range []string{"read", "create"} {
 			document := bson.D{{Key: "_id", Value: "shared"}, {Key: "n", Value: int32(999)}}
 			opts := batchOperationOptions{resource: targetResource(target) + "/s:shared", action: action, index: uint64(70 + i*2 + j), document: document}
-			work, failure := adapter.prepareRecord(batchOperation(t, opts))
+			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -164,7 +164,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			index:    uint64(50 + i),
 			program:  `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("10"))))`,
 		}
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -243,7 +243,7 @@ func TestMongoResourceTargetsConcurrent(t *testing.T) {
 			for i := 0; i < 8; i++ {
 				document := bson.D{{Key: "_id", Value: "same"}, {Key: "n", Value: int32(i)}}
 				opts := batchOperationOptions{resource: targetResource(target) + "/s:same", action: "put", document: document}
-				work, failure := fixture.adapter.prepareRecord(batchOperation(t, opts))
+				work, failure := prepareTestRecord(fixture.adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Error(failure)
 					return
@@ -334,7 +334,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 						document: document,
 						program:  `return weir.replace(weir.object("n", weir.i32("1")))`,
 					}
-					work, failure := fixture.adapter.prepareRecord(batchOperation(t, opts))
+					work, failure := prepareTestRecord(fixture.adapter, batchOperation(t, opts))
 					if failure != nil {
 						t.Fatal(failure)
 					}

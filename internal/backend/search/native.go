@@ -41,7 +41,7 @@ func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 		return nil, f
 	}
 	_, parts, _ := protocol.ParseResource(open.Resource)
-	if len(parts) != 1 || !indexPattern.MatchString(parts[0]) {
+	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one concrete Search index")
 	}
 	if open.Descriptor_.MediaType != NativeDescriptor {

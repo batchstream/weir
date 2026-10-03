@@ -72,9 +72,13 @@ func batchMockAdapter(t *testing.T, responses []bson.D, monitor *event.CommandMo
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
 	config := Config{Store: "mongo"}
 	a := &Adapter{client: client, config: config}
+	t.Cleanup(func() {
+		if err := a.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return a
 }
 
@@ -107,7 +111,7 @@ func TestMongoPointReadRejectsMalformedCursorEvidence(t *testing.T) {
 			var plans []*execution.Plan
 			for _, name := range []string{"a", "b"} {
 				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + name, action: "read"}
-				p, failure := a.prepareRecord(batchOperation(t, opts))
+				p, failure := prepareTestRecord(a, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -137,7 +141,7 @@ func TestMongoPointReadMatchesTypedIDsAcrossPages(t *testing.T) {
 	var plans []*execution.Plan
 	for i, name := range []string{"s:a", "oid:" + objectID.Hex(), "i:42", "s:missing"} {
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/" + name, action: "read", index: uint64(i + 9)}
-		p, failure := a.prepareRecord(batchOperation(t, opts))
+		p, failure := prepareTestRecord(a, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -260,7 +264,7 @@ func TestMongoVerboseWriteCursorKeepsItemIndexesAndSessionAcrossPages(t *testing
 	for i, id := range []string{"a", "b"} {
 		document := bson.D{{Key: "_id", Value: id}}
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "create", index: uint64(i + 8), document: document}
-		p, failure := a.prepareRecord(batchOperation(t, opts))
+		p, failure := prepareTestRecord(a, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -295,7 +299,7 @@ func TestMongoReadContinuationStopsWhenItsCallersCancel(t *testing.T) {
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
 		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "read"}
-		p, failure := a.prepareRecord(batchOperation(t, opts))
+		p, failure := prepareTestRecord(a, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -345,7 +349,7 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
 	opts := batchOperationOptions{resource: "weir://mongo/db/records/s:a", action: "read"}
-	p, failure := a.prepareRecord(batchOperation(t, opts))
+	p, failure := prepareTestRecord(a, batchOperation(t, opts))
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -386,7 +390,7 @@ func TestMongoReadBatchAccepts513DistinctDocuments(t *testing.T) {
 	for i := range plans {
 		opts := batchOperationOptions{resource: fmt.Sprintf("weir://mongo/db/records/s:item-%d", i), action: "read", index: uint64(i + 1)}
 		var failure *pb.Failure
-		plans[i], failure = adapter.prepareRecord(batchOperation(t, opts))
+		plans[i], failure = prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}

@@ -51,7 +51,7 @@ func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution
 			op.Operation = &pb.Operation_Mutate{Mutate: mutation}
 		}
 	}
-	work, failure := a.prepareRecord(op)
+	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}

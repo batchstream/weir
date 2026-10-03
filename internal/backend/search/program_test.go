@@ -76,7 +76,7 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:item", Action: action}
 	variant := &pb.Operation_Mutate{Mutate: mutation}
 	operation := &pb.Operation{Operation: variant}
-	work, failure := a.prepareRecord(operation)
+	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -120,7 +120,7 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 				client: server.Client(),
 				ctx:    context.Background(),
 			}
-			work, failure := a.prepareRecord(operation)
+			work, failure := prepareTestRecord(a, operation)
 			if failure != nil {
 				t.Fatal(failure)
 			}

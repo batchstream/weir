@@ -23,7 +23,7 @@ import (
 func searchExpression(t *testing.T, a *Adapter, index, raw string) *execution.Plan {
 	t.Helper()
 	op := expressionOperation(searchResource(index, "counter"), raw)
-	p, f := a.prepareRecord(op)
+	p, f := prepareTestRecord(a, op)
 	if f != nil {
 		t.Fatal(f)
 	}

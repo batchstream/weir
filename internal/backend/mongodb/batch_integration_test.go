@@ -62,7 +62,7 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 			document = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
 		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + operation.id, action: operation.action, index: uint64(i + 3), document: document, program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
-		work, failure := a.prepareRecord(batchOperation(t, options))
+		work, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -116,7 +116,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		id := []string{"read-missing", "canceled-write", "peer-write", "canceled-program"}[i]
 		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(1)}}
 		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: document, program: "return weir.keep()"}
-		p, failure := a.prepareRecord(batchOperation(t, options))
+		p, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -159,7 +159,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 			doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
 		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: doc}
-		work, failure := a.prepareRecord(batchOperation(t, options))
+		work, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
 		}

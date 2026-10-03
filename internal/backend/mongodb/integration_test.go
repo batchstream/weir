@@ -299,7 +299,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 		m := &pb.MutateRequest{Resource: "weir://mongo/" + db + "/records/s:" + id, Action: action}
 		v := &pb.Operation_Mutate{Mutate: m}
 		op := &pb.Operation{Operation: v}
-		p, f := a.prepareRecord(op)
+		p, f := prepareTestRecord(a, op)
 		if f != nil {
 			t.Fatal(f)
 		}
@@ -397,7 +397,7 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 		m := &pb.MutateRequest{Resource: "weir://mongo/" + db + "/records/s:" + id, Action: action}
 		v := &pb.Operation_Mutate{Mutate: m}
 		op := &pb.Operation{Operation: v}
-		p, f := a.prepareRecord(op)
+		p, f := prepareTestRecord(a, op)
 		if f != nil {
 			t.Fatal(f)
 		}

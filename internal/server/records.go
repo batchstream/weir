@@ -5,6 +5,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -29,19 +30,19 @@ func failureStatus(failure *pb.Failure) error {
 }
 
 func (s *Server) Read(ctx context.Context, request *pb.ReadBatchRequest) (*pb.ReadBatchResponse, error) {
-	if err := protocol.ValidateReadBatchRequest(request); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	byteLimit := protocol.MaxBatchRequestBytes
+	if runtime := s.stores[request.GetStoreName()]; runtime != nil {
+		byteLimit = runtime.PendingByteLimit()
+	}
+	records, failure := execution.NewReadRecords(request, byteLimit)
+	if failure != nil {
+		return nil, failureStatus(failure)
 	}
 	runtime, err := s.hostedStore(request.StoreName)
 	if err != nil {
 		return nil, err
 	}
-	operations := make([]*pb.Operation, len(request.Requests))
-	for i, read := range request.Requests {
-		value := &pb.Operation_Read{Read: read}
-		operations[i] = &pb.Operation{Index: uint64(i + 1), Operation: value}
-	}
-	prepared, failure := runtime.PrepareBatch(operations)
+	prepared, failure := runtime.PrepareBatch(records)
 	if failure != nil {
 		return nil, failureStatus(failure)
 	}
@@ -70,19 +71,19 @@ func (s *Server) Read(ctx context.Context, request *pb.ReadBatchRequest) (*pb.Re
 }
 
 func (s *Server) Mutate(ctx context.Context, request *pb.MutateBatchRequest) (*pb.MutateBatchResponse, error) {
-	if err := protocol.ValidateMutateBatchRequest(request); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	byteLimit := protocol.MaxBatchRequestBytes
+	if runtime := s.stores[request.GetStoreName()]; runtime != nil {
+		byteLimit = runtime.PendingByteLimit()
+	}
+	records, failure := execution.NewMutationRecords(request, byteLimit)
+	if failure != nil {
+		return nil, failureStatus(failure)
 	}
 	runtime, err := s.hostedStore(request.StoreName)
 	if err != nil {
 		return nil, err
 	}
-	operations := make([]*pb.Operation, len(request.Requests))
-	for i, mutation := range request.Requests {
-		value := &pb.Operation_Mutate{Mutate: mutation}
-		operations[i] = &pb.Operation{Index: uint64(i + 1), Operation: value}
-	}
-	prepared, failure := runtime.PrepareBatch(operations)
+	prepared, failure := runtime.PrepareBatch(records)
 	if failure != nil {
 		return nil, failureStatus(failure)
 	}

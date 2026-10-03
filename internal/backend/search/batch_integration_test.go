@@ -72,7 +72,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "weir://search/" + backend.Index + "/s:program", Action: action}
 	variant := &pb.Operation_Mutate{Mutate: mutation}
 	operation := &pb.Operation{Operation: variant}
-	programWork, failure := a.prepareRecord(operation)
+	programWork, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -87,7 +87,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 			body = `{"doc":{}}`
 		}
 		op := expressionOperation("weir://search/"+backend.Index+"/s:"+id, body)
-		work, failure := a.prepareRecord(op)
+		work, failure := prepareTestRecord(a, op)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -97,7 +97,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 		work.Operation.Index = uint64(100 + i)
 	}
 	results, feedback := a.executeRecords(context.Background(), works)
-	if inspections.Load() != 1 || reads.Load() != 2 || writes.Load() != 1 || len(results) != len(works) || feedback != execution.Neutral {
+	if inspections.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) || feedback != execution.Neutral {
 		t.Fatal("aggregate backend call counts", inspections.Load(), reads.Load(), writes.Load(), len(results), feedback)
 	}
 	if results[0].GetRead().GetDocument() == nil || results[1].GetRead().GetMissing() == nil {
@@ -184,7 +184,7 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	mutation := &pb.MutateRequest{Resource: "weir://search/" + backend.Index + "/s:program", Action: action}
 	variant := &pb.Operation_Mutate{Mutate: mutation}
 	operation := &pb.Operation{Operation: variant}
-	programWork, failure := a.prepareRecord(operation)
+	programWork, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
 	}

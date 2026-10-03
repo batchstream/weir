@@ -297,7 +297,8 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 	}
 }
 
-func (a *scanTestAdapter) PrepareOperation(operation *pb.Operation) (*execution.Plan, *pb.Failure) {
+func (a *scanTestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
 	prepared := &execution.Plan{ID: operation.Index, Operation: operation, Key: protocol.Resource(operation), BatchKey: "records", Bytes: 1024, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
 	return prepared, nil
 }

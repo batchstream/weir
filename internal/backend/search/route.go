@@ -46,18 +46,15 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	return work, nil
 }
 
-func (a *Adapter) PrepareOperation(input *pb.Operation) (*execution.Plan, *pb.Failure) {
-	if input == nil || input.Index == 0 {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record ID")
+func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	if record == nil || record.Operation() == nil || record.StoreName() != a.config.Store {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or wrong-Store record")
 	}
-	operation, failure := execution.NormalizeOperation(input, a.config.Store)
+	work, failure := a.prepareRecord(record)
 	if failure != nil {
 		return nil, failure
 	}
-	work, failure := a.prepareRecord(operation)
-	if failure != nil {
-		return nil, failure
-	}
+	operation := record.Operation()
 	work.ID = operation.Index
 	work.WorkingBytes = a.readWorkingBytes()
 	native := work.Backend.(*plan)

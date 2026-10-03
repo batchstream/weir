@@ -168,7 +168,7 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		read := &pb.ReadRequest{Resource: resource + "/s:same"}
 		variant := &pb.Operation_Read{Read: read}
 		op := &pb.Operation{Operation: variant}
-		if _, failure := a.prepareRecord(op); failure == nil {
+		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Error("record target accepted", resource)
 		}
 		scan := &pb.ScanRequest{Resource: resource}

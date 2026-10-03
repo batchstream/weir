@@ -38,7 +38,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	request := &pb.MutateRequest{Resource: "weir://mongo/" + fixture.DB + "/records/s:secure", Action: put}
 	mutation := &pb.Operation_Mutate{Mutate: request}
 	op := &pb.Operation{Operation: mutation}
-	plan, failure := adapter.prepareRecord(op)
+	plan, failure := prepareTestRecord(adapter, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -165,7 +165,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				variant := &pb.Operation_Mutate{Mutate: request}
 				operation := &pb.Operation{Operation: variant}
 				var failure *pb.Failure
-				work, failure = adapter.prepareRecord(operation)
+				work, failure = prepareTestRecord(adapter, operation)
 				if failure != nil {
 					t.Fatal(failure)
 				}

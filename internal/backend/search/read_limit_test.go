@@ -30,7 +30,7 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 		request := &pb.ReadRequest{Resource: "records/s:id"}
 		variant := &pb.Operation_Read{Read: request}
 		call := &pb.Operation{Index: 1, Operation: variant}
-		work, failure := adapter.PrepareOperation(call)
+		work, failure := prepareTestRecord(adapter, call)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -129,7 +129,7 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			document := &pb.Document{MediaType: "application/json", Data: writeSource}
 			mutation := &pb.MutateRequest{Resource: "weir://search/records/s:write", Action: &pb.MutateRequest_Put{Put: document}}
 			operation := &pb.Operation{Operation: &pb.Operation_Mutate{Mutate: mutation}}
-			write, failure := adapter.prepareRecord(operation)
+			write, failure := prepareTestRecord(adapter, operation)
 			if failure != nil {
 				t.Fatal("read profile affected mutation admission", failure)
 			}

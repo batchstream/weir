@@ -9,6 +9,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil/testrecords"
 )
 
 type concurrencyAdapter struct {
@@ -17,8 +18,8 @@ type concurrencyAdapter struct {
 	finish  chan execution.Feedback
 }
 
-func (adapter *concurrencyAdapter) PrepareOperation(operation *pb.Operation) (*execution.Plan, *pb.Failure) {
-	work, failure := adapter.lifecycleAdapter.PrepareOperation(operation)
+func (adapter *concurrencyAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	work, failure := adapter.lifecycleAdapter.PrepareRecord(record)
 	work.WorkingBytes = 16 << 20
 	return work, failure
 }
@@ -68,7 +69,12 @@ func TestBackendFeedbackDoesNotReduceConfiguredDispatch(t *testing.T) {
 					var ticket *Ticket
 					var failure *pb.Failure
 					if bulk {
-						prepared, prepareFailure := runtime.PrepareBatch([]*pb.Operation{work.Operation})
+						record, recordFailure := testrecords.New("test", work.Operation)
+						if recordFailure != nil {
+							t.Fatal(recordFailure)
+						}
+						records := []*execution.Record{record}
+						prepared, prepareFailure := runtime.PrepareBatch(records)
 						if prepareFailure != nil {
 							t.Fatal(prepareFailure)
 						}

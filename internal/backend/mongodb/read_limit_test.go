@@ -25,7 +25,7 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 		request := &pb.ReadRequest{Resource: "db/records/s:id"}
 		variant := &pb.Operation_Read{Read: request}
 		call := &pb.Operation{Index: 1, Operation: variant}
-		work, failure := adapter.PrepareOperation(call)
+		work, failure := prepareTestRecord(adapter, call)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -72,7 +72,7 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 		writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", index: 8, document: writeDocument}
 		var plans []*execution.Plan
 		for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
-			work, failure := adapter.prepareRecord(batchOperation(t, opts))
+			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 			if failure != nil {
 				t.Fatal("read size profile affected mutation admission", failure)
 			}

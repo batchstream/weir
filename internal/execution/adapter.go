@@ -48,7 +48,7 @@ type Emit func(*Plan, *Output) error
 
 type Adapter interface {
 	PrepareCommand(uint64, *pb.Command) (*Plan, *pb.Failure)
-	PrepareOperation(*pb.Operation) (*Plan, *pb.Failure)
+	PrepareRecord(*Record) (*Plan, *pb.Failure)
 	Execute(context.Context, []*Plan, Emit) Feedback
 	ClosePlan(context.Context, *Plan) *pb.Failure
 	Close() error

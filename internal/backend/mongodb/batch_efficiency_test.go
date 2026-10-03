@@ -37,7 +37,7 @@ func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 	writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", index: 8, document: writeDocument}
 	var plans []*execution.Plan
 	for _, opts := range []batchOperationOptions{writeOptions, readOptions} {
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -74,8 +74,8 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			var plans []*execution.Plan
 			for i, id := range ids {
-				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "read", index: uint64(i)}
-				work, failure := adapter.prepareRecord(batchOperation(t, opts))
+				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "read", index: uint64(i + 1)}
+				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -83,7 +83,7 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 			}
 			results, signal := adapter.executeRecords(context.Background(), plans)
 			for i, result := range results {
-				if result.Index != uint64(i) || result.GetRead().GetDocument() == nil {
+				if result.Index != uint64(i+1) || result.GetRead().GetDocument() == nil {
 					t.Fatal("read or duplicate-ID correspondence lost", results)
 				}
 			}
@@ -116,7 +116,7 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 	writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
 	var plans []*execution.Plan
 	for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -151,7 +151,7 @@ func TestMongoMixedBatchRechecksWriteCallerAfterRead(t *testing.T) {
 	writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
 	var plans []*execution.Plan
 	for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
-		work, failure := adapter.prepareRecord(batchOperation(t, opts))
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
 		}

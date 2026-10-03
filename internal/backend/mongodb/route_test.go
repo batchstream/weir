@@ -25,10 +25,16 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	adapter := batchMockAdapter(t, replies, nil)
 	adapter.config.MaxReadSize = protocol.MaxDocument
 	request := &pb.ReadRequest{Resource: "db/records/s:a"}
-	variant := &pb.Operation_Read{Read: request}
-	call := &pb.Operation{Index: 1, Operation: variant}
-	call.Index = 9
-	work, failure := adapter.PrepareOperation(call)
+	items := make([]*pb.ReadRequest, 9)
+	for i := range items {
+		items[i] = request
+	}
+	batch := &pb.ReadBatchRequest{StoreName: "mongo", Requests: items}
+	records, failure := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work, failure := adapter.PrepareRecord(records[8])
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -48,13 +54,13 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events, feedback)
 	}
 	request.Resource = "weir://mongo/db/records/s:a"
-	if _, failure := adapter.PrepareOperation(call); failure == nil {
+	if _, err := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes); err == nil {
 		t.Fatal("accepted obsolete absolute wire resource")
 	}
 	request.Resource = "db/records/s:a"
-	call.Index = 0
-	if _, failure := adapter.PrepareOperation(call); failure == nil {
-		t.Fatal("accepted zero ID")
+	emptyRecord := &execution.Record{}
+	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
+		t.Fatal("accepted unconstructed record")
 	}
 }
 
@@ -65,9 +71,12 @@ func TestRouteLuaPlanKeepsIndependentTransaction(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "db/records/s:a", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	call := &pb.Operation{Index: 1, Operation: variant}
-	work, failure := adapter.PrepareOperation(call)
+	batch := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{mutation}}
+	records, failure := execution.NewMutationRecords(batch, protocol.MaxBatchRequestBytes)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work, failure := adapter.PrepareRecord(records[0])
 	if failure != nil {
 		t.Fatal(failure)
 	}

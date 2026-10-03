@@ -18,13 +18,20 @@ type PreparedBatch struct {
 	workingBytes int
 }
 
-func (r *Runtime) PrepareBatch(operations []*pb.Operation) (*PreparedBatch, *pb.Failure) {
-	prepared := &PreparedBatch{plans: make([]*execution.Plan, len(operations))}
-	if len(operations) == 0 {
+// PendingByteLimit is immutable for the lifetime of a Store. Preflight uses it
+// before retaining decoded paths and constructing backend plans.
+func (r *Runtime) PendingByteLimit() int { return r.limits.PendingBytes }
+
+func (r *Runtime) PrepareBatch(records []*execution.Record) (*PreparedBatch, *pb.Failure) {
+	prepared := &PreparedBatch{plans: make([]*execution.Plan, len(records))}
+	if len(records) == 0 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "empty record batch")
 	}
-	for position, operation := range operations {
-		plan, failure := r.adapter.PrepareOperation(operation)
+	for position, record := range records {
+		if record == nil || record.Operation() == nil || record.Operation().Index != uint64(position+1) {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record batch ordinal")
+		}
+		plan, failure := r.adapter.PrepareRecord(record)
 		if failure != nil {
 			r.metrics.rejections.WithLabelValues("prepare").Inc()
 			return nil, failure

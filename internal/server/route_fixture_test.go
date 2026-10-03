@@ -39,11 +39,9 @@ func (*peerAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Fa
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 }
 
-func (a *peerAdapter) PrepareOperation(operation *pb.Operation) (*execution.Plan, *pb.Failure) {
-	key := protocol.Resource(operation)
-	if _, _, err := protocol.ParseResource("weir://" + a.name + "/" + key); err != nil {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid relative target")
-	}
+func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	operation := record.Operation()
+	key := record.Key()
 	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: key, BatchKey: "records", Bytes: proto.Size(operation) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
 	return plan, nil
 }

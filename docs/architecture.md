@@ -14,6 +14,12 @@ ordered list of canonical relative resources. Preparation validates every item
 before backend work. Results have the same length and position as the inputs.
 One batch can select several collections or indices within the same Store.
 
+A shared execution constructor validates the complete public batch once and
+borrows its immutable request fields. It decodes relative path segments into
+internal records before backend preparation. Adapters consume those prepared
+records and validate database-specific targets and documents; they do not copy
+request DTOs, build full Store URIs or repeat public protocol validation.
+
 Mutate is not a transaction. Same-resource mutations execute in input order,
 including after a failed item; different keys can share a physical batch. Separate
 RPCs retain normal backend concurrency semantics. There is no durable request
@@ -61,7 +67,7 @@ contains only public ownership/address advertisements, never backend credentials
 | Execute Event | 2 MiB plus bounded framing/metadata allowance |
 | Store pending requests | 256 entries / 32 MiB of prepared input |
 | Store retained results | 128 live entries / 32 MiB |
-| Store backend workspace | 384 MiB |
+| Store backend workspace | 384 MiB; configurable with working_memory |
 | Physical batch input | 8 MiB / 32 operations, configurable |
 | Application admission | 4 business RPCs / 16 accepted connections |
 | Encoded native output queue | max_sessions × 32 MiB |
@@ -89,6 +95,12 @@ and failure envelopes retain reserved space.
 Backend working charges cover bounded native replies and decoding scratch.
 MongoDB uses its native bounded cursor reply; Search caps multi-get response bytes.
 Physical grouping does not multiply the maximum document size by the item count.
+`working_memory` is a byte budget, and `max_concurrency` is an independent upper
+bound. The smaller capacity applies. At `max_read_size: 2MiB`, a MongoDB read batch
+reserves 40.125MiB and a Search batch reserves 96MiB; the default workspace permits
+9 and 4 such batches respectively. Size the workspace for the required concurrency
+and increase process `memory` to cover it. Configuration rejects an insufficient
+process envelope before opening backends.
 Encoded response bytes remain charged until the native transport frees its final
 buffer reference, including after handler completion. Exhausted output capacity
 fails boundedly. Application result charges end after native serialization/enqueue.

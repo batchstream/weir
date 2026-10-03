@@ -34,10 +34,16 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	config := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
-	variant := &pb.Operation_Read{Read: request}
-	call := &pb.Operation{Index: 1, Operation: variant}
-	call.Index = 9
-	work, failure := adapter.PrepareOperation(call)
+	items := make([]*pb.ReadRequest, 9)
+	for i := range items {
+		items[i] = request
+	}
+	batch := &pb.ReadBatchRequest{StoreName: "search", Requests: items}
+	records, failure := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work, failure := adapter.PrepareRecord(records[8])
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -57,13 +63,13 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events, feedback)
 	}
 	request.Resource = "weir://search/records/s:a"
-	if _, failure := adapter.PrepareOperation(call); failure == nil {
+	if _, err := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes); err == nil {
 		t.Fatal("accepted obsolete absolute wire resource")
 	}
 	request.Resource = "records/s:a"
-	call.Index = 0
-	if _, failure := adapter.PrepareOperation(call); failure == nil {
-		t.Fatal("accepted zero ID")
+	emptyRecord := &execution.Record{}
+	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
+		t.Fatal("accepted unconstructed record")
 	}
 }
 
@@ -75,9 +81,12 @@ func TestRouteLuaUsesSingletonCASBoundary(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	call := &pb.Operation{Index: 1, Operation: variant}
-	work, failure := adapter.PrepareOperation(call)
+	batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{mutation}}
+	records, failure := execution.NewMutationRecords(batch, protocol.MaxBatchRequestBytes)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work, failure := adapter.PrepareRecord(records[0])
 	if failure != nil {
 		t.Fatal(failure)
 	}

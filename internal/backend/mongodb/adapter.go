@@ -21,7 +21,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
-	"google.golang.org/protobuf/proto"
 )
 
 type Config struct {
@@ -148,13 +147,10 @@ func (a *Adapter) Close() error {
 	return a.closeErr
 }
 
-func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure) {
-	if f := protocol.Validate(op, a.config.Store); f != nil {
-		return nil, f
-	}
-	resource := protocol.Resource(op)
-	_, s, err := protocol.ParseResource(resource)
-	if err != nil || len(s) != 3 || !validNamespace(s) {
+func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	op := record.Operation()
+	s := record.Segments()
+	if len(s) != 3 || !validNamespace(s) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB record target")
 	}
 	id, err := parseID(s[2])
@@ -163,7 +159,7 @@ func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure)
 	}
 	target := namespace{database: s[0], collection: s[1]}
 	native := &plan{target: target, id: id}
-	p := &execution.Plan{Operation: op, Key: resource, Backend: native, ResultBytes: protocol.ResultOverhead}
+	p := &execution.Plan{Operation: op, Key: record.Key(), Backend: native, ResultBytes: protocol.ResultOverhead}
 	if r := op.GetRead(); r != nil {
 		if r.AdapterOptions != nil || r.ReadMediaType != "" && r.ReadMediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
@@ -228,7 +224,7 @@ func (a *Adapter) prepareRecord(op *pb.Operation) (*execution.Plan, *pb.Failure)
 		}
 	}
 	// BSON filters, model envelopes and write-command overhead fit this conservative charge.
-	p.Bytes = proto.Size(op) + len(resource)*2 + 1024
+	p.Bytes = record.Bytes()
 	return p, nil
 }
 
