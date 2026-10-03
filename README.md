@@ -120,7 +120,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active Execute to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.2.0`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.3.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -136,23 +136,27 @@ if err != nil {
     return err
 }
 defer client.Close()
-request := &weir.ReadRequest{Resource: "database/collection/s:example"}
-readOptions := weir.ReadOptions{StoreName: "mongo", Request: request}
-result, err := client.Read(ctx, readOptions)
+first := &weir.ReadRequest{Resource: "database/collection/s:first"}
+second := &weir.ReadRequest{Resource: "database/collection/s:second"}
+readOptions := weir.ReadOptions{StoreName: "mongo", Requests: []*weir.ReadRequest{first, second}}
+results, err := client.Read(ctx, readOptions)
 if err != nil {
     return err
 }
-if result.Failure != nil {
-    return fmt.Errorf("read failed: %s", result.Failure.Message)
+for _, result := range results {
+    if result.Failure != nil {
+        return fmt.Errorf("read failed: %s", result.Failure.Message)
+    }
+    fmt.Println("missing:", result.Missing)
 }
-fmt.Println("missing:", result.Missing)
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.2.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.2.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.2.0/examples/scan) examples
-initialize through a seed. The SDK provides Read, Create, Put, Replace, Delete,
-AtomicTransform, Scan and Native methods. Finite Execute batches use opaque SDK
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.3.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.3.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.3.0/examples/scan) examples
+initialize through a seed. Read and Mutate accept batches for one Store and preserve input order. Each batch
+uses one Execute RPC; resources are relative paths within its Store. The SDK also
+provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan and Native methods. Finite Execute batches use opaque SDK
 Command constructors and SDK Events, without protobuf versions or oneof assembly.
 The SDK pins public protocol v0.1.0. Advanced fixed-owner callers can use Dial and
 the package-level business helpers with their existing application connection.

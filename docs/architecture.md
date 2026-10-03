@@ -139,9 +139,20 @@ same bounded batch result budget. An oversized source fails with
 `RESOURCE_EXHAUSTED`; datasets with larger sources must explicitly raise the limit.
 This setting does not constrain writes, Scan, Native or
 Lua/expression results. Search bounds each multi-get response by these source
-reservations. MongoDB qualifies a namespace once within a compatible mixed
-physical batch, then performs the read and write phases; the next batch qualifies
-again so metadata and permissions are not retained across executions.
+reservations. MongoDB collections and Search indexes are checked on first use.
+Each Store adapter retains up to 64 successful target metadata checks for its
+lifetime, so subsequent batches perform business I/O without repeating collection
+or index metadata queries. Concurrent cold requests on the same target share one
+check; failed or canceled checks are not retained. When full, the oldest completed
+target is evicted and checked again on its next use. If all 64 checks are pending,
+additional targets wait for a slot with their execution deadline.
+
+Target structure is a deployment prerequisite: collection type/collation and
+index routing, stored source and pipeline settings must stay stable while the
+Store is open. Recreating a collection/index or changing these settings requires
+reopening the Store or restarting its owning nodes before resuming traffic.
+The cache retains structural capabilities, not authorization: every actual
+backend read/write command still enforces current database permissions.
 
 The defaults collect at most 32 operations per batch and allow at most 2 concurrent
 backend executions, following the small-document resource tuning tests. Collection

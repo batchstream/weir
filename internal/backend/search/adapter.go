@@ -13,6 +13,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend/targetcache"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
@@ -44,6 +45,7 @@ type Adapter struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	once            sync.Once
+	targets         targetcache.Cache[string, capabilities]
 }
 
 type plan struct {
@@ -166,6 +168,23 @@ func (a *Adapter) qualify(ctx context.Context) error {
 }
 
 func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capabilities, *pb.Failure, execution.Feedback) {
+	lookup, err := a.targets.Acquire(ctx, target)
+	if err != nil {
+		caps := capabilities{}
+		return caps, protocol.ContextFailure(ctx), execution.Neutral
+	}
+	if lookup.Cached {
+		return lookup.Value, nil, execution.Neutral
+	}
+	caps, failure, signal := a.inspectTarget(ctx, target, native)
+	a.targets.Complete(target, lookup, caps, failure == nil && ctx.Err() == nil)
+	if ctx.Err() != nil {
+		return caps, protocol.ContextFailure(ctx), execution.Neutral
+	}
+	return caps, failure, signal
+}
+
+func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool) (capabilities, *pb.Failure, execution.Feedback) {
 	caps := capabilities{}
 	call := exchange{path: "/" + target + "?flat_settings=true", limit: metadataLimit, native: native}
 	status, raw, err := a.request(ctx, call)

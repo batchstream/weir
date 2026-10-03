@@ -170,10 +170,19 @@ func sdkIngressRead(t *testing.T, client *weirclient.Client, storeName string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	request := &weirclient.ReadRequest{Resource: "records/s:key"}
-	options := weirclient.ReadOptions{StoreName: storeName, Request: request}
-	result, err := client.Read(ctx, options)
-	if err != nil || !result.GetMissing() {
-		t.Fatalf("Store %s direct read failed across directory refresh: result=%v error=%v", storeName, result, err)
+	requests := make([]*weirclient.ReadRequest, 17)
+	for i := range requests {
+		request := &weirclient.ReadRequest{Resource: fmt.Sprintf("records/s:key-%d", i)}
+		requests[i] = request
+	}
+	options := weirclient.ReadOptions{StoreName: storeName, Requests: requests}
+	results, err := client.Read(ctx, options)
+	if err != nil || len(results) != len(requests) {
+		t.Fatalf("Store %s batch read failed across directory refresh: results=%v error=%v", storeName, results, err)
+	}
+	for i, result := range results {
+		if !result.GetMissing() {
+			t.Fatalf("Store %s batch item %d failed across directory refresh: result=%v", storeName, i, result)
+		}
 	}
 }

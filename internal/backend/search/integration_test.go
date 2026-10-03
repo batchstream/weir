@@ -42,6 +42,7 @@ func TestSearchCRUD(t *testing.T) {
 	if status != 200 {
 		t.Fatal(status)
 	}
+	a = reopenSearch(t, a)
 	result := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "plain")))
 	if result.GetRead().GetMissing() != nil || result.GetRead().GetFailure() == nil {
 		t.Fatal("index missing is not record missing", result)

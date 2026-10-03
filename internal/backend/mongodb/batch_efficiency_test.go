@@ -12,7 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func TestMongoMixedBatchSharesQualificationAndRechecksNextExecute(t *testing.T) {
+func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 	document := bson.D{{Key: "_id", Value: "read"}}
 	readCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
 	item := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
@@ -25,7 +25,7 @@ func TestMongoMixedBatchSharesQualificationAndRechecksNextExecute(t *testing.T) 
 	}
 	responses := []bson.D{
 		collectionQualificationResponse("db", "records"), readCursorResponse(readCursor), writeReply,
-		collectionQualificationResponse("db", "records"), readCursorResponse(readCursor), writeReply,
+		readCursorResponse(readCursor), writeReply,
 	}
 	var commands []string
 	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
@@ -49,9 +49,9 @@ func TestMongoMixedBatchSharesQualificationAndRechecksNextExecute(t *testing.T) 
 			t.Fatal("mixed batch lost result correspondence or acknowledgement", results, signal)
 		}
 	}
-	want := []string{"listCollections", "find", "bulkWrite", "listCollections", "find", "bulkWrite"}
+	want := []string{"listCollections", "find", "bulkWrite", "find", "bulkWrite"}
 	if !reflect.DeepEqual(commands, want) {
-		t.Fatal("qualification was duplicated or cached across executions", commands)
+		t.Fatal("hot batch repeated metadata I/O or lost business commands", commands)
 	}
 }
 

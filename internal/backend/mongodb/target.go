@@ -26,9 +26,26 @@ func (n namespace) String() string {
 	return n.database + "." + n.collection
 }
 
-// Qualify the requested collection before dispatch. Each execution rechecks the
-// target instead of retaining a namespace cache.
+// Collection structure is a deployment prerequisite and stays stable while the
+// Store is open. Actual read/write commands still enforce backend permissions.
 func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) (*pb.Failure, execution.Feedback) {
+	lookup, err := a.targets.Acquire(ctx, target)
+	if err != nil {
+		return protocol.ContextFailure(ctx), execution.Neutral
+	}
+	if lookup.Cached {
+		return nil, execution.Healthy
+	}
+	failure, signal := a.inspectTarget(ctx, target)
+	empty := struct{}{}
+	a.targets.Complete(target, lookup, empty, failure == nil && ctx.Err() == nil)
+	if ctx.Err() != nil {
+		return protocol.ContextFailure(ctx), execution.Neutral
+	}
+	return failure, signal
+}
+
+func (a *Adapter) inspectTarget(ctx context.Context, target namespace) (*pb.Failure, execution.Feedback) {
 	filter := bson.D{{Key: "name", Value: target.collection}}
 	specs, err := a.client.Database(target.database).ListCollectionSpecifications(ctx, filter)
 	if err != nil {
@@ -54,7 +71,7 @@ func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) (*pb.Fail
 }
 
 // A cancelled group never contacts MongoDB. Read and write commands within one
-// Execute share this qualification; each later Execute inspects the target again.
+// Execute share this qualification; later calls reuse successful target checks.
 // Command builders recheck callers because metadata I/O can outlive them.
 func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
 	var failure *pb.Failure

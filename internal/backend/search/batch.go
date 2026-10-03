@@ -371,7 +371,8 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 		caps    capabilities
 		failure *pb.Failure
 	}
-	// This map lives only for this bounded Execute call, never across requests.
+	// Failed checks are shared only within this bounded Execute call. Successful
+	// target capabilities are retained by the Adapter's bounded metadata cache.
 	qualified := make(map[string]qualification)
 	for _, i := range positions {
 		work := works[i]
