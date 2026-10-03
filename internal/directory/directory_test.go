@@ -387,7 +387,7 @@ func TestSyncDirectoryRejectsUnknownResponseBeforeMerge(t *testing.T) {
 	t.Cleanup(func() { server.Stop(); _ = listener.Close(); <-done })
 	cfg := Config{Group: "observer"}
 	d := newTestDirectory(t, cfg)
-	if err := d.syncPeer(context.Background(), listener.Addr().String()); status.Code(err) != codes.InvalidArgument {
+	if err := d.syncPeer(context.Background(), listener.Addr().String()); status.Code(err) != codes.Internal {
 		t.Fatal("unknown peer response accepted", err)
 	}
 	request := &pb.ResolveStoreRequest{StoreName: "data"}

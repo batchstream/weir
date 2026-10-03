@@ -1,11 +1,8 @@
 package server
 
 import (
-	"bufio"
 	"context"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -15,6 +12,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/protowire"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
@@ -70,7 +68,7 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 	switch value.(type) {
 	case *pb.ReadBatchRequest, *pb.MutateBatchRequest:
-		if err := validateMessageDecodeBudget(data, 2, protocol.MaxBatchResponseBytes/protocol.ResultOverhead); err != nil {
+		if err := protowire.ValidateRepeatedMessages(data, 2, protocol.MaxBatchResponseBytes/protocol.ResultOverhead); err != nil {
 			return err
 		}
 
@@ -78,7 +76,7 @@ func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 		if data.Len() > directory.MaxSyncBytes {
 			return status.Error(codes.ResourceExhausted, "directory sync exceeds input byte budget")
 		}
-		if err := validateMessageDecodeBudget(data, 1, directory.MaxAnnouncements); err != nil {
+		if err := protowire.ValidateRepeatedMessages(data, 1, directory.MaxAnnouncements); err != nil {
 			return err
 		}
 	case *pb.ResolveStoreRequest:
@@ -87,37 +85,6 @@ func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 		}
 	}
 	return encoding.GetCodecV2("proto").Unmarshal(data, value)
-}
-
-// Apply existing result-envelope or directory-announcement capacity before
-// protobuf construction, bounding amplification by tiny repeated messages.
-func validateMessageDecodeBudget(data mem.BufferSlice, repeatedField uint64, maximumItems int) error {
-	source := data.Reader()
-	defer source.Close()
-	reader := bufio.NewReader(source)
-	items := 0
-	for {
-		tag, err := binary.ReadUvarint(reader)
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil || tag>>3 < 1 || tag>>3 > repeatedField || tag&7 != 2 {
-			return status.Error(codes.InvalidArgument, "invalid protobuf request framing")
-		}
-		length, err := binary.ReadUvarint(reader)
-		if err != nil || length > uint64(data.Len()) {
-			return status.Error(codes.InvalidArgument, "invalid protobuf field length")
-		}
-		if tag>>3 == repeatedField {
-			items++
-			if items > maximumItems {
-				return status.Error(codes.ResourceExhausted, "request metadata exceeds decode budget")
-			}
-		}
-		if _, err := reader.Discard(int(length)); err != nil {
-			return status.Error(codes.InvalidArgument, "truncated protobuf field")
-		}
-	}
 }
 
 // gRPC's mem.BufferPool is the native buffer ownership seam. Marshal allocates
