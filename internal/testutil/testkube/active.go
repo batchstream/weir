@@ -20,9 +20,9 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.StoreSer
 	if err != nil || code != 200 {
 		return errors.New("disable fixture refresh")
 	}
-	// This separate live Route input keeps drain observable until the original
+	// This separate unfinished gRPC request keeps drain observable until the original
 	// 30-second input-stall deadline. It sends no mutation body and is not replayed.
-	description := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
+	description := &grpc.StreamDesc{ServerStreams: true}
 	partial, err := connection.NewStream(ctx, description, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func active(ctx context.Context, connection *grpc.ClientConn, client pb.StoreSer
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	fmt.Println("ACTIVE mutation persisted; refresh reply pending; roll or pause worker now")
+	fmt.Println("ACTIVE mutation persisted; refresh reply pending; roll or pause Weir node now")
 	for {
 		reply, err := stream.Recv()
 		if err != nil {

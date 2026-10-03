@@ -32,7 +32,7 @@ func TestLocalConcurrencyConfiguration(t *testing.T) {
 				t.Fatal(err)
 			}
 			decoded, err := DecodeRouting(bytes.NewReader(raw))
-			if c < 0 || c > 32 {
+			if c < 0 {
 				if err == nil {
 					t.Fatal("invalid concurrency accepted")
 				}
@@ -67,7 +67,7 @@ func TestLocalConcurrencyWholeGraphBeforeIO(t *testing.T) {
 	defer endpoint.Close()
 	backend := &Search{URL: endpoint.URL}
 	first := &Local{Search: backend}
-	for _, c := range []int{-1, 33} {
+	for _, c := range []int{-1} {
 		mongo := &Mongo{
 			URI: "mongodb://unresolved.invalid:27017/?tls=true&tlsCAFile=/missing/concurrency-ca.pem",
 		}

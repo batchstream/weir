@@ -20,14 +20,14 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 	bytes := 0
 	for _, p := range plans {
 		charge := max(p.Bytes, proto.Size(p.Operation))
-		if p.Bytes < 0 || charge > 8<<20 || bytes > (8<<20)-charge {
-			bytes = 8<<20 + 1
+		if p.Bytes < 0 || charge > protocol.MaxBatchRequestBytes || bytes > protocol.MaxBatchRequestBytes-charge {
+			bytes = protocol.MaxBatchRequestBytes + 1
 			break
 		}
 		bytes += charge
 	}
-	if len(plans) > 128 || bytes > 8<<20 {
-		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "MongoDB batch exceeds operation or byte bound")
+	if bytes > protocol.MaxBatchRequestBytes {
+		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "MongoDB batch exceeds encoded input byte bound")
 		for i, p := range plans {
 			results[i] = protocol.ResultError(p.Operation, pb.MutationOutcome_NOT_STARTED, failure)
 		}
@@ -219,6 +219,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 				var reply *pb.ReadResult
 				if len(raw) > a.maxReadSize() {
 					reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
+				} else if !plans[matches[0]].Results.Reserve(len(raw) * len(matches)) {
+					reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch result budget exhausted"))
 				} else {
 					nodes := 65536
 					if !validScanBSON(raw, 0, &nodes) {
@@ -575,7 +577,7 @@ func cursorDocuments(fields map[string]bson.RawValue, state *recordCursor, names
 	rest := batch[4 : len(batch)-1]
 	documents := make([]bson.Raw, 0)
 	for len(rest) > 0 {
-		if len(documents) >= min(state.items, 128) {
+		if len(documents) >= state.items {
 			return nil, false
 		}
 		element, tail, valid := bsoncore.ReadElement(rest)

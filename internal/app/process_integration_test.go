@@ -185,57 +185,50 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
 		t.Fatal("direct read", found, err)
 	}
-	bulk := testutil.OpenEvents(ctx, opts.client, opts.store)
-	var frame *pb.Command
-	readVariant := &pb.Operation_Read{Read: read}
-	readOperation := &pb.Operation{Index: 0, Operation: readVariant}
-	document = processDocument(t, opts.store, "bulk-example", 2)
-	create := &pb.MutateRequest_Create{Create: document}
-	mutation = &pb.MutateRequest{Resource: opts.root + "/s:bulk-example", Action: create}
-	mutationVariant := &pb.Operation_Mutate{Mutate: mutation}
-	mutationOperation := &pb.Operation{Index: 1, Operation: mutationVariant}
-	for _, operation := range []*pb.Operation{readOperation, mutationOperation} {
-		_, item := testutil.OperationCommand(operation)
-		frame = item
-		if err := bulk.Send(frame); err != nil {
-			t.Fatal(err)
+	readFixture := testutil.RecordCommand(read)
+	readBatch := &pb.ReadBatchRequest{StoreName: opts.store, Requests: []*pb.ReadRequest{readFixture.Operation.GetRead(), readFixture.Operation.GetRead()}}
+	reads, err := opts.client.Read(ctx, readBatch)
+	if err != nil || len(reads.GetResults()) != 2 {
+		t.Fatal("batch read", reads, err)
+	}
+	for _, item := range reads.Results {
+		if item.GetFailure() != nil || processRecordNumber(t, item.GetDocument()) != 1 {
+			t.Fatal("batch read changed record", item)
 		}
 	}
-	if err := bulk.CloseSend(); err != nil {
-		t.Fatal(err)
+	requests := make([]*pb.MutateRequest, 0, 2)
+	for i := range 2 {
+		id := fmt.Sprintf("bulk-example-%d", i)
+		document := processDocument(t, opts.store, id, int32(i+2))
+		create := &pb.MutateRequest_Create{Create: document}
+		mutation := &pb.MutateRequest{Resource: opts.root + "/s:" + id, Action: create}
+		fixture := testutil.RecordCommand(mutation)
+		requests = append(requests, fixture.Operation.GetMutate())
 	}
-	seen := make(map[uint64]bool)
-	for {
-		frame, err := bulk.Recv()
-		if err == io.EOF {
-			if len(seen) != 2 {
-				t.Fatal("Route terminal accounting", seen)
-			}
-			break
-		}
-		if err != nil {
-			t.Fatal("direct Route response", err)
-		}
-		result := frame.GetResult()
-		if result == nil || seen[result.Index] {
-			t.Fatal("duplicate or invalid Bulk result", frame)
-		}
-		seen[result.Index] = true
-		switch result.Index {
-		case 1:
-			if processRecordNumber(t, result.GetRead().GetDocument()) != 1 {
-				t.Fatal("Bulk read changed record", result)
-			}
-		case 2:
-			if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
-				t.Fatal("Bulk create", result)
-			}
-		default:
-			t.Fatal("unexpected Bulk result index", result)
+	batch := &pb.MutateBatchRequest{StoreName: opts.store, Requests: requests}
+	mutations, err := opts.client.Mutate(ctx, batch)
+	if err != nil || len(mutations.GetResults()) != len(requests) {
+		t.Fatal("batch create", mutations, err)
+	}
+	for i, item := range mutations.Results {
+		if item.GetOutcome() != pb.MutationOutcome_APPLIED || item.GetFailure() != nil {
+			t.Fatal("batch create", i, item)
 		}
 	}
-	if _, err := bulk.Recv(); err != io.EOF {
-		t.Fatal("Bulk final status", err)
+	verification := make([]*pb.ReadRequest, 0, len(requests))
+	for _, item := range requests {
+		request := &pb.ReadRequest{Resource: item.Resource}
+		verification = append(verification, request)
+	}
+	verifyBatch := &pb.ReadBatchRequest{StoreName: opts.store, Requests: verification}
+	verified, err := opts.client.Read(ctx, verifyBatch)
+	if err != nil || len(verified.GetResults()) != len(requests) {
+		t.Fatal("batch create readback", verified, err)
+	}
+	for i, item := range verified.Results {
+		if item.GetFailure() != nil || processRecordNumber(t, item.GetDocument()) != int32(i+2) {
+			t.Fatal("batch input order/readback", i, item)
+		}
 	}
 	processNativeSmoke(t, ctx, opts)
 	if opts.store == "search" {
@@ -245,7 +238,7 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		}
 	}
 	processScanSmoke(t, ctx, opts)
-	t.Logf("three independent Weir processes, %s: Route reads, mutations, mixed records, Native and Scan completed", opts.store)
+	t.Logf("three independent Weir processes, %s: batch reads and mutations, Native and Scan completed", opts.store)
 }
 
 func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
@@ -266,8 +259,6 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	}
 	if err != nil {
 		t.Fatal(err)
-	}
-	if len(body) != 0 {
 	}
 	nativeCall := &pb.NativeRequest{Open: open, Body: body}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
@@ -338,10 +329,11 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 		t.Fatal(err)
 	}
 	seen := make(map[string]bool)
-	expectedDocuments := uint64(2)
+	values := map[string]int32{"example": 1, "bulk-example-0": 2, "bulk-example-1": 3}
 	if opts.initialized {
-		expectedDocuments++
+		values["initialized"] = 7
 	}
+	expectedDocuments := uint64(len(values))
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
@@ -372,7 +364,8 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 			}
 			id, n = hit.ID, hit.Source.N
 		}
-		if seen[id] || id != "example" && id != "bulk-example" && !(opts.initialized && id == "initialized" && n == 7) || id == "example" && n != 1 || id == "bulk-example" && n != 2 {
+		want, known := values[id]
+		if seen[id] || !known || n != want {
 			t.Fatal("Scan repeated or changed records", id, n)
 		}
 		seen[id] = true

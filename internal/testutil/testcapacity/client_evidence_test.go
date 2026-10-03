@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,50 +14,22 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 type evidencePeer struct {
 	pb.UnimplementedStoreServiceServer
 	outcome pb.MutationOutcome
-	end     bool
 	calls   atomic.Int64
 }
 
-func (p *evidencePeer) Execute(stream pb.StoreService_ExecuteServer) error {
-	request, err := stream.Recv()
-	if err != nil {
-		return err
-	}
+func (p *evidencePeer) Mutate(context.Context, *pb.MutateBatchRequest) (*pb.MutateBatchResponse, error) {
 	p.calls.Add(1)
-	if p.outcome != pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED {
-		mutation := &pb.MutationResult{Outcome: p.outcome}
-		if p.outcome != pb.MutationOutcome_APPLIED {
-			mutation.Failure = &pb.Failure{Code: pb.FailureCode_UNAVAILABLE, Message: "fixture mutation evidence"}
-		}
-		value := &pb.Result_Mutation{Mutation: mutation}
-		result := &pb.Result{Index: request.RequestId, Result: value}
-		variant := &pb.Event_Result{Result: result}
-		event := &pb.Event{Version: 1, Value: variant}
-		var encoded bytes.Buffer
-		_, err = protodelim.MarshalTo(&encoded, event)
-		if err != nil {
-			return err
-		}
-		response := &pb.ExecuteResponse{RequestId: request.RequestId, EventFragment: encoded.Bytes()}
-		err = stream.Send(response)
-		if err != nil {
-			return err
-		}
-		if p.end {
-			response = &pb.ExecuteResponse{RequestId: request.RequestId, RequestComplete: true}
-			err = stream.Send(response)
-			if err != nil {
-				return err
-			}
-		}
+	mutation := &pb.MutationResult{Outcome: p.outcome}
+	if p.outcome != pb.MutationOutcome_APPLIED {
+		mutation.Failure = &pb.Failure{Code: pb.FailureCode_UNAVAILABLE, Message: "fixture mutation evidence"}
 	}
-	return status.Error(codes.Unavailable, "fixture terminal unavailable")
+	response := &pb.MutateBatchResponse{Results: []*pb.MutationResult{mutation}}
+	return response, status.Error(codes.Unavailable, "fixture terminal unavailable")
 }
 
 func evidenceClient(t *testing.T, peer *evidencePeer) *Client {
@@ -79,44 +50,38 @@ func evidenceClient(t *testing.T, peer *evidencePeer) *Client {
 	return client
 }
 
-func TestRPCFailureRetainsValidatedMutationEvidence(t *testing.T) {
+func TestUnaryRPCFailureHasUnknownMutationOutcome(t *testing.T) {
 	cases := []struct {
 		outcome pb.MutationOutcome
-		ledger  byte
 	}{
-		{outcome: pb.MutationOutcome_APPLIED, ledger: applied},
-		{outcome: pb.MutationOutcome_NOT_APPLIED, ledger: notApplied},
-		{outcome: pb.MutationOutcome_NOT_STARTED, ledger: notStarted},
-		{outcome: pb.MutationOutcome_UNKNOWN, ledger: unknown},
-		{outcome: pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED, ledger: unknown},
+		{outcome: pb.MutationOutcome_APPLIED},
+		{outcome: pb.MutationOutcome_NOT_APPLIED},
+		{outcome: pb.MutationOutcome_NOT_STARTED},
+		{outcome: pb.MutationOutcome_UNKNOWN},
+		{outcome: pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED},
 	}
 	for _, tc := range cases {
-		for _, end := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/end=%t", tc.outcome, end), func(t *testing.T) {
-				peer := &evidencePeer{outcome: tc.outcome, end: end}
-				client := evidenceClient(t, peer)
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				op := Operation{Write: true, ID: "evidence"}
-				result := client.Execute(ctx, op)
-				if result.Outcome != tc.ledger || result.Class != "transport_Unavailable" || peer.calls.Load() != 1 {
-					t.Fatal("RPC completion replaced write evidence or retried", result, peer.calls.Load())
-				}
-				metrics := Metrics{}
-				metrics.finish(result, op, time.Now(), time.Now())
-				wantUnknown := uint64(0)
-				if tc.ledger == unknown {
-					wantUnknown = 1
-				}
-				if metrics.Success != 0 || metrics.Failures["transport_Unavailable"] != 1 || metrics.Unknown != wantUnknown {
-					t.Fatal("API failure counted as success or changed uncertainty", metrics)
-				}
-			})
-		}
+		t.Run(tc.outcome.String(), func(t *testing.T) {
+			peer := &evidencePeer{outcome: tc.outcome}
+			client := evidenceClient(t, peer)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			op := Operation{Write: true, ID: "evidence"}
+			result := client.Execute(ctx, op)
+			if result.Outcome != unknown || result.Class != "transport_Unavailable" || peer.calls.Load() != 1 {
+				t.Fatal("RPC completion replaced write evidence or retried", result, peer.calls.Load())
+			}
+			metrics := Metrics{}
+			metrics.finish(result, op, time.Now(), time.Now())
+			wantUnknown := uint64(1)
+			if metrics.Success != 0 || metrics.Failures["transport_Unavailable"] != 1 || metrics.Unknown != wantUnknown {
+				t.Fatal("API failure counted as success or changed uncertainty", metrics)
+			}
+		})
 	}
 }
 
-func TestTrialLedgerKeepsAppliedAfterLostTerminal(t *testing.T) {
+func TestTrialLedgerMarksLostUnaryResponseUnknown(t *testing.T) {
 	for _, outcome := range []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED} {
 		t.Run(outcome.String(), func(t *testing.T) {
 			peer := &evidencePeer{outcome: outcome}
@@ -128,10 +93,7 @@ func TestTrialLedgerKeepsAppliedAfterLostTerminal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := applied
-			if outcome == pb.MutationOutcome_MUTATION_OUTCOME_UNSPECIFIED {
-				want = unknown
-			}
+			want := unknown
 			for _, evidence := range trial.Ledger {
 				if evidence != want {
 					t.Fatal("trial overwrote irreversible evidence", trial.Ledger)

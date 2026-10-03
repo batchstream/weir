@@ -34,9 +34,10 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	config := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
-	variant := &pb.Command_Read{Read: request}
-	call := &pb.Command{Version: 1, Operation: variant}
-	work, failure := adapter.PrepareCommand(9, call)
+	variant := &pb.Operation_Read{Read: request}
+	call := &pb.Operation{Index: 1, Operation: variant}
+	call.Index = 9
+	work, failure := adapter.PrepareOperation(call)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -44,9 +45,9 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("wire Command mutated or association lost", work)
 	}
 	events := 0
-	emit := func(plan *execution.Plan, event *pb.Event) error {
+	emit := func(plan *execution.Plan, output *execution.Output) error {
 		events++
-		if plan != work || event.Version != 1 || event.GetResult().Index != 9 || string(event.GetResult().GetRead().GetDocument().Data) != source {
+		if plan != work || output.Result.Index != 9 || string(output.Result.GetRead().GetDocument().Data) != source {
 			t.Fatal("large read lost source or association")
 		}
 		return nil
@@ -56,16 +57,12 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events, feedback)
 	}
 	request.Resource = "weir://search/records/s:a"
-	if _, failure := adapter.PrepareCommand(10, call); failure == nil {
+	if _, failure := adapter.PrepareOperation(call); failure == nil {
 		t.Fatal("accepted obsolete absolute wire resource")
 	}
 	request.Resource = "records/s:a"
-	call.Version = 2
-	if _, failure := adapter.PrepareCommand(10, call); failure == nil {
-		t.Fatal("accepted unknown payload version")
-	}
-	call.Version = 1
-	if _, failure := adapter.PrepareCommand(0, call); failure == nil {
+	call.Index = 0
+	if _, failure := adapter.PrepareOperation(call); failure == nil {
 		t.Fatal("accepted zero ID")
 	}
 }
@@ -78,9 +75,9 @@ func TestRouteLuaUsesSingletonCASBoundary(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	variant := &pb.Command_Mutate{Mutate: mutation}
-	call := &pb.Command{Version: 1, Operation: variant}
-	work, failure := adapter.PrepareCommand(1, call)
+	variant := &pb.Operation_Mutate{Mutate: mutation}
+	call := &pb.Operation{Index: 1, Operation: variant}
+	work, failure := adapter.PrepareOperation(call)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -145,7 +142,8 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			work.BackendTimeout = 100 * time.Millisecond
 			var end *pb.NativeEnd
 			var body strings.Builder
-			emit := func(_ *execution.Plan, event *pb.Event) error {
+			emit := func(_ *execution.Plan, output *execution.Output) error {
+				event := output.Event
 				if phase == "slow_output" && (event.GetHead() != nil || event.GetChunk() != nil) {
 					time.Sleep(150 * time.Millisecond)
 				}

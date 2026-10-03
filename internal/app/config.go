@@ -65,7 +65,6 @@ type Local struct {
 	Search             *Search   `json:"search" yaml:"search"`
 	MaxConcurrency     int       `json:"max_concurrency" yaml:"max_concurrency"`
 	MaxBatchOperations int       `json:"max_batch_operations" yaml:"max_batch_operations"`
-	BatchCollect       *Duration `json:"batch_collect,omitempty" yaml:"batch_collect,omitempty"`
 	MaxReadSize        *ByteSize `json:"max_read_size,omitempty" yaml:"max_read_size,omitempty"`
 }
 
@@ -113,7 +112,7 @@ func DefaultConfig() Config {
 		Timeouts:       timeouts,
 	}
 	basic := BasicConfig{
-		Memory:    1 << 30,
+		Memory:    2 << 30,
 		Transport: transport,
 	}
 
@@ -167,10 +166,16 @@ func (cfg Config) Validate() error {
 // Runtime heap and RSS additionally include GC slack, stacks and driver/native
 // allocations; the overload guard enforces the configured process threshold.
 func (cfg Config) ReservedMemory() uint64 {
-	budget := uint64(64<<20) + uint64(cfg.Basic.Transport.MaxSessions)*(64<<20) + uint64(cfg.Basic.Transport.MaxConnections)*(256<<10)
+	if cfg.Basic.Transport.serverLimits().Validate() != nil {
+		return (64 << 30) + 1
+	}
+	budget := uint64(64<<20) + uint64(cfg.Basic.Transport.MaxSessions)*(96<<20) + uint64(cfg.Basic.Transport.MaxConnections)*(256<<10)
 	for _, service := range cfg.Routing.Stores {
 		if service.Local != nil {
 			limits := service.Local.runtimeLimits()
+			if limits.Validate() != nil {
+				return (64 << 30) + 1
+			}
 			budget += uint64(limits.PendingBytes + limits.ResultBytes + limits.WorkingBytes)
 			budget += uint64(limits.Concurrency) * (2 << 20)
 		}
@@ -357,9 +362,6 @@ func (l *Local) runtimeLimits() store.Limits {
 	}
 	if l.MaxBatchOperations != 0 {
 		limits.BatchOperations = l.MaxBatchOperations
-	}
-	if l.BatchCollect != nil {
-		limits.Collect = time.Duration(*l.BatchCollect)
 	}
 
 	return limits

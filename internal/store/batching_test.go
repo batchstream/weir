@@ -43,7 +43,6 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 
 func TestAllRecordActionsShareBatch(t *testing.T) {
 	limits := DefaultLimits()
-	limits.Collect = 0
 	r := newRuntime(nil, limits)
 	session := r.NewSession()
 	defer session.Close()
@@ -81,7 +80,6 @@ func TestAllRecordActionsShareBatch(t *testing.T) {
 
 func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	limits := DefaultLimits()
-	limits.Collect = 0
 	limits.BatchOperations = 3
 	r := newRuntime(nil, limits)
 	session := r.NewSession()
@@ -134,53 +132,6 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	ticket.Ack()
 }
 
-func TestReadsCollectAndAnyParticipantDeadlineFlushes(t *testing.T) {
-	limits := DefaultLimits()
-	limits.Collect = 10 * time.Millisecond
-	for _, expiringParticipant := range []bool{false, true} {
-		r := newRuntime(nil, limits)
-		base := time.Now()
-		ctx, cancel := context.WithDeadline(context.Background(), base.Add(time.Second))
-		first := recordActionPlan(0, "first", "read")
-		a, failure, _ := r.Submit(context.Background(), first, nil)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		second := recordActionPlan(1, "second", "read")
-		b, failure, _ := r.Submit(ctx, second, nil)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		now := base
-		if expiringParticipant {
-			now = base.Add(time.Second - 5*time.Millisecond)
-		}
-		r.mu.Lock()
-		batch := r.selectLocked(now)
-		r.mu.Unlock()
-		if !expiringParticipant {
-			if batch != nil {
-				t.Fatal("reads bypassed the collection window")
-			}
-			r.mu.Lock()
-			batch = r.selectLocked(now.Add(limits.Collect))
-			r.mu.Unlock()
-		}
-		if batch == nil || len(batch.items) != 2 {
-			t.Fatal("reads did not aggregate or later deadline did not flush", batch)
-		}
-		if batch.backendDeadline.Before(now.Add(limits.BackendTimeout)) {
-			t.Fatal("short caller deadline constrained an independent caller")
-		}
-		r.mu.Lock()
-		finish(r, batch)
-		r.mu.Unlock()
-		a.Ack()
-		b.Ack()
-		cancel()
-	}
-}
-
 type recordBatchAdapter struct {
 	scanTestAdapter
 	started chan []*execution.Plan
@@ -207,7 +158,8 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 		results[i] = protocol.ResultError(p.Operation, outcome, failure)
 	}
 	for i, result := range results {
-		_ = emit(plans[i], resultEvent(result))
+		output := &execution.Output{Result: result}
+		_ = emit(plans[i], output)
 	}
 	return execution.Healthy
 }
@@ -223,7 +175,6 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 	}()
 	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 2), gate: gate}
 	limits := DefaultLimits()
-	limits.Collect = 0
 	r := newRuntime(adapter, limits)
 	p := recordActionPlan(0, "same", "replace")
 	firstContext, cancelFirst := context.WithCancel(context.Background())
@@ -281,7 +232,6 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 			}()
 			adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 1), phases: make(chan *execution.Plan, 2), gate: gate}
 			limits := DefaultLimits()
-			limits.Collect = 0
 			r := newRuntime(adapter, limits)
 			original, cancel := context.WithCancel(context.Background())
 			defer cancel()

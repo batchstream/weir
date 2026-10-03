@@ -1,68 +1,56 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.1.0/api/weir/v1/store.proto), package
-`weir.v1`. It contains only client discovery and business execution, with no
-dependency on the peer schema. A client initializes through any application
-endpoint, then sends business requests directly to the returned Store endpoints.
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.2.0/api/weir/v1/store.proto),
+package weir.v1. Clients initialize through any application endpoint and send
+business requests directly to the returned Store endpoints. No Kubernetes types
+or peer membership appear in this schema.
 
-| Public API | Meaning |
+| Public RPC | Meaning |
 | --- | --- |
-| `StoreService.ResolveStore` | Find reachable endpoints for one named Store |
-| `ResolveStoreRequest.store_name` | The logical Store to discover |
-| `ResolveStoreResponse.store_name` | The resolved Store, matching the request |
-| `ResolveStoreResponse.endpoints` | IP or DNS host:port values; DNS may identify several replicas |
-| `ResolveStoreResponse.cache_ttl_ms` | Remaining time the mapping may be used |
-| `StoreService.Execute` | Execute a finite stream of Commands in one local Store |
-| `ExecuteRequest.request_id` | Positive, strictly increasing correlation ID within this RPC |
-| `ExecuteRequest.store_name` | Store fixed by the first valid request of the stream |
-| `ExecuteRequest.command_payload` | Exactly one protobuf-encoded, versioned `Command` |
-| `ExecuteResponse.request_id` | Request whose output this frame carries |
-| `ExecuteResponse.event_fragment` | Fragment of a length-delimited protobuf `Event` sequence |
-| `ExecuteResponse.request_complete` | Separate empty frame ending that request's Events |
+| StoreService.ResolveStore | Discover IP/DNS endpoints and cache TTL for one named Store |
+| StoreService.Read | Read a complete ordered batch in one unary RPC |
+| StoreService.Mutate | Apply a complete ordered mutation batch in one unary RPC |
+| StoreService.Execute | Stream Events for one Scan or Native Command |
 
-An Event can span several response frames. Clients must parse varint-length
-delimited Events across arbitrary fragment boundaries. Completing a request also
-requires its valid business terminal. Completing the entire RPC requires client
-half-close, all request completions and final gRPC OK. Connection failures never
-authorize replaying a mutation.
+ReadBatchRequest and MutateBatchRequest contain store_name and requests.
+Their responses contain results in the same positions as inputs. All input is
+validated before effects; individual business failures remain positional results.
+Full encoded requests and responses are bounded to 32 MiB. Mutate is not an atomic
+transaction; same-resource mutations execute in input order.
 
-The independent internal contract is
-[peer.proto](../internal/api/peer/v1/peer.proto), package `weir.peer.v1`.
-`PeerDiscoveryService.SyncDirectory` exchanges bounded snapshots of node
-announcements. It has no dependency on public business DTOs.
+ExecuteRequest contains store_name and one Command. ExecuteResponse contains one
+Event. Commands and Events use version 1; unknown fields/versions are rejected.
+There are no request IDs, encoded command blobs, Event fragments or separate
+request-complete messages. Scan and Native require their terminal Event and final
+gRPC OK. A failed unary RPC confirms no batch result; mutations are never
+automatically replayed. See [payload contracts](route-payloads.md).
+
+The independent internal [peer.proto](../internal/api/peer/v1/peer.proto), package
+weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory. It exchanges bounded
+snapshots without depending on public business DTOs.
 
 | Internal field | Meaning |
 | --- | --- |
-| `announcements` | Node state offered to, or learned from, a peer |
-| `incarnation_id` | Fresh identity for each process lifetime |
-| `revision` | Monotonic heartbeat version advanced only by the origin |
-| `peer_endpoint` | Direct endpoint for node-to-node synchronization |
-| `replica_group` | Replicas that provide the same logical Store ownership |
-| `store_names` | Complete set of locally served Stores |
-| `store_endpoints` | Business endpoints serving those Stores |
-| `lease_remaining_ms` | Remaining origin lease; relays cannot extend it |
-| `withdrawn` | Explicit withdrawal of this process incarnation |
+| announcements | Node state offered to or learned from a peer |
+| incarnation_id | Fresh identity for each process lifetime |
+| revision | Monotonic heartbeat version advanced only by the origin |
+| peer_endpoint | Direct node-to-node synchronization endpoint |
+| replica_group | Replicas with equivalent logical Store ownership |
+| store_names | Complete locally served Store set |
+| store_endpoints | Business endpoints for those Stores |
+| lease_remaining_ms | Remaining origin lease; relays cannot extend it |
+| withdrawn | Explicit withdrawal of a process incarnation |
 
-The server merges same-group endpoints and rejects conflicting Store ownership
-before answering ResolveStore. Replica groups and peer membership therefore stay
-internal and are absent from the public response.
+Same-group endpoints merge; conflicting Store ownership fails ResolveStore.
+Replica groups stay internal and do not appear in its public response.
+Application listeners expose only StoreService; peer listeners expose only
+PeerDiscoveryService. Removed RPC paths have no aliases.
 
-Application listeners expose only StoreService. Peer listeners expose only
-PeerDiscoveryService. Old RPC paths and aliases are removed. Shared endpoint
-validation belongs to the public protocol helpers; the production Go client does
-not depend on the peer protocol or directory implementation.
-
-The [Go SDK](https://github.com/batchstream/weir-go) is an independent module,
-`github.com/batchstream/weir-go` (package `weir`). The independent
-[weir-protocol](https://github.com/batchstream/weir-protocol) repository owns the
-canonical public schemas, generated Go bindings and shared validation/DNS helpers.
-Both server and SDK depend on `github.com/batchstream/weir-protocol`; that module
-depends on neither. The SDK has no dependency on the Weir server module. Server
-acceptance tests consume the SDK without introducing a module cycle.
-
-This repository generates only internal peer bindings through `scripts/generate.sh`.
-Public bindings are generated in weir-protocol. Other language bindings and SDKs
-are deferred. Future SDKs
-can generate the public schema independently, then implement initialization,
-endpoint/DNS refresh, load balancing, Event framing and safe completion handling
-using this contract. No Kubernetes types or APIs appear in either schema.
+[weir-protocol](https://github.com/batchstream/weir-protocol) owns canonical public
+schemas, generated Go bindings and shared validation/DNS helpers. Both Weir and
+[weir-go](https://github.com/batchstream/weir-go) depend on it; it depends on neither.
+The SDK has no dependency on the server. Server acceptance tests can consume the
+SDK without introducing a cycle. This repository generates only internal peer
+bindings with scripts/generate.sh. Future language SDKs can independently generate
+the public schema and implement discovery, endpoint refresh, load balancing and
+safe typed completion. This change requires protocol v0.2.0 and Go SDK v0.4.0.

@@ -28,16 +28,16 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "records/s:id"}
-		variant := &pb.Command_Read{Read: request}
-		call := &pb.Command{Version: 1, Operation: variant}
-		work, failure := adapter.PrepareCommand(1, call)
+		variant := &pb.Operation_Read{Read: request}
+		call := &pb.Operation{Index: 1, Operation: variant}
+		work, failure := adapter.PrepareOperation(call)
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		if limit == 0 {
 			limit = 16 << 10
 		}
-		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes > 24<<20 || work.WorkingBytes < 3*metadataLimit {
+		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes != 3*batchBodyLimit || work.WorkingBytes < 3*metadataLimit {
 			t.Fatal("read declaration was not reflected in resource bounds", limit, work.ResultBytes, work.WorkingBytes)
 		}
 	}

@@ -11,9 +11,9 @@ import (
 
 func TestMemoryLimitedFlightsAreSaturatedBeforeConfiguredConcurrency(t *testing.T) {
 	limits := DefaultLimits()
+	limits.WorkingBytes = 128 << 20
 	limits.Concurrency = 8
 	limits.BatchOperations = 1
-	limits.Collect = 0
 	runtime := newRuntime(nil, limits)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -69,9 +69,9 @@ func TestMemoryLimitedFlightsAreSaturatedBeforeConfiguredConcurrency(t *testing.
 
 func TestMemorySaturationIncludesDemandArrivingAfterDispatch(t *testing.T) {
 	limits := DefaultLimits()
+	limits.WorkingBytes = 128 << 20
 	limits.Concurrency = 8
 	limits.BatchOperations = 1
-	limits.Collect = 0
 	adapter := &scanTestAdapter{}
 	runtime := newRuntime(adapter, limits)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,7 +123,6 @@ func TestMemorySaturationIncludesDemandArrivingAfterDispatch(t *testing.T) {
 func TestWorkingBudgetBackfillsIndependentWorkWithoutBreakingSessionOrder(t *testing.T) {
 	limits := DefaultLimits()
 	limits.WorkingBytes = 48 << 20
-	limits.Collect = 0
 	runtime := newRuntime(nil, limits)
 	session := runtime.NewSession()
 	defer session.Close()

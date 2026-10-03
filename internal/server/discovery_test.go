@@ -98,17 +98,8 @@ func TestDiscoveryIngressRolesAndIndependentAdmission(t *testing.T) {
 	if _, err := client.ResolveStore(ctx, unknown); status.Code(err) != codes.Unavailable {
 		t.Fatal("unknown Store did not return retryable discovery error", err)
 	}
-	stream, err := client.Execute(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	business := routeAcceptanceRead(1, "data/s:key")
-	business.StoreName = "unknown"
-	if err := stream.Send(business); err != nil {
-		t.Fatal(err)
-	}
-	_ = stream.CloseSend()
-	if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
+	business := &pb.ReadBatchRequest{StoreName: "unknown", Requests: []*pb.ReadRequest{testRequest()}}
+	if _, err := client.Read(ctx, business); status.Code(err) != codes.Unavailable {
 		t.Fatal("unhosted Store was accepted", err)
 	}
 	if adapter.commands.Load() != 0 {

@@ -3,12 +3,13 @@
 Weir discovers logical Stores and executes finite database batches. Clients initialize
 through any Weir node with `ResolveStore`, then connect directly to the returned business
 targets. Nodes synchronize their Store directory through bounded periodic peer
-exchanges. Business `Execute` streams execute only local Stores.
+exchanges. Business requests execute only local Stores.
 
-Each finite bidirectional Execute RPC selects one Store and one instance. Record
-reads/mutations, scans, native exchanges and atomic Lua transforms share the
-bounded Store scheduler. Compatible operations batch across RPCs. Lua runs inside
-the single Weir process. Uncompleted writes remain indeterminate after transport
+`Read` and `Mutate` carry a complete batch in one unary RPC. `Execute` carries one
+Scan or Native command and streams its typed Events. All share the bounded Store
+scheduler. A client batch stays together through preparation, scheduling and
+backend grouping; same-URI mutations execute in input order. Lua runs inside the
+single Weir process. Unconfirmed writes remain indeterminate after transport
 failure and are never automatically replayed.
 
 This is a breaking routing/configuration refactor. Configuration declares local
@@ -49,7 +50,7 @@ discovery:
   advertise: ["127.0.0.1:7447"]
 diagnostics:
   address: "127.0.0.1:7449"
-memory: "1GiB"
+memory: "2GiB"
 transport:
   max_connections: 16
   max_sessions: 4
@@ -67,7 +68,6 @@ stores:
       uri: "mongodb://127.0.0.1:27028/?directConnection=true"
     max_concurrency: 2
     max_batch_operations: 32
-    batch_collect: "5ms"
     max_read_size: "16KiB"
 ```
 
@@ -89,7 +89,10 @@ unknown/duplicate fields, anchors, aliases, explicit tags and documents over
 peers or backends. Configuration changes take effect after a restart.
 
 Store defaults are two concurrent backend executions, 32 operations per batch,
-a `5ms` collection window and a `16KiB` ordinary-read limit. Tune against completed
+a `16KiB` ordinary-read limit and a `384MiB` backend working budget. There is no
+collection delay; physical batches split by namespace, action, actual input bytes
+and `max_batch_operations`. Read results reserve actual retained bytes, rather
+than the configured maximum size multiplied by the number of records. Tune against completed
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
 or container limit for a hard memory boundary. The adaptive scheduler and backend
 connection budgets remain independent of peer discovery.
@@ -119,8 +122,8 @@ The Go SDK lives in the independent [weir-go](https://github.com/batchstream/wei
 repository and module `github.com/batchstream/weir-go` (package `weir`). It resolves
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
-and drains retired connections without moving an active Execute to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.3.0`.
+and drains retired connections without moving an active RPC to another instance.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.4.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -151,22 +154,30 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.3.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.3.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.3.0/examples/scan) examples
-initialize through a seed. Read and Mutate accept batches for one Store and preserve input order. Each batch
-uses one Execute RPC; resources are relative paths within its Store. The SDK also
-provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan and Native methods. Finite Execute batches use opaque SDK
-Command constructors and SDK Events, without protobuf versions or oneof assembly.
-The SDK pins public protocol v0.1.0. Advanced fixed-owner callers can use Dial and
-the package-level business helpers with their existing application connection.
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.4.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.4.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.4.0/examples/scan) examples
+initialize through a seed. Read and Mutate accept batches for one Store, each with
+one unary RPC and results in input order. Resources are canonical relative paths.
+There is no item-count limit in the public API; the complete protobuf request and
+response must each fit 32 MiB. The SDK also provides ReadOne, Create, Put, Replace,
+Delete, AtomicTransform, Scan and Native methods. It pins public protocol v0.2.0.
+Advanced fixed-owner callers can use Dial and package-level business helpers.
 
-An Execute succeeds only after every request's business terminal and end frame,
-input half-close and final gRPC OK. A finite scan page returns a continuation
-checkpoint or exhaustion; commit its checkpoint only after complete delivery.
-A later page can use another instance. MongoDB scans paginate by ascending `_id`
-without a retained cursor; Search continuations carry the backend PIT snapshot.
-Consumers must tolerate repeated documents when restarting an interrupted page.
+Batch requests are fully validated before backend work. Individual business
+failures remain in their corresponding result. Mutate is not a transaction:
+earlier successes remain applied if a later item fails. A transport or invalid
+response error returns no confirmed batch results; all submitted mutations may
+have applied and must not be retried automatically. An APPLIED outcome with a
+later acknowledgement failure preserves application evidence without counting
+as a successful operation.
+
+Scan and Native each use one server-streaming Execute RPC. Success requires a
+valid terminal Event and final gRPC OK. A scan checkpoint additionally requires
+the matching delivered document count. A later page can use another instance.
+MongoDB scans paginate by ascending `_id` without a retained cursor; Search
+continuations carry the backend PIT snapshot. Consumers must tolerate repeated
+documents when restarting an interrupted page.
 
 ## Deployment
 
@@ -196,7 +207,11 @@ python3 -m unittest discover -s scripts -p '*_test.py'
 Default tests use owned offline/loopback fixtures. Live backend and process tests
 are explicit opt-ins through `scripts/test-integration.sh`. Compile tagged helpers
 and run real backend profiles separately; tagged compilation is not live coverage.
-Build reproducible archives from a clean commit with
+Matched direct/Weir benchmarks and current blackbox integration live in the
+independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
+The locked first-reference `scripts/test-capacity.py` and historical Kubernetes
+calibration require their original source/artifact receipts; they do not qualify
+this refactor. Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
 
 ## CLI

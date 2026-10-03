@@ -4,9 +4,8 @@
 # A node may host 0..16 Stores. Empty/missing stores is valid for discovery-only nodes.
 # name is a unique lowercase Store name, at most 63 bytes; exactly one backend
 # (mongodb or search) is required. No databases/collections/indexes are configured.
-# max_concurrency: default 2; explicit 0 selects default; effective range 1..32.
-# max_batch_operations: default 32; explicit 0 selects default; range 1..128.
-# batch_collect: default 5ms; range 0s..10ms; explicit zero disables collection wait.
+# max_concurrency: default 2; explicit 0 selects default; positive values within the process memory budget.
+# max_batch_operations: default 32; explicit 0 selects default; positive values; requests are bounded by encoded bytes.
 # max_read_size: default 16KiB; range 1KiB..2MiB; oversized records fail boundedly.
 # MongoDB URI: mongodb:// with one host and explicit port, without userinfo.
 # mongodb+srv, multi-host and replica-set topology discovery are unsupported.
@@ -25,7 +24,6 @@ stores:
       uri: mongodb://127.0.0.1:27017/?directConnection=true
     max_concurrency: 2
     max_batch_operations: 32
-    batch_collect: 5ms
     max_read_size: 16KiB
   - name: search
     search:
@@ -36,5 +34,4 @@ stores:
         ca_file: /etc/weir/ca.pem
     max_concurrency: 2
     max_batch_operations: 32
-    batch_collect: 5ms
     max_read_size: 16KiB

@@ -22,9 +22,6 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	}
 	var work *execution.Plan
 	switch {
-	case call.GetRead() != nil || call.GetMutate() != nil:
-		operation := execution.RecordOperation(id, call)
-		work, failure = a.prepareRecord(operation)
 	case call.GetScan() != nil:
 		work, failure = a.prepareScan(call.GetScan())
 	case call.GetNative() != nil:
@@ -45,18 +42,27 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	work.Command = call
 	work.ID = id
 	work.Bytes = max(work.Bytes, 2*proto.Size(input)+4096)
-	if call.GetRead() != nil {
-		work.WorkingBytes = max(work.WorkingBytes, a.readWorkingBytes())
-	} else {
-		work.WorkingBytes = max(work.WorkingBytes, 24<<20)
+	work.WorkingBytes = max(work.WorkingBytes, 24<<20)
+	return work, nil
+}
+
+func (a *Adapter) PrepareOperation(input *pb.Operation) (*execution.Plan, *pb.Failure) {
+	if input == nil || input.Index == 0 {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record ID")
 	}
-	if !work.Singleton {
-		native := work.Backend.(*plan)
-		work.BatchKey = native.index
-		if native.program != nil {
-			work.Singleton = true
-		}
+	operation, failure := execution.NormalizeOperation(input, a.config.Store)
+	if failure != nil {
+		return nil, failure
 	}
+	work, failure := a.prepareRecord(operation)
+	if failure != nil {
+		return nil, failure
+	}
+	work.ID = operation.Index
+	work.WorkingBytes = a.readWorkingBytes()
+	native := work.Backend.(*plan)
+	work.BatchKey = native.index
+	work.Singleton = native.program != nil
 	return work, nil
 }
 
@@ -65,12 +71,11 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		return execution.Neutral
 	}
 	work := works[0]
-	if !work.Singleton || work.Command == nil || work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
+	if work.Operation != nil {
 		results, feedback := a.executeRecords(ctx, works)
 		for i, result := range results {
-			value := &pb.Event_Result{Result: result}
-			event := &pb.Event{Version: 1, Value: value}
-			_ = emit(works[i], event)
+			output := &execution.Output{Result: result}
+			_ = emit(works[i], output)
 		}
 		return feedback
 	}
@@ -85,7 +90,8 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 	_ = source.Close()
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Version: 1, Value: value}
-	_ = emit(work, event)
+	output := &execution.Output{Event: event}
+	_ = emit(work, output)
 	return feedback
 }
 
@@ -102,7 +108,8 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 	for _, document := range page.Documents {
 		value := &pb.Event_Document{Document: document}
 		event := &pb.Event{Version: 1, Value: value}
-		if err := emit(work, event); err != nil {
+		output := &execution.Output{Event: event}
+		if err := emit(work, output); err != nil {
 			page.Failure = protocol.ContextFailure(ctx)
 			break
 		}
@@ -116,7 +123,8 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 		}
 		value := &pb.Event_ScanEnd{ScanEnd: end}
 		event := &pb.Event{Version: 1, Value: value}
-		if err := emit(work, event); err == nil && len(end.NextContinuationToken) != 0 {
+		output := &execution.Output{Event: event}
+		if err := emit(work, output); err == nil && len(end.NextContinuationToken) != 0 {
 			state.transferred = true
 		}
 	} else {
@@ -141,10 +149,12 @@ func (s *eventSink) Interrupt() {}
 func (s *eventSink) Head(head *pb.NativeHead) error {
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Version: 1, Value: value}
-	return s.emit(s.work, event)
+	output := &execution.Output{Event: event}
+	return s.emit(s.work, output)
 }
 func (s *eventSink) Chunk(chunk []byte) error {
 	value := &pb.Event_Chunk{Chunk: append([]byte(nil), chunk...)}
 	event := &pb.Event{Version: 1, Value: value}
-	return s.emit(s.work, event)
+	output := &execution.Output{Event: event}
+	return s.emit(s.work, output)
 }

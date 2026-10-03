@@ -126,8 +126,8 @@ class Fixture:
         self.backend = getattr(args, "backend", "elasticsearch")
         self.weir_cpu = getattr(args, "weir_cpu", 2)
         self.workers = getattr(args, "workers", 8)
-        reserved_mib = 228 + 64 * self.workers + 2 * args.pool
-        self.weir_memory = max(768, ((reserved_mib + 255) // 256) * 256)
+        reserved_mib = 64 + 96 * self.workers + 4 + 448 + 2 * args.pool
+        self.weir_memory = max(2048, ((reserved_mib + 255) // 256) * 256)
         self.weir_cpuset = "3,4" if self.weir_cpu <= 2 else "3,4,5,6"
         self.backend_url = ("mongodb://mongodb:27017/?directConnection=true"
                             if self.backend == "mongodb" else "http://elasticsearch:9200")
@@ -521,9 +521,6 @@ class Fixture:
             local = routes["stores"][0]
             del local["search"]
             local["mongodb"] = {"uri": self.backend_url}
-        collect_ms = getattr(self.args, "collect_ms", None)
-        if mode != "baseline" and collect_ms is not None:
-            routes["stores"][0]["batch_collect"] = str(collect_ms) + "ms"
         max_read_size = getattr(self.args, "max_read_size", None)
         if mode != "baseline" and max_read_size is not None:
             routes["stores"][0]["max_read_size"] = max_read_size
@@ -991,7 +988,6 @@ def main():
         help="optional separately tuned direct pool; zero uses --pool",
     )
     parser.add_argument("--batch-operations", type=int, default=16)
-    parser.add_argument("--collect-ms", type=int, help="current Weir batch collection window, 0..10 ms; baseline retains 1 ms")
     parser.add_argument("--max-read-size", help="current Weir ordinary Record Read bound, e.g. 16KiB; baseline retains 2MiB")
     parser.add_argument("--db-cpu", type=float, default=1)
     parser.add_argument("--backend", choices=("elasticsearch", "mongodb"), default="elasticsearch")
@@ -1020,7 +1016,6 @@ def main():
         or not 0.1 <= args.weir_cpu <= 4
         or not 1 <= args.workers <= 64
         or not 1 <= args.client_queue <= 512
-        or args.collect_ms is not None and not 0 <= args.collect_ms <= 10
     ):
         parser.error("bounded trial options required")
     modes = args.modes.split(",")

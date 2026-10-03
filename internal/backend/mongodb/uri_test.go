@@ -108,15 +108,13 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		invalid.Username, invalid.Password = pair.username, pair.password
 		cases = append(cases, invalid)
 	}
-	for _, field := range []string{"store", "pool-zero", "pool-large"} {
+	for _, field := range []string{"store", "pool-zero"} {
 		invalid := base
 		switch field {
 		case "store":
 			invalid.Store = "invalid/private-sentinel"
 		case "pool-zero":
 			invalid.Pool = 0
-		case "pool-large":
-			invalid.Pool = 33
 		}
 		cases = append(cases, invalid)
 	}

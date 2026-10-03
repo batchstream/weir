@@ -19,14 +19,14 @@ func (a *canceledFeedbackAdapter) Execute(ctx context.Context, plans []*executio
 	for _, plan := range plans {
 		failure := protocol.ContextFailure(ctx)
 		result := protocol.ResultError(plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
-		_ = emit(plan, resultEvent(result))
+		output := &execution.Output{Result: result}
+		_ = emit(plan, output)
 	}
 	return execution.Congested
 }
 
 func TestRuntimeCanceledCallDoesNotBecomeBackendCongestion(t *testing.T) {
 	limits := DefaultLimits()
-	limits.Collect = 0
 	adapter := &canceledFeedbackAdapter{}
 	runtime := newRuntime(adapter, limits)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,7 +55,6 @@ func TestRuntimeCanceledCallDoesNotBecomeBackendCongestion(t *testing.T) {
 
 func TestRuntimeOwnedBackendDeadlineRemainsCongestion(t *testing.T) {
 	limits := DefaultLimits()
-	limits.Collect = 0
 	adapter := &canceledFeedbackAdapter{}
 	runtime := newRuntime(adapter, limits)
 	work := plan(1, "timeout", false)
@@ -81,7 +80,6 @@ func TestRuntimeOwnedBackendDeadlineRemainsCongestion(t *testing.T) {
 func TestRuntimePartiallyCanceledHealthyBatchCannotRecoverConcurrency(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchOperations = 2
-	limits.Collect = 0
 	gate := make(chan struct{})
 	close(gate)
 	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 1), gate: gate}

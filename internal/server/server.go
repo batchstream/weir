@@ -2,7 +2,6 @@
 package server
 
 import (
-	"net/http"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
@@ -51,21 +51,18 @@ type Server struct {
 	limits          Limits
 	slots           chan struct{}
 	grpc            *grpc.Server
-	controlGRPC     *grpc.Server
-	http            *http.Server
 	draining        chan struct{}
 	once            sync.Once
 	connections     sync.Map
-	executionStats  executionCounters
 	metrics         transportMetrics
 	serving         chan struct{}
 }
 
 func (l Limits) Validate() error {
-	if l.Connections < 1 || l.Connections > 64 ||
-		l.Sessions < 1 || l.Sessions > 64 ||
-		l.RouteLifetime <= 0 || l.RouteLifetime > 15*time.Minute ||
-		l.Stall <= 0 || l.Stall > 30*time.Second {
+	if l.Connections < 1 || uint64(l.Connections) > (64<<30)/(256<<10) ||
+		l.Sessions < 1 || uint64(l.Sessions) > (64<<30)/(96<<20) ||
+		l.RouteLifetime <= 0 ||
+		l.Stall <= 0 {
 		return status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}
 	return nil
@@ -76,7 +73,7 @@ func New(cfg Config) (*Server, error) {
 	if err := l.Validate(); err != nil {
 		return nil, err
 	}
-	if len(cfg.Stores) > 16 || cfg.Admission == nil {
+	if cfg.Admission == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid Stores or ingress bounds")
 	}
 	if cap(cfg.Admission.slots) != l.Sessions || cap(cfg.Admission.connections) != l.Connections {
@@ -107,48 +104,32 @@ func New(cfg Config) (*Server, error) {
 		s.connectionSlots = make(chan struct{}, 16)
 	}
 	s.serving = make(chan struct{})
-	statistics := deliveryStats{}
-	s.grpc = grpc.NewServer(
-		grpc.MaxRecvMsgSize(protocol.MaxFrame),
-		grpc.MaxSendMsgSize(protocol.MaxResponse),
-		grpc.StatsHandler(statistics),
-		grpc.WaitForHandlers(true),
-	)
-	s.controlGRPC = grpc.NewServer(
-		grpc.MaxRecvMsgSize(directory.MaxSyncBytes),
-		grpc.MaxSendMsgSize(directory.MaxSyncBytes),
-		grpc.StatsHandler(statistics),
-		grpc.WaitForHandlers(true),
-	)
-	protocols := &http.Protocols{}
-	protocols.SetUnencryptedHTTP2(true)
-	// Bound incomplete HTTP/2 headers/frames before a handler exists. A stalled
-	// frame also prevents PING acknowledgements from being parsed; the native
-	// transport closes it after the finite idle plus PING budgets.
-	h2 := &http.HTTP2Config{
-		MaxConcurrentStreams:          8,
-		MaxReadFrameSize:              16 << 10,
-		MaxReceiveBufferPerStream:     65535,
-		MaxReceiveBufferPerConnection: 65535,
-		SendPingTimeout:               l.Stall,
-		PingTimeout:                   min(5*time.Second, l.Stall),
-		WriteByteTimeout:              l.Stall,
+	statistics := transportStats{}
+	codec := &responseCodec{admission: s.admission}
+	keepaliveParameters := keepalive.ServerParameters{Time: l.Stall, Timeout: min(5*time.Second, l.Stall), MaxConnectionIdle: time.Minute}
+	receiveBytes, sendBytes := protocol.MaxBatchRequestBytes, protocol.MaxBatchResponseBytes
+	if cfg.Peer {
+		receiveBytes, sendBytes = directory.MaxSyncBytes, directory.MaxSyncBytes
 	}
-	s.http = &http.Server{
-		Handler:           http.HandlerFunc(s.serveHTTP),
-		Protocols:         protocols,
-		HTTP2:             h2,
-		ReadHeaderTimeout: min(5*time.Second, l.Stall),
-		MaxHeaderBytes:    16 << 10,
-		IdleTimeout:       time.Minute,
+	options := []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(receiveBytes),
+		grpc.MaxSendMsgSize(sendBytes),
+		grpc.MaxConcurrentStreams(uint32(l.Sessions + cap(s.control))),
+		grpc.MaxHeaderListSize(16 << 10),
+		grpc.InTapHandle(s.admitRPC),
+		grpc.StatsHandler(statistics),
+		grpc.ForceServerCodecV2(codec),
+		grpc.KeepaliveParams(keepaliveParameters),
+		grpc.WaitForHandlers(true),
+		grpc.ConnectionTimeout(min(5*time.Second, l.Stall)),
 	}
+	s.grpc = grpc.NewServer(options...)
 	if cfg.Peer {
 		if cfg.Directory != nil {
-			peerpb.RegisterPeerDiscoveryServiceServer(s.controlGRPC, cfg.Directory)
+			peerpb.RegisterPeerDiscoveryServiceServer(s.grpc, cfg.Directory)
 		}
 	} else {
 		pb.RegisterStoreServiceServer(s.grpc, s)
-		pb.RegisterStoreServiceServer(s.controlGRPC, s)
 	}
 	return s, nil
 }

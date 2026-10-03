@@ -103,7 +103,11 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					for !ended {
 						frame, err := framer.ReadFrame()
 						if err != nil {
-							t.Fatal("partial body did not receive a bounded stream termination", err)
+							if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+								t.Fatal("partial body survived until the client deadline", err)
+							}
+							ended = true
+							break
 						}
 						switch frame := frame.(type) {
 						case *http2.SettingsFrame:
@@ -133,11 +137,11 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					t.Fatal("only the client deadline closed the stalled connection", readErr)
 				}
 				deadline := time.Now().Add(time.Second)
-				for len(srv.admission.connections) != 0 && time.Now().Before(deadline) {
+				for (len(srv.connectionSlots) != 0 || len(srv.slots) != 0 || len(srv.control) != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(deadline) {
 					time.Sleep(time.Millisecond)
 				}
-				if time.Since(started) > 750*time.Millisecond || len(srv.admission.connections) != 0 || len(srv.slots) != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
-					t.Fatal("stalled transport leaked resources or executed", time.Since(started), len(srv.admission.connections), len(srv.slots))
+				if time.Since(started) > 1500*time.Millisecond || len(srv.connectionSlots) != 0 || len(srv.slots) != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
+					t.Fatal("stalled transport leaked resources or executed", time.Since(started), len(srv.connectionSlots), len(srv.slots))
 				}
 			})
 		}

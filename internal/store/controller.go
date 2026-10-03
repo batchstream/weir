@@ -54,11 +54,18 @@ func classifyLatency(items []*Ticket) (latencyClass, bool) {
 	if len(items) == 0 {
 		return class, false
 	}
-	class.operations = uint8(bits.Len(uint(len(items) - 1)))
-	class.target = items[0].plan.BatchKey
-	reads, mutations, bytes := 0, 0, 0
+	var plans []*execution.Plan
 	for _, item := range items {
-		plan := item.plan
+		if item.bulk != nil {
+			plans = append(plans, item.bulk.plans...)
+		} else {
+			plans = append(plans, item.plan)
+		}
+	}
+	class.operations = uint8(bits.Len(uint(len(plans) - 1)))
+	class.target = plans[0].BatchKey
+	reads, mutations, bytes := 0, 0, 0
+	for _, plan := range plans {
 		if plan.Streaming {
 			// Native includes time waiting for the consumer to accept output.
 			return class, false
@@ -85,7 +92,7 @@ func classifyLatency(items []*Ticket) (latencyClass, bool) {
 			class.kind = 2
 		}
 	}
-	average := (bytes + len(items) - 1) / len(items)
+	average := (bytes + len(plans) - 1) / len(plans)
 	class.bytes = uint8(bits.Len(uint(average)))
 	return class, true
 }
@@ -168,7 +175,11 @@ func (c *controller) observe(opts observation) string {
 		// Scale to the operation-count bucket's upper bound. For a fixed plus
 		// per-record cost, normal size variation inside a bucket stays within
 		// the 2x allowance while frequent 9..16-record batches share evidence.
-		duration := b.duration * time.Duration(1<<b.latency.operations) / time.Duration(max(1, len(b.items)))
+		operations := len(b.items)
+		if operations == 1 && b.items[0].bulk != nil {
+			operations = len(b.items[0].bulk.plans)
+		}
+		duration := b.duration * time.Duration(1<<b.latency.operations) / time.Duration(max(1, operations))
 		c.sample = duration
 		slow := profile.samples >= 4 && duration > 2*profile.baseline+2*time.Millisecond
 		if profile.samples < 4 {

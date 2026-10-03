@@ -9,7 +9,6 @@ import (
 	"fmt"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
-	"io"
 	"time"
 )
 
@@ -73,39 +72,34 @@ func verifyEffect(ctx context.Context, id, outcome string) error {
 }
 
 func hold(ctx context.Context, client pb.StoreServiceClient, prefix string) error {
-	next := 0
-	opts := testutil.ExecuteOptions{StoreName: "records"}
-	opts.Produce = func(ctx context.Context) (*pb.Command, error) {
-		if next == 40 {
-			return nil, io.EOF
+	for first := 0; first < 40; first += 2 {
+		requests := make([]*pb.MutateRequest, 0, 2)
+		for i := first; i < first+2; i++ {
+			id := fmt.Sprintf("%s-%03d", prefix, i)
+			fixture := testutil.RecordCommand(put(id))
+			requests = append(requests, fixture.Operation.GetMutate())
 		}
-		if next > 0 {
-			select {
-			case <-time.After(500 * time.Millisecond):
-			case <-ctx.Done():
-				return nil, ctx.Err()
+		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
+		response, err := client.Mutate(ctx, batch)
+		if err != nil || len(response.GetResults()) != len(requests) {
+			return fmt.Errorf("hold batch: %v %v", response, err)
+		}
+		for i, result := range response.Results {
+			if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
+				return fmt.Errorf("hold result[%d]: %v", first+i, result)
 			}
+			id := fmt.Sprintf("%s-%03d", prefix, first+i)
+			if err := persisted(ctx, id); err != nil {
+				return err
+			}
+			fmt.Printf("HOLD index=%d APPLIED\n", first+i)
 		}
-		id := fmt.Sprintf("%s-%03d", prefix, next)
-		next++
-		fixture := testutil.RecordCommand(put(id))
-		return fixture.Command, nil
-	}
-	opts.Consume = func(ctx context.Context, id uint64, event *pb.Event) error {
-		result := event.GetResult()
-		if result == nil || result.Index != id || result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
-			return errors.New("Route correlation or outcome")
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-		record := fmt.Sprintf("%s-%03d", prefix, id-1)
-		if err := persisted(ctx, record); err != nil {
-			return err
-		}
-		fmt.Printf("HOLD id=%d APPLIED\n", id)
-		return nil
 	}
-	if err := testutil.Execute(ctx, client, opts); err != nil {
-		return err
-	}
-	fmt.Println("HOLD all 40 request ends and final OK")
+	fmt.Println("HOLD all 40 ordered mutation results and final RPC OK")
 	return nil
 }

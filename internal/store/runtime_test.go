@@ -165,7 +165,6 @@ func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 }
 func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 	l := DefaultLimits()
-	l.Collect = 0
 	l.BatchOperations = 3
 	r := newRuntime(nil, l)
 	short, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
@@ -206,7 +205,6 @@ func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
 		t.Run(fmt.Sprint(streaming), func(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BackendTimeout = 50 * time.Millisecond
-			limits.Collect = 0
 			runtime := newRuntime(nil, limits)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -249,7 +247,7 @@ func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
 func TestSlowConsumerRetainedBound(t *testing.T) {
 	l := DefaultLimits()
 	l.BatchOperations = 1
-	l.SessionOutstanding = 2
+	l.ResultOperations = 2
 	r := newRuntime(nil, l)
 	s := r.NewSession()
 	ctx := context.Background()

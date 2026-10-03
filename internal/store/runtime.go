@@ -14,28 +14,27 @@ import (
 
 type Limits struct {
 	PendingOperations, PendingBytes, ResultOperations, ResultBytes int
-	WorkingBytes, BatchResultBytes                                 int
-	Concurrency, BatchOperations, BatchBytes, SessionOutstanding   int
-	Collect, BackendTimeout                                        time.Duration
+	WorkingBytes                                                   int
+	Concurrency, BatchOperations, BatchBytes                       int
+	BackendTimeout                                                 time.Duration
 }
 
 func DefaultLimits() Limits {
 	limits := Limits{
 		PendingOperations: 256, PendingBytes: 32 << 20, ResultOperations: 128, ResultBytes: 32 << 20,
-		WorkingBytes: 128 << 20, BatchResultBytes: 8 << 20,
-		Concurrency: 2, BatchOperations: 32, BatchBytes: 8 << 20, SessionOutstanding: 8,
-		Collect: 5 * time.Millisecond, BackendTimeout: 2 * time.Second,
+		WorkingBytes: 384 << 20,
+		Concurrency:  2, BatchOperations: 32, BatchBytes: 8 << 20,
+		BackendTimeout: 2 * time.Second,
 	}
 	return limits
 }
 func (l Limits) Validate() error {
-	if l.PendingOperations < 1 || l.PendingOperations > 4096 || l.PendingBytes < protocol.MaxFrame ||
-		l.ResultOperations < 1 || l.ResultOperations > 4096 || l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
-		l.WorkingBytes < 24<<20 || l.BatchResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
-		l.Concurrency < 1 || l.Concurrency > 32 || l.BatchOperations < 1 || l.BatchOperations > 128 ||
+	if l.PendingOperations < 1 || l.PendingBytes < protocol.MaxFrame ||
+		l.ResultOperations < 1 || l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
+		l.WorkingBytes < 24<<20 ||
+		l.Concurrency < 1 || uint64(l.Concurrency) > (64<<30)/(2<<20) || l.BatchOperations < 1 ||
 		l.BatchBytes < protocol.MaxDocument+4096 || l.BatchBytes > 32<<20 ||
-		l.SessionOutstanding < 1 || l.SessionOutstanding > 32 || l.Collect < 0 || l.Collect > 10*time.Millisecond ||
-		l.BackendTimeout <= 0 || l.BackendTimeout > 10*time.Second {
+		l.BackendTimeout <= 0 {
 		return fmt.Errorf("invalid runtime bounds")
 	}
 	return nil
@@ -95,6 +94,9 @@ type Ticket struct {
 	state                uint8
 	abandoned, acked     bool
 	stopWatch            func() bool
+	bulk                 *PreparedBatch
+	results              []*pb.Result
+	resultCharge         int
 }
 type batch struct {
 	ctx              context.Context
@@ -174,10 +176,10 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if plan != nil && (plan.CleanupRequired || plan.Streaming) && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes <= 0 || plan.ResultBytes < 0 || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes || plan.ResultBytes > r.limits.BatchResultBytes)) {
+	if plan == nil || plan.Bytes <= 0 || plan.ResultBytes < 0 || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
 	}
-	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+plan.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+plan.ResultBytes > r.limits.ResultBytes || session != nil && session.outstanding >= r.limits.SessionOutstanding {
+	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+plan.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+plan.ResultBytes > r.limits.ResultBytes {
 		if session == nil {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
 		}
@@ -289,8 +291,15 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	}
 	t.released = true
 	delete(r.live, t)
-	r.pendingBytes -= t.plan.Bytes
-	r.resultBytes -= t.plan.ResultBytes
+	if t.bulk != nil {
+		r.pendingBytes -= t.bulk.bytes
+		r.resultBytes -= t.resultCharge
+		t.bulk = nil
+		t.results = nil
+	} else {
+		r.pendingBytes -= t.plan.Bytes
+		r.resultBytes -= t.plan.ResultBytes
+	}
 	if t.session != nil {
 		t.session.outstanding--
 	}
@@ -322,6 +331,10 @@ func (r *Runtime) cancelQueuedLocked() {
 			if r.closed {
 				failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
 			}
+			if t.bulk != nil {
+				r.completeBatchLocked(t, failure)
+				continue
+			}
 			var result *pb.Result
 			if t.plan.Operation != nil {
 				result = protocol.ResultError(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, failure)
@@ -333,9 +346,7 @@ func (r *Runtime) cancelQueuedLocked() {
 			}
 			if t.session != nil && !t.acked {
 				var events []*pb.Event
-				if result != nil {
-					events = []*pb.Event{resultEvent(result)}
-				}
+
 				r.startPublisherLocked(t, events, false)
 			}
 		} else {
@@ -386,10 +397,16 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	records := make(map[string]bool)
 	selected := make(map[*Ticket]bool)
 	var items []*Ticket
-	bytes, resultBytes := 0, 0
+	bytes := 0
 	var seed *Ticket
 	for _, t := range r.queue {
 		if t.state != 0 {
+			continue
+		}
+		if t.bulk != nil {
+			if len(items) == 0 && t.bulk.workingBytes <= r.limits.WorkingBytes-r.workingBytes {
+				return r.selectBatchLocked(t, now)
+			}
 			continue
 		}
 		if t.sequence != "" {
@@ -407,14 +424,13 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		if seed == nil {
 			seed = t
 		}
-		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || records[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes || resultBytes+t.plan.ResultBytes > r.limits.BatchResultBytes) {
+		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || records[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes) {
 			continue
 		}
 		items = append(items, t)
 		selected[t] = true
 		records[t.plan.Key] = true
 		bytes += t.plan.Bytes
-		resultBytes += t.plan.ResultBytes
 		if len(items) >= r.limits.BatchOperations || seed.plan.Singleton {
 			break
 		}
@@ -434,16 +450,6 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			r.cancelQueuedLocked()
 			return nil
 		}
-	}
-	collect := !r.draining && !seed.plan.Singleton && len(items) < r.limits.BatchOperations && now.Sub(seed.eligible) < r.limits.Collect
-	for _, t := range items {
-		if deadline, ok := t.ctx.Deadline(); ok && deadline.Sub(now) <= r.limits.Collect {
-			collect = false
-			break
-		}
-	}
-	if collect {
-		return nil
 	}
 	latest := now
 	for _, t := range items {
@@ -521,7 +527,8 @@ func (r *Runtime) saturatedLocked() bool {
 				continue
 			}
 		}
-		if ticket.plan.WorkingBytes <= remaining {
+		working := ticket.workingReservation()
+		if working <= remaining {
 			return false
 		}
 		blocked = true
@@ -533,14 +540,6 @@ func (r *Runtime) saturatedLocked() bool {
 		}
 	}
 	return blocked
-}
-func resultEvent(result *pb.Result) *pb.Event {
-	if result == nil {
-		return nil
-	}
-	value := &pb.Event_Result{Result: result}
-	event := &pb.Event{Version: 1, Value: value}
-	return event
 }
 func (t *Ticket) emit(event *pb.Event) error {
 	if t.session == nil {
@@ -635,6 +634,10 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 	}()
 }
 func (r *Runtime) execute(b *batch) {
+	if len(b.items) == 1 && b.items[0].bulk != nil {
+		r.runBatch(b)
+		return
+	}
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
 	events := make(map[*Ticket][]*pb.Event, len(b.items))
@@ -645,16 +648,21 @@ func (r *Runtime) execute(b *batch) {
 		plans[i] = &plan
 		positions[&plan] = t
 	}
-	emit := func(plan *execution.Plan, event *pb.Event) error {
+	emit := func(plan *execution.Plan, output *execution.Output) error {
 		ticket := positions[plan]
 		if ticket == nil {
 			return fmt.Errorf("adapter emitted unknown plan")
 		}
-		if event == nil {
+		if output == nil {
 			return fmt.Errorf("adapter emitted nil event")
 		}
-		if event.GetResult() != nil {
-			ticket.result = event.GetResult()
+		if output.Result != nil {
+			ticket.result = output.Result
+			return nil
+		}
+		event := output.Event
+		if event == nil {
+			return fmt.Errorf("adapter emitted no result or event")
 		}
 		if plan.Streaming {
 			return ticket.emit(event)
@@ -714,7 +722,7 @@ func (r *Runtime) execute(b *batch) {
 		if result == nil && ticket.plan.Operation != nil {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no result")
 			result = protocol.ResultError(ticket.plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
-			events[ticket] = []*pb.Event{resultEvent(result)}
+
 		}
 		if ticket.plan.Continue || ticket.plan.CleanupRequired {
 			ticket.state = 3
@@ -759,7 +767,7 @@ func (r *Runtime) Snapshot() Snapshot {
 	for t := range r.live {
 		if t.state == 2 {
 			snapshot.Ready++
-			snapshot.ReadyBytes += t.plan.ResultBytes
+			snapshot.ReadyBytes += t.resultReservation()
 		}
 	}
 	return snapshot
@@ -834,4 +842,18 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (t *Ticket) ID() uint64 {
 	return t.id
+}
+
+func (t *Ticket) workingReservation() int {
+	if t.bulk != nil {
+		return t.bulk.workingBytes
+	}
+	return t.plan.WorkingBytes
+}
+
+func (t *Ticket) resultReservation() int {
+	if t.bulk != nil {
+		return t.resultCharge
+	}
+	return t.plan.ResultBytes
 }

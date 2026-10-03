@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"io"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
@@ -12,11 +11,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var metricMethods = []string{"execute", "resolve_store", "sync_directory", "other"}
+var metricMethods = []string{"read", "mutate", "execute", "resolve_store", "sync_directory", "other"}
 var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
 
 func methodLabel(method string) string {
 	switch method {
+	case pb.StoreService_Read_FullMethodName:
+		return "read"
+	case pb.StoreService_Mutate_FullMethodName:
+		return "mutate"
 	case pb.StoreService_Execute_FullMethodName:
 		return "execute"
 	case pb.StoreService_ResolveStore_FullMethodName:
@@ -79,7 +82,7 @@ func newTransportMetrics() transportMetrics {
 	for _, phase := range []string{"open", "input_or_result", "output"} {
 		m.watchdogs.WithLabelValues(phase)
 	}
-	for _, reason := range []string{"drain", "abort"} {
+	for _, reason := range []string{"drain", "abort", "open"} {
 		m.forced.WithLabelValues(reason)
 	}
 	return m
@@ -98,30 +101,16 @@ func (a *Admission) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeBy
 
 func (a *Admission) Collect(ch chan<- prometheus.Metric) {
 	values := map[string]int{
-		"connections":       len(a.connections),
-		"connections_limit": cap(a.connections),
-		"sessions":          len(a.slots),
-		"sessions_limit":    cap(a.slots),
+		"connections":                 len(a.connections),
+		"connections_limit":           cap(a.connections),
+		"sessions":                    len(a.slots),
+		"sessions_limit":              cap(a.slots),
+		"queued_response_bytes":       int(a.wireBytes.Load()),
+		"queued_response_bytes_limit": int(a.wireLimit),
 	}
 	for name, value := range values {
 		desc := prometheus.NewDesc("weir_ingress_"+name, "Shared application/peer admission occupancy or limit.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
 	}
 	a.rejections.Collect(ch)
-}
-
-func (d *delivery) ioFailure(phase string, err error) {
-	if err == nil || errors.Is(err, io.EOF) || d.metrics == nil {
-		return
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	seen := &d.inputFailed
-	if phase == "output" {
-		seen = &d.outputFailed
-	}
-	if !*seen {
-		*seen = true
-		d.metrics.failures.WithLabelValues(d.method, phase).Inc()
-	}
 }

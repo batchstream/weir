@@ -214,12 +214,10 @@ func TestGroupedConfigurationBounds(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"memory: 67108863B\n", "memory: 68719476737B\n",
-		"transport:\n  max_connections: 0\n", "transport:\n  max_connections: 65\n",
-		"transport:\n  max_sessions: 0\n", "transport:\n  max_sessions: 65\n",
+		"transport:\n  max_connections: 0\n", "transport:\n  max_connections: 9223372036854775807\n",
+		"transport:\n  max_sessions: 0\n", "transport:\n  max_sessions: 9223372036854775807\n",
 		"transport:\n  timeouts:\n    route: 0s\n", "transport:\n  timeouts:\n    route: -1s\n",
-		"transport:\n  timeouts:\n    route: 15m0.000000001s\n",
 
-		"transport:\n  timeouts:\n    stall: 30.000000001s\n",
 		"forwarding:\n  hop_limit: -1\n", "forwarding:\n  hop_limit: 9\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {

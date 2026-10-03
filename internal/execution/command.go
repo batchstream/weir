@@ -16,20 +16,6 @@ func NormalizeCommand(call *pb.Command, store string) (*pb.Command, *pb.Failure)
 	normalized := &pb.Command{Version: 1}
 	var resource string
 	switch value := call.Operation.(type) {
-	case *pb.Command_Read:
-		if value.Read == nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing read")
-		}
-		resource = value.Read.Resource
-		request := &pb.ReadRequest{Resource: "weir://" + store + "/" + resource, ReadMediaType: value.Read.ReadMediaType, AdapterOptions: value.Read.AdapterOptions}
-		normalized.Operation = &pb.Command_Read{Read: request}
-	case *pb.Command_Mutate:
-		if value.Mutate == nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing mutation")
-		}
-		resource = value.Mutate.Resource
-		request := &pb.MutateRequest{Resource: "weir://" + store + "/" + resource, AdapterOptions: value.Mutate.AdapterOptions, Action: value.Mutate.Action}
-		normalized.Operation = &pb.Command_Mutate{Mutate: request}
 	case *pb.Command_Scan:
 		if value.Scan == nil {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing scan")
@@ -58,12 +44,33 @@ func NormalizeCommand(call *pb.Command, store string) (*pb.Command, *pb.Failure)
 	return normalized, nil
 }
 
-func RecordOperation(id uint64, call *pb.Command) *pb.Operation {
-	operation := &pb.Operation{Index: id}
-	if read := call.GetRead(); read != nil {
-		operation.Operation = &pb.Operation_Read{Read: read}
-	} else if mutation := call.GetMutate(); mutation != nil {
-		operation.Operation = &pb.Operation_Mutate{Mutate: mutation}
+// NormalizeOperation copies the record envelope after checking its relative target.
+func NormalizeOperation(input *pb.Operation, store string) (*pb.Operation, *pb.Failure) {
+	if input == nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing record operation")
 	}
-	return operation
+	operation := &pb.Operation{Index: input.Index}
+	var resource string
+	switch value := input.Operation.(type) {
+	case *pb.Operation_Read:
+		if value.Read == nil {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing read")
+		}
+		resource = value.Read.Resource
+		request := &pb.ReadRequest{Resource: "weir://" + store + "/" + resource, ReadMediaType: value.Read.ReadMediaType, AdapterOptions: value.Read.AdapterOptions}
+		operation.Operation = &pb.Operation_Read{Read: request}
+	case *pb.Operation_Mutate:
+		if value.Mutate == nil {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing mutation")
+		}
+		resource = value.Mutate.Resource
+		request := &pb.MutateRequest{Resource: "weir://" + store + "/" + resource, Action: value.Mutate.Action, AdapterOptions: value.Mutate.AdapterOptions}
+		operation.Operation = &pb.Operation_Mutate{Mutate: request}
+	default:
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing record operation")
+	}
+	if resource == "" || strings.HasPrefix(resource, "/") || strings.Contains(resource, "://") {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "target must be a canonical relative Store path")
+	}
+	return operation, nil
 }

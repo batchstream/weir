@@ -58,8 +58,8 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		"active_executions": float64(snapshot.Active), "publishers": float64(snapshot.Publishers), "window": float64(snapshot.Window),
 		"pending_entries_limit": float64(r.limits.PendingOperations), "pending_reserved_bytes_limit": float64(r.limits.PendingBytes),
 		"result_reserved_entries_limit": float64(r.limits.ResultOperations), "result_reserved_bytes_limit": float64(r.limits.ResultBytes),
-		"working_reserved_bytes_limit": float64(r.limits.WorkingBytes), "batch_result_reserved_bytes_limit": float64(r.limits.BatchResultBytes),
-		"window_limit": float64(r.limits.Concurrency), "cooldown": boolValue(snapshot.Cooldown), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
+		"working_reserved_bytes_limit": float64(r.limits.WorkingBytes),
+		"window_limit":                 float64(r.limits.Concurrency), "cooldown": boolValue(snapshot.Cooldown), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
 	}
 	for name, value := range values {
 		description := prometheus.NewDesc("weir_store_"+name, "Bounded local admission reservations; bytes do not represent heap or RSS.", nil, nil)
@@ -112,10 +112,14 @@ func (r *Runtime) observeLocked(b *batch, feedback execution.Feedback) {
 }
 
 func (r *Runtime) terminalLocked(t *Ticket, result *pb.Result) {
-	if t.plan.Operation == nil {
+	r.terminalResultLocked(t.plan, result)
+}
+
+func (r *Runtime) terminalResultLocked(plan *execution.Plan, result *pb.Result) {
+	if plan.Operation == nil {
 		return
 	}
-	if t.plan.Operation.GetRead() != nil {
+	if plan.Operation.GetRead() != nil {
 		label := "success"
 		if result.GetRead().GetFailure() != nil {
 			label = "failure"

@@ -349,6 +349,8 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 		read = protocol.ReadFailure(failure)
 	case !*reply.Found:
 		read = protocol.Missing()
+	case !work.Results.Reserve(len(reply.Source)):
+		read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch result budget exhausted"))
 	default:
 		document := &pb.Document{MediaType: "application/json", Data: reply.Source}
 		read = protocol.ReadDocument(document)

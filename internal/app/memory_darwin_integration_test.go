@@ -210,7 +210,7 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 	monitor := &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	proxy.Monitor = monitor
 	cfg := packagedConfig(t, proxy.URI())
-	cfg.Basic.Memory = 256 << 20
+	cfg.Basic.Memory = ByteSize(testmemory.Budget)
 	p := startProcess(t, binary, cfg)
 	t.Logf("owned artifact PID=%d", p.command.Process.Pid)
 	client := endpointProcessClient(t, p.address)

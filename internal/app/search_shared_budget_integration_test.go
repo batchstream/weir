@@ -340,45 +340,31 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 		t.Fatal("atomic create winner", wins.Load())
 	}
 	for _, e := range peers {
-		stream := testutil.OpenEvents(ctx, e.client, "records")
-		for i := 0; i < 4; i++ {
+		requests := make([]*pb.MutateRequest, 0, 4)
+		for i := range 4 {
 			request := searchBudgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			mutation := &pb.Operation_Mutate{Mutate: request}
-			op := &pb.Operation{Index: uint64(i), Operation: mutation}
-			_, item := testutil.OperationCommand(op)
-			frame := item
-			if err := stream.Send(frame); err != nil {
-				t.Fatal(err)
-			}
+			fixture := testutil.RecordCommand(request)
+			requests = append(requests, fixture.Operation.GetMutate())
 		}
-		if err := stream.CloseSend(); err != nil {
-			t.Fatal(err)
+		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
+		reply, err := e.client.Mutate(ctx, batch)
+		if err != nil || len(reply.GetResults()) != len(requests) {
+			t.Fatal("Search batch association", reply, err)
 		}
-		seen := make(map[uint64]bool)
-		for range 4 {
-			reply, err := stream.Recv()
-			item := reply.GetResult()
-			if err != nil || item == nil || item.Index >= 4 || seen[item.Index] {
-				t.Fatal("Search Bulk association", reply, err)
-			}
-			seen[item.Index] = true
-			result := item.GetMutation()
-			status, _ := f.Admin.Do(t, "GET", fmt.Sprintf("/%s/_doc/bulk%d-%d", f.Backend.Index, e.concurrency, item.Index), "")
+		for i, result := range reply.Results {
+			status, _ := f.Admin.Do(t, "GET", fmt.Sprintf("/%s/_doc/bulk%d-%d", f.Backend.Index, e.concurrency, i), "")
 			switch result.GetOutcome() {
 			case pb.MutationOutcome_APPLIED:
 				if status != 200 {
-					t.Fatal("false applied Bulk", status)
+					t.Fatal("false applied batch", i, status)
 				}
 			case pb.MutationOutcome_NOT_APPLIED:
 				if status != 404 || result.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
-					t.Fatal("false not-applied Bulk", status, result)
+					t.Fatal("false not-applied batch", i, status, result)
 				}
 			default:
-				t.Fatal("unexpected Bulk evidence", result)
+				t.Fatal("unexpected batch evidence", i, result)
 			}
-		}
-		if _, err := stream.Recv(); err != io.EOF {
-			t.Fatal(err)
 		}
 	}
 	f.Admin.Do(t, "POST", "/"+f.Backend.Index+"/_refresh", "")

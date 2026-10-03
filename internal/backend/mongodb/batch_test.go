@@ -3,6 +3,7 @@ package mongodb
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -354,7 +355,7 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 			plans[i] = p
 		}
 		if count == 1 {
-			p.Bytes = 8<<20 + 1
+			p.Bytes = protocol.MaxBatchRequestBytes + 1
 		}
 		results, _ := a.executeRecords(context.Background(), plans)
 		for _, result := range results {
@@ -363,5 +364,40 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 			}
 		}
 		p.Bytes = protocol.MaxDocument
+	}
+}
+
+func TestMongoReadBatchAccepts513DistinctDocuments(t *testing.T) {
+	const count = 513
+	documents := make(bson.A, count)
+	plans := make([]*execution.Plan, count)
+	for i := range documents {
+		documents[i] = bson.D{{Key: "_id", Value: fmt.Sprintf("item-%d", i)}, {Key: "n", Value: i}}
+	}
+	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: documents}}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
+	finds := 0
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+		if e.CommandName == "find" {
+			finds++
+		}
+	}}
+	adapter := batchMockAdapter(t, responses, monitor)
+	for i := range plans {
+		opts := batchOperationOptions{resource: fmt.Sprintf("weir://mongo/db/records/s:item-%d", i), action: "read", index: uint64(i + 1)}
+		var failure *pb.Failure
+		plans[i], failure = adapter.prepareRecord(batchOperation(t, opts))
+		if failure != nil {
+			t.Fatal(failure)
+		}
+	}
+	replies, _ := adapter.executeRecords(t.Context(), plans)
+	for i, reply := range replies {
+		if reply.Index != uint64(i+1) || reply.GetRead().GetDocument() == nil {
+			t.Fatalf("record %d failed: %v", i, reply)
+		}
+	}
+	if finds != 1 {
+		t.Fatal("batch split by an arbitrary item limit", finds)
 	}
 }

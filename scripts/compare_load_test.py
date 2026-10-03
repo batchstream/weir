@@ -174,6 +174,7 @@ class PairedComparison(unittest.TestCase):
         self.assertNotIn('"routing":', current_config)
         self.assertNotIn('"services":', current_config)
         self.assertNotIn('"routes":', current_config)
+        self.assertNotIn('"batch_collect":', current_routes)
 
         self.assertEqual(baseline_config, current_config)
         self.assertEqual(baseline_routes, current_routes)
@@ -194,11 +195,23 @@ class PairedComparison(unittest.TestCase):
         for _, options, _ in commands:
             self.assertEqual(options[options.index("--cpus") + 1], "2")
             self.assertEqual(options[options.index("--cpuset-cpus") + 1], "3,4")
-            self.assertEqual(options[options.index("--memory") + 1], "768m")
+            self.assertEqual(options[options.index("--memory") + 1], "2048m")
             for filename in ("node.yaml", "routes.yaml"):
                 self.assertIn("type=bind,source=" + str(fixture.root / filename) + ",target=/" + filename + ",readonly", options)
         for options in (baseline_options, current_options):
             self.assertNotIn("WEIR_CAPACITY_INTEGRATION=1", options)
+
+    def test_memory_scales_with_full_unary_request_and_response_envelope(self):
+        self.args.workers = 64
+        fixture = entry.Fixture(self.args)
+        self.assertEqual(fixture.weir_memory, 6912)
+
+    def test_removed_collection_flag_is_rejected_before_fixture_creation(self):
+        argv = ["compare-load.py", "--client", "client", "--weir", "weir", "--output", "unused", "--collect-ms", "0"]
+        with patch.object(sys, "argv", argv), patch.object(entry, "Fixture") as fixture, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                entry.main()
+        fixture.assert_not_called()
 
     def test_elasticsearch_rejects_untrusted_process_identifiers_before_client_start(self):
         for pid in (0, -1, True, "42", 2**31):

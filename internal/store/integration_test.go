@@ -63,9 +63,9 @@ func setup(t *testing.T) fixture {
 func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	req := &pb.ReadRequest{Resource: f.db + "/records/s:" + key}
-	v := &pb.Command_Read{Read: req}
-	call := &pb.Command{Version: 1, Operation: v}
-	p, err := f.runtime.PrepareCommand(1, call)
+	v := &pb.Operation_Read{Read: req}
+	operation := &pb.Operation{Index: 1, Operation: v}
+	p, err := f.runtime.adapter.PrepareOperation(operation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +78,9 @@ func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	d := &pb.Document{MediaType: "application/bson", Data: raw}
 	v := &pb.MutateRequest_Create{Create: d}
 	m := &pb.MutateRequest{Resource: f.db + "/records/s:" + key, Action: v}
-	mv := &pb.Command_Mutate{Mutate: m}
-	call := &pb.Command{Version: 1, Operation: mv}
-	p, err := f.runtime.PrepareCommand(1, call)
+	mv := &pb.Operation_Mutate{Mutate: m}
+	operation := &pb.Operation{Index: 1, Operation: mv}
+	p, err := f.runtime.adapter.PrepareOperation(operation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,57 +326,34 @@ func TestNativeCancellationDispatchRace(t *testing.T) {
 }
 func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
 	f := setup(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	s := f.runtime.NewSession()
-	defer s.Close()
-	consumed := make(chan error, 1)
-	go func() {
-		results := make(map[*Ticket]int)
-		var failure error
-		for ends := 0; ends < 6; {
-			select {
-			case emission := <-s.Events:
-				if emission.End {
-					if results[emission.Ticket] != 1 && failure == nil {
-						failure = fmt.Errorf("request ended with %d results", results[emission.Ticket])
-					}
-					ends++
-					emission.Release()
-					emission.Ticket.Ack()
-					continue
-				}
-				result := emission.Event.GetResult()
-				results[emission.Ticket]++
-				if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED && failure == nil {
-					failure = fmt.Errorf("accepted mutation did not apply: %v", result)
-				}
-				emission.Release()
-			case <-ctx.Done():
-				consumed <- ctx.Err()
-				return
-			}
-		}
-		if len(results) != 6 && failure == nil {
-			failure = fmt.Errorf("drain completed %d distinct requests", len(results))
-		}
-		consumed <- failure
-	}()
-	for i := 0; i < 6; i++ {
-		p := createPlan(t, f, fmt.Sprintf("drain_%d", i))
-		_, e, _ := f.runtime.Submit(ctx, p, s)
-		if e != nil {
-			t.Fatal(e)
+	operations := make([]*pb.Operation, 6)
+	for i := range operations {
+		plan := createPlan(t, f, fmt.Sprintf("drain_%d", i))
+		operations[i] = plan.Operation
+		operations[i].Index = uint64(i + 1)
+	}
+	prepared, failure := f.runtime.PrepareBatch(operations)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	ticket, failure, _ := f.runtime.SubmitBatch(ctx, prepared)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	results, err := ticket.WaitBatch(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+			t.Fatal(result)
 		}
 	}
+	ticket.Ack()
 	if err := f.runtime.Close(ctx); err != nil {
 		t.Fatal(err)
-	}
-	if err := <-consumed; err != nil {
-		t.Fatal(err)
-	}
-	if s.Outstanding() != 0 {
-		t.Fatal("credits retained after drain")
 	}
 	snapshot := f.runtime.Snapshot()
 	if snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.Publishers != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
@@ -487,9 +464,9 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}
-			variant := &pb.Command_Mutate{Mutate: mutation}
-			call := &pb.Command{Version: 1, Operation: variant}
-			work, failure := f.runtime.PrepareCommand(1, call)
+			variant := &pb.Operation_Mutate{Mutate: mutation}
+			operation := &pb.Operation{Index: 1, Operation: variant}
+			work, failure := f.runtime.adapter.PrepareOperation(operation)
 			if failure != nil {
 				t.Fatal(failure)
 			}

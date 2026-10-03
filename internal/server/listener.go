@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 )
 
@@ -15,8 +15,8 @@ func (s *Server) Serving() <-chan struct{} { return s.serving }
 func (s *Server) Serve(listener net.Listener) error {
 	close(s.serving)
 	bounded := &limitedListener{Listener: listener, slots: s.connectionSlots, server: s}
-	err := s.http.Serve(bounded)
-	if errors.Is(err, http.ErrServerClosed) {
+	err := s.grpc.Serve(bounded)
+	if errors.Is(err, grpc.ErrServerStopped) {
 		return nil
 	}
 	return err
@@ -28,22 +28,17 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.admission.BeginDrain()
 		stopped := make(chan struct{})
 		go func() {
-			if err := s.http.Shutdown(drain); err != nil {
-				s.metrics.forced.WithLabelValues("drain").Inc()
-				_ = s.http.Close()
-			}
-			// ServeHTTP has no gRPC Drain. net/http owns HTTP/2 graceful shutdown;
-			// Stop joins the remaining bounded handlers after transport cancellation.
-			s.grpc.Stop()
-			s.controlGRPC.Stop()
+			s.grpc.GracefulStop()
 			close(stopped)
 		}()
 		select {
 		case <-stopped:
 		case <-drain.Done():
-			_ = s.http.Close()
+			s.metrics.forced.WithLabelValues("drain").Inc()
+			s.grpc.Stop()
 			<-stopped
 		}
+
 	})
 	return nil
 }
@@ -56,8 +51,9 @@ type limitedListener struct {
 type limitedConn struct {
 	server *Server
 	net.Conn
-	slots  chan struct{}
-	closed atomic.Bool
+	slots   chan struct{}
+	closed  atomic.Bool
+	opening atomic.Pointer[time.Timer]
 }
 
 func (l *limitedListener) Accept() (net.Conn, error) {
@@ -70,6 +66,10 @@ func (l *limitedListener) Accept() (net.Conn, error) {
 		case l.slots <- struct{}{}:
 			c := &limitedConn{Conn: conn, slots: l.slots, server: l.server}
 			l.server.connections.Store(conn.RemoteAddr().String(), c)
+			if l.server.limits.Stall > 0 {
+				timer := time.AfterFunc(min(5*time.Second, l.server.limits.Stall), func() { _ = c.close("open") })
+				c.opening.Store(timer)
+			}
 			return c, nil
 		default:
 			l.server.admission.rejections.WithLabelValues("connections").Inc()
@@ -77,9 +77,21 @@ func (l *limitedListener) Accept() (net.Conn, error) {
 		}
 	}
 }
+func (c *limitedConn) Write(data []byte) (int, error) {
+	if c.server.limits.Stall > 0 {
+		if err := c.Conn.SetWriteDeadline(time.Now().Add(c.server.limits.Stall)); err != nil {
+			return 0, err
+		}
+	}
+	return c.Conn.Write(data)
+}
+
 func (c *limitedConn) Close() error { return c.close("") }
 func (c *limitedConn) close(reason string) error {
 	if c.closed.CompareAndSwap(false, true) {
+		if timer := c.opening.Load(); timer != nil {
+			timer.Stop()
+		}
 		if reason != "" {
 			c.server.metrics.forced.WithLabelValues(reason).Inc()
 		}

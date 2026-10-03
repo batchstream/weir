@@ -24,7 +24,8 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 		results[i] = protocol.ResultError(p.Operation, outcomes[i], failure)
 	}
 	for i, result := range results {
-		_ = emit(plans[i], resultEvent(result))
+		output := &execution.Output{Result: result}
+		_ = emit(plans[i], output)
 	}
 	return execution.Congested
 }
@@ -32,7 +33,6 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 	limits := DefaultLimits()
 	limits.PendingOperations = 4
 	limits.BatchOperations = 3
-	limits.Collect = 0
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
 	r.controller.window = 4
@@ -117,7 +117,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndAIMD(t *testing.T) {
 	if testmetrics.Sample(families, "weir_store_backpressure_events_total", map[string]string{"reason": "backend"}).GetCounter().GetValue() != 3 {
 		t.Fatal("backend cooldown at the minimum window was not observable")
 	}
-	if testmetrics.Series(families) != 76 {
+	if testmetrics.Series(families) != 75 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

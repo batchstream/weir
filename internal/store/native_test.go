@@ -14,8 +14,6 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 	limits.WorkingBytes = 24 << 20
 	runtime := newRuntime(adapter, limits)
 	runtime.controller.window = 2
-	limits.Collect = 0
-	runtime.limits.Collect = 0
 	session := runtime.NewSession()
 	defer session.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -68,7 +66,6 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 func TestCanceledSingletonDoesNotRunOrPoisonPeer(t *testing.T) {
 	adapter := &scanTestAdapter{pages: 1}
 	limits := DefaultLimits()
-	limits.Collect = 0
 	runtime, err := New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)

@@ -23,9 +23,9 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "db/records/s:id"}
-		variant := &pb.Command_Read{Read: request}
-		call := &pb.Command{Version: 1, Operation: variant}
-		work, failure := adapter.PrepareCommand(1, call)
+		variant := &pb.Operation_Read{Read: request}
+		call := &pb.Operation{Index: 1, Operation: variant}
+		work, failure := adapter.PrepareOperation(call)
 		if failure != nil {
 			t.Fatal(failure)
 		}

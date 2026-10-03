@@ -18,7 +18,7 @@ import (
 )
 
 // Reuses the owned M14 fixture, but observes the exact archive without starting
-// its 416MiB cgroup pressure helper. M19's extra allocation cap stays 256MiB.
+// its 416MiB cgroup pressure helper. The owned cgroup remains limited to 512MiB.
 func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	if os.Getenv("WEIR_M14_NATIVE") != "1" {
 		t.Skip("owned native Linux fixture required")
@@ -62,7 +62,7 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := packagedConfig(t, uri)
-	cfg.Basic.Memory = 128 << 20
+	cfg.Basic.Memory = 2 << 30
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
 	request := budgetPut("weir://records/"+db+"/records", "observed")

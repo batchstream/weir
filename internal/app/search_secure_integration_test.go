@@ -159,24 +159,11 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("expression", result, err)
 	}
-	bulk := testutil.OpenEvents(ctx, client, "search")
-	var frame *pb.Command
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	operation := &pb.Operation{Operation: variant}
-	_, item := testutil.OperationCommand(operation)
-	frame = item
-	if err := bulk.Send(frame); err != nil {
-		t.Fatal(err)
-	}
-	if err := bulk.CloseSend(); err != nil {
-		t.Fatal(err)
-	}
-	reply, err := bulk.Recv()
-	if err != nil || reply.GetResult().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatal("Bulk result", reply, err)
-	}
-	if _, err := bulk.Recv(); err != io.EOF {
-		t.Fatal("Bulk EOF", err)
+	recordFixture := testutil.RecordCommand(mutation)
+	batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{recordFixture.Operation.GetMutate()}}
+	reply, err := client.Mutate(ctx, batch)
+	if err != nil || len(reply.GetResults()) != 1 || reply.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("batch mutation", reply, err)
 	}
 	var routedResult184 *pb.Result
 	routedResult184, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
@@ -244,7 +231,7 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	if !strings.Contains(string(response), `"errors":false`) {
 		t.Fatal("Native operation failed")
 	}
-	t.Log("Read CRUD conflict/missing Bulk End/EOF Scan End/EOF Native bulk End/EOF BackendExpression; exact int64 preserved")
+	t.Log("Read CRUD conflict/missing batch mutation Scan End/EOF Native bulk End/EOF BackendExpression; exact int64 preserved")
 }
 
 func secureHTTPOpenCount(t *testing.T, b *testsearch.Backend) int {

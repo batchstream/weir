@@ -1,18 +1,16 @@
 # Route payload contract
 
-Every configured MongoDB, Elasticsearch or OpenSearch Store accepts protobuf
-`weir.v1.Command` with `version=1` and emits length-delimited `weir.v1.Event` with
-`version=1`. Unknown versions, unknown protobuf fields at any envelope depth and
-missing oneof variants fail validation. There is no version negotiation or legacy
-fallback. An incompatible adapter document/descriptor schema must use a new
-explicit media profile; its version is part of the media type below. Plain BSON
-and JSON retain their native format semantics within Command version 1.
+Configured MongoDB, Elasticsearch and OpenSearch Stores accept typed Read/Mutate
+batches and one version-1 Scan/Native Command per Execute RPC. Execute emits typed
+version-1 Events. Unknown versions, unknown protobuf fields and missing oneof
+variants fail validation. There is no legacy fallback. An incompatible adapter
+document/descriptor schema must use a new explicit media profile; its version is
+part of the media type below. BSON and JSON retain their native semantics.
 
-The outer store_name selects the adapter. Command resources are canonical relative
-paths: percent escaping must round-trip canonically, and a full `weir://` resource
-is invalid on the wire. A request cannot select a different Store inside its body.
-The proto source is the field schema; validation takes place before scheduling or
-before a validated native item reaches the database.
+The outer `store_name` selects the adapter. Resource paths are canonical relative
+paths: percent escaping must round-trip canonically, and full `weir://` resources
+are invalid on the wire. The whole Read/Mutate batch is validated before any
+backend effect. The public protobuf source defines field shapes.
 
 | Capability | MongoDB | Elasticsearch / OpenSearch |
 | --- | --- | --- |
@@ -43,7 +41,7 @@ write and JavaScript options are rejected. Native replies are raw BSON, at most
 4 MiB, emitted as ordered chunks with a NativeEnd completion result.
 
 Search Native's descriptor is the explicit protobuf schema in
-[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.1.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
+[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.2.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
 `application/x-ndjson` and GET `/_doc/<unreserved-id>` with an empty body. Canonical
 query options are `refresh` for bulk or `realtime` for GET. Headers are restricted
 to `accept`, `content-type`, `x-opaque-id` with bounded values; they cannot override
@@ -52,18 +50,17 @@ sending, scoped to the resource index and bounded to 256 KiB. Native replies are
 raw HTTP metadata/body, at most 8 MiB total, followed by NativeEnd. HTTP/backend
 errors remain native data, rather than normalized mutation outcomes.
 
-A record emits exactly one Result. A scan emits one finite page of zero or more
+A unary batch returns exactly one positional result per record. A scan emits one finite page of zero or more
 Document Events and exactly one ScanEnd containing that page's matching document
 count and optional failure. `ScanRequest.page_size` defaults to 128 when zero and
 cannot exceed 256. Successful ScanEnd has exactly one of a nonempty
 `next_continuation_token` or `exhausted=true`; failure carries neither. The next
 ScanRequest repeats the same resource, selector and representation, with the token
-in `continuation_token`. Start it in a new Route RPC to allow another Weir instance
+in `continuation_token`. Start it in a new Execute RPC to allow another Weir instance
 to process the page. Tokens are opaque, bounded and validated before backend work;
 they are not authentication credentials.
 
-Only accept a page checkpoint after the matching ScanEnd, outer request end and
-final gRPC OK. On an interrupted page, reuse the previous checkpoint and handle
+Only accept a page checkpoint after the matching document count, ScanEnd and final gRPC OK. On an interrupted page, reuse the previous checkpoint and handle
 repeated documents in the consumer. MongoDB uses an ascending `_id` keyset and
 has no cross-page snapshot. Search uses a backend PIT and fails if its 60-second
 keep-alive expires; it never restarts an expired snapshot automatically. A PIT
@@ -72,7 +69,7 @@ exhaustion or a failed page, so losing the final page response does not immediat
 invalidate the client's previous checkpoint.
 A native request emits metadata before chunks if it starts, then exactly one
 NativeEnd; a rejected unstarted request can emit NativeEnd without metadata.
-Business failure Events still require the outer empty end frame. Every ID has its
-own ordered byte sequence; different IDs can interleave. Overall success requires
-all outer ends, input half-close and final gRPC OK. No transport termination is an
-acknowledgement that an unfinished write did not occur.
+Business failure Events still require final gRPC completion. Overall streaming
+success requires the expected terminal Event and final gRPC OK; unary success
+requires a validated complete response. Transport termination never acknowledges
+that an unfinished write did not occur.
