@@ -67,6 +67,7 @@ type Local struct {
 	MaxBatchOperations int       `json:"max_batch_operations" yaml:"max_batch_operations"`
 	MaxReadSize        *ByteSize `json:"max_read_size,omitempty" yaml:"max_read_size,omitempty"`
 	WorkingMemory      *ByteSize `json:"working_memory,omitempty" yaml:"working_memory,omitempty"`
+	BackendTimeout     *Duration `json:"backend_timeout,omitempty" yaml:"backend_timeout,omitempty"`
 }
 
 type Mongo struct {
@@ -319,6 +320,9 @@ func (cfg RoutingConfig) Validate() error {
 	for _, service := range cfg.Stores {
 
 		if l := service.Local; l != nil {
+			if l.BackendTimeout != nil && *l.BackendTimeout <= 0 {
+				return errors.New("backend_timeout must be positive")
+			}
 			if l.MaxReadSize != nil && (*l.MaxReadSize < 1<<10 || *l.MaxReadSize > protocol.MaxDocument) {
 				return errors.New("max_read_size must be between 1KiB and 2MiB")
 			}
@@ -370,6 +374,9 @@ func (cfg RoutingConfig) validateGraph() error {
 
 func (l *Local) runtimeLimits() store.Limits {
 	limits := store.DefaultLimits()
+	if l.BackendTimeout != nil {
+		limits.BackendTimeout = time.Duration(*l.BackendTimeout)
+	}
 	if l.MaxConcurrency != 0 {
 		limits.Concurrency = l.MaxConcurrency
 	}

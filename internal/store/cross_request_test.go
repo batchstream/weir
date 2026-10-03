@@ -325,6 +325,36 @@ func TestCrossRPCSharedContextUsesLatestCallerAndBackendCap(t *testing.T) {
 	}
 }
 
+func TestCrossRPCBackendCapPrecedesLongCallerDeadline(t *testing.T) {
+	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 2)}
+	limits := DefaultLimits()
+	limits.BackendTimeout = 100 * time.Millisecond
+	runtime := newRuntime(adapter, limits)
+	caller, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	first := submitCrossBatch(t, runtime, caller, prepareCrossReads(t, runtime, []string{"records/s:first"}))
+	second := submitCrossBatch(t, runtime, caller, prepareCrossReads(t, runtime, []string{"records/s:second"}))
+	before := time.Now()
+	selected := selectCrossBatch(runtime)
+	deadline, ok := selected.ctx.Deadline()
+	if !ok || !selected.timeoutOwned || deadline.Before(before.Add(limits.BackendTimeout)) || deadline.After(time.Now().Add(limits.BackendTimeout)) {
+		t.Fatal("long callers replaced the configured execution cap", deadline, selected.timeoutOwned)
+	}
+	runtime.execute(selected)
+	call := <-adapter.calls
+	if len(call.plans) != 2 {
+		t.Fatal("independent requests stopped sharing execution", len(call.plans))
+	}
+	for _, ticket := range []*Ticket{first, second} {
+		results := crossResults(t, ticket)
+		if len(results) != 1 || results[0].GetRead().GetFailure() != nil {
+			t.Fatal("configured cap changed confirmed results", results)
+		}
+		ticket.Ack()
+	}
+	waitReleased(t, runtime)
+}
+
 func TestCrossRPCPreflightRejectsLateBackendInvalidRecordBeforeAdmission(t *testing.T) {
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 1)}
 	runtime := newRuntime(adapter, DefaultLimits())

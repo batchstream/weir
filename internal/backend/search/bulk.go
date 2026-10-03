@@ -2,6 +2,7 @@ package search
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -37,7 +38,21 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 
 func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) ([]*pb.Result, execution.Feedback) {
 	results := make([]*pb.Result, len(works))
-	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledgement unavailable or incomplete")
+	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write acknowledgement invalid or incomplete")
+	// A timeout changes what we know about the reply, never whether a connected
+	// mutation might have committed. Keep causes fixed and omit native bodies.
+	switch err {
+	case errTimeout:
+		failure = protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "backend write deadline exceeded; acknowledgement unavailable")
+	case errCanceled:
+		failure = protocol.Fail(pb.FailureCode_CANCELLED, "backend write canceled; acknowledgement unavailable")
+	case errTransport:
+		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write transport failed; acknowledgement unavailable")
+	case errResponseLimit:
+		failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "backend write response exceeds byte limit; acknowledgement unavailable")
+	case errResponse:
+		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write response invalid or incomplete; acknowledgement unavailable")
+	}
 	for i, work := range works {
 		results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
 	}
@@ -52,6 +67,10 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		return results, execution.Neutral
 	}
 	if status != 200 {
+		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write HTTP status "+strconv.Itoa(status)+"; acknowledgement unavailable")
+		for i, work := range works {
+			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
+		}
 		var envelope struct {
 			Error  *nativeError
 			Status int

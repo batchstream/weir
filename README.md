@@ -72,6 +72,7 @@ stores:
     max_concurrency: 2
     max_batch_operations: 32
     max_read_size: "16KiB"
+    backend_timeout: "2s"
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -101,6 +102,19 @@ than the configured maximum size multiplied by the number of records. Tune again
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
 or container limit for a hard memory boundary. Execution concurrency and backend
 working budgets remain independent of peer discovery.
+
+`backend_timeout` is a positive duration and defaults to `2s` when omitted.
+Record execution gets one absolute deadline from dispatch through qualification,
+reads and writes. A shared group uses the latest participating caller deadline,
+capped by `backend_timeout`; an earlier caller stops waiting independently, and
+canceling every caller stops the backend work. Queueing consumes the original RPC
+lifetime. Set an explicit longer budget, such as `10s`, for that service's SLO.
+Connected Search requests inherit this deadline for both headers and body;
+connection setup has a separate `2s` bound. A sent write whose acknowledgement
+times out remains `UNKNOWN`, with `DEADLINE_EXCEEDED` and a sanitized cause; it is
+never replayed. Scan pages use the same backend budget. Search Native retains its
+cumulative backend I/O budget, paused while publishing to the caller, so this
+setting is not the entire streaming RPC's wall-clock lifetime.
 
 MongoDB and Search authentication can use explicit `username`/`password` fields
 or `username_file`/`password_file`; each credential has exactly one source. Search
@@ -212,6 +226,9 @@ python3 -m unittest discover -s scripts -p '*_test.py'
 Default tests use owned offline/loopback fixtures. Live backend and process tests
 are explicit opt-ins through `scripts/test-integration.sh`. Compile tagged helpers
 and run real backend profiles separately; tagged compilation is not live coverage.
+When several integration packages share one MongoDB fixture, run them sequentially
+or pass `go test -p=1`: fault tests change the instance's global `failCommand`
+failpoint, so concurrent packages can overwrite each other's faults and cleanup.
 Matched direct/Weir benchmarks and current blackbox integration live in the
 independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
 The locked first-reference `scripts/test-capacity.py` and historical Kubernetes

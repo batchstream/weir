@@ -303,7 +303,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 	}
 	timeout := p.BackendTimeout
 	if timeout <= 0 {
-		timeout = callLimit
+		timeout = fallbackRequestTimeout
 	}
 	backendContext, stopBackend := context.WithCancelCause(ctx)
 	budget := &nativeIOBudget{ctx: backendContext, cancel: stopBackend, remaining: timeout, started: time.Now()}

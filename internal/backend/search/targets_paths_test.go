@@ -158,7 +158,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				}
 				scans.Go(func() {
 					defer func() {
-						cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), callLimit)
+						cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), fallbackRequestTimeout)
 						defer cancelCleanup()
 						if failure := a.closeScan(cleanupContext, work); failure != nil {
 							t.Error(failure)
