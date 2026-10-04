@@ -8,11 +8,11 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
+func TestPrepareLuaTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte("return weir.keep()")}
-	form := &pb.Transform_Program{Program: program}
+	program := &pb.LuaTransform{Source: []byte("return weir.keep()")}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "db/records/s:item", Action: action}

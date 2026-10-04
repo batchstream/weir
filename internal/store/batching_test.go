@@ -31,8 +31,8 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 		transform := &pb.Transform{Form: form}
 		m.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	case "program":
-		program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.keep()`)}
-		form := &pb.Transform_Program{Program: program}
+		program := &pb.LuaTransform{Source: []byte(`return weir.keep()`)}
+		form := &pb.Transform_Lua{Lua: program}
 		transform := &pb.Transform{Form: form}
 		m.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	default:

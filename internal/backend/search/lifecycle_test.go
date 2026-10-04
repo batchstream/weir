@@ -86,14 +86,15 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 		<-a.ctx.Done()
 		return io.ErrClosedPipe
 	}
-	open := nativeOpen(t, "records", "GET", "/_doc/x")
+	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	work, failure := a.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	work.Command = testutil.NativeCommand(open, nil)
+	open.GetSearchHttp().Body = nil
+	work.Command = testutil.NativeCommand(open)
 	done := make(chan *pb.NativeEnd, 1)
 	go func() { end, _ := a.executeNative(ctx, work, emit); done <- end }()
 	select {
@@ -227,13 +228,14 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	open := nativeOpen(t, "records", "GET", "/_doc/x")
+	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	plan, failure := a.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	capture := &nativeCapture{}
-	plan.Command = testutil.NativeCommand(open, nil)
+	open.GetSearchHttp().Body = nil
+	plan.Command = testutil.NativeCommand(open)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan *pb.NativeEnd, 1)

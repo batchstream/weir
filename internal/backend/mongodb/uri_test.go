@@ -79,7 +79,7 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		"mongodb://unresolved.invalid:27028/?authMechanism=MONGODB-OIDC&authSource=admin&tls=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&tls=true",
-		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=invalid-name&tls=true",
+		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=invalid.name&tls=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=false",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsInsecure=true",
 		"mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authMechanism=SCRAM-SHA-256&authSource=admin&tls=true",

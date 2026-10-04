@@ -69,14 +69,15 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				testmongo.FailCommand(t, native, data, 1)
 			}
 			raw, _ := bson.Marshal(command)
-			descriptor := &pb.Document{ContentType: NativeContentType}
-			open := &pb.NativeOpen{Resource: db + "/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
+			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			open := &pb.NativeRequest{Resource: db + "/records", Request: nativeBody}
 			plan, f := a.prepareNative(open)
 			if f != nil {
 				t.Fatal(f)
 			}
 			capture := &nativeCapture{}
-			plan.Command = testutil.NativeCommand(open, raw)
+			open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if mode == "overload" && feedback != execution.Congested {
 				t.Fatal("known Mongo overload did not supply congestion feedback", feedback)

@@ -7,8 +7,11 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -58,12 +61,11 @@ type plan struct {
 type capabilities struct{ source, write, nativeWrite bool }
 
 func validIndex(name string) bool {
-	if len(name) == 0 || len(name) > 63 || name[0] < 'a' || name[0] > 'z' {
+	if name == "" || len(name) > 255 || name == "." || name == ".." || strings.ToLower(name) != name || strings.ContainsAny(name, "\\/*?\"<>| ,#:+") || strings.ContainsRune("-_+", rune(name[0])) || !utf8.ValidString(name) {
 		return false
 	}
-	for i := 1; i < len(name); i++ {
-		b := name[i]
-		if (b < 'a' || b > 'z') && (b < '0' || b > '9') && b != '_' && b != '-' {
+	for _, character := range name {
+		if unicode.IsControl(character) {
 			return false
 		}
 	}
@@ -195,7 +197,7 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 
 func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool) (capabilities, *pb.Failure, execution.Feedback) {
 	caps := capabilities{}
-	call := exchange{path: "/" + target + "?flat_settings=true", limit: metadataLimit, native: native}
+	call := exchange{path: "/" + url.PathEscape(target) + "?flat_settings=true", limit: metadataLimit, native: native}
 	status, raw, err := a.request(ctx, call)
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed"), execution.Congested
@@ -207,7 +209,8 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
 	}
 	if status != 200 {
-		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "requested concrete index unavailable"), execution.Neutral
+		failure, signal := a.nativeResponseFailure(status, raw)
+		return caps, failure, signal
 	}
 	type indexInfo struct {
 		DataStream string `json:"data_stream"`
@@ -286,7 +289,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
-			if program := action.AtomicTransform.GetProgram(); program != nil {
+			if program := action.AtomicTransform.GetLua(); program != nil {
 				if program.Input != nil && program.Input.ContentType != "application/json" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
 				}

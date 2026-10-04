@@ -21,8 +21,6 @@ import (
 
 	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/backend/mongodb"
-	searchbackend "github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
@@ -32,7 +30,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type process struct {
@@ -239,24 +236,22 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 
 func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
 	t.Helper()
-	var err error
-	descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
-	open := &pb.NativeOpen{Resource: opts.root, Descriptor_: descriptor, BodyContentType: "application/bson"}
-	var body []byte
+	var request *pb.NativeRequest
 	if opts.store == "mongo" {
 		query := bson.D{{Key: "_id", Value: "example"}}
 		command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
-		body, err = bson.Marshal(command)
+		body, err := bson.Marshal(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		variant := &pb.NativeRequest_MongodbCommand{MongodbCommand: body}
+		request = &pb.NativeRequest{Resource: opts.root, Request: variant}
 	} else {
-		request := &spb.Request{Method: "GET", Path: "/_doc/example", Query: "realtime=true"}
-		descriptor.Data, err = proto.Marshal(request)
-		descriptor.ContentType = searchbackend.NativeContentType
-		open.BodyContentType = ""
+		httpRequest := &spb.HttpRequest{Method: "GET", Path: "/_doc/example", Query: "realtime=true"}
+		variant := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
+		request = &pb.NativeRequest{Resource: opts.root, Request: variant}
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	nativeCall := &pb.NativeRequest{Open: open, Body: body}
+	nativeCall := request
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}
 	stream, err := testutil.ExecuteEvents(ctx, opts.client, opts.store, call)
@@ -276,8 +271,8 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 			}
 			headSeen = true
 			if opts.store == "search" {
-				metadata := &spb.Response{}
-				if proto.Unmarshal(head.GetMetadata().GetData(), metadata) != nil || metadata.StatusCode != http.StatusOK {
+				metadata := head.GetHttp()
+				if metadata.GetStatusCode() != http.StatusOK {
 					t.Fatal("Native HTTP metadata", head)
 				}
 			}
@@ -324,10 +319,10 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := make(map[string]bool)
-	values := map[string]int32{"example": 1, "bulk-example-0": 2, "bulk-example-1": 3}
+	seen := make(map[int32]bool)
+	values := map[int32]bool{1: true, 2: true, 3: true}
 	if opts.initialized {
-		values["initialized"] = 7
+		values[7] = true
 	}
 	expectedDocuments := uint64(len(values))
 	for {
@@ -345,26 +340,21 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 		if document == nil {
 			t.Fatal("unexpected Scan frame", frame)
 		}
-		var id string
 		var n int32
 		if opts.store == "mongo" {
 			raw := bson.Raw(document.Data)
-			id, n = raw.Lookup("_id").StringValue(), raw.Lookup("n").Int32()
+			n = raw.Lookup("n").Int32()
 		} else {
-			var hit struct {
-				ID     string            `json:"_id"`
-				Source struct{ N int32 } `json:"_source"`
+			var record struct{ N int32 }
+			if json.Unmarshal(document.Data, &record) != nil {
+				t.Fatal("invalid Scan document", string(document.Data))
 			}
-			if json.Unmarshal(document.Data, &hit) != nil {
-				t.Fatal("invalid Scan hit", string(document.Data))
-			}
-			id, n = hit.ID, hit.Source.N
+			n = record.N
 		}
-		want, known := values[id]
-		if seen[id] || !known || n != want {
-			t.Fatal("Scan repeated or changed records", id, n)
+		if seen[n] || !values[n] {
+			t.Fatal("Scan repeated or changed records", n)
 		}
-		seen[id] = true
+		seen[n] = true
 	}
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatal("Scan final status", err)

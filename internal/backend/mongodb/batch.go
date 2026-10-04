@@ -680,6 +680,12 @@ func writeRejection(raw bson.RawValue, unknown *pb.MutationResult) *pb.MutationR
 		return unknown
 	}
 	switch code {
+	case 18:
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAUTHENTICATED, "backend authentication required"))
+	case 13:
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_PERMISSION_DENIED, "backend permission denied"))
+	case 26:
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "target collection does not exist"))
 	case 112:
 		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_CONFLICT, "native mutation conflict"))
 	case 2, 14, 28, 40, 66, 121, 11000:

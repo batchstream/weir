@@ -18,7 +18,6 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
-	"google.golang.org/protobuf/proto"
 )
 
 type nativeCapture struct {
@@ -53,57 +52,58 @@ func (c *nativeCapture) Emit(_ *execution.Plan, event *pb.Event) error {
 	}
 	return c.Chunk(event.GetChunk())
 }
-func nativeOpen(t *testing.T, index, method, path string) *pb.NativeOpen {
+func nativeRequest(t *testing.T, index, method, path string) *pb.NativeRequest {
 	t.Helper()
-	descriptor := &spb.Request{Method: method, Path: path}
-	raw, err := proto.Marshal(descriptor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	document := &pb.Document{ContentType: NativeContentType, Data: raw}
 	contentType := ""
 	if method == "POST" {
 		contentType = "application/x-ndjson"
 	}
-	open := &pb.NativeOpen{Resource: index, Descriptor_: document, BodyContentType: contentType}
-	return open
+	http := &spb.HttpRequest{Method: method, Path: path, BodyContentType: contentType}
+	variant := &pb.NativeRequest_SearchHttp{SearchHttp: http}
+	request := &pb.NativeRequest{Resource: index, Request: variant}
+	return request
 }
-func runNative(t *testing.T, a *Adapter, open *pb.NativeOpen, body []byte) (*pb.NativeEnd, *nativeCapture) {
+func runNative(t *testing.T, a *Adapter, request *pb.NativeRequest, body []byte) (*pb.NativeEnd, *nativeCapture) {
 	t.Helper()
-	p, f := a.prepareNative(open)
+	request.GetSearchHttp().Body = body
+	p, f := a.prepareNative(request)
 	if f != nil {
 		t.Fatal(f)
 	}
 	capture := &nativeCapture{}
-	p.Command = testutil.NativeCommand(open, body)
+	p.Command = testutil.NativeCommand(request)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	end, _ := a.executeNative(ctx, p, capture.Emit)
 	return end, capture
 }
-func TestNativeHTTPDescriptorScope(t *testing.T) {
+func TestNativeHTTPRequestScope(t *testing.T) {
 	for _, path := range []string{"http://evil/_bulk", "//evil/_bulk", "/../_bulk", "/%2e%2e/_bulk", "/_doc/%2Fetc", "/_doc/%252fetc", "/_doc/..", "/_reindex", "/_search", "/_doc/x?x=y"} {
-		d := &spb.Request{Method: "GET", Path: path}
-		if nativeDescriptor(d, "") == nil {
+		d := &spb.HttpRequest{Method: "GET", Path: path}
+		d.BodyContentType = ""
+		if validateNativeHTTPRequest(d) == nil {
 			t.Fatal(path)
 		}
 	}
 	for _, query := range []string{"pipeline=p", "refresh=true&refresh=false", "refresh=%74rue", "routing=x", "filter_path=items", "realtime=true%0D%0Ax:y"} {
-		d := &spb.Request{Method: "POST", Path: "/_bulk", Query: query}
-		if nativeDescriptor(d, "application/x-ndjson") == nil {
+		d := &spb.HttpRequest{Method: "POST", Path: "/_bulk", Query: query}
+		d.BodyContentType = "application/x-ndjson"
+		if validateNativeHTTPRequest(d) == nil {
 			t.Fatal(query)
 		}
 	}
 	for _, name := range []string{"host", "authorization", "proxy-authorization", "connection", "transfer-encoding", "content-length", "idempotency-key", "x-idempotency-key"} {
 		h := &spb.Header{Name: name, Values: []string{"x"}}
-		d := &spb.Request{Method: "POST", Path: "/_bulk", Headers: []*spb.Header{h}}
-		if nativeDescriptor(d, "application/x-ndjson") == nil {
+		d := &spb.HttpRequest{Method: "POST", Path: "/_bulk", Headers: []*spb.Header{h}}
+		d.BodyContentType = "application/x-ndjson"
+		if validateNativeHTTPRequest(d) == nil {
 			t.Fatal(name)
 		}
 	}
 	h := &spb.Header{Name: "x-opaque-id", Values: []string{"x\r\nHost: evil"}}
-	d := &spb.Request{Method: "GET", Path: "/_doc/x", Headers: []*spb.Header{h}}
-	if nativeDescriptor(d, "") == nil {
+	d := &spb.HttpRequest{Method: "GET", Path: "/_doc/x", Headers: []*spb.Header{h}}
+	d.BodyContentType = ""
+	if validateNativeHTTPRequest(d) == nil {
 		t.Fatal("header injection")
 	}
 }
@@ -200,7 +200,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{Store: "search", URL: backend.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
-			open := nativeOpen(t, "records", "GET", "/_doc/x")
+			open := nativeRequest(t, "records", "GET", "/_doc/x")
 			end, capture := runNative(t, a, open, nil)
 			complete := mode == "empty" || mode == "headers" || mode == "redirect" || mode == "multichunk" || mode == "boundary"
 			if (end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE) != complete || calls.Load() != 1 {
@@ -216,8 +216,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 				t.Fatal(capture.chunks, capture.body.Len())
 			}
 			if mode == "headers" {
-				meta := &spb.Response{}
-				proto.Unmarshal(capture.head.Metadata.Data, meta)
+				meta := capture.head.Http
 				if meta.StatusCode != 400 {
 					t.Fatal(meta)
 				}
@@ -295,7 +294,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 				method, path = http.MethodPost, "/_bulk"
 				input = "{\"index\":{\"_index\":\"records\",\"_id\":\"x\"}}\n{}\n"
 			}
-			open := nativeOpen(t, "records", method, path)
+			open := nativeRequest(t, "records", method, path)
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -312,16 +311,14 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			if test.cancelAfterHead {
 				capture.cancelAfterHead = cancel
 			}
-			plan.Command = testutil.NativeCommand(open, []byte(input))
+			open.GetSearchHttp().Body = []byte(input)
+			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
 				t.Fatal(end, feedback, calls.Load())
 			}
 			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
-				metadata := &spb.Response{}
-				if err := proto.Unmarshal(capture.head.Metadata.Data, metadata); err != nil {
-					t.Fatal(err)
-				}
+				metadata := capture.head.Http
 				if int(metadata.StatusCode) != test.status || capture.body.String() != test.body || end.Failure != nil {
 					t.Fatal("native reply changed", metadata, capture.body.String(), end)
 				}
@@ -351,13 +348,14 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx}
-			open := nativeOpen(t, "records", "POST", "/_bulk")
+			open := nativeRequest(t, "records", "POST", "/_bulk")
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			capture := &nativeCapture{}
-			plan.Command = testutil.NativeCommand(open, []byte("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
+			open.GetSearchHttp().Body = []byte("{\"index\":{\"_id\":\"x\"}}\n{}\n")
+			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || feedback != execution.Congested || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
 				t.Fatal(end, feedback, calls.Load(), capture)

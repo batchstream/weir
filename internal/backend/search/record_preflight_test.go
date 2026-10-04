@@ -131,12 +131,12 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 }
 
 func TestSearchIndexBytePolicy(t *testing.T) {
-	for _, name := range []string{"a", "z_a09-", strings.Repeat("a", 63)} {
+	for _, name := range []string{"a", "z_a09-", "1a", "logs.2026", "中文", "aé", "percent%2f", strings.Repeat("a", 255)} {
 		if !validIndex(name) {
 			t.Fatal("valid index rejected", name)
 		}
 	}
-	for _, name := range []string{"", "_a", "1a", "A", "a.b", "a/", "a\n", "aé", strings.Repeat("a", 64)} {
+	for _, name := range []string{"", "_a", "-a", "a+b", "A", ".", "..", "a/", "a,b", "a*", "a\n", strings.Repeat("a", 256)} {
 		if validIndex(name) {
 			t.Fatal("invalid index accepted", name)
 		}

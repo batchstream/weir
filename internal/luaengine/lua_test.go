@@ -66,6 +66,9 @@ func TestEvaluateActionsAndRestrictedEnvironment(t *testing.T) {
 		want   luaengine.Action
 	}{
 		{source: "return weir.keep()", want: luaengine.Keep},
+		{source: "return nil", want: luaengine.Keep},
+		{source: "local ignored = 1", want: luaengine.Keep},
+		{source: `return weir.object("n", weir.i32("1"))`, want: luaengine.Replace},
 		{source: "return weir.delete()", want: luaengine.Delete},
 		{source: "return weir.reject('invalid')", want: luaengine.Reject},
 	}

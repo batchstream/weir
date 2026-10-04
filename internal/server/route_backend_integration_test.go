@@ -103,8 +103,8 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, counter); err != nil {
 		t.Fatal(err)
 	}
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
-	form := &pb.Transform_Program{Program: program}
+	program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.DB + "/records/s:counter", Action: action}
@@ -127,10 +127,10 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	if err := backend.Admin.Database(backend.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 12 {
 		t.Fatal("ordered Lua increment lost", observed.N, err)
 	}
-	selector := bson.D{{Key: "filter", Value: filter}}
+	selector := filter
 	selectorRaw, _ := bson.Marshal(selector)
 	document := &pb.Document{ContentType: "application/bson", Data: selectorRaw}
-	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Selector: document}
+	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Filter: document}
 	scanValue := &pb.Command_Scan{Scan: scan}
 	scanCommand := &pb.Command{Operation: scanValue}
 	events := routeBackendEvents(t, client, scanCommand)
@@ -182,9 +182,10 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				update := bson.D{{Key: "$inc", Value: increment}}
 				nativeCommand := bson.D{{Key: "findAndModify", Value: "records"}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "new", Value: true}}
 				body, _ := bson.Marshal(nativeCommand)
-				descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
-				open := &pb.NativeOpen{Resource: backend.DB + "/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
-				native := &pb.NativeRequest{Open: open, Body: body}
+				nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+				open := &pb.NativeRequest{Resource: backend.DB + "/records", Request: nativeBody}
+				open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = body
+				native := open
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Operation: value}
 			}
@@ -293,12 +294,12 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 			mutation := routeBackendMutation(backend.Index+"/s:"+id, "put", "application/json", []byte(`{"n":1}`))
 			var call *pb.Command
 			if mode == "native" {
-				httpCall := &searchpb.Request{Method: "POST", Path: "/_bulk"}
-				rawDescriptor, _ := proto.Marshal(httpCall)
-				descriptor := &pb.Document{ContentType: search.NativeContentType, Data: rawDescriptor}
-				open := &pb.NativeOpen{Resource: backend.Index, Descriptor_: descriptor, BodyContentType: "application/x-ndjson"}
+				httpCall := &searchpb.HttpRequest{Method: "POST", Path: "/_bulk", BodyContentType: "application/x-ndjson"}
+				nativeBody := &pb.NativeRequest_SearchHttp{SearchHttp: httpCall}
+				open := &pb.NativeRequest{Resource: backend.Index, Request: nativeBody}
 				body := []byte(fmt.Sprintf("{\"create\":{\"_id\":%q}}\n{\"n\":1}\n", id))
-				native := &pb.NativeRequest{Open: open, Body: body}
+				open.GetSearchHttp().Body = body
+				native := open
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Operation: value}
 			}

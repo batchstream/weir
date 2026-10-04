@@ -203,12 +203,12 @@ func scanRPCMongoDocumentID(t *testing.T, document *pb.Document) string {
 func scanRPCSearchDocumentID(t *testing.T, document *pb.Document) string {
 	t.Helper()
 	var hit struct {
-		ID string `json:"_id"`
+		N *int `json:"n"`
 	}
-	if document.ContentType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" {
+	if document.ContentType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.N == nil {
 		t.Fatal("Scan changed native Search hit identity or encoding")
 	}
-	return hit.ID
+	return fmt.Sprintf("record_%04d", *hit.N)
 }
 
 func seedScanRPCMongo(t *testing.T, backend *testmongo.Fixture, count, padding int) []string {
@@ -346,7 +346,7 @@ type scanRPCStallOptions struct {
 	adapter      execution.Adapter
 	resource     string
 	readResource string
-	selector     *pb.Document
+	filter       *pb.Document
 }
 
 func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
@@ -397,7 +397,7 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	// plan and backend continuation must survive that cancellation.
 	survivorContext, survivorCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer survivorCancel()
-	survivorRequest := &pb.ScanRequest{Resource: opts.resource, Selector: opts.selector}
+	survivorRequest := &pb.ScanRequest{Resource: opts.resource, Filter: opts.filter}
 	survivorCommand := scanRPCCommand(survivorRequest)
 	survivor, err := testutil.ExecuteEvents(survivorContext, client, "records", survivorCommand)
 	if err != nil {
@@ -472,13 +472,13 @@ func TestRouteMongoScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
 		t.Fatal(err)
 	}
 	filter := bson.D{{Key: "n", Value: int32(0)}}
-	selector := bson.D{{Key: "filter", Value: filter}}
+	selector := filter
 	raw, err := bson.Marshal(selector)
 	if err != nil {
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
-	opts := scanRPCStallOptions{adapter: adapter, resource: backend.DB + "/records", readResource: backend.DB + "/records/s:record_0000", selector: document}
+	opts := scanRPCStallOptions{adapter: adapter, resource: backend.DB + "/records", readResource: backend.DB + "/records/s:record_0000", filter: document}
 	assertScanRPCStallReleasesPermit(t, opts)
 }
 
@@ -490,7 +490,7 @@ func TestRouteSearchScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"query":{"term":{"n":0}}}`)}
-	opts := scanRPCStallOptions{adapter: adapter, resource: backend.Index, readResource: backend.Index + "/s:record_0000", selector: document}
+	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"term":{"n":0}}`)}
+	opts := scanRPCStallOptions{adapter: adapter, resource: backend.Index, readResource: backend.Index + "/s:record_0000", filter: document}
 	assertScanRPCStallReleasesPermit(t, opts)
 }

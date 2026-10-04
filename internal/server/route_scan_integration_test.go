@@ -175,12 +175,12 @@ func TestRouteSearchScanContinuesOnNewInstanceAfterOriginShutdown(t *testing.T) 
 	opts.documentID = func(t *testing.T, document *pb.Document) string {
 		t.Helper()
 		var hit struct {
-			ID string `json:"_id"`
+			N *int `json:"n"`
 		}
-		if document.ContentType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" {
+		if document.ContentType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.N == nil {
 			t.Fatal("Search scan changed native hit encoding")
 		}
-		return hit.ID
+		return fmt.Sprintf("record_%02d", *hit.N)
 	}
 	opts.beforeResume = func(t *testing.T) {
 		status, _ := backend.Do(t, "PUT", "/"+backend.Index+"/_doc/after_origin_shutdown", `{"n":99}`)

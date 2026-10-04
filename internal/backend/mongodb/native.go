@@ -14,28 +14,28 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeContentType = "application/vnd.weir.mongodb-command.v1+protobuf"
 const NativeCommandLimit = 4 << 20
 
 const NativeResponseLimit = 4 << 20
 
-func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateNative(open); f != nil {
+func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
+	if f := protocol.ValidateNative(request); f != nil {
 		return nil, f
 	}
-	parts, _ := protocol.ParseRelativeResource(open.Resource)
+	parts, _ := protocol.ParseRelativeResource(request.Resource)
 	if len(parts) != 2 || !validNamespace(parts) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
-	if open.Descriptor_.ContentType != NativeContentType || len(open.Descriptor_.Data) != 0 || open.BodyContentType != "application/bson" {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native requires empty Mongo command descriptor and BSON body")
+	if _, ok := request.Request.(*pb.NativeRequest_MongodbCommand); !ok {
+		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires mongodb_command")
 	}
+
 	target := namespace{database: parts[0], collection: parts[1]}
 	p := &execution.Plan{
 		Backend:      target,
 		Singleton:    true,
-		Key:          open.Resource,
-		Bytes:        proto.Size(open) + execution.EntryOverheadBytes,
+		Key:          request.Resource,
+		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
 		WorkingBytes: scanPageBudget,
 	}
@@ -97,7 +97,7 @@ func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 }
 
 func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) (*pb.NativeEnd, execution.Feedback) {
-	raw := work.Command.GetNative().Body
+	raw := work.Command.GetNative().GetMongodbCommand()
 	target := work.Backend.(namespace)
 	if f := a.nativeCommand(raw, target); f != nil {
 		return protocol.NativeFailure(false, f), execution.Neutral

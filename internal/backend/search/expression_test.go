@@ -51,8 +51,7 @@ func TestSearchExpressionEvidence(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct}
 	n := &plan{index: "records", id: "a"}
 	success := `{"_index":"records","_id":"a","_version":1,"_seq_no":0,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`
-	noop := strings.ReplaceAll(strings.ReplaceAll(success, `"updated"`, `"noop"`), `:1,"failed"`, `:0,"failed"`)
-	noop = strings.ReplaceAll(noop, `"total":1`, `"total":0`)
+	noop := strings.Replace(success, `"updated"`, `"noop"`, 1)
 	for _, raw := range []string{success, noop} {
 		opts := expressionReplyOptions{native: n, status: 200, raw: []byte(raw)}
 		r, _ := a.expressionReply(opts)

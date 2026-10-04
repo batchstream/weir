@@ -33,7 +33,7 @@ func TestSearchScanTraversal(t *testing.T) {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			a, b := setupSearch(t)
 			for i := 0; i < size; i++ {
-				status, _ := b.Do(t, "PUT", fmt.Sprintf("/%s/_doc/%d", b.Index, i), `{"n":9223372036854775807,"kind":"scan"}`)
+				status, _ := b.Do(t, "PUT", fmt.Sprintf("/%s/_doc/%d", b.Index, i), fmt.Sprintf(`{"id":%q,"n":9223372036854775807,"kind":"scan"}`, fmt.Sprint(i)))
 				if status != 201 {
 					t.Fatal(status)
 				}
@@ -56,16 +56,13 @@ func TestSearchScanTraversal(t *testing.T) {
 					t.Fatal("scan exceeded document batch bound", len(page.Documents))
 				}
 				for _, doc := range page.Documents {
-					var hit struct {
-						ID     string          `json:"_id"`
-						Index  string          `json:"_index"`
-						Source json.RawMessage `json:"_source"`
-						Sort   []int64
+					var source struct {
+						ID string `json:"id"`
 					}
-					if json.Unmarshal(doc.Data, &hit) != nil || hit.ID == "" || hit.Index != b.Index || len(hit.Sort) != 1 || !strings.Contains(string(hit.Source), "9223372036854775807") || seen[hit.ID] {
-						t.Fatalf("hit fidelity/duplicate: %s", doc.Data)
+					if json.Unmarshal(doc.Data, &source) != nil || source.ID == "" || !strings.Contains(string(doc.Data), "9223372036854775807") || seen[source.ID] {
+						t.Fatalf("source fidelity/duplicate: %s", doc.Data)
 					}
-					seen[hit.ID] = true
+					seen[source.ID] = true
 				}
 				if page.Exhausted {
 					wantCalls := (size+execution.ScanBatchDocuments-1)/execution.ScanBatchDocuments + 2
@@ -295,8 +292,8 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 		b.Do(t, "PUT", fmt.Sprintf("/%s/_doc/%d", b.Index, i), fmt.Sprintf(`{"n":%d}`, i))
 	}
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-	selector := &pb.Document{ContentType: "application/json", Data: []byte(`{"query":{"range":{"n":{"gte":1}}}}`)}
-	req := &pb.ScanRequest{Resource: b.Index, Selector: selector}
+	selector := &pb.Document{ContentType: "application/json", Data: []byte(`{"range":{"n":{"gte":1}}}`)}
+	req := &pb.ScanRequest{Resource: b.Index, Filter: selector}
 	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)

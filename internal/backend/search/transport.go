@@ -159,7 +159,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 }
 
 // Both execution paths use exactly the immutable backend credentials. Native
-// descriptors cannot supply Authorization or replayable request headers.
+// Native HTTP requests cannot supply Authorization or replayable request headers.
 func (a *Adapter) configureRequest(request *http.Request) {
 	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
 	// values. Keep the original request lifetime for our owned DNS/TLS I/O too.

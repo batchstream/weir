@@ -26,8 +26,7 @@ func RecordRequest(store string, message proto.Message) RecordFixture {
 	return fixture
 }
 
-func NativeCommand(open *pb.NativeOpen, body []byte) *pb.Command {
-	request := &pb.NativeRequest{Open: open, Body: body}
+func NativeCommand(request *pb.NativeRequest) *pb.Command {
 	operation := &pb.Command_Native{Native: request}
 	command := &pb.Command{Operation: operation}
 	return command

@@ -77,15 +77,16 @@ func targetResource(target namespace) string {
 
 func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson.D) bson.Raw {
 	t.Helper()
-	descriptor := &pb.Document{ContentType: NativeContentType}
-	open := &pb.NativeOpen{Resource: targetResource(target), Descriptor_: descriptor, BodyContentType: "application/bson"}
+	nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	open := &pb.NativeRequest{Resource: targetResource(target), Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	work.Command = testutil.NativeCommand(open, raw)
+	open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+	work.Command = testutil.NativeCommand(open)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	end, _ := adapter.executeNative(ctx, work, capture.Emit)
@@ -306,8 +307,8 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 						t.Fatal(failure)
 					}
 				case "native":
-					descriptor := &pb.Document{ContentType: NativeContentType}
-					open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyContentType: "application/bson"}
+					nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+					open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 					work, failure := fixture.adapter.prepareNative(open)
 					if failure != nil {
 						t.Fatal(failure)
@@ -317,7 +318,8 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					command := bson.D{{Key: "findAndModify", Value: target.collection}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "upsert", Value: true}}
 					raw := expressionBSON(t, command)
 					capture := &nativeCapture{}
-					work.Command = testutil.NativeCommand(open, raw)
+					open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+					work.Command = testutil.NativeCommand(open)
 					end, _ := fixture.adapter.executeNative(ctx, work, capture.Emit)
 					if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || capture.head != nil {
 						t.Fatal("unqualified Native target accepted", end)

@@ -416,7 +416,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 			continue
 		}
 		if transformErr != nil {
-			result, _ := luaProgramFailure(ctx, ctx, transformErr)
+			result, _ := luaProgramFailure(ctx, transformErr)
 			batch.results[position] = result
 			continue
 		}
@@ -557,18 +557,15 @@ func withMongoIdentity(document value.Value, identity value.Field, id any) (valu
 	return result, true
 }
 
-func luaProgramFailure(parent, ctx context.Context, err error) (*pb.MutationResult, execution.Feedback) {
-	if parent.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(parent)), execution.Neutral
+func luaProgramFailure(ctx context.Context, err error) (*pb.MutationResult, execution.Feedback) {
+	if ctx.Err() != nil {
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx)), execution.Neutral
 	}
 	code := pb.FailureCode_INVALID_ARGUMENT
 	message := "Lua program evaluation failed"
 	if errors.Is(err, context.DeadlineExceeded) {
 		code = pb.FailureCode_DEADLINE_EXCEEDED
 		message = "Lua program execution limit exceeded"
-	} else if ctx.Err() != nil {
-		code = pb.FailureCode_DEADLINE_EXCEEDED
-		message = "Lua transform execution deadline exceeded"
 	}
 	failure := protocol.Fail(code, message)
 	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral

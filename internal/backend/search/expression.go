@@ -81,14 +81,12 @@ type expressionReplyOptions struct {
 	native *plan
 	status int
 	raw    []byte
-	err    error
-	bulk   bool
 }
 
 func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResult, execution.Feedback) {
-	n, status, raw, err := opts.native, opts.status, opts.raw, opts.err
+	n, status, raw := opts.native, opts.status, opts.raw
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "update acknowledgement unavailable or incomplete"))
-	if err != nil || len(raw) > metadataLimit || validateJSON(raw, 4096) != nil {
+	if len(raw) > metadataLimit || validateJSON(raw, 4096) != nil {
 		return unknown, execution.Neutral
 	}
 	var response expressionResponse
@@ -138,13 +136,7 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 	}
 	switch response.Result {
 	case "noop":
-		// Both qualified backends return zero shard work for standalone Update,
-		// but Bulk wraps the same noop with a positive primary acknowledgement.
-		if opts.bulk {
-			if *shards.Successful < 1 || *shards.Failed != 0 {
-				return unknown, execution.Neutral
-			}
-		} else if *shards.Total != 0 || *shards.Successful != 0 || *shards.Failed != 0 {
+		if *shards.Successful < 1 || *shards.Failed != 0 {
 			return unknown, execution.Neutral
 		}
 	case "updated":

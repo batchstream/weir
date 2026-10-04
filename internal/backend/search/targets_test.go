@@ -159,7 +159,7 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 	for _, resource := range []string{
 		"weir://other/records", "weir://search", "Records",
 		"_hidden", "a,b", "a*",
-		".hidden", strings.Repeat("a", 64),
+		"..", strings.Repeat("a", 256),
 		"records/extra", "records?query=x",
 	} {
 		read := &pb.ReadRequest{Resource: resource + "/s:same"}
@@ -173,7 +173,7 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		if _, failure := a.prepareScan(scan); failure == nil {
 			t.Error("Scan target accepted", resource)
 		}
-		native := nativeOpen(t, "records", "GET", "/_doc/same")
+		native := nativeRequest(t, "records", "GET", "/_doc/same")
 		native.Resource = resource
 		if _, failure := a.prepareNative(native); failure == nil {
 			t.Error("Native target accepted", resource)
@@ -198,7 +198,7 @@ func TestSearchPlansRetainRequestTargets(t *testing.T) {
 	if scan.Backend.(*scanPlan).index != "left" {
 		t.Fatal("Scan target follows mutable request")
 	}
-	open := nativeOpen(t, "left", "GET", "/_doc/same")
+	open := nativeRequest(t, "left", "GET", "/_doc/same")
 	native, failure := a.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)

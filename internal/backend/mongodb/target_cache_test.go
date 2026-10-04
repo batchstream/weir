@@ -79,7 +79,7 @@ func TestMongoQualificationFailureIsNotCached(t *testing.T) {
 	}}
 	adapter := batchMockAdapter(t, responses, monitor)
 	target := namespace{database: "db", collection: "records"}
-	if failure, _ := adapter.qualifyTarget(context.Background(), target); failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED {
+	if failure, _ := adapter.qualifyTarget(context.Background(), target); failure.GetCode() != pb.FailureCode_TARGET_NOT_FOUND {
 		t.Fatal("missing collection passed qualification", failure)
 	}
 	for range 2 {

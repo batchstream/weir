@@ -42,8 +42,8 @@ func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution
 		case "expression":
 			op = expressionOperation(resource, `{"doc":{"n":2}}`)
 		case "program":
-			program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.object("n", weir.i64("3")))`)}
-			form := &pb.Transform_Program{Program: program}
+			program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.object("n", weir.i64("3")))`)}
+			form := &pb.Transform_Lua{Lua: program}
 			transform := &pb.Transform{Form: form}
 			mutation.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 		default:

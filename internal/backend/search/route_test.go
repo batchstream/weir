@@ -68,8 +68,8 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	config := Config{Store: "search"}
 	adapter := &Adapter{config: config}
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.keep()`)}
-	form := &pb.Transform_Program{Program: program}
+	program := &pb.LuaTransform{Source: []byte(`return weir.keep()`)}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
@@ -132,9 +132,9 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			config := Config{Store: "search", URL: server.URL}
 			client := server.Client()
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, nativeClient: client, ctx: context.Background()}
-			open := nativeOpen(t, "records", "GET", "/_doc/x")
+			open := nativeRequest(t, "records", "GET", "/_doc/x")
 			open.Resource = "records"
-			native := &pb.NativeRequest{Open: open}
+			native := open
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
 			work, failure := adapter.PrepareCommand(1, call)

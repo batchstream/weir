@@ -124,7 +124,7 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 	}
 	results, signal := adapter.executeRecords(context.Background(), plans)
 	mutation := results[1].GetMutationResult()
-	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED || signal != execution.Neutral {
+	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_UNSUPPORTED || signal != execution.Neutral {
 		t.Fatal("mixed batch bypassed qualification", results, signal)
 	}
 	want := []string{"listCollections"}

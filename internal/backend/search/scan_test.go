@@ -80,18 +80,18 @@ func TestScanEnvelopeAndLatestPIT(t *testing.T) {
 		})
 	}
 }
-func TestScanSelectorControlsAndBounds(t *testing.T) {
+func TestScanFilterControlsAndBounds(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: Config{Store: "search"}}
-	for _, key := range []string{"pit", "search_after", "from", "size", "sort", "track_total_hits", "timeout", "terminate_after", "allow_partial_search_results", "aggregations", "aggs", "_source", "routing", "slice", "stored_fields", "rescore", "script_fields", "profile"} {
-		selector := &pb.Document{ContentType: "application/json", Data: []byte(fmt.Sprintf(`{"%s":{}}`, key))}
-		req := &pb.ScanRequest{Resource: "records", Selector: selector}
-		if _, f := a.prepareScan(req); f == nil {
-			t.Fatal("allowed control", key)
-		}
+	filter := &pb.Document{ContentType: "application/json", Data: []byte(`{"term":{"sort":1}}`)}
+	projection := &pb.Projection{Mode: pb.ProjectionMode_INCLUDE, Fields: []string{"nested.name"}}
+	request := &pb.ScanRequest{Resource: "records", Filter: filter, Projection: projection}
+	work, failure := a.prepareScan(request)
+	if failure != nil || string(work.Backend.(*scanPlan).query) != string(filter.Data) || work.Backend.(*scanPlan).projection != projection {
+		t.Fatal("native query or projection changed", failure)
 	}
-	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 34) + `{}` + strings.Repeat(`}`, 34) + `}`, `{"query":{"x":[` + strings.Repeat(`0,`, 4096) + `0]}}`, strings.Repeat(" ", protocol.MaxSelector+1) + "{}"} {
+	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 34) + `{}` + strings.Repeat(`}`, 34) + `}`, `{"query":{"x":[` + strings.Repeat(`0,`, 4096) + `0]}}`, strings.Repeat(" ", protocol.MaxScanFilterBytes+1) + "{}"} {
 		selector := &pb.Document{ContentType: "application/json", Data: []byte(raw)}
-		req := &pb.ScanRequest{Resource: "records", Selector: selector}
+		req := &pb.ScanRequest{Resource: "records", Filter: selector}
 		if _, f := a.prepareScan(req); f == nil {
 			t.Fatal("accepted excessive selector")
 		}
@@ -138,7 +138,7 @@ func TestScanHitByteBoundary(t *testing.T) {
 		a := &Adapter{dialect: ElasticsearchProduct}
 		n := &scanPlan{index: "records", items: 1, pit: "previous"}
 		hit := `{"_index":"records","_id":"a","_score":null,"_source":{"pad":""},"sort":[0]}`
-		hit = strings.Replace(hit, `"pad":""`, `"pad":"`+strings.Repeat("x", protocol.MaxDocument-len(hit)+extra)+`"`, 1)
+		hit = strings.Replace(hit, `"pad":""`, `"pad":"`+strings.Repeat("x", protocol.MaxDocument-len(`{"pad":""}`)+extra)+`"`, 1)
 		fields := scanTestReply()
 		fields["hits"] = json.RawMessage(`{"max_score":null,"hits":[` + hit + `]}`)
 		raw, _ := json.Marshal(fields)

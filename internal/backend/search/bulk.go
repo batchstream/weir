@@ -15,10 +15,14 @@ type nativeError struct {
 
 func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.Feedback) {
 	switch {
+	case status == 401 && errorType == "security_exception":
+		return protocol.Fail(pb.FailureCode_UNAUTHENTICATED, "backend authentication required"), execution.Neutral
+	case status == 403 && errorType == "security_exception":
+		return protocol.Fail(pb.FailureCode_PERMISSION_DENIED, "backend permission denied"), execution.Neutral
 	case status == 409 && errorType == "version_conflict_engine_exception":
 		return protocol.Fail(pb.FailureCode_CONFLICT, "native conditional conflict"), execution.Neutral
 	case status == 404 && errorType == "index_not_found_exception":
-		return protocol.Fail(pb.FailureCode_NOT_FOUND, "requested index missing"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "requested index missing"), execution.Neutral
 	case status == 429 &&
 		(a.dialect == ElasticsearchProduct && errorType == "es_rejected_execution_exception" ||
 			a.dialect == OpenSearchProduct && errorType == "rejected_execution_exception"),
@@ -145,7 +149,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 				}
 				mutation, signal = a.programWriteReply(opts)
 			} else {
-				opts := expressionReplyOptions{native: native, status: item.Status, raw: encoded, bulk: true}
+				opts := expressionReplyOptions{native: native, status: item.Status, raw: encoded}
 				mutation, signal = a.expressionReply(opts)
 			}
 			results[i] = execution.FailedEvent(work.Command, mutation.Outcome, mutation.Failure)
@@ -205,4 +209,18 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, postWriteFailure)
 	}
 	return results, feedback
+}
+
+// Metadata/read failures describe availability, without claiming a write outcome.
+func (a *Adapter) nativeResponseFailure(status int, raw []byte) (*pb.Failure, execution.Feedback) {
+	var envelope struct {
+		Error  *nativeError
+		Status int
+	}
+	if len(raw) <= metadataLimit && validateJSON(raw, 4096) == nil && json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
+		if failure, signal := a.reject(envelope.Error.Type, status); failure != nil {
+			return failure, signal
+		}
+	}
+	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend request failed without reliable native error evidence"), execution.Neutral
 }

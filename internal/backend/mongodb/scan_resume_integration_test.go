@@ -170,13 +170,14 @@ func TestMongoScanBSONExtremesWithFilterAndProjection(t *testing.T) {
 	}
 	config := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 	config = mongoFixtureConfig(t, config)
-	selector := bson.D{{Key: "filter", Value: filter}, {Key: "projection", Value: projection}}
+	projectionRequest := &pb.Projection{Mode: pb.ProjectionMode_INCLUDE, Fields: []string{"_id", "n"}}
+	selector := filter
 	raw, err := bson.Marshal(selector)
 	if err != nil {
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
-	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Selector: document}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Filter: document, Projection: projectionRequest}
 	var seen []*pb.Document
 	for page := 0; page <= len(ids); page++ {
 		adapter, err := Open(ctx, config)
@@ -228,14 +229,14 @@ func TestMongoScanDeepKeysetUsesIDIndexAndIncludesMaxKey(t *testing.T) {
 	}
 	lowerBound := bson.D{{Key: "$gte", Value: int32(0)}}
 	filter := bson.D{{Key: "n", Value: lowerBound}}
-	projection := bson.D{{Key: "n", Value: int32(1)}}
-	selector := bson.D{{Key: "filter", Value: filter}, {Key: "projection", Value: projection}}
+	projectionRequest := &pb.Projection{Mode: pb.ProjectionMode_INCLUDE, Fields: []string{"_id", "n"}}
+	selector := filter
 	selectorBytes, err := bson.Marshal(selector)
 	if err != nil {
 		t.Fatal(err)
 	}
 	selectorDocument := &pb.Document{ContentType: "application/bson", Data: selectorBytes}
-	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Selector: selectorDocument}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Filter: selectorDocument, Projection: projectionRequest}
 	config := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 	config = mongoFixtureConfig(t, config)
 	adapter, err := Open(ctx, config)

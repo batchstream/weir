@@ -91,7 +91,7 @@ func ValidateConfig(cfg Config) error {
 		}
 		return nil
 	}
-	if options["authmechanism"] != "SCRAM-SHA-256" || !validNamespaceName(options["authsource"]) || options["tls"] != "true" {
+	if options["authmechanism"] != "SCRAM-SHA-256" || !validDatabaseName(options["authsource"]) || options["tls"] != "true" {
 		return errors.New("authenticated MongoDB connections require explicit SCRAM-SHA-256, authSource, and TLS")
 	}
 	if caFile, ok := options["tlscafile"]; ok && (caFile == "" || strings.ContainsAny(caFile, "\x00\r\n")) {

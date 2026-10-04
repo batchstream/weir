@@ -17,10 +17,8 @@ import (
 
 	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
-	"google.golang.org/protobuf/proto"
 )
 
 type searchBudgetExecutor struct {
@@ -427,14 +425,9 @@ func searchBudgetNative(t *testing.T, e *searchBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	descriptor := &spb.Request{Method: "GET", Path: "/_doc/native-probe"}
-	encoded, err := proto.Marshal(descriptor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	document := &pb.Document{ContentType: search.NativeContentType, Data: encoded}
-	opening := &pb.NativeOpen{Resource: e.root, Descriptor_: document}
-	nativeCall := &pb.NativeRequest{Open: opening, Body: nil}
+	httpRequest := &spb.HttpRequest{Method: "GET", Path: "/_doc/native-probe"}
+	request := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
+	nativeCall := &pb.NativeRequest{Resource: e.root, Request: request}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}
 	stream, err := testutil.ExecuteEvents(ctx, e.client, e.store, call)

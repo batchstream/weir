@@ -448,9 +448,10 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
-			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
-			native := &pb.NativeRequest{Open: open, Body: raw}
+			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			open := &pb.NativeRequest{Resource: f.db + "/records", Request: nativeBody}
+			open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+			native := open
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
 			work, failure := f.runtime.PrepareCommand(1, call)
@@ -518,8 +519,8 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			}
 			data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 			testmongo.FailCommand(t, f.native, data, 1)
-			program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
-			form := &pb.Transform_Program{Program: program}
+			program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
+			form := &pb.Transform_Lua{Lua: program}
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}

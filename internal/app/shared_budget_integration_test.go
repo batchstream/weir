@@ -559,12 +559,11 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
-	open := &pb.NativeOpen{Resource: e.root, Descriptor_: descriptor, BodyContentType: "application/bson"}
 	filter := bson.D{{Key: "_id", Value: "counter"}}
 	command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: filter}, {Key: "limit", Value: 1}}
 	raw, _ := bson.Marshal(command)
-	nativeCall := &pb.NativeRequest{Open: open, Body: raw}
+	request := &pb.NativeRequest_MongodbCommand{MongodbCommand: raw}
+	nativeCall := &pb.NativeRequest{Resource: e.root, Request: request}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}
 	stream, err := testutil.ExecuteEvents(ctx, e.client, e.store, call)

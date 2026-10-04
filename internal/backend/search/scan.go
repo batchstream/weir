@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -24,6 +25,7 @@ type scanPlan struct {
 	count                    uint64
 	index                    string
 	query                    json.RawMessage
+	projection               *pb.Projection
 	items                    int
 	batchSize                int
 	pit                      string
@@ -56,24 +58,16 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		pageSize:    protocol.ScanPageSize(req),
 		fingerprint: protocol.ScanFingerprint(req, a.config.Store, "search:"+a.dialect),
 	}
-	if d := req.Selector; d != nil {
+	if d := req.Filter; d != nil {
 		if d.ContentType != "application/json" {
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "search selector requires JSON")
+			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Scan filter requires JSON")
 		}
 		if !object(d.Data) || validateJSON(d.Data, 4096) != nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive JSON selector")
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive JSON filter")
 		}
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(d.Data, &fields) != nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid selector")
-		}
-		for name, value := range fields {
-			if name != "query" || !object(value) {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "only native query is allowed in the selector")
-			}
-			native.query = value
-		}
+		native.query = d.Data
 	}
+	native.projection = req.Projection
 	if len(req.ContinuationToken) != 0 {
 		raw, err := protocol.DecodeScanToken(req.ContinuationToken, "search:"+a.dialect, native.fingerprint)
 		var checkpoint scanCheckpoint
@@ -118,16 +112,16 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			return page, execution.Neutral
 		}
 		call := exchange{
-			path:  "/" + n.index + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
+			path:  "/" + url.PathEscape(n.index) + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
 			body:  []byte("{}"),
 			limit: metadataLimit,
 		}
 		if a.dialect == OpenSearchProduct {
-			call.path = "/" + n.index + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
+			call.path = "/" + url.PathEscape(n.index) + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
 		}
 		n.opened = true
 		status, raw, err := a.request(ctx, call)
-		f, fb = a.scanExchangeFailure(ctx, status, err)
+		f, fb = a.scanExchangeFailure(ctx, status, raw, err)
 		if f != nil {
 			page.Failure = f
 			return page, fb
@@ -164,6 +158,14 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		"timeout":          "1s",
 		"_source":          true,
 	}
+	if n.projection != nil {
+		key := "excludes"
+		if n.projection.Mode == pb.ProjectionMode_INCLUDE {
+			key = "includes"
+		}
+		source := map[string][]string{key: n.projection.Fields}
+		body["_source"] = source
+	}
 	if n.hasAfter {
 		body["search_after"] = []int64{n.after}
 	}
@@ -185,7 +187,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			n.batchSize = n.items
 			continue
 		}
-		f, fb := a.scanExchangeFailure(ctx, status, err)
+		f, fb := a.scanExchangeFailure(ctx, status, reply, err)
 		if f != nil {
 			page.Failure = f
 			return page, fb
@@ -212,7 +214,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	return page, execution.Healthy
 }
 
-func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, err error) (*pb.Failure, execution.Feedback) {
+func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, raw []byte, err error) (*pb.Failure, execution.Feedback) {
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx), execution.Neutral
 	}
@@ -229,7 +231,7 @@ func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, err error
 		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid, truncated or excessive Scan response"), execution.Neutral
 	}
 	if status != 200 {
-		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "PIT or search request failed"), execution.Neutral
+		return a.nativeResponseFailure(status, raw)
 	}
 	return nil, execution.Neutral
 }
@@ -349,8 +351,8 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 	acceptedBytes := 0
 	retaining := true
 	for _, row := range rows {
-		if len(row) > protocol.MaxDocument {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native hit exceeds output bound")
+		if len(row) > protocol.MaxDocument+(16<<10) {
+			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native hit exceeds bounded source and metadata")
 			return page
 		}
 		var hit struct {
@@ -360,8 +362,14 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			Score  json.RawMessage   `json:"_score"`
 			Sort   []json.RawMessage `json:"sort"`
 		}
-		if json.Unmarshal(row, &hit) != nil ||
-			hit.Index != n.index ||
+		if json.Unmarshal(row, &hit) != nil {
+			return page
+		}
+		if len(hit.Source) > protocol.MaxDocument {
+			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored Scan document exceeds output bound")
+			return page
+		}
+		if hit.Index != n.index ||
 			hit.ID == "" ||
 			len(hit.ID) > 512 ||
 			!object(hit.Source) ||
@@ -375,10 +383,10 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			return page
 		}
 		last, hasLast = position, true
-		if retaining && acceptedBytes+len(row) <= execution.ScanBatchBytes {
-			doc := &pb.Document{ContentType: "application/json", Data: row}
+		if retaining && acceptedBytes+len(hit.Source) <= execution.ScanBatchBytes {
+			doc := &pb.Document{ContentType: "application/json", Data: hit.Source}
 			docs = append(docs, doc)
-			acceptedBytes += len(row)
+			acceptedBytes += len(hit.Source)
 			acceptedLast = position
 		} else {
 			// Validate the complete envelope before publishing this ordered prefix.
@@ -420,6 +428,7 @@ func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	defer func() {
 		n.pit = ""
 		n.query = nil
+		n.projection = nil
 	}()
 	// An input checkpoint remains retryable until the backend's keep-alive
 	// expires, including when the last page or its transport acknowledgement is
