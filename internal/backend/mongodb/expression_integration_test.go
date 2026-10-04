@@ -21,7 +21,7 @@ import (
 func mongoExpression(t *testing.T, a *Adapter, database string, doc bson.D) *execution.Plan {
 	t.Helper()
 	raw := expressionBSON(t, doc)
-	op := expressionOperation("weir://mongo/"+database+"/records/s:counter", raw)
+	op := expressionOperation(database+"/records/s:counter", raw)
 	p, f := prepareTestRecord(a, op)
 	if f != nil {
 		t.Fatal(f)
@@ -33,7 +33,7 @@ func executeMongoExpression(t *testing.T, a *Adapter, p *execution.Plan) *pb.Mut
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	results, _ := a.executeRecords(ctx, []*execution.Plan{p})
-	return results[0].GetMutation()
+	return results[0].Mutation
 }
 
 func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
@@ -215,7 +215,7 @@ func TestMongoExpressionReplyLossAndConcern(t *testing.T) {
 				t.Fatal(mode, r)
 			}
 			if mode == "drop" {
-				verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:"+"counter")
+				verifyReconnectRead(t, a, proxy, db+"/records/s:"+"counter")
 			}
 			writes := 0
 			for _, e := range proxy.Events() {
@@ -310,7 +310,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			wait, done := context.WithTimeout(context.Background(), time.Second)
 			defer done()
 			result, err := queued.Wait(wait)
-			if err != nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
+			if err != nil || result.Mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 				t.Fatal(result, err)
 			}
 			queued.Ack()
@@ -326,12 +326,12 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 				}
 			}
 			result, err = first.Wait(wait)
-			if err != nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+			if err != nil || result.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal(result, err)
 			}
 			first.Ack()
 			if mode == "drop" {
-				verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:"+"counter")
+				verifyReconnectRead(t, a, proxy, db+"/records/s:"+"counter")
 			}
 			writes := 0
 			for _, e := range proxy.Events() {

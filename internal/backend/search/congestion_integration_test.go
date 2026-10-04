@@ -17,7 +17,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 	a, b := setupSearch(t)
 	type sample struct {
 		works    []*execution.Plan
-		results  []*pb.Result
+		results  []*execution.Result
 		feedback execution.Feedback
 	}
 	var samples []sample
@@ -58,7 +58,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 			congested++
 		}
 		for i, result := range sample.results {
-			mutation := result.GetMutation()
+			mutation := result.Mutation
 			if mutation.GetOutcome() == pb.MutationOutcome_APPLIED {
 				applied++
 				continue

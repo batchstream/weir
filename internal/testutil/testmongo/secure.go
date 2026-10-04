@@ -58,8 +58,8 @@ var secureFixtureSequence atomic.Uint64
 
 func OpenSecure(t *testing.T) *SecureFixture {
 	t.Helper()
-	if os.Getenv("WEIR_M10_INTEGRATION") != "1" {
-		t.Fatal("secure integration requires WEIR_M10_INTEGRATION=1")
+	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
+		t.Fatal("secure integration requires WEIR_MONGO_SECURE_INTEGRATION=1")
 	}
 	startup, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -77,13 +77,13 @@ func (fixture *SecureFixture) prepareRoot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(projectDirectory, ".testdata"), 0700); err != nil {
 		t.Fatal("cannot create fixture parent")
 	}
-	fixture.root = filepath.Join(projectDirectory, ".testdata", fmt.Sprintf("mongo-m10-%d-%d", os.Getpid(), secureFixtureSequence.Add(1)))
+	fixture.root = filepath.Join(projectDirectory, ".testdata", fmt.Sprintf("mongo-secure-%d-%d", os.Getpid(), secureFixtureSequence.Add(1)))
 	if err := os.Mkdir(fixture.root, 0700); err != nil {
 		t.Fatal("cannot create unique MongoDB fixture directory")
 	}
 	fixture.owned = true
 	marker := filepath.Join(fixture.root, ".weir-owner")
-	if err := os.WriteFile(marker, []byte("weir-milestone-10 mongodb-8.0.32 loopback TLS-SCRAM\n"), 0600); err != nil {
+	if err := os.WriteFile(marker, []byte("weir-mongo-local0 mongodb-8.0.32 loopback TLS-SCRAM\n"), 0600); err != nil {
 		t.Fatal("cannot mark MongoDB fixture ownership")
 	}
 	fixture.caFile = filepath.Join(fixture.root, "ca.pem")
@@ -95,7 +95,7 @@ func (fixture *SecureFixture) prepareRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal("cannot create MongoDB fixture log")
 	}
-	fixture.DB = fmt.Sprintf("weir_m10_%d_%d", os.Getpid(), secureFixtureSequence.Load())
+	fixture.DB = fmt.Sprintf("weir_mongo_secure_%d_%d", os.Getpid(), secureFixtureSequence.Load())
 	fixture.writeOtherCA(t)
 }
 
@@ -106,7 +106,7 @@ func (fixture *SecureFixture) writeCertificates() error {
 	}
 	caTemplate := &x509.Certificate{
 		SerialNumber:          randomSerial(),
-		Subject:               pkix.Name{CommonName: "Weir M10 test CA"},
+		Subject:               pkix.Name{CommonName: "Weir MongoDB test CA"},
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		IsCA:                  true,
@@ -188,7 +188,7 @@ func (fixture *SecureFixture) writeOtherCA(t *testing.T) string {
 	}
 	template := &x509.Certificate{
 		SerialNumber:          randomSerial(),
-		Subject:               pkix.Name{CommonName: "Untrusted M10 test CA"},
+		Subject:               pkix.Name{CommonName: "Untrusted MongoDB test CA"},
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		IsCA:                  true,
@@ -271,7 +271,7 @@ func (fixture *SecureFixture) startMongo(t *testing.T) {
 		"--dbpath", dataDirectory,
 		"--bind_ip", "127.0.0.1",
 		"--port", strconv.Itoa(fixture.port),
-		"--replSet", "weir_m10",
+		"--replSet", "weir_mongo_secure",
 		"--auth",
 		"--keyFile", filepath.Join(fixture.root, "keyfile"),
 		"--tlsMode", "requireTLS",
@@ -338,7 +338,7 @@ func (fixture *SecureFixture) connect(t *testing.T, uri string) *mongo.Client {
 func (fixture *SecureFixture) initializeReplicaSet(t *testing.T, client *mongo.Client) {
 	t.Helper()
 	configuration := bson.D{
-		{Key: "_id", Value: "weir_m10"},
+		{Key: "_id", Value: "weir_mongo_secure"},
 		{
 			Key: "members",
 			Value: bson.A{bson.D{
@@ -480,7 +480,7 @@ func (fixture *SecureFixture) cleanup(t *testing.T) {
 	}
 	marker := filepath.Join(fixture.root, ".weir-owner")
 	contents, err := os.ReadFile(marker)
-	if err != nil || string(contents) != "weir-milestone-10 mongodb-8.0.32 loopback TLS-SCRAM\n" {
+	if err != nil || string(contents) != "weir-mongo-local0 mongodb-8.0.32 loopback TLS-SCRAM\n" {
 		t.Error("MongoDB fixture ownership marker changed; preserving the directory")
 		return
 	}

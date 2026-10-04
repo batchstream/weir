@@ -6,4 +6,4 @@ import "github.com/batchstream/weir-protocol/api/protocol"
 // during publication. These bounds apply to retained output, not database pages.
 const ScanBatchDocuments = 128
 const ScanBatchBytes = 4 << 20
-const ScanResultBytes = ScanBatchBytes + ScanBatchDocuments*protocol.ResultOverhead + protocol.MaxScanToken + protocol.ResultOverhead
+const ScanResultBytes = ScanBatchBytes + ScanBatchDocuments*ResultOverheadBytes + protocol.MaxScanToken + ResultOverheadBytes

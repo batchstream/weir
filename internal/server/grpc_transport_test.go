@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"github.com/batchstream/weir-protocol/api/protocol"
+	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"strings"
@@ -174,7 +175,7 @@ func TestNativeBatchDecodeLimitFailsBeforeBackendWork(t *testing.T) {
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	count := protocol.MaxBatchResponseBytes/protocol.ResultOverhead + 1
+	count := protocol.MaxBatchResponseBytes/execution.ResultOverheadBytes + 1
 	read := &pb.ReadRequest{Resource: "records/s:key"}
 	requests := make([]*pb.ReadRequest, count)
 	for i := range requests {

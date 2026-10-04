@@ -12,18 +12,18 @@ import (
 // Record is constructed only after its complete public batch passes validation.
 // Its request and decoded segments are borrowed immutably by the backend plan.
 type Record struct {
-	operation *pb.Operation
+	operation *Operation
 	store     string
 	segments  []string
 	key       string
 	bytes     int
 }
 
-func (r *Record) Operation() *pb.Operation { return r.operation }
-func (r *Record) StoreName() string        { return r.store }
-func (r *Record) Segments() []string       { return r.segments }
-func (r *Record) Key() string              { return r.key }
-func (r *Record) Bytes() int               { return r.bytes }
+func (r *Record) Operation() *Operation { return r.operation }
+func (r *Record) StoreName() string     { return r.store }
+func (r *Record) Segments() []string    { return r.segments }
+func (r *Record) Key() string           { return r.key }
+func (r *Record) Bytes() int            { return r.bytes }
 
 func NewReadRecords(request *pb.ReadBatchRequest, byteLimit int) ([]*Record, *pb.Failure) {
 	if err := protocol.ValidateReadBatchRequest(request); err != nil {
@@ -39,8 +39,7 @@ func NewReadRecords(request *pb.ReadBatchRequest, byteLimit int) ([]*Record, *pb
 	}
 	records := make([]*Record, len(request.Requests))
 	for i, read := range request.Requests {
-		variant := &pb.Operation_Read{Read: read}
-		operation := &pb.Operation{Index: uint64(i + 1), Operation: variant}
+		operation := &Operation{Index: uint64(i + 1), Read: read}
 		record, err := newRecord(request.StoreName, operation)
 		if err != nil {
 			return nil, protocol.Fail(pb.FailureCode_INTERNAL, "validated record path could not be decoded")
@@ -64,8 +63,7 @@ func NewMutationRecords(request *pb.MutateBatchRequest, byteLimit int) ([]*Recor
 	}
 	records := make([]*Record, len(request.Requests))
 	for i, mutation := range request.Requests {
-		variant := &pb.Operation_Mutate{Mutate: mutation}
-		operation := &pb.Operation{Index: uint64(i + 1), Operation: variant}
+		operation := &Operation{Index: uint64(i + 1), Mutate: mutation}
 		record, err := newRecord(request.StoreName, operation)
 		if err != nil {
 			return nil, protocol.Fail(pb.FailureCode_INTERNAL, "validated record path could not be decoded")
@@ -76,16 +74,14 @@ func NewMutationRecords(request *pb.MutateBatchRequest, byteLimit int) ([]*Recor
 }
 
 // Count the retained request, model envelope and decoded path before allocating
-// a batch. Sixteen bytes cover the internal Operation index and message wrapper.
+// a batch. Sixteen bytes cover the retained internal positional metadata.
 // The Store's pending bound and existing RPC envelope both remain effective.
 func recordBytes(store, resource string, operationBytes int) int {
-	prefixBytes := len("weir://") + len(store) + 1
-	fullResourceBytes := prefixBytes + len(resource)
-	return operationBytes + prefixBytes + 2*fullResourceBytes + 1024 + 16*(strings.Count(resource, "/")+1)
+	return operationBytes + len(store) + 2*len(resource) + 1024 + 16*(strings.Count(resource, "/")+1)
 }
 
-func newRecord(store string, operation *pb.Operation) (*Record, error) {
-	resource := protocol.Resource(operation)
+func newRecord(store string, operation *Operation) (*Record, error) {
+	resource := operation.Resource()
 	parts := make([]string, 0, strings.Count(resource, "/")+1)
 	remaining := resource
 	for {
@@ -102,7 +98,7 @@ func newRecord(store string, operation *pb.Operation) (*Record, error) {
 		}
 		remaining = rest
 	}
-	bytes := recordBytes(store, resource, proto.Size(operation))
+	bytes := recordBytes(store, resource, operation.RequestBytes())
 	record := &Record{operation: operation, store: store, segments: parts, key: resource, bytes: bytes}
 	return record, nil
 }

@@ -67,7 +67,7 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 		return nil, err
 	}
 	slots := s.slots
-	lifetime := s.limits.RouteLifetime
+	lifetime := s.limits.RequestLifetime
 	if control {
 		slots = s.control
 		lifetime = min(directory.SyncTimeout, s.limits.Stall)

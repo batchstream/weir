@@ -53,7 +53,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	events := 0
 	emit := func(plan *execution.Plan, output *execution.Output) error {
 		events++
-		if plan != work || output.Result.Index != 9 || string(output.Result.GetRead().GetDocument().Data) != source {
+		if plan != work || output.Result.Index != 9 || string(output.Result.Read.GetDocument().Data) != source {
 			t.Fatal("large read lost source or association")
 		}
 		return nil
@@ -64,7 +64,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	}
 	request.Resource = "weir://search/records/s:a"
 	if _, err := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes); err == nil {
-		t.Fatal("accepted obsolete absolute wire resource")
+		t.Fatal("accepted absolute wire resource")
 	}
 	request.Resource = "records/s:a"
 	emptyRecord := &execution.Record{}
@@ -143,7 +143,7 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			open.Resource = "records"
 			native := &pb.NativeRequest{Open: open}
 			variant := &pb.Command_Native{Native: native}
-			call := &pb.Command{Version: 1, Operation: variant}
+			call := &pb.Command{Operation: variant}
 			work, failure := adapter.PrepareCommand(1, call)
 			if failure != nil {
 				t.Fatal(failure)

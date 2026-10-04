@@ -106,7 +106,7 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	request := &pb.ReadRequest{Resource: "weir://missing/records/s:key"}
+	request := &pb.ReadRequest{Resource: "records/s:key"}
 	for i, address := range addresses {
 		connection, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
 		if err != nil {
@@ -114,8 +114,11 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 		}
 		client := pb.NewStoreServiceClient(connection)
 		requestContext := ctx
-		routedResult139, readErr := testutil.ExecuteRecord(requestContext, client, testutil.RecordCommand(request))
-		result := routedResult139.GetRead()
+		recordResult, readErr := testutil.ExecuteRecord(requestContext, client, testutil.RecordRequest("missing", request))
+		var result *pb.ReadResult
+		if recordResult != nil {
+			result = recordResult.Read
+		}
 		closeErr := connection.Close()
 		want := codes.Unavailable
 		if i == 1 {

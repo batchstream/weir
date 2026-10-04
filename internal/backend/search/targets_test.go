@@ -120,7 +120,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 	}
 	works := make([]*execution.Plan, len(cases))
 	for i, target := range cases {
-		resource := "weir://search/" + target.index + "/s:" + target.id
+		resource := target.index + "/s:" + target.id
 		works[i] = batchTestPlan(t, a, target.action, resource)
 		works[i].Operation.Index = uint64(i)
 	}
@@ -134,21 +134,21 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		}
 		if i < 2 {
 			want := fmt.Sprintf(`{"n":%d}`, 10+i*10)
-			if string(result.GetRead().GetDocument().GetData()) != want {
+			if string(result.Read.GetDocument().GetData()) != want {
 				t.Fatal("same ID read from wrong index", result)
 			}
-		} else if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
+		} else if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || result.Mutation.GetFailure() != nil {
 			t.Fatal("mixed target mutation failed", result)
 		}
 	}
 
 	var concurrent sync.WaitGroup
 	for range 16 {
-		left := batchTestPlan(t, a, "read", "weir://search/left/s:same")
-		right := batchTestPlan(t, a, "read", "weir://search/right/s:same")
+		left := batchTestPlan(t, a, "read", "left/s:same")
+		right := batchTestPlan(t, a, "read", "right/s:same")
 		concurrent.Go(func() {
 			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
-			if string(results[0].GetRead().GetDocument().GetData()) != `{"n":10}` || string(results[1].GetRead().GetDocument().GetData()) != `{"n":20}` {
+			if string(results[0].Read.GetDocument().GetData()) != `{"n":10}` || string(results[1].Read.GetDocument().GetData()) != `{"n":20}` {
 				t.Error("concurrent request changed adapter target", results)
 			}
 		})
@@ -160,14 +160,13 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 	cfg := Config{Store: "search"}
 	a := &Adapter{config: cfg}
 	for _, resource := range []string{
-		"weir://other/records", "weir://search", "weir://search/Records",
-		"weir://search/_hidden", "weir://search/a,b", "weir://search/a*",
-		"weir://search/.hidden", "weir://search/" + strings.Repeat("a", 64),
-		"weir://search/records/extra", "weir://search/records?query=x",
+		"weir://other/records", "weir://search", "Records",
+		"_hidden", "a,b", "a*",
+		".hidden", strings.Repeat("a", 64),
+		"records/extra", "records?query=x",
 	} {
 		read := &pb.ReadRequest{Resource: resource + "/s:same"}
-		variant := &pb.Operation_Read{Read: read}
-		op := &pb.Operation{Operation: variant}
+		op := &execution.Operation{Read: read}
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Error("record target accepted", resource)
 		}
@@ -186,17 +185,17 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 func TestSearchPlansRetainRequestTargets(t *testing.T) {
 	cfg := Config{Store: "search"}
 	a := &Adapter{config: cfg}
-	record := batchTestPlan(t, a, "read", "weir://search/left/s:same")
-	record.Operation.GetRead().Resource = "weir://search/right/s:same"
+	record := batchTestPlan(t, a, "read", "left/s:same")
+	record.Operation.Read.Resource = "right/s:same"
 	if record.Backend.(*plan).index != "left" {
 		t.Fatal("record target follows mutable request")
 	}
-	req := &pb.ScanRequest{Resource: "weir://search/left"}
+	req := &pb.ScanRequest{Resource: "left"}
 	scan, failure := a.prepareScan(req)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	req.Resource = "weir://search/right"
+	req.Resource = "right"
 	if scan.Backend.(*scanPlan).index != "left" {
 		t.Fatal("Scan target follows mutable request")
 	}
@@ -205,7 +204,7 @@ func TestSearchPlansRetainRequestTargets(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	open.Resource = "weir://search/right"
+	open.Resource = "right"
 	if native.Backend.(*nativePlan).index != "left" {
 		t.Fatal("Native target follows mutable request")
 	}
@@ -238,16 +237,16 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			defer server.Close()
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
-			left := batchTestPlan(t, a, action, "weir://search/left/s:same")
-			right := batchTestPlan(t, a, action, "weir://search/right/s:same")
+			left := batchTestPlan(t, a, action, "left/s:same")
+			right := batchTestPlan(t, a, action, "right/s:same")
 			works := []*execution.Plan{left, right}
 			results, _ := a.executeRecords(context.Background(), works)
 			for _, result := range results {
 				if action == "read" {
-					if result.GetRead().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+					if result.Read.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 						t.Fatal("cross-index mget became a trusted missing record", result)
 					}
-				} else if result.GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+				} else if result.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("cross-index acknowledgement became a trusted write", result)
 				}
 			}
@@ -318,12 +317,12 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 			defer server.Close()
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
-			left := batchTestPlan(t, a, "put", "weir://search/left/s:left")
-			right := batchTestPlan(t, a, "put", "weir://search/right/s:cancelled")
+			left := batchTestPlan(t, a, "put", "left/s:left")
+			right := batchTestPlan(t, a, "put", "right/s:cancelled")
 			right.Context = cancelled
 			works := []*execution.Plan{left, right}
 			if test.liveRight {
-				live := batchTestPlan(t, a, "put", "weir://search/right/s:live")
+				live := batchTestPlan(t, a, "put", "right/s:live")
 				works = append(works, live)
 			}
 			for i, work := range works {
@@ -339,7 +338,7 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 				if result.Index != uint64(i) {
 					t.Fatal("caller result position lost", results)
 				}
-				mutation := result.GetMutation()
+				mutation := result.Mutation
 				if i == 1 {
 					if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 						t.Fatal("cancelled caller lost its cancellation result", result)

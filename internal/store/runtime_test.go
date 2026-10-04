@@ -12,17 +12,17 @@ import (
 )
 
 func plan(index uint64, key string, read bool) *execution.Plan {
-	op := &pb.Operation{Index: index}
-	bytes := protocol.ResultOverhead
+	op := &execution.Operation{Index: index}
+	bytes := execution.ResultOverheadBytes
 	if read {
 		r := &pb.ReadRequest{Resource: key}
-		op.Operation = &pb.Operation_Read{Read: r}
+		op.Read = r
 		bytes += protocol.MaxDocument
 	} else {
 		e := &pb.Empty{}
 		a := &pb.MutateRequest_Delete{Delete: e}
 		m := &pb.MutateRequest{Resource: key, Action: a}
-		op.Operation = &pb.Operation_Mutate{Mutate: m}
+		op.Mutate = m
 	}
 	p := &execution.Plan{Operation: op, Key: key, Bytes: 1024, ResultBytes: bytes}
 	return p
@@ -33,7 +33,10 @@ func finish(r *Runtime, b *batch) {
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	for _, t := range b.items {
-		result := protocol.ResultError(t.plan.Operation, pb.MutationOutcome_APPLIED, nil)
+		var result *execution.Result
+		if t.plan.Operation != nil {
+			result = execution.FailedResult(t.plan.Operation, pb.MutationOutcome_APPLIED, nil)
+		}
 		r.completeLocked(t, result)
 	}
 }
@@ -118,7 +121,7 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	if overlap == nil || overlap.items[0] != read {
 		t.Fatal("independent same-key read was serialized or cancelled successor released active key")
 	}
-	if b.Result().GetMutation().Outcome != pb.MutationOutcome_NOT_STARTED {
+	if b.Result().Mutation.Outcome != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal("queued cancellation")
 	}
 	r.mu.Lock()
@@ -153,11 +156,11 @@ func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 			t.Fatal("dispatched operation moved backwards")
 		}
 		f := protocol.Fail(pb.FailureCode_CANCELLED, "lost acknowledgement")
-		result := protocol.ResultError(p.Operation, pb.MutationOutcome_UNKNOWN, f)
+		result := execution.FailedResult(p.Operation, pb.MutationOutcome_UNKNOWN, f)
 		r.completeLocked(ticket, result)
 		b.cancel()
 		r.mu.Unlock()
-		if ticket.Result().GetMutation().Outcome != pb.MutationOutcome_UNKNOWN {
+		if ticket.Result().Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("false NOT_STARTED")
 		}
 		ticket.Ack()
@@ -247,7 +250,7 @@ func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
 func TestSlowConsumerRetainedBound(t *testing.T) {
 	l := DefaultLimits()
 	l.BatchOperations = 1
-	l.ResultBytes = 2 * (protocol.MaxDocument + protocol.ResultOverhead)
+	l.ResultBytes = 2 * (protocol.MaxDocument + execution.ResultOverheadBytes)
 	r := newRuntime(nil, l)
 	s := r.NewSession()
 	ctx := context.Background()
@@ -305,7 +308,7 @@ func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := ticket.Wait(context.Background())
-	if err != nil || result == nil || result.GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+	if err != nil || result == nil || result.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("shutdown discarded write evidence", result, err)
 	}
 	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
@@ -327,9 +330,9 @@ func TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge(t *testing.T) 
 				work.Command = scanCall()
 				work.Singleton, work.Streaming = true, streaming
 				if resource == "input" {
-					work.Bytes = protocol.EntryOverhead - 1
+					work.Bytes = execution.EntryOverheadBytes - 1
 				} else {
-					work.ResultBytes = protocol.ResultOverhead - 1
+					work.ResultBytes = execution.ResultOverheadBytes - 1
 				}
 				session := runtime.NewSession()
 				defer session.Close()

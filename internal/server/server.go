@@ -17,16 +17,16 @@ import (
 )
 
 type Limits struct {
-	Connections, Sessions int
-	RouteLifetime, Stall  time.Duration
+	Connections, Sessions  int
+	RequestLifetime, Stall time.Duration
 }
 
 func DefaultLimits() Limits {
 	l := Limits{
-		Connections:   16,
-		Sessions:      4,
-		RouteLifetime: 15 * time.Minute,
-		Stall:         30 * time.Second,
+		Connections:     16,
+		Sessions:        4,
+		RequestLifetime: 15 * time.Minute,
+		Stall:           30 * time.Second,
 	}
 	return l
 }
@@ -61,7 +61,7 @@ type Server struct {
 func (l Limits) Validate() error {
 	if l.Connections < 1 || uint64(l.Connections) > (64<<30)/(256<<10) ||
 		l.Sessions < 1 || uint64(l.Sessions) > (64<<30)/(96<<20) ||
-		l.RouteLifetime <= 0 ||
+		l.RequestLifetime <= 0 ||
 		l.Stall <= 0 {
 		return status.Error(codes.InvalidArgument, "invalid transport bounds")
 	}

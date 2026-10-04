@@ -21,7 +21,7 @@ import (
 
 func scanWork(t *testing.T, a *Adapter, index string) *execution.Plan {
 	t.Helper()
-	req := &pb.ScanRequest{Resource: "weir://search/" + index}
+	req := &pb.ScanRequest{Resource: index}
 	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)
@@ -296,7 +296,7 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 	}
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
 	selector := &pb.Document{MediaType: "application/json", Data: []byte(`{"query":{"range":{"n":{"gte":1}}}}`)}
-	req := &pb.ScanRequest{Resource: "weir://search/" + b.Index, Selector: selector}
+	req := &pb.ScanRequest{Resource: b.Index, Selector: selector}
 	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)

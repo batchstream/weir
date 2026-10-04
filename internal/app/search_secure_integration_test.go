@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"strings"
@@ -86,18 +87,24 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	b := fixture.Backend
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	root := "weir://search/" + b.Index
+	root := b.Index
 	doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9007199254740993,"keep":"opaque"}`)}
 	put := &pb.MutateRequest_Put{Put: doc}
 	mutation := &pb.MutateRequest{Resource: root + "/s:" + name, Action: put}
-	routedResult98, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(mutation))
-	result := routedResult98.GetMutation()
+	recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", mutation))
+	var result *pb.MutationResult
+	if recordResult != nil {
+		result = recordResult.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("Put", result, err)
 	}
 	read := &pb.ReadRequest{Resource: mutation.Resource}
-	routedResult103, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
-	found := routedResult103.GetRead()
+	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", read))
+	var found *pb.ReadResult
+	if recordResult2 != nil {
+		found = recordResult2.Read
+	}
 	if err != nil || !bytes.Equal(found.GetDocument().GetData(), doc.Data) {
 		failure := found.GetFailure()
 		t.Fatalf(
@@ -112,39 +119,54 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	}
 	create := &pb.MutateRequest_Create{Create: doc}
 	mutation.Action = create
-	var routedResult118 *pb.Result
-	routedResult118, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(mutation))
-	result = routedResult118.GetMutation()
+	var recordResult3 *execution.Result
+	recordResult3, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", mutation))
+	result = nil
+	if recordResult3 != nil {
+		result = recordResult3.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("duplicate create", result, err)
 	}
 	empty := &pb.Empty{}
 	remove := &pb.MutateRequest_Delete{Delete: empty}
 	mutation.Action = remove
-	var routedResult125 *pb.Result
-	routedResult125, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(mutation))
-	result = routedResult125.GetMutation()
+	var recordResult4 *execution.Result
+	recordResult4, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", mutation))
+	result = nil
+	if recordResult4 != nil {
+		result = recordResult4.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("delete", result, err)
 	}
-	var routedResult129 *pb.Result
-	routedResult129, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
-	found = routedResult129.GetRead()
+	var recordResult5 *execution.Result
+	recordResult5, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", read))
+	found = nil
+	if recordResult5 != nil {
+		found = recordResult5.Read
+	}
 	if err != nil || found.GetMissing() == nil {
 		t.Fatal("missing", found, err)
 	}
 	mutation.Action = create
-	var routedResult134 *pb.Result
-	routedResult134, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(mutation))
-	result = routedResult134.GetMutation()
+	var recordResult6 *execution.Result
+	recordResult6, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", mutation))
+	result = nil
+	if recordResult6 != nil {
+		result = recordResult6.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("create", result, err)
 	}
 	replace := &pb.MutateRequest_Replace{Replace: doc}
 	mutation.Action = replace
-	var routedResult140 *pb.Result
-	routedResult140, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(mutation))
-	result = routedResult140.GetMutation()
+	var recordResult7 *execution.Result
+	recordResult7, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", mutation))
+	result = nil
+	if recordResult7 != nil {
+		result = recordResult7.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replace", result, err)
 	}
@@ -153,29 +175,35 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation.Action = action
-	var routedResult149 *pb.Result
-	routedResult149, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(mutation))
-	result = routedResult149.GetMutation()
+	var recordResult8 *execution.Result
+	recordResult8, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", mutation))
+	result = nil
+	if recordResult8 != nil {
+		result = recordResult8.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("expression", result, err)
 	}
-	recordFixture := testutil.RecordCommand(mutation)
-	batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{recordFixture.Operation.GetMutate()}}
+	recordFixture := testutil.RecordRequest("search", mutation)
+	batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{recordFixture.Operation.Mutate}}
 	reply, err := client.Mutate(ctx, batch)
 	if err != nil || len(reply.GetResults()) != 1 || reply.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("batch mutation", reply, err)
 	}
-	var routedResult184 *pb.Result
-	routedResult184, err = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
-	found = routedResult184.GetRead()
+	var recordResult9 *execution.Result
+	recordResult9, err = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", read))
+	found = nil
+	if recordResult9 != nil {
+		found = recordResult9.Read
+	}
 	if err != nil || !strings.Contains(string(found.GetDocument().GetData()), "9007199254740995") {
 		t.Fatal("expression int64", err)
 	}
 	fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
 	scanRequest := &pb.ScanRequest{Resource: root}
 	scanVariant := &pb.Command_Scan{Scan: scanRequest}
-	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
-	scan, err := testutil.OneEvents(ctx, client, scanCall)
+	scanCall := &pb.Command{Operation: scanVariant}
+	scan, err := testutil.ExecuteEvents(ctx, client, "search", scanCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +234,8 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
 	nativeCall := &pb.NativeRequest{Open: nativeOpen, Body: body}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
-	call := &pb.Command{Version: 1, Operation: nativeVariant}
-	native, err := testutil.OneEvents(ctx, client, call)
+	call := &pb.Command{Operation: nativeVariant}
+	native, err := testutil.ExecuteEvents(ctx, client, "search", call)
 	if err != nil {
 		t.Fatal(err)
 	}

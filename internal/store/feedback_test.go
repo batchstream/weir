@@ -18,7 +18,7 @@ func (a *canceledFeedbackAdapter) Execute(ctx context.Context, plans []*executio
 	<-ctx.Done()
 	for _, plan := range plans {
 		failure := protocol.ContextFailure(ctx)
-		result := protocol.ResultError(plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
+		result := execution.FailedResult(plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
 		output := &execution.Output{Result: result}
 		_ = emit(plan, output)
 	}
@@ -47,7 +47,7 @@ func TestRuntimeCanceledCallDoesNotBecomeBackendCongestion(t *testing.T) {
 	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "neutral" {
 		t.Fatal("caller cancellation reduced backend capacity", got)
 	}
-	if ticket.Result().GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+	if ticket.Result().Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("feedback changed uncertain write evidence")
 	}
 	ticket.Ack()
@@ -107,7 +107,7 @@ func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {
 	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "healthy" {
 		t.Fatal("a partially canceled batch changed configured capacity or feedback", got)
 	}
-	if tickets[0].Result().GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED || tickets[1].Result().GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+	if tickets[0].Result().Mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED || tickets[1].Result().Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("cancellation leaked into the healthy caller's mutation evidence")
 	}
 	cancel()

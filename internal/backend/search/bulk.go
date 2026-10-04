@@ -36,8 +36,8 @@ func (a *Adapter) reject(errorType string, status int) (*pb.Failure, execution.F
 	}
 }
 
-func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) ([]*pb.Result, execution.Feedback) {
-	results := make([]*pb.Result, len(works))
+func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) ([]*execution.Result, execution.Feedback) {
+	results := make([]*execution.Result, len(works))
 	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write acknowledgement invalid or incomplete")
 	// A timeout changes what we know about the reply, never whether a connected
 	// mutation might have committed. Keep causes fixed and omit native bodies.
@@ -54,12 +54,12 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write response invalid or incomplete; acknowledgement unavailable")
 	}
 	for i, work := range works {
-		results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
+		results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
 	}
 	if err == errWriteNotSent {
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")
 		for i, work := range works {
-			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 		return results, execution.Neutral
 	}
@@ -69,7 +69,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	if status != 200 {
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write HTTP status "+strconv.Itoa(status)+"; acknowledgement unavailable")
 		for i, work := range works {
-			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
+			results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_UNKNOWN, failure)
 		}
 		var envelope struct {
 			Error  *nativeError
@@ -84,7 +84,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			failure, feedback := a.reject(envelope.Error.Type, status)
 			if failure != nil {
 				for i, work := range works {
-					results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+					results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 				}
 				return results, feedback
 			}
@@ -148,7 +148,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 				opts := expressionReplyOptions{native: native, status: item.Status, raw: encoded, bulk: true}
 				mutation, signal = a.expressionReply(opts)
 			}
-			results[i] = protocol.ResultError(work.Operation, mutation.Outcome, mutation.Failure)
+			results[i] = execution.FailedResult(work.Operation, mutation.Outcome, mutation.Failure)
 			feedback = combineFeedback(feedback, signal)
 			continue
 		}
@@ -162,7 +162,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			if native.action == "create" && failure.Code == pb.FailureCode_CONFLICT {
 				failure = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record already exists")
 			}
-			results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
 		}
 		valid := false
@@ -202,7 +202,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 				feedback = execution.Neutral
 			}
 		}
-		results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_APPLIED, postWriteFailure)
+		results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_APPLIED, postWriteFailure)
 	}
 	return results, feedback
 }

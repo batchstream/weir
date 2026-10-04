@@ -80,25 +80,25 @@ func TestNativeCoalescedRPCDuplicateReadBudgetAndRetainedOwners(t *testing.T) {
 		if result.Index != uint64(position+1) {
 			t.Fatal("first caller results were reordered")
 		}
-		if document := result.GetRead().GetDocument(); document != nil {
+		if document := result.Read.GetDocument(); document != nil {
 			successes++
 			if !bytes.Equal(document.Data, raw) {
 				t.Fatal("stored document changed in aggregated response")
 			}
-		} else if result.GetRead().GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+		} else if result.Read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 			t.Fatal("unexpected per-caller budget failure", result)
 		}
 	}
 	peer := crossResults(t, tickets[1])[0]
-	expectedSuccesses := (protocol.MaxBatchResponseBytes - 31*protocol.ResultOverhead) / len(raw)
-	if successes != expectedSuccesses || successes >= len(results) || finds.Load() != 1 || peer.Index != 1 || !bytes.Equal(peer.GetRead().GetDocument().GetData(), raw) {
-		t.Fatal("first response budget poisoned peer or caused multiple native reads", successes, expectedSuccesses, finds.Load(), peer.GetRead().GetFailure())
+	expectedSuccesses := (protocol.MaxBatchResponseBytes - 31*execution.ResultOverheadBytes) / len(raw)
+	if successes != expectedSuccesses || successes >= len(results) || finds.Load() != 1 || peer.Index != 1 || !bytes.Equal(peer.Read.GetDocument().GetData(), raw) {
+		t.Fatal("first response budget poisoned peer or caused multiple native reads", successes, expectedSuccesses, finds.Load(), peer.Read.GetFailure())
 	}
 	tickets[0].Ack()
-	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != protocol.ResultOverhead+len(raw) || snapshot.WorkingBytes != 0 {
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+len(raw) || snapshot.WorkingBytes != 0 {
 		t.Fatal("first caller did not release only its own response charge", snapshot)
 	}
-	if !bytes.Equal(peer.GetRead().GetDocument().GetData(), raw) {
+	if !bytes.Equal(peer.Read.GetDocument().GetData(), raw) {
 		t.Fatal("first caller release invalidated slower peer's document")
 	}
 	tickets[1].Ack()

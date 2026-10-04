@@ -28,18 +28,18 @@ import (
 // Explicit opt-in: the supplied binary is extracted from the delivered archive;
 // the supplied image is loaded from the delivered OCI content, not rebuilt here.
 func TestPackagedArtifacts(t *testing.T) {
-	if os.Getenv("WEIR_M15_INTEGRATION") != "1" {
+	if os.Getenv("WEIR_PACKAGED_INTEGRATION") != "1" {
 		t.Skip("requires explicit owned packaged-artifact fixture")
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Fatal("this fixture qualifies Darwin arm64 + native Linux arm64 only")
 	}
-	binary, image := os.Getenv("WEIR_M15_BINARY"), os.Getenv("WEIR_M15_IMAGE")
-	source, helper := os.Getenv("WEIR_M15_SOURCE"), os.Getenv("WEIR_M15_HELPER")
+	binary, image := os.Getenv("WEIR_PACKAGED_BINARY"), os.Getenv("WEIR_PACKAGED_IMAGE")
+	source, helper := os.Getenv("WEIR_PACKAGED_SOURCE"), os.Getenv("WEIR_PACKAGED_HELPER")
 	if !filepath.IsAbs(binary) || !filepath.IsAbs(helper) || !strings.HasPrefix(image, "sha256:") || len(source) != 40 {
 		t.Fatal("explicit artifact identities required")
 	}
-	root := filepath.Join(testutil.Root(t), ".testdata", fmt.Sprintf("weir-m15-artifact-%d", os.Getpid()))
+	root := filepath.Join(testutil.Root(t), ".testdata", fmt.Sprintf("weir-packaged-artifact-%d", os.Getpid()))
 	if err := os.Mkdir(root, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestPackagedArtifacts(t *testing.T) {
 					packagedFiles(t, directory, fixture.URI)
 					containerOpts := packagedContainerOptions{owner: owner, name: container, image: image, directory: directory, helper: helper}
 					address = packagedContainer(t, containerOpts)
-					probe := packagedDocker(t, "exec", "--env", "WEIR_M15_PROBE=1", container, "/app.test", "-test.run=^TestPackagedImageProbe$", "-test.v", "-test.timeout=8s")
+					probe := packagedDocker(t, "exec", "--env", "WEIR_PACKAGED_PROBE=1", container, "/app.test", "-test.run=^TestPackagedImageProbe$", "-test.v", "-test.timeout=8s")
 					if !strings.Contains(probe, "--- PASS: TestPackagedImageProbe") {
 						t.Fatal(probe)
 					}
@@ -143,7 +143,7 @@ func TestPackagedArtifacts(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					raw = []byte(strings.ReplaceAll(string(raw), "host.docker.internal", "m15-wrong"))
+					raw = []byte(strings.ReplaceAll(string(raw), "host.docker.internal", "packaged-wrong"))
 					if err := os.WriteFile(filename, raw, 0644); err != nil {
 						t.Fatal(err)
 					}
@@ -190,10 +190,13 @@ func TestPackagedArtifacts(t *testing.T) {
 		client := endpointProcessClient(t, address)
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
-		request := budgetPut("weir://records/"+fixture.DB+"/records", "lost")
+		request := budgetPut(fixture.DB+"/records", "lost")
 		proxy.DropRemaining.Store(1)
-		routedResult196, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
-		result := routedResult196.GetMutation()
+		recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
+		var result *pb.MutationResult
+		if recordResult != nil {
+			result = recordResult.Mutation
+		}
 		if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("dropped acknowledged reply must be UNKNOWN", result, err)
 		}
@@ -317,7 +320,7 @@ func packagedContainer(t *testing.T, opts packagedContainerOptions) string {
 	})
 	args := []string{"create", "--name", opts.name, "--label", "weir.owner=" + opts.owner, "--platform=linux/arm64",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--memory=512m", "--memory-swap=512m", "--cpus=2", "--pids-limit=96",
-		"--add-host=m15-wrong:host-gateway", "--publish", "127.0.0.1::7447", "--mount", "type=bind,src=" + opts.directory + ",dst=/fixture,readonly",
+		"--add-host=packaged-wrong:host-gateway", "--publish", "127.0.0.1::7447", "--mount", "type=bind,src=" + opts.directory + ",dst=/fixture,readonly",
 		"--mount", "type=bind,src=" + opts.helper + ",dst=/app.test,readonly", opts.image, "serve", "--config", "/fixture/node.yaml", "--routes", "/fixture/node-routing.yaml"}
 	packagedDocker(t, args...)
 	packagedDocker(t, "start", opts.name)
@@ -354,27 +357,31 @@ func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	request := budgetPut("weir://records/"+fixture.DB+"/records", "artifact")
+	request := budgetPut(fixture.DB+"/records", "artifact")
 	for mode := 0; mode < 3; mode++ {
-		if !budgetLoadCall(ctx, client, request, mode) {
+		success := budgetLoadCall(ctx, client, testutil.RecordRequest("records", request), mode)
+		if !success {
 			t.Fatal("packaged Read/Mutate/Bulk", mode)
 		}
 	}
 	read := &pb.ReadRequest{Resource: request.Resource}
-	routedResult363, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
-	result := routedResult363.GetRead()
+	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read))
+	var result *pb.ReadResult
+	if recordResult2 != nil {
+		result = recordResult2.Read
+	}
 	if err != nil || result.GetDocument() == nil {
 		t.Fatal("packaged readback", err)
 	}
-	invalid := &pb.MutateRequest{Resource: "weir://missing/db/records/s:artifact", Action: request.Action}
-	response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(invalid))
+	invalid := &pb.MutateRequest{Resource: "db/records/s:artifact", Action: request.Action}
+	response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", invalid))
 	if status.Code(err) != codes.Unavailable || response != nil {
 		t.Fatal("unhosted Store request was not rejected", response, err)
 	}
 	cancelled, stop := context.WithCancel(ctx)
-	cancelRequest := budgetPut("weir://records/"+fixture.DB+"/records", "cancelled-artifact")
-	fixtureRequest := testutil.RecordCommand(cancelRequest)
-	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.GetMutate()}}
+	cancelRequest := budgetPut(fixture.DB+"/records", "cancelled-artifact")
+	fixtureRequest := testutil.RecordRequest("records", cancelRequest)
+	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
 	stop()
 	cancelResponse, err := client.Mutate(cancelled, batch)
 	if status.Code(err) != codes.Canceled || cancelResponse != nil {
@@ -395,7 +402,7 @@ func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 // Runs only via docker exec, as an independent bind-mounted helper. The image
 // still contains only /weir and the pinned distroless runtime contents.
 func TestPackagedImageProbe(t *testing.T) {
-	if os.Getenv("WEIR_M15_PROBE") != "1" {
+	if os.Getenv("WEIR_PACKAGED_PROBE") != "1" {
 		t.Skip("owned image probe only")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" || os.Geteuid() != 65532 {
@@ -414,7 +421,7 @@ func TestPackagedImageProbe(t *testing.T) {
 	if err != nil || !strings.HasPrefix(string(cmd), "/weir\x00serve\x00--config\x00") {
 		t.Fatal("PID1 is not exec Weir")
 	}
-	if err := os.WriteFile("/weir-m15-readonly-check", []byte("fixture"), 0600); err == nil {
+	if err := os.WriteFile("/weir-packaged-readonly-check", []byte("fixture"), 0600); err == nil {
 		t.Fatal("root filesystem writable")
 	}
 	limit, err := os.ReadFile("/sys/fs/cgroup/memory.max")

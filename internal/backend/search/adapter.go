@@ -264,9 +264,9 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		Key:         record.Key(),
 		Backend:     native,
 		Bytes:       record.Bytes(),
-		ResultBytes: protocol.ResultOverhead,
+		ResultBytes: execution.ResultOverheadBytes,
 	}
-	if read := op.GetRead(); read != nil {
+	if read := op.Read; read != nil {
 		if read.AdapterOptions != nil || read.ReadMediaType != "" && read.ReadMediaType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
@@ -274,7 +274,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		// Reserve bounded source scratch for the batched pre-read.
 		work.ResultBytes += a.maxReadSize()
 	} else {
-		mutation := op.GetMutate()
+		mutation := op.Mutate
 		if mutation.AdapterOptions != nil {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "adapter options unsupported")
 		}
@@ -349,7 +349,7 @@ type getReply struct {
 	Status int             `json:"status"`
 }
 
-func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.Result {
+func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *execution.Result {
 	var read *pb.ReadResult
 	switch {
 	case failure != nil:
@@ -362,7 +362,6 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 		document := &pb.Document{MediaType: "application/json", Data: reply.Source}
 		read = protocol.ReadDocument(document)
 	}
-	variant := &pb.Result_Read{Read: read}
-	result := &pb.Result{Index: work.Operation.Index, Result: variant}
+	result := &execution.Result{Index: work.Operation.Index, Read: read}
 	return result
 }

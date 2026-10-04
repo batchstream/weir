@@ -30,8 +30,8 @@ func DefaultLimits() Limits {
 	return limits
 }
 func (l Limits) Validate() error {
-	if l.PendingBytes < protocol.MaxFrame ||
-		l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
+	if l.PendingBytes < protocol.MaxExecuteRequestBytes ||
+		l.ResultBytes < protocol.MaxDocument+execution.ResultOverheadBytes ||
 		l.WorkingBytes < 24<<20 ||
 		l.Concurrency < 1 || uint64(l.Concurrency) > (64<<30)/(2<<20) || l.BatchOperations < 1 ||
 		l.BatchBytes < protocol.MaxDocument+4096 || l.BatchBytes > 32<<20 ||
@@ -87,7 +87,7 @@ type Ticket struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	plan                 *execution.Plan
-	result               *pb.Result
+	result               *execution.Result
 	ready                chan struct{}
 	sequence             string
 	queuedAt             time.Time
@@ -95,7 +95,7 @@ type Ticket struct {
 	abandoned, acked     bool
 	stopWatch            func() bool
 	bulk                 *PreparedBatch
-	results              []*pb.Result
+	results              []*execution.Result
 	resultCharge         int
 }
 type batch struct {
@@ -166,7 +166,7 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if plan != nil && (plan.CleanupRequired || plan.Streaming) && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes < protocol.EntryOverhead || plan.ResultBytes < protocol.ResultOverhead || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
+	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
 	}
 	if plan.Bytes > r.limits.PendingBytes-r.pendingBytes || plan.ResultBytes > r.limits.ResultBytes-r.resultBytes {
@@ -200,7 +200,7 @@ func (r *Runtime) signal() {
 	}
 }
 func (r *Runtime) notifyLocked() { close(r.changed); r.changed = make(chan struct{}); r.signal() }
-func (t *Ticket) Wait(ctx context.Context) (*pb.Result, error) {
+func (t *Ticket) Wait(ctx context.Context) (*execution.Result, error) {
 	select {
 	case <-t.ready:
 		r := t.runtime
@@ -213,7 +213,7 @@ func (t *Ticket) Wait(ctx context.Context) (*pb.Result, error) {
 		return nil, ctx.Err()
 	}
 }
-func (t *Ticket) Result() *pb.Result {
+func (t *Ticket) Result() *execution.Result {
 	<-t.ready
 	r := t.runtime
 	r.mu.Lock()
@@ -297,7 +297,7 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	t.result = nil
 	r.notifyLocked()
 }
-func (r *Runtime) completeLocked(t *Ticket, result *pb.Result) {
+func (r *Runtime) completeLocked(t *Ticket, result *execution.Result) {
 	r.terminalLocked(t, result)
 	t.state = 2
 	t.result = result
@@ -325,9 +325,9 @@ func (r *Runtime) cancelQueuedLocked() {
 				r.completeBatchLocked(t, failure)
 				continue
 			}
-			var result *pb.Result
+			var result *execution.Result
 			if t.plan.Operation != nil {
-				result = protocol.ResultError(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, failure)
+				result = execution.FailedResult(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, failure)
 			}
 			if t.plan.CleanupRequired {
 				t.state = 3
@@ -467,7 +467,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
-			r.metrics.queue.WithLabelValues("route").Observe(now.Sub(t.queuedAt).Seconds())
+			r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(t.queuedAt).Seconds())
 			t.state = 1
 			if t.sequence != "" {
 				r.keys[t.sequence] = t
@@ -639,11 +639,11 @@ func (r *Runtime) execute(b *batch) {
 		events[ticket] = append(events[ticket], event)
 		return nil
 	}
-	r.metrics.executions.WithLabelValues("route").Inc()
+	r.metrics.executions.WithLabelValues("execution").Inc()
 	r.metrics.batch.Observe(float64(len(plans)))
 	started := time.Now()
 	feedback := r.adapter.Execute(b.ctx, plans, emit)
-	r.metrics.duration.WithLabelValues("route").Observe(time.Since(started).Seconds())
+	r.metrics.duration.WithLabelValues("execution").Observe(time.Since(started).Seconds())
 	interested := false
 	for _, ticket := range b.items {
 		if ticket.ctx.Err() == nil {
@@ -670,7 +670,7 @@ func (r *Runtime) execute(b *batch) {
 		result := ticket.result
 		if result == nil && ticket.plan.Operation != nil {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no result")
-			result = protocol.ResultError(ticket.plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
+			result = execution.FailedResult(ticket.plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
 
 		}
 		if ticket.plan.Continue || ticket.plan.CleanupRequired {

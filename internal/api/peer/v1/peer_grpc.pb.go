@@ -26,9 +26,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// PeerDiscoveryService is internal node-to-node control traffic. It contains no
-// public business DTOs and never carries a business request or response stream.
+// PeerDiscoveryService synchronizes Store ownership between equal Weir nodes.
+// It carries public endpoint advertisements and never carries business payloads
+// or backend credentials. Clients use the separate weir.v1.StoreService.
 type PeerDiscoveryServiceClient interface {
+	// SyncDirectory merges a bounded snapshot and returns the receiver's current
+	// snapshot. Every announcement retains its origin's revision and lease.
 	SyncDirectory(ctx context.Context, in *SyncDirectoryRequest, opts ...grpc.CallOption) (*SyncDirectoryResponse, error)
 }
 
@@ -55,9 +58,12 @@ func (c *peerDiscoveryServiceClient) SyncDirectory(ctx context.Context, in *Sync
 // All implementations must embed UnimplementedPeerDiscoveryServiceServer
 // for forward compatibility.
 //
-// PeerDiscoveryService is internal node-to-node control traffic. It contains no
-// public business DTOs and never carries a business request or response stream.
+// PeerDiscoveryService synchronizes Store ownership between equal Weir nodes.
+// It carries public endpoint advertisements and never carries business payloads
+// or backend credentials. Clients use the separate weir.v1.StoreService.
 type PeerDiscoveryServiceServer interface {
+	// SyncDirectory merges a bounded snapshot and returns the receiver's current
+	// snapshot. Every announcement retains its origin's revision and lease.
 	SyncDirectory(context.Context, *SyncDirectoryRequest) (*SyncDirectoryResponse, error)
 	mustEmbedUnimplementedPeerDiscoveryServiceServer()
 }

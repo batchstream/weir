@@ -16,7 +16,6 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
-	"google.golang.org/protobuf/proto"
 )
 
 type sdkIngressReadAdapter struct{}
@@ -27,19 +26,18 @@ func (a *sdkIngressReadAdapter) PrepareCommand(uint64, *pb.Command) (*execution.
 
 func (a *sdkIngressReadAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
 	operation := record.Operation()
-	request := operation.GetRead()
+	request := operation.Read
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	}
-	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: proto.Size(operation) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: protocol.ResultOverhead}
+	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: operation.RequestBytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: execution.ResultOverheadBytes}
 	return plan, nil
 }
 
 func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
 	for _, plan := range plans {
 		read := protocol.Missing()
-		variant := &pb.Result_Read{Read: read}
-		result := &pb.Result{Index: plan.ID, Result: variant}
+		result := &execution.Result{Index: plan.ID, Read: read}
 		output := &execution.Output{Result: result}
 		if err := emit(plan, output); err != nil {
 			return execution.Neutral
@@ -182,7 +180,7 @@ func sdkIngressRead(t *testing.T, client *weirclient.Client, storeName string) {
 		t.Fatalf("Store %s batch read failed across directory refresh: results=%v error=%v", storeName, results, err)
 	}
 	for i, result := range results {
-		if !result.GetMissing() {
+		if result == nil || !result.Missing {
 			t.Fatalf("Store %s batch item %d failed across directory refresh: result=%v", storeName, i, result)
 		}
 	}

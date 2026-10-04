@@ -31,19 +31,17 @@ func TestJSONBoundsAndExactNumbers(t *testing.T) {
 func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	cfg := Config{Store: "search"}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
-	for _, resource := range []string{"weir://other/records/s:a", "weir://search/records/i:1", "weir://search/records/s:", "weir://search/Records/s:a", "weir://search/records/s:a?routing=x"} {
+	for _, resource := range []string{"weir://other/records/s:a", "records/i:1", "records/s:", "Records/s:a", "records/s:a?routing=x"} {
 		read := &pb.ReadRequest{Resource: resource}
-		variant := &pb.Operation_Read{Read: read}
-		op := &pb.Operation{Operation: variant}
+		op := &execution.Operation{Read: read}
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Fatal("unsupported URI accepted", resource)
 		}
 	}
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9223372036854775807}`)}
 	action := &pb.MutateRequest_Put{Put: document}
-	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	op := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
+	op := &execution.Operation{Mutate: mutation}
 	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
@@ -105,16 +103,15 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
-	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	op := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
+	op := &execution.Operation{Mutate: mutation}
 	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	for _, raw := range []string{`{}`, `{"errors":false,"took":0,"items":[]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"a","status":404}}]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"other","status":200}}]}`} {
 		results, _ := a.bulkResults([]*execution.Plan{work}, 200, []byte(raw), nil)
-		if results[0].GetMutation().Outcome != pb.MutationOutcome_UNKNOWN {
+		if results[0].Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("invented acknowledgement", raw)
 		}
 	}
@@ -133,14 +130,13 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	}
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
-	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:a", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	op := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
+	op := &execution.Operation{Mutate: mutation}
 	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{Operation: op, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)
 	results, _ := a.bulkResults([]*execution.Plan{work}, 200, raw, nil)
-	if results[0].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+	if results[0].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[0].Mutation.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("positive primary acknowledgement discarded", results)
 	}
 }

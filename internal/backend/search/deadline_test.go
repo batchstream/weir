@@ -125,7 +125,7 @@ func TestConfiguredBackendDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testi
 				t.Fatal(failure)
 			}
 			results, err := ticket.WaitBatch(caller)
-			if err != nil || len(results) != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutation().GetFailure() != nil {
+			if err != nil || len(results) != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || results[0].Mutation.GetFailure() != nil {
 				t.Fatal("legal acknowledgement was cut off by a second deadline", err, results)
 			}
 			if elapsed := time.Since(started); elapsed < 2*time.Second || elapsed >= 4*time.Second || backend.writes.Load() != 1 {
@@ -153,7 +153,7 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 			if err != nil || len(results) != 1 {
 				t.Fatal(err, results)
 			}
-			mutation := results[0].GetMutation()
+			mutation := results[0].Mutation
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || mutation.GetFailure().GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || backend.writes.Load() != 1 {
 				t.Fatal("deadline lost the sent-write uncertainty or cause", mutation, backend.writes.Load())
 			}
@@ -185,7 +185,7 @@ func TestBackendDeadlineIsCumulativeAcrossQualificationReadAndWrite(t *testing.T
 	if err != nil || len(results) != 1 {
 		t.Fatal(err, results)
 	}
-	mutation := results[0].GetMutation()
+	mutation := results[0].Mutation
 	if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || backend.writes.Load() != 1 || time.Since(started) > 500*time.Millisecond {
 		t.Fatal("a later backend stage received a fresh deadline", mutation, backend.writes.Load(), time.Since(started))
 	}
@@ -223,7 +223,7 @@ func TestBulkUnknownRetainsSanitizedFailureCause(t *testing.T) {
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
 			results, _ := adapter.bulkResults(works, test.status, []byte(test.raw), test.err)
-			mutation := results[0].GetMutation()
+			mutation := results[0].Mutation
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != test.code || mutation.GetFailure().GetMessage() != test.message {
 				t.Fatal("uncertainty or sanitized cause changed", mutation)
 			}

@@ -117,10 +117,10 @@ func TestRealSearchBackendDeadlineAcknowledgements(t *testing.T) {
 				t.Fatal(failure)
 			}
 			results, err := ticket.WaitBatch(caller)
-			if err != nil || len(results) != 1 || results[0].GetMutation().GetOutcome() != test.outcome {
+			if err != nil || len(results) != 1 || results[0].Mutation.GetOutcome() != test.outcome {
 				t.Fatal("real acknowledgement certainty changed", err, results)
 			}
-			failure = results[0].GetMutation().GetFailure()
+			failure = results[0].Mutation.GetFailure()
 			elapsed := time.Since(started)
 			if test.outcome == pb.MutationOutcome_APPLIED {
 				if failure != nil || elapsed < 2*time.Second || elapsed >= limits.BackendTimeout {

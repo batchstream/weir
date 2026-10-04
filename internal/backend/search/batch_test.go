@@ -20,10 +20,10 @@ const testIndexReply = `{"records":{"settings":{"index.uuid":"test","index.numbe
 
 func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	op := &pb.Operation{}
+	op := &execution.Operation{}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
-		op.Operation = &pb.Operation_Read{Read: read}
+		op.Read = read
 	} else {
 		document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":2}`)}
 		mutation := &pb.MutateRequest{Resource: resource}
@@ -48,7 +48,7 @@ func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution
 			t.Fatal(action)
 		}
 		if action != "expression" {
-			op.Operation = &pb.Operation_Mutate{Mutate: mutation}
+			op.Mutate = mutation
 		}
 	}
 	work, failure := prepareTestRecord(a, op)
@@ -99,10 +99,10 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	ids := []string{"read", "missing", "replace", "expression", "program", "put", "create", "delete"}
 	works := make([]*execution.Plan, len(actions))
 	for i, action := range actions {
-		works[i] = batchTestPlan(t, a, action, "weir://search/records/s:"+ids[i])
+		works[i] = batchTestPlan(t, a, action, "records/s:"+ids[i])
 		works[i].Operation.Index = uint64(100 + i)
 		if action == "replace" || action == "program" {
-			if works[i].ResultBytes < protocol.MaxDocument+protocol.ResultOverhead {
+			if works[i].ResultBytes < protocol.MaxDocument+execution.ResultOverheadBytes {
 				t.Fatal("batched pre-read scratch not reserved")
 			}
 		}
@@ -111,14 +111,14 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	if feedback != execution.Healthy || len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {
 		t.Fatalf("batch counts/results: feedback=%v qualification=%d reads=%d writes=%d results=%v", feedback, qualifications.Load(), reads.Load(), writes.Load(), results)
 	}
-	if string(results[0].GetRead().GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].GetRead().GetMissing() == nil {
+	if string(results[0].Read.GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].Read.GetMissing() == nil {
 		t.Fatal("read source/missing evidence", results[:2])
 	}
 	for i, result := range results {
 		if result.Index != uint64(100+i) {
 			t.Fatal("caller index correspondence", result)
 		}
-		if i >= 2 && (result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil) {
+		if i >= 2 && (result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || result.Mutation.GetFailure() != nil) {
 			t.Fatal("mutation not applied", result)
 		}
 	}
@@ -153,12 +153,12 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 			defer server.Close()
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
-			works := []*execution.Plan{batchTestPlan(t, a, "read", "weir://search/records/s:first"), batchTestPlan(t, a, "read", "weir://search/records/s:second")}
+			works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:first"), batchTestPlan(t, a, "read", "records/s:second")}
 			results, signal := a.executeRecords(context.Background(), works)
-			if signal != execution.Neutral || len(results) != 2 || results[1].GetRead().GetFailure() == nil {
+			if signal != execution.Neutral || len(results) != 2 || results[1].Read.GetFailure() == nil {
 				t.Fatal("incomplete/error evidence", results, signal)
 			}
-			if (results[0].GetRead().GetDocument() != nil) != (mode == "item_error") {
+			if (results[0].Read.GetDocument() != nil) != (mode == "item_error") {
 				t.Fatal("positional evidence or error isolation", results)
 			}
 		})
@@ -210,7 +210,7 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			defer server.Close()
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
-			works := []*execution.Plan{batchTestPlan(t, a, "program", "weir://search/records/s:program"), batchTestPlan(t, a, "put", "weir://search/records/s:put")}
+			works := []*execution.Plan{batchTestPlan(t, a, "program", "records/s:program"), batchTestPlan(t, a, "put", "records/s:put")}
 			results, signal := a.executeRecords(context.Background(), works)
 			wantCalls, wantOutcome := int32(2), pb.MutationOutcome_APPLIED
 			if mode == "unknown" {
@@ -226,11 +226,11 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 				expected := wantOutcome
 				if mode == "exhausted" && i == 0 {
 					expected = pb.MutationOutcome_NOT_APPLIED
-					if result.GetMutation().GetFailure().GetCode() != pb.FailureCode_CONFLICT {
+					if result.Mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 						t.Fatal("retry limit did not report confirmed conflicts", result)
 					}
 				}
-				if result.GetMutation().GetOutcome() != expected {
+				if result.Mutation.GetOutcome() != expected {
 					t.Fatal(result)
 				}
 			}
@@ -262,11 +262,11 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	defer server.Close()
 	cfg := Config{Store: "search", URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
-	replace := batchTestPlan(t, a, "replace", "weir://search/records/s:replace")
+	replace := batchTestPlan(t, a, "replace", "records/s:replace")
 	replace.Context = caller
-	put := batchTestPlan(t, a, "put", "weir://search/records/s:put")
+	put := batchTestPlan(t, a, "put", "records/s:put")
 	results, _ := a.executeRecords(context.Background(), []*execution.Plan{replace, put})
-	if writes.Load() != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+	if writes.Load() != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].Mutation.GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller isolation", results, writes.Load())
 	}
 }

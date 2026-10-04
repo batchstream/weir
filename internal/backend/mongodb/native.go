@@ -21,10 +21,10 @@ const NativeCommandLimit = 4 << 20
 const NativeResponseLimit = 4 << 20
 
 func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
+	if f := protocol.ValidateNative(open); f != nil {
 		return nil, f
 	}
-	_, parts, _ := protocol.ParseResource(open.Resource)
+	parts, _ := protocol.ParseRelativeResource(open.Resource)
 	if len(parts) != 2 || !validNamespace(parts) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
@@ -36,8 +36,8 @@ func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 		Backend:      target,
 		Singleton:    true,
 		Key:          open.Resource,
-		Bytes:        proto.Size(open) + protocol.EntryOverhead,
-		ResultBytes:  protocol.NativeChunk + protocol.ResultOverhead,
+		Bytes:        proto.Size(open) + execution.EntryOverheadBytes,
+		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
 		WorkingBytes: scanPageBudget,
 	}
 	return p, nil

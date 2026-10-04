@@ -28,8 +28,7 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "records/s:id"}
-		variant := &pb.Operation_Read{Read: request}
-		call := &pb.Operation{Index: 1, Operation: variant}
+		call := &execution.Operation{Index: 1, Read: request}
 		work, failure := prepareTestRecord(adapter, call)
 		if failure != nil {
 			t.Fatal(failure)
@@ -37,7 +36,7 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 		if limit == 0 {
 			limit = 16 << 10
 		}
-		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes != 3*batchBodyLimit || work.WorkingBytes < 3*metadataLimit {
+		if work.ResultBytes != limit+execution.ResultOverheadBytes || work.WorkingBytes != 3*batchBodyLimit || work.WorkingBytes < 3*metadataLimit {
 			t.Fatal("read declaration was not reflected in resource bounds", limit, work.ResultBytes, work.WorkingBytes)
 		}
 	}
@@ -76,12 +75,12 @@ func TestSearchSmallReadProfileBatches128Records(t *testing.T) {
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	plans := make([]*execution.Plan, 0, 128)
 	for i := range 128 {
-		work := batchTestPlan(t, adapter, "read", fmt.Sprintf("weir://search/records/s:%d", i))
+		work := batchTestPlan(t, adapter, "read", fmt.Sprintf("records/s:%d", i))
 		plans = append(plans, work)
 	}
 	results, signal := adapter.executeRecords(context.Background(), plans)
 	for _, result := range results {
-		if result.GetRead().GetDocument() == nil {
+		if result.Read.GetDocument() == nil {
 			t.Fatal("small record failed", result)
 		}
 	}
@@ -124,22 +123,22 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			defer server.Close()
 			config := Config{Store: "search", URL: server.URL, MaxReadSize: tc.limit}
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
-			read := batchTestPlan(t, adapter, "read", "weir://search/records/s:read")
+			read := batchTestPlan(t, adapter, "read", "records/s:read")
 			writeSource := []byte(`{"pad":"` + strings.Repeat("x", 2048) + `"}`)
 			document := &pb.Document{MediaType: "application/json", Data: writeSource}
-			mutation := &pb.MutateRequest{Resource: "weir://search/records/s:write", Action: &pb.MutateRequest_Put{Put: document}}
-			operation := &pb.Operation{Operation: &pb.Operation_Mutate{Mutate: mutation}}
+			mutation := &pb.MutateRequest{Resource: "records/s:write", Action: &pb.MutateRequest_Put{Put: document}}
+			operation := &execution.Operation{Mutate: mutation}
 			write, failure := prepareTestRecord(adapter, operation)
 			if failure != nil {
 				t.Fatal("read profile affected mutation admission", failure)
 			}
 			works := []*execution.Plan{read, write}
 			results, _ := adapter.executeRecords(context.Background(), works)
-			result := results[0].GetRead()
+			result := results[0].Read
 			if size <= limit && len(result.GetDocument().Data) != size || size > limit && result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal("read size boundary was not enforced", size, result)
 			}
-			if writes.Load() != 1 || results[1].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutation().Failure != nil {
+			if writes.Load() != 1 || results[1].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[1].Mutation.Failure != nil {
 				t.Fatal("acknowledged write was affected by a read limit", results[1], writes.Load())
 			}
 		})

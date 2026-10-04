@@ -15,7 +15,7 @@ const DefaultMaxReadSize = 16 << 10
 type Plan struct {
 	ID                                   uint64
 	Command                              *pb.Command
-	Operation                            *pb.Operation
+	Operation                            *Operation
 	Key, BatchKey                        string
 	Bytes, ResultBytes, WorkingBytes     int
 	Continue, CleanupRequired, Streaming bool
@@ -40,7 +40,7 @@ const (
 // Emit borrows an event until it returns. Callers must not mutate its contents.
 // One caller's canceled emission does not cancel other members of a shared batch.
 type Output struct {
-	Result *pb.Result
+	Result *Result
 	Event  *pb.Event
 }
 

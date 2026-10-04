@@ -11,7 +11,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -211,25 +210,6 @@ func TestIntranetListenerConfiguration(t *testing.T) {
 	}
 }
 
-func TestRemovedAuthenticationAndForwardingFieldsAreUnknown(t *testing.T) {
-	cfg := emptyConfig(t)
-	basic, err := yaml.Marshal(cfg.Basic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, field := range []string{"identity", "allow", "lua_worker", "forwarding"} {
-		input := field + ": unknown\n" + string(basic)
-		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
-			t.Fatal("legacy field accepted", field)
-		}
-	}
-	for _, input := range []string{"services: []\nroutes: []\n", "stores:\n  - name: records\n    remote:\n      endpoints: [peer:7447]\n"} {
-		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-			t.Fatal("manual remote routing accepted")
-		}
-	}
-}
-
 func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
 	cfg := emptyConfig(t)
 	cfg.Basic.Listeners.Peer = cfg.Basic.Listeners.Application
@@ -247,7 +227,7 @@ func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	request := &pb.ReadRequest{Resource: "weir://missing/records/s:key"}
+	request := &pb.ReadRequest{Resource: "records/s:key"}
 	for i, address := range addresses {
 		conn, err := grpc.NewClient("passthrough:///"+address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry())
 		if err != nil {
@@ -255,7 +235,7 @@ func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
 		}
 		defer conn.Close()
 		client := pb.NewStoreServiceClient(conn)
-		result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
+		result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("missing", request))
 		want := codes.Unavailable
 		if i == 1 {
 			want = codes.Unimplemented

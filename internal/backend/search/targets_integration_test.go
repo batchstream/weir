@@ -48,7 +48,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 			t.Fatal("mixed target result position", result)
 		}
 		want := fmt.Sprintf(`{"n":%d}`, 10+i*10)
-		if string(result.GetRead().GetDocument().GetData()) != want {
+		if string(result.Read.GetDocument().GetData()) != want {
 			t.Fatal("same ID crossed indexes during pre-read", result)
 		}
 	}
@@ -83,7 +83,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		for i, result := range results {
 			feedback := batchFeedback
 			for attempt := 1; ; attempt++ {
-				mutation := result.GetMutation()
+				mutation := result.Mutation
 				if mutation.GetOutcome() == pb.MutationOutcome_APPLIED && mutation.GetFailure() == nil {
 					break
 				}
@@ -100,7 +100,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				t.Logf("target=%s action=%s attempt=%d confirmed not applied; submitting one item after capacity rejection", indexes[i], works[i].Backend.(*plan).action, attempt)
 				time.Sleep(50 * time.Millisecond)
 				single := []*execution.Plan{works[i]}
-				var replies []*pb.Result
+				var replies []*execution.Result
 				replies, feedback = a.executeRecords(context.Background(), single)
 				if len(replies) != 1 || replies[0].Index != works[i].Operation.Index {
 					t.Fatal("single target mutation result position", actions, replies)
@@ -116,7 +116,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		right := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 		concurrent.Go(func() {
 			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
-			if string(results[0].GetRead().GetDocument().GetData()) != `{"n":2}` || string(results[1].GetRead().GetDocument().GetData()) != `{"n":3}` {
+			if string(results[0].Read.GetDocument().GetData()) != `{"n":2}` || string(results[1].Read.GetDocument().GetData()) != `{"n":3}` {
 				t.Error("same service concurrent index isolation failed", results)
 			}
 		})

@@ -75,13 +75,13 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	client := pb.NewStoreServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	read := &pb.ReadRequest{Resource: "weir://records/db/records/s:missing"}
-	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read)) // observed failed dial, no synthetic backend work
+	read := &pb.ReadRequest{Resource: "db/records/s:missing"}
+	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read)) // observed failed dial, no synthetic backend work
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("unknown Store changed readiness")
 	}
 	n.admission.SetOverloaded(true)
-	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
+	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("overload changed readiness")
 	}
@@ -118,7 +118,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
+	_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read))
 	if health(t, n, "/readyz") != 200 {
 		t.Fatal("session capacity changed readiness")
 	}
@@ -167,8 +167,8 @@ func TestDiagnosticsInputCardinalityAndNoSecrets(t *testing.T) {
 		nonce := fmt.Sprintf("%x", random.Uint64())
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, "weir-request-id", "secret-request-"+nonce)
-		req := &pb.ReadRequest{Resource: "weir://unknown" + nonce + "/private/s:document-secret"}
-		_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(req))
+		req := &pb.ReadRequest{Resource: "private/s:document-secret"}
+		_, _ = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("unknown"+nonce, req))
 		var output pb.ReadResult
 		_ = conn.Invoke(ctx, "/unknown"+nonce+"/Method", req, &output)
 		cancel()

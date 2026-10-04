@@ -44,7 +44,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	events := 0
 	emit := func(plan *execution.Plan, output *execution.Output) error {
 		events++
-		if plan != work || output.Result.Index != 9 || len(output.Result.GetRead().GetDocument().Data) != protocol.MaxDocument {
+		if plan != work || output.Result.Index != 9 || len(output.Result.Read.GetDocument().Data) != protocol.MaxDocument {
 			t.Fatal("large read/result framing failed", output.Result)
 		}
 		return nil
@@ -55,7 +55,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	}
 	request.Resource = "weir://mongo/db/records/s:a"
 	if _, err := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes); err == nil {
-		t.Fatal("accepted obsolete absolute wire resource")
+		t.Fatal("accepted absolute wire resource")
 	}
 	request.Resource = "db/records/s:a"
 	emptyRecord := &execution.Record{}
@@ -98,7 +98,7 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
 	native := &pb.NativeRequest{Open: open, Body: raw}
 	variant := &pb.Command_Native{Native: native}
-	call := &pb.Command{Version: 1, Operation: variant}
+	call := &pb.Command{Operation: variant}
 	work, failure := adapter.PrepareCommand(1, call)
 	if failure != nil {
 		t.Fatal(failure)

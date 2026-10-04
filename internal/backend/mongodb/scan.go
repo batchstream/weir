@@ -43,10 +43,10 @@ type scanCheckpoint struct {
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateScan(req, a.config.Store); f != nil {
+	if f := protocol.ValidateScan(req); f != nil {
 		return nil, f
 	}
-	_, parts, _ := protocol.ParseResource(req.Resource)
+	parts, _ := protocol.ParseRelativeResource(req.Resource)
 	if len(parts) != 2 || !validNamespace(parts) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Scan target")
 	}
@@ -54,7 +54,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native BSON")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, "mongodb")}
+	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, "mongodb")}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
@@ -115,7 +115,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	p := &execution.Plan{
 		Singleton:    true,
 		Key:          req.Resource,
-		Bytes:        proto.Size(req) + protocol.EntryOverhead + 4096,
+		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
 		ResultBytes:  execution.ScanResultBytes,
 		WorkingBytes: scanWorkingBytes,
 		Backend:      native,

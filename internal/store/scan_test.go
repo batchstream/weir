@@ -40,7 +40,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 	}
 	work := works[0]
 	if work.Operation != nil {
-		result := protocol.ResultError(work.Operation, pb.MutationOutcome_APPLIED, nil)
+		result := execution.FailedResult(work.Operation, pb.MutationOutcome_APPLIED, nil)
 		output := &execution.Output{Result: result}
 		_ = emit(work, output)
 		return execution.Healthy
@@ -60,7 +60,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 		}
 		document := &pb.Document{MediaType: "application/json", Data: data}
 		value := &pb.Event_Document{Document: document}
-		event := &pb.Event{Version: 1, Value: value}
+		event := &pb.Event{Value: value}
 		output := &execution.Output{Event: event}
 		if err := emit(work, output); err != nil {
 			a.rejected.Store(true)
@@ -80,7 +80,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 			end.NextContinuationToken = nil
 		}
 		variant := &pb.Event_ScanEnd{ScanEnd: end}
-		terminal := &pb.Event{Version: 1, Value: variant}
+		terminal := &pb.Event{Value: variant}
 		terminalOutput := &execution.Output{Event: terminal}
 		_ = emit(work, terminalOutput)
 	}
@@ -95,7 +95,7 @@ func (*scanTestAdapter) Close() error { return nil }
 func scanCall() *pb.Command {
 	request := &pb.ScanRequest{Resource: "records"}
 	variant := &pb.Command_Scan{Scan: request}
-	call := &pb.Command{Version: 1, Operation: variant}
+	call := &pb.Command{Operation: variant}
 	return call
 }
 func waitReleased(t *testing.T, runtime *Runtime) {
@@ -265,7 +265,7 @@ func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	result, err := ticket.Wait(ctx)
-	if err != nil || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+	if err != nil || result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("slow scan monopolized the one execution permit", err, result)
 	}
 	ticket.Ack()
@@ -291,7 +291,7 @@ func TestScanBatchPublicationBounds(t *testing.T) {
 		{name: "full batch", documents: 128, bytes: 32 << 10, accepted: 128},
 		{name: "document bound", documents: 129, accepted: 128, rejected: true},
 		{name: "byte bound", documents: 3, bytes: 2 << 20, accepted: 2, rejected: true},
-		{name: "reservation bound", documents: 2, bytes: 1024, reservation: protocol.ResultOverhead, rejected: true},
+		{name: "reservation bound", documents: 2, bytes: 1024, reservation: execution.ResultOverheadBytes, rejected: true},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -399,6 +399,6 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 
 func (a *scanTestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
 	operation := record.Operation()
-	prepared := &execution.Plan{ID: operation.Index, Operation: operation, Key: protocol.Resource(operation), BatchKey: "records", Bytes: 1024, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
+	prepared := &execution.Plan{ID: operation.Index, Operation: operation, Key: operation.Resource(), BatchKey: "records", Bytes: 1024, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	return prepared, nil
 }

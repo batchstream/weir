@@ -20,7 +20,7 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 	open := &pb.NativeOpen{Resource: "records"}
 	native := &pb.NativeRequest{Open: open}
 	variant := &pb.Command_Native{Native: native}
-	call := &pb.Command{Version: 1, Operation: variant}
+	call := &pb.Command{Operation: variant}
 	first, _ := runtime.PrepareCommand(1, call)
 	ticket, failure, _ := runtime.Submit(ctx, first, session)
 	if failure != nil {
@@ -28,7 +28,7 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 	}
 	scan := &pb.ScanRequest{Resource: "records"}
 	scanVariant := &pb.Command_Scan{Scan: scan}
-	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
+	scanCall := &pb.Command{Operation: scanVariant}
 	second, _ := runtime.PrepareCommand(2, scanCall)
 	secondTicket, failure, _ := runtime.Submit(ctx, second, session)
 	if failure != nil {

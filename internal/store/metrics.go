@@ -29,9 +29,9 @@ func newRuntimeMetrics() runtimeMetrics {
 	for _, outcome := range []string{"success", "failure"} {
 		metrics.records.WithLabelValues("read", outcome)
 	}
-	metrics.executions.WithLabelValues("route")
-	metrics.queue.WithLabelValues("route")
-	metrics.duration.WithLabelValues("route")
+	metrics.executions.WithLabelValues("execution")
+	metrics.queue.WithLabelValues("execution")
+	metrics.duration.WithLabelValues("execution")
 	for _, reason := range []string{"prepare", "capacity", "budget", "draining", "overload", "canceled", "session"} {
 		metrics.rejections.WithLabelValues(reason)
 	}
@@ -72,24 +72,24 @@ func boolValue(value bool) float64 {
 	}
 	return 0
 }
-func (r *Runtime) terminalLocked(t *Ticket, result *pb.Result) {
+func (r *Runtime) terminalLocked(t *Ticket, result *execution.Result) {
 	r.terminalResultLocked(t.plan, result)
 }
 
-func (r *Runtime) terminalResultLocked(plan *execution.Plan, result *pb.Result) {
+func (r *Runtime) terminalResultLocked(plan *execution.Plan, result *execution.Result) {
 	if plan.Operation == nil {
 		return
 	}
-	if plan.Operation.GetRead() != nil {
+	if plan.Operation.Read != nil {
 		label := "success"
-		if result.GetRead().GetFailure() != nil {
+		if result.Read.GetFailure() != nil {
 			label = "failure"
 		}
 		r.metrics.records.WithLabelValues("read", label).Inc()
 		return
 	}
 	label := "invalid"
-	switch result.GetMutation().GetOutcome() {
+	switch result.Mutation.GetOutcome() {
 	case pb.MutationOutcome_APPLIED:
 		label = "applied"
 	case pb.MutationOutcome_NOT_APPLIED:

@@ -12,6 +12,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protowire"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
@@ -68,7 +69,7 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 	switch value.(type) {
 	case *pb.ReadBatchRequest, *pb.MutateBatchRequest:
-		if err := protowire.ValidateRepeatedMessages(data, 2, protocol.MaxBatchResponseBytes/protocol.ResultOverhead); err != nil {
+		if err := protowire.ValidateRepeatedMessages(data, 2, protocol.MaxBatchResponseBytes/execution.ResultOverheadBytes); err != nil {
 			return err
 		}
 

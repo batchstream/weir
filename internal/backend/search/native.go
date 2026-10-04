@@ -37,10 +37,10 @@ type nativePlan struct {
 }
 
 func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateNative(open, a.config.Store); f != nil {
+	if f := protocol.ValidateNative(open); f != nil {
 		return nil, f
 	}
-	_, parts, _ := protocol.ParseResource(open.Resource)
+	parts, _ := protocol.ParseRelativeResource(open.Resource)
 	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one concrete Search index")
 	}
@@ -58,8 +58,8 @@ func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	p := &execution.Plan{
 		Singleton:    true,
 		Key:          open.Resource,
-		Bytes:        proto.Size(open) + protocol.EntryOverhead,
-		ResultBytes:  protocol.NativeChunk + protocol.NativeDescriptor + protocol.ResultOverhead,
+		Bytes:        proto.Size(open) + execution.EntryOverheadBytes,
+		ResultBytes:  protocol.NativeChunk + protocol.NativeDescriptor + execution.ResultOverheadBytes,
 		WorkingBytes: nativeBudget,
 		Backend:      native,
 	}

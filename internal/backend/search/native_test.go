@@ -59,7 +59,7 @@ func nativeOpen(t *testing.T, index, method, path string) *pb.NativeOpen {
 	if method == "POST" {
 		media = "application/x-ndjson"
 	}
-	open := &pb.NativeOpen{Resource: "weir://search/" + index, Descriptor_: document, BodyMediaType: media}
+	open := &pb.NativeOpen{Resource: index, Descriptor_: document, BodyMediaType: media}
 	return open
 }
 func runNative(t *testing.T, a *Adapter, open *pb.NativeOpen, body io.ReadCloser) (*pb.NativeEnd, *nativeCapture) {

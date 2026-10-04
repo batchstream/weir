@@ -35,14 +35,14 @@ import (
 // Reuses packaged fixture ownership and explicit archive/image identities.
 // The independently mounted probe is never part of the product image.
 func TestPackagedSearchArtifacts(t *testing.T) {
-	if os.Getenv("WEIR_M17_INTEGRATION") != "1" {
-		t.Skip("requires explicit owned M17 Search artifact fixture")
+	if os.Getenv("WEIR_PACKAGED_SEARCH_INTEGRATION") != "1" {
+		t.Skip("requires explicit owned packaged Search Search artifact fixture")
 	}
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		t.Fatal("requires native Darwin arm64 and Linux arm64")
 	}
-	binary, image := os.Getenv("WEIR_M15_BINARY"), os.Getenv("WEIR_M15_IMAGE")
-	source, helper := os.Getenv("WEIR_M15_SOURCE"), os.Getenv("WEIR_M15_HELPER")
+	binary, image := os.Getenv("WEIR_PACKAGED_BINARY"), os.Getenv("WEIR_PACKAGED_IMAGE")
+	source, helper := os.Getenv("WEIR_PACKAGED_SOURCE"), os.Getenv("WEIR_PACKAGED_HELPER")
 	if !filepath.IsAbs(binary) || !filepath.IsAbs(helper) || !strings.HasPrefix(image, "sha256:") || len(source) != 40 {
 		t.Fatal("explicit artifact identities required")
 	}
@@ -69,7 +69,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 		t.Fatal("requires native Linux arm64 cgroup-v2")
 	}
 	t.Log("exact source", source, "image", image, "archive", strings.TrimSpace(string(raw)))
-	root, err := os.MkdirTemp(filepath.Join(testutil.Root(t), ".testdata"), "weir-m17-artifact-")
+	root, err := os.MkdirTemp(filepath.Join(testutil.Root(t), ".testdata"), "weir-local-artifact-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				container = owner + "-" + platform
 				opts := packagedContainerOptions{owner: owner, name: container, image: image, directory: directory, helper: helper}
 				address = packagedContainer(t, opts)
-				probe := packagedDocker(t, "exec", "--env", "WEIR_M15_PROBE=1", container, "/app.test", "-test.run=^TestPackagedImageProbe$", "-test.v", "-test.timeout=8s")
+				probe := packagedDocker(t, "exec", "--env", "WEIR_PACKAGED_PROBE=1", container, "/app.test", "-test.run=^TestPackagedImageProbe$", "-test.v", "-test.timeout=8s")
 				if !strings.Contains(probe, "--- PASS: TestPackagedImageProbe") {
 					t.Fatal(probe)
 				}
@@ -177,7 +177,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 						t.Fatal(err)
 					}
 				case "hostname":
-					raw = []byte(strings.ReplaceAll(string(raw), "host.docker.internal", "m15-wrong"))
+					raw = []byte(strings.ReplaceAll(string(raw), "host.docker.internal", "packaged-wrong"))
 				case "credentials":
 					raw = []byte(strings.ReplaceAll(string(raw), fixture.Backend.Password, "wrong-owned-pair"))
 				}
@@ -259,15 +259,18 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	root := "weir://search/" + f.Backend.Index
+	root := f.Backend.Index
 	for _, mode := range []string{"ordinary", "native"} {
 		id := fmt.Sprintf("lost-%s-%d", mode, time.Now().UnixNano())
 		before, applied, dropped := proxy.mutations.Load(), proxy.applied.Load(), proxy.dropped.Load()
 		proxy.dropNext.Store(true)
 		if mode == "ordinary" {
 			request := searchBudgetPut(root, id)
-			routedResult268, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
-			result := routedResult268.GetMutation()
+			recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", request))
+			var result *pb.MutationResult
+			if recordResult != nil {
+				result = recordResult.Mutation
+			}
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)
 			}
@@ -281,8 +284,8 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
 			nativeCall := &pb.NativeRequest{Open: open, Body: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
 			nativeVariant := &pb.Command_Native{Native: nativeCall}
-			call := &pb.Command{Version: 1, Operation: nativeVariant}
-			stream, err := testutil.OneEvents(ctx, client, call)
+			call := &pb.Command{Operation: nativeVariant}
+			stream, err := testutil.ExecuteEvents(ctx, client, "search", call)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -316,9 +319,15 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 		t.Log(mode, "dispatch=1 acknowledged=1 dropped=1 backend version=1; no replay")
 	}
 	cancelled, stop := context.WithCancel(ctx)
-	stream := testutil.OpenEvents(cancelled, client, "search")
 	stop()
-	if _, err := stream.Recv(); status.Code(err) != codes.Canceled && err != io.EOF {
-		t.Fatal("packaged Bulk cancellation", err)
+	scan := &pb.ScanRequest{Resource: root}
+	variant := &pb.Command_Scan{Scan: scan}
+	command := &pb.Command{Operation: variant}
+	stream, err := testutil.ExecuteEvents(cancelled, client, "search", command)
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.Canceled {
+		t.Fatal("packaged Execute cancellation", err)
 	}
 }

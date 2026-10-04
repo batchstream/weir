@@ -15,7 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestDecodeBasicDefaultsAndRemovedRoutingFields(t *testing.T) {
+func TestDecodeBasicDefaultsAndListenerRequirement(t *testing.T) {
 	input := "listeners:\n  application: 127.0.0.1:0\n"
 	cfg, err := DecodeBasic(strings.NewReader(input))
 	if err != nil {
@@ -24,17 +24,6 @@ func TestDecodeBasicDefaultsAndRemovedRoutingFields(t *testing.T) {
 	defaults := DefaultConfig().Basic
 	if cfg.Memory != defaults.Memory || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
 		t.Fatal("process defaults changed")
-	}
-	for _, field := range []string{
-		"routing: {}\n",
-		"routing:\n  file: \"\"\n",
-		"routing:\n  file: '   '\n",
-		"routing:\n  file: null\n",
-	} {
-		input := "listeners:\n  application: 127.0.0.1:0\n" + field
-		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
-			t.Fatal("removed basic routing field accepted")
-		}
 	}
 	input = "{}\n"
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
@@ -186,9 +175,7 @@ func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 		"memory:\n",
 		"transport: null\n",
 		"transport:\n  max_connections: null\n",
-		"transport:\n  timeouts:\n    route: null\n",
-		"forwarding: null\n",
-		"routing: null\n",
+		"transport:\n  timeouts:\n    request: null\n",
 	} {
 		input := fragment + string(raw)
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be null") {
@@ -387,10 +374,10 @@ func TestRoutingNullFields(t *testing.T) {
 	}
 	for _, document := range []string{
 		"stores: [null]\n",
-		"stores:\n  - name: remote\n    remote:\n      endpoints: null\n      max_concurrency: 2\n",
+		"stores:\n  - name: database\n    mongodb:\n      uri: mongodb://127.0.0.1:27017\n    max_concurrency: null\n",
 	} {
 		if _, err := DecodeRouting(strings.NewReader(document)); err == nil {
-			t.Fatal("null required graph or endpoint collection accepted")
+			t.Fatal("null Store or required scalar accepted")
 		}
 	}
 }

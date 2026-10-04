@@ -73,7 +73,7 @@ func openTargetFixture(t *testing.T) targetFixture {
 }
 
 func targetResource(target namespace) string {
-	return "weir://mongo/" + target.database + "/" + target.collection
+	return target.database + "/" + target.collection
 }
 
 func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson.D) bson.Raw {
@@ -113,7 +113,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 	}
 	results, _ := adapter.executeRecords(ctx, plans)
 	for i, result := range results {
-		if result.Index != uint64(i+12) || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+		if result.Index != uint64(i+12) || result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target create failed", i, result)
 		}
 	}
@@ -125,7 +125,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 	}
 	results, _ = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
-		document := result.GetRead().GetDocument()
+		document := result.Read.GetDocument()
 		if document == nil || result.Index != uint64(30+i) || bson.Raw(document.Data).Lookup("n").Int32() != int32(i+1) {
 			t.Fatal("same id crossed a namespace", i, result)
 		}
@@ -148,11 +148,11 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			t.Fatal("mixed target result index changed", result)
 		}
 		if i%2 == 0 {
-			document := result.GetRead().GetDocument()
+			document := result.Read.GetDocument()
 			if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != int32(i/2+1) {
 				t.Fatal("mixed target point read changed", result)
 			}
-		} else if result.GetMutation().Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetMutation().Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED {
+		} else if result.Mutation.Outcome != pb.MutationOutcome_NOT_APPLIED || result.Mutation.Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED {
 			t.Fatal("mixed target duplicate acknowledgement changed", result)
 		}
 	}
@@ -172,7 +172,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 	}
 	results, _ = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
-		if result.Index != uint64(50+i) || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+		if result.Index != uint64(50+i) || result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target Lua failed", i, result)
 		}
 	}
@@ -249,13 +249,13 @@ func TestMongoResourceTargetsConcurrent(t *testing.T) {
 					return
 				}
 				results, _ := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
-				if results[0].GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+				if results[0].Mutation.Outcome != pb.MutationOutcome_APPLIED {
 					t.Error(target, results)
 					return
 				}
 				read := prepareCounter(t, fixture.adapter, targetResource(target)+"/s:same")
 				results, _ = fixture.adapter.executeRecords(ctx, []*execution.Plan{read})
-				readDocument := results[0].GetRead().GetDocument()
+				readDocument := results[0].Read.GetDocument()
 				if readDocument == nil || bson.Raw(readDocument.Data).Lookup("n").Int32() != int32(i) {
 					t.Error("concurrent target state crossed namespace", target, results)
 					return
@@ -340,10 +340,10 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					}
 					results, _ := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
 					if action == "read" {
-						if results[0].GetRead().GetFailure() == nil || results[0].GetRead().GetMissing() != nil {
+						if results[0].Read.GetFailure() == nil || results[0].Read.GetMissing() != nil {
 							t.Fatal("unqualified point read target accepted", results)
 						}
-					} else if results[0].GetMutation().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutation().Failure == nil {
+					} else if results[0].Mutation.Outcome != pb.MutationOutcome_NOT_STARTED || results[0].Mutation.Failure == nil {
 						t.Fatal("unqualified mutation target attempted", results)
 					}
 				}

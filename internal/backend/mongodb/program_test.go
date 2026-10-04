@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -15,9 +16,8 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	form := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	mutation := &pb.MutateRequest{Resource: "weir://mongo/db/records/s:item", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	operation := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: "db/records/s:item", Action: action}
+	operation := &execution.Operation{Mutate: mutation}
 	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)

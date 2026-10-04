@@ -38,8 +38,8 @@ func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, command *pb.
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	stream := testutil.OpenEvents(ctx, client, "records")
-	if err := stream.Send(command); err != nil {
+	stream, err := testutil.ExecuteEvents(ctx, client, "records", command)
+	if err != nil {
 		t.Fatal(err)
 	}
 	var events []*pb.Event
@@ -131,7 +131,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	document := &pb.Document{MediaType: "application/bson", Data: selectorRaw}
 	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Selector: document}
 	scanValue := &pb.Command_Scan{Scan: scan}
-	scanCommand := &pb.Command{Version: 1, Operation: scanValue}
+	scanCommand := &pb.Command{Operation: scanValue}
 	events := routeBackendEvents(t, client, scanCommand)
 	if len(events) != 2 || events[1].GetScanEnd().Failure != nil {
 		t.Fatal("Scan failed", events)
@@ -185,7 +185,7 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				open := &pb.NativeOpen{Resource: backend.DB + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
 				native := &pb.NativeRequest{Open: open, Body: body}
 				value := &pb.Command_Native{Native: native}
-				call = &pb.Command{Version: 1, Operation: value}
+				call = &pb.Command{Operation: value}
 			}
 			if mode == "record" {
 				batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}
@@ -297,7 +297,7 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 				body := []byte(fmt.Sprintf("{\"create\":{\"_id\":%q}}\n{\"n\":1}\n", id))
 				native := &pb.NativeRequest{Open: open, Body: body}
 				value := &pb.Command_Native{Native: native}
-				call = &pb.Command{Version: 1, Operation: value}
+				call = &pb.Command{Operation: value}
 			}
 			if mode == "record" {
 				batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}

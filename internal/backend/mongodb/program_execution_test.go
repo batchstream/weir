@@ -84,13 +84,13 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 			defer client.Disconnect(context.Background())
 			a := &Adapter{client: client}
 			a.config.Store = "mongo"
-			operationOpts := batchOperationOptions{resource: "weir://mongo/db/records/s:item", action: "program", program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
+			operationOpts := batchOperationOptions{resource: "db/records/s:item", action: "program", program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
 			work, failure := prepareTestRecord(a, batchOperation(t, operationOpts))
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			results, _ := a.executePrograms(t.Context(), []*execution.Plan{work})
-			result := results[0].GetMutation()
+			result := results[0].Mutation
 			if result.GetOutcome() != tc.outcome || result.GetFailure().GetCode() != tc.failure {
 				t.Fatalf("unexpected result: %v", result)
 			}
@@ -158,7 +158,7 @@ func TestMongoLuaBatchCallerCancellationDoesNotCancelPeers(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			var plans []*execution.Plan
 			for _, id := range []string{"a", "b"} {
-				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
 				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
@@ -171,11 +171,11 @@ func TestMongoLuaBatchCallerCancellationDoesNotCancelPeers(t *testing.T) {
 			want := pb.MutationOutcome_APPLIED
 			if phase == "read" {
 				want = pb.MutationOutcome_NOT_APPLIED
-				if results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+				if results[0].Mutation.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 					t.Fatal("pre-write cancellation was not isolated", results)
 				}
 			}
-			if results[0].GetMutation().GetOutcome() != want || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || commits != 1 {
+			if results[0].Mutation.GetOutcome() != want || results[1].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || commits != 1 {
 				t.Fatal("caller cancellation poisoned the shared transaction", phase, results, commits)
 			}
 		})
@@ -202,13 +202,13 @@ func TestMongoLuaBatchMalformedWriteAcknowledgementNeverCommits(t *testing.T) {
 		}
 	}}
 	adapter := batchMockAdapter(t, responses, monitor)
-	opts := batchOperationOptions{resource: "weir://mongo/db/records/s:a", action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+	opts := batchOperationOptions{resource: "db/records/s:a", action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
 	work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	results, _ := adapter.executePrograms(t.Context(), []*execution.Plan{work})
-	if results[0].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || commits != 0 || aborts != 1 {
+	if results[0].Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || commits != 0 || aborts != 1 {
 		t.Fatal("inconsistent batch acknowledgement was committed", results, commits, aborts)
 	}
 }
@@ -256,7 +256,7 @@ func TestMongoLuaBatchCursorContinuationsKeepTransactionIdentity(t *testing.T) {
 	adapter := batchMockAdapter(t, responses, monitor)
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
-		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
@@ -268,7 +268,7 @@ func TestMongoLuaBatchCursorContinuationsKeepTransactionIdentity(t *testing.T) {
 		t.Fatal("read/write continuations were not completed before commit", commands)
 	}
 	for _, result := range results {
-		if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("continued transaction did not apply both independent items", results)
 		}
 	}
@@ -298,7 +298,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 	adapter := batchMockAdapter(t, responses, monitor)
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
-		opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
@@ -307,7 +307,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 	}
 	results, _ := adapter.executePrograms(t.Context(), plans)
 	for _, result := range results {
-		if result.GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+		if result.Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 			t.Fatal("incomplete verbose acknowledgement became applied", results)
 		}
 	}
@@ -358,7 +358,7 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			var plans []*execution.Plan
 			for _, id := range []string{"a", "b"} {
-				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
 				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
@@ -367,7 +367,7 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 			}
 			results, _ := adapter.executePrograms(t.Context(), plans)
 			for _, result := range results {
-				mutation := result.GetMutation()
+				mutation := result.Mutation
 				if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE || mutation.GetFailure().GetMessage() != "MongoDB transaction rollback unconfirmed" {
 					t.Fatal("unobserved rollback became a confirmed abort", mode, mutation)
 				}

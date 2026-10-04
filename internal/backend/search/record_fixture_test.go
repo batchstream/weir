@@ -6,6 +6,6 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testrecords"
 )
 
-func prepareTestRecord(adapter *Adapter, operation *pb.Operation) (*execution.Plan, *pb.Failure) {
+func prepareTestRecord(adapter *Adapter, operation *execution.Operation) (*execution.Plan, *pb.Failure) {
 	return testrecords.Prepare(adapter, adapter.config.Store, operation)
 }

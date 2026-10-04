@@ -21,9 +21,11 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// SyncDirectoryRequest offers announcements learned locally or from other peers.
 type SyncDirectoryRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Announcements []*NodeAnnouncement    `protobuf:"bytes,1,rep,name=announcements,proto3" json:"announcements,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Announcements must pass complete snapshot validation before any are merged.
+	Announcements []*NodeAnnouncement `protobuf:"bytes,1,rep,name=announcements,proto3" json:"announcements,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,9 +67,11 @@ func (x *SyncDirectoryRequest) GetAnnouncements() []*NodeAnnouncement {
 	return nil
 }
 
+// SyncDirectoryResponse provides the receiver's current discovery snapshot.
 type SyncDirectoryResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Announcements []*NodeAnnouncement    `protobuf:"bytes,1,rep,name=announcements,proto3" json:"announcements,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Relayed announcements report their remaining lease, never a renewed lease.
+	Announcements []*NodeAnnouncement `protobuf:"bytes,1,rep,name=announcements,proto3" json:"announcements,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -109,20 +113,29 @@ func (x *SyncDirectoryResponse) GetAnnouncements() []*NodeAnnouncement {
 	return nil
 }
 
-// A fresh process creates an incarnation_id. Only its owner advances revision or
-// renews the lease. Peers reduce, never renew, lease_remaining_ms during sync.
+// NodeAnnouncement describes one process incarnation. Only its originating node
+// advances the revision or renews its lease. A relay reduces the remaining lease.
 type NodeAnnouncement struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	IncarnationId    string                 `protobuf:"bytes,1,opt,name=incarnation_id,json=incarnationId,proto3" json:"incarnation_id,omitempty"`
-	Revision         uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	PeerEndpoint     string                 `protobuf:"bytes,3,opt,name=peer_endpoint,json=peerEndpoint,proto3" json:"peer_endpoint,omitempty"`
-	ReplicaGroup     string                 `protobuf:"bytes,4,opt,name=replica_group,json=replicaGroup,proto3" json:"replica_group,omitempty"`
-	StoreNames       []string               `protobuf:"bytes,5,rep,name=store_names,json=storeNames,proto3" json:"store_names,omitempty"`
-	StoreEndpoints   []string               `protobuf:"bytes,6,rep,name=store_endpoints,json=storeEndpoints,proto3" json:"store_endpoints,omitempty"`
-	LeaseRemainingMs uint64                 `protobuf:"varint,7,opt,name=lease_remaining_ms,json=leaseRemainingMs,proto3" json:"lease_remaining_ms,omitempty"`
-	Withdrawn        bool                   `protobuf:"varint,8,opt,name=withdrawn,proto3" json:"withdrawn,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Random identity generated for this process lifetime; a restart gets a new ID.
+	IncarnationId string `protobuf:"bytes,1,opt,name=incarnation_id,json=incarnationId,proto3" json:"incarnation_id,omitempty"`
+	// Monotonic origin heartbeat sequence. Replaying a revision cannot extend its lease.
+	Revision uint64 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	// Direct host:port endpoint for this node's PeerDiscoveryService listener.
+	PeerEndpoint string `protobuf:"bytes,3,opt,name=peer_endpoint,json=peerEndpoint,proto3" json:"peer_endpoint,omitempty"`
+	// Replicas in this group serve equivalent Store ownership. Different groups
+	// advertising the same Store create an ownership conflict.
+	ReplicaGroup string `protobuf:"bytes,4,opt,name=replica_group,json=replicaGroup,proto3" json:"replica_group,omitempty"`
+	// Complete set of logical Stores served locally by this process.
+	StoreNames []string `protobuf:"bytes,5,rep,name=store_names,json=storeNames,proto3" json:"store_names,omitempty"`
+	// Reachable IP or DNS host:port endpoints for the advertised Stores' business RPCs.
+	StoreEndpoints []string `protobuf:"bytes,6,rep,name=store_endpoints,json=storeEndpoints,proto3" json:"store_endpoints,omitempty"`
+	// Remaining origin lease in milliseconds at the time this snapshot is formed.
+	LeaseRemainingMs uint64 `protobuf:"varint,7,opt,name=lease_remaining_ms,json=leaseRemainingMs,proto3" json:"lease_remaining_ms,omitempty"`
+	// Explicit process withdrawal; this incarnation must no longer supply endpoints.
+	Withdrawn     bool `protobuf:"varint,8,opt,name=withdrawn,proto3" json:"withdrawn,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NodeAnnouncement) Reset() {

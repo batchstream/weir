@@ -55,7 +55,7 @@ func TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay(t *testing.T) {
 				backend.Do(t, "PUT", fmt.Sprintf("/%s/_doc/%d", backend.Index, i), `{"n":1}`)
 			}
 			backend.Do(t, "POST", "/"+backend.Index+"/_refresh", "")
-			request := &pb.ScanRequest{Resource: "weir://search/" + backend.Index, PageSize: 2}
+			request := &pb.ScanRequest{Resource: backend.Index, PageSize: 2}
 			documents, end := searchFinitePage(t, first, request)
 			if end.Failure != nil || len(documents) != 2 || end.Exhausted || len(end.NextContinuationToken) == 0 {
 				t.Fatal("initial page", end, len(documents))

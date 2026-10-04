@@ -62,7 +62,7 @@ func startScanRPCNode(t *testing.T, adapter execution.Adapter) *routeAcceptanceN
 
 func scanRPCCommand(request *pb.ScanRequest) *pb.Command {
 	variant := &pb.Command_Scan{Scan: request}
-	command := &pb.Command{Version: 1, Operation: variant}
+	command := &pb.Command{Operation: variant}
 	return command
 }
 
@@ -70,9 +70,9 @@ func scanRPCPage(t *testing.T, client pb.StoreServiceClient, request *pb.ScanReq
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	stream := testutil.OpenEvents(ctx, client, "records")
 	command := scanRPCCommand(request)
-	if err := stream.Send(command); err != nil {
+	stream, err := testutil.ExecuteEvents(ctx, client, "records", command)
+	if err != nil {
 		t.Fatal(err)
 	}
 	var documents []*pb.Document
@@ -355,10 +355,10 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	client := routeAcceptanceClient(t, node.address)
 	caller, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	stream := testutil.OpenEvents(caller, client, "records")
 	request := &pb.ScanRequest{Resource: opts.resource, PageSize: 256}
 	command := scanRPCCommand(request)
-	if err := stream.Send(command); err != nil {
+	stream, err := testutil.ExecuteEvents(caller, client, "records", command)
+	if err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -395,10 +395,10 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	// plan and backend continuation must survive that cancellation.
 	survivorContext, survivorCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer survivorCancel()
-	survivor := testutil.OpenEvents(survivorContext, client, "records")
 	survivorRequest := &pb.ScanRequest{Resource: opts.resource, Selector: opts.selector}
 	survivorCommand := scanRPCCommand(survivorRequest)
-	if err := survivor.Send(survivorCommand); err != nil {
+	survivor, err := testutil.ExecuteEvents(survivorContext, client, "records", survivorCommand)
+	if err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(2 * time.Second)

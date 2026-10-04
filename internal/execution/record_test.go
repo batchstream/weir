@@ -25,10 +25,10 @@ func TestReadRecordsPreserveBorrowedRequestAndDecodedPath(t *testing.T) {
 	}
 	for i, record := range records {
 		parts := record.Segments()
-		if len(parts) != 3 || parts[0] != "db" || parts[1] != "records" || parts[2] != "s:a/b 中" || record.StoreName() != "mongo" || record.Key() != first.Resource || record.Operation().Index != uint64(i+1) || record.Operation().GetRead() != request.Requests[i] {
+		if len(parts) != 3 || parts[0] != "db" || parts[1] != "records" || parts[2] != "s:a/b 中" || record.StoreName() != "mongo" || record.Key() != first.Resource || record.Operation().Index != uint64(i+1) || record.Operation().Read != request.Requests[i] {
 			t.Fatal("record lost decoded path, ordinal or immutable request ownership", record)
 		}
-		if record.Bytes() <= proto.Size(record.Operation())+2*len(record.Key()) {
+		if record.Bytes() <= record.Operation().RequestBytes()+2*len(record.Key()) {
 			t.Fatal("record omitted retained metadata from its memory charge", record.Bytes())
 		}
 	}
@@ -48,7 +48,7 @@ func TestMutationRecordsBorrowDocumentAndMaintainInputOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !proto.Equal(before, request) || records[0].Operation().GetMutate() != first || records[1].Operation().GetMutate() != second || records[0].Operation().GetMutate().GetPut() != document || &records[0].Operation().GetMutate().GetPut().Data[0] != &data[0] || records[0].Key() != records[1].Key() || records[0].Operation().Index != 1 || records[1].Operation().Index != 2 {
+	if !proto.Equal(before, request) || records[0].Operation().Mutate != first || records[1].Operation().Mutate != second || records[0].Operation().Mutate.GetPut() != document || &records[0].Operation().Mutate.GetPut().Data[0] != &data[0] || records[0].Key() != records[1].Key() || records[0].Operation().Index != 1 || records[1].Operation().Index != 2 {
 		t.Fatal("constructor copied document data or changed mutation identity/order")
 	}
 }
@@ -99,18 +99,17 @@ func TestRecordConstructorRejectsNestedUnknownFields(t *testing.T) {
 	}
 }
 
-func TestReadRecordFullURIAndBatchByteBounds(t *testing.T) {
+func TestReadRecordRelativePathAndBatchByteBounds(t *testing.T) {
 	store := strings.Repeat("s", 63)
-	prefix := len("weir://") + len(store) + 1
-	resource := strings.Repeat("a", protocol.MaxURI-prefix)
+	resource := strings.Repeat("a", protocol.MaxResourceBytes)
 	read := &pb.ReadRequest{Resource: resource}
 	request := &pb.ReadBatchRequest{StoreName: store, Requests: []*pb.ReadRequest{read}}
 	if _, err := NewReadRecords(request, protocol.MaxBatchRequestBytes); err != nil {
-		t.Fatal("legal full URI boundary rejected", err)
+		t.Fatal("legal relative resource boundary rejected", err)
 	}
 	read.Resource += "a"
 	if records, err := NewReadRecords(request, protocol.MaxBatchRequestBytes); err == nil || records != nil {
-		t.Fatal("actual Store URI length exceeded its bound", records, err)
+		t.Fatal("relative resource length exceeded its bound", records, err)
 	}
 	options := &pb.Document{MediaType: "application/json", Data: bytes.Repeat([]byte("x"), protocol.MaxDocument)}
 	read = &pb.ReadRequest{Resource: "records/s:a", AdapterOptions: options}

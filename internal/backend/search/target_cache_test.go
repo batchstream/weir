@@ -40,12 +40,12 @@ func TestSearchHotRecordsDoNotRepeatMetadataIO(t *testing.T) {
 	cfg := Config{Store: "search", URL: server.URL}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	for range 2 {
-		read := batchTestPlan(t, adapter, "read", "weir://search/records/s:same")
-		put := batchTestPlan(t, adapter, "put", "weir://search/records/s:same")
+		read := batchTestPlan(t, adapter, "read", "records/s:same")
+		put := batchTestPlan(t, adapter, "put", "records/s:same")
 		put.Operation.Index = 1
 		works := []*execution.Plan{read, put}
 		results, feedback := adapter.executeRecords(context.Background(), works)
-		if feedback != execution.Healthy || len(results) != 2 || results[0].GetRead().GetDocument() == nil || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		if feedback != execution.Healthy || len(results) != 2 || results[0].Read.GetDocument() == nil || results[1].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("hot target lost business results", results, feedback)
 		}
 	}
@@ -246,14 +246,14 @@ func TestSearchCachedTargetStillChecksBusinessPermissions(t *testing.T) {
 	defer server.Close()
 	cfg := Config{Store: "search", URL: server.URL}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
-	read := batchTestPlan(t, adapter, "read", "weir://search/records/s:same")
+	read := batchTestPlan(t, adapter, "read", "records/s:same")
 	works := []*execution.Plan{read}
 	results, _ := adapter.executeRecords(context.Background(), works)
-	if results[0].GetRead().GetMissing() == nil {
+	if results[0].Read.GetMissing() == nil {
 		t.Fatal("first authorized read failed", results)
 	}
 	results, _ = adapter.executeRecords(context.Background(), works)
-	if results[0].GetRead().GetFailure() == nil || results[0].GetRead().GetMissing() != nil || results[0].GetRead().GetDocument() != nil {
+	if results[0].Read.GetFailure() == nil || results[0].Read.GetMissing() != nil || results[0].Read.GetDocument() != nil {
 		t.Fatal("cached metadata became a cached authorization", results)
 	}
 	if metadata.Load() != 1 || reads.Load() != 2 {

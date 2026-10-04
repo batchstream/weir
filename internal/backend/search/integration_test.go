@@ -17,7 +17,7 @@ func TestSearchCRUD(t *testing.T) {
 	for _, id := range []string{"plain", "a/b% space", "中文", "?query#fragment"} {
 		t.Run(id, func(t *testing.T) {
 			read := searchPlan(t, a, "read", searchResource(b.Index, id))
-			if runSearch(t, a, read).GetRead().GetMissing() == nil {
+			if runSearch(t, a, read).Read.GetMissing() == nil {
 				t.Fatal("missing read")
 			}
 			replace := searchPlan(t, a, "replace", searchResource(b.Index, id))
@@ -28,7 +28,7 @@ func TestSearchCRUD(t *testing.T) {
 			assertOutcome(t, runSearch(t, a, replace), pb.MutationOutcome_APPLIED, 0)
 			put := searchPlan(t, a, "put", searchResource(b.Index, id))
 			assertOutcome(t, runSearch(t, a, put), pb.MutationOutcome_APPLIED, 0)
-			result := runSearch(t, a, read).GetRead()
+			result := runSearch(t, a, read).Read
 			if result.GetDocument() == nil || !strings.Contains(string(result.GetDocument().Data), "9223372036854775807") || strings.Contains(string(result.GetDocument().Data), "_id") {
 				t.Fatal("source fidelity", result)
 			}
@@ -44,7 +44,7 @@ func TestSearchCRUD(t *testing.T) {
 	}
 	a = reopenSearch(t, a)
 	result := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "plain")))
-	if result.GetRead().GetMissing() != nil || result.GetRead().GetFailure() == nil {
+	if result.Read.GetMissing() != nil || result.Read.GetFailure() == nil {
 		t.Fatal("index missing is not record missing", result)
 	}
 	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "plain"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
@@ -77,12 +77,12 @@ func TestSearchMixedBulk(t *testing.T) {
 	assertOutcome(t, results[3], pb.MutationOutcome_APPLIED, 0)
 	for _, id := range []string{"good", "exists"} {
 		read := searchPlan(t, a, "read", searchResource(b.Index, id))
-		if runSearch(t, a, read).GetRead().GetDocument() == nil {
+		if runSearch(t, a, read).Read.GetDocument() == nil {
 			t.Fatal("confirmed write missing")
 		}
 	}
 	read := searchPlan(t, a, "read", searchResource(b.Index, "bad"))
-	if runSearch(t, a, read).GetRead().GetMissing() == nil {
+	if runSearch(t, a, read).Read.GetMissing() == nil {
 		t.Fatal("rejected write persisted")
 	}
 }

@@ -14,14 +14,14 @@ import (
 type metricAdapter struct{ scanTestAdapter }
 
 func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
-	results := make([]*pb.Result, len(plans))
+	results := make([]*execution.Result, len(plans))
 	outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_UNKNOWN}
 	for i, p := range plans {
 		var failure *pb.Failure
 		if i > 0 {
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "private backend error")
 		}
-		results[i] = protocol.ResultError(p.Operation, outcomes[i], failure)
+		results[i] = execution.FailedResult(p.Operation, outcomes[i], failure)
 	}
 	for i, result := range results {
 		output := &execution.Output{Result: result}
@@ -31,7 +31,7 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 }
 func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
-	limits.PendingBytes = protocol.MaxFrame
+	limits.PendingBytes = protocol.MaxExecuteRequestBytes
 	limits.BatchOperations = 3
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
@@ -64,7 +64,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	r.mu.Unlock()
 	r.execute(b)
 	ready := testmetrics.Gather(t, r)
-	if testmetrics.Sum(ready, "weir_store_retained_results") != 3 || testmetrics.Sum(ready, "weir_store_retained_result_reserved_bytes") != 3*protocol.ResultOverhead {
+	if testmetrics.Sum(ready, "weir_store_retained_results") != 3 || testmetrics.Sum(ready, "weir_store_retained_result_reserved_bytes") != 3*execution.ResultOverheadBytes {
 		t.Fatal("ready result byte reservations")
 	}
 	cancel()
@@ -96,11 +96,6 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	families := testmetrics.Gather(t, r)
 	if testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(limits.Concurrency) {
 		t.Fatal("configured concurrency metric changed")
-	}
-	for _, obsolete := range []string{"weir_store_window", "weir_store_window_limit", "weir_store_cooldown", "weir_store_window_changes_total", "weir_store_backpressure_events_total", "weir_store_latency_baseline_seconds", "weir_store_pending_entries_limit", "weir_store_result_reserved_entries_limit"} {
-		if families[obsolete] != nil {
-			t.Fatal("removed adaptive metric still exposed", obsolete)
-		}
 	}
 	if testmetrics.Series(families) != 61 {
 		t.Fatal("Store series changed", testmetrics.Series(families))

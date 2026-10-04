@@ -13,13 +13,14 @@ import (
 )
 
 func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan, *pb.Failure) {
-	if id == 0 || proto.Size(input) > protocol.MaxFrame {
+	if id == 0 || proto.Size(input) > protocol.MaxExecuteRequestBytes {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ID or Command size")
 	}
-	call, failure := execution.NormalizeCommand(input, a.config.Store)
-	if failure != nil {
-		return nil, failure
+	if err := protocol.ValidateCommand(input); err != nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}
+	call := input
+	var failure *pb.Failure
 	var work *execution.Plan
 	switch {
 	case call.GetScan() != nil:
@@ -56,7 +57,7 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	}
 	operation := record.Operation()
 	work.ID = operation.Index
-	if operation.GetRead() != nil {
+	if operation.Read != nil {
 		work.WorkingBytes = a.readWorkingBytes()
 	} else {
 		work.WorkingBytes = 24 << 20
@@ -93,7 +94,7 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 	end, feedback := a.executeNative(ctx, work, exchange)
 	_ = source.Close()
 	value := &pb.Event_NativeEnd{NativeEnd: end}
-	event := &pb.Event{Version: 1, Value: value}
+	event := &pb.Event{Value: value}
 	output := &execution.Output{Event: event}
 	_ = emit(work, output)
 	return feedback
@@ -111,7 +112,7 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 	state := work.Backend.(*scanPlan)
 	for _, document := range page.Documents {
 		value := &pb.Event_Document{Document: document}
-		event := &pb.Event{Version: 1, Value: value}
+		event := &pb.Event{Value: value}
 		output := &execution.Output{Event: event}
 		if err := emit(work, output); err != nil {
 			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan result publication failed")
@@ -129,7 +130,7 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 			end.NextContinuationToken = page.NextContinuationToken
 		}
 		value := &pb.Event_ScanEnd{ScanEnd: end}
-		event := &pb.Event{Version: 1, Value: value}
+		event := &pb.Event{Value: value}
 		output := &execution.Output{Event: event}
 		_ = emit(work, output)
 	} else {
@@ -153,13 +154,13 @@ type eventSink struct {
 func (s *eventSink) Interrupt() {}
 func (s *eventSink) Head(head *pb.NativeHead) error {
 	value := &pb.Event_Head{Head: head}
-	event := &pb.Event{Version: 1, Value: value}
+	event := &pb.Event{Value: value}
 	output := &execution.Output{Event: event}
 	return s.emit(s.work, output)
 }
 func (s *eventSink) Chunk(chunk []byte) error {
 	value := &pb.Event_Chunk{Chunk: append([]byte(nil), chunk...)}
-	event := &pb.Event{Version: 1, Value: value}
+	event := &pb.Event{Value: value}
 	output := &execution.Output{Event: event}
 	return s.emit(s.work, output)
 }
