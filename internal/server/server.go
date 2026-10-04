@@ -16,6 +16,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// SessionMemoryBytes covers three maximum request representations, decoded
+// frame metadata, one encoded response, and fixed transport flow-control slack.
+// Store pending/results/working budgets are reserved separately.
+const SessionMemoryBytes = ((3*protocol.MaxExecuteRequestBytes + protocol.MaxExecuteResponseBytes + (2 << 20) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
+
 type Limits struct {
 	Connections, Sessions  int
 	RequestLifetime, Stall time.Duration
@@ -60,7 +65,7 @@ type Server struct {
 
 func (l Limits) Validate() error {
 	if l.Connections < 1 || uint64(l.Connections) > (64<<30)/(256<<10) ||
-		l.Sessions < 1 || uint64(l.Sessions) > (64<<30)/(96<<20) ||
+		l.Sessions < 1 || uint64(l.Sessions) > (64<<30)/SessionMemoryBytes ||
 		l.RequestLifetime <= 0 ||
 		l.Stall <= 0 {
 		return status.Error(codes.InvalidArgument, "invalid transport bounds")
@@ -107,7 +112,7 @@ func New(cfg Config) (*Server, error) {
 	statistics := transportStats{}
 	codec := &responseCodec{admission: s.admission}
 	keepaliveParameters := keepalive.ServerParameters{Time: l.Stall, Timeout: min(5*time.Second, l.Stall), MaxConnectionIdle: time.Minute}
-	receiveBytes, sendBytes := protocol.MaxBatchRequestBytes, protocol.MaxBatchResponseBytes
+	receiveBytes, sendBytes := protocol.MaxExecuteRequestBytes, protocol.MaxExecuteResponseBytes
 	if cfg.Peer {
 		receiveBytes, sendBytes = directory.MaxSyncBytes, directory.MaxSyncBytes
 	}
@@ -116,6 +121,8 @@ func New(cfg Config) (*Server, error) {
 		grpc.MaxSendMsgSize(sendBytes),
 		grpc.MaxConcurrentStreams(uint32(l.Sessions + cap(s.control))),
 		grpc.MaxHeaderListSize(16 << 10),
+		grpc.InitialWindowSize(64 << 10),
+		grpc.InitialConnWindowSize(64 << 10),
 		grpc.InTapHandle(s.admitRPC),
 		grpc.UnaryInterceptor(unaryRPC),
 		grpc.StreamInterceptor(streamRPC),

@@ -74,7 +74,7 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
-	operation := &execution.Operation{Mutate: mutation}
+	operation := &execution.Operation{Index: 1, Mutate: mutation}
 	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
@@ -97,7 +97,7 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
-	operation := &execution.Operation{Mutate: mutation}
+	operation := &execution.Operation{Index: 1, Mutate: mutation}
 	for name, pipeline := range map[string]string{"default": "index.default_pipeline", "final": "index.final_pipeline"} {
 		t.Run(name, func(t *testing.T) {
 			var documentReads atomic.Int32

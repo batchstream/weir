@@ -10,7 +10,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-const batchBodyLimit = protocol.MaxBatchResponseBytes
+const batchBodyLimit = execution.BackendBatchBytes
 
 const getFramingLimit = 32 << 10
 

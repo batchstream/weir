@@ -19,8 +19,9 @@ type crossRequestCall struct {
 
 type crossRequestAdapter struct {
 	lifecycleAdapter
-	calls chan crossRequestCall
-	gate  <-chan struct{}
+	calls        chan crossRequestCall
+	gate         <-chan struct{}
+	maxReadBytes int
 }
 
 func (a *crossRequestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
@@ -28,7 +29,11 @@ func (a *crossRequestAdapter) PrepareRecord(record *execution.Record) (*executio
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "backend rejected last record")
 	}
 	operation := record.Operation()
-	work := &execution.Plan{ID: operation.Index, Operation: operation, Key: record.Key(), BatchKey: record.Segments()[0], Bytes: record.Bytes(), WorkingBytes: 1024}
+	resultBytes := execution.ResultOverheadBytes
+	if operation.Read != nil {
+		resultBytes += max(len(fmt.Sprintf("%q", record.Key())), a.maxReadBytes)
+	}
+	work := &execution.Plan{ID: operation.Index, Operation: operation, Key: record.Key(), BatchKey: record.Segments()[0], Bytes: record.Bytes(), ResultBytes: resultBytes, WorkingBytes: 1024}
 	return work, nil
 }
 
@@ -48,8 +53,9 @@ func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Pl
 		var result *execution.Result
 		if work.Operation.Read != nil {
 			var read *pb.ReadResult
-			if work.Results.Reserve(len(work.Key)) {
-				document := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf("%q", work.Key))}
+			data := []byte(fmt.Sprintf("%q", work.Key))
+			if work.Results.Reserve(len(data)) {
+				document := &pb.Document{MediaType: "application/json", Data: data}
 				read = protocol.ReadDocument(document)
 			} else {
 				read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "result budget exhausted"))
@@ -68,12 +74,12 @@ func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Pl
 
 func prepareCrossReads(t testing.TB, runtime *Runtime, resources []string) *PreparedBatch {
 	t.Helper()
-	request := &pb.ReadBatchRequest{StoreName: "test"}
+	request := &pb.ReadBatch{}
 	for _, resource := range resources {
 		read := &pb.ReadRequest{Resource: resource}
 		request.Requests = append(request.Requests, read)
 	}
-	records, failure := execution.NewReadRecords(request, runtime.PendingByteLimit())
+	records, failure := execution.NewReadRecords("test", request.Requests, runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -86,14 +92,14 @@ func prepareCrossReads(t testing.TB, runtime *Runtime, resources []string) *Prep
 
 func prepareCrossWrites(t testing.TB, runtime *Runtime, resources []string) *PreparedBatch {
 	t.Helper()
-	request := &pb.MutateBatchRequest{StoreName: "test"}
+	request := &pb.MutationBatch{}
 	for _, resource := range resources {
 		empty := &pb.Empty{}
 		action := &pb.MutateRequest_Delete{Delete: empty}
 		mutation := &pb.MutateRequest{Resource: resource, Action: action}
 		request.Requests = append(request.Requests, mutation)
 	}
-	records, failure := execution.NewMutationRecords(request, runtime.PendingByteLimit())
+	records, failure := execution.NewMutationRecords("test", request.Requests, runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -181,7 +187,7 @@ func TestIndependentRPCsShareExecutionAndKeepResultsAndQuota(t *testing.T) {
 			ticket.Ack()
 		}
 	}
-	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+len(resources[0][0]) || snapshot.PendingBytes != tickets[0].bulk.bytes || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != tickets[0].bulk.resultBytes || snapshot.PendingBytes != tickets[0].bulk.bytes || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
 		t.Fatal("slow result owner retained another RPC's quota", snapshot)
 	}
 	tickets[0].Ack()
@@ -359,8 +365,8 @@ func TestCrossRPCPreflightRejectsLateBackendInvalidRecordBeforeAdmission(t *test
 	runtime := newRuntime(adapter, DefaultLimits())
 	one := &pb.ReadRequest{Resource: "records/valid"}
 	last := &pb.ReadRequest{Resource: "records/invalid"}
-	request := &pb.ReadBatchRequest{StoreName: "test", Requests: []*pb.ReadRequest{one, last}}
-	records, failure := execution.NewReadRecords(request, runtime.PendingByteLimit())
+	request := &pb.ReadBatch{Requests: []*pb.ReadRequest{one, last}}
+	records, failure := execution.NewReadRecords("test", request.Requests, runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -558,7 +564,7 @@ func TestCrossRPC512QueuedAndRetainedRequestsAreBoundedByBytes(t *testing.T) {
 			for range 512 {
 				tickets = append(tickets, submitCrossBatch(t, runtime, ctx, prepared))
 			}
-			if snapshot := runtime.Snapshot(); snapshot.Pending != 512 || snapshot.Retained != 512 || snapshot.PendingBytes != 512*prepared.bytes || snapshot.ResultBytes != 512*execution.ResultOverheadBytes {
+			if snapshot := runtime.Snapshot(); snapshot.Pending != 512 || snapshot.Retained != 512 || snapshot.PendingBytes != 512*prepared.bytes || snapshot.ResultBytes != 512*prepared.resultBytes {
 				t.Fatal("queued requests or per-RPC metadata charges missing", snapshot)
 			}
 			if canceled {
@@ -609,13 +615,13 @@ func TestCrossRPCByteAdmissionRemainsIndependentPerStore(t *testing.T) {
 			} else {
 				data := []byte(`{"n":0}` + strings.Repeat(" ", 1<<20))
 				document := &pb.Document{MediaType: "application/json", Data: data}
-				request := &pb.MutateBatchRequest{StoreName: "test"}
+				request := &pb.MutationBatch{}
 				for i := range 10 {
 					action := &pb.MutateRequest_Put{Put: document}
 					mutation := &pb.MutateRequest{Resource: fmt.Sprintf("records/s:%d", i), Action: action}
 					request.Requests = append(request.Requests, mutation)
 				}
-				records, failure := execution.NewMutationRecords(request, construction.PendingByteLimit())
+				records, failure := execution.NewMutationRecords("test", request.Requests, construction.PendingByteLimit())
 				if failure != nil {
 					t.Fatal(failure)
 				}

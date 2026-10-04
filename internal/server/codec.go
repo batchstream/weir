@@ -12,7 +12,6 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protowire"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
@@ -42,14 +41,18 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 		return nil, fmt.Errorf("response is not a protobuf message: %T", value)
 	}
 	size := proto.Size(wire)
-	if size > protocol.MaxBatchResponseBytes {
+	maximum := protocol.MaxExecuteResponseBytes
+	if _, peer := value.(*peerpb.SyncDirectoryResponse); peer {
+		maximum = directory.MaxSyncBytes
+	}
+	if size > maximum {
 		return nil, status.Error(codes.ResourceExhausted, "response exceeds protobuf byte bound")
 	}
 	capacity := max(size, 1025)
 	if !codec.admission.reserveWire(capacity) {
 		return nil, status.Error(codes.ResourceExhausted, "queued response byte budget exhausted")
 	}
-	pool := &responseBufferOwner{admission: codec.admission, bytes: int64(capacity), message: value}
+	pool := &responseBufferOwner{admission: codec.admission, bytes: int64(capacity), message: value, done: make(chan struct{})}
 	codec.admission.responses.Store(value, pool)
 	data := make([]byte, 0, capacity)
 	options := proto.MarshalOptions{}
@@ -68,8 +71,8 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 
 func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 	switch value.(type) {
-	case *pb.ReadBatchRequest, *pb.MutateBatchRequest:
-		if err := protowire.ValidateRepeatedMessages(data, 2, protocol.MaxBatchResponseBytes/execution.ResultOverheadBytes); err != nil {
+	case *pb.ExecuteRequest:
+		if err := protowire.ValidateExecuteFrame(data); err != nil {
 			return err
 		}
 
@@ -98,6 +101,7 @@ type responseBufferOwner struct {
 	message   any
 	timer     *time.Timer
 	cleanup   runtime.Cleanup
+	done      chan struct{}
 }
 
 func (*responseBufferOwner) Get(length int) *[]byte {
@@ -118,6 +122,10 @@ func (owner *responseBufferOwner) Put(*[]byte) {
 			owner.admission.responses.CompareAndDelete(owner.message, owner)
 		}
 		owner.admission.wireBytes.Add(-owner.bytes)
+		owner.message = nil
+		if owner.done != nil {
+			close(owner.done)
+		}
 	}
 }
 
@@ -129,7 +137,6 @@ func (owner *responseBufferOwner) watch(ctx context.Context, server *Server) {
 	if owner.released.Load() {
 		return
 	}
-	owner.message = nil
 	owner.timer = time.AfterFunc(server.limits.Stall, func() {
 		owner.mu.Lock()
 		defer owner.mu.Unlock()
@@ -151,5 +158,16 @@ func (a *Admission) reserveWire(bytes int) bool {
 		if a.wireBytes.CompareAndSwap(current, current+int64(bytes)) {
 			return true
 		}
+	}
+}
+
+// On cancellation the completed Send no longer needs the original document.
+// Its independent encoded copy remains charged until the transport frees it.
+func (owner *responseBufferOwner) detachMessage() {
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	if owner.message != nil {
+		owner.admission.responses.CompareAndDelete(owner.message, owner)
+		owner.message = nil
 	}
 }

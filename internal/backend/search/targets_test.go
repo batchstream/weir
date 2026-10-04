@@ -166,7 +166,7 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		"records/extra", "records?query=x",
 	} {
 		read := &pb.ReadRequest{Resource: resource + "/s:same"}
-		op := &execution.Operation{Read: read}
+		op := &execution.Operation{Index: 1, Read: read}
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Error("record target accepted", resource)
 		}

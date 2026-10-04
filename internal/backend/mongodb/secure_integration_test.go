@@ -36,7 +36,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	document := &pb.Document{MediaType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: fixture.DB + "/records/s:secure", Action: put}
-	op := &execution.Operation{Mutate: request}
+	op := &execution.Operation{Index: 1, Mutate: request}
 	plan, failure := prepareTestRecord(adapter, op)
 	if failure != nil {
 		t.Fatal(failure)
@@ -161,7 +161,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				doc := &pb.Document{MediaType: "application/bson", Data: raw}
 				put := &pb.MutateRequest_Put{Put: doc}
 				request := &pb.MutateRequest{Resource: db + "/records/s:counter", Action: put}
-				operation := &execution.Operation{Mutate: request}
+				operation := &execution.Operation{Index: 1, Mutate: request}
 				var failure *pb.Failure
 				work, failure = prepareTestRecord(adapter, operation)
 				if failure != nil {

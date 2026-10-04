@@ -25,7 +25,7 @@ type batchOperationOptions struct {
 
 func batchOperation(t testing.TB, opts batchOperationOptions) *execution.Operation {
 	t.Helper()
-	op := &execution.Operation{Index: opts.index}
+	op := &execution.Operation{Index: max(1, opts.index)}
 	if opts.action == "read" {
 		read := &pb.ReadRequest{Resource: opts.resource}
 		op.Read = read
@@ -319,7 +319,7 @@ func TestMongoCanceledProgramBatchHasNeutralFeedback(t *testing.T) {
 	caller, cancel := context.WithCancel(context.Background())
 	cancel()
 	native := &plan{action: "program"}
-	op := &execution.Operation{}
+	op := &execution.Operation{Index: 1}
 	p := &execution.Plan{Operation: op, Backend: native, Context: caller}
 	a := &Adapter{}
 	replies, signal := a.executeRecords(context.Background(), []*execution.Plan{p})
@@ -353,21 +353,10 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	for _, count := range []int{1, 129} {
-		plans := make([]*execution.Plan, count)
-		for i := range plans {
-			plans[i] = p
-		}
-		if count == 1 {
-			p.Bytes = protocol.MaxBatchRequestBytes + 1
-		}
-		results, _ := a.executeRecords(context.Background(), plans)
-		for _, result := range results {
-			if result.Read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-				t.Fatal(result)
-			}
-		}
-		p.Bytes = protocol.MaxDocument
+	p.Bytes = execution.BackendBatchBytes + 1
+	results, feedback := a.executeRecords(context.Background(), []*execution.Plan{p})
+	if len(results) != 1 || results[0].Read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || feedback != execution.Neutral {
+		t.Fatal("oversized native input reached backend work", results, feedback)
 	}
 }
 
@@ -414,7 +403,7 @@ func TestMongoDuplicateReadSeparatesRPCResultBudgets(t *testing.T) {
 			responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
 			adapter := batchMockAdapter(t, responses, nil)
 			var plans []*execution.Plan
-			charges := [2]int{}
+			budgets := [2]*execution.ResultBudget{}
 			firstContext, cancelFirst := context.WithCancel(t.Context())
 			defer cancelFirst()
 			for i := range 2 {
@@ -423,10 +412,8 @@ func TestMongoDuplicateReadSeparatesRPCResultBudgets(t *testing.T) {
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				budget := &execution.ResultBudget{Limit: protocol.MaxBatchResponseBytes, Retain: func(bytes int) bool {
-					charges[i] += bytes
-					return true
-				}}
+				budget := &execution.ResultBudget{Limit: protocol.MaxDocument + execution.ResultOverheadBytes}
+				budgets[i] = budget
 				if i == 0 {
 					work.Context = firstContext
 					if mode == "first exhausted" {
@@ -440,6 +427,7 @@ func TestMongoDuplicateReadSeparatesRPCResultBudgets(t *testing.T) {
 				cancelFirst()
 			}
 			replies, _ := adapter.executeRecords(t.Context(), plans)
+			charges := [2]int{budgets[0].Used, budgets[1].Used}
 			raw := expressionBSON(t, document)
 			if len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].Read.GetDocument().GetData(), raw) || charges[1] != len(raw) {
 				t.Fatal("first RPC budget/cancellation poisoned same-ID peer", replies, charges)

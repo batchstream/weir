@@ -29,8 +29,8 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	for i := range items {
 		items[i] = request
 	}
-	batch := &pb.ReadBatchRequest{StoreName: "mongo", Requests: items}
-	records, failure := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes)
+	batch := &pb.ReadBatch{Requests: items}
+	records, failure := execution.NewReadRecords("mongo", batch.Requests, execution.BackendBatchBytes)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -54,7 +54,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events, feedback)
 	}
 	request.Resource = "weir://mongo/db/records/s:a"
-	if _, err := execution.NewReadRecords(batch, protocol.MaxBatchRequestBytes); err == nil {
+	if _, err := execution.NewReadRecords("mongo", batch.Requests, execution.BackendBatchBytes); err == nil {
 		t.Fatal("accepted absolute wire resource")
 	}
 	request.Resource = "db/records/s:a"
@@ -71,8 +71,8 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "db/records/s:a", Action: action}
-	batch := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{mutation}}
-	records, failure := execution.NewMutationRecords(batch, protocol.MaxBatchRequestBytes)
+	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}
+	records, failure := execution.NewMutationRecords("mongo", batch.Requests, execution.BackendBatchBytes)
 	if failure != nil {
 		t.Fatal(failure)
 	}

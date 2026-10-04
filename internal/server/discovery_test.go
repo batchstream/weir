@@ -1,5 +1,7 @@
 package server
 
+import "github.com/batchstream/weir/internal/testutil"
+
 import (
 	"context"
 	"net"
@@ -98,8 +100,10 @@ func TestDiscoveryIngressRolesAndIndependentAdmission(t *testing.T) {
 	if _, err := client.ResolveStore(ctx, unknown); status.Code(err) != codes.Unavailable {
 		t.Fatal("unknown Store did not return retryable discovery error", err)
 	}
-	business := &pb.ReadBatchRequest{StoreName: "unknown", Requests: []*pb.ReadRequest{testRequest()}}
-	if _, err := client.Read(ctx, business); status.Code(err) != codes.Unavailable {
+	business := &pb.ExecuteRequest{StoreName: "unknown",
+		Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{testRequest()}}}}}
+
+	if _, err := testutil.ReadRecords(ctx, client, business.StoreName, business.Command.GetRead().Requests); status.Code(err) != codes.Unavailable {
 		t.Fatal("unhosted Store was accepted", err)
 	}
 	if adapter.commands.Load() != 0 {

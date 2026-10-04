@@ -2,6 +2,8 @@
 
 package server
 
+import "github.com/batchstream/weir/internal/testutil"
+
 import (
 	"context"
 	"encoding/json"
@@ -125,7 +127,7 @@ type luaRPCBatchOptions struct {
 }
 
 type luaRPCCallResult struct {
-	response *pb.MutateBatchResponse
+	response []*pb.MutationResult
 	err      error
 }
 
@@ -141,8 +143,10 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) {
 	blockerDone := make(chan error, 1)
 	go func() {
 		read := &pb.ReadRequest{Resource: opts.prefix + "blocker"}
-		request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
-		_, err := clients[0].Read(ctx, request)
+		request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.
+			ReadBatch{Requests: []*pb.ReadRequest{read}}}}}
+
+		_, err := testutil.ReadRecords(ctx, clients[0], request.StoreName, request.Command.GetRead().Requests)
 		blockerDone <- err
 	}()
 	waitLuaRPCRead(t, ctx, opts.gate, 1)
@@ -158,8 +162,9 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) {
 		workers.Go(func() {
 			defer close(done[i])
 			mutation := luaRPCMutation(opts.prefix+item.id, item.program)
-			request := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}
-			response, err := clients[i%len(clients)].Mutate(caller, request)
+			request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}}}}
+
+			response, err := testutil.MutateRecords(caller, clients[i%len(clients)], request.StoreName, request.Command.GetMutate().Requests)
 			results[i] = luaRPCCallResult{response: response, err: err}
 		})
 	}
@@ -204,11 +209,11 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) {
 			}
 			continue
 		}
-		if result.err != nil || result.response == nil || len(result.response.Results) != 1 {
+		if result.err != nil || result.response == nil || len(result.response) != 1 {
 			t.Errorf("RPC %d did not return its single result: response=%v err=%v", i, result.response, result.err)
 			continue
 		}
-		mutation := result.response.Results[0]
+		mutation := result.response[0]
 		if mutation.Outcome != item.outcome || mutation.GetFailure().GetCode() != item.failure {
 			t.Errorf("RPC %d received another caller's result: got=%v want=%v/%v", i, mutation, item.outcome, item.failure)
 		}

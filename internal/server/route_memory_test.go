@@ -17,7 +17,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/grpc/mem"
 )
 
@@ -32,7 +31,7 @@ func TestEncodedResponseCreditsFollowFinalTransportReference(t *testing.T) {
 	for _, size := range []int{0, 1, 1024, 1 << 20} {
 		document := &pb.Document{MediaType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), size)}
 		read := protocol.ReadDocument(document)
-		response := &pb.ReadBatchResponse{Results: []*pb.ReadResult{read}}
+		response := &pb.ExecuteResponse{Index: 1, Event: &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}}
 		encoded, err := codec.Marshal(response)
 		if err != nil {
 			t.Fatal(err)
@@ -67,7 +66,7 @@ func TestEncodedResponseBudgetDoesNotWaitOnPartialOwners(t *testing.T) {
 	}
 	codec := &responseCodec{admission: admission}
 	admission.wireLimit = 2048
-	response := &pb.ReadBatchResponse{}
+	response := &pb.ExecuteResponse{Index: 1}
 	first, err := codec.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +90,7 @@ func TestEncodedResponseMarshalErrorReturnsCredit(t *testing.T) {
 	codec := &responseCodec{admission: admission}
 	failure := &pb.Failure{Message: string([]byte{255})}
 	read := protocol.ReadFailure(failure)
-	response := &pb.ReadBatchResponse{Results: []*pb.ReadResult{read}}
+	response := &pb.ExecuteResponse{Index: 1, Event: &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}}
 	if encoded, err := codec.Marshal(response); err == nil {
 		encoded.Free()
 		t.Fatal("invalid UTF8 unexpectedly marshaled")
@@ -133,7 +132,7 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 	}
 	var block bytes.Buffer
 	encoder := hpack.NewEncoder(&block)
-	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Read_FullMethodName}, {Name: "content-type", Value: "application/grpc"}, {Name: "te", Value: "trailers"}}
+	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}, {Name: "te", Value: "trailers"}}
 	for _, field := range fields {
 		if err := encoder.WriteField(field); err != nil {
 			t.Fatal(err)
@@ -144,7 +143,10 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 		t.Fatal(err)
 	}
 	read := &pb.ReadRequest{Resource: "records/s:value"}
-	request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
+	request := &pb.ExecuteRequest{StoreName: "records",
+		Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{
+			Requests: repeatedReadRequests(read, protocol.MaxRecordFrameItems)}}}}
+
 	raw, err := proto.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
@@ -152,14 +154,25 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 	body := make([]byte, 5+len(raw))
 	binary.BigEndian.PutUint32(body[1:5], uint32(len(raw)))
 	copy(body[5:], raw)
-	if err := framer.WriteData(1, true, body); err != nil {
-		t.Fatal(err)
+	for start := 0; start < len(body); {
+		end := min(start+(16<<10), len(body))
+		if err := framer.WriteData(1, end == len(body), body[start:end]); err != nil {
+			t.Fatal(err)
+		}
+		start = end
 	}
 	queued := false
 	started := time.Now()
+	bounded := false
 	for {
 		if server.admission.wireBytes.Load() > 0 {
 			queued = true
+		}
+		if snapshot := local.Snapshot(); snapshot.ResultBytes > 0 {
+			bounded = true
+			if snapshot.Retained != 1 || snapshot.ResultBytes > store.DefaultLimits().ResultBytes/store.DefaultLimits().Concurrency || snapshot.Publishers != 0 {
+				t.Fatal("slow reader accumulated result windows", snapshot)
+			}
 		}
 		frame, err := framer.ReadFrame()
 		if err != nil {
@@ -185,8 +198,8 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 			t.Fatal("server ignored zero stream window", len(frame.Data()))
 		}
 	}
-	if !queued || time.Since(started) > time.Second {
-		t.Fatal("response ownership/output watchdog not exercised", queued, time.Since(started))
+	if !queued || !bounded || time.Since(started) > time.Second {
+		t.Fatal("response ownership/output watchdog not exercised", queued, bounded, time.Since(started))
 	}
 	// Native grpc may orphan DATA references on an aborted connection.
 	// Collection proves the encoded storage is unreachable before credit release.
@@ -211,27 +224,31 @@ func TestBatchDecodeBudgetRejectsTinyItemAmplificationBeforeAllocation(t *testin
 		t.Fatal(err)
 	}
 	codec := &responseCodec{admission: admission}
-	maximum := protocol.MaxBatchResponseBytes / execution.ResultOverheadBytes
+	maximum := protocol.MaxRecordFrameItems
 	for _, count := range []int{513, maximum, maximum + 1} {
 		read := &pb.ReadRequest{Resource: "a/b/s:k"}
 		requests := make([]*pb.ReadRequest, count)
 		for i := range requests {
 			requests[i] = read
 		}
-		request := &pb.ReadBatchRequest{StoreName: "records", Requests: requests}
+		request := &pb.ExecuteRequest{StoreName: "records",
+			Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{
+				Requests: requests}}}}
+
 		raw, err := proto.Marshal(request)
 		if err != nil {
 			t.Fatal(err)
 		}
 		buffer := mem.SliceBuffer(raw)
 		input := mem.BufferSlice{buffer}
-		decoded := &pb.ReadBatchRequest{}
+		decoded := &pb.ExecuteRequest{StoreName: "", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: nil}}}}
+
 		err = codec.Unmarshal(input, decoded)
-		if count <= maximum && (err != nil || len(decoded.Requests) != count) {
+		if count <= maximum && (err != nil || len(decoded.Command.GetRead().Requests) != count) {
 			t.Fatal("resource bounded batch rejected", count, err)
 		}
-		if count > maximum && (err == nil || len(decoded.Requests) != 0) {
-			t.Fatal("item amplification reached protobuf allocation", count, err, len(decoded.Requests))
+		if count > maximum && (err == nil || len(decoded.Command.GetRead().Requests) != 0) {
+			t.Fatal("item amplification reached protobuf allocation", count, err, len(decoded.Command.GetRead().Requests))
 		}
 	}
 }
@@ -269,4 +286,12 @@ func TestControlDecodeBudgetRejectsBeforeObjectConstruction(t *testing.T) {
 	if err := codec.Unmarshal(input, decoded); err == nil || decoded.StoreName != "" {
 		t.Fatal("over-budget discovery scalar decoded", err)
 	}
+}
+
+func repeatedReadRequests(read *pb.ReadRequest, count int) []*pb.ReadRequest {
+	items := make([]*pb.ReadRequest, count)
+	for i := range items {
+		items[i] = read
+	}
+	return items
 }

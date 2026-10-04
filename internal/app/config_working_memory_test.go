@@ -17,13 +17,13 @@ func TestWorkingMemoryParticipatesInProcessAdmission(t *testing.T) {
 	cfg.Routing = routing
 	cfg.Basic.Transport.MaxSessions = 64
 	cfg.Basic.Transport.MaxConnections = 64
-	cfg.Basic.Memory = 8 << 30
+	cfg.Basic.Memory = 4 << 30
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("8GiB accepted despite the complete ingress and 3GiB backend workspace envelope")
+		t.Fatal("4GiB accepted despite 64 stream windows and the 3GiB backend workspace")
 	}
-	cfg.Basic.Memory = 12 << 30
+	cfg.Basic.Memory = 8 << 30
 	if err := cfg.Validate(); err != nil {
-		t.Fatal("sufficient process memory rejected", err)
+		t.Fatal("bounded stream windows and backend workspace fit within 8GiB", err)
 	}
 	limits := routing.Stores[0].Local.runtimeLimits()
 	if limits.WorkingBytes != 3<<30 || limits.Concurrency != 32 {

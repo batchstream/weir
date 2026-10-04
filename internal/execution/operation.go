@@ -11,8 +11,12 @@ import (
 const EntryOverheadBytes = 512
 const ResultOverheadBytes = 512
 
-// Operation associates one validated request with its position in the owning
-// RPC. It is an internal execution value and has no serialized representation.
+// BackendBatchBytes bounds one native database exchange, independently of the
+// number of records in a logical client stream.
+const BackendBatchBytes = 32 << 20
+
+// Operation associates a validated request with its position in the current
+// Store window. The public stream ordinal is assigned at publication.
 type Operation struct {
 	Index  uint64
 	Read   *pb.ReadRequest
@@ -34,8 +38,8 @@ func (operation *Operation) RequestBytes() int {
 	return proto.Size(operation.Mutate) + 16
 }
 
-// Result retains one positional terminal for its owning RPC. The public Read or
-// Mutate handler publishes the corresponding result without an internal envelope.
+// Result retains one positional terminal for the current Store window. Execute
+// publishes its typed result with the corresponding public stream ordinal.
 type Result struct {
 	Index    uint64
 	Read     *pb.ReadResult

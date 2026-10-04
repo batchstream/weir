@@ -17,7 +17,7 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "db/records/s:item", Action: action}
-	operation := &execution.Operation{Mutate: mutation}
+	operation := &execution.Operation{Index: 1, Mutate: mutation}
 	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)

@@ -381,9 +381,9 @@ func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 	cancelled, stop := context.WithCancel(ctx)
 	cancelRequest := budgetPut(fixture.DB+"/records", "cancelled-artifact")
 	fixtureRequest := testutil.RecordRequest("records", cancelRequest)
-	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
+	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
 	stop()
-	cancelResponse, err := client.Mutate(cancelled, batch)
+	cancelResponse, err := testutil.MutateRecords(cancelled, client, "records", batch.Requests)
 	if status.Code(err) != codes.Canceled || cancelResponse != nil {
 		t.Fatal("batch cancellation", cancelResponse, err)
 	}

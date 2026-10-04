@@ -19,7 +19,7 @@ func expressionOperation(resource string, raw []byte) *execution.Operation {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	op := &execution.Operation{Mutate: req}
+	op := &execution.Operation{Index: 1, Mutate: req}
 	return op
 }
 

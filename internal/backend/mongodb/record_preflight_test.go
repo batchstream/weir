@@ -35,8 +35,8 @@ func TestMongoCompleteBatchPreflightBeforeAnyCommand(t *testing.T) {
 			action := &pb.MutateRequest_Delete{Delete: empty}
 			first := &pb.MutateRequest{Resource: "db/records/s:good", Action: action}
 			last := &pb.MutateRequest{Resource: path, Action: action}
-			request := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{first, last}}
-			records, failure := execution.NewMutationRecords(request, runtime.PendingByteLimit())
+			request := &pb.MutationBatch{Requests: []*pb.MutateRequest{first, last}}
+			records, failure := execution.NewMutationRecords("mongo", request.Requests, runtime.PendingByteLimit())
 			if failure != nil {
 				t.Fatal("backend-specific fixture failed common validation", failure)
 			}

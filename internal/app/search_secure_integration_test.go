@@ -185,9 +185,9 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 		t.Fatal("expression", result, err)
 	}
 	recordFixture := testutil.RecordRequest("search", mutation)
-	batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{recordFixture.Operation.Mutate}}
-	reply, err := client.Mutate(ctx, batch)
-	if err != nil || len(reply.GetResults()) != 1 || reply.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{recordFixture.Operation.Mutate}}
+	reply, err := testutil.MutateRecords(ctx, client, "search", batch.Requests)
+	if err != nil || len(reply) != 1 || reply[0].GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("batch mutation", reply, err)
 	}
 	var recordResult9 *execution.Result

@@ -214,7 +214,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			opts := adapterTestOptions{fixture: fixture, monitor: monitor}
 			adapter := testAdapter(t, opts)
 			var plans []*execution.Plan
-			charges := [2]int{}
+			budgets := [2]*execution.ResultBudget{}
 			caller, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			for i := range 2 {
@@ -223,10 +223,8 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				budget := &execution.ResultBudget{Limit: protocol.MaxBatchResponseBytes, Retain: func(bytes int) bool {
-					charges[i] += bytes
-					return true
-				}}
+				budget := &execution.ResultBudget{Limit: protocol.MaxDocument + execution.ResultOverheadBytes}
+				budgets[i] = budget
 				work.Context = t.Context()
 				if i == 0 {
 					work.Context = caller
@@ -241,6 +239,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 				cancel()
 			}
 			replies, _ := adapter.executeRecords(t.Context(), plans)
+			charges := [2]int{budgets[0].Used, budgets[1].Used}
 			raw := expressionBSON(t, document)
 			if finds.Load() != 1 || len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].Read.GetDocument().GetData(), raw) || charges[1] != len(raw) {
 				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies, charges)

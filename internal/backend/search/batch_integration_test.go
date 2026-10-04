@@ -70,7 +70,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.Index + "/s:program", Action: action}
-	operation := &execution.Operation{Mutate: mutation}
+	operation := &execution.Operation{Index: 1, Mutate: mutation}
 	programWork, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
@@ -181,7 +181,7 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.Index + "/s:program", Action: action}
-	operation := &execution.Operation{Mutate: mutation}
+	operation := &execution.Operation{Index: 1, Mutate: mutation}
 	programWork, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)

@@ -99,8 +99,8 @@ func deadlineMutation(t *testing.T, runtime *store.Runtime, action string) *stor
 	} else {
 		request.Action = &pb.MutateRequest_Put{Put: document}
 	}
-	batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{request}}
-	records, failure := execution.NewMutationRecords(batch, runtime.PendingByteLimit())
+	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{request}}
+	records, failure := execution.NewMutationRecords("search", batch.Requests, runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}

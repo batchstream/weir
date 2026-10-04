@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"github.com/batchstream/weir-protocol/api/protocol"
-	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"strings"
@@ -23,7 +22,7 @@ func TestTapRejectsExpiredAndReclaimsUndispatchedRPC(t *testing.T) {
 	_, local := peerLocal(t, "records")
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, _ := startPeerServer(t, opts)
-	info := &tap.Info{FullMethodName: pb.StoreService_Read_FullMethodName}
+	info := &tap.Info{FullMethodName: pb.StoreService_Execute_FullMethodName}
 	for range 50 {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
@@ -48,7 +47,7 @@ func TestDispatchedRPCAdmissionRemainsWhileHandlerWorks(t *testing.T) {
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, _ := startPeerServer(t, opts)
 	ctx, cancel := context.WithCancel(t.Context())
-	info := &tap.Info{FullMethodName: pb.StoreService_Read_FullMethodName}
+	info := &tap.Info{FullMethodName: pb.StoreService_Execute_FullMethodName}
 	accepted, err := server.admitRPC(ctx, info)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +74,7 @@ type admissionStream struct {
 func (stream *admissionStream) Context() context.Context { return stream.ctx }
 
 func TestHandlerCompletionReleasesAdmissionBeforeTransportEnd(t *testing.T) {
-	methods := []string{pb.StoreService_Read_FullMethodName, pb.StoreService_Execute_FullMethodName, pb.StoreService_ResolveStore_FullMethodName, peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName}
+	methods := []string{pb.StoreService_Execute_FullMethodName, pb.StoreService_ResolveStore_FullMethodName, peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName}
 	for _, method := range methods {
 		t.Run(methodLabel(method), func(t *testing.T) {
 			_, local := peerLocal(t, "records")
@@ -136,7 +135,7 @@ func TestHandlerCompletionReleasesAdmissionBeforeTransportEnd(t *testing.T) {
 				}
 			} else {
 				unaryInfo := &grpc.UnaryServerInfo{Server: server, FullMethod: method}
-				response := &pb.ReadBatchResponse{}
+				response := &pb.ExecuteResponse{Index: 1}
 				_, err := unaryRPC(ctx, nil, unaryInfo, func(context.Context, any) (any, error) { return response, nil })
 				if err != nil {
 					t.Fatal(err)
@@ -146,7 +145,7 @@ func TestHandlerCompletionReleasesAdmissionBeforeTransportEnd(t *testing.T) {
 				t.Fatal("handler did not release only its admission slot", ctx.Err(), len(slots))
 			}
 			codec := &responseCodec{admission: server.admission}
-			response := &pb.ReadBatchResponse{}
+			response := &pb.ExecuteResponse{Index: 1}
 			encoded, err := codec.Marshal(response)
 			if err != nil {
 				t.Fatal(err)
@@ -170,71 +169,35 @@ func TestHandlerCompletionReleasesAdmissionBeforeTransportEnd(t *testing.T) {
 	}
 }
 
-func TestUnaryBatchResultsReleaseAtTransportEnd(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, _ := startPeerServer(t, opts)
-	info := &tap.Info{FullMethodName: pb.StoreService_Read_FullMethodName}
-	ctx, err := server.admitRPC(t.Context(), info)
-	if err != nil {
-		t.Fatal(err)
-	}
-	statistics := transportStats{}
-	tags := &stats.RPCTagInfo{FullMethodName: info.FullMethodName}
-	statistics.TagRPC(ctx, tags)
-	payload := &stats.InPayload{}
-	statistics.HandleRPC(ctx, payload)
-	end := &stats.End{}
-	defer statistics.HandleRPC(ctx, end)
-
-	request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{testRequest()}}
-	unaryInfo := &grpc.UnaryServerInfo{Server: server, FullMethod: info.FullMethodName}
-	response, err := unaryRPC(ctx, request, unaryInfo, func(ctx context.Context, request any) (any, error) {
-		return server.Read(ctx, request.(*pb.ReadBatchRequest))
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	codec := &responseCodec{admission: server.admission}
-	encoded, err := codec.Marshal(response)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded.Free()
-	if len(server.slots) != 0 || server.admission.wireBytes.Load() != 0 {
-		t.Fatal("handler or encoded response retained transport credits")
-	}
-	// Returning the response and its encoded buffer precedes stats.End. Neither
-	// transport credit is evidence that the Store result has been acknowledged.
-	snapshot := local.Snapshot()
-	if snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 || snapshot.Ready != 1 || snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes {
-		t.Fatal("completed unary batch lost result ownership before transport End", snapshot)
-	}
-	statistics.HandleRPC(ctx, end)
-	waitPeerIdle(t, server)
-	snapshot = local.Snapshot()
-	if snapshot.PendingBytes != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 {
-		t.Fatal("transport End did not acknowledge the retained unary batch", snapshot)
-	}
-}
-
-func TestNativeBatchDecodeLimitFailsBeforeBackendWork(t *testing.T) {
+func TestRecordFrameDecodeLimitFailsBeforeBackendWork(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	count := protocol.MaxBatchResponseBytes/execution.ResultOverheadBytes + 1
+	count := protocol.MaxRecordFrameItems + 1
 	read := &pb.ReadRequest{Resource: "records/s:key"}
 	requests := make([]*pb.ReadRequest, count)
 	for i := range requests {
 		requests[i] = read
 	}
-	request := &pb.ReadBatchRequest{StoreName: "records", Requests: requests}
+	request := &pb.ExecuteRequest{StoreName: "records",
+		Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: requests}}}}
+
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	response, err := client.Read(ctx, request)
-	// Native gRPC wraps codec errors as Internal before the unary interceptor.
-	if response != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "request metadata exceeds decode budget") {
+	stream, err := client.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	response, err := stream.Recv()
+	// Native gRPC wraps codec errors as Internal before the stream handler.
+	if response != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "record metadata exceeds decode budget") {
 		t.Fatal("native decode status changed", response, err)
 	}
 	if len(adapter.seen) != 0 || adapter.commands.Load() != 0 || local.Snapshot().Retained != 0 {

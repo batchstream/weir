@@ -1,5 +1,7 @@
 package server
 
+import "github.com/batchstream/weir/internal/testutil"
+
 import (
 	"context"
 	"net"
@@ -42,6 +44,15 @@ func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, 
 	operation := record.Operation()
 	key := record.Key()
 	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: key, BatchKey: "records", Bytes: operation.RequestBytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
+	if operation.Read != nil {
+		a.mu.Lock()
+		readBytes := execution.DefaultMaxReadSize
+		for _, document := range a.documents {
+			readBytes = max(readBytes, len(document.Data))
+		}
+		a.mu.Unlock()
+		plan.ResultBytes += readBytes
+	}
 	return plan, nil
 }
 
@@ -175,7 +186,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 
 func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
 	t.Helper()
-	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxBatchResponseBytes), grpc.MaxCallSendMsgSize(protocol.MaxBatchRequestBytes))}
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxExecuteResponseBytes), grpc.MaxCallSendMsgSize(protocol.MaxExecuteRequestBytes))}
 	conn, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {
 		t.Fatal(err)
@@ -218,19 +229,26 @@ func waitPeerIdle(t *testing.T, s *Server) {
 }
 
 func routeRead(client pb.StoreServiceClient, ctx context.Context, read *pb.ReadRequest) (*pb.ReadResult, error) {
-	request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
-	response, err := client.Read(ctx, request)
+	request := &pb.ExecuteRequest{StoreName: "records",
+		Index: 1, Command: &pb.Command{
+			Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{
+				read}}}}}
+
+	response, err := testutil.ReadRecords(ctx, client, request.StoreName, request.Command.GetRead().Requests)
 	if err != nil {
 		return nil, err
 	}
-	return response.Results[0], nil
+	return response[0], nil
 }
 
 func routeMutate(client pb.StoreServiceClient, ctx context.Context, mutation *pb.MutateRequest) (*pb.MutationResult, error) {
-	request := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{mutation}}
-	response, err := client.Mutate(ctx, request)
+	request := &pb.ExecuteRequest{StoreName: "records",
+		Index: 1, Command: &pb.Command{
+			Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}}}}
+
+	response, err := testutil.MutateRecords(ctx, client, request.StoreName, request.Command.GetMutate().Requests)
 	if err != nil {
 		return nil, err
 	}
-	return response.Results[0], nil
+	return response[0], nil
 }

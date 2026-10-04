@@ -21,7 +21,7 @@ func unsentWritePlan() *execution.Plan {
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 	action := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: "records/s:write", Action: action}
-	operation := &execution.Operation{Mutate: mutation}
+	operation := &execution.Operation{Index: 1, Mutate: mutation}
 	work := &execution.Plan{Operation: operation}
 	return work
 }

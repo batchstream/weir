@@ -178,9 +178,9 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 				t.Fatal(result, err)
 			}
 			fixture := testutil.RecordRequest("mongo", request)
-			batch := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{fixture.Operation.Mutate}}
-			reply, err := client.Mutate(ctx, batch)
-			if err != nil || len(reply.GetResults()) != 1 || reply.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+			batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixture.Operation.Mutate}}
+			reply, err := testutil.MutateRecords(ctx, client, "mongo", batch.Requests)
+			if err != nil || len(reply) != 1 || reply[0].GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal("batch mutation", reply, err)
 			}
 			var recordResult9 *execution.Result

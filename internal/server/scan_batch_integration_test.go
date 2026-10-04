@@ -385,10 +385,13 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	}
 	readContext, stop := context.WithTimeout(t.Context(), 2*time.Second)
 	read := &pb.ReadRequest{Resource: opts.readResource}
-	batch := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{read}}
-	response, err := client.Read(readContext, batch)
+	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
+		Command{Operation: &pb.Command_Read{
+		Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{read}}}}}
+
+	response, err := testutil.ReadRecords(readContext, client, batch.StoreName, batch.Command.GetRead().Requests)
 	stop()
-	if err != nil || len(response.GetResults()) != 1 || response.Results[0].GetFailure() != nil || response.Results[0].GetDocument() == nil {
+	if err != nil || len(response) != 1 || response[0].GetFailure() != nil || response[0].GetDocument() == nil {
 		t.Fatal("independent Read was blocked by a slow Scan at concurrency one", response, err)
 	}
 	// A separate Scan remains live while the first caller cancels. Its context,

@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
+	"github.com/batchstream/weir/internal/directory"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,7 +30,7 @@ func NewAdmission(l Limits) (*Admission, error) {
 		slots:       make(chan struct{}, l.Sessions),
 		connections: make(chan struct{}, l.Connections),
 		draining:    make(chan struct{}),
-		wireLimit:   int64(l.Sessions) * protocol.MaxBatchResponseBytes,
+		wireLimit:   int64(l.Sessions)*protocol.MaxExecuteResponseBytes + 4*directory.MaxSyncBytes,
 	}
 	opts := prometheus.CounterOpts{
 		Name: "weir_admission_rejections_total",
