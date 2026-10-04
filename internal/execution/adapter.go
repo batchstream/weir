@@ -32,8 +32,8 @@ const (
 	Neutral Feedback = iota
 	Healthy
 	Congested
-	// Completed permits a slow capacity probe after a complete Native transport
-	// exchange. Its opaque body makes no assertion about business or write effects.
+	// Completed records a complete Native transport exchange. Its opaque body
+	// makes no assertion about business or write effects.
 	Completed
 )
 
