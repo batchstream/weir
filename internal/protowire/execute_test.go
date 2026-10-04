@@ -1,6 +1,7 @@
 package protowire
 
 import (
+	"bytes"
 	"encoding/binary"
 	"testing"
 
@@ -77,8 +78,8 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 	condition := append(wireMessage(1, []byte("application/json")), wireMessage(2, []byte(`{"match_all":{}}`))...)
 	projection := append([]byte{8, 1}, wireMessage(2, []byte("name"))...)
 	scan := append(append(append([]byte(nil), resource...), wireMessage(2, condition)...), wireMessage(3, projection)...)
-	http := append(wireMessage(1, []byte("GET")), wireMessage(2, []byte("/_doc/id"))...)
-	native := append(append([]byte(nil), resource...), wireMessage(3, http)...)
+	opaque := append(wireMessage(1, []byte("application/vnd.test.native")), wireMessage(2, []byte{0xff, 0x12, 0x80})...)
+	native := append(append([]byte(nil), resource...), wireMessage(2, opaque)...)
 	input := wireMessage(2, condition)
 	lua := append(wireMessage(1, []byte("return nil")), input...)
 	transform := wireMessage(1, lua)
@@ -90,12 +91,13 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 		valid   bool
 	}{
 		{name: "typed scan", kind: 3, payload: scan, valid: true},
-		{name: "typed native HTTP", kind: 4, payload: native, valid: true},
+		{name: "opaque native document", kind: 4, payload: native, valid: true},
 		{name: "typed Lua", kind: 2, payload: mutation, valid: true},
 		{name: "duplicate scan filter", kind: 3, payload: append(append([]byte(nil), scan...), wireMessage(2, condition)...)},
 		{name: "duplicate projection mode", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(3, append(projection, 8, 2))...)},
-		{name: "duplicate native variant", kind: 4, payload: append(append([]byte(nil), native...), wireMessage(2, []byte{5, 0, 0, 0, 0})...)},
-		{name: "duplicate HTTP path", kind: 4, payload: append(append([]byte(nil), resource...), wireMessage(3, append(http, wireMessage(2, []byte("/_bulk"))...))...)},
+		{name: "duplicate native document", kind: 4, payload: append(append([]byte(nil), native...), wireMessage(2, opaque)...)},
+		{name: "unknown native backend variant", kind: 4, payload: append(append([]byte(nil), native...), wireMessage(3, nil)...)},
+		{name: "duplicate native content type", kind: 4, payload: append(append([]byte(nil), resource...), wireMessage(2, append(opaque, wireMessage(1, []byte("application/http"))...))...)},
 		{name: "duplicate Lua input", kind: 2, payload: append(append([]byte(nil), resource...), wireMessage(6, wireMessage(1, append(lua, input...)))...)},
 		{name: "duplicate transform form", kind: 2, payload: append(append([]byte(nil), resource...), wireMessage(6, append(transform, wireMessage(2, condition)...))...)},
 		{name: "duplicate document content type", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(2, append(condition, wireMessage(1, []byte("application/bson"))...))...)},
@@ -116,14 +118,11 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 	}
 }
 
-func TestExecuteDecodeNestedMetadataUsesBoundedAllocation(t *testing.T) {
-	header := append(wireMessage(1, []byte("x")), wireMessage(2, nil)...)
-	base := append(wireMessage(1, []byte("GET")), wireMessage(2, []byte("/_doc/id"))...)
-	raw := append([]byte(nil), base...)
-	for range 8192 {
-		raw = append(raw, wireMessage(4, header)...)
-	}
-	native := append(wireMessage(1, []byte("records")), wireMessage(3, raw)...)
+func TestExecuteDecodeOpaqueNativeUsesBoundedAllocation(t *testing.T) {
+	// Opaque bytes resembling malformed protobuf are never recursively decoded.
+	payload := bytes.Repeat([]byte{0xff, 0x12, 0x80}, (protocol.MaxNativeRequestBytes-2)/3)
+	document := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, payload)...)
+	native := append(wireMessage(1, []byte("records")), wireMessage(2, document)...)
 	frame := wireMessage(3, wireMessage(4, native))
 	data := mem.BufferSlice{mem.SliceBuffer(frame)}
 	defer data.Free()
@@ -133,16 +132,14 @@ func TestExecuteDecodeNestedMetadataUsesBoundedAllocation(t *testing.T) {
 		}
 	})
 	if allocations > 32 {
-		t.Fatal("nested metadata allocated per-message buffers", allocations)
+		t.Fatal("opaque payload allocated per-message buffers", allocations)
 	}
-	for range 1200 {
-		raw = append(raw, wireMessage(4, header)...)
-	}
-	native = append(wireMessage(1, []byte("records")), wireMessage(3, raw)...)
+	oversizedDocument := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, make([]byte, protocol.MaxNativeRequestBytes+256))...)
+	native = append(wireMessage(1, []byte("records")), wireMessage(2, oversizedDocument)...)
 	frame = wireMessage(3, wireMessage(4, native))
 	oversized := mem.BufferSlice{mem.SliceBuffer(frame)}
 	defer oversized.Free()
 	if status.Code(ValidateExecuteFrame(oversized)) != codes.InvalidArgument {
-		t.Fatal("HTTP metadata bound disappeared")
+		t.Fatal("Native document bound disappeared")
 	}
 }

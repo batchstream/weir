@@ -3,7 +3,7 @@
 Configured MongoDB, Elasticsearch and OpenSearch Stores accept typed Read/Mutate
 streams and one Scan or Native Command per Execute RPC. Execute emits typed
 Events. Unknown protobuf fields and missing oneof variants fail validation.
-Document content types identify native bytes. Scan projection and Native request variants are explicit protocol fields.
+Document content types identify native bytes. Scan projection is a public type; Native carries an opaque request Document interpreted by the owning adapter. New Stores do not require a new public request variant.
 BSON and JSON retain their native semantics.
 
 The outer `store_name` selects the adapter. Resource paths are canonical relative
@@ -22,9 +22,9 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Backend expression content type | `application/vnd.weir.mongodb-update.v1+bson` | `application/vnd.weir.search-update.v1+json` |
 | Expression structure | bounded `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
 | Lua input | optional BSON document | optional JSON document |
-| Native request variant | `mongodb_command`: complete raw BSON bytes | `search_http`: typed `weir.search.v1.HttpRequest` with its body |
+| Native request Document | `application/bson`: complete raw BSON command | `application/http`: complete HTTP/1.1 request, including headers and body |
 | Native target | `db/collection` | one concrete `index` |
-| Native body | one complete BSON command, at most 4 MiB | at most 8 MiB; POST bulk uses NDJSON, GET has no body |
+| Native request limit | one complete BSON command, at most 4 MiB | 8 MiB for the complete HTTP message; headers consume part of that budget |
 
 Records are at most 2 MiB. The Mongo codec and Search JSON validator also bound
 nesting and node counts. Scan filters and backend expressions are at most 16 KiB.
@@ -34,7 +34,8 @@ facility with the transaction/CAS and allocation limitations in the architecture
 
 Projection has one mode and distinct dot-separated paths. INCLUDE publishes only
 listed fields; EXCLUDE publishes all other fields. Paths cannot overlap, contain
-wildcards/operators or empty segments. A projection has at most 128 paths, each
+wildcards or empty segments. MongoDB additionally rejects dollar-prefixed path
+segments; Search can project a literal dollar-prefixed business field. A projection has at most 128 paths, each
 at most 512 UTF-8 bytes and 8 KiB in total. MongoDB always reads the original `_id`
 for keyset pagination but removes it before publication when it is not selected.
 Search keeps PIT sort and hit identity internally. These pagination fields need
@@ -77,15 +78,32 @@ booleans and count limit/skip/hint types. Caller session, lifecycle, unacknowled
 write and JavaScript options are rejected. Native replies are raw BSON, at most
 4 MiB, emitted as ordered chunks with a NativeEnd completion result.
 
-Search Native uses the explicit HttpRequest/HttpResponse protobuf schema in
-[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.6.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
-`application/x-ndjson` and GET `/_doc/<unreserved-id>` with an empty body. Canonical
-query options are `refresh` for bulk or `realtime` for GET. Headers are restricted
-to `accept`, `content-type`, `x-opaque-id` with bounded values; they cannot override
-connection credentials or select another host. Each bulk item is validated before
-sending, scoped to the resource index and bounded to 256 KiB. Native replies are
-typed HTTP response metadata and raw body chunks, at most 8 MiB of body, followed by NativeEnd. HTTP/backend
-errors remain native data, rather than normalized mutation outcomes.
+Native uses a Store-neutral `request` Document, with at most 8 MiB of opaque
+payload, and an optional response `metadata` Document, with at most 64 KiB.
+The shared protocol checks content-type syntax and byte bounds. Each adapter
+interprets its own format and rejects unsupported types or operations. Empty
+payloads are allowed by the envelope but need not be valid for a particular Store.
+MongoDB Native responses omit metadata and publish BSON body chunks.
+
+Search Native accepts `application/http`: an HTTP/1.1 origin-form request-line,
+headers terminated by CRLFCRLF, and its body. Headers are limited to 64 KiB before
+HTTP parsing; the entire message is limited to 8 MiB, so the body must fit after
+subtracting the headers. A nonempty body requires exactly one Content-Length
+matching its byte length. An empty body may omit Content-Length. Chunked encoding,
+compression, trailers, Expect, absolute request targets and trailing bytes are
+rejected. Host is syntactic metadata and never selects the backend: Weir rebuilds
+the request using the configured Store and resource index.
+
+Supported operations are POST `/_bulk` with `application/x-ndjson` and GET
+`/_doc/<unreserved-id>` with an empty body. Canonical query options are `refresh`
+for bulk or `realtime` for GET. Option headers are restricted to `accept`,
+`content-type` and `x-opaque-id`, with bounded values. Each bulk item is validated
+before sending, scoped to the resource index and bounded to 256 KiB. Response
+metadata is `application/http` containing only a status-line and headers followed
+by CRLFCRLF. Raw entity body bytes follow as chunks, at most 8 MiB, then NativeEnd.
+HTTP/backend errors remain native data rather than normalized mutation outcomes.
+The SDK provides optional standard HTTP encoding/parsing helpers without adding
+backend-specific fields to the public wire contract.
 
 A record stream returns one indexed result per input record. A scan emits one finite page of zero or more
 Document Events and exactly one ScanEnd containing that page's matching document
@@ -104,8 +122,9 @@ keep-alive expires; it never restarts an expired snapshot automatically. A PIT
 already passed to the client remains alive until that timeout, including after
 exhaustion or a failed page, so losing the final page response does not immediately
 invalidate the client's previous checkpoint.
-A native request emits metadata before chunks if it starts, then exactly one
-NativeEnd; a rejected unstarted request can emit NativeEnd without metadata.
+A native request emits NativeHead before chunks if it starts, then exactly one
+NativeEnd. The head may omit its metadata Document; a rejected unstarted request
+can emit NativeEnd without a head.
 Business failure Events still require final gRPC completion. Overall streaming
 success requires the expected terminal Event and final gRPC OK; record-stream success
 requires a validated complete response. Transport termination never acknowledges

@@ -77,7 +77,7 @@ func targetResource(target namespace) string {
 
 func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson.D) bson.Raw {
 	t.Helper()
-	nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: targetResource(target), Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
@@ -85,7 +85,7 @@ func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson
 	}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+	open.Request.Data = raw
 	work.Command = testutil.NativeCommand(open)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -307,7 +307,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 						t.Fatal(failure)
 					}
 				case "native":
-					nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+					nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 					open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 					work, failure := fixture.adapter.prepareNative(open)
 					if failure != nil {
@@ -318,7 +318,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					command := bson.D{{Key: "findAndModify", Value: target.collection}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "upsert", Value: true}}
 					raw := expressionBSON(t, command)
 					capture := &nativeCapture{}
-					open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+					open.Request.Data = raw
 					work.Command = testutil.NativeCommand(open)
 					end, _ := fixture.adapter.executeNative(ctx, work, capture.Emit)
 					if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || capture.head != nil {

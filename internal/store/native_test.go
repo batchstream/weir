@@ -17,7 +17,7 @@ func TestAllCallKindsShareWorkingSetAdmission(t *testing.T) {
 	defer session.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	body := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	body := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	native := &pb.NativeRequest{Resource: "records", Request: body}
 	variant := &pb.Command_Native{Native: native}
 	call := &pb.Command{Operation: variant}

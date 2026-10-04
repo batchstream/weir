@@ -26,8 +26,8 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	if len(parts) != 2 || !validNamespace(parts) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
-	if _, ok := request.Request.(*pb.NativeRequest_MongodbCommand); !ok {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires mongodb_command")
+	if request.Request.ContentType != "application/bson" {
+		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires application/bson")
 	}
 
 	target := namespace{database: parts[0], collection: parts[1]}
@@ -97,7 +97,7 @@ func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 }
 
 func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) (*pb.NativeEnd, execution.Feedback) {
-	raw := work.Command.GetNative().GetMongodbCommand()
+	raw := work.Command.GetNative().Request.Data
 	target := work.Backend.(namespace)
 	if f := a.nativeCommand(raw, target); f != nil {
 		return protocol.NativeFailure(false, f), execution.Neutral

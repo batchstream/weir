@@ -93,7 +93,6 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	open.GetSearchHttp().Body = nil
 	work.Command = testutil.NativeCommand(open)
 	done := make(chan *pb.NativeEnd, 1)
 	go func() { end, _ := a.executeNative(ctx, work, emit); done <- end }()
@@ -234,7 +233,6 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 		t.Fatal(failure)
 	}
 	capture := &nativeCapture{}
-	open.GetSearchHttp().Body = nil
 	plan.Command = testutil.NativeCommand(open)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

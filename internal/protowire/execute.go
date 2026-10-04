@@ -37,8 +37,6 @@ const (
 	wireTransform
 	wireLua
 	wireProjection
-	wireHTTP
-	wireHeader
 )
 
 type wireField struct {
@@ -70,8 +68,7 @@ var requestShapes = [...][]wireField{
 		{number: 4, scalar: true},
 		{number: 5, maximum: protocol.MaxScanToken}},
 	wireNative: {{number: 1, maximum: protocol.MaxResourceBytes},
-		{number: 2, maximum: protocol.MaxNativeBodyBytes, oneof: true},
-		{number: 3, nested: wireHTTP, maximum: protocol.MaxCommandBytes, oneof: true}},
+		{number: 2, nested: wireDocument, maximum: protocol.MaxNativeRequestBytes + 256}},
 	wireDocument: {{number: 1, maximum: 128},
 		{number: 2, maximum: protocol.MaxCommandBytes}},
 	wireEmpty: {},
@@ -81,23 +78,14 @@ var requestShapes = [...][]wireField{
 		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes}},
 	wireProjection: {{number: 1, scalar: true},
 		{number: 2, repeated: true, maximum: 512}},
-	wireHTTP: {{number: 1, maximum: protocol.MaxNativeHTTPMetadataBytes},
-		{number: 2, maximum: protocol.MaxResourceBytes},
-		{number: 3, maximum: protocol.MaxResourceBytes},
-		{number: 4, repeated: true, nested: wireHeader, maximum: protocol.MaxNativeHTTPMetadataBytes},
-		{number: 5, maximum: 128},
-		{number: 6, maximum: protocol.MaxNativeBodyBytes}},
-	wireHeader: {{number: 1, maximum: protocol.MaxNativeHTTPMetadataBytes},
-		{number: 2, repeated: true, maximum: protocol.MaxNativeHTTPMetadataBytes}},
 }
 
 // Every recursion borrows the same buffered reader and owns an exact byte span.
-// Repeated nested headers do not allocate a separate input buffer per message.
+// Native payload bytes are opaque here; only their Document envelope is parsed.
 func validateMessageFrame(reader *bufio.Reader, kind wireKind, remaining uint64) error {
 	seen := uint64(0)
 	oneof := false
 	repeated := 0
-	metadataBytes := uint64(0)
 	for remaining > 0 {
 		tag, tagBytes, err := frameVarint(reader, remaining)
 		if err != nil {
@@ -145,12 +133,6 @@ func validateMessageFrame(reader *bufio.Reader, kind wireKind, remaining uint64)
 		remaining -= lengthBytes
 		if length > uint64(shape.maximum) || length > remaining {
 			return invalidExecuteFraming()
-		}
-		if kind == wireHTTP && number != 6 {
-			metadataBytes += tagBytes + lengthBytes + length
-			if metadataBytes > protocol.MaxNativeHTTPMetadataBytes {
-				return invalidExecuteFraming()
-			}
 		}
 		if shape.nested != 0 {
 			if err := validateMessageFrame(reader, shape.nested, length); err != nil {

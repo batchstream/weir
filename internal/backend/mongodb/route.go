@@ -24,7 +24,7 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 		work, failure = a.prepareScan(input.GetScan())
 	case input.GetNative() != nil:
 		native := input.GetNative()
-		if len(native.GetMongodbCommand()) > NativeCommandLimit {
+		if len(native.GetRequest().GetData()) > NativeCommandLimit {
 			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native input exceeds adapter bound")
 		}
 		work, failure = a.prepareNative(native)

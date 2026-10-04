@@ -448,9 +448,9 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: f.db + "/records", Request: nativeBody}
-			open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+			open.Request.Data = raw
 			native := open
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}

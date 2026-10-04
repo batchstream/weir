@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
@@ -244,12 +243,17 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 		if err != nil {
 			t.Fatal(err)
 		}
-		variant := &pb.NativeRequest_MongodbCommand{MongodbCommand: body}
+		variant := &pb.Document{ContentType: "application/bson", Data: body}
 		request = &pb.NativeRequest{Resource: opts.root, Request: variant}
 	} else {
-		httpRequest := &spb.HttpRequest{Method: "GET", Path: "/_doc/example", Query: "realtime=true"}
-		variant := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
-		request = &pb.NativeRequest{Resource: opts.root, Request: variant}
+		httpRequest, err := http.NewRequest(http.MethodGet, "http://ignored.invalid/_doc/example?realtime=true", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err = weirclient.NewHTTPNativeRequest(opts.root, httpRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	nativeCall := request
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
@@ -271,8 +275,8 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 			}
 			headSeen = true
 			if opts.store == "search" {
-				metadata := head.GetHttp()
-				if metadata.GetStatusCode() != http.StatusOK {
+				metadata, err := weirclient.ParseHTTPNativeResponse(head)
+				if err != nil || metadata.StatusCode != http.StatusOK {
 					t.Fatal("Native HTTP metadata", head)
 				}
 			}

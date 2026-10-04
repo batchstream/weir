@@ -3,11 +3,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net"
 	"net/http"
@@ -22,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
@@ -271,9 +272,15 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 			}
 		} else {
 			body := []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")
-			httpRequest := &spb.HttpRequest{Method: "POST", Path: "/_bulk", BodyContentType: "application/x-ndjson", Body: body}
-			request := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
-			nativeCall := &pb.NativeRequest{Resource: root, Request: request}
+			httpRequest, err := http.NewRequest(http.MethodPost, "http://ignored.invalid/_bulk", bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			httpRequest.Header.Set("Content-Type", "application/x-ndjson")
+			nativeCall, err := weirclient.NewHTTPNativeRequest(root, httpRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
 			nativeVariant := &pb.Command_Native{Native: nativeCall}
 			call := &pb.Command{Operation: nativeVariant}
 			stream, err := testutil.ExecuteEvents(ctx, client, "search", call)

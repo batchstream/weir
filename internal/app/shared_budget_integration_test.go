@@ -562,7 +562,7 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 	filter := bson.D{{Key: "_id", Value: "counter"}}
 	command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: filter}, {Key: "limit", Value: 1}}
 	raw, _ := bson.Marshal(command)
-	request := &pb.NativeRequest_MongodbCommand{MongodbCommand: raw}
+	request := &pb.Document{ContentType: "application/bson", Data: raw}
 	nativeCall := &pb.NativeRequest{Resource: e.root, Request: request}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}

@@ -68,6 +68,11 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		include := projection.Mode == pb.ProjectionMode_INCLUDE
 		native.includeID = !include
 		for _, name := range projection.Fields {
+			for _, segment := range strings.Split(name, ".") {
+				if strings.HasPrefix(segment, "$") {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan projection does not support dollar-prefixed fields")
+				}
+			}
 			if strings.HasPrefix(name, "_id.") {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan projects the complete _id or excludes it")
 			}

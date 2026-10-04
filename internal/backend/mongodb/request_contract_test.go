@@ -74,3 +74,14 @@ func TestMongoNativeCommandFailureClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestMongoScanProjectionRejectsDollarSegmentsBeforeBackend(t *testing.T) {
+	adapter := &Adapter{}
+	for _, field := range []string{"$price", "price.$amount", "_id.part"} {
+		projection := &pb.Projection{Mode: pb.ProjectionMode_INCLUDE, Fields: []string{field}}
+		request := &pb.ScanRequest{Resource: "db/records", Projection: projection}
+		if _, failure := adapter.prepareScan(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
+			t.Fatal("Mongo-specific path reached backend", field, failure)
+		}
+	}
+}

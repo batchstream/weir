@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -15,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
@@ -425,9 +426,14 @@ func searchBudgetNative(t *testing.T, e *searchBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	httpRequest := &spb.HttpRequest{Method: "GET", Path: "/_doc/native-probe"}
-	request := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
-	nativeCall := &pb.NativeRequest{Resource: e.root, Request: request}
+	httpRequest, err := http.NewRequest(http.MethodGet, "http://ignored.invalid/_doc/native-probe", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeCall, err := weirclient.NewHTTPNativeRequest(e.root, httpRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}
 	stream, err := testutil.ExecuteEvents(ctx, e.client, e.store, call)
