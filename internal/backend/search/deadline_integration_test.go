@@ -100,8 +100,8 @@ func TestRealSearchBackendDeadlineAcknowledgements(t *testing.T) {
 			document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":7}`)}
 			action := &pb.MutateRequest_Put{Put: document}
 			request := &pb.MutateRequest{Resource: backend.Index + "/s:write", Action: action}
-			batch := &pb.MutateBatchRequest{StoreName: "search", Requests: []*pb.MutateRequest{request}}
-			records, failure := execution.NewMutationRecords(batch, runtime.PendingByteLimit())
+			batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{request}}
+			records, failure := execution.NewMutationRecords("search", batch.Requests, runtime.PendingByteLimit())
 			if failure != nil {
 				t.Fatal(failure)
 			}

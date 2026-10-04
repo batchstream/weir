@@ -6,11 +6,10 @@ import (
 	"testing"
 )
 
-func TestReadAndMutateFixturesValidateTypedBatchRequests(t *testing.T) {
+func TestMutationFixturesValidateTypedRequests(t *testing.T) {
 	action := &pb.MutateRequest_AtomicTransform{}
 	mutation := &pb.MutateRequest{Resource: "records/s:key", Action: action}
-	request := &pb.MutateBatchRequest{StoreName: "store", Requests: []*pb.MutateRequest{mutation}}
-	if err := protocol.ValidateMutateBatchRequest(request); err == nil {
+	if err := protocol.ValidateMutationRequest(mutation); err == nil {
 		t.Fatal("missing transform accepted")
 	}
 }

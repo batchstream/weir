@@ -40,7 +40,7 @@ write and JavaScript options are rejected. Native replies are raw BSON, at most
 4 MiB, emitted as ordered chunks with a NativeEnd completion result.
 
 Search Native's descriptor is the explicit protobuf schema in
-[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.3.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
+[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.4.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
 `application/x-ndjson` and GET `/_doc/<unreserved-id>` with an empty body. Canonical
 query options are `refresh` for bulk or `realtime` for GET. Headers are restricted
 to `accept`, `content-type`, `x-opaque-id` with bounded values; they cannot override
@@ -49,7 +49,7 @@ sending, scoped to the resource index and bounded to 256 KiB. Native replies are
 raw HTTP metadata/body, at most 8 MiB total, followed by NativeEnd. HTTP/backend
 errors remain native data, rather than normalized mutation outcomes.
 
-A unary batch returns exactly one positional result per record. A scan emits one finite page of zero or more
+A record stream returns one indexed result per input record. A scan emits one finite page of zero or more
 Document Events and exactly one ScanEnd containing that page's matching document
 count and optional failure. `ScanRequest.page_size` defaults to 128 when zero and
 cannot exceed 256. Successful ScanEnd has exactly one of a nonempty
@@ -69,6 +69,6 @@ invalidate the client's previous checkpoint.
 A native request emits metadata before chunks if it starts, then exactly one
 NativeEnd; a rejected unstarted request can emit NativeEnd without metadata.
 Business failure Events still require final gRPC completion. Overall streaming
-success requires the expected terminal Event and final gRPC OK; unary success
+success requires the expected terminal Event and final gRPC OK; record-stream success
 requires a validated complete response. Transport termination never acknowledges
 that an unfinished write did not occur.

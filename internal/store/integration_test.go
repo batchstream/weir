@@ -63,8 +63,8 @@ func setup(t *testing.T) fixture {
 func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	read := &pb.ReadRequest{Resource: f.db + "/records/s:" + key}
-	request := &pb.ReadBatchRequest{StoreName: "mongo", Requests: []*pb.ReadRequest{read}}
-	records, failure := execution.NewReadRecords(request, f.runtime.PendingByteLimit())
+	request := &pb.ReadBatch{Requests: []*pb.ReadRequest{read}}
+	records, failure := execution.NewReadRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -91,8 +91,8 @@ func createMutation(t *testing.T, f fixture, key string) *pb.MutateRequest {
 func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	mutation := createMutation(t, f, key)
-	request := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{mutation}}
-	records, failure := execution.NewMutationRecords(request, f.runtime.PendingByteLimit())
+	request := &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}
+	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -224,8 +224,8 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, existing); err != nil {
 		t.Fatal(err)
 	}
-	request := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{createMutation(t, f, "exists"), createMutation(t, f, "new")}}
-	records, failure := execution.NewMutationRecords(request, f.runtime.PendingByteLimit())
+	request := &pb.MutationBatch{Requests: []*pb.MutateRequest{createMutation(t, f, "exists"), createMutation(t, f, "new")}}
+	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -254,7 +254,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "closeConnection", Value: true}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	request.Requests = []*pb.MutateRequest{createMutation(t, f, "unknown_a"), createMutation(t, f, "unknown_b")}
-	records, failure = execution.NewMutationRecords(request, f.runtime.PendingByteLimit())
+	records, failure = execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -318,8 +318,8 @@ func TestNativeWriteConcernAmbiguity(t *testing.T) {
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	request := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{createMutation(t, f, "wc_a"), createMutation(t, f, "wc_b")}}
-	records, failure := execution.NewMutationRecords(request, f.runtime.PendingByteLimit())
+	request := &pb.MutationBatch{Requests: []*pb.MutateRequest{createMutation(t, f, "wc_a"), createMutation(t, f, "wc_b")}}
+	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -390,11 +390,11 @@ func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
 	f := setup(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	request := &pb.MutateBatchRequest{StoreName: "mongo", Requests: make([]*pb.MutateRequest, 6)}
+	request := &pb.MutationBatch{Requests: make([]*pb.MutateRequest, 6)}
 	for i := range request.Requests {
 		request.Requests[i] = createMutation(t, f, fmt.Sprintf("drain_%d", i))
 	}
-	records, failure := execution.NewMutationRecords(request, f.runtime.PendingByteLimit())
+	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -528,8 +528,8 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}
-			request := &pb.MutateBatchRequest{StoreName: "mongo", Requests: []*pb.MutateRequest{mutation}}
-			records, failure := execution.NewMutationRecords(request, f.runtime.PendingByteLimit())
+			request := &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}
+			records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
 			if failure != nil {
 				t.Fatal(failure)
 			}

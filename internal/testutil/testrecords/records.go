@@ -5,42 +5,27 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"google.golang.org/protobuf/proto"
 )
 
-// New accepts relative backend requests and positional indices. It runs
-// the production constructor, assigning the requested index by choosing that
-// position in a valid public batch rather than fabricating a validated Record.
+// New validates a fixture request through the production record constructor.
 func New(store string, operation *execution.Operation) (*execution.Record, *pb.Failure) {
-	if operation == nil || operation.Index > uint64(protocol.MaxBatchResponseBytes/execution.ResultOverheadBytes) {
+	if operation == nil || operation.Index == 0 || (operation.Read == nil) == (operation.Mutate == nil) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record fixture")
 	}
-	count := max(1, int(operation.Index))
-	var records []*execution.Record
-	var failure *pb.Failure
-	if input := operation.Read; input != nil {
-		read := proto.Clone(input).(*pb.ReadRequest)
-		items := make([]*pb.ReadRequest, count)
-		for i := range items {
-			items[i] = read
-		}
-		request := &pb.ReadBatchRequest{StoreName: store, Requests: items}
-		records, failure = execution.NewReadRecords(request, protocol.MaxBatchRequestBytes)
-	} else if input := operation.Mutate; input != nil {
-		mutation := proto.Clone(input).(*pb.MutateRequest)
-		items := make([]*pb.MutateRequest, count)
-		for i := range items {
-			items[i] = mutation
-		}
-		request := &pb.MutateBatchRequest{StoreName: store, Requests: items}
-		records, failure = execution.NewMutationRecords(request, protocol.MaxBatchRequestBytes)
+	var err error
+	if operation.Read != nil {
+		err = protocol.ValidateReadRequest(operation.Read)
 	} else {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing record fixture")
+		err = protocol.ValidateMutationRequest(operation.Mutate)
 	}
-	if failure != nil {
-		return nil, failure
+	if err != nil || !protocol.ValidStoreName(store) {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record fixture request")
 	}
-	return records[count-1], nil
+	record, err := execution.NewRecord(store, operation)
+	if err != nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
+	}
+	return record, nil
 }
 
 func Prepare(adapter execution.Adapter, store string, operation *execution.Operation) (*execution.Plan, *pb.Failure) {

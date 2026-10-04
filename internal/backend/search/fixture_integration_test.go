@@ -49,7 +49,7 @@ func searchResource(index, id string) string {
 
 func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	op := &execution.Operation{}
+	op := &execution.Operation{Index: 1}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
 		op.Read = read

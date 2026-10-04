@@ -33,7 +33,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	for _, resource := range []string{"weir://other/records/s:a", "records/i:1", "records/s:", "Records/s:a", "records/s:a?routing=x"} {
 		read := &pb.ReadRequest{Resource: resource}
-		op := &execution.Operation{Read: read}
+		op := &execution.Operation{Index: 1, Read: read}
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Fatal("unsupported URI accepted", resource)
 		}
@@ -41,7 +41,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9223372036854775807}`)}
 	action := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	op := &execution.Operation{Mutate: mutation}
+	op := &execution.Operation{Index: 1, Mutate: mutation}
 	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
@@ -104,7 +104,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	op := &execution.Operation{Mutate: mutation}
+	op := &execution.Operation{Index: 1, Mutate: mutation}
 	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)
@@ -131,7 +131,7 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	empty := &pb.Empty{}
 	action := &pb.MutateRequest_Delete{Delete: empty}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	op := &execution.Operation{Mutate: mutation}
+	op := &execution.Operation{Index: 1, Mutate: mutation}
 	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{Operation: op, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)

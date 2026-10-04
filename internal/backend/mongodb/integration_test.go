@@ -297,7 +297,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 		d := &pb.Document{MediaType: "application/bson", Data: raw}
 		action := &pb.MutateRequest_Create{Create: d}
 		m := &pb.MutateRequest{Resource: db + "/records/s:" + id, Action: action}
-		op := &execution.Operation{Mutate: m}
+		op := &execution.Operation{Index: 1, Mutate: m}
 		p, f := prepareTestRecord(a, op)
 		if f != nil {
 			t.Fatal(f)
@@ -394,7 +394,7 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 		empty := &pb.Empty{}
 		action := &pb.MutateRequest_Delete{Delete: empty}
 		m := &pb.MutateRequest{Resource: db + "/records/s:" + id, Action: action}
-		op := &execution.Operation{Mutate: m}
+		op := &execution.Operation{Index: 1, Mutate: m}
 		p, f := prepareTestRecord(a, op)
 		if f != nil {
 			t.Fatal(f)

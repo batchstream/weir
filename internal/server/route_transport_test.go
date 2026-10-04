@@ -34,7 +34,7 @@ func TestBatchDeadlineAndCancellation(t *testing.T) {
 	}
 	cancel()
 	if err := <-done; status.Code(err) != codes.Canceled {
-		t.Fatal("cancellation did not reach unary caller", err)
+		t.Fatal("cancellation did not reach record stream caller", err)
 	}
 	close(release)
 	// Cancellation can orphan a native DATA buffer. Its cleanup returns byte

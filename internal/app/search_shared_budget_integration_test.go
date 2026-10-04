@@ -372,12 +372,12 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 			fixture := testutil.RecordRequest(e.store, request)
 			requests = append(requests, fixture.Operation.Mutate)
 		}
-		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
-		reply, err := e.client.Mutate(ctx, batch)
-		if err != nil || len(reply.GetResults()) != len(requests) {
+		batch := &pb.MutationBatch{Requests: requests}
+		reply, err := testutil.MutateRecords(ctx, e.client, "records", batch.Requests)
+		if err != nil || len(reply) != len(requests) {
 			t.Fatal("Search batch association", reply, err)
 		}
-		for i, result := range reply.Results {
+		for i, result := range reply {
 			status, _ := f.Admin.Do(t, "GET", fmt.Sprintf("/%s/_doc/bulk%d-%d", f.Backend.Index, e.concurrency, i), "")
 			switch result.GetOutcome() {
 			case pb.MutationOutcome_APPLIED:

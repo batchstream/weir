@@ -19,13 +19,13 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 	bytes := 0
 	for _, p := range plans {
 		charge := max(p.Bytes, p.Operation.RequestBytes())
-		if p.Bytes < 0 || charge > protocol.MaxBatchRequestBytes || bytes > protocol.MaxBatchRequestBytes-charge {
-			bytes = protocol.MaxBatchRequestBytes + 1
+		if p.Bytes < 0 || charge > execution.BackendBatchBytes || bytes > execution.BackendBatchBytes-charge {
+			bytes = execution.BackendBatchBytes + 1
 			break
 		}
 		bytes += charge
 	}
-	if bytes > protocol.MaxBatchRequestBytes {
+	if bytes > execution.BackendBatchBytes {
 		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "MongoDB batch exceeds encoded input byte bound")
 		for i, p := range plans {
 			results[i] = execution.FailedResult(p.Operation, pb.MutationOutcome_NOT_STARTED, failure)

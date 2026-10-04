@@ -192,12 +192,12 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		t.Fatal("direct read", found, err)
 	}
 	readFixture := testutil.RecordRequest(opts.store, read)
-	readBatch := &pb.ReadBatchRequest{StoreName: opts.store, Requests: []*pb.ReadRequest{readFixture.Operation.Read, readFixture.Operation.Read}}
-	reads, err := opts.client.Read(ctx, readBatch)
-	if err != nil || len(reads.GetResults()) != 2 {
+	readBatch := &pb.ReadBatch{Requests: []*pb.ReadRequest{readFixture.Operation.Read, readFixture.Operation.Read}}
+	reads, err := testutil.ReadRecords(ctx, opts.client, opts.store, readBatch.Requests)
+	if err != nil || len(reads) != 2 {
 		t.Fatal("batch read", reads, err)
 	}
-	for _, item := range reads.Results {
+	for _, item := range reads {
 		if item.GetFailure() != nil || processRecordNumber(t, item.GetDocument()) != 1 {
 			t.Fatal("batch read changed record", item)
 		}
@@ -211,12 +211,12 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		fixture := testutil.RecordRequest(opts.store, mutation)
 		requests = append(requests, fixture.Operation.Mutate)
 	}
-	batch := &pb.MutateBatchRequest{StoreName: opts.store, Requests: requests}
-	mutations, err := opts.client.Mutate(ctx, batch)
-	if err != nil || len(mutations.GetResults()) != len(requests) {
+	batch := &pb.MutationBatch{Requests: requests}
+	mutations, err := testutil.MutateRecords(ctx, opts.client, opts.store, batch.Requests)
+	if err != nil || len(mutations) != len(requests) {
 		t.Fatal("batch create", mutations, err)
 	}
-	for i, item := range mutations.Results {
+	for i, item := range mutations {
 		if item.GetOutcome() != pb.MutationOutcome_APPLIED || item.GetFailure() != nil {
 			t.Fatal("batch create", i, item)
 		}
@@ -226,12 +226,12 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		request := &pb.ReadRequest{Resource: item.Resource}
 		verification = append(verification, request)
 	}
-	verifyBatch := &pb.ReadBatchRequest{StoreName: opts.store, Requests: verification}
-	verified, err := opts.client.Read(ctx, verifyBatch)
-	if err != nil || len(verified.GetResults()) != len(requests) {
+	verifyBatch := &pb.ReadBatch{Requests: verification}
+	verified, err := testutil.ReadRecords(ctx, opts.client, opts.store, verifyBatch.Requests)
+	if err != nil || len(verified) != len(requests) {
 		t.Fatal("batch create readback", verified, err)
 	}
-	for i, item := range verified.Results {
+	for i, item := range verified {
 		if item.GetFailure() != nil || processRecordNumber(t, item.GetDocument()) != int32(i+2) {
 			t.Fatal("batch input order/readback", i, item)
 		}

@@ -127,7 +127,7 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			writeSource := []byte(`{"pad":"` + strings.Repeat("x", 2048) + `"}`)
 			document := &pb.Document{MediaType: "application/json", Data: writeSource}
 			mutation := &pb.MutateRequest{Resource: "records/s:write", Action: &pb.MutateRequest_Put{Put: document}}
-			operation := &execution.Operation{Mutate: mutation}
+			operation := &execution.Operation{Index: 1, Mutate: mutation}
 			write, failure := prepareTestRecord(adapter, operation)
 			if failure != nil {
 				t.Fatal("read profile affected mutation admission", failure)

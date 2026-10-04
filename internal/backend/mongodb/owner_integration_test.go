@@ -129,7 +129,7 @@ func ownerMutation(t *testing.T, a *Adapter, database, id string) *execution.Pla
 	body := &pb.Document{MediaType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: body}
 	req := &pb.MutateRequest{Resource: database + "/records/s:" + id, Action: put}
-	op := &execution.Operation{Mutate: req}
+	op := &execution.Operation{Index: 1, Mutate: req}
 	plan, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)

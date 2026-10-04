@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/execution"
@@ -19,7 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func TestNativeCoalescedRPCDuplicateReadBudgetAndRetainedOwners(t *testing.T) {
+func TestNativeCoalescedWindowsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 	fixture := testmongo.Open(t)
 	document := bson.D{{Key: "_id", Value: "same"}, {Key: "pad", Value: strings.Repeat("x", 1100<<10)}}
 	if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertOne(t.Context(), document); err != nil {
@@ -36,7 +35,7 @@ func TestNativeCoalescedRPCDuplicateReadBudgetAndRetainedOwners(t *testing.T) {
 			finds.Add(1)
 		}
 	}}
-	config := mongodb.Config{URI: proxy.URI(), Store: "mongo", Pool: 1, MaxReadSize: protocol.MaxDocument}
+	config := mongodb.Config{URI: proxy.URI(), Store: "mongo", Pool: 1, MaxReadSize: len(raw)}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	adapter, err := mongodb.Open(ctx, config)
@@ -54,12 +53,12 @@ func TestNativeCoalescedRPCDuplicateReadBudgetAndRetainedOwners(t *testing.T) {
 	runtime := newRuntime(adapter, limits)
 	var tickets []*Ticket
 	for _, count := range []int{31, 1} {
-		request := &pb.ReadBatchRequest{StoreName: "mongo"}
+		request := &pb.ReadBatch{}
 		for range count {
 			read := &pb.ReadRequest{Resource: fixture.DB + "/records/s:same"}
 			request.Requests = append(request.Requests, read)
 		}
-		records, failure := execution.NewReadRecords(request, runtime.PendingByteLimit())
+		records, failure := execution.NewReadRecords("mongo", request.Requests, runtime.PendingByteLimit())
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -85,14 +84,13 @@ func TestNativeCoalescedRPCDuplicateReadBudgetAndRetainedOwners(t *testing.T) {
 			if !bytes.Equal(document.Data, raw) {
 				t.Fatal("stored document changed in aggregated response")
 			}
-		} else if result.Read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-			t.Fatal("unexpected per-caller budget failure", result)
+		} else {
+			t.Fatal("admitted window lost its reserved read result", result)
 		}
 	}
 	peer := crossResults(t, tickets[1])[0]
-	expectedSuccesses := (protocol.MaxBatchResponseBytes - 31*execution.ResultOverheadBytes) / len(raw)
-	if successes != expectedSuccesses || successes >= len(results) || finds.Load() != 1 || peer.Index != 1 || !bytes.Equal(peer.Read.GetDocument().GetData(), raw) {
-		t.Fatal("first response budget poisoned peer or caused multiple native reads", successes, expectedSuccesses, finds.Load(), peer.Read.GetFailure())
+	if successes != len(results) || successes*len(raw) <= 32<<20 || finds.Load() != 1 || peer.Index != 1 || !bytes.Equal(peer.Read.GetDocument().GetData(), raw) {
+		t.Fatal("large result window was truncated or lost peer isolation", successes, len(results), finds.Load(), peer.Read.GetFailure())
 	}
 	tickets[0].Ack()
 	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+len(raw) || snapshot.WorkingBytes != 0 {

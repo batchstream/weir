@@ -271,7 +271,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
 		native.action = "read"
-		// Reserve bounded source scratch for the batched pre-read.
+		// Reserve the exported Read document up to its configured source bound.
 		work.ResultBytes += a.maxReadSize()
 	} else {
 		mutation := op.Mutate
@@ -289,8 +289,6 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		case *pb.MutateRequest_Replace:
 			native.action = "replace"
 			document = action.Replace
-			// Reserve bounded source scratch for the batched pre-read.
-			work.ResultBytes += protocol.MaxDocument
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
@@ -312,8 +310,6 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				native.action = "program"
 				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input}
 				native.program = luaProgram
-				// Reserve bounded source scratch for the batched pre-read.
-				work.ResultBytes += protocol.MaxDocument
 			} else {
 				expression := action.AtomicTransform.GetBackendExpression()
 				if f := prepareExpression(expression); f != nil {

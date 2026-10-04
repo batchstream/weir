@@ -52,8 +52,9 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// One Route vocabulary and one scheduler keep the maximum graph fixed.
-	const maximumSeries = 1444
+	// One bounded business stream replaces the separate Read and Mutate RPCs.
+	// Both application and peer listeners expose a fixed transport vocabulary.
+	const maximumSeries = 1420
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}

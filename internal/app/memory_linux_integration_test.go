@@ -316,11 +316,11 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	}()
 	admitted := budgetPut(root, "admitted")
 	fixtureRequest := testutil.RecordRequest("records", admitted)
-	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
-	responses := make(chan *pb.MutateBatchResponse, 1)
+	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
+	responses := make(chan []*pb.MutationResult, 1)
 	callErrors := make(chan error, 1)
 	go func() {
-		response, err := client.Mutate(ctx, batch)
+		response, err := testutil.MutateRecords(ctx, client, "records", batch.Requests)
 		responses <- response
 		callErrors <- err
 	}()
@@ -348,7 +348,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	observer.hold(nil, 0)
 	response := <-responses
 	callErr := <-callErrors
-	if callErr != nil || len(response.GetResults()) != 1 || response.Results[0].GetOutcome() != pb.MutationOutcome_APPLIED {
+	if callErr != nil || len(response) != 1 || response[0].GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("admitted batch result lost under overload", response, callErr)
 	}
 	if healthProcess(t, p, "/readyz") != 200 || healthProcess(t, p, "/livez") != 200 {

@@ -20,7 +20,7 @@ const testIndexReply = `{"records":{"settings":{"index.uuid":"test","index.numbe
 
 func batchTestPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	op := &execution.Operation{}
+	op := &execution.Operation{Index: 1}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
 		op.Read = read
@@ -102,8 +102,8 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 		works[i] = batchTestPlan(t, a, action, "records/s:"+ids[i])
 		works[i].Operation.Index = uint64(100 + i)
 		if action == "replace" || action == "program" {
-			if works[i].ResultBytes < protocol.MaxDocument+execution.ResultOverheadBytes {
-				t.Fatal("batched pre-read scratch not reserved")
+			if works[i].ResultBytes != execution.ResultOverheadBytes || works[i].WorkingBytes < 3*execution.BackendBatchBytes {
+				t.Fatal("mutation result credits or batched pre-read working memory incorrect", works[i].ResultBytes, works[i].WorkingBytes)
 			}
 		}
 	}

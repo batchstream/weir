@@ -48,7 +48,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 func prepareCounter(t *testing.T, a *Adapter, resource string) *execution.Plan {
 	t.Helper()
 	r := &pb.ReadRequest{Resource: resource}
-	op := &execution.Operation{Read: r}
+	op := &execution.Operation{Index: 1, Read: r}
 	p, f := prepareTestRecord(a, op)
 	if f != nil {
 		t.Fatal(f)

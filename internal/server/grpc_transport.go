@@ -8,7 +8,6 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
-	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -31,7 +30,6 @@ type rpcState struct {
 	cancel   context.CancelFunc
 	input    *time.Timer
 	lifetime func() bool
-	ticket   *store.Ticket
 	finished bool
 	started  bool
 }
@@ -50,7 +48,7 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 	control := false
 	allowed := false
 	switch info.FullMethodName {
-	case pb.StoreService_Read_FullMethodName, pb.StoreService_Mutate_FullMethodName, pb.StoreService_Execute_FullMethodName:
+	case pb.StoreService_Execute_FullMethodName:
 		allowed = !s.peer
 	case pb.StoreService_ResolveStore_FullMethodName:
 		allowed, control = !s.peer, true
@@ -118,12 +116,6 @@ func (state *rpcState) decoded() {
 	}
 }
 
-func (state *rpcState) retain(ticket *store.Ticket) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	state.ticket = ticket
-}
-
 func (state *rpcState) releaseAdmission() {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -168,9 +160,6 @@ func (state *rpcState) finishLocked(err error) {
 	if state.lifetime != nil {
 		state.lifetime()
 	}
-	if state.ticket != nil {
-		state.ticket.Ack()
-	}
 	state.server.metrics.rpcs.WithLabelValues(state.method, statusLabel(err)).Inc()
 	state.releaseAdmissionLocked()
 	state.cancel()
@@ -194,7 +183,7 @@ func (transportStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 	}
 	switch value := event.(type) {
 	case *stats.OutPayload:
-		if value, ok := state.server.admission.responses.LoadAndDelete(value.Payload); ok {
+		if value, ok := state.server.admission.responses.Load(value.Payload); ok {
 			value.(*responseBufferOwner).watch(ctx, state.server)
 		}
 	case *stats.InPayload:

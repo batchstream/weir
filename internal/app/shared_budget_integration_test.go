@@ -461,7 +461,7 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	if err := fixture.Client.Database(fixture.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 49 {
 		t.Fatal("lost cross-process/native increment", observed.N, err)
 	}
-	// Each mutation batch shares one unary RPC; input-order results are all checked.
+	// Each mutation batch shares one streaming RPC; input-order results are all checked.
 	for _, e := range peers {
 		requests := make([]*pb.MutateRequest, 0, 4)
 		for i := range 4 {
@@ -469,12 +469,12 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 			fixture := testutil.RecordRequest(e.store, request)
 			requests = append(requests, fixture.Operation.Mutate)
 		}
-		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
-		reply, err := e.client.Mutate(ctx, batch)
-		if err != nil || len(reply.GetResults()) != len(requests) {
+		batch := &pb.MutationBatch{Requests: requests}
+		reply, err := testutil.MutateRecords(ctx, e.client, "records", batch.Requests)
+		if err != nil || len(reply) != len(requests) {
 			t.Fatal("batch mutation", reply, err)
 		}
-		for i, result := range reply.Results {
+		for i, result := range reply {
 			if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 				t.Fatal("batch mutation", i, result)
 			}
@@ -844,12 +844,12 @@ func budgetLoadCall(ctx context.Context, client pb.StoreServiceClient, fixture t
 		result := response.Read
 		return err == nil && result.GetFailure() == nil
 	default:
-		batch := &pb.MutateBatchRequest{StoreName: fixture.StoreName, Requests: []*pb.MutateRequest{fixture.Operation.Mutate, fixture.Operation.Mutate}}
-		response, err := client.Mutate(ctx, batch)
-		if err != nil || len(response.GetResults()) != len(batch.Requests) {
+		batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixture.Operation.Mutate, fixture.Operation.Mutate}}
+		response, err := testutil.MutateRecords(ctx, client, fixture.StoreName, batch.Requests)
+		if err != nil || len(response) != len(batch.Requests) {
 			return false
 		}
-		for _, result := range response.Results {
+		for _, result := range response {
 			if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 				return false
 			}

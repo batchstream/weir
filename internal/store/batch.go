@@ -9,7 +9,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-// PreparedBatch owns one validated request. Its record plans never become
+// PreparedBatch owns one bounded record window. Its plans never become
 // independent admission entries, publishers, cancellation watchers or RPCs.
 type PreparedBatch struct {
 	plans        []*execution.Plan
@@ -44,11 +44,11 @@ func (r *Runtime) PrepareBatch(records []*execution.Record) (*PreparedBatch, *pb
 		plan.Bytes = max(plan.Bytes, record.Bytes())
 		prepared.plans[position] = plan
 		prepared.bytes += plan.Bytes
-		// Terminal envelopes always have space; only actual copied read data
-		// increases this charge. The read size limit is not a reservation.
-		prepared.resultBytes += execution.ResultOverheadBytes
+		// Reserve the configured maximum before database work starts. Shared
+		// result pressure delays admission rather than failing a copied document.
+		prepared.resultBytes += max(plan.ResultBytes, execution.ResultOverheadBytes)
 		prepared.workingBytes = max(prepared.workingBytes, plan.WorkingBytes)
-		if prepared.bytes > r.limits.PendingBytes || prepared.resultBytes > min(r.limits.ResultBytes, protocol.MaxBatchResponseBytes) {
+		if prepared.bytes > r.limits.PendingBytes || prepared.resultBytes > r.limits.ResultBytes {
 			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch exceeds Store memory bounds")
 		}
 	}
@@ -96,18 +96,6 @@ func (t *Ticket) WaitBatch(ctx context.Context) ([]*execution.Result, error) {
 		t.Abandon()
 		return nil, ctx.Err()
 	}
-}
-
-func (t *Ticket) retainResults(bytes int) bool {
-	r := t.runtime
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if t.released || bytes > r.limits.ResultBytes-r.resultBytes {
-		return false
-	}
-	r.resultBytes += bytes
-	t.resultCharge += bytes
-	return true
 }
 
 func (r *Runtime) completeBatchLocked(t *Ticket, failure *pb.Failure) {
@@ -175,7 +163,7 @@ func (r *Runtime) executeBatch(ctx context.Context, tickets []*Ticket) execution
 	plans := make([]*execution.Plan, 0, count)
 	owners := make(map[*execution.Plan]*Ticket, count)
 	for _, ticket := range tickets {
-		budget := &execution.ResultBudget{Limit: protocol.MaxBatchResponseBytes, Used: ticket.resultCharge, Retain: ticket.retainResults}
+		budget := &execution.ResultBudget{Limit: ticket.resultCharge, Used: len(ticket.bulk.plans) * execution.ResultOverheadBytes}
 		for _, original := range ticket.bulk.plans {
 			plan := *original
 			plan.Context = ticket.ctx
@@ -222,8 +210,7 @@ func (r *Runtime) executeBatch(ctx context.Context, tickets []*Ticket) execution
 	return feedback
 }
 
-// A complete small RPC can share one execution task with other queued RPCs.
-// Large, multi-namespace and singleton requests retain their sequential groups.
+// Compatible bounded windows from different streams share database execution.
 func (r *Runtime) batchKey(prepared *PreparedBatch) (string, bool) {
 	if len(prepared.plans) > r.limits.BatchOperations || prepared.bytes > r.limits.BatchBytes {
 		return "", false

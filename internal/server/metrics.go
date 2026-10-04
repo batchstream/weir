@@ -11,15 +11,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var metricMethods = []string{"read", "mutate", "execute", "resolve_store", "sync_directory", "other"}
+var metricMethods = []string{"execute", "resolve_store", "sync_directory", "other"}
 var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
 
 func methodLabel(method string) string {
 	switch method {
-	case pb.StoreService_Read_FullMethodName:
-		return "read"
-	case pb.StoreService_Mutate_FullMethodName:
-		return "mutate"
 	case pb.StoreService_Execute_FullMethodName:
 		return "execute"
 	case pb.StoreService_ResolveStore_FullMethodName:

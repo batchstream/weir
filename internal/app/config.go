@@ -170,7 +170,7 @@ func (cfg Config) ReservedMemory() uint64 {
 	if cfg.Basic.Transport.serverLimits().Validate() != nil {
 		return (64 << 30) + 1
 	}
-	transportCosts := []uint64{uint64(cfg.Basic.Transport.MaxSessions) * (96 << 20), uint64(cfg.Basic.Transport.MaxConnections) * (256 << 10)}
+	transportCosts := []uint64{uint64(cfg.Basic.Transport.MaxSessions) * uint64(server.SessionMemoryBytes), uint64(cfg.Basic.Transport.MaxConnections) * (256 << 10)}
 	budget := addMemoryBudget(64<<20, transportCosts)
 	for _, service := range cfg.Routing.Stores {
 		if service.Local != nil {

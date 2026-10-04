@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Record is constructed only after its complete public batch passes validation.
+// Record borrows one validated request in the current bounded execution window.
 // Its request and decoded segments are borrowed immutably by the backend plan.
 type Record struct {
 	operation *Operation
@@ -25,22 +25,26 @@ func (r *Record) Segments() []string    { return r.segments }
 func (r *Record) Key() string           { return r.key }
 func (r *Record) Bytes() int            { return r.bytes }
 
-func NewReadRecords(request *pb.ReadBatchRequest, byteLimit int) ([]*Record, *pb.Failure) {
-	if err := protocol.ValidateReadBatchRequest(request); err != nil {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
+func NewReadRecords(store string, requests []*pb.ReadRequest, byteLimit int) ([]*Record, *pb.Failure) {
+	for _, request := range requests {
+		if err := protocol.ValidateReadRequest(request); err != nil {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
+		}
 	}
-	byteLimit = min(byteLimit, protocol.MaxBatchRequestBytes)
+	if !protocol.ValidStoreName(store) || len(requests) == 0 {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Store or empty record window")
+	}
 	bytes := 0
-	for _, read := range request.Requests {
-		bytes += recordBytes(request.StoreName, read.Resource, proto.Size(read)+16)
+	for _, read := range requests {
+		bytes += recordBytes(store, read.Resource, proto.Size(read)+16)
 		if bytes > byteLimit {
 			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch preparation metadata exceeds byte budget")
 		}
 	}
-	records := make([]*Record, len(request.Requests))
-	for i, read := range request.Requests {
+	records := make([]*Record, len(requests))
+	for i, read := range requests {
 		operation := &Operation{Index: uint64(i + 1), Read: read}
-		record, err := newRecord(request.StoreName, operation)
+		record, err := NewRecord(store, operation)
 		if err != nil {
 			return nil, protocol.Fail(pb.FailureCode_INTERNAL, "validated record path could not be decoded")
 		}
@@ -49,22 +53,26 @@ func NewReadRecords(request *pb.ReadBatchRequest, byteLimit int) ([]*Record, *pb
 	return records, nil
 }
 
-func NewMutationRecords(request *pb.MutateBatchRequest, byteLimit int) ([]*Record, *pb.Failure) {
-	if err := protocol.ValidateMutateBatchRequest(request); err != nil {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
+func NewMutationRecords(store string, requests []*pb.MutateRequest, byteLimit int) ([]*Record, *pb.Failure) {
+	for _, request := range requests {
+		if err := protocol.ValidateMutationRequest(request); err != nil {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
+		}
 	}
-	byteLimit = min(byteLimit, protocol.MaxBatchRequestBytes)
+	if !protocol.ValidStoreName(store) || len(requests) == 0 {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Store or empty record window")
+	}
 	bytes := 0
-	for _, mutation := range request.Requests {
-		bytes += recordBytes(request.StoreName, mutation.Resource, proto.Size(mutation)+16)
+	for _, mutation := range requests {
+		bytes += recordBytes(store, mutation.Resource, proto.Size(mutation)+16)
 		if bytes > byteLimit {
 			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch preparation metadata exceeds byte budget")
 		}
 	}
-	records := make([]*Record, len(request.Requests))
-	for i, mutation := range request.Requests {
+	records := make([]*Record, len(requests))
+	for i, mutation := range requests {
 		operation := &Operation{Index: uint64(i + 1), Mutate: mutation}
-		record, err := newRecord(request.StoreName, operation)
+		record, err := NewRecord(store, operation)
 		if err != nil {
 			return nil, protocol.Fail(pb.FailureCode_INTERNAL, "validated record path could not be decoded")
 		}
@@ -75,12 +83,12 @@ func NewMutationRecords(request *pb.MutateBatchRequest, byteLimit int) ([]*Recor
 
 // Count the retained request, model envelope and decoded path before allocating
 // a batch. Sixteen bytes cover the retained internal positional metadata.
-// The Store's pending bound and existing RPC envelope both remain effective.
+// The Store pending bound accounts for prepared window metadata.
 func recordBytes(store, resource string, operationBytes int) int {
 	return operationBytes + len(store) + 2*len(resource) + 1024 + 16*(strings.Count(resource, "/")+1)
 }
 
-func newRecord(store string, operation *Operation) (*Record, error) {
+func NewRecord(store string, operation *Operation) (*Record, error) {
 	resource := operation.Resource()
 	parts := make([]string, 0, strings.Count(resource, "/")+1)
 	remaining := resource

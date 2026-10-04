@@ -9,35 +9,35 @@ independent; see [protocols](protocols.md) and [discovery design](discovery-desi
 
 ## Public requests and completion
 
-Read and Mutate are unary batch RPCs. Each request contains one Store name and an
-ordered list of canonical relative resources. Preparation validates every item
-before backend work. Results have the same length and position as the inputs.
-One batch can select several collections or indices within the same Store.
+Execute is bidirectional. One finite stream selects a Store and one operation
+kind. ReadBatch and MutationBatch frames carry bounded lists of canonical relative
+resources and a consecutive first-item ordinal. The server validates a frame,
+prepares one finite window, executes and publishes its indexed results, then
+continues receiving. A logical call can contain arbitrarily many frames; it never
+owns a complete-call result table on the server.
 
-A shared execution constructor validates the complete public batch once and
-borrows its immutable request fields. It decodes relative path segments into
-internal records before backend preparation. Adapters consume those prepared
-records and validate database-specific targets and documents; they do not copy
-request DTOs, build full Store URIs or repeat public protocol validation.
+The SDK Read and Mutate conveniences preflight slice inputs without copying the
+whole call into another protobuf batch. ReadStream and MutateStream offer an
+incremental producer and consumer. Sending and receiving run concurrently with
+bounded frame credits. Convenience methods accumulate output on the caller.
 
-Mutate is not a transaction. Same-resource mutations execute in input order,
-including after a failed item; different keys can share a physical batch. Separate
-RPCs retain normal backend concurrency semantics. There is no durable request
-ID, deduplication or exactly-once guarantee.
+Compatible windows from independent streams share database batches. Mutations to
+the same resource execute in stream input order, including after item failures.
+Different streams retain backend concurrency semantics. Mutate is not an atomic
+transaction; a later invalid frame cannot undo earlier effects. There is no durable
+request identity, deduplication or exactly-once guarantee.
 
-Execute accepts exactly one Scan or Native Command and streams typed Events. A scan page emits documents then ScanEnd;
-a native operation emits metadata, ordered chunks and NativeEnd. Streaming
-success requires a validated terminal and final gRPC OK. A scan checkpoint also
-requires its terminal document count to match complete delivery.
+Scan and Native each send one command with index 1 and half-close input. A scan
+page emits documents then ScanEnd; Native emits metadata, chunks and NativeEnd.
+Success requires the terminal event and final gRPC OK. A scan checkpoint additionally
+requires the terminal document count to match complete delivery.
 
 Individual business failures are typed results or terminal Events. RPC failures
 are gRPC status. NOT_STARTED requires evidence of no backend attempt; NOT_APPLIED
 requires definite rejection or evidence of no send; APPLIED requires a validated
-acknowledgement; otherwise mutation outcome is UNKNOWN. APPLIED can include a
-failure of a later acknowledgement step without losing application evidence.
-A failed unary RPC or invalid batch response confirms none of its submitted
-mutations. Neither server nor SDK automatically replays possible writes.
-NativeEnd evidence can survive a later transport error, but that RPC still failed.
+acknowledgement; otherwise mutation outcome is UNKNOWN. Confirmed indexed results
+survive a later transport failure, which still means the whole RPC failed. Neither
+server nor SDK automatically replays possible writes.
 
 ## Native gRPC ingress
 
@@ -45,7 +45,7 @@ The server uses grpc.Server.Serve on a bounded listener. Application listeners
 serve only the public StoreService; peer listeners serve only SyncDirectory.
 Control calls have separate finite admission and short deadlines. InTapHandle
 reserves an RPC slot before DATA decoding. Request deadlines, cancellation and
-input-stall watchdogs apply to unary and streaming requests. An expired request
+input-stall watchdogs apply to discovery and streaming requests. An expired request
 that never reaches a handler still releases its slot.
 
 The SDK reuses round-robin channels with native adaptive HTTP/2 flow control.
@@ -57,7 +57,7 @@ contains only public ownership/address advertisements, never backend credentials
 
 | Budget | Default or bound |
 | --- | --- |
-| Complete Read/Mutate protobuf request or response | 32 MiB, including repeated-item envelope bytes |
+| Read/Mutate request frame | 5 MiB and 1024 items; no whole-call size limit |
 | Record document | 2 MiB; ordinary Read additionally obeys max_read_size |
 | Ordinary Read source | Default 16 KiB; configurable 1 KiB–2 MiB |
 | Native body | MongoDB 4 MiB; Search 8 MiB |
@@ -67,33 +67,22 @@ contains only public ownership/address advertisements, never backend credentials
 | Store backend workspace | 384 MiB; configurable with working_memory |
 | Physical batch input | 8 MiB / 32 operations, configurable |
 | Application admission | 4 business RPCs / 16 accepted connections |
-| Encoded native output queue | max_sessions × 32 MiB |
+| Encoded native output queue | bounded independently of total stream length |
 | Directory controls | 2 concurrent controls per listener; bounded exchanges |
 | Process admission threshold | 2 GiB |
 
-There is no public item-count limit. Complete encoded bytes, real backend limits
-and declared memory budgets determine capacity. Runtime counters, session counts
-and configured execution concurrency must fit the process memory envelope.
+There is no whole-call item-count limit. Frame bytes, frame metadata, Store budgets
+and physical grouping bounds determine concurrent capacity. A wire pre-scan rejects
+frame expansion beyond the metadata budget before protobuf construction.
 
-Before protobuf object construction, a wire pre-scan checks repeated-item
-metadata against the same 32-MiB terminal-envelope budget. This prevents tiny
-encoded items from amplifying into unbounded decoded objects. A failure at this
-stage follows the native gRPC decoder status, with an explicit budget diagnostic.
-It allocates no item objects and performs no backend work.
-
-A complete client batch owns one prepared request, one admission ticket, one
-cancellation watcher and one result table. Record terminal envelopes reserve
-small fixed charges. Read data reserves actual copied bytes before retention;
-max_read_size is an acceptance limit rather than a per-record reservation.
-Insufficient result credit produces an individual ResourceExhausted result instead
-of waiting while holding a partially filled response. Mutation acknowledgement
-and failure envelopes retain reserved space. Several RPCs can share a backend
-execution without sharing admission or response budgets. Duplicate reads may
-share immutable data, but every response owner retains its own byte charge until
-that RPC releases its results.
-There is no separate Store request-count cap: these byte budgets and the configured
-ingress RPC limit bound concurrent requests. Every record or command charges its
-retained metadata, including a nonzero ticket and terminal envelope.
+Each stream retains one bounded input frame and one prepared execution window.
+Read windows reserve output credits from their configured maximum read sizes before
+execution, so an oversized logical call does not consume an entire Store result
+budget. Shared capacity exhaustion waits for admission or cancellation. The server
+publishes and releases a window before advancing to the next window or frame.
+Window result tables and database workspace are independent of total call length.
+Same-resource ordering is maintained across windows. Slow response consumption
+stalls publication and stops further input; queues cannot grow without a bound.
 
 Backend working charges cover bounded native replies and decoding scratch.
 MongoDB uses its native bounded cursor reply; Search caps multi-get response bytes.
@@ -106,7 +95,10 @@ and increase process `memory` to cover it. Configuration rejects an insufficient
 process envelope before opening backends.
 Encoded response bytes remain charged until the native transport frees its final
 buffer reference, including after handler completion. Exhausted output capacity
-fails boundedly. Application result charges end after native serialization/enqueue.
+fails boundedly. A record window's application result charges remain held until
+every response's encoded buffer ownership ends, then the window is acknowledged.
+Cancellation releases application data; any independent encoded copy remains
+charged until the transport drops its final reference.
 
 Configuration validates a conservative sum of connection, RPC, Store and control
 envelopes. This is admission accounting, not an allocator or RSS limit: GC slack,
@@ -117,13 +109,13 @@ hard VM allocation sandbox.
 
 ## Scheduling and backend work
 
-A complete request enters the Store scheduler directly; there is no collection
-window or polling. When an execution permit becomes available, the scheduler
-combines already queued single-record RPCs and compatible complete small batches
-by target namespace, actual input bytes and max_batch_operations. One selected
-execution holds one working envelope sized for its largest operation. Large,
-multi-namespace and singleton client batches execute independently and split into
-sequential bounded groups. Repeated mutation keys start a new sequential wave.
+The current prepared window enters the Store scheduler directly; there is no
+timed collection window or polling. When an execution permit becomes available,
+the scheduler combines compatible queued windows from different streams by
+target namespace, actual input bytes and max_batch_operations. One selected
+execution holds one working envelope sized for its largest operation. Each
+stream advances through sequential bounded windows; multi-namespace work splits
+into compatible backend groups. Repeated mutation keys start a new sequential wave.
 One adapter implementation handles both record groups and Scan/Native plans.
 
 Every record keeps its owning RPC context, result budget and ordinal. Backend
