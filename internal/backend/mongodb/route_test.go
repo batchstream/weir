@@ -64,7 +64,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	}
 }
 
-func TestRouteLuaPlanKeepsIndependentTransaction(t *testing.T) {
+func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	adapter := &Adapter{config: Config{Store: "mongo"}}
 	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.keep()`)}
 	form := &pb.Transform_Program{Program: program}
@@ -80,8 +80,8 @@ func TestRouteLuaPlanKeepsIndependentTransaction(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if !work.Singleton || work.Backend.(*plan).program == nil {
-		t.Fatal("Lua could be combined into another request's transaction")
+	if work.Singleton || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" || work.WorkingBytes != programWorkingBytes {
+		t.Fatal("Lua plan did not declare bounded transaction batching")
 	}
 }
 

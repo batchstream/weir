@@ -59,7 +59,6 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	work.WorkingBytes = a.readWorkingBytes()
 	native := work.Backend.(*plan)
 	work.BatchKey = native.index
-	work.Singleton = native.program != nil
 	return work, nil
 }
 

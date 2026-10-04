@@ -63,7 +63,10 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	}
 	native := work.Backend.(*plan)
 	work.BatchKey = native.target.String()
-	work.Singleton = native.program != nil
+	if native.program != nil {
+		work.BatchKey += "/lua"
+		work.WorkingBytes = programWorkingBytes
+	}
 	return work, nil
 }
 

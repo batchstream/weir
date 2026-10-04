@@ -95,13 +95,24 @@ peers or backends. Configuration changes take effect after a restart.
 Store defaults are two concurrent backend executions, 32 operations per batch,
 a `16KiB` ordinary-read limit and a `384MiB` backend working budget. There is no
 collection delay; queued RPCs combine by namespace, actual input bytes and
-`max_batch_operations`. Large client batches split into sequential bounded groups;
-singleton Lua operations remain separate. Adapters issue their native read and write
+`max_batch_operations`. Large client batches split into sequential bounded groups.
+Lua transforms also combine compatible queued requests: MongoDB batches reads and
+writes in a short snapshot transaction, and Search batches real-time reads and
+version-conditional writes. Weir adds no revision fields to business documents.
+Adapters issue their native read and write
 commands for each group. Read results reserve actual retained bytes, rather
 than the configured maximum size multiplied by the number of records. Tune against completed
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
 or container limit for a hard memory boundary. Execution concurrency and backend
 working budgets remain independent of peer discovery.
+
+A MongoDB Lua transaction can contain records from several RPCs. A database write
+failure rolls back that transaction; a confirmed abort can be retried within the
+original deadline. An uncertain commit cannot start another write attempt. Lua
+keep, reject and evaluation failures have individual results and do not enqueue
+writes. Search retries only items with a confirmed version conflict. Physical
+groups can split further to bound retained read sources and generated writes;
+clients cannot treat Mutate or several RPCs as one application transaction.
 
 `backend_timeout` is a positive duration and defaults to `2s` when omitted.
 Record execution gets one absolute deadline from dispatch through qualification,

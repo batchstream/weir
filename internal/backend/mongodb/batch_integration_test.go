@@ -84,7 +84,7 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 			t.Fatal(operation.id, reply)
 		}
 	}
-	if finds.Load() != 2 || bulkWrites.Load() != 1 || transactionWrites.Load() != 1 || commits.Load() != 1 {
+	if finds.Load() != 2 || bulkWrites.Load() != 2 || transactionWrites.Load() != 0 || commits.Load() != 1 {
 		t.Fatal("mixed operations were not physically aggregated", finds.Load(), bulkWrites.Load(), transactionWrites.Load(), commits.Load())
 	}
 	for _, id := range []string{"put-new", "create-new", "replace", "expression", "program"} {
@@ -94,7 +94,7 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 			t.Fatal("effect absent", id, err, raw)
 		}
 	}
-	t.Logf("12 mixed records: point read requests=%d verbose bulk writes=%d separate Lua commits=%d", finds.Load()-1, bulkWrites.Load(), commits.Load())
+	t.Logf("12 mixed records: point read requests=%d physical bulk writes=%d Lua transaction commits=%d", finds.Load(), bulkWrites.Load(), commits.Load())
 }
 
 func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T) {

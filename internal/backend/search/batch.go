@@ -13,7 +13,6 @@ import (
 const batchBodyLimit = protocol.MaxBatchResponseBytes
 
 const getFramingLimit = 32 << 10
-const getBatchItems = (batchBodyLimit - getFramingLimit) / (protocol.MaxDocument + getFramingLimit)
 
 type observedRecord struct {
 	reply    *getReply
@@ -182,13 +181,6 @@ func combineFeedback(current, next execution.Feedback) execution.Feedback {
 	return execution.Healthy
 }
 
-type programExecution struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	stop     func() bool
-	attempts int
-}
-
 type recordWrite struct {
 	work                 *execution.Plan
 	position, start, end int
@@ -198,36 +190,21 @@ type recordBatch struct {
 	adapter  *Adapter
 	ctx      context.Context
 	results  []*pb.Result
-	programs []*programExecution
+	attempts []int
 	feedback execution.Feedback
 	request  bytes.Buffer
 	pending  []recordWrite
 	retry    []int
 }
 
-func (b *recordBatch) callerFailure(work *execution.Plan, position int) *pb.Failure {
+func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
 	if work.Context != nil && work.Context.Err() != nil {
 		return protocol.ContextFailure(work.Context)
 	}
 	if b.ctx.Err() != nil {
 		return protocol.ContextFailure(b.ctx)
 	}
-	if program := b.programs[position]; program != nil && program.ctx.Err() != nil {
-		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "Lua transform execution deadline exceeded")
-	}
 	return nil
-}
-
-func (b *recordBatch) closePrograms() {
-	for _, program := range b.programs {
-		if program == nil {
-			continue
-		}
-		if program.stop != nil {
-			program.stop()
-		}
-		program.cancel()
-	}
 }
 
 // appendWrite frames one document at a time. Generated Lua sources are released
@@ -284,7 +261,7 @@ func (b *recordBatch) flush() {
 	works := make([]*execution.Plan, 0, len(b.pending))
 	positions := make([]int, 0, len(b.pending))
 	for _, item := range b.pending {
-		if failure := b.callerFailure(item.work, item.position); failure != nil {
+		if failure := b.callerFailure(item.work); failure != nil {
 			b.results[item.position] = protocol.ResultError(item.work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			b.feedback = combineFeedback(b.feedback, execution.Neutral)
 			continue
@@ -305,12 +282,12 @@ func (b *recordBatch) flush() {
 		b.feedback = combineFeedback(b.feedback, sample)
 		for i, position := range positions {
 			b.results[position] = replies[i]
-			program := b.programs[position]
+			program := works[i].Backend.(*plan).program
 			mutation := replies[i].GetMutation()
 			if program == nil || mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 				continue
 			}
-			if program.attempts < programAttempts {
+			if b.attempts[position] < programAttempts {
 				b.retry = append(b.retry, position)
 			} else {
 				failure := protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt")
@@ -331,10 +308,9 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 		adapter:  a,
 		ctx:      ctx,
 		results:  make([]*pb.Result, len(works)),
-		programs: make([]*programExecution, len(works)),
+		attempts: make([]int, len(works)),
 		feedback: execution.Healthy,
 	}
-	defer batch.closePrograms()
 	totalBytes := 0
 	for _, work := range works {
 		totalBytes += work.Bytes
@@ -348,18 +324,10 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 	}
 	positions := make([]int, 0, len(works))
 	for i, work := range works {
-		if failure := batch.callerFailure(work, i); failure != nil {
+		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
-		}
-		if work.Backend.(*plan).action == "program" {
-			programContext, cancel := context.WithTimeout(ctx, programLifetime)
-			program := &programExecution{ctx: programContext, cancel: cancel}
-			if work.Context != nil {
-				program.stop = context.AfterFunc(work.Context, cancel)
-			}
-			batch.programs[i] = program
 		}
 		positions = append(positions, i)
 	}
@@ -375,7 +343,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 	qualified := make(map[string]qualification)
 	for _, i := range positions {
 		work := works[i]
-		if failure := batch.callerFailure(work, i); failure != nil {
+		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
@@ -390,7 +358,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 				batch.feedback = combineFeedback(batch.feedback, sample)
 			}
 		}
-		if failure := batch.callerFailure(work, i); failure != nil {
+		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
@@ -413,75 +381,104 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 		}
 	}
 	for len(positions) != 0 {
-		readWorks := make([]*execution.Plan, 0, len(positions))
-		readPositions := make([]int, 0, len(positions))
-		for _, i := range positions {
-			work := works[i]
-			if batch.results[i] != nil {
-				continue
-			}
-			if denied := batch.callerFailure(work, i); denied != nil {
-				batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
-				batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
-				continue
-			}
-			action := work.Backend.(*plan).action
-			if action == "read" || action == "replace" || action == "program" {
-				readWorks = append(readWorks, work)
-				readPositions = append(readPositions, i)
-			}
-		}
-		observed := make([]*getReply, len(works))
-		for offset, record := range a.mget(ctx, readWorks) {
-			i := readPositions[offset]
-			work := works[i]
-			batch.feedback = combineFeedback(batch.feedback, record.feedback)
-			if work.Backend.(*plan).action == "read" {
-				batch.results[i] = readResult(work, record.reply, record.failure)
-			} else if record.failure != nil {
-				batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, record.failure)
-			} else {
-				observed[i] = record.reply
-			}
-		}
-		for _, i := range positions {
-			work := works[i]
-			if batch.results[i] != nil {
-				continue
-			}
-			if denied := batch.callerFailure(work, i); denied != nil {
-				batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
-				batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
-				continue
-			}
-			native := work.Backend.(*plan)
-			current := observed[i]
-			if native.action == "replace" && !*current.Found {
-				denied := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
-				batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
-				batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
-				continue
-			}
-			if native.action == "program" {
-				program := batch.programs[i]
-				program.attempts++
-				next, mutation, sample := evaluateProgram(program.ctx, native, current)
-				if denied := batch.callerFailure(work, i); denied != nil {
-					mutation = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, denied)
-					sample = execution.Neutral
+		// Bound the retained pre-read sources before Lua runs. Only one chunk's
+		// sources and one framed write body coexist; small ordinary reads still
+		// collect up to the complete response bound in a single native request.
+		for start := 0; start < len(positions); {
+			end, readBytes := start, getFramingLimit
+			for end < len(positions) {
+				work := works[positions[end]]
+				native := work.Backend.(*plan)
+				if batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
+					bound := a.sourceLimit(work) + getFramingLimit
+					if bound > batchBodyLimit-readBytes {
+						break
+					}
+					readBytes += bound
 				}
-				batch.feedback = combineFeedback(batch.feedback, sample)
-				if mutation != nil {
-					batch.results[i] = protocol.ResultError(work.Operation, mutation.Outcome, mutation.Failure)
+				end++
+			}
+			chunk := positions[start:end]
+			readWorks := make([]*execution.Plan, 0, len(chunk))
+			readPositions := make([]int, 0, len(chunk))
+			for _, i := range chunk {
+				work := works[i]
+				if batch.results[i] != nil {
 					continue
 				}
-				copy := *work
-				copy.Backend = next
-				work = &copy
+				if denied := batch.callerFailure(work); denied != nil {
+					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
+					continue
+				}
+				action := work.Backend.(*plan).action
+				if action == "read" || action == "replace" || action == "program" {
+					readWorks = append(readWorks, work)
+					readPositions = append(readPositions, i)
+				}
 			}
-			batch.appendWrite(work, i, current)
-			observed[i] = nil
+			observed := make(map[int]*getReply, len(readWorks))
+			for offset, record := range a.mget(ctx, readWorks) {
+				i := readPositions[offset]
+				work := works[i]
+				batch.feedback = combineFeedback(batch.feedback, record.feedback)
+				if work.Backend.(*plan).action == "read" {
+					batch.results[i] = readResult(work, record.reply, record.failure)
+				} else if record.failure != nil {
+					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, record.failure)
+				} else {
+					observed[i] = record.reply
+				}
+			}
+			for _, i := range chunk {
+				work := works[i]
+				if batch.results[i] != nil {
+					continue
+				}
+				if denied := batch.callerFailure(work); denied != nil {
+					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
+					continue
+				}
+				native := work.Backend.(*plan)
+				current := observed[i]
+				delete(observed, i)
+				if native.action == "replace" && !*current.Found {
+					denied := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
+					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
+					continue
+				}
+				if native.action == "program" {
+					batch.attempts[i]++
+					programContext, cancel := context.WithCancel(ctx)
+					var stop func() bool
+					if work.Context != nil {
+						stop = context.AfterFunc(work.Context, cancel)
+					}
+					next, mutation, sample := evaluateProgram(programContext, native, current)
+					if stop != nil {
+						stop()
+					}
+					cancel()
+					if denied := batch.callerFailure(work); denied != nil {
+						mutation = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, denied)
+						sample = execution.Neutral
+					}
+					batch.feedback = combineFeedback(batch.feedback, sample)
+					if mutation != nil {
+						batch.results[i] = protocol.ResultError(work.Operation, mutation.Outcome, mutation.Failure)
+						continue
+					}
+					copy := *work
+					copy.Backend = next
+					work = &copy
+				}
+				batch.appendWrite(work, i, current)
+			}
+			start = end
 		}
+
 		batch.flush()
 		positions = batch.retry
 		batch.retry = nil
