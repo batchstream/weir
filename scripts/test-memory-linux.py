@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit opt-in, native Linux M14 fixture. No image pulls, credentials or host cgroup writes."""
+"""Explicit opt-in, native Linux memory fixture. No image pulls, credentials or host cgroup writes."""
 
 import shutil
 import signal
@@ -14,7 +14,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE = "sha256:997ed65ff26fc20107e799f0fd1477e5af782b42bd651d870c5436b95fd0323c"
-OWNER = "weir-m14-" + uuid.uuid4().hex[:12]
+OWNER = "weir-memory-" + uuid.uuid4().hex[:12]
 OUTPUT = ROOT / ".testdata" / OWNER
 
 
@@ -184,15 +184,15 @@ def cleanup(resources):
 
 
 def main():
-    if os.environ.get("WEIR_M14_INTEGRATION") != "1":
-        sys.exit("requires WEIR_M14_INTEGRATION=1; starts bounded owned containers")
+    if os.environ.get("WEIR_MEMORY_INTEGRATION") != "1":
+        sys.exit("requires WEIR_MEMORY_INTEGRATION=1; starts bounded owned containers")
     OUTPUT.mkdir(parents=True)
     (OUTPUT / "owner").write_text(OWNER + "\n")
-    print(f"M14 logs: {OUTPUT}", flush=True)
+    print(f"memory logs: {OUTPUT}", flush=True)
     resources = {"containers": [], "network": None, "host_mongo": None, "host_output": None}
     network, database = OWNER, OWNER + "-mongo"
-    host_db = os.environ.get("WEIR_M14_HOST_MONGO") == "1"
-    database_address = "m14mongo:27017"
+    host_db = os.environ.get("WEIR_MEMORY_HOST_MONGO") == "1"
+    database_address = "memory-mongo:27017"
     test_error = None
     try:
         engine = json.loads(
@@ -286,7 +286,7 @@ def main():
                     "--port",
                     str(port),
                     "--replSet",
-                    "m14",
+                    "weir_memory",
                     "--wiredTigerCacheSizeGB=0.25",
                 ],
                 stdout=resources["host_output"],
@@ -301,7 +301,7 @@ def main():
                     if resources["host_mongo"].poll() is not None:
                         raise RuntimeError("host fixture startup failed")
                     time.sleep(0.1)
-            bootstrap = f'rs.initiate({{_id:"m14",members:[{{_id:0,host:"127.0.0.1:{port}"}}]}}); for(let i=0;i<100;i++){{if(db.hello().isWritablePrimary)break;sleep(100)}}; if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'
+            bootstrap = f'rs.initiate({{_id:"weir_memory",members:[{{_id:0,host:"127.0.0.1:{port}"}}]}}); for(let i=0;i<100;i++){{if(db.hello().isWritablePrimary)break;sleep(100)}}; if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'
             run(
                 [
                     "mongosh",
@@ -329,7 +329,7 @@ def main():
                     "--network",
                     network,
                     "--network-alias",
-                    "m14mongo",
+                    "memory-mongo",
                     "--memory=768m",
                     "--memory-swap=768m",
                     "--cpus=1",
@@ -341,14 +341,14 @@ def main():
                     IMAGE,
                     "--bind_ip_all",
                     "--replSet",
-                    "m14",
+                    "weir_memory",
                     "--wiredTigerCacheSizeGB=0.25",
                     "--setParameter",
                     "enableTestCommands=1",
                 ]
             )
             bootstrap = '''for(let i=0;i<100;i++){try{db.adminCommand({ping:1});break}catch(e){sleep(100)}};
-    rs.initiate({_id:"m14",members:[{_id:0,host:"m14mongo:27017"}]});
+    rs.initiate({_id:"weir_memory",members:[{_id:0,host:"memory-mongo:27017"}]});
     for(let i=0;i<100;i++){if(db.hello().isWritablePrimary)break;sleep(100)};
     if(!db.hello().isWritablePrimary)throw new Error("not primary"); print(db.version());'''
             run(
@@ -382,9 +382,9 @@ def main():
                     "--mount",
                     f"type=bind,src={OUTPUT},dst=/fixture,readonly",
                     "--env",
-                    "WEIR_M14_NATIVE=1",
+                    "WEIR_MEMORY_NATIVE=1",
                     "--env",
-                    "WEIR_M14_MONGO_ADDR=" + database_address,
+                    "WEIR_MEMORY_MONGO_ADDR=" + database_address,
                     "--entrypoint",
                     "/fixture/" + binary,
                     IMAGE,

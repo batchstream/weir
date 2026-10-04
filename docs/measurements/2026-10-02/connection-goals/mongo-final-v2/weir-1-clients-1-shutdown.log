@@ -1,3 +1,0 @@
-Weir listening on [127.0.0.1:7447]; static local/peer profile, not production ready
-Diagnostics listening on 127.0.0.1:7449
-2026/10/01 23:49:43 INFO backend_connections_closed backend=mongo store=records owned=0 peak=2 limit=5 dialing=0 closing=0 acquired=2 released=2

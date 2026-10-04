@@ -1,9 +1,8 @@
 # Store discovery and direct business traffic
 
-This breaking refactor separates Store discovery from business execution. The
-public StoreService exposes ResolveStore, unary Read/Mutate and single-command streaming Execute. The private
-PeerDiscoveryService exchanges owner announcements with SyncDirectory. All run in the single Weir
-process. URI affinity and automatic business retries are intentionally absent.
+The public StoreService exposes ResolveStore, unary Read/Mutate and streaming
+Execute for one Scan or Native command. PeerDiscoveryService exchanges Store
+ownership announcements with SyncDirectory. All run in one Weir process.
 
 The public and peer schemas are independent; see [protocol boundaries and names](protocols.md).
 
@@ -12,9 +11,8 @@ The public and peer schemas are independent; see [protocol boundaries and names]
 Clients can initialize through any Weir application address. A normal load-balanced
 seed service can select any group: every peer eventually learns the same Store
 ownership directory. ResolveStore returns the provider group's reachable host:port
-business targets, rather than a forwarding next hop. The client connects directly
-to those targets. Business RPCs only accept a locally configured Store; there is no
-remote execution destination or fallback forwarding path.
+business endpoints. The client connects directly
+to those endpoints. Business RPCs accept a locally configured Store.
 
 The protocol uses Store names, replica group identities, instance advertisements
 and addresses. It does not use Kubernetes objects or APIs. On VMs/containers,

@@ -25,9 +25,7 @@ including after a failed item; different keys can share a physical batch. Separa
 RPCs retain normal backend concurrency semantics. There is no durable request
 ID, deduplication or exactly-once guarantee.
 
-Execute accepts exactly one version-1 Scan or Native Command and streams typed
-version-1 Events. It has no input pump, correlation IDs, byte-fragment assembly
-or separate request-complete frame. A scan page emits documents then ScanEnd;
+Execute accepts exactly one Scan or Native Command and streams typed Events. A scan page emits documents then ScanEnd;
 a native operation emits metadata, ordered chunks and NativeEnd. Streaming
 success requires a validated terminal and final gRPC OK. A scan checkpoint also
 requires its terminal document count to match complete delivery.
@@ -52,8 +50,7 @@ that never reaches a handler still releases its slot.
 
 The SDK reuses round-robin channels with native adaptive HTTP/2 flow control.
 Directory and DNS refresh change selection for future RPCs without moving an
-active call. No custom HTTP ServeHTTP bridge or static 65-KiB flow-control window
-is retained. Both listeners require deployment-isolated networking; the directory
+active call. Both listeners require deployment-isolated networking; the directory
 contains only public ownership/address advertisements, never backend credentials.
 
 ## Memory and admission

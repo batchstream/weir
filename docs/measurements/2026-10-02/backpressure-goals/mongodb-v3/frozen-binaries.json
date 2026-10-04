@@ -1,9 +1,0 @@
-{
-  "archive_sha256": "064abbcb114840137f6afd557fb9bac8f28884186d2e0f3401b12822c5f0e499",
-  "binary_sha256": {
-    "weir-final": "4054ca6a7ef9d12886566124bb5153591d7beacb5cf83949de34fe6a058eee87",
-    "client-final": "aaff403cca45426601b2906655ff0fd6460dea91c53d154d267b1c43e1ae4aad",
-    "sampler": "06f18570bc092306ec75f5a097bb3ad7d5ba7a64bf7e69e17150ddbb180b410f",
-    "sampler-metrics": "fa4d6534ef59c35e90e117119a7f8135f0b319f3435351f7b2698b57ca15fb0d"
-  }
-}

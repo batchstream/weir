@@ -1,1 +1,0 @@
-Healthy quota fixture startup rejected before any DB workload: no-op generator at3200/s, queue32, planned32000/success31959/drop41(client_queue_full), lag p99 2.1ms/max42.8ms. No health pilot or quota phase ran. Failure retained; own containers/network/imported image cleanup passed and exact inventory restored. Same parameters retried in a new owned fixture.

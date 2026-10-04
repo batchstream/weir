@@ -1,9 +1,0 @@
-Filesystem      Size  Used Avail Use% Mounted on
-tmpfs           1.0G  318M  707M  31% /data/db
-593338368
-low 0
-high 0
-max 0
-oom 0
-oom_kill 0
-oom_group_kill 0

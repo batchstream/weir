@@ -1,7 +1,0 @@
-PID   USER     TIME  COMMAND
-    1 65532     0:00 sleep 21600
-   13 65532     0:47 [weir-final]
-   34 65532     0:00 [sampler-metrics]
-   62 65532     0:49 [weir-final]
-   82 65532     0:00 [sampler-metrics]
-  103 65532     0:00 ps

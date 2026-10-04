@@ -49,14 +49,10 @@ jobs:
         run: CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
-      - name: Static vet and isolated helper regressions
+      - name: Static vet and offline script tests
         run: |
           CGO_ENABLED=0 go vet ./...
           CGO_ENABLED=0 go vet -tags=integration ./...
-          CGO_ENABLED=1 go test -race -tags=integration -count=1 -timeout=180s ./internal/testutil/testcapacity
-          mkdir "$RUNNER_TEMP/weir-completion"
-          export WEIR_COMPLETION_TEST_BINARY="$RUNNER_TEMP/weir-completion/testcapacity.test"
-          CGO_ENABLED=0 go test -c -tags=integration -o "$WEIR_COMPLETION_TEST_BINARY" ./internal/testutil/testcapacity
           python3 -m unittest discover -v -s scripts -p '*_test.py'
           python3 -O -m unittest discover -v -s scripts -p '*_test.py'
           git diff --exit-code
@@ -78,15 +74,15 @@ jobs:
           persist-credentials: false
       - name: Prepare fixed build and registry tools
         run: python3 scripts/ci-tools.py publish
-      - name: Reproduce and validate both images
+      - name: Reproduce and validate the server image
         run: timeout 24m python3 scripts/ci-images.py build
       - name: Login using job-owned registry state
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
         run: |
-          mkdir -p .testdata/m24/ci/publisher/docker
-          printf '%s' "$GHCR_TOKEN" | docker --config "$PWD/.testdata/m24/ci/publisher/docker" login ghcr.io --username "$GHCR_USER" --password-stdin
+          mkdir -p .testdata/images/publisher/docker
+          printf '%s' "$GHCR_TOKEN" | docker --config "$PWD/.testdata/images/publisher/docker" login ghcr.io --username "$GHCR_USER" --password-stdin
       - name: Publish exact verified content
         id: publish
         run: python3 scripts/ci-images.py publish
@@ -101,17 +97,17 @@ jobs:
           retention-days: 7
           include-hidden-files: true
           path: |
-            .testdata/m24/ci/delivery.json
-            .testdata/m24/ci/weir-first/weir-*.tar.gz
-            .testdata/m24/ci/weir-first/weir-*.zip
-            .testdata/m24/ci/weir-first/*-linked.json
-            .testdata/m24/ci/weir-first/module-graph.json
-            .testdata/m24/ci/weir-first/receipt.json
+            .testdata/images/delivery.json
+            .testdata/images/weir-first/weir-*.tar.gz
+            .testdata/images/weir-first/weir-*.zip
+            .testdata/images/weir-first/*-linked.json
+            .testdata/images/weir-first/module-graph.json
+            .testdata/images/weir-first/receipt.json
       - name: Remove job registry login
         if: always()
         run: |
-          if test -d .testdata/m24/ci/publisher/docker; then
-            docker --config "$PWD/.testdata/m24/ci/publisher/docker" logout ghcr.io
+          if test -d .testdata/images/publisher/docker; then
+            docker --config "$PWD/.testdata/images/publisher/docker" logout ghcr.io
           fi
 
   release:

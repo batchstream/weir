@@ -1,8 +1,0 @@
-{
-  "old_preferred_node": "ip-172-31-159-242.us-west-1.compute.internal",
-  "preflight_stderr": "Error from server (NotFound): nodes \"ip-172-31-159-242.us-west-1.compute.internal\" not found\n",
-  "preflight_exit": 1,
-  "resources_created_before_failure": false,
-  "replacement_node": "ip-172-31-191-104.us-west-1.compute.internal",
-  "reason": "original node absent; replacement ARM8core no taints, metrics943m CPU, requests34%CPU/12%memory, no pressure; root node12-243 excluded"
-}

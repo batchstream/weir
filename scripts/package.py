@@ -53,7 +53,7 @@ def allowed(name):
     )
 
 
-def source_files(root, revision, *, qualification=False):
+def source_files(root, revision):
     # Inspect every tracked path before opening any source blob, even excluded files.
     if not re.fullmatch('[0-9a-f]{40}', revision):
         raise ValueError('expected immutable full source SHA')
@@ -65,9 +65,7 @@ def source_files(root, revision, *, qualification=False):
         mode, kind, oid = metadata.decode().split()
         if secret_path(name):
             raise ValueError('tracked secret-style path refused: ' + name)
-        helper = qualification and (name == 'scripts/qualification.Dockerfile' or (
-            name.startswith('internal/testutil/testcapacity/') and name.endswith('.go') and not name.endswith('_test.go')))
-        if allowed(name) or helper:
+        if allowed(name):
             if mode not in ('100644', '100755') or kind != 'blob' or '..' in PurePosixPath(name).parts:
                 raise ValueError('non-regular build input refused: ' + name)
             files.append((name, oid))
@@ -249,20 +247,16 @@ def build_once(opts):
         modules.append({key: module[key] for key in ('Path', 'Version', 'Sum', 'GoModSum', 'GoVersion', 'Main') if key in module})
     write_json(output / 'module-graph.json', modules)
     binary_hashes, artifact_hashes = {}, {}
-    qualification = opts.get('qualification', False)
-    binary_name = 'qualification' if qualification else 'weir'
-    targets = (('linux', 'amd64'), ('linux', 'arm64')) if qualification else TARGETS
+    binary_name = 'weir'
     flags = ['-trimpath', '-buildvcs=false', '-mod=readonly', '-ldflags=-buildid= -X main.sourceRevision=' + opts['revision']]
-    if qualification:
-        flags.append('-tags=integration')
-    for system, arch in targets:
+    for system, arch in TARGETS:
         target = system + '-' + arch
         print('build', output.name, target, flush=True)
         dest = output / 'binaries' / target
         dest.mkdir(parents=True)
         binary = dest / (binary_name + ('.exe' if system == 'windows' else ''))
         target_env = dict(env, GOOS=system, GOARCH=arch)
-        entry = './internal/testutil/testcapacity' if qualification else './cmd/weir'
+        entry = './cmd/weir'
         run(['go', 'build', *flags, '-o', str(binary), entry], cwd=source, env=target_env)
         info = build_info(binary, (system, arch), env)
         if run(['go', 'tool', 'buildid', str(binary)], env=env).strip():
@@ -270,8 +264,6 @@ def build_once(opts):
         info.update(source=opts['revision'], flags=flags, cpu_baseline='v1' if arch == 'amd64' else 'v8.0')
         write_json(output / (target + '-linked.json'), info)
         binary_hashes[target] = sha(binary.read_bytes())
-        if qualification:
-            continue
         members = {
             binary.name: (binary.read_bytes(), 0o755),
             'README.md': ((source / 'README.md').read_bytes(), 0o644),
@@ -293,7 +285,7 @@ def build_once(opts):
         base = json.loads((source / 'deploy/docker/base.json').read_text())
         context = source.parent / 'oci-context'
         context.mkdir()
-        dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'deploy/docker/Dockerfile'
+        dockerfile = 'deploy/docker/Dockerfile'
         shutil.copyfile(source / dockerfile, context / 'Dockerfile')
         for arch in ('amd64', 'arm64'):
             dest = context / ('linux-' + arch)

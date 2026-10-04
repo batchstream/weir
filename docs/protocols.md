@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.2.1/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.3.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -26,11 +26,9 @@ bulk writes. Neither path adds metadata fields to business documents, and an
 ambiguous write or commit cannot start a new mutation attempt.
 
 ExecuteRequest contains store_name and one Command. ExecuteResponse contains one
-Event. Commands and Events use version 1; unknown fields/versions are rejected.
-There are no request IDs, encoded command blobs, Event fragments or separate
-request-complete messages. Scan and Native require their terminal Event and final
+Event. Unknown protobuf fields and missing variants are rejected. Scan and Native require their terminal Event and final
 gRPC OK. A failed unary RPC confirms no batch result; mutations are never
-automatically replayed. See [payload contracts](route-payloads.md).
+automatically replayed. See [payload contracts](payloads.md).
 
 The independent internal [peer.proto](../internal/api/peer/v1/peer.proto), package
 weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory. It exchanges bounded
@@ -51,7 +49,7 @@ snapshots without depending on public business DTOs.
 Same-group endpoints merge; conflicting Store ownership fails ResolveStore.
 Replica groups stay internal and do not appear in its public response.
 Application listeners expose only StoreService; peer listeners expose only
-PeerDiscoveryService. Removed RPC paths have no aliases.
+PeerDiscoveryService.
 
 [weir-protocol](https://github.com/batchstream/weir-protocol) owns canonical public
 schemas, generated Go bindings and shared validation/DNS helpers. Both Weir and
@@ -60,4 +58,8 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. This change requires protocol v0.2.1 and Go SDK v0.4.2.
+safe typed completion. The current dependencies are protocol v0.3.0 and Go SDK v0.5.0.
+
+Internal execution plans and positional result associations are ordinary Go values
+owned by the server. They are not public protobuf messages and do not appear on
+the wire. Public schema messages describe only client-visible RPC data.

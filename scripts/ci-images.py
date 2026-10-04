@@ -13,8 +13,8 @@ import tempfile
 import package
 
 ROOT = package.ROOT
-OUT = ROOT / '.testdata/m24/ci'
-IMAGES = {'weir': 'weir', 'qualification': 'weir-qualification'}
+OUT = ROOT / '.testdata/images'
+IMAGES = {'weir': 'weir'}
 
 
 def client_environment(directory, *, plugins=False):
@@ -65,7 +65,7 @@ def build():
     OUT.mkdir(parents=True, exist_ok=False)
     env = client_environment(OUT / 'builder-client', plugins=True)
     pins = json.loads((ROOT / 'scripts/ci-tools.json').read_text())
-    builder = 'weir-m24-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
+    builder = 'weir-images-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
     existing = (
         package.run(['docker', 'buildx', 'ls', '--format', '{{.Name}}'], env=env)
         .decode()
@@ -105,8 +105,7 @@ def build():
             images={},
         )
         for name in IMAGES:
-            qualification = name == 'qualification'
-            files = package.source_files(ROOT, revision, qualification=qualification)
+            files = package.source_files(ROOT, revision)
             receipts = []
             for round_name in ('first', 'second'):
                 with tempfile.TemporaryDirectory(prefix='weir-ci-' + name + '-') as work:
@@ -122,7 +121,6 @@ def build():
                         oci=True,
                         builder=builder,
                         docker_env=env,
-                        qualification=qualification,
                         base_layers=layers,
                     )
                     receipts.append(package.build_once(opts))
@@ -236,86 +234,17 @@ def publish():
         output.write('delivery=' + json.dumps(delivery, separators=(',', ':')) + '\n')
 
 
-def verify_snapshot(result, expected_hash):
-    if result.get('errors') or result.get('role') != 'client' or result.get('sequence') != 0:
-        raise ValueError('snapshot sampling failed')
-    identity = result['process']['identity']
-    if (
-        identity != result['observer']['identity']
-        or identity['pid'] != '1'
-        or identity['uid'] != 65532
-        or identity['exe_sha256'] != expected_hash
-        or identity['start_ticks'] <= 0
-        or identity['cgroup'] != '0::/\n'
-    ):
-        raise ValueError('snapshot self identity mismatch')
-    if set(identity['namespaces']) != {'pid', 'mnt', 'cgroup', 'net', 'user'} or not all(
-        identity['namespaces'].values()
-    ):
-        raise ValueError('snapshot namespace identity missing')
-    files = result['files']
-    required = {
-        'memory.current',
-        'memory.max',
-        'memory.swap.max',
-        'memory.events',
-        'cpu.max',
-        'cpu.stat',
-        'pids.current',
-        'pids.max',
-        'cpuset.cpus.effective',
-        'io.stat',
-        'limits',
-        'net/tcp',
-        'net/tcp6',
-        'status',
-        'stat',
-        'cgroup',
-    }
-    if not required <= files.keys() or any(
-        not isinstance(files[k], str) or (k != 'io.stat' and not files[k].strip()) for k in required
-    ):
-        raise ValueError('snapshot raw fields missing')
-    if (
-        files['memory.max'].strip() != '268435456'
-        or files['memory.swap.max'].strip() != '0'
-        or files['pids.max'].strip() != '128'
-        or files['cpu.max'].split() != ['100000', '100000']
-    ):
-        raise ValueError('snapshot smoke resource limits mismatch')
-    if (
-        result['duration_ns'] <= 0
-        or result['duration_ns'] != result['end_monotonic_ns'] - result['monotonic_ns']
-        or result['gomaxprocs'] <= 0
-        or result['goroutines'] <= 0
-        or result['go_heap_alloc_bytes'] <= 0
-    ):
-        raise ValueError('snapshot runtime fields missing')
-    for name in ('process', 'observer'):
-        process = result[name]
-        if (
-            process['rss_bytes'] <= 0
-            or process['fd'] <= 0
-            or process['threads'] <= 0
-            or process['user_ticks'] < 0
-            or process['system_ticks'] < 0
-            or not process['status']
-            or not process['stat']
-        ):
-            raise ValueError('snapshot process fields missing')
-
-
 def smoke_container(options):
     env, reference, name = options['env'], options['reference'], options['name']
-    mode = options.get('mode', 'pace' if name == 'qualification' else 'version')
-    owner = 'weir-m24-' + os.environ['GITHUB_RUN_ID'] + '-' + name + '-' + mode
+    mode = 'version'
+    owner = 'weir-images-' + os.environ['GITHUB_RUN_ID'] + '-' + name + '-' + mode
     args = [
         'docker',
         'create',
         '--name',
         owner,
         '--label',
-        'weir.m24.owner=' + owner,
+        'weir.images.owner=' + owner,
         '--network=none',
         '--read-only',
         '--cap-drop=ALL',
@@ -330,12 +259,7 @@ def smoke_container(options):
         '--log-opt=max-size=1m',
         '--log-opt=max-file=1',
     ]
-    if name == 'qualification':
-        args += ['--env', 'WEIR_CAPACITY_INTEGRATION=1', reference, '-mode', mode]
-        if mode == 'pace':
-            args += ['-seconds', '1', '-rate', '50']
-    else:
-        args += [reference, 'version']
+    args += [reference, 'version']
     cid = package.run(args, env=env).decode().strip()
     try:
         raw = package.run(['docker', 'start', '--attach', cid], env=env, timeout=20)
@@ -382,42 +306,21 @@ def smoke_container(options):
         if inspection['State']['Running'] or inspection['State']['ExitCode'] != 0:
             raise ValueError('native smoke did not exit successfully')
         result = json.loads(raw)
-        if name == 'weir':
-            if (
-                result.get('revision') != options['source']
-                or result.get('target') != 'linux/' + options['arch']
-                or result.get('go') != 'go1.27.1'
-                or result.get('state') != 'clean-commit'
-                or result.get('dirty') != 'false'
-            ):
-                raise ValueError('product version contract mismatch')
-        elif mode == 'snapshot':
-            verify_snapshot(result, options['hash'])
-        elif (
-            result.get('exe_sha256') != options['hash']
-            or result.get('goarch') != options['arch']
-            or result.get('goos') != 'linux'
-            or result.get('kind') != 'native pacing diagnostic only'
+        if (
+            result.get('revision') != options['source']
+            or result.get('target') != 'linux/' + options['arch']
+            or result.get('go') != 'go1.27.1'
+            or result.get('state') != 'clean-commit'
+            or result.get('dirty') != 'false'
         ):
-            raise ValueError('qualification output identity mismatch')
-        if name == 'qualification' and mode == 'pace':
-            trial = result['trial']
-            metrics = trial['measure']['all']
-            if (
-                trial['planned'] != 50
-                or not trial['options']['TimingOnly']
-                or trial['options']['Seconds'] != 1
-                or metrics['completed'] + metrics['client_drop'] != 50
-            ):
-                raise ValueError('pure pacing output contract mismatch')
-        # No latency threshold is evaluated by this one-second execution smoke.
+            raise ValueError('product version contract mismatch')
         print(
             'NATIVE_SMOKE=' + json.dumps(dict(name=name, mode=mode, result=result), sort_keys=True),
             flush=True,
         )
     finally:
         inspection = json.loads(package.run(['docker', 'inspect', cid], env=env))[0]
-        if inspection['Id'] != cid or inspection['Config']['Labels'].get('weir.m24.owner') != owner:
+        if inspection['Id'] != cid or inspection['Config']['Labels'].get('weir.images.owner') != owner:
             raise ValueError('container owner changed; refuse cleanup')
         package.run(['docker', 'stop', '--time', '2', cid], env=env, timeout=10)
         package.run(['docker', 'wait', cid], env=env, timeout=10)
@@ -479,9 +382,6 @@ def anonymous(delivery):
                 linux=linux,
             )
             smoke_container(options)
-            if name == 'qualification':
-                options = dict(options, mode='snapshot')
-                smoke_container(options)
 
 
 def main():

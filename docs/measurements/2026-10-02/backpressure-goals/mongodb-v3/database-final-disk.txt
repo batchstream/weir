@@ -1,3 +1,0 @@
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/nvme0n1p1   20G  8.5G   12G  43% /data/db
-311M	/data/db

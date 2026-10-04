@@ -12,7 +12,6 @@ import unittest
 from unittest.mock import patch
 
 import package
-import observer_completion_test
 
 spec = importlib.util.spec_from_file_location('ci_images', Path(__file__).with_name('ci-images.py'))
 ci = importlib.util.module_from_spec(spec)
@@ -32,13 +31,13 @@ def fixture(path, change):
     for arch in ('amd64', 'arm64'):
         layer = io.BytesIO()
         with tarfile.open(fileobj=layer, mode='w') as output:
-            entries = ['qualification', 'unapproved-config'] if change == 'extra' else ['qualification']
+            entries = ['weir', 'unapproved-config'] if change == 'extra' else ['weir']
             for name in entries:
                 item = tarfile.TarInfo(name)
                 item.size, item.mode = 6, 0o555
                 output.addfile(item, io.BytesIO(b'binary'))
         layer_info = blob(layer.getvalue())
-        runtime = dict(User='0' if change == 'root' else '65532:65532', Entrypoint=['/qualification'],
+        runtime = dict(User='0' if change == 'root' else '65532:65532', Entrypoint=['/weir'],
                        Labels={'org.opencontainers.image.revision': 'b' * 40 if change == 'revision' else 'a' * 40,
                                'org.opencontainers.image.source': 'https://github.com/batchstream/weir'})
         config = dict(architecture=arch, os='linux', config=runtime)
@@ -67,72 +66,12 @@ class DeliveryTests(unittest.TestCase):
             self.assertIn("python3 " + mode + "-m unittest discover -v -s scripts -p '*_test.py'", workflow)
         tests = {p.name for p in Path(__file__).parent.glob('*_test.py')}
         self.assertTrue({'package_test.py', 'release_test.py', 'ci_images_test.py',
-                         'test_capacity_test.py', 'test_kubernetes_test.py', 'test_memory_linux_test.py',
-                         'resource_report_test.py', 'observer_completion_test.py'} <= tests)
+                         'test_memory_linux_test.py', 'check_dependencies_test.py', 'config_yaml_test.py'} <= tests)
         self.assertTrue(all(fnmatch.fnmatch(name, '*_test.py') for name in tests))
-
-    def test_workflow_builds_native_completion_child_before_both_python_modes(self):
-        workflow = (package.ROOT / '.github/workflows/images.yml').read_text()
-        build = 'CGO_ENABLED=0 go test -c -tags=integration -o "$WEIR_COMPLETION_TEST_BINARY" ./internal/testutil/testcapacity'
-        export = 'export WEIR_COMPLETION_TEST_BINARY="$RUNNER_TEMP/weir-completion/testcapacity.test"'
-        for name in ('ci.yml', 'images.yml'):
-            definition = (package.ROOT / '.github/workflows' / name).read_text()
-            self.assertIn('runs-on: ubuntu-24.04', definition)
-            self.assertNotIn('ubuntu-24.04-arm', definition)
-            self.assertNotIn('matrix:', definition)
-            self.assertLess(definition.index(export), definition.index(build))
-            for mode in ('', '-O '):
-                self.assertLess(definition.index(build), definition.index('python3 ' + mode + '-m unittest discover'))
-        self.assertNotIn('smoke-arm64:', workflow)
-        release_job = workflow[workflow.index('  release:'):]
-        self.assertIn('needs: publish', release_job)
-
-    def test_completion_ci_refuses_missing_relative_or_nonexecutable_child(self):
-        with tempfile.TemporaryDirectory() as directory:
-            binary = Path(directory)/'child'
-            binary.write_text('fixture')
-            for value in ('', 'relative-child', str(binary), str(binary)+'-missing'):
-                env = dict(GITHUB_ACTIONS='true', WEIR_COMPLETION_TEST_BINARY=value)
-                with patch.dict(ci.os.environ, env), self.assertRaisesRegex(RuntimeError, 'CI requires'):
-                    observer_completion_test.CompletionConsumers.setUpClass()
-            binary.chmod(0o700)
-            env = dict(GITHUB_ACTIONS='true', WEIR_COMPLETION_TEST_BINARY=str(binary))
-            with patch.dict(ci.os.environ, env):
-                observer_completion_test.CompletionConsumers.setUpClass()
-
-    def test_snapshot_requires_self_identity_raw_fields_and_no_errors(self):
-        namespaces = {name: name + ':[123]' for name in ('pid', 'mnt', 'cgroup', 'net', 'user')}
-        identity = dict(pid='1', uid=65532, start_ticks=123, exe_sha256='a' * 64, cgroup='0::/\n', namespaces=namespaces)
-        process = dict(identity=identity, rss_bytes=4096, fd=3, threads=2, user_ticks=0, system_ticks=0,
-                       status='synthetic status', stat='synthetic stat')
-        files = {name: 'synthetic raw' for name in ('memory.current', 'memory.events', 'cpu.stat',
-                 'pids.current', 'cpuset.cpus.effective', 'limits', 'net/tcp', 'net/tcp6', 'status', 'stat', 'cgroup')}
-        limits = {'memory.max': '268435456\n', 'memory.swap.max': '0\n', 'pids.max': '128\n',
-                  'cpu.max': '100000 100000\n', 'io.stat': ''}
-        files.update(limits)
-        sample = dict(role='client', sequence=0, process=process, observer=copy.deepcopy(process), files=files,
-                      duration_ns=2, monotonic_ns=1, end_monotonic_ns=3, gomaxprocs=1, goroutines=2, go_heap_alloc_bytes=4096)
-        ci.verify_snapshot(sample, 'a' * 64)
-        mutations = [lambda s: s.update(errors=['missing sampling prerequisite']),
-                     lambda s: s['observer']['identity'].update(pid='2'),
-                     lambda s: s['process']['identity'].update(exe_sha256='b' * 64),
-                     lambda s: s['process']['identity'].update(uid=0),
-                     lambda s: s['process']['identity']['namespaces'].pop('net'),
-                     lambda s: s['files'].pop('io.stat'),
-                     lambda s: s['files'].__setitem__('cpu.max', 'max 100000'),
-                     lambda s: s['files'].__setitem__('memory.max', '0'),
-                     lambda s: s['files'].__setitem__('stat', ''),
-                     lambda s: s.update(duration_ns=0),
-                     lambda s: s['observer'].update(rss_bytes=0)]
-        for mutate in mutations:
-            value = copy.deepcopy(sample)
-            mutate(value)
-            with self.assertRaises(ValueError):
-                ci.verify_snapshot(value, 'a' * 64)
 
     def test_oci_rejects_unapproved_content_and_identity(self):
         hashes = {'linux-' + arch: package.sha(b'binary') for arch in ('amd64', 'arm64')}
-        options = dict(binary_name='qualification', revision='a' * 40, base_layers=dict(amd64=[], arm64=[]))
+        options = dict(binary_name='weir', revision='a' * 40, base_layers=dict(amd64=[], arm64=[]))
         with tempfile.TemporaryDirectory() as temp:
             for change in ('none', 'extra', 'root', 'revision', 'duplicate', 'corrupt'):
                 path = Path(temp) / (change + '.tar')

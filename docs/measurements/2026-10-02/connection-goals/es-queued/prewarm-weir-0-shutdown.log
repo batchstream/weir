@@ -1,3 +1,0 @@
-Weir listening on [[::]:7447]; static local/peer profile, not production ready
-Diagnostics listening on [::]:7449
-2026/10/01 22:24:09 INFO backend_connections_closed backend=search store=records owned=0 peak=4 limit=5 acquired=4 released=4
