@@ -31,7 +31,7 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 }
 func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
-	limits.PendingOperations = 4
+	limits.PendingBytes = protocol.MaxFrame
 	limits.BatchOperations = 3
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
@@ -40,6 +40,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	var tickets []*Ticket
 	for i, key := range []string{"a", "b", "c", "d"} {
 		p := plan(uint64(i), key, false)
+		p.Bytes = limits.PendingBytes / 4
 		ticket, f, _ := r.Submit(ctx, p, nil)
 		if f != nil {
 			t.Fatal(f)
@@ -47,6 +48,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 		tickets = append(tickets, ticket)
 	}
 	p := plan(4, "rejected", false)
+	p.Bytes = limits.PendingBytes / 4
 	if _, f, _ := r.Submit(ctx, p, nil); f == nil {
 		t.Fatal("missing rejection")
 	}
@@ -95,12 +97,12 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(limits.Concurrency) {
 		t.Fatal("configured concurrency metric changed")
 	}
-	for _, obsolete := range []string{"weir_store_window", "weir_store_window_limit", "weir_store_cooldown", "weir_store_window_changes_total", "weir_store_backpressure_events_total", "weir_store_latency_baseline_seconds"} {
+	for _, obsolete := range []string{"weir_store_window", "weir_store_window_limit", "weir_store_cooldown", "weir_store_window_changes_total", "weir_store_backpressure_events_total", "weir_store_latency_baseline_seconds", "weir_store_pending_entries_limit", "weir_store_result_reserved_entries_limit"} {
 		if families[obsolete] != nil {
 			t.Fatal("removed adaptive metric still exposed", obsolete)
 		}
 	}
-	if testmetrics.Series(families) != 63 {
+	if testmetrics.Series(families) != 61 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

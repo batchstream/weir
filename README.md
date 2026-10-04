@@ -1,14 +1,17 @@
 # Weir
 
-Weir discovers logical Stores and executes finite database batches. Clients initialize
+Weir discovers logical Stores and combines concurrent client requests into finite
+database batches. Clients initialize
 through any Weir node with `ResolveStore`, then connect directly to the returned business
 targets. Nodes synchronize their Store directory through bounded periodic peer
 exchanges. Business requests execute only local Stores.
 
 `Read` and `Mutate` carry a complete batch in one unary RPC. `Execute` carries one
 Scan or Native command and streams its typed Events. All share the bounded Store
-scheduler. A client batch stays together through preparation, scheduling and
-backend grouping; same-URI mutations execute in input order. Lua runs inside the
+scheduler. Each client request completes its full preparation before admission.
+Queued single-record requests and compatible small client batches share backend
+executions while keeping their own ordered results and memory budgets. Same-URI
+mutations within one request execute in input order. Lua runs inside the
 single Weir process. Unconfirmed writes remain indeterminate after transport
 failure and are never automatically replayed.
 
@@ -69,6 +72,7 @@ stores:
     max_concurrency: 2
     max_batch_operations: 32
     max_read_size: "16KiB"
+    backend_timeout: "2s"
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -90,12 +94,27 @@ peers or backends. Configuration changes take effect after a restart.
 
 Store defaults are two concurrent backend executions, 32 operations per batch,
 a `16KiB` ordinary-read limit and a `384MiB` backend working budget. There is no
-collection delay; physical batches split by namespace, action, actual input bytes
-and `max_batch_operations`. Read results reserve actual retained bytes, rather
+collection delay; queued RPCs combine by namespace, actual input bytes and
+`max_batch_operations`. Large client batches split into sequential bounded groups;
+singleton Lua operations remain separate. Adapters issue their native read and write
+commands for each group. Read results reserve actual retained bytes, rather
 than the configured maximum size multiplied by the number of records. Tune against completed
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
 or container limit for a hard memory boundary. Execution concurrency and backend
 working budgets remain independent of peer discovery.
+
+`backend_timeout` is a positive duration and defaults to `2s` when omitted.
+Record execution gets one absolute deadline from dispatch through qualification,
+reads and writes. A shared group uses the latest participating caller deadline,
+capped by `backend_timeout`; an earlier caller stops waiting independently, and
+canceling every caller stops the backend work. Queueing consumes the original RPC
+lifetime. Set an explicit longer budget, such as `10s`, for that service's SLO.
+Connected Search requests inherit this deadline for both headers and body;
+connection setup has a separate `2s` bound. A sent write whose acknowledgement
+times out remains `UNKNOWN`, with `DEADLINE_EXCEEDED` and a sanitized cause; it is
+never replayed. Scan pages use the same backend budget. Search Native retains its
+cumulative backend I/O budget, paused while publishing to the caller, so this
+setting is not the entire streaming RPC's wall-clock lifetime.
 
 MongoDB and Search authentication can use explicit `username`/`password` fields
 or `username_file`/`password_file`; each credential has exactly one source. Search
@@ -207,6 +226,9 @@ python3 -m unittest discover -s scripts -p '*_test.py'
 Default tests use owned offline/loopback fixtures. Live backend and process tests
 are explicit opt-ins through `scripts/test-integration.sh`. Compile tagged helpers
 and run real backend profiles separately; tagged compilation is not live coverage.
+When several integration packages share one MongoDB fixture, run them sequentially
+or pass `go test -p=1`: fault tests change the instance's global `failCommand`
+failpoint, so concurrent packages can overwrite each other's faults and cleanup.
 Matched direct/Weir benchmarks and current blackbox integration live in the
 independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
 The locked first-reference `scripts/test-capacity.py` and historical Kubernetes

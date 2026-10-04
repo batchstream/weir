@@ -14,11 +14,19 @@ import (
 
 const metadataLimit = 256 << 10
 const responseLimit = 8 << 20
-const callLimit = 2 * time.Second
+
+// An exchange inherits the execution's absolute deadline. Only callers outside
+// the Store runtime without a deadline need this fallback.
+const fallbackRequestTimeout = 2 * time.Second
+
+// Connection setup has its own bound; it does not limit a connected request's
+// headers or acknowledgement body.
+const connectionTimeout = 2 * time.Second
 
 var errTransport = errors.New("backend transport failed")
 var errResponse = errors.New("invalid or excessive backend response")
 var errTimeout = errors.New("backend call deadline")
+var errCanceled = errors.New("backend call canceled")
 var errResponseLimit = errors.New("backend response byte limit")
 var errWriteNotSent = errors.New("backend write request not sent")
 
@@ -36,7 +44,12 @@ type exchange struct {
 type requestContextKey struct{}
 
 func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, callLimit)
+	var cancel context.CancelFunc
+	if _, bounded := ctx.Deadline(); bounded {
+		ctx, cancel = context.WithCancel(ctx)
+	} else {
+		ctx, cancel = context.WithTimeout(ctx, fallbackRequestTimeout)
+	}
 	defer cancel()
 	if a.ctx.Err() != nil {
 		if call.mutation {
@@ -104,6 +117,9 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 		if errors.Is(err, context.DeadlineExceeded) {
 			return 0, nil, errTimeout
 		}
+		if errors.Is(err, context.Canceled) {
+			return 0, nil, errCanceled
+		}
 		var network *net.OpError
 		if errors.As(err, &network) {
 			return 0, nil, errTransport
@@ -125,6 +141,9 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return response.StatusCode, nil, errTimeout
+	}
+	if errors.Is(err, context.Canceled) {
+		return response.StatusCode, nil, errCanceled
 	}
 	if err != nil {
 		return response.StatusCode, nil, errResponse
@@ -153,15 +172,15 @@ func (a *Adapter) configureRequest(request *http.Request) {
 	}
 }
 func newTransport(pool int) *http.Transport {
-	dialer := &net.Dialer{Timeout: callLimit, KeepAlive: 30 * time.Second}
+	dialer := &net.Dialer{Timeout: connectionTimeout, KeepAlive: 30 * time.Second}
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	transport := &http.Transport{
 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
 		DisableCompression: true, MaxConnsPerHost: pool, MaxIdleConns: pool,
 		MaxIdleConnsPerHost: pool, IdleConnTimeout: 30 * time.Second,
-		ResponseHeaderTimeout: callLimit, MaxResponseHeaderBytes: 32 << 10,
-		TLSHandshakeTimeout: callLimit,
+		MaxResponseHeaderBytes: 32 << 10,
+		TLSHandshakeTimeout:    connectionTimeout,
 	}
 	return transport
 }

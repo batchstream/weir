@@ -13,15 +13,15 @@ import (
 )
 
 type Limits struct {
-	PendingOperations, PendingBytes, ResultOperations, ResultBytes int
-	WorkingBytes                                                   int
-	Concurrency, BatchOperations, BatchBytes                       int
-	BackendTimeout                                                 time.Duration
+	PendingBytes, ResultBytes                int
+	WorkingBytes                             int
+	Concurrency, BatchOperations, BatchBytes int
+	BackendTimeout                           time.Duration
 }
 
 func DefaultLimits() Limits {
 	limits := Limits{
-		PendingOperations: 256, PendingBytes: 32 << 20, ResultOperations: 128, ResultBytes: 32 << 20,
+		PendingBytes: 32 << 20, ResultBytes: 32 << 20,
 		WorkingBytes: 384 << 20,
 		Concurrency:  2, BatchOperations: 32, BatchBytes: 8 << 20,
 		BackendTimeout: 2 * time.Second,
@@ -29,8 +29,8 @@ func DefaultLimits() Limits {
 	return limits
 }
 func (l Limits) Validate() error {
-	if l.PendingOperations < 1 || l.PendingBytes < protocol.MaxFrame ||
-		l.ResultOperations < 1 || l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
+	if l.PendingBytes < protocol.MaxFrame ||
+		l.ResultBytes < protocol.MaxDocument+protocol.ResultOverhead ||
 		l.WorkingBytes < 24<<20 ||
 		l.Concurrency < 1 || uint64(l.Concurrency) > (64<<30)/(2<<20) || l.BatchOperations < 1 ||
 		l.BatchBytes < protocol.MaxDocument+4096 || l.BatchBytes > 32<<20 ||
@@ -165,10 +165,10 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if plan != nil && (plan.CleanupRequired || plan.Streaming) && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes <= 0 || plan.ResultBytes < 0 || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
+	if plan == nil || plan.Bytes < protocol.EntryOverhead || plan.ResultBytes < protocol.ResultOverhead || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
 	}
-	if len(r.queue) >= r.limits.PendingOperations || r.pendingBytes+plan.Bytes > r.limits.PendingBytes || len(r.live) >= r.limits.ResultOperations || r.resultBytes+plan.ResultBytes > r.limits.ResultBytes {
+	if plan.Bytes > r.limits.PendingBytes-r.pendingBytes || plan.ResultBytes > r.limits.ResultBytes-r.resultBytes {
 		if session == nil {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
 		}
@@ -578,7 +578,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 	}()
 }
 func (r *Runtime) execute(b *batch) {
-	if len(b.items) == 1 && b.items[0].bulk != nil {
+	if b.items[0].bulk != nil {
 		r.runBatch(b)
 		return
 	}

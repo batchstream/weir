@@ -39,8 +39,7 @@ func finish(r *Runtime, b *batch) {
 }
 func TestAdmissionBoundsAndReservation(t *testing.T) {
 	l := DefaultLimits()
-	l.PendingOperations = 2
-	l.ResultOperations = 2
+	l.PendingBytes = 2 * l.BatchBytes
 	l.BatchOperations = 1
 	r := newRuntime(nil, l)
 	defer func() {
@@ -53,6 +52,7 @@ func TestAdmissionBoundsAndReservation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	p := plan(0, "a", false)
+	p.Bytes = l.PendingBytes / 2
 	a, f, _ := r.Submit(ctx, p, nil)
 	if f != nil {
 		t.Fatal(f)
@@ -247,7 +247,7 @@ func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
 func TestSlowConsumerRetainedBound(t *testing.T) {
 	l := DefaultLimits()
 	l.BatchOperations = 1
-	l.ResultOperations = 2
+	l.ResultBytes = 2 * (protocol.MaxDocument + protocol.ResultOverhead)
 	r := newRuntime(nil, l)
 	s := r.NewSession()
 	ctx := context.Background()
@@ -314,5 +314,32 @@ func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
 	ticket.Ack()
 	if snapshot := runtime.Snapshot(); snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 {
 		t.Fatal("synchronous consumer acknowledgment did not free result", snapshot)
+	}
+}
+
+func TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge(t *testing.T) {
+	for _, resource := range []string{"input", "result"} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(resource+fmt.Sprint(streaming), func(t *testing.T) {
+				runtime := newRuntime(nil, DefaultLimits())
+				work := plan(1, "command", false)
+				work.Operation = nil
+				work.Command = scanCall()
+				work.Singleton, work.Streaming = true, streaming
+				if resource == "input" {
+					work.Bytes = protocol.EntryOverhead - 1
+				} else {
+					work.ResultBytes = protocol.ResultOverhead - 1
+				}
+				session := runtime.NewSession()
+				defer session.Close()
+				if _, failure, _ := runtime.Submit(t.Context(), work, session); failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+					t.Fatal("command bypassed metadata accounting", failure)
+				}
+				if snapshot := runtime.Snapshot(); snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 {
+					t.Fatal("invalid metadata plan retained resources", snapshot)
+				}
+			})
+		}
 	}
 }

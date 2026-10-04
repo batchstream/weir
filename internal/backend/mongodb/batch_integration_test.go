@@ -3,10 +3,12 @@
 package mongodb
 
 import (
+	"bytes"
 	"context"
 	"sync/atomic"
 	"testing"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
@@ -192,5 +194,70 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 	}
 	if writes != 1 {
 		t.Fatal("mixed writes replayed", writes)
+	}
+}
+
+func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testing.T) {
+	for _, mode := range []string{"first exhausted", "both retained", "first canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			fixture := testmongo.Open(t)
+			document := bson.D{{Key: "_id", Value: "same"}, {Key: "value", Value: 123}}
+			if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertOne(t.Context(), document); err != nil {
+				t.Fatal(err)
+			}
+			var finds atomic.Int32
+			monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+				if e.CommandName == "find" {
+					finds.Add(1)
+				}
+			}}
+			opts := adapterTestOptions{fixture: fixture, monitor: monitor}
+			adapter := testAdapter(t, opts)
+			var plans []*execution.Plan
+			charges := [2]int{}
+			caller, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			for i := range 2 {
+				opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:same", action: "read", index: 1}
+				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				budget := &execution.ResultBudget{Limit: protocol.MaxBatchResponseBytes, Retain: func(bytes int) bool {
+					charges[i] += bytes
+					return true
+				}}
+				work.Context = t.Context()
+				if i == 0 {
+					work.Context = caller
+					if mode == "first exhausted" {
+						budget.Limit = 1
+					}
+				}
+				work.Results = budget
+				plans = append(plans, work)
+			}
+			if mode == "first canceled" {
+				cancel()
+			}
+			replies, _ := adapter.executeRecords(t.Context(), plans)
+			raw := expressionBSON(t, document)
+			if finds.Load() != 1 || len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].GetRead().GetDocument().GetData(), raw) || charges[1] != len(raw) {
+				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies, charges)
+			}
+			if mode == "both retained" {
+				if charges[0] != len(raw) || replies[0].GetRead().GetDocument() != replies[1].GetRead().GetDocument() {
+					t.Fatal("same-ID responses did not share immutable data with separate charges", replies, charges)
+				}
+			} else {
+				code := pb.FailureCode_RESOURCE_EXHAUSTED
+				if mode == "first canceled" {
+					code = pb.FailureCode_CANCELLED
+				}
+				if replies[0].GetRead().GetFailure().GetCode() != code || charges[0] != 0 {
+					t.Fatal("failed owner retained peer's data charge", replies, charges)
+				}
+			}
+		})
 	}
 }

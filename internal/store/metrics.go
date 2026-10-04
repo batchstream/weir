@@ -45,8 +45,8 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		"result_reserved_entries": float64(snapshot.Retained), "result_reserved_bytes": float64(snapshot.ResultBytes),
 		"working_reserved_bytes": float64(snapshot.WorkingBytes), "retained_results": float64(snapshot.Ready), "retained_result_reserved_bytes": float64(snapshot.ReadyBytes),
 		"active_executions": float64(snapshot.Active), "publishers": float64(snapshot.Publishers),
-		"pending_entries_limit": float64(r.limits.PendingOperations), "pending_reserved_bytes_limit": float64(r.limits.PendingBytes),
-		"result_reserved_entries_limit": float64(r.limits.ResultOperations), "result_reserved_bytes_limit": float64(r.limits.ResultBytes),
+		"pending_reserved_bytes_limit": float64(r.limits.PendingBytes),
+		"result_reserved_bytes_limit":  float64(r.limits.ResultBytes),
 		"working_reserved_bytes_limit": float64(r.limits.WorkingBytes),
 		"concurrency_limit":            float64(snapshot.ConcurrencyLimit), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
 	}

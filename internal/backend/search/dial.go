@@ -37,7 +37,7 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 	d.workers.Add(1)
 	d.mu.Unlock()
 	defer d.workers.Done()
-	ctx, cancel := context.WithTimeout(ctx, callLimit)
+	ctx, cancel := context.WithTimeout(ctx, connectionTimeout)
 	stop := context.AfterFunc(d.ctx, cancel)
 	defer func() { stop(); cancel() }()
 	key := requestContextKey{}
@@ -84,7 +84,7 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 			return nil, errTransport
 		}
 	}
-	dialer := net.Dialer{Timeout: callLimit, KeepAlive: 30 * time.Second}
+	dialer := net.Dialer{Timeout: connectionTimeout, KeepAlive: 30 * time.Second}
 	raw, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.Unmap().String(), port))
 	if err != nil {
 		return nil, err
