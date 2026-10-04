@@ -175,8 +175,8 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, excha
 	if errors.As(err, &commandFailure) && signal == execution.Congested {
 		resultFeedback = execution.Congested
 	} else if err == nil && commandOK && ctx.Err() == nil {
-		// A complete command envelope permits a low-rate capacity probe. It
-		// does not interpret Native write effects or assert a mutation outcome.
+		// Record a complete command envelope without interpreting Native write
+		// effects or asserting a mutation outcome.
 		resultFeedback = execution.Completed
 	}
 	return end, resultFeedback

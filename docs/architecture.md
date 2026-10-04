@@ -143,8 +143,7 @@ when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 
 Each Store dispatches while configured max_concurrency and backend working bytes
-permit. Database latency does not train a second concurrency controller. Transport
-failures do not replay mutations; the bounded Lua conflict and confirmed-abort
+permit. Transport failures do not replay mutations; the bounded Lua conflict and confirmed-abort
 retries described below retain the original execution deadline. Pending work
 remains bounded by queue bytes and deadlines.
 

@@ -422,7 +422,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native HTTP trailers unsupported")), execution.Neutral
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-	// Native bodies stay opaque. A complete GET may probe capacity without
+	// Native bodies stay opaque. Record completed GET exchanges without
 	// asserting business success; bulk 2xx can still contain item-level failures.
 	feedback := execution.Neutral
 	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable {
