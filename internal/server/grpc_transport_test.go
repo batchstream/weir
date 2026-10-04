@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"github.com/batchstream/weir-protocol/api/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"strings"
@@ -174,15 +173,10 @@ func TestRecordFrameDecodeLimitFailsBeforeBackendWork(t *testing.T) {
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	count := protocol.MaxRecordFrameItems + 1
 	read := &pb.ReadRequest{Resource: "records/s:key"}
-	requests := make([]*pb.ReadRequest, count)
-	for i := range requests {
-		requests[i] = read
-	}
-	request := &pb.ExecuteRequest{StoreName: "records",
-		Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: requests}}}}
-
+	command := &pb.Command{Operation: &pb.Command_Read{Read: read}}
+	request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: command}
+	request.ProtoReflect().SetUnknown([]byte{0x1a, 0})
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	stream, err := client.Execute(ctx)
@@ -197,7 +191,7 @@ func TestRecordFrameDecodeLimitFailsBeforeBackendWork(t *testing.T) {
 	}
 	response, err := stream.Recv()
 	// Native gRPC wraps codec errors as Internal before the stream handler.
-	if response != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "record metadata exceeds decode budget") {
+	if response != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "invalid execution protobuf framing") {
 		t.Fatal("native decode status changed", response, err)
 	}
 	if len(adapter.seen) != 0 || adapter.commands.Load() != 0 || local.Snapshot().Retained != 0 {

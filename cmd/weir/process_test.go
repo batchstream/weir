@@ -25,7 +25,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/app"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
@@ -698,17 +697,17 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	defer conn.Close()
 
 	client := pb.NewStoreServiceClient(conn)
-	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
+	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"n":1}`)}
 	put := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: "records/s:one", Action: put}
 	done := make(chan struct{})
 	var result *pb.MutationResult
 	var callErr error
 	go func() {
-		var recordResult *execution.Result
+		var recordResult *pb.Event
 		recordResult, callErr = testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
 		if recordResult != nil {
-			result = recordResult.Mutation
+			result = recordResult.GetMutationResult()
 		}
 		close(done)
 	}()

@@ -17,6 +17,7 @@ import (
 	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -46,7 +47,12 @@ func (c *nativeCapture) Chunk(b []byte) error {
 	_, err := c.body.Write(b)
 	return err
 }
-func (c *nativeCapture) Interrupt() {}
+func (c *nativeCapture) Emit(_ *execution.Plan, event *pb.Event) error {
+	if head := event.GetHead(); head != nil {
+		return c.Head(head)
+	}
+	return c.Chunk(event.GetChunk())
+}
 func nativeOpen(t *testing.T, index, method, path string) *pb.NativeOpen {
 	t.Helper()
 	descriptor := &spb.Request{Method: method, Path: path}
@@ -54,25 +60,25 @@ func nativeOpen(t *testing.T, index, method, path string) *pb.NativeOpen {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &pb.Document{MediaType: NativeDescriptor, Data: raw}
-	media := ""
+	document := &pb.Document{ContentType: NativeContentType, Data: raw}
+	contentType := ""
 	if method == "POST" {
-		media = "application/x-ndjson"
+		contentType = "application/x-ndjson"
 	}
-	open := &pb.NativeOpen{Resource: index, Descriptor_: document, BodyMediaType: media}
+	open := &pb.NativeOpen{Resource: index, Descriptor_: document, BodyContentType: contentType}
 	return open
 }
-func runNative(t *testing.T, a *Adapter, open *pb.NativeOpen, body io.ReadCloser) (*pb.NativeEnd, *nativeCapture) {
+func runNative(t *testing.T, a *Adapter, open *pb.NativeOpen, body []byte) (*pb.NativeEnd, *nativeCapture) {
 	t.Helper()
 	p, f := a.prepareNative(open)
 	if f != nil {
 		t.Fatal(f)
 	}
 	capture := &nativeCapture{}
-	exchange := &execution.NativeExchange{Source: body, Sink: capture}
+	p.Command = testutil.NativeCommand(open, body)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end, _ := a.executeNative(ctx, p, exchange)
+	end, _ := a.executeNative(ctx, p, capture.Emit)
 	return end, capture
 }
 func TestNativeHTTPDescriptorScope(t *testing.T) {
@@ -135,7 +141,7 @@ func TestNativeBulkItemAndBodyBounds(t *testing.T) {
 	}
 }
 func TestNativeHTTPSyntheticFraming(t *testing.T) {
-	for _, mode := range []string{"empty", "headers", "redirect", "multiframe", "large", "truncated", "length", "drop", "trailers", "upgrade", "boundary", "large_chunked"} {
+	for _, mode := range []string{"empty", "headers", "redirect", "multichunk", "large", "truncated", "length", "drop", "trailers", "upgrade", "boundary", "large_chunked"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +171,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 				case "redirect":
 					w.Header().Set("Location", "http://127.0.0.1:1/evil")
 					w.WriteHeader(307)
-				case "multiframe":
+				case "multichunk":
 					io.WriteString(w, strings.Repeat("x", 150<<10))
 				case "boundary", "large_chunked":
 					w.(http.Flusher).Flush()
@@ -195,8 +201,8 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			cfg := Config{Store: "search", URL: backend.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			open := nativeOpen(t, "records", "GET", "/_doc/x")
-			end, capture := runNative(t, a, open, io.NopCloser(strings.NewReader("")))
-			complete := mode == "empty" || mode == "headers" || mode == "redirect" || mode == "multiframe" || mode == "boundary"
+			end, capture := runNative(t, a, open, nil)
+			complete := mode == "empty" || mode == "headers" || mode == "redirect" || mode == "multichunk" || mode == "boundary"
 			if (end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE) != complete || calls.Load() != 1 {
 				t.Fatal(end, calls.Load())
 			}
@@ -206,7 +212,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			if mode == "boundary" && capture.body.Len() != NativeResponseLimit {
 				t.Fatal("response boundary", capture.body.Len())
 			}
-			if mode == "multiframe" && (capture.chunks < 2 || capture.body.Len() != 150<<10) {
+			if mode == "multichunk" && (capture.chunks < 2 || capture.body.Len() != 150<<10) {
 				t.Fatal(capture.chunks, capture.body.Len())
 			}
 			if mode == "headers" {
@@ -306,9 +312,8 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			if test.cancelAfterHead {
 				capture.cancelAfterHead = cancel
 			}
-			source := io.NopCloser(strings.NewReader(input))
-			exchange := &execution.NativeExchange{Source: source, Sink: capture}
-			end, feedback := a.executeNative(ctx, plan, exchange)
+			plan.Command = testutil.NativeCommand(open, []byte(input))
+			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
 				t.Fatal(end, feedback, calls.Load())
 			}
@@ -352,13 +357,31 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 				t.Fatal(failure)
 			}
 			capture := &nativeCapture{}
-			body := io.NopCloser(strings.NewReader("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
-			defer body.Close()
-			exchange := &execution.NativeExchange{Source: body, Sink: capture}
-			end, feedback := a.executeNative(ctx, plan, exchange)
+			plan.Command = testutil.NativeCommand(open, []byte("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
+			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || feedback != execution.Congested || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
 				t.Fatal(end, feedback, calls.Load(), capture)
 			}
 		})
+	}
+}
+
+func TestNativeHTTPBodyCloseReleasesInput(t *testing.T) {
+	body := &nativeHTTPBody{Reader: strings.NewReader("bounded input")}
+	var buffer [4]byte
+	if n, err := body.Read(buffer[:]); n != 4 || err != nil {
+		t.Fatal(n, err)
+	}
+	if err := body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if body.Reader != nil {
+		t.Fatal("closed HTTP request still retains Native input")
+	}
+	if n, err := body.Read(buffer[:]); n != 0 || !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatal("closed upload still reads borrowed input", n, err)
+	}
+	if err := body.Close(); err != nil {
+		t.Fatal("repeated close", err)
 	}
 }

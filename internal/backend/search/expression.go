@@ -9,10 +9,10 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-const ExpressionMedia = "application/vnd.weir.search-update.v1+json"
+const ExpressionContentType = "application/vnd.weir.search-update.v1+json"
 
 func prepareExpression(d *pb.Document) *pb.Failure {
-	if d == nil || d.MediaType != ExpressionMedia {
+	if d == nil || d.ContentType != ExpressionContentType {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Search expression profile")
 	}
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "expression requires exactly one bounded doc object")

@@ -33,21 +33,23 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	defer adapter.Close()
 	doc := bson.D{{Key: "_id", Value: "secure"}, {Key: "n", Value: int64(42)}}
 	raw, _ := bson.Marshal(doc)
-	document := &pb.Document{MediaType: "application/bson", Data: raw}
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: fixture.DB + "/records/s:secure", Action: put}
-	op := &execution.Operation{Index: 1, Mutate: request}
+	opOperation := &pb.Command_Mutate{Mutate: request}
+	opCommand := &pb.Command{Operation: opOperation}
+	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	plan, failure := prepareTestRecord(adapter, op)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	result, _ := adapter.executeRecords(ctx, []*execution.Plan{plan})
-	if result[0].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+	if result[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result)
 	}
 	read := prepareCounter(t, adapter, fixture.DB+"/records/s:secure")
 	result, _ = adapter.executeRecords(ctx, []*execution.Plan{read})
-	if result[0].Read.GetDocument() == nil {
+	if result[0].GetReadResult().GetDocument() == nil {
 		t.Fatal(result)
 	}
 	for name, uri := range map[string]string{"password": fixture.BadPassURI, "missing": fixture.MissingPassURI, "CA": fixture.BadCAURI, "SAN": fixture.WrongHostURI, "privilege": fixture.DeniedURI} {
@@ -62,7 +64,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 				}
 				work := prepareCounter(t, bad, fixture.DB+"/records/s:secure")
 				replies, _ := bad.executeRecords(ctx, []*execution.Plan{work})
-				if replies[0].Read.GetFailure() == nil || replies[0].Read.GetDocument() != nil {
+				if replies[0].GetReadResult().GetFailure() == nil || replies[0].GetReadResult().GetDocument() != nil {
 					t.Fatal("request bypassed target privilege check", replies)
 				}
 				if err = bad.Close(); err != nil {
@@ -158,10 +160,12 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			work := mongoExpression(t, adapter, db, increment)
 			if kind != "expression" {
 				raw, _ := bson.Marshal(document)
-				doc := &pb.Document{MediaType: "application/bson", Data: raw}
+				doc := &pb.Document{ContentType: "application/bson", Data: raw}
 				put := &pb.MutateRequest_Put{Put: doc}
 				request := &pb.MutateRequest{Resource: db + "/records/s:counter", Action: put}
-				operation := &execution.Operation{Index: 1, Mutate: request}
+				operationOperation := &pb.Command_Mutate{Mutate: request}
+				operationCommand := &pb.Command{Operation: operationOperation}
+				operation := &pb.ExecuteRequest{Index: 1, Command: operationCommand}
 				var failure *pb.Failure
 				work, failure = prepareTestRecord(adapter, operation)
 				if failure != nil {
@@ -177,7 +181,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				testmongo.FailCommand(t, native, data, 1)
 			}
 			results, _ := adapter.executeRecords(ctx, []*execution.Plan{work})
-			if results[0].Mutation.Outcome == pb.MutationOutcome_APPLIED || results[0].Mutation.Outcome == pb.MutationOutcome_NOT_STARTED {
+			if results[0].GetMutationResult().Outcome == pb.MutationOutcome_APPLIED || results[0].GetMutationResult().Outcome == pb.MutationOutcome_NOT_STARTED {
 				t.Fatal("391 produced unjustified outcome", results)
 			}
 			count := 0
@@ -194,7 +198,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			if err != nil || raw.Lookup("n").AsInt64() != 1 {
 				t.Fatal("unexpected effect after 391")
 			}
-			t.Logf("%s 391: business updates=%d n=1 outcome=%s", kind, count, results[0].Mutation.Outcome)
+			t.Logf("%s 391: business updates=%d n=1 outcome=%s", kind, count, results[0].GetMutationResult().Outcome)
 		})
 	}
 }
@@ -205,7 +209,7 @@ func verifyReconnectRead(t *testing.T, adapter *Adapter, proxy *testmongo.Proxy,
 	defer cancel()
 	plan := prepareCounter(t, adapter, resource)
 	results, _ := adapter.executeRecords(ctx, []*execution.Plan{plan})
-	if results[0].Read.GetDocument() == nil {
+	if results[0].GetReadResult().GetDocument() == nil {
 		t.Fatal("new connection did not recover after lost reply", results)
 	}
 	sasl := 0

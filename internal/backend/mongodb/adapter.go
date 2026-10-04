@@ -148,7 +148,7 @@ func (a *Adapter) Close() error {
 }
 
 func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	op := record.Operation()
+	op := record.Command()
 	s := record.Segments()
 	if len(s) != 3 || !validNamespace(s) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB record target")
@@ -159,18 +159,12 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	}
 	target := namespace{database: s[0], collection: s[1]}
 	native := &plan{target: target, id: id}
-	p := &execution.Plan{Operation: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
-	if r := op.Read; r != nil {
-		if r.AdapterOptions != nil || r.ReadMediaType != "" && r.ReadMediaType != "application/bson" {
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
-		}
+	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
+	if r := op.GetRead(); r != nil {
 		native.action = "read"
 		p.ResultBytes += a.maxReadSize()
 	} else {
-		m := op.Mutate
-		if m.AdapterOptions != nil {
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "adapter options unsupported")
-		}
+		m := op.GetMutate()
 		var d *pb.Document
 		switch v := m.Action.(type) {
 		case *pb.MutateRequest_Put:
@@ -186,7 +180,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
 			if program := v.AtomicTransform.GetProgram(); program != nil {
-				if program.Input != nil && program.Input.MediaType != "application/bson" {
+				if program.Input != nil && program.Input.ContentType != "application/bson" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
 				}
 				input := value.Value{Kind: value.Missing}
@@ -209,7 +203,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			}
 		}
 		if d != nil {
-			if d.MediaType != "application/bson" {
+			if d.ContentType != "application/bson" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
 			}
 			doc, err := Decode(d.Data)

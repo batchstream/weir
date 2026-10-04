@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -39,7 +39,12 @@ func (c *nativeCapture) Chunk(b []byte) error {
 	_, err := c.body.Write(b)
 	return err
 }
-func (c *nativeCapture) Interrupt() {}
+func (c *nativeCapture) Emit(_ *execution.Plan, event *pb.Event) error {
+	if head := event.GetHead(); head != nil {
+		return c.Head(head)
+	}
+	return c.Chunk(event.GetChunk())
+}
 
 func TestMongoNativeExplicitCongestion(t *testing.T) {
 	for _, test := range []struct {
@@ -100,8 +105,8 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			defer client.Disconnect(context.Background())
 			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, config: cfg}
-			descriptor := &pb.Document{MediaType: NativeDescriptor}
-			open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			descriptor := &pb.Document{ContentType: NativeContentType}
+			open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -118,10 +123,8 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			source := io.NopCloser(bytes.NewReader(raw))
-			defer source.Close()
-			exchange := &execution.NativeExchange{Source: source, Sink: capture}
-			end, feedback := a.executeNative(ctx, plan, exchange)
+			plan.Command = testutil.NativeCommand(open, raw)
+			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
 				t.Fatal(end, feedback, calls)
 			}
@@ -130,7 +133,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !bytes.Equal(capture.body.Bytes(), want) || capture.head.BodyMediaType != "application/bson" || end.Failure != nil {
+				if !bytes.Equal(capture.body.Bytes(), want) || capture.head.BodyContentType != "application/bson" || end.Failure != nil {
 					t.Fatal("native reply changed", bson.Raw(capture.body.Bytes()), end)
 				}
 			}

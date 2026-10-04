@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/event"
@@ -69,7 +68,7 @@ func TestDirectoryWithdrawalDoesNotDelayAdmittedWriteDrain(t *testing.T) {
 	}
 	client := endpointProcessClient(t, node.Addresses()[0])
 	request := budgetPut(fixture.DB+"/records", "drain")
-	result := make(chan *execution.Result, 1)
+	result := make(chan *pb.Event, 1)
 	callErrors := make(chan error, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
@@ -94,7 +93,7 @@ func TestDirectoryWithdrawalDoesNotDelayAdmittedWriteDrain(t *testing.T) {
 	release.Do(func() { close(gate) })
 	select {
 	case response := <-result:
-		if err := <-callErrors; err != nil || response.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+		if err := <-callErrors; err != nil || response.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("admitted write did not finish during peer withdrawal", response, err)
 		}
 	case <-time.After(time.Second):

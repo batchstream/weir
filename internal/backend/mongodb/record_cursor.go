@@ -135,7 +135,7 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 		if n.limited {
 			continue
 		}
-		doc := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), value.Data...)}
+		doc := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), value.Data...)}
 		docs = append(docs, doc)
 		outputBytes += len(value.Data)
 	}

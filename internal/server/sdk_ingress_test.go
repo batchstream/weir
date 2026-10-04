@@ -25,20 +25,20 @@ func (a *sdkIngressReadAdapter) PrepareCommand(uint64, *pb.Command) (*execution.
 }
 
 func (a *sdkIngressReadAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	operation := record.Operation()
-	request := operation.Read
+	command := record.Command()
+	request := command.GetRead()
 	if request == nil {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 	}
-	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: request.Resource, BatchKey: "reads", Bytes: operation.RequestBytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: execution.ResultOverheadBytes}
+	plan := &execution.Plan{ID: record.Index(), Command: command, Key: request.Resource, BatchKey: "reads", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: execution.ResultOverheadBytes}
 	return plan, nil
 }
 
 func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
 	for _, plan := range plans {
 		read := protocol.Missing()
-		result := &execution.Result{Index: plan.ID, Read: read}
-		output := &execution.Output{Result: result}
+		result := &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}
+		output := result
 		if err := emit(plan, output); err != nil {
 			return execution.Neutral
 		}

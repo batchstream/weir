@@ -7,16 +7,17 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 )
 
-func expressionOperation(resource, raw string) *execution.Operation {
-	doc := &pb.Document{MediaType: ExpressionMedia, Data: []byte(raw)}
+func expressionOperation(resource, raw string) *pb.ExecuteRequest {
+	doc := &pb.Document{ContentType: ExpressionContentType, Data: []byte(raw)}
 	form := &pb.Transform_BackendExpression{BackendExpression: doc}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	op := &execution.Operation{Index: 1, Mutate: req}
+	opOperation := &pb.Command_Mutate{Mutate: req}
+	opCommand := &pb.Command{Operation: opOperation}
+	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	return op
 }
 
@@ -40,7 +41,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 		}
 	}
 	op := expressionOperation("records/s:a", `{"doc":{}}`)
-	op.Mutate.GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
+	op.Command.GetMutate().GetAtomicTransform().GetBackendExpression().ContentType = "application/unknown"
 	if _, f := prepareTestRecord(a, op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal(f)
 	}
@@ -98,7 +99,7 @@ func FuzzSearchExpression(f *testing.F) {
 		if len(raw) > protocol.MaxExpression {
 			return
 		}
-		d := &pb.Document{MediaType: ExpressionMedia, Data: raw}
+		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
 		_ = prepareExpression(d)
 	})
 }

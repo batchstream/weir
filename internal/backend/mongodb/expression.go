@@ -11,10 +11,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-const ExpressionMedia = "application/vnd.weir.mongodb-update.v1+bson"
+const ExpressionContentType = "application/vnd.weir.mongodb-update.v1+bson"
 
 func (a *Adapter) prepareExpression(d *pb.Document) *pb.Failure {
-	if d == nil || d.MediaType != ExpressionMedia {
+	if d == nil || d.ContentType != ExpressionContentType {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported MongoDB expression profile")
 	}
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive MongoDB expression")

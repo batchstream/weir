@@ -178,18 +178,18 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 					}
 				})
 				get := nativeOpen(t, index, "GET", "/_doc/same")
-				end, capture := runNative(t, a, get, io.NopCloser(strings.NewReader("")))
+				end, capture := runNative(t, a, get, nil)
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"_index":"`+index+`"`) {
 					t.Fatal("Native GET used another target", end, capture.body.String())
 				}
 				bulk := nativeOpen(t, index, "POST", "/_bulk")
 				body := fmt.Sprintf("{\"index\":{\"_index\":%q,\"_id\":\"same\"}}\n{}\n", index)
-				end, _ = runNative(t, a, bulk, io.NopCloser(strings.NewReader(body)))
+				end, _ = runNative(t, a, bulk, []byte(body))
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
 					t.Fatal("Native bulk target failed", end)
 				}
 				wrong := "{\"index\":{\"_index\":\"other\",\"_id\":\"same\"}}\n{}\n"
-				end, _ = runNative(t, a, bulk, io.NopCloser(strings.NewReader(wrong)))
+				end, _ = runNative(t, a, bulk, []byte(wrong))
 				if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
 					t.Fatal("Native item escaped request target", end)
 				}

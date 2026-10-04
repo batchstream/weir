@@ -122,22 +122,19 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 	for i, target := range cases {
 		resource := target.index + "/s:" + target.id
 		works[i] = batchTestPlan(t, a, target.action, resource)
-		works[i].Operation.Index = uint64(i)
+		works[i].ID = uint64(i)
 	}
 	results, feedback := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) || feedback != execution.Healthy || inspections.Load() != 2 || reads.Load() != 2 || writes.Load() != 1 {
 		t.Fatal("mixed index request framing", len(results), feedback, inspections.Load(), reads.Load(), writes.Load())
 	}
 	for i, result := range results {
-		if result.Index != uint64(i) {
-			t.Fatal("caller result position lost", result)
-		}
 		if i < 2 {
 			want := fmt.Sprintf(`{"n":%d}`, 10+i*10)
-			if string(result.Read.GetDocument().GetData()) != want {
+			if string(result.GetReadResult().GetDocument().GetData()) != want {
 				t.Fatal("same ID read from wrong index", result)
 			}
-		} else if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || result.Mutation.GetFailure() != nil {
+		} else if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
 			t.Fatal("mixed target mutation failed", result)
 		}
 	}
@@ -148,7 +145,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		right := batchTestPlan(t, a, "read", "right/s:same")
 		concurrent.Go(func() {
 			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
-			if string(results[0].Read.GetDocument().GetData()) != `{"n":10}` || string(results[1].Read.GetDocument().GetData()) != `{"n":20}` {
+			if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":10}` || string(results[1].GetReadResult().GetDocument().GetData()) != `{"n":20}` {
 				t.Error("concurrent request changed adapter target", results)
 			}
 		})
@@ -166,7 +163,9 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		"records/extra", "records?query=x",
 	} {
 		read := &pb.ReadRequest{Resource: resource + "/s:same"}
-		op := &execution.Operation{Index: 1, Read: read}
+		opOperation := &pb.Command_Read{Read: read}
+		opCommand := &pb.Command{Operation: opOperation}
+		op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Error("record target accepted", resource)
 		}
@@ -186,7 +185,7 @@ func TestSearchPlansRetainRequestTargets(t *testing.T) {
 	cfg := Config{Store: "search"}
 	a := &Adapter{config: cfg}
 	record := batchTestPlan(t, a, "read", "left/s:same")
-	record.Operation.Read.Resource = "right/s:same"
+	record.Command.GetRead().Resource = "right/s:same"
 	if record.Backend.(*plan).index != "left" {
 		t.Fatal("record target follows mutable request")
 	}
@@ -243,10 +242,10 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			results, _ := a.executeRecords(context.Background(), works)
 			for _, result := range results {
 				if action == "read" {
-					if result.Read.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+					if result.GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 						t.Fatal("cross-index mget became a trusted missing record", result)
 					}
-				} else if result.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
+				} else if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("cross-index acknowledgement became a trusted write", result)
 				}
 			}
@@ -326,7 +325,7 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 				works = append(works, live)
 			}
 			for i, work := range works {
-				work.Operation.Index = uint64(i)
+				work.ID = uint64(i)
 			}
 			ctx, stop := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer stop()
@@ -335,10 +334,7 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 				t.Fatal("cancelled target blocked valid caller", results, writes.Load(), feedback)
 			}
 			for i, result := range results {
-				if result.Index != uint64(i) {
-					t.Fatal("caller result position lost", results)
-				}
-				mutation := result.Mutation
+				mutation := result.GetMutationResult()
 				if i == 1 {
 					if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 						t.Fatal("cancelled caller lost its cancellation result", result)

@@ -103,7 +103,7 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 					t.Fatal(failure)
 				}
 			}
-			second.Operation.Index = 1
+			second.ID = 1
 			a, failure, _ := runtime.Submit(short, first, nil)
 			if failure != nil {
 				t.Fatal(failure)

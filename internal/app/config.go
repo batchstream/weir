@@ -310,51 +310,47 @@ func (cfg Config) validateDiscovery() error {
 }
 
 func (cfg RoutingConfig) Validate() error {
-	if err := cfg.validateGraph(); err != nil {
+	if err := cfg.validateStores(); err != nil {
 		return err
 	}
 	if err := cfg.validateCredentialSources(); err != nil {
 		return err
 	}
 	for _, service := range cfg.Stores {
+		l := service.Local
+		if l.BackendTimeout != nil && *l.BackendTimeout <= 0 {
+			return errors.New("backend_timeout must be positive")
+		}
+		if l.MaxReadSize != nil && (*l.MaxReadSize < 1<<10 || *l.MaxReadSize > protocol.MaxDocument) {
+			return errors.New("max_read_size must be between 1KiB and 2MiB")
+		}
+		limits := l.runtimeLimits()
+		if err := limits.Validate(); err != nil {
+			return err
+		}
 
-		if l := service.Local; l != nil {
-			if l.BackendTimeout != nil && *l.BackendTimeout <= 0 {
-				return errors.New("backend_timeout must be positive")
+		if m := l.MongoDB; m != nil {
+			if m.UsernameFile != "" || m.PasswordFile != "" {
+				return errors.New("unresolved credential file")
 			}
-			if l.MaxReadSize != nil && (*l.MaxReadSize < 1<<10 || *l.MaxReadSize > protocol.MaxDocument) {
-				return errors.New("max_read_size must be between 1KiB and 2MiB")
-			}
-			limits := l.runtimeLimits()
-			if err := limits.Validate(); err != nil {
+			config := l.mongoConfig(service.Name)
+			if err := mongodb.ValidateConfig(config); err != nil {
 				return err
 			}
-
-			if m := l.MongoDB; m != nil {
-				if m.UsernameFile != "" || m.PasswordFile != "" {
-					return errors.New("unresolved credential file")
-				}
-				config := l.mongoConfig(service.Name)
-				if err := mongodb.ValidateConfig(config); err != nil {
-					return err
-				}
+		} else {
+			if c := l.Search.Connection; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
+				return errors.New("unresolved credential file")
 			}
-
-			if l.Search != nil {
-				if c := l.Search.Connection; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
-					return errors.New("unresolved credential file")
-				}
-				config := l.searchConfig(service.Name)
-				if err := search.ValidateConfig(config); err != nil {
-					return err
-				}
+			config := l.searchConfig(service.Name)
+			if err := search.ValidateConfig(config); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-func (cfg RoutingConfig) validateGraph() error {
+func (cfg RoutingConfig) validateStores() error {
 	if len(cfg.Stores) > 16 {
 		return errors.New("invalid local Store bounds")
 	}

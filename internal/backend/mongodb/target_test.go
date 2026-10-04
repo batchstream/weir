@@ -1,14 +1,13 @@
 package mongodb
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"strings"
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 )
@@ -30,14 +29,14 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			descriptor := &pb.Document{MediaType: NativeDescriptor}
-			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			descriptor := &pb.Document{ContentType: NativeContentType}
+			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyContentType: "application/bson"}
 			native, failure := adapter.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			want := namespace{database: database, collection: collection}
-			operation.Read.Resource = "changed/changed/s:changed"
+			operation.Command.GetRead().Resource = "changed/changed/s:changed"
 			request.Resource = "changed/changed"
 			open.Resource = "changed/changed"
 			if work.Backend.(*plan).target != want || scan.Backend.(*scanPlan).target != want || native.Backend.(namespace) != want {
@@ -61,8 +60,8 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			if _, failure := adapter.prepareScan(request); failure == nil {
 				t.Fatal("invalid Scan target accepted")
 			}
-			descriptor := &pb.Document{MediaType: NativeDescriptor}
-			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			descriptor := &pb.Document{ContentType: NativeContentType}
+			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyContentType: "application/bson"}
 			if _, failure := adapter.prepareNative(open); failure == nil {
 				t.Fatal("invalid Native target accepted")
 			}
@@ -94,8 +93,8 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 		if i == 1 {
 			want = 2
 		}
-		document := reply.Read.GetDocument()
-		if document == nil || reply.Index != uint64(i+8) || bson.Raw(document.Data).Lookup("n").Int32() != want {
+		document := reply.GetReadResult().GetDocument()
+		if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != want {
 			t.Fatal("namespace/id correspondence lost", i, reply)
 		}
 	}
@@ -107,16 +106,17 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
-	descriptor := &pb.Document{MediaType: NativeDescriptor}
-	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+	descriptor := &pb.Document{ContentType: NativeContentType}
+	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	command := bson.D{{Key: "count", Value: "other"}}
 	raw := expressionBSON(t, command)
-	exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: &nativeCapture{}}
-	end, signal := adapter.executeNative(context.Background(), work, exchange)
+	capture := &nativeCapture{}
+	work.Command = testutil.NativeCommand(open, raw)
+	end, signal := adapter.executeNative(context.Background(), work, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || signal != execution.Neutral {
 		t.Fatal(end, signal)
 	}
@@ -150,7 +150,7 @@ func TestMongoQualificationFailureDoesNotAttemptWrites(t *testing.T) {
 				t.Fatal(failure)
 			}
 			results, _ := adapter.executeRecords(context.Background(), []*execution.Plan{work})
-			if results[0].Mutation.Outcome != pb.MutationOutcome_NOT_STARTED || results[0].Mutation.Failure == nil || len(commands) != 1 || commands[0] != "listCollections" {
+			if results[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutationResult().Failure == nil || len(commands) != 1 || commands[0] != "listCollections" {
 				t.Fatal("target rejection performed a write", results, commands)
 			}
 		})
@@ -179,10 +179,10 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 			}
 			work.Context = caller
 			results, signal := adapter.executeRecords(context.Background(), []*execution.Plan{work})
-			code := results[0].Read.GetFailure().GetCode()
+			code := results[0].GetReadResult().GetFailure().GetCode()
 			if action == "put" {
-				code = results[0].Mutation.GetFailure().GetCode()
-				if results[0].Mutation.Outcome != pb.MutationOutcome_NOT_STARTED {
+				code = results[0].GetMutationResult().GetFailure().GetCode()
+				if results[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED {
 					t.Fatal(results)
 				}
 			}
@@ -219,8 +219,8 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	if page.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(page)
 	}
-	descriptor := &pb.Document{MediaType: NativeDescriptor}
-	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+	descriptor := &pb.Document{ContentType: NativeContentType}
+	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
 	native, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
@@ -228,8 +228,8 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	command := bson.D{{Key: "count", Value: "records"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
-	end, _ := adapter.executeNative(ctx, native, exchange)
+	native.Command = testutil.NativeCommand(open, raw)
+	end, _ := adapter.executeNative(ctx, native, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(end)
 	}

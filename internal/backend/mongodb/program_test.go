@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -17,7 +16,9 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "db/records/s:item", Action: action}
-	operation := &execution.Operation{Index: 1, Mutate: mutation}
+	operationOperation := &pb.Command_Mutate{Mutate: mutation}
+	operationCommand := &pb.Command{Operation: operationOperation}
+	operation := &pb.ExecuteRequest{Index: 1, Command: operationCommand}
 	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
@@ -26,7 +27,7 @@ func TestPrepareProgramTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 		t.Fatalf("unexpected program plan: %#v", work)
 	}
 
-	program.Input = &pb.Document{MediaType: "application/json", Data: []byte(`{"step":1}`)}
+	program.Input = &pb.Document{ContentType: "application/json", Data: []byte(`{"step":1}`)}
 	if _, failure := prepareTestRecord(a, operation); failure == nil || failure.Code != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("JSON input accepted by MongoDB adapter", failure)
 	}

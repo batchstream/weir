@@ -87,7 +87,7 @@ func (a *Adapter) inspectTarget(ctx context.Context, target namespace) (*pb.Fail
 // A cancelled group never contacts MongoDB. Read and write commands within one
 // Execute share this qualification; later calls reuse successful target checks.
 // Command builders recheck callers because metadata I/O can outlive them.
-func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*execution.Result, execution.Feedback) {
+func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
 	var failure *pb.Failure
 	signal := execution.Neutral
 	for _, work := range plans {
@@ -99,11 +99,11 @@ func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Pla
 			break
 		}
 	}
-	results := make([]*execution.Result, len(plans))
+	results := make([]*pb.Event, len(plans))
 	for i, work := range plans {
 		result := unstarted(ctx, work)
 		if result == nil {
-			result = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)
+			result = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
 		}
 		results[i] = result
 	}

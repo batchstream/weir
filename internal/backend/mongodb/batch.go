@@ -12,13 +12,14 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
+	"google.golang.org/protobuf/proto"
 )
 
-func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) ([]*execution.Result, execution.Feedback) {
-	results := make([]*execution.Result, len(plans))
+func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+	results := make([]*pb.Event, len(plans))
 	bytes := 0
 	for _, p := range plans {
-		charge := max(p.Bytes, p.Operation.RequestBytes())
+		charge := max(p.Bytes, proto.Size(p.Command)+16)
 		if p.Bytes < 0 || charge > execution.BackendBatchBytes || bytes > execution.BackendBatchBytes-charge {
 			bytes = execution.BackendBatchBytes + 1
 			break
@@ -28,7 +29,7 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 	if bytes > execution.BackendBatchBytes {
 		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "MongoDB batch exceeds encoded input byte bound")
 		for i, p := range plans {
-			results[i] = execution.FailedResult(p.Operation, pb.MutationOutcome_NOT_STARTED, failure)
+			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, failure)
 		}
 		return results, execution.Neutral
 	}
@@ -120,18 +121,18 @@ func batchFeedback(current, next execution.Feedback) execution.Feedback {
 	return execution.Healthy
 }
 
-func unstarted(ctx context.Context, p *execution.Plan) *execution.Result {
+func unstarted(ctx context.Context, p *execution.Plan) *pb.Event {
 	if p.Context != nil && p.Context.Err() != nil {
-		return execution.FailedResult(p.Operation, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(p.Context))
+		return execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(p.Context))
 	}
 	if ctx.Err() != nil {
-		return execution.FailedResult(p.Operation, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(ctx))
+		return execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(ctx))
 	}
 	return nil
 }
 
-func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*execution.Result, execution.Feedback) {
-	results := make([]*execution.Result, len(plans))
+func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+	results := make([]*pb.Event, len(plans))
 	skipped := make([]bool, len(plans))
 	ids := make(bson.A, 0, len(plans))
 	positions := make(map[any][]int, len(plans))
@@ -224,19 +225,20 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 					var reply *pb.ReadResult
 					if oversized {
 						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
-					} else if !plans[i].Results.Reserve(len(raw)) {
-						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch result budget exhausted"))
+					} else if len(raw) > plans[i].ResultBytes-execution.ResultOverheadBytes {
+						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record exceeds result reservation"))
 					} else {
 						// Duplicate reads can share immutable data, but every RPC
 						// pays its own response budget before retaining that data.
 						if document == nil {
-							d := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), raw...)}
+							d := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), raw...)}
 							document = protocol.ReadDocument(d)
 						}
 						reply = document
 					}
-					result := &execution.Result{Index: plans[i].Operation.Index, Read: reply}
-					results[i] = result
+					value := &pb.Event_ReadResult{ReadResult: reply}
+					event := &pb.Event{Value: value}
+					results[i] = event
 				}
 				received++
 			}
@@ -280,7 +282,9 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 			}
 			reply = protocol.ReadFailure(failure)
 		}
-		results[i] = &execution.Result{Index: p.Operation.Index, Read: reply}
+		value := &pb.Event_ReadResult{ReadResult: reply}
+		event := &pb.Event{Value: value}
+		results[i] = event
 	}
 	signal := feedback(ctx, err)
 	if !valid && signal == execution.Healthy {
@@ -304,8 +308,8 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 	return nil, false
 }
 
-func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*execution.Result, execution.Feedback) {
-	results := make([]*execution.Result, len(plans))
+func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+	results := make([]*pb.Event, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
@@ -333,7 +337,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 		case "delete":
 			op = bson.D{{Key: "delete", Value: int32(0)}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
 		default:
-			results[i] = execution.FailedResult(p.Operation, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_INTERNAL, "unsupported prepared operation"))
+			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_INTERNAL, "unsupported prepared operation"))
 			continue
 		}
 		active = append(active, p)
@@ -360,7 +364,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 	session, err := a.client.StartSession()
 	if err != nil {
 		for i, p := range active {
-			results[positions[i]] = execution.FailedResult(p.Operation, pb.MutationOutcome_NOT_STARTED, backendFailure(ctx, err))
+			results[positions[i]] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, backendFailure(ctx, err))
 		}
 		return results, feedback(ctx, err)
 	}
@@ -394,12 +398,14 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 	if !valid || state.cursor.cursor != 0 && err == nil {
 		state.results = make([]*pb.MutationResult, len(active))
 	}
-	for i, p := range active {
+	for i := range active {
 		reply := state.results[i]
 		if reply == nil {
 			reply = protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledgement unavailable or incomplete"))
 		}
-		results[positions[i]] = &execution.Result{Index: p.Operation.Index, Mutation: reply}
+		value := &pb.Event_MutationResult{MutationResult: reply}
+		event := &pb.Event{Value: value}
+		results[positions[i]] = event
 	}
 	signal := feedback(ctx, err)
 	uncertain := false

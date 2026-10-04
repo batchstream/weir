@@ -101,31 +101,3 @@ func (v Value) Lookup(name string) (Value, error) {
 	}
 	return found, nil
 }
-
-// Increment is a finite conformance transform, not a general runtime or public DSL.
-// Missing records receive an explicit identity supplied by the adapter.
-func Increment(current Value, identity Field) (Value, error) {
-	var zero Value
-	if current.Kind == Missing {
-		z := Value{Kind: Int64}
-		current = Value{Kind: Object, Fields: []Field{identity, {Name: "n", Value: z}}}
-	}
-	n, err := current.Lookup("n")
-	if err != nil {
-		return zero, err
-	}
-	one, err := Integer(n.Kind, 1)
-	if err != nil {
-		return zero, err
-	}
-	next, err := Arithmetic(n, one, '+')
-	if err != nil {
-		return zero, err
-	}
-	for i := range current.Fields {
-		if current.Fields[i].Name == "n" {
-			current.Fields[i].Value = next
-		}
-	}
-	return current, nil
-}

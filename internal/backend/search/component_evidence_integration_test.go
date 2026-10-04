@@ -28,7 +28,7 @@ func TestOpenSearchComponentEvidence(t *testing.T) {
 	a := secureAdapter(t, f.Backend)
 	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(f.Backend.Index, "component-evidence"))), pb.MutationOutcome_APPLIED, 0)
 	result := runSearch(t, a, searchPlan(t, a, "read", searchResource(f.Backend.Index, "component-evidence")))
-	if result.Read.GetDocument() == nil {
+	if result.GetReadResult().GetDocument() == nil {
 		t.Fatal("component evidence read failed")
 	}
 

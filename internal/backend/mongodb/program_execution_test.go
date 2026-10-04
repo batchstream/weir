@@ -22,6 +22,7 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 	ambiguous := programCommitError(ambiguousLabels)
 	bothLabels := bson.A{"TransientTransactionError", "UnknownTransactionCommitResult"}
 	both := programCommitError(bothLabels)
+	definite := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 2}, {Key: "errmsg", Value: "definite commit rejection"}}
 	success := bson.D{{Key: "ok", Value: 1}}
 	writeItem := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
 	writeReply := programBulkResponse(bson.A{writeItem}, 1)
@@ -36,6 +37,7 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 		{name: "transient retry limit", commits: []bson.D{transient, transient, transient, transient, transient}, reevaluate: true, outcome: pb.MutationOutcome_NOT_APPLIED, failure: pb.FailureCode_CONFLICT},
 		{name: "ambiguous commit retries only commit", commits: []bson.D{ambiguous, success}, outcome: pb.MutationOutcome_APPLIED},
 		{name: "ambiguity remains after transient errors", commits: []bson.D{ambiguous, transient, transient, transient, transient}, outcome: pb.MutationOutcome_UNKNOWN, failure: pb.FailureCode_UNAVAILABLE},
+		{name: "ambiguity remains after definite rejection", commits: []bson.D{ambiguous, definite, definite, definite, definite}, outcome: pb.MutationOutcome_UNKNOWN, failure: pb.FailureCode_UNAVAILABLE},
 		{name: "ambiguity takes precedence over transient label", commits: []bson.D{both, success}, outcome: pb.MutationOutcome_APPLIED},
 	}
 	for _, tc := range cases {
@@ -90,7 +92,7 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 				t.Fatal(failure)
 			}
 			results, _ := a.executePrograms(t.Context(), []*execution.Plan{work})
-			result := results[0].Mutation
+			result := results[0].GetMutationResult()
 			if result.GetOutcome() != tc.outcome || result.GetFailure().GetCode() != tc.failure {
 				t.Fatalf("unexpected result: %v", result)
 			}
@@ -171,11 +173,11 @@ func TestMongoLuaBatchCallerCancellationDoesNotCancelPeers(t *testing.T) {
 			want := pb.MutationOutcome_APPLIED
 			if phase == "read" {
 				want = pb.MutationOutcome_NOT_APPLIED
-				if results[0].Mutation.GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+				if results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_CANCELLED {
 					t.Fatal("pre-write cancellation was not isolated", results)
 				}
 			}
-			if results[0].Mutation.GetOutcome() != want || results[1].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || commits != 1 {
+			if results[0].GetMutationResult().GetOutcome() != want || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || commits != 1 {
 				t.Fatal("caller cancellation poisoned the shared transaction", phase, results, commits)
 			}
 		})
@@ -208,7 +210,7 @@ func TestMongoLuaBatchMalformedWriteAcknowledgementNeverCommits(t *testing.T) {
 		t.Fatal(failure)
 	}
 	results, _ := adapter.executePrograms(t.Context(), []*execution.Plan{work})
-	if results[0].Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || commits != 0 || aborts != 1 {
+	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || commits != 0 || aborts != 1 {
 		t.Fatal("inconsistent batch acknowledgement was committed", results, commits, aborts)
 	}
 }
@@ -268,7 +270,7 @@ func TestMongoLuaBatchCursorContinuationsKeepTransactionIdentity(t *testing.T) {
 		t.Fatal("read/write continuations were not completed before commit", commands)
 	}
 	for _, result := range results {
-		if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("continued transaction did not apply both independent items", results)
 		}
 	}
@@ -307,7 +309,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 	}
 	results, _ := adapter.executePrograms(t.Context(), plans)
 	for _, result := range results {
-		if result.Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 			t.Fatal("incomplete verbose acknowledgement became applied", results)
 		}
 	}
@@ -367,7 +369,7 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 			}
 			results, _ := adapter.executePrograms(t.Context(), plans)
 			for _, result := range results {
-				mutation := result.Mutation
+				mutation := result.GetMutationResult()
 				if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE || mutation.GetFailure().GetMessage() != "MongoDB transaction rollback unconfirmed" {
 					t.Fatal("unobserved rollback became a confirmed abort", mode, mutation)
 				}

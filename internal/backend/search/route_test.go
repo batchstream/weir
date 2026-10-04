@@ -34,26 +34,23 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	config := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
-	items := make([]*pb.ReadRequest, 9)
-	for i := range items {
-		items[i] = request
+	operation := &pb.Command_Read{Read: request}
+	command := &pb.Command{Operation: operation}
+	record, err := execution.NewRecord("search", 9, command)
+	if err != nil {
+		t.Fatal(err)
 	}
-	batch := &pb.ReadBatch{Requests: items}
-	records, failure := execution.NewReadRecords("search", batch.Requests, execution.BackendBatchBytes)
+	work, failure := adapter.PrepareRecord(record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	work, failure := adapter.PrepareRecord(records[8])
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	if request.Resource != "records/s:a" || work.Operation.Index != 9 || work.ID != 9 || work.BatchKey != "records" {
+	if request.Resource != "records/s:a" || work.ID != 9 || work.BatchKey != "records" {
 		t.Fatal("wire Command mutated or association lost", work)
 	}
 	events := 0
-	emit := func(plan *execution.Plan, output *execution.Output) error {
+	emit := func(plan *execution.Plan, event *pb.Event) error {
 		events++
-		if plan != work || output.Result.Index != 9 || string(output.Result.Read.GetDocument().Data) != source {
+		if plan != work || string(event.GetReadResult().GetDocument().Data) != source {
 			t.Fatal("large read lost source or association")
 		}
 		return nil
@@ -62,11 +59,6 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	if events != 1 || feedback != execution.Healthy {
 		t.Fatal("large legal record failed", events, feedback)
 	}
-	request.Resource = "weir://search/records/s:a"
-	if _, err := execution.NewReadRecords("search", batch.Requests, execution.BackendBatchBytes); err == nil {
-		t.Fatal("accepted absolute wire resource")
-	}
-	request.Resource = "records/s:a"
 	emptyRecord := &execution.Record{}
 	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
 		t.Fatal("accepted unconstructed record")
@@ -81,12 +73,13 @@ func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:a", Action: action}
-	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}
-	records, failure := execution.NewMutationRecords("search", batch.Requests, execution.BackendBatchBytes)
-	if failure != nil {
-		t.Fatal(failure)
+	operation := &pb.Command_Mutate{Mutate: mutation}
+	command := &pb.Command{Operation: operation}
+	record, err := execution.NewRecord("search", 1, command)
+	if err != nil {
+		t.Fatal(err)
 	}
-	work, failure := adapter.PrepareRecord(records[0])
+	work, failure := adapter.PrepareRecord(record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -151,8 +144,7 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			work.BackendTimeout = 100 * time.Millisecond
 			var end *pb.NativeEnd
 			var body strings.Builder
-			emit := func(_ *execution.Plan, output *execution.Output) error {
-				event := output.Event
+			emit := func(_ *execution.Plan, event *pb.Event) error {
 				if phase == "slow_output" && (event.GetHead() != nil || event.GetChunk() != nil) {
 					time.Sleep(150 * time.Millisecond)
 				}

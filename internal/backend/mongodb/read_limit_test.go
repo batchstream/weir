@@ -23,7 +23,9 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "db/records/s:id"}
-		call := &execution.Operation{Index: 1, Read: request}
+		callOperation := &pb.Command_Read{Read: request}
+		callCommand := &pb.Command{Operation: callOperation}
+		call := &pb.ExecuteRequest{Index: 1, Command: callCommand}
 		work, failure := prepareTestRecord(adapter, call)
 		if failure != nil {
 			t.Fatal(failure)
@@ -78,11 +80,11 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			plans = append(plans, work)
 		}
 		results, _ := adapter.executeRecords(context.Background(), plans)
-		read := results[0].Read
+		read := results[0].GetReadResult()
 		if size <= limit && len(read.GetDocument().Data) != size || size > limit && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 			t.Fatal("read size boundary was not enforced", size, read)
 		}
-		if results[1].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[1].Mutation.Failure != nil {
+		if results[1].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutationResult().Failure != nil {
 			t.Fatal("acknowledged write was affected by a read limit", results[1])
 		}
 	}

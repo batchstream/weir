@@ -132,14 +132,14 @@ type processSmokeOptions struct {
 
 func processDocument(t *testing.T, store, id string, n int32) *pb.Document {
 	t.Helper()
-	document := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf(`{"n":%d}`, n))}
+	document := &pb.Document{ContentType: "application/json", Data: []byte(fmt.Sprintf(`{"n":%d}`, n))}
 	if store == "mongo" {
 		record := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: n}}
 		raw, err := bson.Marshal(record)
 		if err != nil {
 			t.Fatal(err)
 		}
-		document.MediaType, document.Data = "application/bson", raw
+		document.ContentType, document.Data = "application/bson", raw
 	}
 	return document
 }
@@ -153,12 +153,12 @@ func processRecordNumber(t *testing.T, document *pb.Document) int32 {
 		N int32 `json:"n" bson:"n"`
 	}
 	var err error
-	if document.MediaType == "application/bson" {
+	if document.ContentType == "application/bson" {
 		err = bson.Unmarshal(document.Data, &record)
-	} else if document.MediaType == "application/json" {
+	} else if document.ContentType == "application/json" {
 		err = json.Unmarshal(document.Data, &record)
 	} else {
-		t.Fatal("unexpected record media type", document.MediaType)
+		t.Fatal("unexpected record content type", document.ContentType)
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -175,25 +175,18 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	put := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: resource, Action: put}
 	recordResult, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordRequest(opts.store, mutation))
-	var result *pb.MutationResult
-	if recordResult != nil {
-		result = recordResult.Mutation
-	}
+	result := recordResult.GetMutationResult()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
 		t.Fatal("direct mutation", result, err)
 	}
 	read := &pb.ReadRequest{Resource: resource}
 	recordResult2, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordRequest(opts.store, read))
-	var found *pb.ReadResult
-	if recordResult2 != nil {
-		found = recordResult2.Read
-	}
+	found := recordResult2.GetReadResult()
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
 		t.Fatal("direct read", found, err)
 	}
-	readFixture := testutil.RecordRequest(opts.store, read)
-	readBatch := &pb.ReadBatch{Requests: []*pb.ReadRequest{readFixture.Operation.Read, readFixture.Operation.Read}}
-	reads, err := testutil.ReadRecords(ctx, opts.client, opts.store, readBatch.Requests)
+	readBatch := []*pb.ReadRequest{read, read}
+	reads, err := testutil.ReadRecords(ctx, opts.client, opts.store, readBatch)
 	if err != nil || len(reads) != 2 {
 		t.Fatal("batch read", reads, err)
 	}
@@ -208,11 +201,9 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		document := processDocument(t, opts.store, id, int32(i+2))
 		create := &pb.MutateRequest_Create{Create: document}
 		mutation := &pb.MutateRequest{Resource: opts.root + "/s:" + id, Action: create}
-		fixture := testutil.RecordRequest(opts.store, mutation)
-		requests = append(requests, fixture.Operation.Mutate)
+		requests = append(requests, mutation)
 	}
-	batch := &pb.MutationBatch{Requests: requests}
-	mutations, err := testutil.MutateRecords(ctx, opts.client, opts.store, batch.Requests)
+	mutations, err := testutil.MutateRecords(ctx, opts.client, opts.store, requests)
 	if err != nil || len(mutations) != len(requests) {
 		t.Fatal("batch create", mutations, err)
 	}
@@ -226,8 +217,7 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		request := &pb.ReadRequest{Resource: item.Resource}
 		verification = append(verification, request)
 	}
-	verifyBatch := &pb.ReadBatch{Requests: verification}
-	verified, err := testutil.ReadRecords(ctx, opts.client, opts.store, verifyBatch.Requests)
+	verified, err := testutil.ReadRecords(ctx, opts.client, opts.store, verification)
 	if err != nil || len(verified) != len(requests) {
 		t.Fatal("batch create readback", verified, err)
 	}
@@ -250,8 +240,8 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
 	t.Helper()
 	var err error
-	descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
-	open := &pb.NativeOpen{Resource: opts.root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
+	descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
+	open := &pb.NativeOpen{Resource: opts.root, Descriptor_: descriptor, BodyContentType: "application/bson"}
 	var body []byte
 	if opts.store == "mongo" {
 		query := bson.D{{Key: "_id", Value: "example"}}
@@ -260,8 +250,8 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	} else {
 		request := &spb.Request{Method: "GET", Path: "/_doc/example", Query: "realtime=true"}
 		descriptor.Data, err = proto.Marshal(request)
-		descriptor.MediaType = searchbackend.NativeDescriptor
-		open.BodyMediaType = ""
+		descriptor.ContentType = searchbackend.NativeContentType
+		open.BodyContentType = ""
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -449,8 +439,8 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			t.Fatal("process not ready")
 		}
 		if p != owner {
-			if metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
-				t.Fatal("directory node executed or relayed business")
+			if metrics["weir_store_executions_total"] != nil {
+				t.Fatal("directory node executed business")
 			}
 		} else if testmetrics.Sum(metrics, "weir_store_records_total") != 12 {
 			t.Fatal("owner business operations duplicated", testmetrics.Sum(metrics, "weir_store_records_total"))

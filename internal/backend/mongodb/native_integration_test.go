@@ -3,10 +3,8 @@
 package mongodb
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +12,7 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -70,15 +69,15 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				testmongo.FailCommand(t, native, data, 1)
 			}
 			raw, _ := bson.Marshal(command)
-			descriptor := &pb.Document{MediaType: NativeDescriptor}
-			open := &pb.NativeOpen{Resource: db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			descriptor := &pb.Document{ContentType: NativeContentType}
+			open := &pb.NativeOpen{Resource: db + "/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
 			plan, f := a.prepareNative(open)
 			if f != nil {
 				t.Fatal(f)
 			}
 			capture := &nativeCapture{}
-			exchange := &execution.NativeExchange{Source: io.NopCloser(bytes.NewReader(raw)), Sink: capture}
-			end, feedback := a.executeNative(ctx, plan, exchange)
+			plan.Command = testutil.NativeCommand(open, raw)
+			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if mode == "overload" && feedback != execution.Congested {
 				t.Fatal("known Mongo overload did not supply congestion feedback", feedback)
 			}

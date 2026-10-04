@@ -97,30 +97,31 @@ func TestRealSearchBackendDeadlineAcknowledgements(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":7}`)}
+			document := &pb.Document{ContentType: "application/json", Data: []byte(`{"n":7}`)}
 			action := &pb.MutateRequest_Put{Put: document}
 			request := &pb.MutateRequest{Resource: backend.Index + "/s:write", Action: action}
-			batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{request}}
-			records, failure := execution.NewMutationRecords("search", batch.Requests, runtime.PendingByteLimit())
-			if failure != nil {
-				t.Fatal(failure)
+			operation := &pb.Command_Mutate{Mutate: request}
+			command := &pb.Command{Operation: operation}
+			record, err := execution.NewRecord("search", 1, command)
+			if err != nil {
+				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareBatch(records)
+			prepared, failure := runtime.PrepareRecord(record)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			caller, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			started := time.Now()
-			ticket, failure, _ := runtime.SubmitBatch(caller, prepared)
+			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results, err := ticket.WaitBatch(caller)
-			if err != nil || len(results) != 1 || results[0].Mutation.GetOutcome() != test.outcome {
-				t.Fatal("real acknowledgement certainty changed", err, results)
+			result, err := ticket.Wait(caller)
+			if err != nil || result.GetMutationResult().GetOutcome() != test.outcome {
+				t.Fatal("real acknowledgement certainty changed", err, result)
 			}
-			failure = results[0].Mutation.GetFailure()
+			failure = result.GetMutationResult().GetFailure()
 			elapsed := time.Since(started)
 			if test.outcome == pb.MutationOutcome_APPLIED {
 				if failure != nil || elapsed < 2*time.Second || elapsed >= limits.BackendTimeout {

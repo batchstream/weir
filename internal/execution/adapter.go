@@ -3,7 +3,6 @@ package execution
 
 import (
 	"context"
-	"io"
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -15,7 +14,6 @@ const DefaultMaxReadSize = 16 << 10
 type Plan struct {
 	ID                                   uint64
 	Command                              *pb.Command
-	Operation                            *Operation
 	Key, BatchKey                        string
 	Bytes, ResultBytes, WorkingBytes     int
 	Continue, CleanupRequired, Streaming bool
@@ -23,7 +21,6 @@ type Plan struct {
 	Context                              context.Context
 	BackendTimeout                       time.Duration
 	Backend                              any
-	Results                              *ResultBudget
 }
 
 type Feedback uint8
@@ -39,12 +36,7 @@ const (
 
 // Emit borrows an event until it returns. Callers must not mutate its contents.
 // One caller's canceled emission does not cancel other members of a shared batch.
-type Output struct {
-	Result *Result
-	Event  *pb.Event
-}
-
-type Emit func(*Plan, *Output) error
+type Emit func(*Plan, *pb.Event) error
 
 type Adapter interface {
 	PrepareCommand(uint64, *pb.Command) (*Plan, *pb.Failure)
@@ -52,17 +44,6 @@ type Adapter interface {
 	Execute(context.Context, []*Plan, Emit) Feedback
 	ClosePlan(context.Context, *Plan) *pb.Failure
 	Close() error
-}
-
-// These private adapter dependencies model one bounded native exchange.
-type NativeExchange struct {
-	Source io.ReadCloser
-	Sink   NativeSink
-}
-type NativeSink interface {
-	Interrupt()
-	Head(*pb.NativeHead) error
-	Chunk([]byte) error
 }
 
 type ScanPage struct {

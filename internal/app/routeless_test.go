@@ -87,7 +87,7 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if len(node.runtimes) != 0 || len(node.targets) != 1 ||
+	if len(node.runtimes) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) ||
 		len(node.localNames) != 0 {
 		t.Fatal("an empty graph must construct admission only, with no backend or remote state")
 	}
@@ -113,12 +113,8 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		client := pb.NewStoreServiceClient(connection)
-		requestContext := ctx
-		recordResult, readErr := testutil.ExecuteRecord(requestContext, client, testutil.RecordRequest("missing", request))
-		var result *pb.ReadResult
-		if recordResult != nil {
-			result = recordResult.Read
-		}
+		recordResult, readErr := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("missing", request))
+		result := recordResult.GetReadResult()
 		closeErr := connection.Close()
 		want := codes.Unavailable
 		if i == 1 {

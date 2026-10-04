@@ -12,20 +12,28 @@ import (
 )
 
 func plan(index uint64, key string, read bool) *execution.Plan {
-	op := &execution.Operation{Index: index}
+	command := &pb.Command{}
 	bytes := execution.ResultOverheadBytes
 	if read {
-		r := &pb.ReadRequest{Resource: key}
-		op.Read = r
+		request := &pb.ReadRequest{Resource: key}
+		command.Operation = &pb.Command_Read{Read: request}
 		bytes += protocol.MaxDocument
 	} else {
-		e := &pb.Empty{}
-		a := &pb.MutateRequest_Delete{Delete: e}
-		m := &pb.MutateRequest{Resource: key, Action: a}
-		op.Mutate = m
+		empty := &pb.Empty{}
+		action := &pb.MutateRequest_Delete{Delete: empty}
+		request := &pb.MutateRequest{Resource: key, Action: action}
+		command.Operation = &pb.Command_Mutate{Mutate: request}
 	}
-	p := &execution.Plan{Operation: op, Key: key, Bytes: 1024, ResultBytes: bytes}
-	return p
+	work := &execution.Plan{ID: index, Command: command, Key: key, Bytes: 1024, ResultBytes: bytes}
+	return work
+}
+func recordEvent(t testing.TB, ticket *Ticket) *pb.Event {
+	t.Helper()
+	event, err := ticket.Wait(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return event
 }
 func finish(r *Runtime, b *batch) {
 	b.cancel()
@@ -33,9 +41,9 @@ func finish(r *Runtime, b *batch) {
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	for _, t := range b.items {
-		var result *execution.Result
-		if t.plan.Operation != nil {
-			result = execution.FailedResult(t.plan.Operation, pb.MutationOutcome_APPLIED, nil)
+		var result *pb.Event
+		if t.plan.Command.GetRead() != nil || t.plan.Command.GetMutate() != nil {
+			result = execution.FailedEvent(t.plan.Command, pb.MutationOutcome_APPLIED, nil)
 		}
 		r.completeLocked(t, result)
 	}
@@ -103,7 +111,7 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	cancelled, stop := context.WithCancel(ctx)
 	next := plan(1, "key", false)
 	b, _, _ := r.Submit(cancelled, next, s)
-	last := plan(2, "key", true)
+	last := plan(2, "key", false)
 	_, _, _ = r.Submit(ctx, last, s)
 	independent := plan(0, "key", true)
 	read, _, _ := r.Submit(ctx, independent, nil)
@@ -121,7 +129,7 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	if overlap == nil || overlap.items[0] != read {
 		t.Fatal("independent same-key read was serialized or cancelled successor released active key")
 	}
-	if b.Result().Mutation.Outcome != pb.MutationOutcome_NOT_STARTED {
+	if recordEvent(t, b).GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal("queued cancellation")
 	}
 	r.mu.Lock()
@@ -156,11 +164,11 @@ func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 			t.Fatal("dispatched operation moved backwards")
 		}
 		f := protocol.Fail(pb.FailureCode_CANCELLED, "lost acknowledgement")
-		result := execution.FailedResult(p.Operation, pb.MutationOutcome_UNKNOWN, f)
+		result := execution.FailedEvent(p.Command, pb.MutationOutcome_UNKNOWN, f)
 		r.completeLocked(ticket, result)
 		b.cancel()
 		r.mu.Unlock()
-		if ticket.Result().Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
+		if recordEvent(t, ticket).GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("false NOT_STARTED")
 		}
 		ticket.Ack()
@@ -188,7 +196,8 @@ func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 	b := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	defer b.cancel()
-	if len(b.items) != 3 || time.Until(b.backendDeadline) < 900*time.Millisecond {
+	deadline, _ := b.ctx.Deadline()
+	if len(b.items) != 3 || time.Until(deadline) < 900*time.Millisecond {
 		t.Fatal("earliest deadline poisoned shared batch")
 	}
 	stop()
@@ -308,7 +317,7 @@ func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := ticket.Wait(context.Background())
-	if err != nil || result == nil || result.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
+	if err != nil || result == nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("shutdown discarded write evidence", result, err)
 	}
 	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
@@ -326,7 +335,7 @@ func TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge(t *testing.T) 
 			t.Run(resource+fmt.Sprint(streaming), func(t *testing.T) {
 				runtime := newRuntime(nil, DefaultLimits())
 				work := plan(1, "command", false)
-				work.Operation = nil
+				work.Command = nil
 				work.Command = scanCall()
 				work.Singleton, work.Streaming = true, streaming
 				if resource == "input" {

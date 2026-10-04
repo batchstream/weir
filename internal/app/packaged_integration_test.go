@@ -193,10 +193,7 @@ func TestPackagedArtifacts(t *testing.T) {
 		request := budgetPut(fixture.DB+"/records", "lost")
 		proxy.DropRemaining.Store(1)
 		recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
-		var result *pb.MutationResult
-		if recordResult != nil {
-			result = recordResult.Mutation
-		}
+		result := recordResult.GetMutationResult()
 		if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("dropped acknowledged reply must be UNKNOWN", result, err)
 		}
@@ -366,10 +363,7 @@ func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 	}
 	read := &pb.ReadRequest{Resource: request.Resource}
 	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read))
-	var result *pb.ReadResult
-	if recordResult2 != nil {
-		result = recordResult2.Read
-	}
+	result := recordResult2.GetReadResult()
 	if err != nil || result.GetDocument() == nil {
 		t.Fatal("packaged readback", err)
 	}
@@ -380,10 +374,9 @@ func packagedCalls(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 	}
 	cancelled, stop := context.WithCancel(ctx)
 	cancelRequest := budgetPut(fixture.DB+"/records", "cancelled-artifact")
-	fixtureRequest := testutil.RecordRequest("records", cancelRequest)
-	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
+	batch := []*pb.MutateRequest{cancelRequest}
 	stop()
-	cancelResponse, err := testutil.MutateRecords(cancelled, client, "records", batch.Requests)
+	cancelResponse, err := testutil.MutateRecords(cancelled, client, "records", batch)
 	if status.Code(err) != codes.Canceled || cancelResponse != nil {
 		t.Fatal("batch cancellation", cancelResponse, err)
 	}

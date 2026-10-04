@@ -93,10 +93,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 		if step.latched {
 			request := budgetPut(fixture.DB+"/records", "refused")
 			recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
-			var result *pb.MutationResult
-			if recordResult != nil {
-				result = recordResult.Mutation
-			}
+			result := recordResult.GetMutationResult()
 			if result != nil || status.Code(err) != codes.ResourceExhausted {
 				t.Fatal("unsafe overload admission", result, err)
 			}
@@ -158,10 +155,7 @@ func darwinUnknown(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 	request := budgetPut(fixture.DB+"/records", "lost")
 	proxy.DropRemaining.Store(1)
 	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
-	var result *pb.MutationResult
-	if recordResult2 != nil {
-		result = recordResult2.Mutation
-	}
+	result := recordResult2.GetMutationResult()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("lost ACK", result, err)
 	}

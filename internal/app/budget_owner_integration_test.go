@@ -105,10 +105,7 @@ func budgetOverlap(t *testing.T, targets []budgetReadTarget, o *budgetObservatio
 			defer cancel()
 			req := &pb.ReadRequest{Resource: target.root + "/s:overlap"}
 			recordResult, err := testutil.ExecuteRecord(ctx, target.client, testutil.RecordRequest(target.store, req))
-			var result *pb.ReadResult
-			if recordResult != nil {
-				result = recordResult.Read
-			}
+			result := recordResult.GetReadResult()
 			if err != nil || result.GetFailure() != nil {
 				t.Error("overlap Read", err, result)
 			}
@@ -164,10 +161,7 @@ func budgetReplacementReads(t *testing.T, targets []budgetReadTarget) {
 		req := &pb.ReadRequest{Resource: target.root + "/s:recovered"}
 		for {
 			recordResult2, err := testutil.ExecuteRecord(ctx, target.client, testutil.RecordRequest(target.store, req))
-			var result *pb.ReadResult
-			if recordResult2 != nil {
-				result = recordResult2.Read
-			}
+			result := recordResult2.GetReadResult()
 			if err == nil && result.GetFailure() == nil {
 				break
 			}

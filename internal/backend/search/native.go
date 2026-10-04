@@ -2,6 +2,7 @@ package search
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeDescriptor = "application/vnd.weir.search-http.v1+protobuf"
+const NativeContentType = "application/vnd.weir.search-http.v1+protobuf"
 const NativeBodyLimit = 8 << 20
 
 const NativeResponseLimit = 8 << 20
@@ -44,14 +45,14 @@ func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one concrete Search index")
 	}
-	if open.Descriptor_.MediaType != NativeDescriptor {
+	if open.Descriptor_.ContentType != NativeContentType {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native descriptor")
 	}
 	descriptor := &spb.Request{}
 	if err := proto.Unmarshal(open.Descriptor_.Data, descriptor); err != nil || len(descriptor.ProtoReflect().GetUnknown()) != 0 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP descriptor")
 	}
-	if f := nativeDescriptor(descriptor, open.BodyMediaType); f != nil {
+	if f := nativeDescriptor(descriptor, open.BodyContentType); f != nil {
 		return nil, f
 	}
 	native := &nativePlan{index: parts[0], request: descriptor}
@@ -66,18 +67,18 @@ func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	return p, nil
 }
 
-func nativeDescriptor(d *spb.Request, media string) *pb.Failure {
+func nativeDescriptor(d *spb.Request, contentType string) *pb.Failure {
 	unsupported := protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native HTTP operation or option")
 	switch {
 	case d.Method == "POST" && d.Path == "/_bulk":
-		if media != "application/x-ndjson" {
+		if contentType != "application/x-ndjson" {
 			return unsupported
 		}
 	case d.Method == "GET" && strings.HasPrefix(d.Path, "/_doc/"):
 		id := strings.TrimPrefix(d.Path, "/_doc/")
 		// Deliberately allow only unreserved IDs. No double decoding, encoded slash,
 		// dot traversal or aliases. Record operations support more general IDs.
-		if len(id) == 0 || len(id) > 512 || id == "." || id == ".." || media != "" {
+		if len(id) == 0 || len(id) > 512 || id == "." || id == ".." || contentType != "" {
 			return unsupported
 		}
 		for _, b := range []byte(id) {
@@ -127,7 +128,7 @@ func nativeDescriptor(d *spb.Request, media string) *pb.Failure {
 					return unsupported
 				}
 			}
-			if h.Name == "accept" && value != "application/json" || h.Name == "content-type" && value != media {
+			if h.Name == "accept" && value != "application/json" || h.Name == "content-type" && value != contentType {
 				return unsupported
 			}
 		}
@@ -270,7 +271,7 @@ func (b *nativeIOBudget) failure(caller context.Context, message string) *pb.Fai
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, message)
 }
 
-func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) (*pb.NativeEnd, execution.Feedback) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if a.ctx != nil {
@@ -280,26 +281,12 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 		stop := context.AfterFunc(a.ctx, cancel)
 		defer stop()
 	}
-	interrupted := make(chan struct{})
-	stopIO := context.AfterFunc(ctx, func() {
-		_ = exchange.Source.Close()
-		exchange.Sink.Interrupt()
-		close(interrupted)
-	})
-	defer func() {
-		if !stopIO() {
-			<-interrupted
-		}
-	}()
 	native := p.Backend.(*nativePlan)
 	d := native.request
+	input := p.Command.GetNative().Body
 	var body io.Reader
-	if d.Method == "GET" {
-		var byte [1]byte
-		n, err := exchange.Source.Read(byte[:])
-		if n != 0 || err != io.EOF {
-			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "GET requires an empty half-closed upload")), execution.Neutral
-		}
+	if d.Method == "GET" && len(input) != 0 {
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "GET requires an empty body")), execution.Neutral
 	}
 	timeout := p.BackendTimeout
 	if timeout <= 0 {
@@ -321,7 +308,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 		if !caps.nativeWrite {
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native bulk requires no default/final ingest pipeline")), execution.Neutral
 		}
-		reader := &nativeBulkReader{reader: bufio.NewReaderSize(exchange.Source, 4096), index: native.index}
+		reader := &nativeBulkReader{reader: bufio.NewReaderSize(bytes.NewReader(input), 4096), index: native.index}
 		first, err := reader.item()
 		if err != nil {
 			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid first Native bulk item")), execution.Neutral
@@ -353,7 +340,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 	// Closing the body terminates this bounded exchange on cancellation. net/http
 	// has at most one writer/read loop for this one non-reused HTTP/1 connection.
 	if body != nil {
-		request.Body = &nativeHTTPBody{Reader: body, source: exchange.Source}
+		request.Body = &nativeHTTPBody{Reader: body}
 		defer request.Body.Close()
 	}
 	response, err := a.nativeClient.Do(request)
@@ -362,9 +349,6 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 		return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete")), execution.Neutral
 	}
 	defer response.Body.Close()
-	// Preserve a complete early backend reply before stopping input. A local
-	// upload cancellation is not allowed to replace a known complete native error.
-	defer exchange.Source.Close()
 	if response.ContentLength > NativeResponseLimit ||
 		response.Header.Get("Content-Encoding") != "" ||
 		len(response.Trailer) != 0 ||
@@ -388,10 +372,12 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 	if err != nil || len(encoded) > protocol.NativeDescriptor {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound")), execution.Neutral
 	}
-	document := &pb.Document{MediaType: NativeDescriptor, Data: encoded}
-	media, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	head := &pb.NativeHead{Metadata: document, BodyMediaType: media}
-	if err := exchange.Sink.Head(head); err != nil {
+	document := &pb.Document{ContentType: NativeContentType, Data: encoded}
+	contentType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	head := &pb.NativeHead{Metadata: document, BodyContentType: contentType}
+	value := &pb.Event_Head{Head: head}
+	event := &pb.Event{Value: value}
+	if err := emit(p, event); err != nil {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable")), execution.Neutral
 	}
 	buffer := make([]byte, protocol.NativeChunk)
@@ -407,7 +393,9 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native response limit")), execution.Neutral
 		}
 		if n > 0 {
-			if err := exchange.Sink.Chunk(buffer[:n]); err != nil {
+			value := &pb.Event_Chunk{Chunk: append([]byte(nil), buffer[:n]...)}
+			event := &pb.Event{Value: value}
+			if err := emit(p, event); err != nil {
 				return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable")), execution.Neutral
 			}
 		}
@@ -433,41 +421,27 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, exchange
 	return end, feedback
 }
 
-// Close joins any in-progress source read before the exchange releases its
-// execution permit. It can also be called by net/http after normal upload EOF.
+// nativeHTTPBody joins finite in-memory validation reads when the HTTP transport
+// closes its upload. Its input already belongs to the bounded Native request.
 type nativeHTTPBody struct {
 	io.Reader
-	source  io.Closer
-	mu      sync.Mutex
-	closed  bool
-	reading chan struct{}
+	mu     sync.Mutex
+	closed bool
 }
 
 func (b *nativeHTTPBody) Read(dst []byte) (int, error) {
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	if b.closed {
-		b.mu.Unlock()
 		return 0, io.ErrClosedPipe
 	}
-	done := make(chan struct{})
-	b.reading = done
-	b.mu.Unlock()
-	n, err := b.Reader.Read(dst)
-	b.mu.Lock()
-	b.reading = nil
-	close(done)
-	b.mu.Unlock()
-	return n, err
+	return b.Reader.Read(dst)
 }
 
 func (b *nativeHTTPBody) Close() error {
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.closed = true
-	reading := b.reading
-	b.mu.Unlock()
-	err := b.source.Close()
-	if reading != nil {
-		<-reading
-	}
-	return err
+	b.Reader = nil
+	return nil
 }

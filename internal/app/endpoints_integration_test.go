@@ -125,8 +125,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		for _, kind := range []string{"mongo", "search"} {
 			request := &pb.ReadRequest{Resource: fmt.Sprintf("%s/s:process%d", roots[kind], i)}
-			fixture := testutil.RecordRequest(kind, request)
-			readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.Read}
+			readOptions := weirclient.ReadOneOptions{StoreName: kind, Request: request}
 			result, err := client.ReadOne(ctx, readOptions)
 			if err != nil || (result == nil || !result.Missing) {
 				t.Fatal(result, err)
@@ -153,8 +152,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:after-stop"}
 	for range 20 {
-		fixture := testutil.RecordRequest("mongo", request)
-		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.Read}
+		readOptions := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
 		result, err := client.ReadOne(ctx, readOptions)
 		if err != nil || (result == nil || !result.Missing) {
 			t.Fatal("healthy replicas unavailable", result, err)
@@ -172,8 +170,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 	until := time.Now().Add(5 * time.Second)
 	for i := 0; ; i++ {
 		request.Resource = fmt.Sprintf("%s/s:replacement%d", roots["mongo"], i)
-		fixture := testutil.RecordRequest("mongo", request)
-		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.Read}
+		readOptions := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
 		result, err := client.ReadOne(ctx, readOptions)
 		if err != nil || (result == nil || !result.Missing) {
 			t.Fatal(result, err)
@@ -186,7 +183,7 @@ func TestEndpointIndependentProcessesDistributionReplacement(t *testing.T) {
 		}
 	}
 	metrics := testmetrics.Scrape(t, seed.diagnostic)
-	if metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+	if metrics["weir_store_executions_total"] != nil {
 		t.Fatal("initialization node owns business execution")
 	}
 	t.Log("three independent same-group executors: direct client distribution, graceful withdrawal, restart and rejoin; seed owns only directory")
@@ -223,8 +220,7 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	}
 	defer client.Close()
 	request := &pb.ReadRequest{Resource: roots["mongo"] + "/s:dns"}
-	fixture := testutil.RecordRequest("mongo", request)
-	readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.Read}
+	readOptions := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
 	result, err := client.ReadOne(ctx, readOptions)
 	if err != nil || (result == nil || !result.Missing) {
 		t.Fatal(result, err)
@@ -233,8 +229,7 @@ func TestEndpointDNSAcrossProcesses(t *testing.T) {
 	dns.Set("executor.weir.test", answer)
 	first.stop(t)
 	for {
-		fixture := testutil.RecordRequest("mongo", request)
-		readOptions := weirclient.ReadOneOptions{StoreName: fixture.StoreName, Request: fixture.Operation.Read}
+		readOptions := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
 		result, err := client.ReadOne(ctx, readOptions)
 		if err == nil && result != nil && result.Missing {
 			break

@@ -28,7 +28,9 @@ func TestSearchReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "records/s:id"}
-		call := &execution.Operation{Index: 1, Read: request}
+		callOperation := &pb.Command_Read{Read: request}
+		callCommand := &pb.Command{Operation: callOperation}
+		call := &pb.ExecuteRequest{Index: 1, Command: callCommand}
 		work, failure := prepareTestRecord(adapter, call)
 		if failure != nil {
 			t.Fatal(failure)
@@ -80,7 +82,7 @@ func TestSearchSmallReadProfileBatches128Records(t *testing.T) {
 	}
 	results, signal := adapter.executeRecords(context.Background(), plans)
 	for _, result := range results {
-		if result.Read.GetDocument() == nil {
+		if result.GetReadResult().GetDocument() == nil {
 			t.Fatal("small record failed", result)
 		}
 	}
@@ -125,20 +127,22 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 			read := batchTestPlan(t, adapter, "read", "records/s:read")
 			writeSource := []byte(`{"pad":"` + strings.Repeat("x", 2048) + `"}`)
-			document := &pb.Document{MediaType: "application/json", Data: writeSource}
+			document := &pb.Document{ContentType: "application/json", Data: writeSource}
 			mutation := &pb.MutateRequest{Resource: "records/s:write", Action: &pb.MutateRequest_Put{Put: document}}
-			operation := &execution.Operation{Index: 1, Mutate: mutation}
+			operationOperation := &pb.Command_Mutate{Mutate: mutation}
+			operationCommand := &pb.Command{Operation: operationOperation}
+			operation := &pb.ExecuteRequest{Index: 1, Command: operationCommand}
 			write, failure := prepareTestRecord(adapter, operation)
 			if failure != nil {
 				t.Fatal("read profile affected mutation admission", failure)
 			}
 			works := []*execution.Plan{read, write}
 			results, _ := adapter.executeRecords(context.Background(), works)
-			result := results[0].Read
+			result := results[0].GetReadResult()
 			if size <= limit && len(result.GetDocument().Data) != size || size > limit && result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal("read size boundary was not enforced", size, result)
 			}
-			if writes.Load() != 1 || results[1].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[1].Mutation.Failure != nil {
+			if writes.Load() != 1 || results[1].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutationResult().Failure != nil {
 				t.Fatal("acknowledged write was affected by a read limit", results[1], writes.Load())
 			}
 		})

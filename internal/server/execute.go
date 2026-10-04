@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,9 +24,12 @@ func (s *Server) Snapshot() ExecutionSnapshot {
 	return snapshot
 }
 
-// Execute processes one Store and operation kind in consecutive bounded frames.
-// Only the current frame and database window are retained. Publication waits for
-// native transport ownership to end before admitting more record work.
+// RecordStreamItems bounds admitted and publishing records per stream. Store
+// byte reservations independently bound their retained input and result data.
+const RecordStreamItems = 32
+
+// Execute consumes single requests while the shared Store scheduler aggregates
+// database work. Results are published in input order without waiting for EOF.
 func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) error {
 	request, err := s.receiveFrame(stream)
 	if err == io.EOF {
@@ -47,38 +52,161 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 			if err != nil {
 				return err
 			}
-			return status.Error(codes.InvalidArgument, "Scan and Native require exactly one frame")
+			return status.Error(codes.InvalidArgument, "Scan and Native require exactly one request")
 		}
 		return s.executeCommand(stream, runtime, request.Command)
 	}
-	storeName, next := request.StoreName, uint64(1)
-	for {
-		if request.StoreName != storeName || commandKind(request.Command) != kind || request.Index != next {
-			return status.Error(codes.InvalidArgument, "execution frames must preserve Store, kind and consecutive ordinals")
+	ctx, cancel := context.WithCancel(stream.Context())
+	session := runtime.NewSession()
+	tickets := make(chan *store.Ticket, RecordStreamItems)
+	credits := make(chan struct{}, RecordStreamItems)
+	for range RecordStreamItems {
+		credits <- struct{}{}
+	}
+	received := make(chan error, 1)
+	receiverDone := make(chan struct{})
+	input := &recordInput{stream: stream, runtime: runtime, session: session, first: request, tickets: tickets, credits: credits}
+	go func() {
+		defer close(tickets)
+		defer close(receiverDone)
+		received <- s.receiveRecords(ctx, input)
+	}()
+	defer func() {
+		cancel()
+		session.Close()
+		input.mu.Lock()
+		receiving := input.waiting
+		input.mu.Unlock()
+		// A canceled native RPC already unblocks Recv. An output error with a live
+		// RPC needs transport cancellation only when its receiver is inside Recv.
+		if receiving && stream.Context().Err() == nil {
+			s.abortPeer(stream.Context())
 		}
-		count := recordCount(request.Command)
-		for offset := 0; offset < count; {
-			prepared, size, failure := runtime.PrepareWindow(storeName, request.Command, offset)
-			if failure != nil {
-				return failureStatus(failure)
-			}
-			if err := s.executeWindow(stream, runtime, prepared, request.Index+uint64(offset)); err != nil {
-				return err
-			}
-			offset += size
-		}
-		next += uint64(count)
-		request, err = s.receiveFrame(stream)
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
+		<-receiverDone
+	}()
+	index := uint64(1)
+	for ticket := range tickets {
+		if err := s.publishRecord(stream, ticket, index); err != nil {
 			return err
 		}
-		if err := protocol.ValidateExecuteRequest(request); err != nil {
-			return status.Error(codes.InvalidArgument, err.Error())
-		}
+		input.acknowledge(s)
+		index++
 	}
+	return <-received
+}
+
+type recordInput struct {
+	stream       grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]
+	runtime      *store.Runtime
+	session      *store.Session
+	first        *pb.ExecuteRequest
+	tickets      chan<- *store.Ticket
+	credits      chan struct{}
+	mu           sync.Mutex
+	waiting      bool
+	idleDeadline time.Time
+	timer        *time.Timer
+}
+
+// Only idle input has a stall deadline: a caller may wait for the first
+// response before producing its next request, including slow database work.
+func (input *recordInput) armIdleLocked(server *Server) {
+	if !input.waiting || len(input.credits) != RecordStreamItems-1 {
+		return
+	}
+	input.idleDeadline = time.Now().Add(server.limits.Stall)
+	input.timer = time.AfterFunc(server.limits.Stall, func() {
+		input.mu.Lock()
+		stalled := input.waiting && len(input.credits) == RecordStreamItems-1 && !time.Now().Before(input.idleDeadline)
+		input.mu.Unlock()
+		if stalled {
+			server.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
+			server.abortPeer(input.stream.Context())
+		}
+	})
+}
+func (input *recordInput) receive(ctx context.Context, server *Server) (*pb.ExecuteRequest, error) {
+	input.mu.Lock()
+	if ctx.Err() != nil {
+		input.mu.Unlock()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	input.waiting = true
+	input.armIdleLocked(server)
+	input.mu.Unlock()
+	request, err := input.stream.Recv()
+	input.mu.Lock()
+	input.waiting = false
+	if input.timer != nil {
+		input.timer.Stop()
+	}
+	input.mu.Unlock()
+	return request, err
+}
+func (input *recordInput) acknowledge(server *Server) {
+	input.mu.Lock()
+	input.credits <- struct{}{}
+	input.armIdleLocked(server)
+	input.mu.Unlock()
+}
+
+func (s *Server) receiveRecords(ctx context.Context, input *recordInput) error {
+	storeName, kind := input.first.StoreName, commandKind(input.first.Command)
+	request := input.first
+	input.first = nil
+	for index := uint64(1); ; index++ {
+		select {
+		case <-input.credits:
+		case <-ctx.Done():
+			return status.FromContextError(ctx.Err()).Err()
+		}
+		if request == nil {
+			var err error
+			request, err = input.receive(ctx, s)
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if err := protocol.ValidateExecuteRequest(request); err != nil {
+				return status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if request.StoreName != storeName || commandKind(request.Command) != kind || request.Index != index {
+			return status.Error(codes.InvalidArgument, "requests must preserve Store, kind and consecutive indices")
+		}
+		record, err := execution.NewRecord(storeName, index, request.Command)
+		if err != nil {
+			return status.Error(codes.Internal, "validated resource could not be decoded")
+		}
+		plan, failure := input.runtime.PrepareRecord(record)
+		if failure != nil {
+			return failureStatus(failure)
+		}
+		ticket, failure := s.submitPlan(ctx, input.runtime, plan, input.session)
+		if failure != nil {
+			return failureStatus(failure)
+		}
+		select {
+		case input.tickets <- ticket:
+		case <-ctx.Done():
+			return status.FromContextError(ctx.Err()).Err()
+		}
+		request = nil
+	}
+}
+
+func (s *Server) publishRecord(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], ticket *store.Ticket, index uint64) error {
+	defer ticket.Ack()
+	event, err := ticket.Wait(stream.Context())
+	if err != nil {
+		return status.FromContextError(err).Err()
+	}
+	if event == nil {
+		return status.Error(codes.Internal, "missing record result")
+	}
+	return s.sendEvent(stream, event, index)
 }
 
 func commandKind(command *pb.Command) string {
@@ -94,13 +222,6 @@ func commandKind(command *pb.Command) string {
 	}
 }
 
-func recordCount(command *pb.Command) int {
-	if read := command.GetRead(); read != nil {
-		return len(read.Requests)
-	}
-	return len(command.GetMutate().Requests)
-}
-
 func (s *Server) receiveFrame(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) (*pb.ExecuteRequest, error) {
 	timer := time.AfterFunc(s.limits.Stall, func() {
 		s.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
@@ -108,34 +229,6 @@ func (s *Server) receiveFrame(stream grpc.BidiStreamingServer[pb.ExecuteRequest,
 	})
 	defer timer.Stop()
 	return stream.Recv()
-}
-
-func (s *Server) executeWindow(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], runtime *store.Runtime, prepared *store.PreparedBatch, first uint64) error {
-	ctx := stream.Context()
-	ticket, err := s.submitBatch(ctx, runtime, prepared)
-	if err != nil {
-		return err
-	}
-	defer ticket.Ack()
-	results, err := ticket.WaitBatch(ctx)
-	if err != nil {
-		return status.FromContextError(err).Err()
-	}
-	for position, result := range results {
-		if result == nil {
-			return status.Error(codes.Internal, "missing record result")
-		}
-		event := &pb.Event{}
-		if result.Read != nil {
-			event.Value = &pb.Event_ReadResult{ReadResult: result.Read}
-		} else {
-			event.Value = &pb.Event_MutationResult{MutationResult: result.Mutation}
-		}
-		if err := s.sendEvent(stream, event, first+uint64(position)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], runtime *store.Runtime, command *pb.Command) error {
@@ -146,33 +239,21 @@ func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteReques
 	session := runtime.NewSession()
 	defer session.Close()
 	ctx := stream.Context()
-	for {
-		_, failure, changed := runtime.Submit(ctx, plan, session)
-		if failure == nil {
-			break
-		}
-		if failure.Code != pb.FailureCode_RESOURCE_EXHAUSTED || runtime.Snapshot().Overloaded {
-			return s.sendEvent(stream, failedCommand(command, failure), 1)
-		}
-		select {
-		case <-changed:
-		case <-ctx.Done():
-			return status.FromContextError(ctx.Err()).Err()
-		case <-s.draining:
-			return status.Error(codes.Unavailable, "draining")
-		}
+	ticket, failure := s.submitPlan(ctx, runtime, plan, session)
+	if failure != nil {
+		return s.sendEvent(stream, failedCommand(command, failure), 1)
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return status.FromContextError(ctx.Err()).Err()
 		case emission := <-session.Events:
-			if emission == nil || emission.Ticket == nil {
+			if emission == nil {
 				return status.Error(codes.Internal, "missing streaming emission")
 			}
-			if emission.End {
+			if emission.Event == nil {
 				emission.Release()
-				emission.Ticket.Ack()
+				ticket.Ack()
 				return nil
 			}
 			err := s.sendEvent(stream, emission.Event, 1)
@@ -224,21 +305,21 @@ func (s *Server) sendEvent(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb
 	return err
 }
 
-func (s *Server) submitBatch(ctx context.Context, runtime *store.Runtime, prepared *store.PreparedBatch) (*store.Ticket, error) {
+func (s *Server) submitPlan(ctx context.Context, runtime *store.Runtime, plan *execution.Plan, session *store.Session) (*store.Ticket, *pb.Failure) {
 	for {
-		ticket, failure, changed := runtime.SubmitBatch(ctx, prepared)
+		ticket, failure, changed := runtime.Submit(ctx, plan, session)
 		if failure == nil {
 			return ticket, nil
 		}
 		if failure.Code != pb.FailureCode_RESOURCE_EXHAUSTED || runtime.Snapshot().Overloaded {
-			return nil, failureStatus(failure)
+			return nil, failure
 		}
 		select {
 		case <-changed:
 		case <-ctx.Done():
-			return nil, status.FromContextError(ctx.Err()).Err()
+			return nil, protocol.ContextFailure(ctx)
 		case <-s.draining:
-			return nil, status.Error(codes.Unavailable, "draining")
+			return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "draining")
 		}
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
@@ -73,14 +72,11 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 	replies, _ := a.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		operation := operations[i]
-		if reply.Index != uint64(i+3) {
-			t.Fatal("index changed", replies)
-		}
 		if operation.action == "read" {
-			if operation.id == "read" && reply.Read.GetDocument() == nil || operation.id == "read-missing" && reply.Read.GetMissing() == nil {
+			if operation.id == "read" && reply.GetReadResult().GetDocument() == nil || operation.id == "read-missing" && reply.GetReadResult().GetMissing() == nil {
 				t.Fatal("read result changed", reply)
 			}
-		} else if reply.Mutation.Outcome != operation.outcome || operation.outcome == pb.MutationOutcome_NOT_APPLIED && reply.Mutation.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED {
+		} else if reply.GetMutationResult().Outcome != operation.outcome || operation.outcome == pb.MutationOutcome_NOT_APPLIED && reply.GetMutationResult().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED {
 			t.Fatal(operation.id, reply)
 		}
 	}
@@ -128,7 +124,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		plans = append(plans, p)
 	}
 	replies, _ := a.executeRecords(context.Background(), plans)
-	if replies[0].Read.GetMissing() == nil || replies[1].Mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].Mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED {
+	if replies[0].GetReadResult().GetMissing() == nil || replies[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal(replies)
 	}
 	if finds.Load() != 1 || writes.Load() != 1 {
@@ -169,7 +165,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 	}
 	replies, _ := a.executeRecords(context.Background(), plans)
 	for _, reply := range replies {
-		if reply.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
+		if reply.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("lost mixed-write acknowledgement became definite", replies)
 		}
 	}
@@ -214,7 +210,6 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			opts := adapterTestOptions{fixture: fixture, monitor: monitor}
 			adapter := testAdapter(t, opts)
 			var plans []*execution.Plan
-			budgets := [2]*execution.ResultBudget{}
 			caller, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			for i := range 2 {
@@ -223,38 +218,34 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				budget := &execution.ResultBudget{Limit: protocol.MaxDocument + execution.ResultOverheadBytes}
-				budgets[i] = budget
 				work.Context = t.Context()
 				if i == 0 {
 					work.Context = caller
 					if mode == "first exhausted" {
-						budget.Limit = 1
+						work.ResultBytes = 1
 					}
 				}
-				work.Results = budget
 				plans = append(plans, work)
 			}
 			if mode == "first canceled" {
 				cancel()
 			}
 			replies, _ := adapter.executeRecords(t.Context(), plans)
-			charges := [2]int{budgets[0].Used, budgets[1].Used}
 			raw := expressionBSON(t, document)
-			if finds.Load() != 1 || len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].Read.GetDocument().GetData(), raw) || charges[1] != len(raw) {
-				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies, charges)
+			if finds.Load() != 1 || len(replies) != 2 || !bytes.Equal(replies[1].GetReadResult().GetDocument().GetData(), raw) {
+				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies)
 			}
 			if mode == "both retained" {
-				if charges[0] != len(raw) || replies[0].Read.GetDocument() != replies[1].Read.GetDocument() {
-					t.Fatal("same-ID responses did not share immutable data with separate charges", replies, charges)
+				if replies[0].GetReadResult().GetDocument() != replies[1].GetReadResult().GetDocument() {
+					t.Fatal("same-ID responses did not share immutable data with independent reservations", replies)
 				}
 			} else {
 				code := pb.FailureCode_RESOURCE_EXHAUSTED
 				if mode == "first canceled" {
 					code = pb.FailureCode_CANCELLED
 				}
-				if replies[0].Read.GetFailure().GetCode() != code || charges[0] != 0 {
-					t.Fatal("failed owner retained peer's data charge", replies, charges)
+				if replies[0].GetReadResult().GetFailure().GetCode() != code {
+					t.Fatal("failed owner retained peer's data charge", replies)
 				}
 			}
 		})

@@ -62,7 +62,7 @@ func routeBackendEvents(t *testing.T, client pb.StoreServiceClient, command *pb.
 }
 
 func routeBackendMutation(key, kind, media string, raw []byte) *pb.MutateRequest {
-	document := &pb.Document{MediaType: media, Data: raw}
+	document := &pb.Document{ContentType: media, Data: raw}
 	mutation := &pb.MutateRequest{Resource: key}
 	if kind == "create" {
 		mutation.Action = &pb.MutateRequest_Create{Create: document}
@@ -93,11 +93,9 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	read := &pb.ReadRequest{Resource: backend.DB + "/records/s:large"}
-	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-		Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.
-		ReadRequest{read}}}}}
+	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: read}}}
 
-	response, err := testutil.ReadRecords(ctx, client, batch.StoreName, batch.Command.GetRead().Requests)
+	response, err := testutil.ReadRecords(ctx, client, batch.StoreName, []*pb.ReadRequest{batch.Command.GetRead()})
 	if err != nil || !bytes.Equal(response[0].GetDocument().GetData(), raw) {
 		t.Fatal("large read corrupted", response, err)
 	}
@@ -114,11 +112,8 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	for i := range mutations {
 		mutations[i] = mutation
 	}
-	writes := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-		Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: mutations}}},
-	}
 
-	result, err := testutil.MutateRecords(ctx, client, writes.StoreName, writes.Command.GetMutate().Requests)
+	result, err := testutil.MutateRecords(ctx, client, "records", mutations)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +129,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	}
 	selector := bson.D{{Key: "filter", Value: filter}}
 	selectorRaw, _ := bson.Marshal(selector)
-	document := &pb.Document{MediaType: "application/bson", Data: selectorRaw}
+	document := &pb.Document{ContentType: "application/bson", Data: selectorRaw}
 	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Selector: document}
 	scanValue := &pb.Command_Scan{Scan: scan}
 	scanCommand := &pb.Command{Operation: scanValue}
@@ -146,10 +141,8 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	rawNew, _ := bson.Marshal(newDoc)
 	rawCounter, _ := bson.Marshal(counter)
 	requests := []*pb.MutateRequest{routeBackendMutation(backend.DB+"/records/s:counter", "create", "application/bson", rawCounter), routeBackendMutation(backend.DB+"/records/s:new", "put", "application/bson", rawNew)}
-	partial := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-		Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: requests}}}}
 
-	result, err = testutil.MutateRecords(ctx, client, partial.StoreName, partial.Command.GetMutate().Requests)
+	result, err = testutil.MutateRecords(ctx, client, "records", requests)
 	if err != nil || result[0].Outcome != pb.MutationOutcome_NOT_APPLIED || result[1].Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("partial evidence lost", result, err)
 	}
@@ -189,18 +182,16 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				update := bson.D{{Key: "$inc", Value: increment}}
 				nativeCommand := bson.D{{Key: "findAndModify", Value: "records"}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "new", Value: true}}
 				body, _ := bson.Marshal(nativeCommand)
-				descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
-				open := &pb.NativeOpen{Resource: backend.DB + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+				descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
+				open := &pb.NativeOpen{Resource: backend.DB + "/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
 				native := &pb.NativeRequest{Open: open, Body: body}
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Operation: value}
 			}
 			if mode == "record" {
-				batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-					Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}}},
-				}
+				batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Mutate{Mutate: mutation}}}
 
-				response, err := testutil.MutateRecords(ctx, client, batch.StoreName, batch.Command.GetMutate().Requests)
+				response, err := testutil.MutateRecords(ctx, client, batch.StoreName, []*pb.MutateRequest{batch.Command.GetMutate()})
 				if err != nil || response[0].Outcome != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("lost write ACK not indeterminate", response, err)
 				}
@@ -247,11 +238,9 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 	}
 	nodes, client := routeBackendServer(t, adapter)
 	read := &pb.ReadRequest{Resource: index + "/s:large"}
-	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-		Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.
-		ReadRequest{read}}}}}
+	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: read}}}
 
-	response, err := testutil.ReadRecords(ctx, client, batch.StoreName, batch.Command.GetRead().Requests)
+	response, err := testutil.ReadRecords(ctx, client, batch.StoreName, []*pb.ReadRequest{batch.Command.GetRead()})
 	if err != nil || !bytes.Equal(response[0].GetDocument().GetData(), []byte(body)) {
 		t.Fatal("Search legal source failed", response, err)
 	}
@@ -306,19 +295,17 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 			if mode == "native" {
 				httpCall := &searchpb.Request{Method: "POST", Path: "/_bulk"}
 				rawDescriptor, _ := proto.Marshal(httpCall)
-				descriptor := &pb.Document{MediaType: search.NativeDescriptor, Data: rawDescriptor}
-				open := &pb.NativeOpen{Resource: backend.Index, Descriptor_: descriptor, BodyMediaType: "application/x-ndjson"}
+				descriptor := &pb.Document{ContentType: search.NativeContentType, Data: rawDescriptor}
+				open := &pb.NativeOpen{Resource: backend.Index, Descriptor_: descriptor, BodyContentType: "application/x-ndjson"}
 				body := []byte(fmt.Sprintf("{\"create\":{\"_id\":%q}}\n{\"n\":1}\n", id))
 				native := &pb.NativeRequest{Open: open, Body: body}
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Operation: value}
 			}
 			if mode == "record" {
-				batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-					Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}}},
-				}
+				batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Mutate{Mutate: mutation}}}
 
-				response, err := testutil.MutateRecords(ctx, client, batch.StoreName, batch.Command.GetMutate().Requests)
+				response, err := testutil.MutateRecords(ctx, client, batch.StoreName, []*pb.MutateRequest{batch.Command.GetMutate()})
 				if err != nil || response[0].Outcome != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("lost write ACK not UNKNOWN", response, err)
 				}

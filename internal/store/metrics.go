@@ -32,7 +32,7 @@ func newRuntimeMetrics() runtimeMetrics {
 	metrics.executions.WithLabelValues("execution")
 	metrics.queue.WithLabelValues("execution")
 	metrics.duration.WithLabelValues("execution")
-	for _, reason := range []string{"prepare", "capacity", "budget", "draining", "overload", "canceled", "session"} {
+	for _, reason := range []string{"prepare", "capacity"} {
 		metrics.rejections.WithLabelValues(reason)
 	}
 	return metrics
@@ -72,24 +72,20 @@ func boolValue(value bool) float64 {
 	}
 	return 0
 }
-func (r *Runtime) terminalLocked(t *Ticket, result *execution.Result) {
-	r.terminalResultLocked(t.plan, result)
-}
-
-func (r *Runtime) terminalResultLocked(plan *execution.Plan, result *execution.Result) {
-	if plan.Operation == nil {
-		return
-	}
-	if plan.Operation.Read != nil {
+func (r *Runtime) terminalLocked(t *Ticket, event *pb.Event) {
+	if t.plan.Command.GetRead() != nil {
 		label := "success"
-		if result.Read.GetFailure() != nil {
+		if event.GetReadResult().GetFailure() != nil {
 			label = "failure"
 		}
 		r.metrics.records.WithLabelValues("read", label).Inc()
 		return
 	}
+	if t.plan.Command.GetMutate() == nil {
+		return
+	}
 	label := "invalid"
-	switch result.Mutation.GetOutcome() {
+	switch event.GetMutationResult().GetOutcome() {
 	case pb.MutationOutcome_APPLIED:
 		label = "applied"
 	case pb.MutationOutcome_NOT_APPLIED:

@@ -28,8 +28,7 @@ func mongoFinitePage(t *testing.T, adapter *Adapter, request *pb.ScanRequest) ([
 	defer adapter.closeScan(ctx, work)
 	var documents []*pb.Document
 	var end *pb.ScanEnd
-	emit := func(_ *execution.Plan, output *execution.Output) error {
-		event := output.Event
+	emit := func(_ *execution.Plan, event *pb.Event) error {
 		if document := event.GetDocument(); document != nil {
 			documents = append(documents, document)
 		}
@@ -176,7 +175,7 @@ func TestMongoScanBSONExtremesWithFilterAndProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &pb.Document{MediaType: "application/bson", Data: raw}
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Selector: document}
 	var seen []*pb.Document
 	for page := 0; page <= len(ids); page++ {
@@ -235,7 +234,7 @@ func TestMongoScanDeepKeysetUsesIDIndexAndIncludesMaxKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	selectorDocument := &pb.Document{MediaType: "application/bson", Data: selectorBytes}
+	selectorDocument := &pb.Document{ContentType: "application/bson", Data: selectorBytes}
 	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Selector: selectorDocument}
 	config := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 	config = mongoFixtureConfig(t, config)

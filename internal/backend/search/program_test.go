@@ -68,13 +68,15 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	program := &pb.ProgramTransform{
 		Runtime: "lua.v1",
 		Source:  []byte(`return weir.replace(weir.object("n", weir.add(weir.get(current, "n"), weir.get(input, "step"))))`),
-		Input:   &pb.Document{MediaType: "application/json", Data: []byte(`{"step":1}`)},
+		Input:   &pb.Document{ContentType: "application/json", Data: []byte(`{"step":1}`)},
 	}
 	form := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
-	operation := &execution.Operation{Index: 1, Mutate: mutation}
+	operationOperation := &pb.Command_Mutate{Mutate: mutation}
+	operationCommand := &pb.Command{Operation: operationOperation}
+	operation := &pb.ExecuteRequest{Index: 1, Command: operationCommand}
 	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
@@ -83,7 +85,7 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("unexpected transform result: %#v", results)
 	}
-	if result := results[0].Mutation; result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
+	if result := results[0].GetMutationResult(); result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 		t.Fatalf("unexpected transform result: outcome=%s failure=%+v gets=%d puts=%d", result.GetOutcome(), result.GetFailure(), gets.Load(), puts.Load())
 	}
 	if gets.Load() != 2 || puts.Load() != 2 {
@@ -97,7 +99,9 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
-	operation := &execution.Operation{Index: 1, Mutate: mutation}
+	operationOperation := &pb.Command_Mutate{Mutate: mutation}
+	operationCommand := &pb.Command{Operation: operationOperation}
+	operation := &pb.ExecuteRequest{Index: 1, Command: operationCommand}
 	for name, pipeline := range map[string]string{"default": "index.default_pipeline", "final": "index.final_pipeline"} {
 		t.Run(name, func(t *testing.T) {
 			var documentReads atomic.Int32
@@ -123,7 +127,7 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 				t.Fatal(failure)
 			}
 			results, _ := a.executeRecords(context.Background(), []*execution.Plan{work})
-			if len(results) != 1 || results[0].Mutation.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+			if len(results) != 1 || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatalf("pipeline was not rejected: %#v", results)
 			}
 			if documentReads.Load() != 0 {

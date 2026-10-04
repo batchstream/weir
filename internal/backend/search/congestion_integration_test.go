@@ -17,7 +17,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 	a, b := setupSearch(t)
 	type sample struct {
 		works    []*execution.Plan
-		results  []*execution.Result
+		results  []*pb.Event
 		feedback execution.Feedback
 	}
 	var samples []sample
@@ -29,7 +29,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 			works := make([]*execution.Plan, 128)
 			for i := range works {
 				works[i] = searchPlan(t, a, "create", searchResource(b.Index, fmt.Sprintf("load-%d-%d-%d", wave, worker, i)))
-				works[i].Operation.Index = uint64(i)
+				works[i].ID = uint64(i)
 			}
 			workers.Go(func() {
 				<-start
@@ -58,7 +58,7 @@ func TestSearchRealBackendCongestion(t *testing.T) {
 			congested++
 		}
 		for i, result := range sample.results {
-			mutation := result.Mutation
+			mutation := result.GetMutationResult()
 			if mutation.GetOutcome() == pb.MutationOutcome_APPLIED {
 				applied++
 				continue

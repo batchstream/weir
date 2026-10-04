@@ -112,7 +112,7 @@ func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(node.runtimes) != 0 || len(node.targets) != 1 {
+	if len(node.runtimes) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) {
 		t.Fatal("directory-only created database state")
 	}
 	node.Start(context.Background())

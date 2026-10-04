@@ -32,12 +32,11 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	node := &Node{
 		admission: admission,
-		budget:    uint64(cfg.Basic.Memory),
 		Errors:    make(chan error, 3),
 		state:     "constructed",
 		registry:  prometheus.NewRegistry(),
 	}
-	node.targets = append(node.targets, admission)
+	overloadTargets := []overload.Target{admission}
 
 	drainOpts := prometheus.CounterOpts{
 		Name: "weir_node_drains_total",
@@ -71,7 +70,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		}
 		node.runtimes = append(node.runtimes, runtime)
 		node.localNames = append(node.localNames, definition.Name)
-		node.targets = append(node.targets, runtime)
+		overloadTargets = append(overloadTargets, runtime)
 		stores[definition.Name] = runtime
 	}
 
@@ -133,7 +132,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		node.servers = append(node.servers, listenerServer)
 	}
 
-	node.guard = overload.New(node.targets, node.budget)
+	node.guard = overload.New(overloadTargets, uint64(cfg.Basic.Memory))
 	if err := node.registerMetrics(cfg); err != nil {
 		return nil, err
 	}

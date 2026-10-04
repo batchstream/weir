@@ -106,7 +106,7 @@ func TestSearchCommittedReplyLossAndIncompleteBulk(t *testing.T) {
 			// Startup establishes a reusable connection before the ambiguous POST.
 			first := searchPlan(t, a, "put", searchResource(b.Index, "first"))
 			second := searchPlan(t, a, "put", searchResource(b.Index, "second"))
-			second.Operation.Index = 1
+			second.ID = 1
 			works := []*execution.Plan{first, second}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -241,7 +241,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	defer cancel()
 	create := searchPlan(t, a, "create", searchResource(b.Index, "direct"))
 	put := searchPlan(t, a, "put", searchResource(b.Index, "other"))
-	put.Operation.Index = 1
+	put.ID = 1
 	works := []*execution.Plan{create, put}
 	results, _ := a.executeRecords(ctx, works)
 	for _, result := range results {
@@ -249,7 +249,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 	}
 	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "replace", searchResource(b.Index, "direct"))), pb.MutationOutcome_APPLIED, 0)
 	for _, id := range []string{"direct", "other"} {
-		result := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, id))).Read
+		result := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, id))).GetReadResult()
 		if result.GetDocument() == nil || strings.Contains(string(result.GetDocument().Data), "changed") {
 			t.Fatal("default pipeline touched Weir source", result)
 		}
@@ -267,7 +267,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, searchResource(b.Index, "direct"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 	}
 	read := searchPlan(t, a, "read", searchResource(b.Index, "direct"))
-	if runSearch(t, a, read).Read.GetDocument() == nil {
+	if runSearch(t, a, read).GetReadResult().GetDocument() == nil {
 		t.Fatal("final pipeline disabled reads")
 	}
 	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "delete", searchResource(b.Index, "direct"))), pb.MutationOutcome_APPLIED, 0)
@@ -286,7 +286,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 			index := b.Index + "_" + spec.name
 			b.Create(t, index, spec.body)
 			read := searchPlan(t, a, "read", searchResource(index, "a"))
-			if runSearch(t, a, read).Read.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+			if runSearch(t, a, read).GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatal("lossy source read allowed")
 			}
 			assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(index, "a"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
@@ -304,7 +304,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		t.Fatal(status)
 	}
 	aliasRead := searchPlan(t, a, "read", searchResource(alias, "a"))
-	if runSearch(t, a, aliasRead).Read.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+	if runSearch(t, a, aliasRead).GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("alias accepted")
 	}
 }

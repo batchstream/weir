@@ -1,29 +1,27 @@
 # Store payload contracts
 
 Configured MongoDB, Elasticsearch and OpenSearch Stores accept typed Read/Mutate
-batches and one Scan or Native Command per Execute RPC. Execute emits typed
+streams and one Scan or Native Command per Execute RPC. Execute emits typed
 Events. Unknown protobuf fields and missing oneof variants fail validation.
 Adapter document and descriptor formats use the explicit media profiles below.
 BSON and JSON retain their native semantics.
 
 The outer `store_name` selects the adapter. Resource paths are canonical relative
 paths: percent escaping must round-trip canonically, and full `weir://` resources
-are invalid on the wire. The whole Read/Mutate batch is validated before any
-backend effect. The public protobuf source defines field shapes.
+are invalid on the wire. Each Read/Mutate request is validated before its backend effect. The public protobuf source defines field shapes.
 
 | Capability | MongoDB | Elasticsearch / OpenSearch |
 | --- | --- | --- |
 | Record target | `db/collection/s:string`, `db/collection/i:canonical-int64`, or `db/collection/oid:lowercase-hex` | `index/s:string`, string ID 1–512 bytes |
-| Read representation | omitted or `application/bson` | omitted or `application/json` |
+| Read output content type | `application/bson` | `application/json` |
 | Put/create/replace document | raw BSON, explicit first `_id` matching the target | JSON object; target supplies the document ID |
-| Adapter options | must be absent | must be absent |
 | Scan target | `db/collection` | one concrete `index` |
 | Scan selector | BSON document containing only document-valued `filter`, `sort`, `projection`; sort omitted or `{_id:1}` and projection preserves original `_id` | JSON object containing only object-valued `query` |
 | Scan output | BSON records | native JSON hits, including hit metadata |
-| Backend expression media | `application/vnd.weir.mongodb-update.v1+bson` | `application/vnd.weir.search-update.v1+json` |
+| Backend expression content type | `application/vnd.weir.mongodb-update.v1+bson` | `application/vnd.weir.search-update.v1+json` |
 | Expression structure | bounded `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
 | Lua runtime | `lua.v1`, BSON input | `lua.v1`, JSON input |
-| Native descriptor media | `application/vnd.weir.mongodb-command.v1+protobuf`, empty descriptor data | `application/vnd.weir.search-http.v1+protobuf`, encoded `weir.search.v1.Request` |
+| Native descriptor content type | `application/vnd.weir.mongodb-command.v1+protobuf`, empty descriptor data | `application/vnd.weir.search-http.v1+protobuf`, encoded `weir.search.v1.Request` |
 | Native target | `db/collection` | one concrete `index` |
 | Native body | one complete BSON command, at most 4 MiB | at most 8 MiB; POST bulk uses NDJSON, GET has no body |
 
@@ -40,7 +38,7 @@ write and JavaScript options are rejected. Native replies are raw BSON, at most
 4 MiB, emitted as ordered chunks with a NativeEnd completion result.
 
 Search Native's descriptor is the explicit protobuf schema in
-[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.4.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
+[weir-protocol's http.proto](https://github.com/batchstream/weir-protocol/blob/v0.5.0/api/weir/search/v1/http.proto). It supports POST `/_bulk` with
 `application/x-ndjson` and GET `/_doc/<unreserved-id>` with an empty body. Canonical
 query options are `refresh` for bulk or `realtime` for GET. Headers are restricted
 to `accept`, `content-type`, `x-opaque-id` with bounded values; they cannot override

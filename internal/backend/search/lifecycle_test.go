@@ -14,6 +14,7 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testdns"
 )
 
@@ -68,71 +69,52 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 	}
 }
 
-type stalledNativeSink struct {
-	started chan struct{}
-	stop    chan struct{}
-	once    sync.Once
-}
-
-func (*stalledNativeSink) Head(*pb.NativeHead) error { return nil }
-func (s *stalledNativeSink) Chunk([]byte) error      { close(s.started); <-s.stop; return io.ErrClosedPipe }
-func (s *stalledNativeSink) Interrupt()              { s.once.Do(func() { close(s.stop) }) }
-
-func TestSearchTLSNativeSlowConsumerAndUploadLedger(t *testing.T) {
-	for _, mode := range []string{"consumer", "upload"} {
-		t.Run(mode, func(t *testing.T) {
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if !qualification(w, r) {
-					io.WriteString(w, `{"data":"native"}`)
-				}
-			})
-			endpoint, c := tlsEndpoint(t, handler, false)
-			a := openTestTLS(t, endpoint.URL, c)
-			sink := &stalledNativeSink{started: make(chan struct{}), stop: make(chan struct{})}
-			var source io.ReadCloser = io.NopCloser(strings.NewReader(""))
-			method, path := "GET", "/_doc/x"
-			if mode == "upload" {
-				reader, writer := io.Pipe()
-				defer writer.Close()
-				source = reader
-				method = "POST"
-				path = "/_bulk"
-			}
-			open := nativeOpen(t, "records", method, path)
-			exchange := &execution.NativeExchange{Source: source, Sink: sink}
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			work, failure := a.prepareNative(open)
-			if failure != nil {
-				t.Fatal(failure)
-			}
-			done := make(chan *pb.NativeEnd, 1)
-			go func() { end, _ := a.executeNative(ctx, work, exchange); done <- end }()
-			if mode == "consumer" {
-				select {
-				case <-sink.started:
-				case <-time.After(time.Second):
-					t.Fatal("consumer not reached")
-				}
-			} else {
-				time.Sleep(30 * time.Millisecond)
-			}
-			start := time.Now()
-			_ = a.Close()
-			select {
-			case end := <-done:
-				if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE {
-					t.Fatal("stalled Native claimed complete")
-				}
-			case <-time.After(time.Second):
-				t.Fatal("Close did not interrupt Native I/O")
-			}
-			if len(a.dialer.slots) != 0 {
-				t.Fatal("Native retained sockets")
-			}
-			t.Logf("%s: Close+join=%s; retained sockets=0", mode, time.Since(start))
-		})
+func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !qualification(w, r) {
+			io.WriteString(w, `{"data":"native"}`)
+		}
+	})
+	endpoint, c := tlsEndpoint(t, handler, false)
+	a := openTestTLS(t, endpoint.URL, c)
+	started := make(chan struct{})
+	emit := func(_ *execution.Plan, event *pb.Event) error {
+		if event.GetChunk() == nil {
+			return nil
+		}
+		close(started)
+		<-a.ctx.Done()
+		return io.ErrClosedPipe
 	}
+	open := nativeOpen(t, "records", "GET", "/_doc/x")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	work, failure := a.prepareNative(open)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work.Command = testutil.NativeCommand(open, nil)
+	done := make(chan *pb.NativeEnd, 1)
+	go func() { end, _ := a.executeNative(ctx, work, emit); done <- end }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("consumer not reached")
+	}
+	start := time.Now()
+	_ = a.Close()
+	select {
+	case end := <-done:
+		if end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE {
+			t.Fatal("stalled Native claimed complete")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not join Native publication")
+	}
+	if len(a.dialer.slots) != 0 {
+		t.Fatal("Native retained sockets")
+	}
+	t.Logf("slow consumer: Close+join=%s; retained sockets=0", time.Since(start))
 }
 
 func TestSearchDNSRepeatedCancelledOpenJoins(t *testing.T) {
@@ -251,11 +233,11 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 		t.Fatal(failure)
 	}
 	capture := &nativeCapture{}
-	nativeExchange := &execution.NativeExchange{Source: io.NopCloser(strings.NewReader("")), Sink: capture}
+	plan.Command = testutil.NativeCommand(open, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan *pb.NativeEnd, 1)
-	go func() { end, _ := a.executeNative(ctx, plan, nativeExchange); done <- end }()
+	go func() { end, _ := a.executeNative(ctx, plan, capture.Emit); done <- end }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):

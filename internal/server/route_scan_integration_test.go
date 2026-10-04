@@ -131,8 +131,8 @@ func TestRouteMongoScanContinuesOnNewInstanceAfterOriginShutdown(t *testing.T) {
 	}
 	opts.documentID = func(t *testing.T, document *pb.Document) string {
 		t.Helper()
-		if document.MediaType != "application/bson" {
-			t.Fatal("Mongo scan changed native document encoding", document.MediaType)
+		if document.ContentType != "application/bson" {
+			t.Fatal("Mongo scan changed native document encoding", document.ContentType)
 		}
 		id, ok := bson.Raw(document.Data).Lookup("_id").StringValueOK()
 		if !ok {
@@ -177,7 +177,7 @@ func TestRouteSearchScanContinuesOnNewInstanceAfterOriginShutdown(t *testing.T) 
 		var hit struct {
 			ID string `json:"_id"`
 		}
-		if document.MediaType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" {
+		if document.ContentType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" {
 			t.Fatal("Search scan changed native hit encoding")
 		}
 		return hit.ID

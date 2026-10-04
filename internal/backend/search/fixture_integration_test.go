@@ -49,12 +49,14 @@ func searchResource(index, id string) string {
 
 func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Plan {
 	t.Helper()
-	op := &execution.Operation{Index: 1}
+	opCommand := &pb.Command{}
+	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	if action == "read" {
 		read := &pb.ReadRequest{Resource: resource}
-		op.Read = read
+		recordOperation1 := &pb.Command_Read{Read: read}
+		op.Command.Operation = recordOperation1
 	} else {
-		document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":9223372036854775807,"keep":"source"}`)}
+		document := &pb.Document{ContentType: "application/json", Data: []byte(`{"n":9223372036854775807,"keep":"source"}`)}
 		mutation := &pb.MutateRequest{Resource: resource}
 		switch action {
 		case "put":
@@ -67,7 +69,8 @@ func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Pl
 			empty := &pb.Empty{}
 			mutation.Action = &pb.MutateRequest_Delete{Delete: empty}
 		}
-		op.Mutate = mutation
+		recordOperation2 := &pb.Command_Mutate{Mutate: mutation}
+		op.Command.Operation = recordOperation2
 	}
 	work, failure := prepareTestRecord(a, op)
 	if failure != nil {
@@ -75,7 +78,7 @@ func searchPlan(t *testing.T, a *Adapter, action, resource string) *execution.Pl
 	}
 	return work
 }
-func runSearch(t *testing.T, a *Adapter, work *execution.Plan) *execution.Result {
+func runSearch(t *testing.T, a *Adapter, work *execution.Plan) *pb.Event {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -85,9 +88,9 @@ func runSearch(t *testing.T, a *Adapter, work *execution.Plan) *execution.Result
 	}
 	return results[0]
 }
-func assertOutcome(t *testing.T, result *execution.Result, want pb.MutationOutcome, code pb.FailureCode) {
+func assertOutcome(t *testing.T, result *pb.Event, want pb.MutationOutcome, code pb.FailureCode) {
 	t.Helper()
-	got := result.Mutation
+	got := result.GetMutationResult()
 	if got == nil || got.Outcome != want || got.GetFailure().GetCode() != code {
 		t.Fatalf("want %v/%v got %v", want, code, result)
 	}

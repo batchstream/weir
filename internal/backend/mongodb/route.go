@@ -1,9 +1,7 @@
 package mongodb
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -13,20 +11,19 @@ import (
 )
 
 func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan, *pb.Failure) {
-	if id == 0 || proto.Size(input) > protocol.MaxExecuteRequestBytes {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ID or Command size")
+	if id == 0 {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid command index")
 	}
 	if err := protocol.ValidateCommand(input); err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}
-	call := input
 	var failure *pb.Failure
 	var work *execution.Plan
 	switch {
-	case call.GetScan() != nil:
-		work, failure = a.prepareScan(call.GetScan())
-	case call.GetNative() != nil:
-		native := call.GetNative()
+	case input.GetScan() != nil:
+		work, failure = a.prepareScan(input.GetScan())
+	case input.GetNative() != nil:
+		native := input.GetNative()
 		if len(native.Body) > NativeCommandLimit {
 			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native input exceeds adapter bound")
 		}
@@ -38,9 +35,9 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	if work == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing operation")
 	}
-	work.CleanupRequired = call.GetScan() != nil
-	work.Streaming = call.GetNative() != nil
-	work.Command = call
+	work.CleanupRequired = input.GetScan() != nil
+	work.Streaming = input.GetNative() != nil
+	work.Command = input
 	work.ID = id
 	work.Bytes = max(work.Bytes, 2*proto.Size(input)+4096)
 	work.WorkingBytes = max(work.WorkingBytes, 24<<20)
@@ -48,16 +45,16 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 }
 
 func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	if record == nil || record.Operation() == nil || record.StoreName() != a.config.Store {
+	if record == nil || record.Command() == nil || record.StoreName() != a.config.Store {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or wrong-Store record")
 	}
 	work, failure := a.prepareRecord(record)
 	if failure != nil {
 		return nil, failure
 	}
-	operation := record.Operation()
-	work.ID = operation.Index
-	if operation.Read != nil {
+	work.ID = record.Index()
+	operation := record.Command()
+	if operation.GetRead() != nil {
 		work.WorkingBytes = a.readWorkingBytes()
 	} else {
 		work.WorkingBytes = 24 << 20
@@ -76,27 +73,20 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		return execution.Neutral
 	}
 	work := works[0]
-	if work.Operation != nil {
+	if work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
 		results, feedback := a.executeRecords(ctx, works)
 		for i, result := range results {
-			output := &execution.Output{Result: result}
-			_ = emit(works[i], output)
+			_ = emit(works[i], result)
 		}
 		return feedback
 	}
 	if work.Command.GetScan() != nil {
 		return a.streamScan(ctx, work, emit)
 	}
-	native := work.Command.GetNative()
-	source := io.NopCloser(bytes.NewReader(native.Body))
-	sink := &eventSink{work: work, emit: emit}
-	exchange := &execution.NativeExchange{Source: source, Sink: sink}
-	end, feedback := a.executeNative(ctx, work, exchange)
-	_ = source.Close()
+	end, feedback := a.executeNative(ctx, work, emit)
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Value: value}
-	output := &execution.Output{Event: event}
-	_ = emit(work, output)
+	_ = emit(work, event)
 	return feedback
 }
 
@@ -113,8 +103,7 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 	for _, document := range page.Documents {
 		value := &pb.Event_Document{Document: document}
 		event := &pb.Event{Value: value}
-		output := &execution.Output{Event: event}
-		if err := emit(work, output); err != nil {
+		if err := emit(work, event); err != nil {
 			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan result publication failed")
 			if ctx.Err() != nil {
 				page.Failure = protocol.ContextFailure(ctx)
@@ -131,8 +120,7 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 		}
 		value := &pb.Event_ScanEnd{ScanEnd: end}
 		event := &pb.Event{Value: value}
-		output := &execution.Output{Event: event}
-		_ = emit(work, output)
+		_ = emit(work, event)
 	} else {
 		work.Continue = true
 	}
@@ -144,23 +132,4 @@ func (a *Adapter) ClosePlan(ctx context.Context, work *execution.Plan) *pb.Failu
 		return a.closeScan(ctx, work)
 	}
 	return nil
-}
-
-type eventSink struct {
-	work *execution.Plan
-	emit execution.Emit
-}
-
-func (s *eventSink) Interrupt() {}
-func (s *eventSink) Head(head *pb.NativeHead) error {
-	value := &pb.Event_Head{Head: head}
-	event := &pb.Event{Value: value}
-	output := &execution.Output{Event: event}
-	return s.emit(s.work, output)
-}
-func (s *eventSink) Chunk(chunk []byte) error {
-	value := &pb.Event_Chunk{Chunk: append([]byte(nil), chunk...)}
-	event := &pb.Event{Value: value}
-	output := &execution.Output{Event: event}
-	return s.emit(s.work, output)
 }

@@ -1,7 +1,7 @@
 # Store discovery and direct business traffic
 
 The public StoreService exposes ResolveStore and bidirectional Execute for
-bounded Read/Mutate frames or one Scan/Native command. PeerDiscoveryService exchanges Store
+individual Read/Mutate requests or one Scan/Native command. PeerDiscoveryService exchanges Store
 ownership announcements with SyncDirectory. All run in one Weir process.
 
 The public and peer schemas are independent; see [protocol boundaries and names](protocols.md).

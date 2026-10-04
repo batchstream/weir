@@ -194,7 +194,7 @@ func assertScanRPCBatchesAcrossRestart(t *testing.T, opts scanRPCRestartOptions)
 func scanRPCMongoDocumentID(t *testing.T, document *pb.Document) string {
 	t.Helper()
 	id, ok := bson.Raw(document.Data).Lookup("_id").StringValueOK()
-	if document.MediaType != "application/bson" || !ok {
+	if document.ContentType != "application/bson" || !ok {
 		t.Fatal("Scan changed native BSON identity or encoding")
 	}
 	return id
@@ -205,7 +205,7 @@ func scanRPCSearchDocumentID(t *testing.T, document *pb.Document) string {
 	var hit struct {
 		ID string `json:"_id"`
 	}
-	if document.MediaType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" {
+	if document.ContentType != "application/json" || json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" {
 		t.Fatal("Scan changed native Search hit identity or encoding")
 	}
 	return hit.ID
@@ -385,11 +385,10 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	}
 	readContext, stop := context.WithTimeout(t.Context(), 2*time.Second)
 	read := &pb.ReadRequest{Resource: opts.readResource}
-	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.
-		Command{Operation: &pb.Command_Read{
-		Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{read}}}}}
+	batch := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{
+		Read: read}}}
 
-	response, err := testutil.ReadRecords(readContext, client, batch.StoreName, batch.Command.GetRead().Requests)
+	response, err := testutil.ReadRecords(readContext, client, batch.StoreName, []*pb.ReadRequest{batch.Command.GetRead()})
 	stop()
 	if err != nil || len(response) != 1 || response[0].GetFailure() != nil || response[0].GetDocument() == nil {
 		t.Fatal("independent Read was blocked by a slow Scan at concurrency one", response, err)
@@ -451,7 +450,7 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	seen := make(map[string]bool, len(documents))
 	for _, document := range documents {
 		var id string
-		if document.MediaType == "application/bson" {
+		if document.ContentType == "application/bson" {
 			id = scanRPCMongoDocumentID(t, document)
 		} else {
 			id = scanRPCSearchDocumentID(t, document)
@@ -478,7 +477,7 @@ func TestRouteMongoScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &pb.Document{MediaType: "application/bson", Data: raw}
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	opts := scanRPCStallOptions{adapter: adapter, resource: backend.DB + "/records", readResource: backend.DB + "/records/s:record_0000", selector: document}
 	assertScanRPCStallReleasesPermit(t, opts)
 }
@@ -491,7 +490,7 @@ func TestRouteSearchScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"query":{"term":{"n":0}}}`)}
+	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"query":{"term":{"n":0}}}`)}
 	opts := scanRPCStallOptions{adapter: adapter, resource: backend.Index, readResource: backend.Index + "/s:record_0000", selector: document}
 	assertScanRPCStallReleasesPermit(t, opts)
 }
