@@ -76,7 +76,7 @@ transport:
   timeouts:
     # Maximum lifetime of one business RPC.
     # Required: no. Default: "15m". Allowed: positive duration.
-    route: "15m"
+    request: "15m"
 
     # Maximum wait for transport/stream progress.
     # Required: no. Default: "30s". Allowed: positive duration.

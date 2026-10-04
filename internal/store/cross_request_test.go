@@ -45,8 +45,8 @@ func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Pl
 		}
 	}
 	for _, work := range plans {
-		var result *pb.Result
-		if work.Operation.GetRead() != nil {
+		var result *execution.Result
+		if work.Operation.Read != nil {
 			var read *pb.ReadResult
 			if work.Results.Reserve(len(work.Key)) {
 				document := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf("%q", work.Key))}
@@ -54,10 +54,9 @@ func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Pl
 			} else {
 				read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "result budget exhausted"))
 			}
-			variant := &pb.Result_Read{Read: read}
-			result = &pb.Result{Index: work.ID, Result: variant}
+			result = &execution.Result{Index: work.ID, Read: read}
 		} else {
-			result = protocol.ResultError(work.Operation, pb.MutationOutcome_APPLIED, nil)
+			result = execution.FailedResult(work.Operation, pb.MutationOutcome_APPLIED, nil)
 		}
 		output := &execution.Output{Result: result}
 		if err := emit(work, output); err != nil {
@@ -120,7 +119,7 @@ func selectCrossBatch(runtime *Runtime) *batch {
 	return runtime.selectLocked(time.Now())
 }
 
-func crossResults(t testing.TB, ticket *Ticket) []*pb.Result {
+func crossResults(t testing.TB, ticket *Ticket) []*execution.Result {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -174,7 +173,7 @@ func TestIndependentRPCsShareExecutionAndKeepResultsAndQuota(t *testing.T) {
 			t.Fatal("cross-RPC result count changed", i, results)
 		}
 		for position, result := range results {
-			if result.Index != uint64(position+1) || string(result.GetRead().GetDocument().GetData()) != fmt.Sprintf("%q", resources[i][position]) {
+			if result.Index != uint64(position+1) || string(result.Read.GetDocument().GetData()) != fmt.Sprintf("%q", resources[i][position]) {
 				t.Fatal("repeated RPC ordinals crossed result ownership", i, position, result)
 			}
 		}
@@ -182,7 +181,7 @@ func TestIndependentRPCsShareExecutionAndKeepResultsAndQuota(t *testing.T) {
 			ticket.Ack()
 		}
 	}
-	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != protocol.ResultOverhead+len(resources[0][0]) || snapshot.PendingBytes != tickets[0].bulk.bytes || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+len(resources[0][0]) || snapshot.PendingBytes != tickets[0].bulk.bytes || snapshot.Active != 0 || snapshot.WorkingBytes != 0 {
 		t.Fatal("slow result owner retained another RPC's quota", snapshot)
 	}
 	tickets[0].Ack()
@@ -270,7 +269,7 @@ func TestCrossRPCDuplicateMutationsKeepInputOrder(t *testing.T) {
 	}
 	for _, ticket := range []*Ticket{first, second} {
 		for _, result := range crossResults(t, ticket) {
-			if result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+			if result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 				t.Fatal(result)
 			}
 		}
@@ -315,7 +314,7 @@ func TestCrossRPCSharedContextUsesLatestCallerAndBackendCap(t *testing.T) {
 			if len(call.plans) != 1 || call.plans[0].Context != second.ctx {
 				t.Fatal("canceled caller was sent to backend or surviving caller lost ownership")
 			}
-			if crossResults(t, first)[0].GetRead().GetFailure().GetCode() != pb.FailureCode_CANCELLED || crossResults(t, second)[0].GetRead().GetDocument() == nil {
+			if crossResults(t, first)[0].Read.GetFailure().GetCode() != pb.FailureCode_CANCELLED || crossResults(t, second)[0].Read.GetDocument() == nil {
 				t.Fatal("cancellation changed surviving results")
 			}
 			first.Ack()
@@ -347,7 +346,7 @@ func TestCrossRPCBackendCapPrecedesLongCallerDeadline(t *testing.T) {
 	}
 	for _, ticket := range []*Ticket{first, second} {
 		results := crossResults(t, ticket)
-		if len(results) != 1 || results[0].GetRead().GetFailure() != nil {
+		if len(results) != 1 || results[0].Read.GetFailure() != nil {
 			t.Fatal("configured cap changed confirmed results", results)
 		}
 		ticket.Ack()
@@ -411,7 +410,7 @@ func TestCrossRPCActiveCancellationDoesNotCancelPeerOrEraseAcknowledgement(t *te
 	gate <- struct{}{}
 	for _, ticket := range []*Ticket{first, second} {
 		result := crossResults(t, ticket)[0]
-		if result.GetMutation().Outcome != pb.MutationOutcome_APPLIED || result.GetMutation().Failure != nil {
+		if result.Mutation.Outcome != pb.MutationOutcome_APPLIED || result.Mutation.Failure != nil {
 			t.Fatal("proved backend acknowledgement was overwritten after caller cancellation", result)
 		}
 		ticket.Ack()
@@ -458,7 +457,7 @@ func TestCrossRPCAllCallersCancelSharedBackendAndKeepUnknownWrites(t *testing.T)
 	}
 	for _, ticket := range []*Ticket{first, second} {
 		result := crossResults(t, ticket)[0]
-		if result.GetMutation().Outcome != pb.MutationOutcome_UNKNOWN || result.GetMutation().Failure.GetCode() != pb.FailureCode_CANCELLED {
+		if result.Mutation.Outcome != pb.MutationOutcome_UNKNOWN || result.Mutation.Failure.GetCode() != pb.FailureCode_CANCELLED {
 			t.Fatal("missing dispatched acknowledgement became NOT_STARTED or APPLIED", result)
 		}
 		ticket.Ack()
@@ -489,10 +488,10 @@ func TestCrossRPCOwnBackendDeadlineAndAbandonedOwnersReleaseAfterExecution(t *te
 	}
 	<-done
 	result := crossResults(t, second)[0]
-	if result.GetMutation().Outcome != pb.MutationOutcome_UNKNOWN || result.GetMutation().Failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
+	if result.Mutation.Outcome != pb.MutationOutcome_UNKNOWN || result.Mutation.Failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
 		t.Fatal("backend deadline lost unknown mutation evidence", result)
 	}
-	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.WorkingBytes != 0 || snapshot.ResultBytes != protocol.ResultOverhead {
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.WorkingBytes != 0 || snapshot.ResultBytes != execution.ResultOverheadBytes {
 		t.Fatal("abandoned owner or shared working gate did not release", snapshot)
 	}
 	second.Ack()
@@ -535,7 +534,7 @@ func TestCrossRPCLargeDuplicateMutationBatchKeepsSequentialGroups(t *testing.T) 
 	runtime.execute(selectCrossBatch(runtime))
 	for _, ticket := range []*Ticket{first, second} {
 		for _, result := range crossResults(t, ticket) {
-			if result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+			if result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 				t.Fatal(result)
 			}
 		}
@@ -550,7 +549,7 @@ func TestCrossRPC512QueuedAndRetainedRequestsAreBoundedByBytes(t *testing.T) {
 			adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 32)}
 			runtime := newRuntime(adapter, DefaultLimits())
 			prepared := prepareCrossReads(t, runtime, []string{"records/s:same"})
-			if prepared.bytes < 1024 || prepared.resultBytes < protocol.ResultOverhead {
+			if prepared.bytes < 1024 || prepared.resultBytes < execution.ResultOverheadBytes {
 				t.Fatal("prepared RPC omitted retained metadata charges")
 			}
 			ctx, cancel := context.WithCancel(t.Context())
@@ -559,8 +558,8 @@ func TestCrossRPC512QueuedAndRetainedRequestsAreBoundedByBytes(t *testing.T) {
 			for range 512 {
 				tickets = append(tickets, submitCrossBatch(t, runtime, ctx, prepared))
 			}
-			if snapshot := runtime.Snapshot(); snapshot.Pending != 512 || snapshot.Retained != 512 || snapshot.PendingBytes != 512*prepared.bytes || snapshot.ResultBytes != 512*protocol.ResultOverhead {
-				t.Fatal("legacy count cap or missing per-RPC metadata charge", snapshot)
+			if snapshot := runtime.Snapshot(); snapshot.Pending != 512 || snapshot.Retained != 512 || snapshot.PendingBytes != 512*prepared.bytes || snapshot.ResultBytes != 512*execution.ResultOverheadBytes {
+				t.Fatal("queued requests or per-RPC metadata charges missing", snapshot)
 			}
 			if canceled {
 				cancel()
@@ -574,7 +573,7 @@ func TestCrossRPC512QueuedAndRetainedRequestsAreBoundedByBytes(t *testing.T) {
 			}
 			for _, ticket := range tickets {
 				result := crossResults(t, ticket)[0]
-				if canceled && result.GetRead().GetFailure().GetCode() != pb.FailureCode_CANCELLED || !canceled && result.GetRead().GetDocument() == nil {
+				if canceled && result.Read.GetFailure().GetCode() != pb.FailureCode_CANCELLED || !canceled && result.Read.GetDocument() == nil {
 					t.Fatal("independent caller lost terminal result", result)
 				}
 			}
@@ -600,7 +599,7 @@ func TestCrossRPCByteAdmissionRemainsIndependentPerStore(t *testing.T) {
 			construction := newRuntime(adapter, limits)
 			var prepared *PreparedBatch
 			if resultBound {
-				count := (protocol.MaxDocument + protocol.ResultOverhead) / protocol.ResultOverhead
+				count := (protocol.MaxDocument + execution.ResultOverheadBytes) / execution.ResultOverheadBytes
 				resources := make([]string, count)
 				for i := range resources {
 					resources[i] = "records/s:one"

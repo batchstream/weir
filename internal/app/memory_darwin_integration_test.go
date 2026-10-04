@@ -27,8 +27,8 @@ import (
 )
 
 func TestDarwinMemoryApplication(t *testing.T) {
-	if os.Getenv("WEIR_M19_NATIVE") != "1" {
-		t.Skip("explicit M19 native fixture required")
+	if os.Getenv("WEIR_MEMORY_DARWIN_NATIVE") != "1" {
+		t.Skip("explicit Darwin memory native fixture required")
 	}
 	fixture := testmongo.OpenSecure(t)
 	proxy := testmongo.StartProxy(t, &fixture.Fixture)
@@ -40,7 +40,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 	packagedCalls(t, client, fixture)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	read := &pb.ReadRequest{Resource: "weir://records/" + fixture.DB + "/records/s:artifact"}
+	read := &pb.ReadRequest{Resource: fixture.DB + "/records/s:artifact"}
 	var producers sync.WaitGroup
 	producers.Add(2)
 	for range 2 {
@@ -48,7 +48,7 @@ func TestDarwinMemoryApplication(t *testing.T) {
 			defer producers.Done()
 			for ctx.Err() == nil {
 				call, stop := context.WithTimeout(ctx, 40*time.Millisecond)
-				_, _ = testutil.ExecuteRecord(call, client, testutil.RecordCommand(read))
+				_, _ = testutil.ExecuteRecord(call, client, testutil.RecordRequest("records", read))
 				stop()
 				time.Sleep(5 * time.Millisecond)
 			}
@@ -91,9 +91,12 @@ func TestDarwinMemoryApplication(t *testing.T) {
 		}
 		darwinMetrics(t, n.DiagnosticAddress())
 		if step.latched {
-			request := budgetPut("weir://records/"+fixture.DB+"/records", "refused")
-			routedResult94, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
-			result := routedResult94.GetMutation()
+			request := budgetPut(fixture.DB+"/records", "refused")
+			recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
+			var result *pb.MutationResult
+			if recordResult != nil {
+				result = recordResult.Mutation
+			}
 			if result != nil || status.Code(err) != codes.ResourceExhausted {
 				t.Fatal("unsafe overload admission", result, err)
 			}
@@ -152,10 +155,13 @@ func darwinUnknown(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 	before := len(proxy.Events())
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	request := budgetPut("weir://records/"+fixture.DB+"/records", "lost")
+	request := budgetPut(fixture.DB+"/records", "lost")
 	proxy.DropRemaining.Store(1)
-	routedResult155, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
-	result := routedResult155.GetMutation()
+	recordResult2, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
+	var result *pb.MutationResult
+	if recordResult2 != nil {
+		result = recordResult2.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("lost ACK", result, err)
 	}
@@ -181,11 +187,11 @@ func darwinUnknown(t *testing.T, client pb.StoreServiceClient, fixture *testmong
 }
 
 func TestDarwinMemoryArtifact(t *testing.T) {
-	if os.Getenv("WEIR_M19_ARTIFACT") != "1" {
-		t.Skip("explicit exact M19 archive required")
+	if os.Getenv("WEIR_MEMORY_DARWIN_ARTIFACT") != "1" {
+		t.Skip("explicit exact Darwin memory archive required")
 	}
-	binary := os.Getenv("WEIR_M19_BINARY")
-	source := os.Getenv("WEIR_M19_SOURCE")
+	binary := os.Getenv("WEIR_MEMORY_DARWIN_BINARY")
+	source := os.Getenv("WEIR_MEMORY_DARWIN_SOURCE")
 	if !filepath.IsAbs(binary) || len(source) != 40 {
 		t.Fatal("artifact identity")
 	}
@@ -226,11 +232,11 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 		observation.hold(nil, 0)
 	})
 	result := make(chan bool, 1)
-	request := budgetPut("weir://records/"+fixture.DB+"/records", "inflight")
+	request := budgetPut(fixture.DB+"/records", "inflight")
 	go func() {
 		call, stop := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stop()
-		result <- budgetLoadCall(call, client, request, 1)
+		result <- budgetLoadCall(call, client, testutil.RecordRequest("records", request), 1)
 	}()
 	budgetWait(t, "artifact in-flight", func() bool {
 		n, _, _, _ := observation.snapshot()

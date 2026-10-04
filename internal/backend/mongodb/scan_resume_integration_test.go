@@ -75,7 +75,7 @@ func TestMongoScanResumesMixedIDsWithoutSessionOrPreviousRecord(t *testing.T) {
 	}
 	config := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 	config = mongoFixtureConfig(t, config)
-	request := &pb.ScanRequest{Resource: "weir://mongo/" + backend.DB + "/records", PageSize: 2}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 2}
 	var seen []*pb.Document
 	for page := 0; page < len(ids)+1; page++ {
 		adapter, err := Open(ctx, config)
@@ -177,7 +177,7 @@ func TestMongoScanBSONExtremesWithFilterAndProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := &pb.Document{MediaType: "application/bson", Data: raw}
-	request := &pb.ScanRequest{Resource: "weir://mongo/" + backend.DB + "/records", PageSize: 1, Selector: document}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Selector: document}
 	var seen []*pb.Document
 	for page := 0; page <= len(ids); page++ {
 		adapter, err := Open(ctx, config)
@@ -236,7 +236,7 @@ func TestMongoScanDeepKeysetUsesIDIndexAndIncludesMaxKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	selectorDocument := &pb.Document{MediaType: "application/bson", Data: selectorBytes}
-	request := &pb.ScanRequest{Resource: "weir://mongo/" + backend.DB + "/records", PageSize: 1, Selector: selectorDocument}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 1, Selector: selectorDocument}
 	config := Config{URI: backend.URI, Store: "mongo", Pool: 1}
 	config = mongoFixtureConfig(t, config)
 	adapter, err := Open(ctx, config)

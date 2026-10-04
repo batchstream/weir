@@ -36,7 +36,7 @@ func assertRouteScanAcrossInstances(t *testing.T, opts routeScanAcrossInstancesO
 		t.Helper()
 		request := &pb.ScanRequest{Resource: opts.resource, PageSize: pageSize, ContinuationToken: bytes.Clone(token)}
 		variant := &pb.Command_Scan{Scan: request}
-		call := &pb.Command{Version: 1, Operation: variant}
+		call := &pb.Command{Operation: variant}
 		events := routeBackendEvents(t, client, call)
 		if len(events) == 0 || len(events) > pageSize+1 {
 			t.Fatal("scan did not complete one bounded page", len(events))

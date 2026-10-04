@@ -46,7 +46,7 @@ func (r *Runtime) PrepareBatch(records []*execution.Record) (*PreparedBatch, *pb
 		prepared.bytes += plan.Bytes
 		// Terminal envelopes always have space; only actual copied read data
 		// increases this charge. The read size limit is not a reservation.
-		prepared.resultBytes += protocol.ResultOverhead
+		prepared.resultBytes += execution.ResultOverheadBytes
 		prepared.workingBytes = max(prepared.workingBytes, plan.WorkingBytes)
 		if prepared.bytes > r.limits.PendingBytes || prepared.resultBytes > min(r.limits.ResultBytes, protocol.MaxBatchResponseBytes) {
 			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch exceeds Store memory bounds")
@@ -75,7 +75,7 @@ func (r *Runtime) SubmitBatch(ctx context.Context, prepared *PreparedBatch) (*Ti
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
-	ticket := &Ticket{runtime: r, ctx: ticketContext, cancel: cancel, bulk: prepared, ready: make(chan struct{}), queuedAt: time.Now(), results: make([]*pb.Result, len(prepared.plans)), resultCharge: prepared.resultBytes}
+	ticket := &Ticket{runtime: r, ctx: ticketContext, cancel: cancel, bulk: prepared, ready: make(chan struct{}), queuedAt: time.Now(), results: make([]*execution.Result, len(prepared.plans)), resultCharge: prepared.resultBytes}
 	ticket.stopWatch = context.AfterFunc(ticketContext, r.signal)
 	r.queue = append(r.queue, ticket)
 	r.live[ticket] = struct{}{}
@@ -85,7 +85,7 @@ func (r *Runtime) SubmitBatch(ctx context.Context, prepared *PreparedBatch) (*Ti
 	return ticket, nil, changed
 }
 
-func (t *Ticket) WaitBatch(ctx context.Context) ([]*pb.Result, error) {
+func (t *Ticket) WaitBatch(ctx context.Context) ([]*execution.Result, error) {
 	select {
 	case <-t.ready:
 		t.runtime.mu.Lock()
@@ -120,7 +120,7 @@ func (r *Runtime) completeBatchLocked(t *Ticket, failure *pb.Failure) {
 			if failure == nil {
 				failure = protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no record result")
 			}
-			t.results[i] = protocol.ResultError(plan.Operation, outcome, failure)
+			t.results[i] = execution.FailedResult(plan.Operation, outcome, failure)
 		}
 		r.terminalResultLocked(plan, t.results[i])
 	}
@@ -152,7 +152,7 @@ func (r *Runtime) recordGroups(plans []*execution.Plan) [][]*execution.Plan {
 		clear(seen)
 	}
 	for _, plan := range plans {
-		duplicate := plan.Operation.GetMutate() != nil && seen[plan.Key]
+		duplicate := plan.Operation.Mutate != nil && seen[plan.Key]
 		if len(group) != 0 && (seed.Singleton || plan.Singleton || seed.BatchKey != plan.BatchKey || duplicate || len(group) >= r.limits.BatchOperations || plan.Bytes > r.limits.BatchBytes-bytes) {
 			flush()
 		}
@@ -195,7 +195,7 @@ func (r *Runtime) executeBatch(ctx context.Context, tickets []*Ticket) execution
 				caller = ticket.ctx
 			}
 			if caller.Err() != nil {
-				ticket.results[plan.ID-1] = protocol.ResultError(plan.Operation, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(caller))
+				ticket.results[plan.ID-1] = execution.FailedResult(plan.Operation, pb.MutationOutcome_NOT_STARTED, protocol.ContextFailure(caller))
 				continue
 			}
 			ready = append(ready, plan)
@@ -204,7 +204,7 @@ func (r *Runtime) executeBatch(ctx context.Context, tickets []*Ticket) execution
 			feedback = execution.Neutral
 			continue
 		}
-		r.metrics.executions.WithLabelValues("route").Inc()
+		r.metrics.executions.WithLabelValues("execution").Inc()
 		r.metrics.batch.Observe(float64(len(ready)))
 		emit := func(plan *execution.Plan, output *execution.Output) error {
 			ticket := owners[plan]
@@ -285,7 +285,7 @@ func (r *Runtime) selectBatchLocked(ticket *Ticket, now time.Time) *batch {
 	keep := r.queue[:0]
 	for _, queued := range r.queue {
 		if selected[queued] {
-			r.metrics.queue.WithLabelValues("route").Observe(now.Sub(queued.queuedAt).Seconds())
+			r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(queued.queuedAt).Seconds())
 			queued.state = 1
 		} else {
 			keep = append(keep, queued)
@@ -303,7 +303,7 @@ func (r *Runtime) selectBatchLocked(ticket *Ticket, now time.Time) *batch {
 func (r *Runtime) runBatch(b *batch) {
 	started := time.Now()
 	feedback := r.executeBatch(b.ctx, b.items)
-	r.metrics.duration.WithLabelValues("route").Observe(time.Since(started).Seconds())
+	r.metrics.duration.WithLabelValues("execution").Observe(time.Since(started).Seconds())
 	interested := false
 	for _, ticket := range b.items {
 		interested = interested || ticket.ctx.Err() == nil

@@ -74,7 +74,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// Allocate the PIT through the real adapter before the fetch-only proxy is used.
-	request := &pb.ScanRequest{Resource: "weir://search/" + backend.Index, PageSize: 8}
+	request := &pb.ScanRequest{Resource: backend.Index, PageSize: 8}
 	work, failure := base.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)

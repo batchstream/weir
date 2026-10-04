@@ -78,6 +78,7 @@ func budgetClosedOwner(t *testing.T, p *process, locals, limit int) {
 }
 
 type budgetReadTarget struct {
+	store         string
 	process       *process
 	client        pb.StoreServiceClient
 	root          string
@@ -103,8 +104,11 @@ func budgetOverlap(t *testing.T, targets []budgetReadTarget, o *budgetObservatio
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			req := &pb.ReadRequest{Resource: target.root + "/s:overlap"}
-			routedResult105, err := testutil.ExecuteRecord(ctx, target.client, testutil.RecordCommand(req))
-			result := routedResult105.GetRead()
+			recordResult, err := testutil.ExecuteRecord(ctx, target.client, testutil.RecordRequest(target.store, req))
+			var result *pb.ReadResult
+			if recordResult != nil {
+				result = recordResult.Read
+			}
 			if err != nil || result.GetFailure() != nil {
 				t.Error("overlap Read", err, result)
 			}
@@ -148,7 +152,7 @@ func budgetReplacementReads(t *testing.T, targets []budgetReadTarget) {
 			workers.Go(func() {
 				for n := 0; ctx.Err() == nil; n++ {
 					req := &pb.ReadRequest{Resource: target.root + fmt.Sprintf("/s:replacement%d", n)}
-					_, _ = testutil.ExecuteRecord(ctx, target.client, testutil.RecordCommand(req))
+					_, _ = testutil.ExecuteRecord(ctx, target.client, testutil.RecordRequest(target.store, req))
 				}
 			})
 		}
@@ -159,8 +163,11 @@ func budgetReplacementReads(t *testing.T, targets []budgetReadTarget) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		req := &pb.ReadRequest{Resource: target.root + "/s:recovered"}
 		for {
-			routedResult160, err := testutil.ExecuteRecord(ctx, target.client, testutil.RecordCommand(req))
-			result := routedResult160.GetRead()
+			recordResult2, err := testutil.ExecuteRecord(ctx, target.client, testutil.RecordRequest(target.store, req))
+			var result *pb.ReadResult
+			if recordResult2 != nil {
+				result = recordResult2.Read
+			}
 			if err == nil && result.GetFailure() == nil {
 				break
 			}

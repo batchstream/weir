@@ -62,7 +62,9 @@ func (s *Server) Read(ctx context.Context, request *pb.ReadBatchRequest) (*pb.Re
 	}
 	response := &pb.ReadBatchResponse{Results: make([]*pb.ReadResult, len(results))}
 	for i, result := range results {
-		response.Results[i] = result.GetRead()
+		if result != nil {
+			response.Results[i] = result.Read
+		}
 	}
 	if err := protocol.ValidateReadBatchResponse(response, len(request.Requests)); err != nil {
 		return nil, status.Error(codes.Internal, "invalid read batch result: "+err.Error())
@@ -103,7 +105,9 @@ func (s *Server) Mutate(ctx context.Context, request *pb.MutateBatchRequest) (*p
 	}
 	response := &pb.MutateBatchResponse{Results: make([]*pb.MutationResult, len(results))}
 	for i, result := range results {
-		response.Results[i] = result.GetMutation()
+		if result != nil {
+			response.Results[i] = result.Mutation
+		}
 	}
 	if err := protocol.ValidateMutateBatchResponse(response, len(request.Requests)); err != nil {
 		return nil, status.Error(codes.Internal, "invalid mutation batch result: "+err.Error())

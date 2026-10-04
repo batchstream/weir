@@ -37,14 +37,14 @@ type scanPlan struct {
 type scanCheckpoint struct {
 	PIT       string `json:"pit"`
 	After     int64  `json:"after"`
-	BatchSize int    `json:"batch_size,omitempty"`
+	BatchSize int    `json:"batch_size"`
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateScan(req, a.config.Store); f != nil {
+	if f := protocol.ValidateScan(req); f != nil {
 		return nil, f
 	}
-	_, parts, _ := protocol.ParseResource(req.Resource)
+	parts, _ := protocol.ParseRelativeResource(req.Resource)
 	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan requires one concrete Search index")
 	}
@@ -57,7 +57,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		batchSize:   execution.ScanBatchDocuments,
 		query:       json.RawMessage(`{"match_all":{}}`),
 		pageSize:    protocol.ScanPageSize(req),
-		fingerprint: protocol.ScanFingerprint(req, "search:"+a.dialect),
+		fingerprint: protocol.ScanFingerprint(req, a.config.Store, "search:"+a.dialect),
 	}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/json" {
@@ -82,7 +82,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		var checkpoint scanCheckpoint
 		decodeErr := json.Unmarshal(raw, &checkpoint)
 		canonical, _ := json.Marshal(checkpoint)
-		if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 || checkpoint.BatchSize < 0 || checkpoint.BatchSize > execution.ScanBatchDocuments {
+		if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 || checkpoint.BatchSize < 1 || checkpoint.BatchSize > execution.ScanBatchDocuments {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched Search Scan continuation")
 		}
 		native.pit = checkpoint.PIT
@@ -90,14 +90,12 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		native.hasAfter = true
 		native.opened = true
 		native.resumed = true
-		if checkpoint.BatchSize != 0 {
-			native.batchSize = checkpoint.BatchSize
-		}
+		native.batchSize = checkpoint.BatchSize
 	}
 	p := &execution.Plan{
 		Singleton:    true,
 		Key:          req.Resource,
-		Bytes:        proto.Size(req) + protocol.EntryOverhead + 4096,
+		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
 		ResultBytes:  execution.ScanResultBytes,
 		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
@@ -428,7 +426,7 @@ func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 	}()
 	// An input checkpoint remains retryable until the backend's keep-alive
 	// expires, including when the last page or its transport acknowledgement is
-	// lost. The caller cannot acknowledge receipt through a completed Route RPC.
+	// lost. The caller cannot acknowledge receipt through a completed Execute RPC.
 	if n.resumed || n.transferred {
 		return nil
 	}

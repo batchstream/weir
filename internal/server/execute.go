@@ -76,7 +76,7 @@ func (s *Server) Execute(request *pb.ExecuteRequest, stream grpc.ServerStreaming
 }
 
 func failedCommand(call *pb.Command, failure *pb.Failure) *pb.Event {
-	event := &pb.Event{Version: 1}
+	event := &pb.Event{}
 	if call.GetScan() != nil {
 		end := &pb.ScanEnd{Failure: failure}
 		event.Value = &pb.Event_ScanEnd{ScanEnd: end}

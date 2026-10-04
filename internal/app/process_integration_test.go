@@ -174,19 +174,25 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 	document := processDocument(t, opts.store, "example", 1)
 	put := &pb.MutateRequest_Put{Put: document}
 	mutation := &pb.MutateRequest{Resource: resource, Action: put}
-	routedResult173, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordCommand(mutation))
-	result := routedResult173.GetMutation()
+	recordResult, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordRequest(opts.store, mutation))
+	var result *pb.MutationResult
+	if recordResult != nil {
+		result = recordResult.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
 		t.Fatal("direct mutation", result, err)
 	}
 	read := &pb.ReadRequest{Resource: resource}
-	routedResult178, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordCommand(read))
-	found := routedResult178.GetRead()
+	recordResult2, err := testutil.ExecuteRecord(ctx, opts.client, testutil.RecordRequest(opts.store, read))
+	var found *pb.ReadResult
+	if recordResult2 != nil {
+		found = recordResult2.Read
+	}
 	if err != nil || processRecordNumber(t, found.GetDocument()) != 1 {
 		t.Fatal("direct read", found, err)
 	}
-	readFixture := testutil.RecordCommand(read)
-	readBatch := &pb.ReadBatchRequest{StoreName: opts.store, Requests: []*pb.ReadRequest{readFixture.Operation.GetRead(), readFixture.Operation.GetRead()}}
+	readFixture := testutil.RecordRequest(opts.store, read)
+	readBatch := &pb.ReadBatchRequest{StoreName: opts.store, Requests: []*pb.ReadRequest{readFixture.Operation.Read, readFixture.Operation.Read}}
 	reads, err := opts.client.Read(ctx, readBatch)
 	if err != nil || len(reads.GetResults()) != 2 {
 		t.Fatal("batch read", reads, err)
@@ -202,8 +208,8 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 		document := processDocument(t, opts.store, id, int32(i+2))
 		create := &pb.MutateRequest_Create{Create: document}
 		mutation := &pb.MutateRequest{Resource: opts.root + "/s:" + id, Action: create}
-		fixture := testutil.RecordCommand(mutation)
-		requests = append(requests, fixture.Operation.GetMutate())
+		fixture := testutil.RecordRequest(opts.store, mutation)
+		requests = append(requests, fixture.Operation.Mutate)
 	}
 	batch := &pb.MutateBatchRequest{StoreName: opts.store, Requests: requests}
 	mutations, err := opts.client.Mutate(ctx, batch)
@@ -262,8 +268,8 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	}
 	nativeCall := &pb.NativeRequest{Open: open, Body: body}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
-	call := &pb.Command{Version: 1, Operation: nativeVariant}
-	stream, err := testutil.OneEvents(ctx, opts.client, call)
+	call := &pb.Command{Operation: nativeVariant}
+	stream, err := testutil.ExecuteEvents(ctx, opts.client, opts.store, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,8 +329,8 @@ func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOption
 	t.Helper()
 	request := &pb.ScanRequest{Resource: opts.root}
 	scanVariant := &pb.Command_Scan{Scan: request}
-	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
-	stream, err := testutil.OneEvents(ctx, opts.client, scanCall)
+	scanCall := &pb.Command{Operation: scanVariant}
+	stream, err := testutil.ExecuteEvents(ctx, opts.client, opts.store, scanCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,9 +409,9 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	defer cancel()
 	rawSeed := endpointProcessClient(t, first.address)
 	for _, kind := range []string{"mongo", "search"} {
-		root := "weir://mongo/" + mongoFixture.DB + "/records"
+		root := mongoFixture.DB + "/records"
 		if kind == "search" {
-			root = "weir://search/" + search.Index
+			root = search.Index
 		}
 		resolveRequest := &pb.ResolveStoreRequest{StoreName: kind}
 		response, err := rawSeed.ResolveStore(ctx, resolveRequest)
@@ -415,7 +421,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		doc := processDocument(t, kind, "initialized", 7)
 		put := &pb.MutateRequest_Put{Put: doc}
 		mutation := &pb.MutateRequest{Resource: root + "/s:initialized", Action: put}
-		relative := strings.TrimPrefix(mutation.Resource, "weir://"+kind+"/")
+		relative := mutation.Resource
 		writeRequest := &weirclient.WriteRequest{Resource: relative, Document: doc}
 		writeOptions := weirclient.WriteOptions{StoreName: kind, Request: writeRequest}
 		applied, err := discovered.Put(ctx, writeOptions)
@@ -426,10 +432,10 @@ func TestIndependentWeirProcesses(t *testing.T) {
 		readRequest := &weirclient.ReadRequest{Resource: relative}
 		readOptions := weirclient.ReadOneOptions{StoreName: kind, Request: readRequest}
 		found, err := discovered.ReadOne(ctx, readOptions)
-		if err != nil || processRecordNumber(t, found.GetDocument()) != 7 {
+		if err != nil || processRecordNumber(t, found.Document) != 7 {
 			t.Fatal("initialized client persisted read", found, err)
 		}
-		_, err = testutil.ExecuteRecord(ctx, rawSeed, testutil.RecordCommand(read))
+		_, err = testutil.ExecuteRecord(ctx, rawSeed, testutil.RecordRequest(kind, read))
 		if status.Code(err) != codes.Unavailable {
 			t.Fatal("nonowner business request was not rejected", err)
 		}

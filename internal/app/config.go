@@ -98,15 +98,15 @@ type TransportConfig struct {
 }
 
 type TransportTimeouts struct {
-	Route Duration `json:"route" yaml:"route"`
-	Stall Duration `json:"stall" yaml:"stall"`
+	Request Duration `json:"request" yaml:"request"`
+	Stall   Duration `json:"stall" yaml:"stall"`
 }
 
 func DefaultConfig() Config {
 	defaults := server.DefaultLimits()
 	timeouts := TransportTimeouts{
-		Route: Duration(defaults.RouteLifetime),
-		Stall: Duration(defaults.Stall),
+		Request: Duration(defaults.RequestLifetime),
+		Stall:   Duration(defaults.Stall),
 	}
 	transport := TransportConfig{
 		MaxConnections: defaults.Connections,
@@ -125,10 +125,10 @@ func DefaultConfig() Config {
 func (cfg TransportConfig) serverLimits() server.Limits {
 	timeouts := cfg.Timeouts
 	limits := server.Limits{
-		Connections:   cfg.MaxConnections,
-		Sessions:      cfg.MaxSessions,
-		RouteLifetime: time.Duration(timeouts.Route),
-		Stall:         time.Duration(timeouts.Stall),
+		Connections:     cfg.MaxConnections,
+		Sessions:        cfg.MaxSessions,
+		RequestLifetime: time.Duration(timeouts.Request),
+		Stall:           time.Duration(timeouts.Stall),
 	}
 	return limits
 }
@@ -144,8 +144,7 @@ func address(value string, loopback bool) bool {
 }
 
 func validName(name string) bool {
-	parsed, segments, err := protocol.ParseResource("weir://" + name)
-	return err == nil && parsed == name && len(segments) == 0
+	return protocol.ValidStoreName(name)
 }
 
 func (cfg Config) Validate() error {

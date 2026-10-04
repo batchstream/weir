@@ -36,7 +36,7 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(package.secret_path(name), name)
         for name in ('.tools/weir', '.testdata/test.go', '.git/config', 'examples/basic/main.go', 'examples/native/main.go', 'cmd/weir/main_test.go', 'internal/testutil/root.go'):
             self.assertFalse(package.allowed(name), name)
-        self.assertFalse(package.allowed('cmd/weir-lua-worker/main.go'))
+        self.assertFalse(package.allowed('cmd/other-product/main.go'))
         included = (
             'README.md',
             'config/weir.yaml',
@@ -116,73 +116,69 @@ class PackageTests(unittest.TestCase):
                         package.build_info(Path('binary'), target, {})
 
     def test_oci_build_context_contains_only_built_binaries(self):
-        for qualification in (False, True):
-            with self.subTest(qualification=qualification), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
-                source = root / 'source'
-                source.mkdir()
-                base = {'image': 'fixture', 'index': 'sha256:' + '0' * 64}
-                inputs = {
-                    'deploy/docker/base.json': json.dumps(base).encode(),
-                    'deploy/docker/Dockerfile': b'product Dockerfile',
-                    'scripts/qualification.Dockerfile': b'qualification Dockerfile',
-                    'README.md': b'fixture docs',
-                    'config/weir.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
-                    'config/routes.yaml': b'# Complete local Store reference\nstores: []\n',
-                    'deploy/docker/weir.yaml': b'listeners:\n  application: 127.0.0.1:7447\n',
-                    'deploy/docker/routes.yaml': b'stores: []\n',
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'source'
+            source.mkdir()
+            base = {'image': 'fixture', 'index': 'sha256:' + '0' * 64}
+            inputs = {
+                'deploy/docker/base.json': json.dumps(base).encode(),
+                'deploy/docker/Dockerfile': b'product Dockerfile',
+                'README.md': b'fixture docs',
+                'config/weir.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
+                'config/routes.yaml': b'# Complete local Store reference\nstores: []\n',
+                'deploy/docker/weir.yaml': b'listeners:\n  application: 127.0.0.1:7447\n',
+                'deploy/docker/routes.yaml': b'stores: []\n',
+            }
+
+            def run(args, *, cwd=None, env=None):
+                if args[:3] == ['git', 'cat-file', 'blob']:
+                    return inputs[args[3]]
+                if args == ['go', 'mod', 'verify'] or args[:3] == ['go', 'tool', 'buildid']:
+                    return b''
+                if args == ['go', 'list', '-m', '-json', 'all']:
+                    return b'{}'
+                if args[:2] == ['go', 'build']:
+                    binary = Path(args[args.index('-o') + 1])
+                    binary.write_bytes(f'{args[-1]} {env["GOOS"]}/{env["GOARCH"]}'.encode())
+                    return b''
+                self.fail('unexpected command: ' + repr(args))
+
+            opts = dict(source=source, output=root / 'output', env={},
+                        files=[(name, name) for name in inputs], revision='0' * 40,
+                        epoch=1700000001, oci=True,
+                        builder='fixture', docker_env={})
+            linked = {}
+            oci = {'index': 'sha256:' + '1' * 64}
+            completed = subprocess.CompletedProcess([], 0, stdout='fixture OCI build')
+            with (patch.object(package, 'run', side_effect=run),
+                  patch.object(package, 'build_info', return_value=linked),
+                  patch.object(package, 'oci_receipt', return_value=oci) as receipt,
+                  patch.object(package.subprocess, 'run', return_value=completed) as docker):
+                result = package.build_once(opts)
+
+            name = 'weir'
+            expected = {name}
+            for arch in ('amd64', 'arm64'):
+                context = root / 'oci-context' / ('linux-' + arch)
+                self.assertEqual({item.name for item in context.iterdir()}, expected)
+                for binary in expected:
+                    built = opts['output'] / 'binaries' / ('linux-' + arch) / binary
+                    self.assertEqual((context / binary).read_bytes(), built.read_bytes())
+            dockerfile = 'deploy/docker/Dockerfile'
+            self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
+            archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
+            with tarfile.open(archive_path) as archive:
+                configurations = {
+                    'config/weir.yaml': 'config/weir.yaml',
+                    'config/routes.yaml': 'config/routes.yaml',
                 }
-
-                def run(args, *, cwd=None, env=None):
-                    if args[:3] == ['git', 'cat-file', 'blob']:
-                        return inputs[args[3]]
-                    if args == ['go', 'mod', 'verify'] or args[:3] == ['go', 'tool', 'buildid']:
-                        return b''
-                    if args == ['go', 'list', '-m', '-json', 'all']:
-                        return b'{}'
-                    if args[:2] == ['go', 'build']:
-                        binary = Path(args[args.index('-o') + 1])
-                        binary.write_bytes(f'{args[-1]} {env["GOOS"]}/{env["GOARCH"]}'.encode())
-                        return b''
-                    self.fail('unexpected command: ' + repr(args))
-
-                opts = dict(source=source, output=root / 'output', env={},
-                            files=[(name, name) for name in inputs], revision='0' * 40,
-                            epoch=1700000001, qualification=qualification, oci=True,
-                            builder='fixture', docker_env={})
-                linked = {}
-                oci = {'index': 'sha256:' + '1' * 64}
-                completed = subprocess.CompletedProcess([], 0, stdout='fixture OCI build')
-                with (patch.object(package, 'run', side_effect=run),
-                      patch.object(package, 'build_info', return_value=linked),
-                      patch.object(package, 'oci_receipt', return_value=oci) as receipt,
-                      patch.object(package.subprocess, 'run', return_value=completed) as docker):
-                    result = package.build_once(opts)
-
-                name = 'qualification' if qualification else 'weir'
-                expected = {name}
-                for arch in ('amd64', 'arm64'):
-                    context = root / 'oci-context' / ('linux-' + arch)
-                    self.assertEqual({item.name for item in context.iterdir()}, expected)
-                    for binary in expected:
-                        built = opts['output'] / 'binaries' / ('linux-' + arch) / binary
-                        self.assertEqual((context / binary).read_bytes(), built.read_bytes())
-                dockerfile = 'scripts/qualification.Dockerfile' if qualification else 'deploy/docker/Dockerfile'
-                self.assertEqual((root / 'oci-context' / 'Dockerfile').read_bytes(), inputs[dockerfile])
-                if not qualification:
-                    archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
-                    with tarfile.open(archive_path) as archive:
-                        configurations = {
-                            'config/weir.yaml': 'config/weir.yaml',
-                            'config/routes.yaml': 'config/routes.yaml',
-                        }
-                        yaml_files = {name for name in archive.getnames() if name.endswith('.yaml')}
-                        self.assertEqual(yaml_files, set(configurations))
-                        for filename, source_path in configurations.items():
-                            self.assertEqual(archive.extractfile(filename).read(), inputs[source_path])
-                receipt.assert_called_once()
-                docker.assert_called_once()
-
+                yaml_files = {name for name in archive.getnames() if name.endswith('.yaml')}
+                self.assertEqual(yaml_files, set(configurations))
+                for filename, source_path in configurations.items():
+                    self.assertEqual(archive.extractfile(filename).read(), inputs[source_path])
+            receipt.assert_called_once()
+            docker.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()

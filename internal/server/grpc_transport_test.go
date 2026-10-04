@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"github.com/batchstream/weir-protocol/api/protocol"
+	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"strings"
@@ -169,12 +170,60 @@ func TestHandlerCompletionReleasesAdmissionBeforeTransportEnd(t *testing.T) {
 	}
 }
 
+func TestUnaryBatchResultsReleaseAtTransportEnd(t *testing.T) {
+	_, local := peerLocal(t, "records")
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, _ := startPeerServer(t, opts)
+	info := &tap.Info{FullMethodName: pb.StoreService_Read_FullMethodName}
+	ctx, err := server.admitRPC(t.Context(), info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statistics := transportStats{}
+	tags := &stats.RPCTagInfo{FullMethodName: info.FullMethodName}
+	statistics.TagRPC(ctx, tags)
+	payload := &stats.InPayload{}
+	statistics.HandleRPC(ctx, payload)
+	end := &stats.End{}
+	defer statistics.HandleRPC(ctx, end)
+
+	request := &pb.ReadBatchRequest{StoreName: "records", Requests: []*pb.ReadRequest{testRequest()}}
+	unaryInfo := &grpc.UnaryServerInfo{Server: server, FullMethod: info.FullMethodName}
+	response, err := unaryRPC(ctx, request, unaryInfo, func(ctx context.Context, request any) (any, error) {
+		return server.Read(ctx, request.(*pb.ReadBatchRequest))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := &responseCodec{admission: server.admission}
+	encoded, err := codec.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded.Free()
+	if len(server.slots) != 0 || server.admission.wireBytes.Load() != 0 {
+		t.Fatal("handler or encoded response retained transport credits")
+	}
+	// Returning the response and its encoded buffer precedes stats.End. Neither
+	// transport credit is evidence that the Store result has been acknowledged.
+	snapshot := local.Snapshot()
+	if snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 || snapshot.Ready != 1 || snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes {
+		t.Fatal("completed unary batch lost result ownership before transport End", snapshot)
+	}
+	statistics.HandleRPC(ctx, end)
+	waitPeerIdle(t, server)
+	snapshot = local.Snapshot()
+	if snapshot.PendingBytes != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 {
+		t.Fatal("transport End did not acknowledge the retained unary batch", snapshot)
+	}
+}
+
 func TestNativeBatchDecodeLimitFailsBeforeBackendWork(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	count := protocol.MaxBatchResponseBytes/protocol.ResultOverhead + 1
+	count := protocol.MaxBatchResponseBytes/execution.ResultOverheadBytes + 1
 	read := &pb.ReadRequest{Resource: "records/s:key"}
 	requests := make([]*pb.ReadRequest, count)
 	for i := range requests {

@@ -136,24 +136,6 @@ func TestHelpWithoutConfiguration(t *testing.T) {
 		if err := run(args, &output); err != nil || !strings.Contains(output.String(), "Usage:") {
 			t.Fatal("help must short circuit server startup", args, err, output.String())
 		}
-		for _, legacy := range []string{
-			"--diagnostics",
-			"--listen",
-			"--mongo-uri",
-			"--database",
-			"--collection",
-			"--batch",
-			"--memory-mib",
-			"--search-url",
-			"--search-index",
-			"--search-profile",
-			"--check-config",
-			"--probe-address",
-		} {
-			if strings.Contains(output.String(), legacy) {
-				t.Fatal("retained removed flag", legacy, output.String())
-			}
-		}
 	}
 
 	var output bytes.Buffer

@@ -71,7 +71,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			}
 			raw, _ := bson.Marshal(command)
 			descriptor := &pb.Document{MediaType: NativeDescriptor}
-			open := &pb.NativeOpen{Resource: "weir://mongo/" + db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			open := &pb.NativeOpen{Resource: db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
 			plan, f := a.prepareNative(open)
 			if f != nil {
 				t.Fatal(f)
@@ -93,7 +93,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				t.Fatal(end)
 			}
 			if mode == "drop" {
-				verifyReconnectRead(t, a, proxy, "weir://mongo/"+db+"/records/s:x")
+				verifyReconnectRead(t, a, proxy, db+"/records/s:x")
 			}
 			count := 0
 			for _, event := range proxy.Events() {

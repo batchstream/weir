@@ -14,7 +14,7 @@ import (
 )
 
 func TestLinuxMemoryNative(t *testing.T) {
-	if os.Getenv("WEIR_M14_NATIVE") != "1" {
+	if os.Getenv("WEIR_MEMORY_NATIVE") != "1" {
 		t.Skip("requires owned scripts/test-memory-linux.py fixture")
 	}
 	var uname syscall.Utsname

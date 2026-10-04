@@ -121,7 +121,7 @@ func warm(t *testing.T, f fixture) {
 		}
 		for _, ticket := range tickets {
 			result, err := ticket.Wait(ctx)
-			if err != nil || result.GetRead().GetFailure() != nil {
+			if err != nil || result.Read.GetFailure() != nil {
 				t.Fatal("warm point read failed", err, result)
 			}
 			ticket.Ack()
@@ -179,7 +179,7 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 		t.Fatal("short caller did not reach its independent deadline", short.Err())
 	}
 	result, err := b.Wait(long)
-	if err != nil || result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+	if err != nil || result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("unrelated caller cancelled", err, result)
 	}
 	b.Ack()
@@ -194,7 +194,7 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	switch shortResult.GetMutation().GetOutcome() {
+	switch shortResult.Mutation.GetOutcome() {
 	case pb.MutationOutcome_NOT_STARTED, pb.MutationOutcome_NOT_APPLIED:
 		if count != 0 {
 			t.Fatal("definite no-effect outcome contradicted persisted write", shortResult, count)
@@ -204,7 +204,7 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 			t.Fatal("acknowledged short write was not persisted", shortResult, count)
 		}
 	case pb.MutationOutcome_UNKNOWN:
-		if shortResult.GetMutation().GetFailure() == nil {
+		if shortResult.Mutation.GetFailure() == nil {
 			t.Fatal("uncertain canceled write lost its failure", shortResult)
 		}
 	default:
@@ -246,7 +246,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 		if i == 0 {
 			want = pb.MutationOutcome_NOT_APPLIED
 		}
-		if result.GetMutation().Outcome != want {
+		if result.Mutation.Outcome != want {
 			t.Fatal(result)
 		}
 	}
@@ -271,7 +271,7 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 		t.Fatal("lost reply batch lost results", err, results)
 	}
 	for _, result := range results {
-		if result.GetMutation().Outcome != pb.MutationOutcome_UNKNOWN {
+		if result.Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("lost reply justified a definite write outcome", result)
 		}
 	}
@@ -301,7 +301,7 @@ func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	}
 	ar, _ := a.Wait(ctx)
 	br, _ := b.Wait(ctx)
-	if ar.GetMutation().Outcome != pb.MutationOutcome_UNKNOWN || br.GetMutation().Outcome != pb.MutationOutcome_NOT_STARTED {
+	if ar.Mutation.Outcome != pb.MutationOutcome_UNKNOWN || br.Mutation.Outcome != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal(ar, br)
 	}
 	a.Ack()
@@ -336,7 +336,7 @@ func TestNativeWriteConcernAmbiguity(t *testing.T) {
 		t.Fatal("write concern batch lost results", err, results)
 	}
 	for i, result := range results {
-		if result.Index != uint64(i+1) || result.GetMutation().Outcome != pb.MutationOutcome_UNKNOWN {
+		if result.Index != uint64(i+1) || result.Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("write concern batch lost order or uncertainty", result)
 		}
 	}
@@ -376,7 +376,7 @@ func TestNativeCancellationDispatchRace(t *testing.T) {
 			t.Fatal(ctx.Err())
 		}
 		result := ticket.Result()
-		if result.GetMutation().Outcome == pb.MutationOutcome_NOT_STARTED {
+		if result.Mutation.Outcome == pb.MutationOutcome_NOT_STARTED {
 			filter := bson.D{{Key: "_id", Value: key}}
 			err := f.native.Database(f.db).Collection("records").FindOne(ctx, filter).Err()
 			if err != mongo.ErrNoDocuments {
@@ -411,7 +411,7 @@ func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, result := range results {
-		if result.GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+		if result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal(result)
 		}
 	}
@@ -457,7 +457,7 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
 			native := &pb.NativeRequest{Open: open, Body: raw}
 			variant := &pb.Command_Native{Native: native}
-			call := &pb.Command{Version: 1, Operation: variant}
+			call := &pb.Command{Operation: variant}
 			work, failure := f.runtime.PrepareCommand(1, call)
 			if failure != nil {
 				t.Fatal(failure)
@@ -548,7 +548,7 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			if command == "commitTransaction" {
 				expected = pb.MutationOutcome_UNKNOWN
 			}
-			if err != nil || result.GetMutation().GetOutcome() != expected || result.GetMutation().GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
+			if err != nil || result.Mutation.GetOutcome() != expected || result.Mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
 				t.Fatal("Lua database I/O escaped deadline or lost uncertainty", err, result, elapsed)
 			}
 			ticket.Ack()

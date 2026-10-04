@@ -42,7 +42,7 @@ func TestSecureSearchProductionOpen(t *testing.T) {
 	a := secureAdapter(t, fixture.Backend)
 	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(fixture.Backend.Index, "minimal"))), pb.MutationOutcome_APPLIED, 0)
 	result := runSearch(t, a, searchPlan(t, a, "read", searchResource(fixture.Backend.Index, "minimal")))
-	if result.GetRead().GetDocument() == nil {
+	if result.Read.GetDocument() == nil {
 		t.Fatal("production read after write failed", result)
 	}
 }
@@ -78,7 +78,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			assertOutcome(t, runSearch(t, a, searchPlan(t, a, action, searchResource(b.Index, "record"))), pb.MutationOutcome_APPLIED, 0)
 		}
 		assertOutcome(t, runSearch(t, a, searchPlan(t, a, "create", searchResource(b.Index, "record"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
-		source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "record"))).GetRead().GetDocument().GetData()
+		source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "record"))).Read.GetDocument().GetData()
 		if !strings.Contains(string(source), "9223372036854775807") {
 			t.Fatal("int64 source changed")
 		}
@@ -92,7 +92,7 @@ func TestSecureSearchQualification(t *testing.T) {
 		}
 		assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "counter"))), pb.MutationOutcome_APPLIED, 0)
 		assertOutcome(t, runSearch(t, a, searchExpression(t, a, b.Index, `{"doc":{"n":9007199254740993}}`)), pb.MutationOutcome_APPLIED, 0)
-		source = runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).GetRead().GetDocument().GetData()
+		source = runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).Read.GetDocument().GetData()
 		if !strings.Contains(string(source), "9007199254740993") || !strings.Contains(string(source), `"keep":"source"`) {
 			t.Fatal("expression changed unrelated source")
 		}
@@ -140,7 +140,7 @@ func TestSecureSearchQualification(t *testing.T) {
 		denied := secureAdapter(t, fixture.Denied)
 		work := searchPlan(t, denied, "put", searchResource(b.Index, "forbidden"))
 		result := runSearch(t, denied, work)
-		if result.GetMutation().Outcome == pb.MutationOutcome_APPLIED {
+		if result.Mutation.Outcome == pb.MutationOutcome_APPLIED {
 			t.Fatal("reader wrote")
 		}
 		code, _ := fixture.Denied.Do(t, "POST", "/_bulk", "{\"index\":{\"_index\":\""+b.Index+"\",\"_id\":\"forbidden\"}}\n{\"n\":1}\n")
@@ -257,7 +257,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		if operation == "bulk" {
 			works = append(works, searchPlan(t, a, "put", searchResource(b.Index, id+"-second")))
 		}
-		var replies []*pb.Result
+		var replies []*execution.Result
 		if fault == "drain" {
 			limits := store.DefaultLimits()
 			owner, err := store.New(a, limits)
@@ -286,7 +286,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 				t.Fatal(waitErr)
 			}
 			ticket.Ack()
-			replies = []*pb.Result{reply}
+			replies = []*execution.Result{reply}
 			snap = owner.Snapshot()
 			if snap.Active != 0 || snap.Retained != 0 || snap.Pending != 0 || len(a.dialer.slots) != 0 || time.Since(start) > time.Second {
 				t.Fatal("drain leaked ledger/socket", snap)
@@ -303,7 +303,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			}
 		}
 	case "expression":
-		op := expressionOperation("weir://search/"+b.Index+"/s:"+id, `{"doc":{"n":2}}`)
+		op := expressionOperation(b.Index+"/s:"+id, `{"doc":{"n":2}}`)
 		p, f := prepareTestRecord(a, op)
 		if f != nil {
 			t.Fatal(f)

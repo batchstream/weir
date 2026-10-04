@@ -94,11 +94,11 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 			second := searchPlan(t, adapter, "put", searchResource(b.Index, "long"))
 			if expression {
 				var failure *pb.Failure
-				first, failure = prepareTestRecord(adapter, expressionOperation("weir://search/"+b.Index+"/s:short", `{"doc":{"n":1}}`))
+				first, failure = prepareTestRecord(adapter, expressionOperation(b.Index+"/s:short", `{"doc":{"n":1}}`))
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				second, failure = prepareTestRecord(adapter, expressionOperation("weir://search/"+b.Index+"/s:long", `{"doc":{"n":1}}`))
+				second, failure = prepareTestRecord(adapter, expressionOperation(b.Index+"/s:long", `{"doc":{"n":1}}`))
 				if failure != nil {
 					t.Fatal(failure)
 				}

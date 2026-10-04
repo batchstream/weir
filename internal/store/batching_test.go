@@ -17,7 +17,7 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 	if action == "read" || action == "delete" {
 		return p
 	}
-	m := p.Operation.GetMutate()
+	m := p.Operation.Mutate
 	doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
 	switch action {
 	case "put":
@@ -145,7 +145,7 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 	case <-a.gate:
 	case <-ctx.Done():
 	}
-	results := make([]*pb.Result, len(plans))
+	results := make([]*execution.Result, len(plans))
 	for i, p := range plans {
 		outcome := pb.MutationOutcome_APPLIED
 		var failure *pb.Failure
@@ -155,7 +155,7 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 		} else if a.phases != nil {
 			a.phases <- p
 		}
-		results[i] = protocol.ResultError(p.Operation, outcome, failure)
+		results[i] = execution.FailedResult(p.Operation, outcome, failure)
 	}
 	for i, result := range results {
 		output := &execution.Output{Result: result}
@@ -208,7 +208,7 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 		t.Fatal("one caller cancellation poisoned independent execution")
 	}
 	close(gate)
-	if first.Result().GetMutation().Outcome != pb.MutationOutcome_NOT_STARTED || second.Result().GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+	if first.Result().Mutation.Outcome != pb.MutationOutcome_NOT_STARTED || second.Result().Mutation.Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller cancellation lost per-item identity")
 	}
 	first.Ack()
@@ -270,7 +270,7 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 				t.Fatal("abandonment released an in-flight reservation", snapshot)
 			}
 			close(gate)
-			if peer.Result().GetMutation().Outcome != pb.MutationOutcome_APPLIED {
+			if peer.Result().Mutation.Outcome != pb.MutationOutcome_APPLIED {
 				t.Fatal("abandonment prevented a peer's already admitted work")
 			}
 			<-abandoned.ready

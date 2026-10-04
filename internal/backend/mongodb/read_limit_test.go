@@ -23,8 +23,7 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 		}
 		adapter := &Adapter{config: config}
 		request := &pb.ReadRequest{Resource: "db/records/s:id"}
-		variant := &pb.Operation_Read{Read: request}
-		call := &pb.Operation{Index: 1, Operation: variant}
+		call := &execution.Operation{Index: 1, Read: request}
 		work, failure := prepareTestRecord(adapter, call)
 		if failure != nil {
 			t.Fatal(failure)
@@ -32,7 +31,7 @@ func TestMongoReadSizeConfigurationAndBudgets(t *testing.T) {
 		if limit == 0 {
 			limit = 16 << 10
 		}
-		if work.ResultBytes != limit+protocol.ResultOverhead || work.WorkingBytes != 2*scanNativeLimit+max(1<<20, 4*limit) {
+		if work.ResultBytes != limit+execution.ResultOverheadBytes || work.WorkingBytes != 2*scanNativeLimit+max(1<<20, 4*limit) {
 			t.Fatal("read declaration was not reflected in resource bounds", limit, work.ResultBytes, work.WorkingBytes)
 		}
 	}
@@ -68,8 +67,8 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 		adapter := batchMockAdapter(t, responses, nil)
 		adapter.config.MaxReadSize = tc.limit
 		writeDocument := bson.D{{Key: "_id", Value: "write"}, {Key: "pad", Value: strings.Repeat("x", 2048)}}
-		readOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:read", action: "read", index: 9}
-		writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", index: 8, document: writeDocument}
+		readOptions := batchOperationOptions{resource: "db/records/s:read", action: "read", index: 9}
+		writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", index: 8, document: writeDocument}
 		var plans []*execution.Plan
 		for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
 			work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
@@ -79,11 +78,11 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			plans = append(plans, work)
 		}
 		results, _ := adapter.executeRecords(context.Background(), plans)
-		read := results[0].GetRead()
+		read := results[0].Read
 		if size <= limit && len(read.GetDocument().Data) != size || size > limit && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 			t.Fatal("read size boundary was not enforced", size, read)
 		}
-		if results[1].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutation().Failure != nil {
+		if results[1].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[1].Mutation.Failure != nil {
 			t.Fatal("acknowledged write was affected by a read limit", results[1])
 		}
 	}

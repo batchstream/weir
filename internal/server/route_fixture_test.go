@@ -15,7 +15,6 @@ import (
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/proto"
 )
 
 type peerAdapter struct {
@@ -42,7 +41,7 @@ func (*peerAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Fa
 func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
 	operation := record.Operation()
 	key := record.Key()
-	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: key, BatchKey: "records", Bytes: proto.Size(operation) + protocol.EntryOverhead, ResultBytes: protocol.ResultOverhead, WorkingBytes: 1024}
+	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: key, BatchKey: "records", Bytes: operation.RequestBytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	return plan, nil
 }
 
@@ -63,8 +62,8 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 	}
 	for _, plan := range plans {
 		a.mu.Lock()
-		result := &pb.Result{Index: plan.ID}
-		if plan.Operation.GetRead() != nil {
+		result := &execution.Result{Index: plan.ID}
+		if plan.Operation.Read != nil {
 			read := protocol.Missing()
 			if document := a.documents[plan.Key]; document != nil {
 				if plan.Results.Reserve(len(document.Data)) {
@@ -73,10 +72,10 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 					read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record result budget exhausted"))
 				}
 			}
-			result.Result = &pb.Result_Read{Read: read}
+			result.Read = read
 		} else {
 			a.commands.Add(1)
-			request := plan.Operation.GetMutate()
+			request := plan.Operation.Mutate
 			document := request.GetPut()
 			if document == nil {
 				document = request.GetCreate()
@@ -93,7 +92,7 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 			if plan.Key == a.ackFailureKey {
 				failure = a.ackFailure
 			}
-			result.Result = &pb.Result_Mutation{Mutation: protocol.Mutation(pb.MutationOutcome_APPLIED, failure)}
+			result.Mutation = protocol.Mutation(pb.MutationOutcome_APPLIED, failure)
 		}
 		a.mu.Unlock()
 		output := &execution.Output{Result: result}
@@ -200,9 +199,19 @@ func testMutation(value string) *pb.MutateRequest {
 func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
-	for len(s.slots) != 0 || s.admission.wireBytes.Load() != 0 {
+	for {
+		idle := len(s.slots) == 0 && s.admission.wireBytes.Load() == 0
+		stores := make(map[string]store.Snapshot, len(s.stores))
+		for name, local := range s.stores {
+			snapshot := local.Snapshot()
+			stores[name] = snapshot
+			idle = idle && snapshot.Pending == 0 && snapshot.PendingBytes == 0 && snapshot.Active == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0 && snapshot.Publishers == 0
+		}
+		if idle {
+			return
+		}
 		if time.Now().After(until) {
-			t.Fatal("RPC transport credits did not release", s.Snapshot(), s.admission.wireBytes.Load())
+			t.Fatal("RPC transport or Store credits did not release", s.Snapshot(), s.admission.wireBytes.Load(), stores)
 		}
 		time.Sleep(time.Millisecond)
 	}

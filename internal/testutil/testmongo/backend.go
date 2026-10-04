@@ -50,7 +50,7 @@ func Open(t *testing.T) *Fixture {
 	var hello struct {
 		Set string `bson:"setName"`
 	}
-	if err := client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil || hello.Set != "weir_m1" {
+	if err := client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil || hello.Set != "weir_local" {
 		_ = client.Disconnect(ctx)
 		t.Fatalf("wrong/missing isolated replica set: %+v %v", hello, err)
 	}

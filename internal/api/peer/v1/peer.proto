@@ -1,23 +1,55 @@
 syntax = "proto3";
+
 package weir.peer.v1;
+
 option go_package = "github.com/batchstream/weir/internal/api/peer/v1;peerv1";
 
-// PeerDiscoveryService is internal node-to-node control traffic. It contains no
-// public business DTOs and never carries a business request or response stream.
+// PeerDiscoveryService synchronizes Store ownership between equal Weir nodes.
+// It carries public endpoint advertisements and never carries business payloads
+// or backend credentials. Clients use the separate weir.v1.StoreService.
 service PeerDiscoveryService {
+  // SyncDirectory merges a bounded snapshot and returns the receiver's current
+  // snapshot. Every announcement retains its origin's revision and lease.
   rpc SyncDirectory(SyncDirectoryRequest) returns (SyncDirectoryResponse);
 }
-message SyncDirectoryRequest { repeated NodeAnnouncement announcements = 1; }
-message SyncDirectoryResponse { repeated NodeAnnouncement announcements = 1; }
-// A fresh process creates an incarnation_id. Only its owner advances revision or
-// renews the lease. Peers reduce, never renew, lease_remaining_ms during sync.
+
+// SyncDirectoryRequest offers announcements learned locally or from other peers.
+message SyncDirectoryRequest {
+  // Announcements must pass complete snapshot validation before any are merged.
+  repeated NodeAnnouncement announcements = 1;
+}
+
+// SyncDirectoryResponse provides the receiver's current discovery snapshot.
+message SyncDirectoryResponse {
+  // Relayed announcements report their remaining lease, never a renewed lease.
+  repeated NodeAnnouncement announcements = 1;
+}
+
+// NodeAnnouncement describes one process incarnation. Only its originating node
+// advances the revision or renews its lease. A relay reduces the remaining lease.
 message NodeAnnouncement {
+  // Random identity generated for this process lifetime; a restart gets a new ID.
   string incarnation_id = 1;
+
+  // Monotonic origin heartbeat sequence. Replaying a revision cannot extend its lease.
   uint64 revision = 2;
+
+  // Direct host:port endpoint for this node's PeerDiscoveryService listener.
   string peer_endpoint = 3;
+
+  // Replicas in this group serve equivalent Store ownership. Different groups
+  // advertising the same Store create an ownership conflict.
   string replica_group = 4;
+
+  // Complete set of logical Stores served locally by this process.
   repeated string store_names = 5;
+
+  // Reachable IP or DNS host:port endpoints for the advertised Stores' business RPCs.
   repeated string store_endpoints = 6;
+
+  // Remaining origin lease in milliseconds at the time this snapshot is formed.
   uint64 lease_remaining_ms = 7;
+
+  // Explicit process withdrawal; this incarnation must no longer supply endpoints.
   bool withdrawn = 8;
 }

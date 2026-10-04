@@ -27,7 +27,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const secureOwner = "weir-milestone-11"
+const secureOwner = "weir-mongo-local1"
 const elasticImage = "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237"
 const openSearchImage = "opensearchproject/opensearch@sha256:89a402aa9132286200b8d12aa37fd5b14daa65851193d009355900c0d1d9d59c"
 
@@ -54,7 +54,7 @@ func OpenSecure(t *testing.T) *SecureFixture {
 		t.Fatal("invalid secure Search product")
 	}
 	suffix := fmt.Sprintf("%d-%d-%s", os.Getpid(), sequence.Add(1), randomPassword(t)[:12])
-	f := &SecureFixture{product: product, name: "weir-m11-" + product + "-" + suffix, image: elasticImage}
+	f := &SecureFixture{product: product, name: "weir-search-secure-" + product + "-" + suffix, image: elasticImage}
 	if product == "opensearch" {
 		f.image = openSearchImage
 	}
@@ -135,7 +135,7 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	if product == "opensearch" {
 		profile = "opensearch-2.19.6"
 	}
-	index := "weir_m11_" + strings.ReplaceAll(suffix, "-", "_")
+	index := "weir_search_secure_" + strings.ReplaceAll(suffix, "-", "_")
 	f.Admin = &Backend{
 		URL:      "https://" + port,
 		Product:  product,
@@ -258,7 +258,7 @@ func (f *SecureFixture) certificates(t *testing.T) *x509.CertPool {
 	if err != nil {
 		t.Fatal("fixture CA key generation")
 	}
-	subject := pkix.Name{CommonName: "Weir M11 temporary CA"}
+	subject := pkix.Name{CommonName: "Weir Search temporary CA"}
 	ca := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               subject,
@@ -344,17 +344,17 @@ xpack.security.transport.ssl.certificate_authorities: [weir/ca.pem]
 		f.write(t, "roles.yml", `weir_fixture_admin:
   cluster: [all]
   indices:
-    - names: ['weir_m11_*']
+    - names: ['weir_search_secure_*']
       privileges: [all]
 weir_application:
   cluster: [monitor]
   indices:
-    - names: ['weir_m11_*']
+    - names: ['weir_search_secure_*']
       privileges: [read, write, view_index_metadata]
 weir_reader:
   cluster: [monitor]
   indices:
-    - names: ['weir_m11_*']
+    - names: ['weir_search_secure_*']
       privileges: [read, view_index_metadata]
 `, 0644)
 		return
@@ -395,18 +395,18 @@ plugins.security.allow_default_init_securityindex: false
 		"roles": `weir_fixture_admin:
   cluster_permissions: ['cluster:*', 'indices:data/write/bulk*']
   index_permissions:
-    - index_patterns: ['weir_m11_*']
+    - index_patterns: ['weir_search_secure_*']
       allowed_actions: ['indices:*']
 weir_application:
   # Multi-get needs a coordinating cluster permission as well as index reads.
   cluster_permissions: ['cluster:monitor/main', 'cluster:monitor/state', 'indices:data/read/mget', 'indices:data/write/bulk*']
   index_permissions:
-    - index_patterns: ['weir_m11_*']
+    - index_patterns: ['weir_search_secure_*']
       allowed_actions: ['indices:admin/get', 'indices:admin/mapping/put', 'indices:data/read/*', 'indices:data/write/*']
 weir_reader:
   cluster_permissions: ['cluster:monitor/main', 'cluster:monitor/state', 'indices:data/read/mget']
   index_permissions:
-    - index_patterns: ['weir_m11_*']
+    - index_patterns: ['weir_search_secure_*']
       allowed_actions: ['indices:admin/get', 'indices:data/read/*']
 `,
 		"roles_mapping": `weir_fixture_admin:

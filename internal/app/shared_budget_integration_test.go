@@ -6,10 +6,10 @@ import (
 	"context"
 	"fmt"
 	weirclient "github.com/batchstream/weir-go"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -97,6 +97,7 @@ func (o *budgetObservation) snapshot() (active, peak, started, completed int) {
 }
 
 type mongoBudgetExecutor struct {
+	store       string
 	process     *process
 	client      pb.StoreServiceClient
 	proxy       *testmongo.Proxy
@@ -140,11 +141,12 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 	}
 	p := startProcess(t, binary, cfg)
 	e := &mongoBudgetExecutor{
+		store:       "records",
 		process:     p,
 		client:      endpointProcessClient(t, p.address),
 		proxy:       proxy,
 		concurrency: concurrency,
-		root:        "weir://records/" + fixture.DB + "/records",
+		root:        fixture.DB + "/records",
 		drop:        drop,
 		locals:      len(cfg.Routing.Stores),
 	}
@@ -183,8 +185,11 @@ func budgetFreshRead(t *testing.T, e *mongoBudgetExecutor, id string) {
 	defer cancel()
 	request := &pb.ReadRequest{Resource: e.root + "/s:" + id}
 	for attempts := 1; ; attempts++ {
-		routedResult180, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordCommand(request))
-		result := routedResult180.GetRead()
+		recordResult, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
+		var result *pb.ReadResult
+		if recordResult != nil {
+			result = recordResult.Read
+		}
 		if err == nil && result.GetFailure() == nil {
 			if attempts > 1 {
 				t.Logf("fresh independent read probes recovered PID=%d calls=%d", e.process.command.Process.Pid, attempts)
@@ -199,8 +204,8 @@ func budgetFreshRead(t *testing.T, e *mongoBudgetExecutor, id string) {
 }
 
 func TestMongoSharedProcessBudget(t *testing.T) {
-	if os.Getenv("WEIR_M12_INTEGRATION") != "mongo" {
-		t.Skip("requires WEIR_M12_INTEGRATION=mongo")
+	if os.Getenv("WEIR_SHARED_BUDGET_INTEGRATION") != "mongo" {
+		t.Skip("requires WEIR_SHARED_BUDGET_INTEGRATION=mongo")
 	}
 	fixture := testmongo.OpenSecure(t)
 	binary := buildEndpointProcess(t)
@@ -225,8 +230,11 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 			workers.Go(func() {
 				for ctx.Err() == nil {
 					request := &pb.ReadRequest{Resource: e.root + "/s:warm"}
-					routedResult221, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordCommand(request))
-					result := routedResult221.GetRead()
+					recordResult2, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
+					var result *pb.ReadResult
+					if recordResult2 != nil {
+						result = recordResult2.Read
+					}
 					if err == nil && result.GetFailure() == nil {
 						reads.Add(1)
 					}
@@ -291,9 +299,9 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	testmongo.FailCommand(t, fixture.Admin, data, 1)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	faultRead := &pb.ReadRequest{Resource: peers[2].root + "/s:congestion"}
-	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(faultRead))
+	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordRequest("records", faultRead))
 	stop()
-	if faultError != nil || faultResult.GetRead().GetFailure() == nil {
+	if faultError != nil || faultResult.Read.GetFailure() == nil {
 		t.Fatal("Mongo congestion lost its read failure", faultError, faultResult)
 	}
 	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
@@ -357,7 +365,7 @@ func mongoBudgetOverload(t *testing.T, peers []*mongoBudgetExecutor, o *budgetOb
 			workers.Go(func() {
 				for n := 0; ctx.Err() == nil; n++ {
 					request := budgetPut(e.root, fmt.Sprintf("overload%d-%d", worker, n))
-					success := budgetLoadCall(ctx, e.client, request, worker%3)
+					success := budgetLoadCall(ctx, e.client, testutil.RecordRequest(e.store, request), worker%3)
 					if !success {
 						rejected.Add(1)
 					} else {
@@ -404,8 +412,11 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	var workers sync.WaitGroup
 	// Three independent runtimes and a direct native writer compete on one key.
 	initial := budgetPut(peers[0].root, "counter")
-	routedResult391, err := testutil.ExecuteRecord(ctx, peers[0].client, testutil.RecordCommand(initial))
-	result := routedResult391.GetMutation()
+	recordResult3, err := testutil.ExecuteRecord(ctx, peers[0].client, testutil.RecordRequest("records", initial))
+	var result *pb.MutationResult
+	if recordResult3 != nil {
+		result = recordResult3.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
@@ -419,8 +430,11 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 				transform := &pb.Transform{Form: form}
 				action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 				request := &pb.MutateRequest{Resource: e.root + "/s:counter", Action: action}
-				routedResult405, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordCommand(request))
-				result := routedResult405.GetMutation()
+				recordResult4, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
+				var result *pb.MutationResult
+				if recordResult4 != nil {
+					result = recordResult4.Mutation
+				}
 				if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Error("atomic increment", result, err)
 					return
@@ -452,8 +466,8 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 		requests := make([]*pb.MutateRequest, 0, 4)
 		for i := range 4 {
 			request := budgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			fixture := testutil.RecordCommand(request)
-			requests = append(requests, fixture.Operation.GetMutate())
+			fixture := testutil.RecordRequest(e.store, request)
+			requests = append(requests, fixture.Operation.Mutate)
 		}
 		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
 		reply, err := e.client.Mutate(ctx, batch)
@@ -476,8 +490,8 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	workers.Go(func() {
 		request := &pb.ScanRequest{Resource: peers[1].root}
 		scanVariant := &pb.Command_Scan{Scan: request}
-		scanCall := &pb.Command{Version: 1, Operation: scanVariant}
-		scan, err := testutil.OneEvents(ctx, peers[1].client, scanCall)
+		scanCall := &pb.Command{Operation: scanVariant}
+		scan, err := testutil.ExecuteEvents(ctx, peers[1].client, peers[1].store, scanCall)
 		if err != nil {
 			t.Error(err)
 			return
@@ -529,8 +543,8 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	defer stopScan()
 	request := &pb.ScanRequest{Resource: peers[1].root}
 	scanVariant := &pb.Command_Scan{Scan: request}
-	scanCall := &pb.Command{Version: 1, Operation: scanVariant}
-	scan, err := testutil.OneEvents(scanCtx, peers[1].client, scanCall)
+	scanCall := &pb.Command{Operation: scanVariant}
+	scan, err := testutil.ExecuteEvents(scanCtx, peers[1].client, peers[1].store, scanCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -567,8 +581,8 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 	raw, _ := bson.Marshal(command)
 	nativeCall := &pb.NativeRequest{Open: open, Body: raw}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
-	call := &pb.Command{Version: 1, Operation: nativeVariant}
-	stream, err := testutil.OneEvents(ctx, e.client, call)
+	call := &pb.Command{Operation: nativeVariant}
+	stream, err := testutil.ExecuteEvents(ctx, e.client, e.store, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,6 +633,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 			process: e.process,
 			client:  e.client,
 			root:    e.root,
+			store:   e.store,
 			locals:  e.locals,
 			limit:   e.concurrency + 1,
 		}
@@ -627,7 +642,8 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	extra := budgetReadTarget{
 		process: replacement.process,
 		client:  replacement.client,
-		root:    strings.Replace(replacement.root, "weir://records/", "weir://extra/", 1),
+		root:    replacement.root,
+		store:   "extra",
 		locals:  2,
 		limit:   2,
 	}
@@ -636,7 +652,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	budgetReplacementReads(t, targets[3:])
 	mongoBudgetNative(t, replacement)
 	extraExecutor := *replacement
-	extraExecutor.root = extra.root
+	extraExecutor.store = extra.store
 	mongoBudgetNative(t, &extraExecutor)
 	drop := old.drop
 	old.proxy.DropRemaining.Store(1)
@@ -645,8 +661,11 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	resultChannel := make(chan *pb.MutationResult, 1)
 	oldRequest := budgetPut(old.root, "lost-reply")
 	go func() {
-		routedResult642, err := testutil.ExecuteRecord(ctx, old.client, testutil.RecordCommand(oldRequest))
-		result := routedResult642.GetMutation()
+		recordResult5, err := testutil.ExecuteRecord(ctx, old.client, testutil.RecordRequest(old.store, oldRequest))
+		var result *pb.MutationResult
+		if recordResult5 != nil {
+			result = recordResult5.Mutation
+		}
 		if err != nil {
 			t.Error("expected conservative terminal response", err)
 		}
@@ -665,7 +684,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	go func() {
 		defer close(queuedDone)
 		request := budgetPut(old.root, "queued-cancel")
-		_, _ = testutil.ExecuteRecord(queuedCtx, old.client, testutil.RecordCommand(request))
+		_, _ = testutil.ExecuteRecord(queuedCtx, old.client, testutil.RecordRequest(old.store, request))
 	}()
 	budgetWait(t, "old queued plus executed write", func() bool {
 		return testmetrics.Sum(testmetrics.Scrape(t, old.process.diagnostic), "weir_store_pending_entries") == 1
@@ -689,15 +708,21 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 		return n == 0
 	})
 	request := budgetPut(replacement.root, "new-independent")
-	routedResult685, err := testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordCommand(request))
-	result = routedResult685.GetMutation()
+	recordResult6, err := testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(replacement.store, request))
+	result = nil
+	if recordResult6 != nil {
+		result = recordResult6.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replacement new mutation", result, err)
 	}
 	request = budgetPut(extra.root, "new-independent-extra")
-	var routedResult690 *pb.Result
-	routedResult690, err = testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordCommand(request))
-	result = routedResult690.GetMutation()
+	var recordResult7 *execution.Result
+	recordResult7, err = testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(extra.store, request))
+	result = nil
+	if recordResult7 != nil {
+		result = recordResult7.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("extra Local new mutation", result, err)
 	}
@@ -759,13 +784,13 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 	client := openDiscoveredClient(t, seed.address, []string{"records"})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	fixture := testutil.RecordCommand(opts.request)
+	fixture := testutil.RecordRequest("records", opts.request)
 	requests := make([]*weirclient.MutateRequest, 0, 4)
 	for range 4 {
 		request := &weirclient.MutateRequest{
-			Resource: fixture.Operation.GetMutate().Resource,
+			Resource: fixture.Operation.Mutate.Resource,
 			Action:   weirclient.MutationPut,
-			Document: fixture.Operation.GetMutate().GetPut(),
+			Document: fixture.Operation.Mutate.GetPut(),
 		}
 		requests = append(requests, request)
 	}
@@ -800,20 +825,26 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 
 // The same finite overload shape drives both real adapter profiles. Every batch
 // result is checked; errors are counted and mutations are never replayed.
-func budgetLoadCall(ctx context.Context, client pb.StoreServiceClient, request *pb.MutateRequest, mode int) bool {
+func budgetLoadCall(ctx context.Context, client pb.StoreServiceClient, fixture testutil.RecordFixture, mode int) bool {
+	request := fixture.Operation.Mutate
 	switch mode {
 	case 0:
-		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(request))
-		result := response.GetMutation()
+		response, err := testutil.ExecuteRecord(ctx, client, fixture)
+		if err != nil || response == nil {
+			return false
+		}
+		result := response.Mutation
 		return err == nil && result.GetFailure() == nil && result.GetOutcome() == pb.MutationOutcome_APPLIED
 	case 1:
 		read := &pb.ReadRequest{Resource: request.Resource}
-		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read))
-		result := response.GetRead()
+		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest(fixture.StoreName, read))
+		if err != nil || response == nil {
+			return false
+		}
+		result := response.Read
 		return err == nil && result.GetFailure() == nil
 	default:
-		fixture := testutil.RecordCommand(request)
-		batch := &pb.MutateBatchRequest{StoreName: fixture.StoreName, Requests: []*pb.MutateRequest{fixture.Operation.GetMutate(), fixture.Operation.GetMutate()}}
+		batch := &pb.MutateBatchRequest{StoreName: fixture.StoreName, Requests: []*pb.MutateRequest{fixture.Operation.Mutate, fixture.Operation.Mutate}}
 		response, err := client.Mutate(ctx, batch)
 		if err != nil || len(response.GetResults()) != len(batch.Requests) {
 			return false

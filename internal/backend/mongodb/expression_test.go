@@ -9,17 +9,17 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func expressionOperation(resource string, raw []byte) *pb.Operation {
+func expressionOperation(resource string, raw []byte) *execution.Operation {
 	doc := &pb.Document{MediaType: ExpressionMedia, Data: raw}
 	form := &pb.Transform_BackendExpression{BackendExpression: doc}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	variant := &pb.Operation_Mutate{Mutate: req}
-	op := &pb.Operation{Operation: variant}
+	op := &execution.Operation{Mutate: req}
 	return op
 }
 
@@ -63,19 +63,19 @@ func TestMongoExpressionValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := expressionBSON(t, tc.doc)
-			op := expressionOperation("weir://mongo/db/records/s:a", raw)
+			op := expressionOperation("db/records/s:a", raw)
 			p, f := prepareTestRecord(a, op)
 			if (f == nil) != tc.valid {
 				t.Fatal(f)
 			}
-			if p != nil && (p.ResultBytes != protocol.ResultOverhead || !bytes.Equal(p.Backend.(*plan).document, raw)) {
+			if p != nil && (p.ResultBytes != execution.ResultOverheadBytes || !bytes.Equal(p.Backend.(*plan).document, raw)) {
 				t.Fatal("plan/byte fidelity", p)
 			}
 		})
 	}
 	for _, path := range []string{"_id", "a..b", ".a", "a.", "a.$", "a.$[]", "a.$[x]", "a.01", strings.Repeat("a", 1025), strings.Repeat("a.", 33) + "b"} {
 		doc := bson.D{{Key: "$set", Value: bson.D{{Key: path, Value: 1}}}}
-		if f := a.prepareExpression(expressionOperation("x", expressionBSON(t, doc)).GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
+		if f := a.prepareExpression(expressionOperation("x", expressionBSON(t, doc)).Mutate.GetAtomicTransform().GetBackendExpression()); f == nil {
 			t.Fatal(path)
 		}
 	}
@@ -84,28 +84,28 @@ func TestMongoExpressionValidation(t *testing.T) {
 		nested = bson.D{{Key: "x", Value: nested}}
 	}
 	doc := bson.D{{Key: "$set", Value: nested}}
-	op := expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, doc))
+	op := expressionOperation("db/records/s:a", expressionBSON(t, doc))
 	if _, f := prepareTestRecord(a, op); f == nil {
 		t.Fatal("depth")
 	}
 	doc = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: strings.Repeat("x", protocol.MaxExpression)}}}}
-	op = expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, doc))
+	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
 	if _, f := prepareTestRecord(a, op); f == nil {
 		t.Fatal("bytes")
 	}
 	doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
-	op = expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, doc))
-	op.GetMutate().GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
+	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
+	op.Mutate.GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
 	if _, f := prepareTestRecord(a, op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("unknown profile", f)
 	}
-	op.GetMutate().GetAtomicTransform().GetBackendExpression().MediaType = ExpressionMedia
+	op.Mutate.GetAtomicTransform().GetBackendExpression().MediaType = ExpressionMedia
 	many := make(bson.D, 129)
 	for i := range many {
 		many[i] = bson.E{Key: fmt.Sprintf("field%d", i), Value: 1}
 	}
 	excessive := bson.D{{Key: "$set", Value: many}}
-	if _, f := prepareTestRecord(a, expressionOperation("weir://mongo/db/records/s:a", expressionBSON(t, excessive))); f == nil {
+	if _, f := prepareTestRecord(a, expressionOperation("db/records/s:a", expressionBSON(t, excessive))); f == nil {
 		t.Fatal("path count")
 	}
 	nodes := make(bson.A, 4096)

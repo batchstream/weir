@@ -17,6 +17,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/grpc/mem"
 )
 
@@ -210,7 +211,7 @@ func TestBatchDecodeBudgetRejectsTinyItemAmplificationBeforeAllocation(t *testin
 		t.Fatal(err)
 	}
 	codec := &responseCodec{admission: admission}
-	maximum := protocol.MaxBatchResponseBytes / protocol.ResultOverhead
+	maximum := protocol.MaxBatchResponseBytes / execution.ResultOverheadBytes
 	for _, count := range []int{513, maximum, maximum + 1} {
 		read := &pb.ReadRequest{Resource: "a/b/s:k"}
 		requests := make([]*pb.ReadRequest, count)

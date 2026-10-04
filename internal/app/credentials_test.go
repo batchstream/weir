@@ -372,7 +372,7 @@ func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	}
 	m.URI = "mongodb://user:password-secret-sentinel@unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"
 	if err := cfg.Validate(); err == nil || err.Error() != "MongoDB URI must not contain credentials" {
-		t.Fatal("URI userinfo must be rejected without legacy compatibility or credential leakage", err)
+		t.Fatal("URI userinfo must be rejected without credential leakage", err)
 	}
 	m.URI = "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=false"
 	if err := cfg.Validate(); err == nil || strings.Contains(err.Error(), "sentinel") {
@@ -434,23 +434,6 @@ func TestCredentialSourceYAMLFieldsAreStrict(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRemovedServiceFileFieldsAreUnknown(t *testing.T) {
-	for _, value := range []string{`""`, `"removed-secret-sentinel.yaml"`} {
-		input := "stores:\n  - name: remote\n    file: " + value + `
-    remote:
-      endpoints: [127.0.0.1:7448]
-      max_concurrency: 2
-routes:
-  - store: records
-    service: remote
-`
-		_, err := DecodeRouting(strings.NewReader(input))
-		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
-			t.Fatal("removed service file syntax must have no compatibility path", err)
-		}
 	}
 }
 

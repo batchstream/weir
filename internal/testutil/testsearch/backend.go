@@ -46,7 +46,7 @@ func Open(t *testing.T) *Backend {
 		Timeout:       5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	index := fmt.Sprintf("weir_m2_%d_%d", os.Getpid(), sequence.Add(1))
+	index := fmt.Sprintf("weir_search_%d_%d", os.Getpid(), sequence.Add(1))
 	b := &Backend{
 		URL:     endpoint,
 		Product: product,
@@ -58,7 +58,7 @@ func Open(t *testing.T) *Backend {
 	if status != 200 {
 		t.Fatal("wrong isolated backend", status)
 	}
-	verifyVersion(t, raw, profile, "weir-m17-"+product)
+	verifyVersion(t, raw, profile, "weir-local-"+product)
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b

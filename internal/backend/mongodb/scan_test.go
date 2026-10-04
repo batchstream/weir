@@ -16,7 +16,7 @@ func TestMongoScanFindUsesRemainingBoundedBatch(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
 	for _, size := range []uint32{1, 17, 128, 256} {
-		request := &pb.ScanRequest{Resource: "weir://mongo/db/records", PageSize: size}
+		request := &pb.ScanRequest{Resource: "db/records", PageSize: size}
 		work, failure := adapter.prepareScan(request)
 		if failure != nil {
 			t.Fatal(failure)
@@ -43,15 +43,15 @@ func TestMongoScanFindUsesRemainingBoundedBatch(t *testing.T) {
 func TestMongoScanCheckpointRequiresBoundedCapacityAndNativeIdentity(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
-	request := &pb.ScanRequest{Resource: "weir://mongo/db/records", PageSize: 1}
-	fingerprint := protocol.ScanFingerprint(request, "mongodb")
+	request := &pb.ScanRequest{Resource: "db/records", PageSize: 1}
+	fingerprint := protocol.ScanFingerprint(request, "mongo", "mongodb")
 	nested := bson.D{{Key: "ordered", Value: int32(1)}, {Key: "second", Value: int64(2)}}
 	identity := bson.D{{Key: "_id", Value: nested}}
 	last, err := bson.Marshal(identity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"valid", "missing_capacity", "zero_capacity", "excess_capacity", "wrong_capacity_type", "extra", "duplicate", "invalid_identity", "legacy"} {
+	for _, mode := range []string{"valid", "missing_capacity", "zero_capacity", "excess_capacity", "wrong_capacity_type", "extra", "duplicate", "invalid_identity", "missing_batch_size"} {
 		t.Run(mode, func(t *testing.T) {
 			checkpoint := bson.D{{Key: "last", Value: bson.Raw(last)}, {Key: "batch_size", Value: int32(3)}}
 			switch mode {
@@ -71,7 +71,7 @@ func TestMongoScanCheckpointRequiresBoundedCapacityAndNativeIdentity(t *testing.
 			case "invalid_identity":
 				invalid := bson.D{{Key: "_id", Value: bson.A{int32(1)}}}
 				checkpoint[0].Value = invalid
-			case "legacy":
+			case "missing_batch_size":
 				checkpoint = identity
 			}
 			state, err := bson.Marshal(checkpoint)
@@ -245,7 +245,7 @@ func TestMongoScanSelectorControls(t *testing.T) {
 		selector := bson.D{{Key: name, Value: true}}
 		raw, _ := bson.Marshal(selector)
 		doc := &pb.Document{MediaType: "application/bson", Data: raw}
-		req := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: doc}
+		req := &pb.ScanRequest{Resource: "db/records", Selector: doc}
 		if _, f := a.prepareScan(req); f == nil {
 			t.Fatal("allowed unsafe option", name)
 		}
@@ -253,7 +253,7 @@ func TestMongoScanSelectorControls(t *testing.T) {
 	raw := make([]byte, protocol.MaxSelector+1)
 	binary.LittleEndian.PutUint32(raw, uint32(len(raw)))
 	doc := &pb.Document{MediaType: "application/bson", Data: raw}
-	req := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: doc}
+	req := &pb.ScanRequest{Resource: "db/records", Selector: doc}
 	if _, f := a.prepareScan(req); f == nil {
 		t.Fatal("oversized selector")
 	}
@@ -272,13 +272,13 @@ func TestMongoScanRejectsUnstableIdentitySelectorsAndTokens(t *testing.T) {
 	for _, selector := range cases {
 		raw, _ := bson.Marshal(selector)
 		document := &pb.Document{MediaType: "application/bson", Data: raw}
-		request := &pb.ScanRequest{Resource: "weir://mongo/db/records", Selector: document}
+		request := &pb.ScanRequest{Resource: "db/records", Selector: document}
 		if _, failure := adapter.prepareScan(request); failure == nil {
 			t.Fatal("unstable identity selector accepted", selector)
 		}
 	}
-	request := &pb.ScanRequest{Resource: "weir://mongo/db/records"}
-	fingerprint := protocol.ScanFingerprint(request, "mongodb")
+	request := &pb.ScanRequest{Resource: "db/records"}
+	fingerprint := protocol.ScanFingerprint(request, "mongo", "mongodb")
 	identities := []bson.D{
 		{{Key: "other", Value: "id"}},
 		{{Key: "_id", Value: bson.A{int32(1)}}},

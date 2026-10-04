@@ -64,7 +64,7 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 	sources := []string{incrementProgram, incrementProgram, incrementProgram, `return weir.delete()`, `return weir.keep()`, `return weir.reject("business constraint")`, `return print("unavailable")`, incrementProgram, `return weir.delete()`}
 	plans := make([]*execution.Plan, len(resources))
 	for i, resource := range resources {
-		opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/" + resource, index: 1, program: sources[i]}
+		opts := batchOperationOptions{resource: fixture.DB + "/records/" + resource, index: 1, program: sources[i]}
 		plans[i] = prepareBatchProgram(t, adapter, opts)
 	}
 	results, _ := adapter.executePrograms(t.Context(), plans)
@@ -73,11 +73,11 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 		if i == 5 || i == 6 {
 			want = pb.MutationOutcome_NOT_APPLIED
 		}
-		if result.Index != 1 || result.GetMutation().GetOutcome() != want {
+		if result.Index != 1 || result.Mutation.GetOutcome() != want {
 			t.Fatal("caller association or isolated result changed", i, result)
 		}
 	}
-	if results[5].GetMutation().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[6].GetMutation().GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+	if results[5].Mutation.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[6].Mutation.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
 		t.Fatal("Lua failures did not remain independent", results)
 	}
 	if finds.Load() != 1 || writes.Load() != 1 || commits.Load() != 1 {
@@ -155,14 +155,14 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 			adapter := testAdapter(t, adapterOpts)
 			var plans []*execution.Plan
 			for _, id := range []string{"counter", "peer"} {
-				opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, program: incrementProgram}
+				opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}
 				plans = append(plans, prepareBatchProgram(t, adapter, opts))
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			results, _ := adapter.executePrograms(ctx, plans)
 			for _, result := range results {
-				if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+				if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Fatal("confirmed conflict was not recomputed", result)
 				}
 			}
@@ -205,7 +205,7 @@ func TestMongoLuaBatchCommitReplyLossNeverReapplies(t *testing.T) {
 			adapter := testAdapter(t, adapterOpts)
 			var plans []*execution.Plan
 			for _, id := range []string{"a", "b"} {
-				opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, program: incrementProgram}
+				opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}
 				plans = append(plans, prepareBatchProgram(t, adapter, opts))
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -216,7 +216,7 @@ func TestMongoLuaBatchCommitReplyLossNeverReapplies(t *testing.T) {
 				want = pb.MutationOutcome_UNKNOWN
 			}
 			for _, result := range results {
-				if result.GetMutation().GetOutcome() != want {
+				if result.Mutation.GetOutcome() != want {
 					t.Fatal("commit ambiguity misclassified", mode, result)
 				}
 			}
@@ -278,7 +278,7 @@ func TestMongoLuaBatchSchemaRejectionRollsBackThenIsolatesItem(t *testing.T) {
 		if id == "invalid" {
 			source = `return weir.replace(weir.set(current, "n", weir.i32("-1")))`
 		}
-		opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, program: source}
+		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: source}
 		plans = append(plans, prepareBatchProgram(t, adapter, opts))
 	}
 	results, _ := adapter.executePrograms(t.Context(), plans)
@@ -290,7 +290,7 @@ func TestMongoLuaBatchSchemaRejectionRollsBackThenIsolatesItem(t *testing.T) {
 		}
 		filter := bson.D{{Key: "_id", Value: id}}
 		raw, err := collection.FindOne(t.Context(), filter).Raw()
-		if results[i].GetMutation().GetOutcome() != want || err != nil || raw.Lookup("n").Int32() != value {
+		if results[i].Mutation.GetOutcome() != want || err != nil || raw.Lookup("n").Int32() != value {
 			t.Fatal("rollback/isolation lost a peer or replayed the preceding item", id, results[i], raw, err)
 		}
 	}
@@ -321,7 +321,7 @@ func TestMongoLuaBatchLostAbortAcknowledgementNeverRebuilds(t *testing.T) {
 		if id == "invalid" {
 			source = `return weir.replace(weir.set(current, "n", weir.i32("-1")))`
 		}
-		opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, program: source}
+		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: source}
 		plans = append(plans, prepareBatchProgram(t, adapter, opts))
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -332,7 +332,7 @@ func TestMongoLuaBatchLostAbortAcknowledgementNeverRebuilds(t *testing.T) {
 		t.Fatal("unconfirmed rollback cleanup exceeded its bound", time.Since(start))
 	}
 	for _, result := range results {
-		mutation := result.GetMutation()
+		mutation := result.Mutation
 		if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE || mutation.GetFailure().GetMessage() != "MongoDB transaction rollback unconfirmed" {
 			t.Fatal("lost rollback acknowledgement allowed transaction rebuild", mutation)
 		}
@@ -398,14 +398,14 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 	adapter := testAdapter(t, adapterOpts)
 	var plans []*execution.Plan
 	for _, id := range ids {
-		opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, program: incrementProgram}
+		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}
 		plans = append(plans, prepareBatchProgram(t, adapter, opts))
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	results, _ := adapter.executePrograms(ctx, plans)
 	for i, result := range results {
-		if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+		if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("bounded batch rejected a valid individual document", i, result)
 		}
 		filter := bson.D{{Key: "_id", Value: ids[i]}}

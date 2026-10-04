@@ -42,14 +42,10 @@ jobs:
           CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
-      - name: Static vet and isolated helper regressions
+      - name: Static vet and offline script tests
         run: |
           CGO_ENABLED=0 go vet ./...
           CGO_ENABLED=0 go vet -tags=integration ./...
-          CGO_ENABLED=1 go test -race -tags=integration -count=1 -timeout=180s ./internal/testutil/testcapacity
-          mkdir "$RUNNER_TEMP/weir-completion"
-          export WEIR_COMPLETION_TEST_BINARY="$RUNNER_TEMP/weir-completion/testcapacity.test"
-          CGO_ENABLED=0 go test -c -tags=integration -o "$WEIR_COMPLETION_TEST_BINARY" ./internal/testutil/testcapacity
           python3 -m unittest discover -v -s scripts -p '*_test.py'
           python3 -O -m unittest discover -v -s scripts -p '*_test.py'
           git diff --exit-code

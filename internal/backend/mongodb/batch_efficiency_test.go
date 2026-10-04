@@ -32,9 +32,9 @@ func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 		commands = append(commands, e.CommandName)
 	}}
 	adapter := batchMockAdapter(t, responses, monitor)
-	readOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:read", action: "read", index: 9}
+	readOptions := batchOperationOptions{resource: "db/records/s:read", action: "read", index: 9}
 	writeDocument := bson.D{{Key: "_id", Value: "write"}}
-	writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", index: 8, document: writeDocument}
+	writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", index: 8, document: writeDocument}
 	var plans []*execution.Plan
 	for _, opts := range []batchOperationOptions{writeOptions, readOptions} {
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
@@ -45,7 +45,7 @@ func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 	}
 	for range 2 {
 		results, signal := adapter.executeRecords(context.Background(), plans)
-		if signal != execution.Healthy || results[0].Index != 8 || results[0].GetMutation().Outcome != pb.MutationOutcome_APPLIED || results[1].Index != 9 || results[1].GetRead().GetDocument() == nil {
+		if signal != execution.Healthy || results[0].Index != 8 || results[0].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[1].Index != 9 || results[1].Read.GetDocument() == nil {
 			t.Fatal("mixed batch lost result correspondence or acknowledgement", results, signal)
 		}
 	}
@@ -74,7 +74,7 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			var plans []*execution.Plan
 			for i, id := range ids {
-				opts := batchOperationOptions{resource: "weir://mongo/db/records/s:" + id, action: "read", index: uint64(i + 1)}
+				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "read", index: uint64(i + 1)}
 				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
@@ -83,7 +83,7 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 			}
 			results, signal := adapter.executeRecords(context.Background(), plans)
 			for i, result := range results {
-				if result.Index != uint64(i+1) || result.GetRead().GetDocument() == nil {
+				if result.Index != uint64(i+1) || result.Read.GetDocument() == nil {
 					t.Fatal("read or duplicate-ID correspondence lost", results)
 				}
 			}
@@ -112,8 +112,8 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 	}}
 	responses := []bson.D{qualification}
 	adapter := batchMockAdapter(t, responses, monitor)
-	readOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:read", action: "read"}
-	writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
+	readOptions := batchOperationOptions{resource: "db/records/s:read", action: "read"}
+	writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
 	var plans []*execution.Plan
 	for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
@@ -123,8 +123,8 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 		plans = append(plans, work)
 	}
 	results, signal := adapter.executeRecords(context.Background(), plans)
-	mutation := results[1].GetMutation()
-	if results[0].GetRead().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED || signal != execution.Neutral {
+	mutation := results[1].Mutation
+	if results[0].Read.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED || signal != execution.Neutral {
 		t.Fatal("mixed batch bypassed qualification", results, signal)
 	}
 	want := []string{"listCollections"}
@@ -147,8 +147,8 @@ func TestMongoMixedBatchRechecksWriteCallerAfterRead(t *testing.T) {
 	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
 	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
 	adapter := batchMockAdapter(t, responses, monitor)
-	readOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:read", action: "read"}
-	writeOptions := batchOperationOptions{resource: "weir://mongo/db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
+	readOptions := batchOperationOptions{resource: "db/records/s:read", action: "read"}
+	writeOptions := batchOperationOptions{resource: "db/records/s:write", action: "put", document: bson.D{{Key: "_id", Value: "write"}}}
 	var plans []*execution.Plan
 	for _, opts := range []batchOperationOptions{readOptions, writeOptions} {
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
@@ -159,8 +159,8 @@ func TestMongoMixedBatchRechecksWriteCallerAfterRead(t *testing.T) {
 	}
 	plans[1].Context = caller
 	results, signal := adapter.executeRecords(context.Background(), plans)
-	mutation := results[1].GetMutation()
-	if results[0].GetRead().GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
+	mutation := results[1].Mutation
+	if results[0].Read.GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
 		t.Fatal("canceled write was dispatched after shared qualification", results, signal)
 	}
 	want := []string{"listCollections", "find"}

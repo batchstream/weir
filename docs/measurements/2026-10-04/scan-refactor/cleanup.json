@@ -1,9 +1,0 @@
-{
-  "controller_pid": 86965,
-  "mongodb_owned_database": "weir_test_86965_1",
-  "search_owned_index": "weir_m2_86965_1",
-  "mongodb_absent": true,
-  "search_head_status": 404,
-  "cleanup": "controller testfixture cleanup dropped its uniquely owned database/index; independently observed absence after timing",
-  "errors": []
-}

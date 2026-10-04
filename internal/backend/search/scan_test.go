@@ -84,14 +84,14 @@ func TestScanSelectorControlsAndBounds(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: Config{Store: "search"}}
 	for _, key := range []string{"pit", "search_after", "from", "size", "sort", "track_total_hits", "timeout", "terminate_after", "allow_partial_search_results", "aggregations", "aggs", "_source", "routing", "slice", "stored_fields", "rescore", "script_fields", "profile"} {
 		selector := &pb.Document{MediaType: "application/json", Data: []byte(fmt.Sprintf(`{"%s":{}}`, key))}
-		req := &pb.ScanRequest{Resource: "weir://search/records", Selector: selector}
+		req := &pb.ScanRequest{Resource: "records", Selector: selector}
 		if _, f := a.prepareScan(req); f == nil {
 			t.Fatal("allowed control", key)
 		}
 	}
 	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 34) + `{}` + strings.Repeat(`}`, 34) + `}`, `{"query":{"x":[` + strings.Repeat(`0,`, 4096) + `0]}}`, strings.Repeat(" ", protocol.MaxSelector+1) + "{}"} {
 		selector := &pb.Document{MediaType: "application/json", Data: []byte(raw)}
-		req := &pb.ScanRequest{Resource: "weir://search/records", Selector: selector}
+		req := &pb.ScanRequest{Resource: "records", Selector: selector}
 		if _, f := a.prepareScan(req); f == nil {
 			t.Fatal("accepted excessive selector")
 		}

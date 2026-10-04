@@ -101,7 +101,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, config: cfg}
 			descriptor := &pb.Document{MediaType: NativeDescriptor}
-			open := &pb.NativeOpen{Resource: "weir://mongo/db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)

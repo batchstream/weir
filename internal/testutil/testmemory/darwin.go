@@ -24,8 +24,8 @@ type Pressure struct {
 
 func Open(t *testing.T) *Pressure {
 	t.Helper()
-	if os.Getenv("WEIR_M19_NATIVE") != "1" {
-		t.Skip("requires explicit M19 native opt-in")
+	if os.Getenv("WEIR_MEMORY_DARWIN_NATIVE") != "1" {
+		t.Skip("requires explicit Darwin memory native opt-in")
 	}
 	base := Oracle(t)
 	if base > 128<<20 {
@@ -69,7 +69,7 @@ func (p *Pressure) Set(t *testing.T, percent uint64) {
 
 func Oracle(t *testing.T) uint64 {
 	t.Helper()
-	helper := os.Getenv("WEIR_M19_ORACLE")
+	helper := os.Getenv("WEIR_MEMORY_DARWIN_ORACLE")
 	if !filepath.IsAbs(helper) {
 		t.Fatal("explicit SDK oracle path required")
 	}

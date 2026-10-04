@@ -43,7 +43,7 @@ func TestSearchExpressionMergeMissingAndNoop(t *testing.T) {
 		t.Fatal(status)
 	}
 	assertOutcome(t, runSearch(t, a, p), pb.MutationOutcome_APPLIED, 0)
-	source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).GetRead().GetDocument().GetData()
+	source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).Read.GetDocument().GetData()
 	var got map[string]json.RawMessage
 	if json.Unmarshal(source, &got) != nil || string(got["n"]) != "9007199254740993" || string(got["keep"]) != `"untouched"` || string(got["array"]) != "[2]" || !strings.Contains(string(got["nested"]), `"keep":1`) || !strings.Contains(string(got["nested"]), `"change":null`) {
 		t.Fatal(string(source))
@@ -203,7 +203,7 @@ func TestSearchExpressionPipelineAndSourceQualification(t *testing.T) {
 				t.Fatal(status)
 			}
 			assertOutcome(t, runSearch(t, a, searchExpression(t, a, b.Index, `{"doc":{"expression":true}}`)), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
-			source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).GetRead().GetDocument().GetData()
+			source := runSearch(t, a, searchPlan(t, a, "read", searchResource(b.Index, "counter"))).Read.GetDocument().GetData()
 			if strings.Contains(string(source), "expression") {
 				t.Fatal("disallowed update sent")
 			}
@@ -255,7 +255,7 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				rs, sample := a.executeRecords(ctx, []*execution.Plan{p})
-				r := rs[0].GetMutation()
+				r := rs[0].Mutation
 				switch {
 				case r.Outcome == pb.MutationOutcome_APPLIED:
 					applied.Add(1)

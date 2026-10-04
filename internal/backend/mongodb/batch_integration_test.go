@@ -63,7 +63,7 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 		if operation.action == "expression" {
 			document = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
-		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + operation.id, action: operation.action, index: uint64(i + 3), document: document, program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
+		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + operation.id, action: operation.action, index: uint64(i + 3), document: document, program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
 		work, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
@@ -77,10 +77,10 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 			t.Fatal("index changed", replies)
 		}
 		if operation.action == "read" {
-			if operation.id == "read" && reply.GetRead().GetDocument() == nil || operation.id == "read-missing" && reply.GetRead().GetMissing() == nil {
+			if operation.id == "read" && reply.Read.GetDocument() == nil || operation.id == "read-missing" && reply.Read.GetMissing() == nil {
 				t.Fatal("read result changed", reply)
 			}
-		} else if reply.GetMutation().Outcome != operation.outcome || operation.outcome == pb.MutationOutcome_NOT_APPLIED && reply.GetMutation().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED {
+		} else if reply.Mutation.Outcome != operation.outcome || operation.outcome == pb.MutationOutcome_NOT_APPLIED && reply.Mutation.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED {
 			t.Fatal(operation.id, reply)
 		}
 	}
@@ -117,7 +117,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 	for i, action := range []string{"read", "put", "put", "program"} {
 		id := []string{"read-missing", "canceled-write", "peer-write", "canceled-program"}[i]
 		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(1)}}
-		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: document, program: "return weir.keep()"}
+		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: document, program: "return weir.keep()"}
 		p, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
@@ -128,7 +128,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		plans = append(plans, p)
 	}
 	replies, _ := a.executeRecords(context.Background(), plans)
-	if replies[0].GetRead().GetMissing() == nil || replies[1].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
+	if replies[0].Read.GetMissing() == nil || replies[1].Mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].Mutation.GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal(replies)
 	}
 	if finds.Load() != 1 || writes.Load() != 1 {
@@ -160,7 +160,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 		if action == "expression" {
 			doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
-		options := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: doc}
+		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: doc}
 		work, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
@@ -169,7 +169,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 	}
 	replies, _ := a.executeRecords(context.Background(), plans)
 	for _, reply := range replies {
-		if reply.GetMutation().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+		if reply.Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("lost mixed-write acknowledgement became definite", replies)
 		}
 	}
@@ -218,7 +218,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			caller, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			for i := range 2 {
-				opts := batchOperationOptions{resource: "weir://mongo/" + fixture.DB + "/records/s:same", action: "read", index: 1}
+				opts := batchOperationOptions{resource: fixture.DB + "/records/s:same", action: "read", index: 1}
 				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
@@ -242,11 +242,11 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			}
 			replies, _ := adapter.executeRecords(t.Context(), plans)
 			raw := expressionBSON(t, document)
-			if finds.Load() != 1 || len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].GetRead().GetDocument().GetData(), raw) || charges[1] != len(raw) {
+			if finds.Load() != 1 || len(replies) != 2 || replies[0].Index != 1 || replies[1].Index != 1 || !bytes.Equal(replies[1].Read.GetDocument().GetData(), raw) || charges[1] != len(raw) {
 				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies, charges)
 			}
 			if mode == "both retained" {
-				if charges[0] != len(raw) || replies[0].GetRead().GetDocument() != replies[1].GetRead().GetDocument() {
+				if charges[0] != len(raw) || replies[0].Read.GetDocument() != replies[1].Read.GetDocument() {
 					t.Fatal("same-ID responses did not share immutable data with separate charges", replies, charges)
 				}
 			} else {
@@ -254,7 +254,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 				if mode == "first canceled" {
 					code = pb.FailureCode_CANCELLED
 				}
-				if replies[0].GetRead().GetFailure().GetCode() != code || charges[0] != 0 {
+				if replies[0].Read.GetFailure().GetCode() != code || charges[0] != 0 {
 					t.Fatal("failed owner retained peer's data charge", replies, charges)
 				}
 			}

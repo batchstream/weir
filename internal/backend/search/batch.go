@@ -189,7 +189,7 @@ type recordWrite struct {
 type recordBatch struct {
 	adapter  *Adapter
 	ctx      context.Context
-	results  []*pb.Result
+	results  []*execution.Result
 	attempts []int
 	feedback execution.Feedback
 	request  bytes.Buffer
@@ -262,7 +262,7 @@ func (b *recordBatch) flush() {
 	positions := make([]int, 0, len(b.pending))
 	for _, item := range b.pending {
 		if failure := b.callerFailure(item.work); failure != nil {
-			b.results[item.position] = protocol.ResultError(item.work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			b.results[item.position] = execution.FailedResult(item.work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			b.feedback = combineFeedback(b.feedback, execution.Neutral)
 			continue
 		}
@@ -283,7 +283,7 @@ func (b *recordBatch) flush() {
 		for i, position := range positions {
 			b.results[position] = replies[i]
 			program := works[i].Backend.(*plan).program
-			mutation := replies[i].GetMutation()
+			mutation := replies[i].Mutation
 			if program == nil || mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 				continue
 			}
@@ -291,7 +291,7 @@ func (b *recordBatch) flush() {
 				b.retry = append(b.retry, position)
 			} else {
 				failure := protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt")
-				b.results[position] = protocol.ResultError(works[i].Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+				b.results[position] = execution.FailedResult(works[i].Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			}
 		}
 	}
@@ -300,14 +300,14 @@ func (b *recordBatch) flush() {
 	b.pending = b.pending[:0]
 }
 
-func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) ([]*pb.Result, execution.Feedback) {
+func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) ([]*execution.Result, execution.Feedback) {
 	if len(works) == 0 {
 		return nil, execution.Neutral
 	}
 	batch := recordBatch{
 		adapter:  a,
 		ctx:      ctx,
-		results:  make([]*pb.Result, len(works)),
+		results:  make([]*execution.Result, len(works)),
 		attempts: make([]int, len(works)),
 		feedback: execution.Healthy,
 	}
@@ -318,14 +318,14 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 	if totalBytes > batchBodyLimit {
 		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "batch exceeds execution bounds")
 		for i, work := range works {
-			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)
+			batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)
 		}
 		return batch.results, execution.Neutral
 	}
 	positions := make([]int, 0, len(works))
 	for i, work := range works {
 		if failure := batch.callerFailure(work); failure != nil {
-			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)
+			batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_STARTED, failure)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
 		}
@@ -344,7 +344,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 	for _, i := range positions {
 		work := works[i]
 		if failure := batch.callerFailure(work); failure != nil {
-			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
 		}
@@ -359,7 +359,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 			}
 		}
 		if failure := batch.callerFailure(work); failure != nil {
-			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
+			batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, failure)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
 		}
@@ -376,7 +376,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 			}
 		}
 		if denied != nil {
-			batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+			batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
 			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 		}
 	}
@@ -407,7 +407,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 					continue
 				}
 				if denied := batch.callerFailure(work); denied != nil {
-					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+					batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
 					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 					continue
 				}
@@ -425,7 +425,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 				if work.Backend.(*plan).action == "read" {
 					batch.results[i] = readResult(work, record.reply, record.failure)
 				} else if record.failure != nil {
-					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, record.failure)
+					batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, record.failure)
 				} else {
 					observed[i] = record.reply
 				}
@@ -436,7 +436,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 					continue
 				}
 				if denied := batch.callerFailure(work); denied != nil {
-					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+					batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
 					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 					continue
 				}
@@ -445,7 +445,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 				delete(observed, i)
 				if native.action == "replace" && !*current.Found {
 					denied := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
-					batch.results[i] = protocol.ResultError(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
+					batch.results[i] = execution.FailedResult(work.Operation, pb.MutationOutcome_NOT_APPLIED, denied)
 					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 					continue
 				}
@@ -467,7 +467,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 					}
 					batch.feedback = combineFeedback(batch.feedback, sample)
 					if mutation != nil {
-						batch.results[i] = protocol.ResultError(work.Operation, mutation.Outcome, mutation.Failure)
+						batch.results[i] = execution.FailedResult(work.Operation, mutation.Outcome, mutation.Failure)
 						continue
 					}
 					copy := *work

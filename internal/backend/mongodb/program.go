@@ -38,8 +38,8 @@ type programBatch struct {
 // Programs share a short snapshot transaction only when their target and typed
 // identities are distinct. Caller contexts govern evaluation and admission to W,
 // while the shared execution context governs the transaction's wire calls.
-func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.Result, execution.Feedback) {
-	results := make([]*pb.Result, len(plans))
+func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) ([]*execution.Result, execution.Feedback) {
+	results := make([]*execution.Result, len(plans))
 	signal := execution.Healthy
 	for start := 0; start < len(plans); {
 		target := plans[start].Backend.(*plan).target
@@ -56,8 +56,7 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 		batch := &programBatch{plans: plans[start:end], results: make([]*pb.MutationResult, end-start)}
 		sample := a.runPrograms(ctx, batch)
 		for i, result := range batch.results {
-			variant := &pb.Result_Mutation{Mutation: result}
-			results[start+i] = &pb.Result{Index: batch.plans[i].Operation.Index, Result: variant}
+			results[start+i] = &execution.Result{Index: batch.plans[i].Operation.Index, Mutation: result}
 		}
 		signal = batchFeedback(signal, sample)
 		start = end
@@ -71,7 +70,7 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) execution.Feedback {
 	for i, work := range batch.plans {
 		if result := unstarted(ctx, work); result != nil {
-			batch.results[i] = result.GetMutation()
+			batch.results[i] = result.Mutation
 		}
 	}
 	active := batch.active()

@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net/http"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -34,11 +34,11 @@ var memorySequence atomic.Uint64
 
 // This child is test-only. It touches at most 416 MiB, uses a fixed 45s watchdog,
 // and is additionally confined by the fixture's 512 MiB cgroup hard limit.
-func TestM14PressureHelper(t *testing.T) {
-	if os.Getenv("WEIR_M14_HELPER") != "1" {
+func TestMemoryPressureHelper(t *testing.T) {
+	if os.Getenv("WEIR_MEMORY_HELPER") != "1" {
 		t.Skip("owned memory helper only")
 	}
-	if os.Getenv("WEIR_M14_NATIVE") != "1" || memoryFile(t, "/sys/fs/cgroup/memory.max") != 512<<20 {
+	if os.Getenv("WEIR_MEMORY_NATIVE") != "1" || memoryFile(t, "/sys/fs/cgroup/memory.max") != 512<<20 {
 		t.Fatal("helper requires owned 512 MiB cgroup")
 	}
 	watchdog := time.AfterFunc(45*time.Second, func() { os.Exit(2) })
@@ -97,8 +97,8 @@ func startMemoryPressure(t *testing.T) *memoryPressure {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	t.Cleanup(cancel)
-	command := exec.CommandContext(ctx, binary, "-test.run=^TestM14PressureHelper$")
-	command.Env = append(os.Environ(), "WEIR_M14_HELPER=1")
+	command := exec.CommandContext(ctx, binary, "-test.run=^TestMemoryPressureHelper$")
+	command.Env = append(os.Environ(), "WEIR_MEMORY_HELPER=1")
 	input, err := command.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +235,7 @@ func memoryState(t *testing.T, p *process, label string, latched bool) {
 }
 
 func TestLinuxMemoryCLI(t *testing.T) {
-	if os.Getenv("WEIR_M14_NATIVE") != "1" {
+	if os.Getenv("WEIR_MEMORY_NATIVE") != "1" {
 		t.Skip("requires owned scripts/test-memory-linux.py fixture")
 	}
 	if memoryFile(t, "/sys/fs/cgroup/memory.max") != 512<<20 {
@@ -243,8 +243,8 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	}
 	t.Logf("native CLI suite Go=%s OS=%s arch=%s runner_PID=%d", runtime.Version(), runtime.GOOS, runtime.GOARCH, os.Getpid())
 	// The script supplies its owned private-network DB or explicit Darwin loopback fixture.
-	address := os.Getenv("WEIR_M14_MONGO_ADDR")
-	if address != "m14mongo:27017" && !strings.HasPrefix(address, "host.docker.internal:") {
+	address := os.Getenv("WEIR_MEMORY_MONGO_ADDR")
+	if address != "memory-mongo:27017" && !strings.HasPrefix(address, "host.docker.internal:") {
 		t.Fatal("requires owned fixture address")
 	}
 	uri := "mongodb://" + address + "/?directConnection=true&serverMonitoringMode=poll"
@@ -255,7 +255,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-	db := fmt.Sprintf("m14_%d_%d", os.Getpid(), memorySequence.Add(1))
+	db := fmt.Sprintf("memory_%d_%d", os.Getpid(), memorySequence.Add(1))
 	if err := admin.Database(db).CreateCollection(ctx, "records"); err != nil {
 		t.Fatal(err)
 	}
@@ -288,16 +288,19 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	cfg.Basic.Memory = 2 << 30
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
-	root := "weir://records/" + db + "/records"
+	root := db + "/records"
 	request := budgetPut(root, "before")
+	recordFixture := testutil.RecordRequest("records", request)
 	for mode := 0; mode < 3; mode++ {
-		if !budgetLoadCall(ctx, client, request, mode) {
+		success := budgetLoadCall(ctx, client, recordFixture, mode)
+		if !success {
 			t.Fatal("pre-pressure Read/Mutate/Bulk", mode)
 		}
 	}
 	front := startProcess(t, "/fixture/weir", cfg)
 	frontClient := endpointProcessClient(t, front.address)
-	if !budgetLoadCall(ctx, frontClient, request, 1) {
+	success := budgetLoadCall(ctx, frontClient, recordFixture, 1)
+	if !success {
 		t.Fatal("second executor before pressure")
 	}
 	helper := startMemoryPressure(t)
@@ -312,8 +315,8 @@ func TestLinuxMemoryCLI(t *testing.T) {
 		}
 	}()
 	admitted := budgetPut(root, "admitted")
-	fixtureRequest := testutil.RecordCommand(admitted)
-	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.GetMutate()}}
+	fixtureRequest := testutil.RecordRequest("records", admitted)
+	batch := &pb.MutateBatchRequest{StoreName: "records", Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
 	responses := make(chan *pb.MutateBatchResponse, 1)
 	callErrors := make(chan error, 1)
 	go func() {
@@ -329,14 +332,14 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	memoryState(t, p, "high", true)
 	memoryState(t, front, "high-second", true)
 	read := &pb.ReadRequest{Resource: request.Resource}
-	if _, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(read)); status.Code(err) != codes.ResourceExhausted {
+	if _, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("Read not rejected", err)
 	}
 	refused := budgetPut(root, "refused")
-	if result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordCommand(refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
+	if result, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", refused)); status.Code(err) != codes.ResourceExhausted || result != nil {
 		t.Fatal("Mutate not safely rejected", result, err)
 	}
-	if _, err := testutil.ExecuteRecord(ctx, frontClient, testutil.RecordCommand(read)); status.Code(err) != codes.ResourceExhausted {
+	if _, err := testutil.ExecuteRecord(ctx, frontClient, testutil.RecordRequest("records", read)); status.Code(err) != codes.ResourceExhausted {
 		t.Fatal("second executor admission", err)
 	}
 	// Refusing fresh RPCs must not discard a response from an admitted RPC.
@@ -358,12 +361,15 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	memoryState(t, p, "recovered", false)
 	memoryState(t, front, "recovered-second", false)
 	fresh := budgetPut(root, "after")
+	freshFixture := testutil.RecordRequest("records", fresh)
 	for mode := 0; mode < 3; mode++ {
-		if !budgetLoadCall(ctx, client, fresh, mode) {
+		success := budgetLoadCall(ctx, client, freshFixture, mode)
+		if !success {
 			t.Fatal("fresh call failed to recover", mode)
 		}
 	}
-	if !budgetLoadCall(ctx, frontClient, fresh, 1) {
+	success = budgetLoadCall(ctx, frontClient, freshFixture, 1)
+	if !success {
 		t.Fatal("second executor recovery")
 	}
 	filter := bson.D{{Key: "_id", Value: "refused"}}

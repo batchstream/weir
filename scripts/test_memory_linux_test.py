@@ -69,8 +69,8 @@ class CleanupTests(unittest.TestCase):
                 if "--format" not in args:
                     labels = {"weir.owner": owner}
                     config = dict(Labels=labels)
-                    legacy = dict(Id=name, Config=config, Labels=labels, State=state)
-                    meta = [legacy]
+                    minimal = dict(Id=name, Config=config, Labels=labels, State=state)
+                    meta = [minimal]
                 output = json.dumps(meta)
         elif args[:2] == ["docker", "start"]:
             if self.failure in ("mismatch", "wait", "marker", "absent") or self.failure in ("logs", "inspect") and args[-1].endswith("cli"):
@@ -91,7 +91,7 @@ class CleanupTests(unittest.TestCase):
         candidate = MagicMock()
         candidate.__enter__.return_value.getsockname.return_value = ("127.0.0.1", 12345)
         connection = MagicMock()
-        env = dict(WEIR_M14_INTEGRATION="1", WEIR_M14_HOST_MONGO="1")
+        env = dict(WEIR_MEMORY_INTEGRATION="1", WEIR_MEMORY_HOST_MONGO="1")
         with patch.dict(os.environ, env), patch.object(self.fixture.sys, "platform", "darwin"), \
              patch.object(subprocess, "run", side_effect=self.command), \
              patch.object(subprocess, "Popen", return_value=self.process), \

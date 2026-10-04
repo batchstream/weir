@@ -6,10 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -25,6 +25,7 @@ import (
 )
 
 type searchBudgetExecutor struct {
+	store       string
 	process     *process
 	client      pb.StoreServiceClient
 	proxy       *searchBudgetProxy
@@ -68,10 +69,11 @@ func startSearchBudgetExecutor(t *testing.T, opts searchBudgetStart) *searchBudg
 	}
 	p := startProcess(t, opts.binary, cfg)
 	e := &searchBudgetExecutor{
+		store:       "records",
 		process:     p,
 		client:      endpointProcessClient(t, p.address),
 		proxy:       proxy,
-		root:        "weir://records/" + b.Index,
+		root:        b.Index,
 		concurrency: opts.concurrency,
 		locals:      len(cfg.Routing.Stores),
 	}
@@ -100,8 +102,11 @@ func searchBudgetRead(t *testing.T, e *searchBudgetExecutor) {
 	defer cancel()
 	request := &pb.ReadRequest{Resource: e.root + "/s:seed"}
 	for attempts := 1; ; attempts++ {
-		routedResult98, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordCommand(request))
-		result := routedResult98.GetRead()
+		recordResult, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
+		var result *pb.ReadResult
+		if recordResult != nil {
+			result = recordResult.Read
+		}
 		if err == nil && result.GetFailure() == nil {
 			if attempts > 1 {
 				t.Logf("fresh independent read probes recovered PID=%d calls=%d", e.process.command.Process.Pid, attempts)
@@ -118,8 +123,8 @@ func searchBudgetRead(t *testing.T, e *searchBudgetExecutor) {
 }
 
 func TestSearchSharedProcessBudget(t *testing.T) {
-	if os.Getenv("WEIR_M12_INTEGRATION") != "search" {
-		t.Skip("requires WEIR_M12_INTEGRATION=search")
+	if os.Getenv("WEIR_SHARED_BUDGET_INTEGRATION") != "search" {
+		t.Skip("requires WEIR_SHARED_BUDGET_INTEGRATION=search")
 	}
 	f := testsearch.OpenSecure(t)
 	binary := buildEndpointProcess(t)
@@ -142,8 +147,11 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 			workers.Go(func() {
 				for ctx.Err() == nil {
 					request := &pb.ReadRequest{Resource: e.root + "/s:warm"}
-					routedResult139, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordCommand(request))
-					result := routedResult139.GetRead()
+					recordResult2, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
+					var result *pb.ReadResult
+					if recordResult2 != nil {
+						result = recordResult2.Read
+					}
 					if err == nil && result.GetFailure() == nil {
 						reads.Add(1)
 					}
@@ -205,10 +213,10 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	peers[2].proxy.reject.Store(true)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
 	request := &pb.ReadRequest{Resource: peers[2].root + "/s:seed"}
-	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordCommand(request))
+	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordRequest(peers[2].store, request))
 	stop()
 	peers[2].proxy.reject.Store(false)
-	if faultError != nil || faultResult.GetRead().GetFailure() == nil {
+	if faultError != nil || faultResult.Read.GetFailure() == nil {
 		t.Fatal("Search congestion lost its read failure", faultError, faultResult)
 	}
 	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
@@ -274,7 +282,7 @@ func searchBudgetOverload(t *testing.T, peers []*searchBudgetExecutor, o *budget
 			workers.Go(func() {
 				for n := 0; ctx.Err() == nil; n++ {
 					request := searchBudgetPut(e.root, fmt.Sprintf("overload%d-%d", worker, n))
-					success := budgetLoadCall(ctx, e.client, request, worker%3)
+					success := budgetLoadCall(ctx, e.client, testutil.RecordRequest(e.store, request), worker%3)
 					if !success {
 						rejected.Add(1)
 					} else {
@@ -323,8 +331,11 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 			request := searchBudgetPut(e.root, "race-create")
 			doc := request.GetPut()
 			request.Action = &pb.MutateRequest_Create{Create: doc}
-			routedResult311, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordCommand(request))
-			result := routedResult311.GetMutation()
+			recordResult3, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
+			var result *pb.MutationResult
+			if recordResult3 != nil {
+				result = recordResult3.Mutation
+			}
 			if err != nil {
 				t.Error(err)
 				return
@@ -358,8 +369,8 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 		requests := make([]*pb.MutateRequest, 0, 4)
 		for i := range 4 {
 			request := searchBudgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			fixture := testutil.RecordCommand(request)
-			requests = append(requests, fixture.Operation.GetMutate())
+			fixture := testutil.RecordRequest(e.store, request)
+			requests = append(requests, fixture.Operation.Mutate)
 		}
 		batch := &pb.MutateBatchRequest{StoreName: "records", Requests: requests}
 		reply, err := e.client.Mutate(ctx, batch)
@@ -387,8 +398,8 @@ func searchBudgetMixed(t *testing.T, peers []*searchBudgetExecutor, f *testsearc
 	workers.Go(func() {
 		request := &pb.ScanRequest{Resource: peers[1].root}
 		scanVariant := &pb.Command_Scan{Scan: request}
-		scanCall := &pb.Command{Version: 1, Operation: scanVariant}
-		scan, err := testutil.OneEvents(ctx, peers[1].client, scanCall)
+		scanCall := &pb.Command{Operation: scanVariant}
+		scan, err := testutil.ExecuteEvents(ctx, peers[1].client, peers[1].store, scanCall)
 		if err != nil {
 			t.Error(err)
 			return
@@ -437,8 +448,8 @@ func searchBudgetNative(t *testing.T, e *searchBudgetExecutor) {
 	opening := &pb.NativeOpen{Resource: e.root, Descriptor_: document}
 	nativeCall := &pb.NativeRequest{Open: opening, Body: nil}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
-	call := &pb.Command{Version: 1, Operation: nativeVariant}
-	stream, err := testutil.OneEvents(ctx, e.client, call)
+	call := &pb.Command{Operation: nativeVariant}
+	stream, err := testutil.ExecuteEvents(ctx, e.client, e.store, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,6 +492,7 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 			process: e.process,
 			client:  e.client,
 			root:    e.root,
+			store:   e.store,
 			locals:  e.locals,
 			limit:   e.concurrency + 1,
 		}
@@ -489,7 +501,8 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	extra := budgetReadTarget{
 		process: replacement.process,
 		client:  replacement.client,
-		root:    strings.Replace(replacement.root, "weir://records/", "weir://extra/", 1),
+		root:    replacement.root,
+		store:   "extra",
 		locals:  2,
 		limit:   2,
 	}
@@ -497,7 +510,7 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	budgetOverlap(t, targets, opts.observation)
 	budgetReplacementReads(t, targets[3:])
 	extraExecutor := *replacement
-	extraExecutor.root = extra.root
+	extraExecutor.store = extra.store
 	nativeGate := make(chan struct{})
 	opts.observation.hold(nativeGate, 0)
 	var native sync.WaitGroup
@@ -515,8 +528,11 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	response := make(chan *pb.MutationResult, 1)
 	go func() {
 		request := searchBudgetPut(old.root, "lost-reply")
-		routedResult528, err := testutil.ExecuteRecord(ctx, old.client, testutil.RecordCommand(request))
-		result := routedResult528.GetMutation()
+		recordResult4, err := testutil.ExecuteRecord(ctx, old.client, testutil.RecordRequest(old.store, request))
+		var result *pb.MutationResult
+		if recordResult4 != nil {
+			result = recordResult4.Mutation
+		}
 		if err != nil {
 			t.Error(err)
 		}
@@ -528,7 +544,7 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 	go func() {
 		defer close(queuedDone)
 		request := searchBudgetPut(old.root, "queued-cancel")
-		_, _ = testutil.ExecuteRecord(queuedCtx, old.client, testutil.RecordCommand(request))
+		_, _ = testutil.ExecuteRecord(queuedCtx, old.client, testutil.RecordRequest(old.store, request))
 	}()
 	budgetWait(t, "Search old queued write", func() bool {
 		return testmetrics.Sum(testmetrics.Scrape(t, old.process.diagnostic), "weir_store_pending_entries") == 1
@@ -552,15 +568,21 @@ func searchBudgetReplacement(t *testing.T, peers []*searchBudgetExecutor, opts s
 		return n == 0
 	})
 	request := searchBudgetPut(replacement.root, "new-independent")
-	routedResult564, err := testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordCommand(request))
-	result = routedResult564.GetMutation()
+	recordResult5, err := testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(replacement.store, request))
+	result = nil
+	if recordResult5 != nil {
+		result = recordResult5.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
 	request = searchBudgetPut(extra.root, "new-independent-extra")
-	var routedResult569 *pb.Result
-	routedResult569, err = testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordCommand(request))
-	result = routedResult569.GetMutation()
+	var recordResult6 *execution.Result
+	recordResult6, err = testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(extra.store, request))
+	result = nil
+	if recordResult6 != nil {
+		result = recordResult6.Mutation
+	}
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("extra Local mutation", result, err)
 	}

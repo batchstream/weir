@@ -15,7 +15,7 @@ import (
 )
 
 func TestSecureMongoFixture(t *testing.T) {
-	if os.Getenv("WEIR_M10_INTEGRATION") != "1" {
+	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
 		t.Skip("secure MongoDB fixture is explicit opt-in")
 	}
 	fixture := OpenSecure(t)

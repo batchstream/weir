@@ -7,16 +7,16 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 )
 
-func expressionOperation(resource, raw string) *pb.Operation {
+func expressionOperation(resource, raw string) *execution.Operation {
 	doc := &pb.Document{MediaType: ExpressionMedia, Data: []byte(raw)}
 	form := &pb.Transform_BackendExpression{BackendExpression: doc}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	variant := &pb.Operation_Mutate{Mutate: req}
-	op := &pb.Operation{Operation: variant}
+	op := &execution.Operation{Mutate: req}
 	return op
 }
 
@@ -25,7 +25,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
 	allowed := []string{`{"doc":{}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
 	for _, raw := range allowed {
-		p, f := prepareTestRecord(a, expressionOperation("weir://search/records/s:a", raw))
+		p, f := prepareTestRecord(a, expressionOperation("records/s:a", raw))
 		if f != nil || string(p.Backend.(*plan).source) != raw {
 			t.Fatal(p, f)
 		}
@@ -35,12 +35,12 @@ func TestSearchExpressionValidation(t *testing.T) {
 		denied = append(denied, fmt.Sprintf(`{"doc":{},%q:{}}`, option))
 	}
 	for _, raw := range denied {
-		if _, f := prepareTestRecord(a, expressionOperation("weir://search/records/s:a", raw)); f == nil {
+		if _, f := prepareTestRecord(a, expressionOperation("records/s:a", raw)); f == nil {
 			t.Fatal("accepted", raw)
 		}
 	}
-	op := expressionOperation("weir://search/records/s:a", `{"doc":{}}`)
-	op.GetMutate().GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
+	op := expressionOperation("records/s:a", `{"doc":{}}`)
+	op.Mutate.GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
 	if _, f := prepareTestRecord(a, op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal(f)
 	}

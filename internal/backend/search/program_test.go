@@ -73,9 +73,8 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	form := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:item", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	operation := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
+	operation := &execution.Operation{Mutate: mutation}
 	work, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
@@ -84,7 +83,7 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("unexpected transform result: %#v", results)
 	}
-	if result := results[0].GetMutation(); result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
+	if result := results[0].Mutation; result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 		t.Fatalf("unexpected transform result: outcome=%s failure=%+v gets=%d puts=%d", result.GetOutcome(), result.GetFailure(), gets.Load(), puts.Load())
 	}
 	if gets.Load() != 2 || puts.Load() != 2 {
@@ -97,9 +96,8 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 	form := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	mutation := &pb.MutateRequest{Resource: "weir://search/records/s:item", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	operation := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
+	operation := &execution.Operation{Mutate: mutation}
 	for name, pipeline := range map[string]string{"default": "index.default_pipeline", "final": "index.final_pipeline"} {
 		t.Run(name, func(t *testing.T) {
 			var documentReads atomic.Int32
@@ -125,7 +123,7 @@ func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
 				t.Fatal(failure)
 			}
 			results, _ := a.executeRecords(context.Background(), []*execution.Plan{work})
-			if len(results) != 1 || results[0].GetMutation().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
+			if len(results) != 1 || results[0].Mutation.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatalf("pipeline was not rejected: %#v", results)
 			}
 			if documentReads.Load() != 0 {

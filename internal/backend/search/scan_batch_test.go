@@ -80,7 +80,7 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 		_, _ = w.Write(scanBatchReply(rows))
 	})
 	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "weir://search/records", PageSize: 250}
+	request := &pb.ScanRequest{Resource: "records", PageSize: 250}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil || work.ResultBytes != execution.ScanResultBytes || work.WorkingBytes != scanWorkingBytes {
 		t.Fatal("Scan reservation", failure, work)
@@ -200,7 +200,7 @@ func TestScanDownsizesExcessiveResponsesWithoutAdvancing(t *testing.T) {
 		_, _ = w.Write(scanBatchReply(rows))
 	})
 	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "weir://search/records", PageSize: 8}
+	request := &pb.ScanRequest{Resource: "records", PageSize: 8}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -231,7 +231,7 @@ func TestScanSingleExcessiveResponseFailsWithoutReplay(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "weir://search/records", PageSize: 1}
+	request := &pb.ScanRequest{Resource: "records", PageSize: 1}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -259,7 +259,7 @@ func TestScanDownsizingRetainsOriginalDeadline(t *testing.T) {
 		}
 	})
 	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "weir://search/records", PageSize: 128}
+	request := &pb.ScanRequest{Resource: "records", PageSize: 128}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -286,7 +286,7 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 		_, _ = w.Write(scanBatchReply(rows))
 	})
 	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "weir://search/records"}
+	request := &pb.ScanRequest{Resource: "records"}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -310,9 +310,9 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 
 func TestScanCheckpointBatchSizeBounds(t *testing.T) {
 	adapter := &Adapter{dialect: ElasticsearchProduct, config: Config{Store: "search"}}
-	for _, batchSize := range []int{-1, 1, 128, 129} {
-		request := &pb.ScanRequest{Resource: "weir://search/records"}
-		fingerprint := protocol.ScanFingerprint(request, "search:"+adapter.dialect)
+	for _, batchSize := range []int{-1, 0, 1, 128, 129} {
+		request := &pb.ScanRequest{Resource: "records"}
+		fingerprint := protocol.ScanFingerprint(request, "search", "search:"+adapter.dialect)
 		checkpoint := scanCheckpoint{PIT: "previous", After: 7, BatchSize: batchSize}
 		state, _ := json.Marshal(checkpoint)
 		token, err := protocol.EncodeScanToken("search:"+adapter.dialect, fingerprint, state)
@@ -338,7 +338,7 @@ func TestScanPublicationFailureEndsWithInternalFailure(t *testing.T) {
 		_, _ = w.Write(scanBatchReply(rows))
 	})
 	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "weir://search/records"}
+	request := &pb.ScanRequest{Resource: "records"}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)

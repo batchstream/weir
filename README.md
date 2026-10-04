@@ -15,14 +15,8 @@ mutations within one request execute in input order. Lua runs inside the
 single Weir process. Unconfirmed writes remain indeterminate after transport
 failure and are never automatically replayed.
 
-This is a breaking routing/configuration refactor. Configuration declares local
-`stores` and peer discovery; there are no remote services, static remote route
-mappings, forwarding budgets or business relays. URI affinity is not implemented.
-
 See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
-and [payload contracts](docs/route-payloads.md). See [current verification](docs/discovery-validation.md)
-for direct discovery evidence. Historical load reports describe
-the protocol and commit tested at that time.
+and [payload contracts](docs/payloads.md) for the current contracts.
 
 ## Build and run
 
@@ -58,7 +52,7 @@ transport:
   max_connections: 16
   max_sessions: 4
   timeouts:
-    route: "15m"
+    request: "15m"
     stall: "30s"
 ```
 
@@ -153,7 +147,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.4.2`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.5.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -184,14 +178,14 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.4.2/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.4.2/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.4.2/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.5.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.5.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.5.0/examples/scan) examples
 initialize through a seed. Read and Mutate accept batches for one Store, each with
 one unary RPC and results in input order. Resources are canonical relative paths.
 There is no item-count limit in the public API; the complete protobuf request and
 response must each fit 32 MiB. The SDK also provides ReadOne, Create, Put, Replace,
-Delete, AtomicTransform, Scan and Native methods. It pins public protocol v0.2.1.
+Delete, AtomicTransform, Scan and Native methods. It pins public protocol v0.3.0.
 Advanced fixed-owner callers can use Dial and package-level business helpers.
 
 Batch requests are fully validated before backend work. Individual business
@@ -249,9 +243,7 @@ or pass `go test -p=1`: fault tests change the instance's global `failCommand`
 failpoint, so concurrent packages can overwrite each other's faults and cleanup.
 Matched direct/Weir benchmarks and current blackbox integration live in the
 independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
-The locked first-reference `scripts/test-capacity.py` and historical Kubernetes
-calibration require their original source/artifact receipts; they do not qualify
-this refactor. Build reproducible archives from a clean commit with
+Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
 
 ## CLI

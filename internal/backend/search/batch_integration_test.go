@@ -69,9 +69,8 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	form := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	mutation := &pb.MutateRequest{Resource: "weir://search/" + backend.Index + "/s:program", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	operation := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: backend.Index + "/s:program", Action: action}
+	operation := &execution.Operation{Mutate: mutation}
 	programWork, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)
@@ -86,7 +85,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 		if id == "noop" {
 			body = `{"doc":{}}`
 		}
-		op := expressionOperation("weir://search/"+backend.Index+"/s:"+id, body)
+		op := expressionOperation(backend.Index+"/s:"+id, body)
 		work, failure := prepareTestRecord(a, op)
 		if failure != nil {
 			t.Fatal(failure)
@@ -100,7 +99,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	if inspections.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) || feedback != execution.Neutral {
 		t.Fatal("aggregate backend call counts", inspections.Load(), reads.Load(), writes.Load(), len(results), feedback)
 	}
-	if results[0].GetRead().GetDocument() == nil || results[1].GetRead().GetMissing() == nil {
+	if results[0].Read.GetDocument() == nil || results[1].Read.GetMissing() == nil {
 		t.Fatal("batched read evidence", results[:2])
 	}
 	for i, result := range results {
@@ -181,9 +180,8 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	form := &pb.Transform_Program{Program: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
-	mutation := &pb.MutateRequest{Resource: "weir://search/" + backend.Index + "/s:program", Action: action}
-	variant := &pb.Operation_Mutate{Mutate: mutation}
-	operation := &pb.Operation{Operation: variant}
+	mutation := &pb.MutateRequest{Resource: backend.Index + "/s:program", Action: action}
+	operation := &execution.Operation{Mutate: mutation}
 	programWork, failure := prepareTestRecord(a, operation)
 	if failure != nil {
 		t.Fatal(failure)

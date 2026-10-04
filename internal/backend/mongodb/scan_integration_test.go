@@ -90,7 +90,7 @@ func TestMongoScanLearnsPrefixCapacityAcrossContinuation(t *testing.T) {
 	}
 	options := adapterTestOptions{fixture: backend, monitor: monitor}
 	adapter := testAdapter(t, options)
-	request := &pb.ScanRequest{Resource: "weir://mongo/" + backend.DB + "/records", PageSize: 16}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 16}
 	first, firstEnd := mongoFinitePage(t, adapter, request)
 	if firstEnd == nil || firstEnd.Failure != nil || firstEnd.Exhausted || len(first) != 16 || len(firstEnd.NextContinuationToken) == 0 {
 		t.Fatal("first learned Scan page failed", firstEnd, len(first))
@@ -150,7 +150,7 @@ func TestMongoScanBatchesHundredsOfRecordsAcrossPages(t *testing.T) {
 	}}
 	options := adapterTestOptions{fixture: backend, monitor: monitor}
 	adapter := testAdapter(t, options)
-	request := &pb.ScanRequest{Resource: "weir://mongo/" + backend.DB + "/records", PageSize: 256}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 256}
 	seen := 0
 	for pages := 0; ; pages++ {
 		if pages > 3 {
@@ -211,7 +211,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer adapter.Close()
-	request := &pb.ScanRequest{Resource: "weir://mongo/" + backend.DB + "/records", PageSize: 256}
+	request := &pb.ScanRequest{Resource: backend.DB + "/records", PageSize: 256}
 	work, failure := adapter.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -257,7 +257,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 
 func scanWork(t *testing.T, a *Adapter, database string) *execution.Plan {
 	t.Helper()
-	req := &pb.ScanRequest{Resource: "weir://mongo/" + database + "/records"}
+	req := &pb.ScanRequest{Resource: database + "/records"}
 	p, f := a.prepareScan(req)
 	if f != nil {
 		t.Fatal(f)

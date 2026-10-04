@@ -153,7 +153,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				scans.Wait()
 			}()
 			for _, index := range []string{"left", "right"} {
-				request := &pb.ScanRequest{Resource: "weir://search/" + index}
+				request := &pb.ScanRequest{Resource: index}
 				work, failure := a.prepareScan(request)
 				if failure != nil {
 					t.Fatal(failure)

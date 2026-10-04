@@ -23,8 +23,7 @@ func ValidateConfig(cfg Config) error {
 	if cfg.MaxReadSize != 0 && (cfg.MaxReadSize < 1024 || cfg.MaxReadSize > protocol.MaxDocument) {
 		return errors.New("MongoDB maximum read size must be between 1 KiB and 2 MiB")
 	}
-	name, segments, err := protocol.ParseResource("weir://" + cfg.Store)
-	if err != nil || name != cfg.Store || len(segments) != 0 {
+	if !protocol.ValidStoreName(cfg.Store) {
 		return errors.New("invalid MongoDB Store")
 	}
 	if (cfg.Username == "") != (cfg.Password == "") ||

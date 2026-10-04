@@ -12,22 +12,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// Reuses the owned M14 fixture, but observes the exact archive without starting
+// Reuses the owned memory fixture, but observes the exact archive without starting
 // its 416MiB cgroup pressure helper. The owned cgroup remains limited to 512MiB.
 func TestLinuxMemoryArtifactObservation(t *testing.T) {
-	if os.Getenv("WEIR_M14_NATIVE") != "1" {
+	if os.Getenv("WEIR_MEMORY_NATIVE") != "1" {
 		t.Skip("owned native Linux fixture required")
 	}
-	address := os.Getenv("WEIR_M14_MONGO_ADDR")
+	address := os.Getenv("WEIR_MEMORY_MONGO_ADDR")
 	if !strings.HasPrefix(address, "host.docker.internal:") {
 		t.Fatal("explicit mixed Darwin backend required")
 	}
-	source := os.Getenv("WEIR_M19_SOURCE")
+	source := os.Getenv("WEIR_MEMORY_DARWIN_SOURCE")
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, "/fixture/weir", "version").Output()
@@ -47,7 +48,7 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := fmt.Sprintf("m19_%d", os.Getpid())
+	db := fmt.Sprintf("memory_artifact_%d", os.Getpid())
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stop()
@@ -65,9 +66,11 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 	cfg.Basic.Memory = 2 << 30
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
-	request := budgetPut("weir://records/"+db+"/records", "observed")
+	request := budgetPut(db+"/records", "observed")
+	fixture := testutil.RecordRequest("records", request)
 	for mode := 0; mode < 3; mode++ {
-		if !budgetLoadCall(ctx, client, request, mode) {
+		success := budgetLoadCall(ctx, client, fixture, mode)
+		if !success {
 			t.Fatal("exact Linux app Read/Mutate/Bulk", mode)
 		}
 	}

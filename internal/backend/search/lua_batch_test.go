@@ -68,7 +68,7 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 	}
 	works := make([]*execution.Plan, 0, len(ids))
 	for i, id := range ids {
-		work := batchTestPlan(t, adapter, "program", "weir://search/records/s:"+id)
+		work := batchTestPlan(t, adapter, "program", "records/s:"+id)
 		work.Backend.(*plan).program.Source = sources[i]
 		// Independent RPCs all begin at ordinal 1; ownership is by plan pointer.
 		work.Operation.Index = 1
@@ -77,7 +77,7 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 		}
 		works = append(works, work)
 	}
-	results := make(map[*execution.Plan]*pb.Result)
+	results := make(map[*execution.Plan]*execution.Result)
 	emit := func(work *execution.Plan, output *execution.Output) error {
 		results[work] = output.Result
 		return nil
@@ -88,7 +88,7 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 	}
 	for i, work := range works {
 		result := results[work]
-		mutation := result.GetMutation()
+		mutation := result.Mutation
 		if result.Index != 1 || work.Backend.(*plan).action != "program" || work.Backend.(*plan).source != nil {
 			t.Fatal("original plan or RPC ordinal changed", result)
 		}
@@ -144,16 +144,16 @@ func TestLuaBatchCallerCancellationAndDeadlineKeepPeers(t *testing.T) {
 			defer server.Close()
 			config := Config{Store: "search", URL: server.URL}
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
-			cancelled := batchTestPlan(t, adapter, "program", "weir://search/records/s:cancelled")
+			cancelled := batchTestPlan(t, adapter, "program", "records/s:cancelled")
 			cancelled.Context = caller
-			peer := batchTestPlan(t, adapter, "program", "weir://search/records/s:peer")
+			peer := batchTestPlan(t, adapter, "program", "records/s:peer")
 			works := []*execution.Plan{cancelled, peer}
 			results, _ := adapter.executeRecords(t.Context(), works)
 			code := pb.FailureCode_CANCELLED
 			if mode == "deadline" {
 				code = pb.FailureCode_DEADLINE_EXCEEDED
 			}
-			if reads.Load() != 1 || writes.Load() != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutation().GetFailure().GetCode() != code || results[1].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED {
+			if reads.Load() != 1 || writes.Load() != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].Mutation.GetFailure().GetCode() != code || results[1].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal("per-caller lifetime or peer isolation", results, reads.Load(), writes.Load())
 			}
 		})
@@ -211,7 +211,7 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
 	works := make([]*execution.Plan, 0, records)
 	for i := range records {
-		work := batchTestPlan(t, adapter, "program", fmt.Sprintf("weir://search/records/s:%d", i))
+		work := batchTestPlan(t, adapter, "program", fmt.Sprintf("records/s:%d", i))
 		works = append(works, work)
 	}
 	results, _ := adapter.executeRecords(t.Context(), works)
@@ -219,7 +219,7 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 		t.Fatal("large document pre-read escaped scratch bounds", reads.Load(), maxReadItems.Load(), writes.Load())
 	}
 	for _, result := range results {
-		if result.GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutation().GetFailure() != nil {
+		if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || result.Mutation.GetFailure() != nil {
 			t.Fatal("legal large source failed to transform", result)
 		}
 	}
@@ -250,12 +250,12 @@ func TestLuaBatchUsesAbsoluteBackendDeadlineBeyondFiveSeconds(t *testing.T) {
 	defer server.Close()
 	config := Config{Store: "search", URL: server.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
-	work := batchTestPlan(t, adapter, "program", "weir://search/records/s:program")
+	work := batchTestPlan(t, adapter, "program", "records/s:program")
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	works := []*execution.Plan{work}
 	results, _ := adapter.executeRecords(ctx, works)
-	if reads.Load() != 1 || writes.Load() != 1 || results[0].GetMutation().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutation().GetFailure() != nil {
+	if reads.Load() != 1 || writes.Load() != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || results[0].Mutation.GetFailure() != nil {
 		t.Fatal("hidden Lua RMW lifetime overrode legal backend deadline", results, reads.Load(), writes.Load())
 	}
 }

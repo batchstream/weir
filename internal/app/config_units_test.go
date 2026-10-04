@@ -164,7 +164,7 @@ memory: 1GiB
 transport:
   max_sessions: 1
   timeouts:
-    route: 1.5s
+    request: 1.5s
 `
 	basic, err := DecodeBasic(strings.NewReader(input))
 	if err != nil {
@@ -172,7 +172,7 @@ transport:
 	}
 	expected := server.DefaultLimits()
 	expected.Sessions = 1
-	expected.RouteLifetime = 1500 * time.Millisecond
+	expected.RequestLifetime = 1500 * time.Millisecond
 	if basic.Transport.serverLimits() != expected || basic.Memory != 1<<30 {
 		t.Fatal("partial nested settings discarded defaults or changed units")
 	}
@@ -204,7 +204,7 @@ func TestGroupedConfigurationBounds(t *testing.T) {
   max_connections: 1
   max_sessions: 64
   timeouts:
-    route: 1ns
+    request: 1ns
     stall: 30s
 `,
 	} {
@@ -216,9 +216,7 @@ func TestGroupedConfigurationBounds(t *testing.T) {
 		"memory: 67108863B\n", "memory: 68719476737B\n",
 		"transport:\n  max_connections: 0\n", "transport:\n  max_connections: 9223372036854775807\n",
 		"transport:\n  max_sessions: 0\n", "transport:\n  max_sessions: 9223372036854775807\n",
-		"transport:\n  timeouts:\n    route: 0s\n", "transport:\n  timeouts:\n    route: -1s\n",
-
-		"forwarding:\n  hop_limit: -1\n", "forwarding:\n  hop_limit: 9\n",
+		"transport:\n  timeouts:\n    request: 0s\n", "transport:\n  timeouts:\n    request: -1s\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {
 			t.Fatal("out-of-range grouped configuration accepted", fragment)
@@ -226,43 +224,35 @@ func TestGroupedConfigurationBounds(t *testing.T) {
 	}
 }
 
-func TestGroupedConfigurationRejectsOldFieldsAndNumbers(t *testing.T) {
+func TestGroupedConfigurationRejectsUnknownFieldsAndInvalidUnits(t *testing.T) {
 	prefix := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
-		"application: 127.0.0.1:0\n", "peer: 127.0.0.1:0\n", "diagnostics: 127.0.0.1:0\n", "diagnostics_allow_intranet: true\n",
-		"memory_mib: 512\n", "initial_forwards: 4\n", "limits: {}\n", "routing_file: routing.yaml\n",
-		"memory: 512\n", "memory: null\n", "transport:\n  timeouts:\n    route: 30000\n", "transport:\n  timeouts:\n    route: null\n",
-		"transport:\n  connections: 16\n", "transport:\n  sessions: 16\n", "transport:\n  unary_ms: 30000\n",
+		"unexpected: true\n",
+		"transport:\n  unexpected: 16\n",
+		"transport:\n  timeouts:\n    unexpected: 1s\n",
+		"memory: 512\n", "memory: null\n",
+		"transport:\n  timeouts:\n    request: 30000\n",
+		"transport:\n  timeouts:\n    request: null\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {
-			t.Fatal("old field or non-string unit accepted", fragment)
+			t.Fatal("unknown field or non-string unit accepted", fragment)
 		}
 	}
 	for _, local := range []string{
-		`    mongo:
-      uri: mongodb://127.0.0.1:27017
+		`    unexpected: {}
 `,
 		`    mongodb:
       uri: mongodb://127.0.0.1:27017
-    concurrency: 4
+      unexpected: true
 `,
 		`    mongodb:
       uri: mongodb://127.0.0.1:27017
-    batch_operations: 16
+    unexpected: 4
 `,
 	} {
 		input := "stores:\n  - name: records\n" + local
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-			t.Fatal("old local field accepted", local)
+			t.Fatal("unknown Store or backend field accepted", local)
 		}
-	}
-	input := `stores:
-  - name: remote
-    remote:
-      endpoints: [127.0.0.1:1]
-      relays: 2
-`
-	if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
-		t.Fatal("old remote relays field accepted")
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testrecords"
@@ -32,7 +31,7 @@ func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*executi
 	case <-ctx.Done():
 	}
 	for _, work := range plans {
-		result := protocol.ResultError(work.Operation, pb.MutationOutcome_APPLIED, nil)
+		result := execution.FailedResult(work.Operation, pb.MutationOutcome_APPLIED, nil)
 		output := &execution.Output{Result: result}
 		_ = emit(work, output)
 	}

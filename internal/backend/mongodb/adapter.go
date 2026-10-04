@@ -159,15 +159,15 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	}
 	target := namespace{database: s[0], collection: s[1]}
 	native := &plan{target: target, id: id}
-	p := &execution.Plan{Operation: op, Key: record.Key(), Backend: native, ResultBytes: protocol.ResultOverhead}
-	if r := op.GetRead(); r != nil {
+	p := &execution.Plan{Operation: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
+	if r := op.Read; r != nil {
 		if r.AdapterOptions != nil || r.ReadMediaType != "" && r.ReadMediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
 		}
 		native.action = "read"
 		p.ResultBytes += a.maxReadSize()
 	} else {
-		m := op.GetMutate()
+		m := op.Mutate
 		if m.AdapterOptions != nil {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "adapter options unsupported")
 		}
