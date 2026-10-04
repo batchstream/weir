@@ -29,7 +29,7 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 			native, failure := adapter.prepareNative(open)
 			if failure != nil {
@@ -60,7 +60,7 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			if _, failure := adapter.prepareScan(request); failure == nil {
 				t.Fatal("invalid Scan target accepted")
 			}
-			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 			if _, failure := adapter.prepareNative(open); failure == nil {
 				t.Fatal("invalid Native target accepted")
@@ -106,7 +106,7 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
-	nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
@@ -115,7 +115,7 @@ func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	command := bson.D{{Key: "count", Value: "other"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+	open.Request.Data = raw
 	work.Command = testutil.NativeCommand(open)
 	end, signal := adapter.executeNative(context.Background(), work, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || signal != execution.Neutral {
@@ -220,7 +220,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	if page.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(page)
 	}
-	nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 	native, failure := adapter.prepareNative(open)
 	if failure != nil {
@@ -229,7 +229,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	command := bson.D{{Key: "count", Value: "records"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+	open.Request.Data = raw
 	native.Command = testutil.NativeCommand(open)
 	end, _ := adapter.executeNative(ctx, native, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_CANCELLED {

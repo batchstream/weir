@@ -105,7 +105,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			defer client.Disconnect(context.Background())
 			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, config: cfg}
-			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
@@ -123,7 +123,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+			open.Request.Data = raw
 			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
@@ -199,5 +199,29 @@ func TestMongoNativeExactCommandBound(t *testing.T) {
 		if extra == 0 && f != nil || extra == 1 && f == nil {
 			t.Fatal(extra, len(raw), f)
 		}
+	}
+}
+
+func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
+	adapter := &Adapter{}
+	for _, contentType := range []string{"application/http", "application/vnd.future.store"} {
+		document := &pb.Document{ContentType: contentType, Data: []byte("GET /_doc/x HTTP/1.1\r\n\r\n")}
+		request := &pb.NativeRequest{Resource: "db/records", Request: document}
+		if _, failure := adapter.prepareNative(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
+			t.Fatal("shared envelope interpreted adapter payload", contentType, failure)
+		}
+	}
+	// An empty opaque document is a valid envelope, but an invalid BSON command.
+	document := &pb.Document{ContentType: "application/bson"}
+	request := &pb.NativeRequest{Resource: "db/records", Request: document}
+	work, failure := adapter.prepareNative(request)
+	if failure != nil {
+		t.Fatal("generic envelope unexpectedly requires a body", failure)
+	}
+	work.Command = testutil.NativeCommand(request)
+	capture := &nativeCapture{}
+	end, feedback := adapter.executeNative(context.Background(), work, capture.Emit)
+	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || feedback != execution.Neutral || capture.head != nil || capture.body.Len() != 0 {
+		t.Fatal("invalid BSON reached backend", end, feedback)
 	}
 }

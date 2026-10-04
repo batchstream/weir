@@ -31,8 +31,8 @@ not an atomic transaction; a later invalid request cannot undo earlier effects.
 There is no durable request identity, deduplication or exactly-once guarantee.
 
 Scan and Native each send one command with index 1 and half-close input. A scan
-page emits business documents then ScanEnd; Native emits typed HTTP response
-metadata (Search), body chunks and NativeEnd.
+page emits business documents then ScanEnd; Native emits optional opaque Document
+metadata, body chunks and NativeEnd. Adapters own the native payload formats.
 Success requires the terminal event and final gRPC OK. A scan checkpoint additionally
 requires the terminal document count to match complete delivery.
 
@@ -64,7 +64,7 @@ contains only public ownership/address advertisements, never backend credentials
 | Read/Mutate input | One bounded record per request; no whole-call size limit |
 | Record document | 2 MiB; ordinary Read additionally obeys max_read_size |
 | Ordinary Read source | Default 16 KiB; configurable 1 KiB–2 MiB |
-| Native body | MongoDB 4 MiB; Search 8 MiB |
+| Native input | Generic 8 MiB; MongoDB command 4 MiB; Search HTTP message 8 MiB including headers |
 | Execute Event | 2 MiB plus bounded framing/metadata allowance |
 | Store pending requests | 32 MiB of prepared input and request metadata |
 | Store retained results | 32 MiB of terminal metadata and actual read data |

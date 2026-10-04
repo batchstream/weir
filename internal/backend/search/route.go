@@ -23,11 +23,7 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	case input.GetScan() != nil:
 		work, failure = a.prepareScan(input.GetScan())
 	case input.GetNative() != nil:
-		native := input.GetNative()
-		if len(native.GetSearchHttp().GetBody()) > NativeBodyLimit {
-			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native input exceeds adapter bound")
-		}
-		work, failure = a.prepareNative(native)
+		work, failure = a.prepareNative(input.GetNative())
 	}
 	if failure != nil {
 		return nil, failure

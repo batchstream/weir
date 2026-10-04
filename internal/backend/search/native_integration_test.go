@@ -176,12 +176,12 @@ func TestSearchNativeLaterInvalidNeverEscapesOrReplays(t *testing.T) {
 	}
 	defer a.Close()
 	open := nativeRequest(t, backend.Index, "POST", "/_bulk")
+	body := first + "{\"delete\":{\"_id\":\"prefix\",\"_index\":\"outside\"}}\n"
+	setNativeBody(t, open, []byte(body))
 	p, f := a.prepareNative(open)
 	if f != nil {
 		t.Fatal(f)
 	}
-	body := first + "{\"delete\":{\"_id\":\"prefix\",\"_index\":\"outside\"}}\n"
-	open.GetSearchHttp().Body = []byte(body)
 	p.Command = testutil.NativeCommand(open)
 	capture := &nativeCapture{}
 	end, _ := a.executeNative(ctx, p, capture.Emit)

@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.6.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.7.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -15,7 +15,11 @@ Commands select one ReadRequest, MutateRequest, ScanRequest or NativeRequest; a
 stream fixes one Store and one kind. Each record is validated before its effects.
 The input half-close ends the logical request sequence, which has no total item
 or byte limit. Document.content_type identifies the actual backend representation;
-Read and Scan do not negotiate alternative output encodings.
+Read and Scan do not negotiate alternative output encodings. NativeRequest carries
+a resource and an opaque request Document; NativeHead carries optional metadata
+and a body content type. Shared validation bounds envelopes while each adapter
+interprets its content type and bytes. No database-specific public DTO is required
+to add another Store.
 
 ExecuteResponse contains index and Event. Record results are emitted individually
 in ordinal order. Scan and Native emit typed events at index 1 and require a valid
@@ -59,7 +63,7 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.6.0 and Go SDK v0.8.0.
+safe typed completion. The current dependencies are protocol v0.7.0 and Go SDK v0.9.0.
 
 Internal execution plans retain scheduling budgets and backend state. They borrow
 the public Command and publish the public Event directly; no second request or

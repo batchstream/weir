@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
-	searchpb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
@@ -182,9 +182,9 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				update := bson.D{{Key: "$inc", Value: increment}}
 				nativeCommand := bson.D{{Key: "findAndModify", Value: "records"}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "new", Value: true}}
 				body, _ := bson.Marshal(nativeCommand)
-				nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+				nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 				open := &pb.NativeRequest{Resource: backend.DB + "/records", Request: nativeBody}
-				open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = body
+				open.Request.Data = body
 				native := open
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Operation: value}
@@ -294,11 +294,16 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 			mutation := routeBackendMutation(backend.Index+"/s:"+id, "put", "application/json", []byte(`{"n":1}`))
 			var call *pb.Command
 			if mode == "native" {
-				httpCall := &searchpb.HttpRequest{Method: "POST", Path: "/_bulk", BodyContentType: "application/x-ndjson"}
-				nativeBody := &pb.NativeRequest_SearchHttp{SearchHttp: httpCall}
-				open := &pb.NativeRequest{Resource: backend.Index, Request: nativeBody}
 				body := []byte(fmt.Sprintf("{\"create\":{\"_id\":%q}}\n{\"n\":1}\n", id))
-				open.GetSearchHttp().Body = body
+				httpCall, err := http.NewRequest(http.MethodPost, "http://ignored.invalid/_bulk", bytes.NewReader(body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				httpCall.Header.Set("Content-Type", "application/x-ndjson")
+				open, err := weirclient.NewHTTPNativeRequest(backend.Index, httpCall)
+				if err != nil {
+					t.Fatal(err)
+				}
 				native := open
 				value := &pb.Command_Native{Native: native}
 				call = &pb.Command{Operation: value}

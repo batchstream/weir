@@ -6,13 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	weirclient "github.com/batchstream/weir-go"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
@@ -188,9 +189,15 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 		t.Fatal("Scan EOF", err)
 	}
 	body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
-	httpRequest := &spb.HttpRequest{Method: "POST", Path: "/_bulk", BodyContentType: "application/x-ndjson", Body: body}
-	request := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
-	nativeCall := &pb.NativeRequest{Resource: root, Request: request}
+	httpRequest, err := http.NewRequest(http.MethodPost, "http://ignored.invalid/_bulk", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest.Header.Set("Content-Type", "application/x-ndjson")
+	nativeCall, err := weirclient.NewHTTPNativeRequest(root, httpRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}
 	native, err := testutil.ExecuteEvents(ctx, client, "search", call)

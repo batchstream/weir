@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
@@ -54,18 +54,47 @@ func (c *nativeCapture) Emit(_ *execution.Plan, event *pb.Event) error {
 }
 func nativeRequest(t *testing.T, index, method, path string) *pb.NativeRequest {
 	t.Helper()
-	contentType := ""
-	if method == "POST" {
-		contentType = "application/x-ndjson"
+	httpRequest, err := http.NewRequest(method, "http://ignored.invalid"+path, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	http := &spb.HttpRequest{Method: method, Path: path, BodyContentType: contentType}
-	variant := &pb.NativeRequest_SearchHttp{SearchHttp: http}
-	request := &pb.NativeRequest{Resource: index, Request: variant}
+	if method == http.MethodPost {
+		httpRequest.Header.Set("Content-Type", "application/x-ndjson")
+	}
+	request, err := weirclient.NewHTTPNativeRequest(index, httpRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return request
 }
+
+func setNativeBody(t *testing.T, request *pb.NativeRequest, body []byte) {
+	t.Helper()
+	parsed, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(request.Request.Data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Body = io.NopCloser(bytes.NewReader(body))
+	parsed.ContentLength = int64(len(body))
+	updated, err := weirclient.NewHTTPNativeRequest(request.Resource, parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Request = updated.Request
+}
+
+func nativeMetadata(t *testing.T, head *pb.NativeHead) *weirclient.HTTPNativeResponse {
+	t.Helper()
+	metadata, err := weirclient.ParseHTTPNativeResponse(head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return metadata
+}
+
 func runNative(t *testing.T, a *Adapter, request *pb.NativeRequest, body []byte) (*pb.NativeEnd, *nativeCapture) {
 	t.Helper()
-	request.GetSearchHttp().Body = body
+	setNativeBody(t, request, body)
 	p, f := a.prepareNative(request)
 	if f != nil {
 		t.Fatal(f)
@@ -77,34 +106,25 @@ func runNative(t *testing.T, a *Adapter, request *pb.NativeRequest, body []byte)
 	end, _ := a.executeNative(ctx, p, capture.Emit)
 	return end, capture
 }
+
 func TestNativeHTTPRequestScope(t *testing.T) {
 	for _, path := range []string{"http://evil/_bulk", "//evil/_bulk", "/../_bulk", "/%2e%2e/_bulk", "/_doc/%2Fetc", "/_doc/%252fetc", "/_doc/..", "/_reindex", "/_search", "/_doc/x?x=y"} {
-		d := &spb.HttpRequest{Method: "GET", Path: path}
-		d.BodyContentType = ""
-		if validateNativeHTTPRequest(d) == nil {
+		raw := []byte("GET " + path + " HTTP/1.1\r\n\r\n")
+		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
 			t.Fatal(path)
 		}
 	}
 	for _, query := range []string{"pipeline=p", "refresh=true&refresh=false", "refresh=%74rue", "routing=x", "filter_path=items", "realtime=true%0D%0Ax:y"} {
-		d := &spb.HttpRequest{Method: "POST", Path: "/_bulk", Query: query}
-		d.BodyContentType = "application/x-ndjson"
-		if validateNativeHTTPRequest(d) == nil {
+		raw := []byte("POST /_bulk?" + query + " HTTP/1.1\r\nContent-Type: application/x-ndjson\r\n\r\n")
+		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
 			t.Fatal(query)
 		}
 	}
-	for _, name := range []string{"host", "authorization", "proxy-authorization", "connection", "transfer-encoding", "content-length", "idempotency-key", "x-idempotency-key"} {
-		h := &spb.Header{Name: name, Values: []string{"x"}}
-		d := &spb.HttpRequest{Method: "POST", Path: "/_bulk", Headers: []*spb.Header{h}}
-		d.BodyContentType = "application/x-ndjson"
-		if validateNativeHTTPRequest(d) == nil {
+	for _, name := range []string{"authorization", "proxy-authorization", "connection", "transfer-encoding", "idempotency-key", "x-idempotency-key"} {
+		raw := []byte("GET /_doc/x HTTP/1.1\r\n" + name + ": x\r\n\r\n")
+		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
 			t.Fatal(name)
 		}
-	}
-	h := &spb.Header{Name: "x-opaque-id", Values: []string{"x\r\nHost: evil"}}
-	d := &spb.HttpRequest{Method: "GET", Path: "/_doc/x", Headers: []*spb.Header{h}}
-	d.BodyContentType = ""
-	if validateNativeHTTPRequest(d) == nil {
-		t.Fatal("header injection")
 	}
 }
 func TestNativeBulkItemAndBodyBounds(t *testing.T) {
@@ -141,7 +161,7 @@ func TestNativeBulkItemAndBodyBounds(t *testing.T) {
 	}
 }
 func TestNativeHTTPSyntheticFraming(t *testing.T) {
-	for _, mode := range []string{"empty", "headers", "redirect", "multichunk", "large", "truncated", "length", "drop", "trailers", "upgrade", "boundary", "large_chunked"} {
+	for _, mode := range []string{"empty", "headers", "redirect", "multichunk", "large", "truncated", "length", "drop", "trailers", "upgrade", "boundary", "large_chunked", "000", "099", "600", "999"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +170,17 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 					return
 				}
 				calls.Add(1)
+				if mode == "000" || mode == "099" || mode == "600" || mode == "999" {
+					conn, buffer, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					fmt.Fprintf(buffer, "HTTP/1.1 %s Invalid\r\nContent-Length: 0\r\n\r\n", mode)
+					_ = buffer.Flush()
+					_ = conn.Close()
+					return
+				}
 				if mode == "drop" {
 					conn, _, _ := w.(http.Hijacker).Hijack()
 					conn.Close()
@@ -209,6 +240,11 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			if complete && end.Failure != nil {
 				t.Fatal(end)
 			}
+			if mode == "000" || mode == "099" || mode == "600" || mode == "999" {
+				if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE || capture.head != nil || capture.body.Len() != 0 {
+					t.Fatal("invalid backend status published as complete", end, capture.head)
+				}
+			}
 			if mode == "boundary" && capture.body.Len() != NativeResponseLimit {
 				t.Fatal("response boundary", capture.body.Len())
 			}
@@ -216,17 +252,11 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 				t.Fatal(capture.chunks, capture.body.Len())
 			}
 			if mode == "headers" {
-				meta := capture.head.Http
+				meta := nativeMetadata(t, capture.head)
 				if meta.StatusCode != 400 {
 					t.Fatal(meta)
 				}
-				found := false
-				for _, h := range meta.Headers {
-					if h.Name == "warning" {
-						found = len(h.Values) == 2
-					}
-				}
-				if !found {
+				if len(meta.Headers.Values("Warning")) != 2 {
 					t.Fatal(meta)
 				}
 			}
@@ -295,6 +325,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 				input = "{\"index\":{\"_index\":\"records\",\"_id\":\"x\"}}\n{}\n"
 			}
 			open := nativeRequest(t, "records", method, path)
+			setNativeBody(t, open, []byte(input))
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -311,14 +342,13 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			if test.cancelAfterHead {
 				capture.cancelAfterHead = cancel
 			}
-			open.GetSearchHttp().Body = []byte(input)
 			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
 				t.Fatal(end, feedback, calls.Load())
 			}
 			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
-				metadata := capture.head.Http
+				metadata := nativeMetadata(t, capture.head)
 				if int(metadata.StatusCode) != test.status || capture.body.String() != test.body || end.Failure != nil {
 					t.Fatal("native reply changed", metadata, capture.body.String(), end)
 				}
@@ -349,12 +379,12 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			defer cancel()
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: client, nativeClient: client, ctx: ctx}
 			open := nativeRequest(t, "records", "POST", "/_bulk")
+			setNativeBody(t, open, []byte("{\"index\":{\"_id\":\"x\"}}\n{}\n"))
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			capture := &nativeCapture{}
-			open.GetSearchHttp().Body = []byte("{\"index\":{\"_id\":\"x\"}}\n{}\n")
 			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || feedback != execution.Congested || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {

@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil/testdns"
 )
@@ -175,10 +174,12 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 	if !a.nativeTransport.DisableKeepAlives || a.nativeTransport.MaxConnsPerHost != 1 || a.transport.MaxConnsPerHost != 2 {
 		t.Fatal("pool policy")
 	}
-	for _, name := range []string{"authorization", "proxy-authorization", "host", "idempotency-key", "x-idempotency-key"} {
-		header := &spb.Header{Name: name, Values: []string{"forbidden"}}
-		d := &spb.HttpRequest{Method: "GET", Path: "/_doc/x", Headers: []*spb.Header{header}}
-		d.BodyContentType = ""
+	for _, name := range []string{"authorization", "proxy-authorization", "idempotency-key", "x-idempotency-key"} {
+		d, err := http.NewRequest(http.MethodGet, "http://ignored.invalid/_doc/x", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.Header.Set(name, "forbidden")
 		if validateNativeHTTPRequest(d) == nil {
 			t.Fatal("caller overrode connection/replay headers")
 		}
