@@ -16,6 +16,9 @@ import (
 type scanTestAdapter struct {
 	fetches, cleanups atomic.Int32
 	pages             int
+	documents         int
+	documentBytes     int
+	rejected          atomic.Bool
 	started           chan struct{}
 	nextToken         []byte
 	cleanupFailure    *pb.Failure
@@ -23,6 +26,9 @@ type scanTestAdapter struct {
 
 func (a *scanTestAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
 	work := &execution.Plan{ID: id, Command: call, Key: "scan", Singleton: true, CleanupRequired: true, Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, WorkingBytes: 24 << 20}
+	if a.documents > 1 {
+		work.ResultBytes = execution.ScanResultBytes
+	}
 	return work, nil
 }
 func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) execution.Feedback {
@@ -44,14 +50,35 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 	if pages == 0 {
 		pages = 6
 	}
-	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"value":1}`)}
-	value := &pb.Event_Document{Document: document}
-	event := &pb.Event{Version: 1, Value: value}
-	output := &execution.Output{Event: event}
-	_ = emit(work, output)
+	documents := max(a.documents, 1)
+	emitted := 0
+	for range documents {
+		data := []byte(`{"value":1}`)
+		if a.documentBytes > 0 {
+			data = append([]byte(`{"pad":"`), bytes.Repeat([]byte("x"), a.documentBytes-10)...)
+			data = append(data, []byte(`"}`)...)
+		}
+		document := &pb.Document{MediaType: "application/json", Data: data}
+		value := &pb.Event_Document{Document: document}
+		event := &pb.Event{Version: 1, Value: value}
+		output := &execution.Output{Event: event}
+		if err := emit(work, output); err != nil {
+			a.rejected.Store(true)
+			break
+		}
+		emitted++
+	}
 	work.Continue = int(count) < pages
+	if a.rejected.Load() {
+		work.Continue = false
+	}
 	if !work.Continue {
-		end := &pb.ScanEnd{DocumentCount: uint64(pages), Exhausted: len(a.nextToken) == 0, NextContinuationToken: bytes.Clone(a.nextToken)}
+		end := &pb.ScanEnd{DocumentCount: uint64((int(count)-1)*documents + emitted), Exhausted: len(a.nextToken) == 0, NextContinuationToken: bytes.Clone(a.nextToken)}
+		if a.rejected.Load() {
+			end.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "test adapter exceeded Scan output budget")
+			end.Exhausted = false
+			end.NextContinuationToken = nil
+		}
 		variant := &pb.Event_ScanEnd{ScanEnd: end}
 		terminal := &pb.Event{Version: 1, Value: variant}
 		terminalOutput := &execution.Output{Event: terminal}
@@ -214,7 +241,7 @@ finished:
 }
 
 func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
-	adapter := &scanTestAdapter{pages: 5}
+	adapter := &scanTestAdapter{pages: 5, documents: execution.ScanBatchDocuments}
 	limits := DefaultLimits()
 	limits.Concurrency = 1
 	runtime, err := New(adapter, limits)
@@ -250,6 +277,79 @@ func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	waitReleased(t, runtime)
 	if adapter.cleanups.Load() != 1 {
 		t.Fatal("abandoned cursor cleanup count", adapter.cleanups.Load())
+	}
+}
+
+func TestScanBatchPublicationBounds(t *testing.T) {
+	cases := []struct {
+		name             string
+		documents, bytes int
+		reservation      int
+		accepted         int
+		rejected         bool
+	}{
+		{name: "full batch", documents: 128, bytes: 32 << 10, accepted: 128},
+		{name: "document bound", documents: 129, accepted: 128, rejected: true},
+		{name: "byte bound", documents: 3, bytes: 2 << 20, accepted: 2, rejected: true},
+		{name: "reservation bound", documents: 2, bytes: 1024, reservation: protocol.ResultOverhead, rejected: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := &scanTestAdapter{pages: 1, documents: test.documents, documentBytes: test.bytes}
+			limits := DefaultLimits()
+			runtime, err := New(adapter, limits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Close(context.Background())
+			session := runtime.NewSession()
+			defer session.Close()
+			work, failure := runtime.PrepareCommand(1, scanCall())
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			if test.reservation != 0 {
+				work.ResultBytes = test.reservation
+			}
+			ticket, failure, _ := runtime.Submit(context.Background(), work, session)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			documents, retained := 0, 0
+			var end *pb.ScanEnd
+			for {
+				select {
+				case emission := <-session.Events:
+					if emission.End {
+						emission.Release()
+						ticket.Ack()
+						goto finished
+					}
+					if document := emission.Event.GetDocument(); document != nil {
+						documents++
+						retained += len(document.Data)
+					}
+					if terminal := emission.Event.GetScanEnd(); terminal != nil {
+						end = terminal
+					}
+					emission.Release()
+				case <-time.After(3 * time.Second):
+					t.Fatal("bounded Scan batch did not finish")
+				}
+			}
+		finished:
+			if documents != test.accepted || retained > execution.ScanBatchBytes || end == nil || int(end.DocumentCount) != documents || adapter.rejected.Load() != test.rejected {
+				t.Fatal("Scan batch publication exceeded bounds", documents, retained, end, adapter.rejected.Load())
+			}
+			if test.rejected && end.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+				t.Fatal("Scan overflow was not reported", end)
+			}
+			session.Close()
+			waitReleased(t, runtime)
+			if snapshot := runtime.Snapshot(); snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
+				t.Fatal("Scan batch retained reservations", snapshot)
+			}
+		})
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 )
 
 const scanPageBudget = 24 << 20
+const scanWorkingBytes = 64 << 20
 const pitKeepAlive = "60s"
 
 const maxPITBytes = 16 << 10
@@ -24,6 +25,7 @@ type scanPlan struct {
 	index                    string
 	query                    json.RawMessage
 	items                    int
+	batchSize                int
 	pit                      string
 	after                    int64
 	hasAfter, opened, closed bool
@@ -33,8 +35,9 @@ type scanPlan struct {
 }
 
 type scanCheckpoint struct {
-	PIT   string `json:"pit"`
-	After int64  `json:"after"`
+	PIT       string `json:"pit"`
+	After     int64  `json:"after"`
+	BatchSize int    `json:"batch_size,omitempty"`
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -50,7 +53,8 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	}
 	native := &scanPlan{
 		index:       parts[0],
-		items:       1,
+		items:       execution.ScanBatchDocuments,
+		batchSize:   execution.ScanBatchDocuments,
 		query:       json.RawMessage(`{"match_all":{}}`),
 		pageSize:    protocol.ScanPageSize(req),
 		fingerprint: protocol.ScanFingerprint(req, "search:"+a.dialect),
@@ -78,7 +82,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		var checkpoint scanCheckpoint
 		decodeErr := json.Unmarshal(raw, &checkpoint)
 		canonical, _ := json.Marshal(checkpoint)
-		if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 {
+		if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 || checkpoint.BatchSize < 0 || checkpoint.BatchSize > execution.ScanBatchDocuments {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched Search Scan continuation")
 		}
 		native.pit = checkpoint.PIT
@@ -86,13 +90,16 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		native.hasAfter = true
 		native.opened = true
 		native.resumed = true
+		if checkpoint.BatchSize != 0 {
+			native.batchSize = checkpoint.BatchSize
+		}
 	}
 	p := &execution.Plan{
 		Singleton:    true,
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + protocol.EntryOverhead + 4096,
-		ResultBytes:  protocol.MaxDocument + protocol.ResultOverhead,
-		WorkingBytes: scanPageBudget,
+		ResultBytes:  execution.ScanResultBytes,
+		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
 	}
 	return p, nil
@@ -142,6 +149,12 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "PIT unavailable")
 		return page, execution.Neutral
 	}
+	if n.count >= n.pageSize {
+		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan fetched beyond its logical page")
+		return page, execution.Neutral
+	}
+	remaining := n.pageSize - n.count
+	n.items = min(n.batchSize, execution.ScanBatchDocuments, int(remaining))
 	sort := "_shard_doc"
 	if a.dialect == OpenSearchProduct {
 		sort = "_doc"
@@ -159,20 +172,38 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	if n.hasAfter {
 		body["search_after"] = []int64{n.after}
 	}
-	encoded, _ := json.Marshal(body)
-	call := exchange{path: "/_search?allow_partial_search_results=false", body: encoded, limit: responseLimit}
-	status, raw, err := a.request(ctx, call)
-	f, fb := a.scanExchangeFailure(ctx, status, err)
-	if f != nil {
-		page.Failure = f
-		return page, fb
+	var raw []byte
+	for {
+		body["size"] = n.items
+		encoded, _ := json.Marshal(body)
+		call := exchange{
+			path:      "/_search?allow_partial_search_results=false",
+			body:      encoded,
+			limit:     responseLimit,
+			jsonNodes: n.items*(16384+32) + 64,
+		}
+		status, reply, err := a.request(ctx, call)
+		// The read-only search has not advanced its checkpoint. Retry an excessive
+		// response at a smaller size within the same absolute fetch deadline.
+		if err == errResponseLimit && n.items > 1 && ctx.Err() == nil {
+			n.items = max(1, n.items/2)
+			n.batchSize = n.items
+			continue
+		}
+		f, fb := a.scanExchangeFailure(ctx, status, err)
+		if f != nil {
+			page.Failure = f
+			return page, fb
+		}
+		raw = reply
+		break
 	}
 	page = a.scanReply(raw, n)
 	if page.Failure != nil {
 		return page, execution.Neutral
 	}
 	if !page.Exhausted && n.count+uint64(len(page.Documents)) >= n.pageSize {
-		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after}
+		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after, BatchSize: n.batchSize}
 		state, _ := json.Marshal(checkpoint)
 		token, err := protocol.EncodeScanToken("search:"+a.dialect, n.fingerprint, state)
 		if err != nil {
@@ -319,6 +350,9 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 	docs := make([]*pb.Document, 0, len(rows))
 	last := n.after
 	hasLast := n.hasAfter
+	acceptedLast := last
+	acceptedBytes := 0
+	retaining := true
 	for _, row := range rows {
 		if len(row) > protocol.MaxDocument {
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native hit exceeds output bound")
@@ -336,6 +370,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			hit.ID == "" ||
 			len(hit.ID) > 512 ||
 			!object(hit.Source) ||
+			validateJSON(hit.Source, 16384) != nil ||
 			!scanScore(hit.Score) ||
 			len(hit.Sort) != 1 {
 			return page
@@ -345,10 +380,23 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			return page
 		}
 		last, hasLast = position, true
-		doc := &pb.Document{MediaType: "application/json", Data: row}
-		docs = append(docs, doc)
+		if retaining && acceptedBytes+len(row) <= execution.ScanBatchBytes {
+			doc := &pb.Document{MediaType: "application/json", Data: row}
+			docs = append(docs, doc)
+			acceptedBytes += len(row)
+			acceptedLast = position
+		} else {
+			// Validate the complete envelope before publishing this ordered prefix.
+			// Its tail is refetched from the last accepted position on the same PIT.
+			retaining = false
+		}
 	}
-	n.after, n.hasAfter = last, hasLast
+	if len(docs) != 0 {
+		n.after, n.hasAfter = acceptedLast, true
+	}
+	if len(docs) < len(rows) {
+		n.batchSize = max(1, len(docs))
+	}
 	page.Documents = docs
 	// Only a complete, validated search envelope on this same PIT and sort can
 	// establish exhaustion. total hits is deliberately neither requested nor used.

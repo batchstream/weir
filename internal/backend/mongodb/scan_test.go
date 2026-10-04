@@ -1,14 +1,162 @@
 package mongodb
 
 import (
+	"bytes"
 	"encoding/binary"
 	"strings"
 	"testing"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+func TestMongoScanFindUsesRemainingBoundedBatch(t *testing.T) {
+	config := Config{Store: "mongo"}
+	adapter := &Adapter{config: config}
+	for _, size := range []uint32{1, 17, 128, 256} {
+		request := &pb.ScanRequest{Resource: "weir://mongo/db/records", PageSize: size}
+		work, failure := adapter.prepareScan(request)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		if work.ResultBytes != execution.ScanResultBytes || work.WorkingBytes != scanWorkingBytes {
+			t.Fatal("Scan did not reserve its bounded batch", work.ResultBytes, work.WorkingBytes)
+		}
+		state := work.Backend.(*scanPlan)
+		for _, emitted := range []uint64{0, uint64(size) - 1} {
+			state.count = emitted
+			command := scanFindCommand(state)
+			raw, err := bson.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := min(uint64(size)-emitted, uint64(execution.ScanBatchDocuments))
+			if bson.Raw(raw).Lookup("limit").Int64() != int64(want) || bson.Raw(raw).Lookup("batchSize").Int32() != int32(want) || !bson.Raw(raw).Lookup("singleBatch").Boolean() {
+				t.Fatal("Scan did not request a bounded remaining batch", size, emitted, raw)
+			}
+		}
+	}
+}
+
+func TestMongoScanCheckpointRequiresBoundedCapacityAndNativeIdentity(t *testing.T) {
+	config := Config{Store: "mongo"}
+	adapter := &Adapter{config: config}
+	request := &pb.ScanRequest{Resource: "weir://mongo/db/records", PageSize: 1}
+	fingerprint := protocol.ScanFingerprint(request, "mongodb")
+	nested := bson.D{{Key: "ordered", Value: int32(1)}, {Key: "second", Value: int64(2)}}
+	identity := bson.D{{Key: "_id", Value: nested}}
+	last, err := bson.Marshal(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"valid", "missing_capacity", "zero_capacity", "excess_capacity", "wrong_capacity_type", "extra", "duplicate", "invalid_identity", "legacy"} {
+		t.Run(mode, func(t *testing.T) {
+			checkpoint := bson.D{{Key: "last", Value: bson.Raw(last)}, {Key: "batch_size", Value: int32(3)}}
+			switch mode {
+			case "missing_capacity":
+				checkpoint = checkpoint[:1]
+			case "zero_capacity":
+				checkpoint[1].Value = int32(0)
+			case "excess_capacity":
+				checkpoint[1].Value = int32(execution.ScanBatchDocuments + 1)
+			case "wrong_capacity_type":
+				checkpoint[1].Value = int64(3)
+			case "extra":
+				field := bson.E{Key: "unknown", Value: int32(1)}
+				checkpoint = append(checkpoint, field)
+			case "duplicate":
+				checkpoint = append(checkpoint, checkpoint[1])
+			case "invalid_identity":
+				invalid := bson.D{{Key: "_id", Value: bson.A{int32(1)}}}
+				checkpoint[0].Value = invalid
+			case "legacy":
+				checkpoint = identity
+			}
+			state, err := bson.Marshal(checkpoint)
+			if err != nil {
+				t.Fatal(err)
+			}
+			token, err := protocol.EncodeScanToken("mongodb", fingerprint, state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.ContinuationToken = token
+			work, failure := adapter.prepareScan(request)
+			if mode != "valid" {
+				if failure == nil {
+					t.Fatal("invalid checkpoint was accepted", mode)
+				}
+				return
+			}
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			native := work.Backend.(*scanPlan)
+			command := scanFindCommand(native)
+			raw, err := bson.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if native.batchSize != 3 || !bytes.Equal(native.last, last) || bson.Raw(raw).Lookup("batchSize").Int32() != 1 {
+				t.Fatal("logical remainder changed learned capacity or BSON identity", native.batchSize, native.last, command)
+			}
+		})
+	}
+}
+
+func TestMongoScanPrefixValidatesDiscardedTail(t *testing.T) {
+	for _, mode := range []string{"valid", "invalid_document", "invalid_index", "too_many", "oversized"} {
+		t.Run(mode, func(t *testing.T) {
+			target := namespace{database: "db", collection: "records"}
+			adapter := &Adapter{}
+			first := bson.D{{Key: "_id", Value: int32(1)}, {Key: "pad", Value: strings.Repeat("x", 64)}}
+			second := bson.D{{Key: "_id", Value: int32(2)}, {Key: "pad", Value: strings.Repeat("x", 64)}}
+			firstRaw, err := bson.Marshal(first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			documents := bson.A{first, second, first}
+			if mode == "invalid_document" {
+				documents[2] = int32(3)
+			}
+			if mode == "oversized" {
+				document := bson.D{{Key: "_id", Value: int32(3)}, {Key: "pad", Value: strings.Repeat("x", protocol.MaxDocument)}}
+				documents[2] = document
+			}
+			cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: target.String()}, {Key: "firstBatch", Value: documents}}
+			envelope := bson.D{{Key: "ok", Value: 1.0}, {Key: "cursor", Value: cursor}}
+			raw, err := bson.Marshal(envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "invalid_index" {
+				batch := bson.Raw(raw).Lookup("cursor", "firstBatch").Array()
+				elements, err := bson.Raw(batch).Elements()
+				if err != nil {
+					t.Fatal(err)
+				}
+				elements[2][1] = '9'
+			}
+			items := 3
+			if mode == "too_many" {
+				items = 2
+			}
+			state := &recordCursor{target: target, items: items, outputBytes: len(firstRaw)}
+			page := adapter.recordCursorReply(raw, state, true)
+			if mode == "valid" {
+				if page.Failure != nil || !state.limited || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, firstRaw) {
+					t.Fatal("Scan did not retain exactly the accepted prefix", page, state.limited)
+				}
+				return
+			}
+			if page.Failure == nil || len(page.Documents) != 0 {
+				t.Fatal("invalid discarded tail exposed a prefix", page)
+			}
+		})
+	}
+}
 
 func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 	for _, first := range []bool{false, true} {

@@ -15,6 +15,8 @@ import (
 type recordCursor struct {
 	target      namespace
 	items       int
+	outputBytes int
+	limited     bool
 	session     *mongo.Session
 	cursor      int64
 	closed      bool
@@ -98,8 +100,10 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 	}
 	rest := batch[4 : len(batch)-1]
 	docs := make([]*pb.Document, 0, n.items)
+	items, outputBytes := 0, 0
+	n.limited = false
 	for len(rest) > 0 {
-		if len(docs) >= n.items {
+		if items >= n.items {
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "cursor batch exceeds item bound")
 			return page
 		}
@@ -113,9 +117,10 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 			return page
 		}
 		key, err := element.KeyErr()
-		if err != nil || key != strconv.Itoa(len(docs)) {
+		if err != nil || key != strconv.Itoa(items) {
 			return page
 		}
+		items++
 		if len(value.Data) > protocol.MaxDocument {
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored Scan document exceeds output bound")
 			return page
@@ -124,8 +129,15 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 		if !validScanBSON(value.Data, 0, &nodes) {
 			return page
 		}
+		if n.outputBytes > 0 && outputBytes+len(value.Data) > n.outputBytes {
+			n.limited = true
+		}
+		if n.limited {
+			continue
+		}
 		doc := &pb.Document{MediaType: "application/bson", Data: append([]byte(nil), value.Data...)}
 		docs = append(docs, doc)
+		outputBytes += len(value.Data)
 	}
 	page.Documents = docs
 	page.Exhausted = id == 0

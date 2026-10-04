@@ -114,7 +114,10 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 		event := &pb.Event{Version: 1, Value: value}
 		output := &execution.Output{Event: event}
 		if err := emit(work, output); err != nil {
-			page.Failure = protocol.ContextFailure(ctx)
+			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan result publication failed")
+			if ctx.Err() != nil {
+				page.Failure = protocol.ContextFailure(ctx)
+			}
 			break
 		}
 		state.count++

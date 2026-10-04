@@ -207,7 +207,14 @@ valid terminal Event and final gRPC OK. A scan checkpoint additionally requires
 the matching delivered document count. A later page can use another instance.
 MongoDB scans paginate by ascending `_id` without a retained cursor; Search
 continuations carry the backend PIT snapshot. Consumers must tolerate repeated
-documents when restarting an interrupted page.
+documents when restarting an interrupted page. Scan fetches up to 128 documents
+per backend call and retains at most 4 MiB for publication. It releases the
+backend execution permit before sending that batch, so a slow consumer does not
+block other database work. Both backends learn a smaller fetch capacity from
+large documents and retain it in the opaque continuation token. Search also
+reduces an excessive native response before retrying the same read.
+The private MongoDB continuation format has changed; start a new Scan after
+upgrading instead of resuming an earlier token.
 
 ## Deployment
 
