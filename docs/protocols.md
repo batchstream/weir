@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.3.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.4.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -8,27 +8,28 @@ or peer membership appear in this schema.
 | Public RPC | Meaning |
 | --- | --- |
 | StoreService.ResolveStore | Discover IP/DNS endpoints and cache TTL for one named Store |
-| StoreService.Read | Read a complete ordered batch in one unary RPC |
-| StoreService.Mutate | Apply a complete ordered mutation batch in one unary RPC |
-| StoreService.Execute | Stream Events for one Scan or Native Command |
+| StoreService.Execute | Exchange bounded typed request frames and indexed results on a finite bidirectional stream |
 
-ReadBatchRequest and MutateBatchRequest contain store_name and requests.
-Their responses contain results in the same positions as inputs. All input is
-validated before effects; individual business failures remain positional results.
-Full encoded requests and responses are bounded to 32 MiB. Mutate is not an atomic
-transaction; same-resource mutations execute in input order.
-The server can combine compatible queued RPCs into one backend execution.
-Each RPC keeps independent positional results, cancellation and response budgets;
-this aggregation gives callers no application transaction guarantee. MongoDB Lua
-items can share an internal short transaction, with whole-group rollback on a
-database write error. Search Lua items use individual version conditions within
-bulk writes. Neither path adds metadata fields to business documents, and an
-ambiguous write or commit cannot start a new mutation attempt.
+ExecuteRequest contains store_name, a one-based index and Command. Commands select
+ReadBatch, MutationBatch, Scan or Native; a stream fixes one Store and one kind.
+For records, index identifies the first item in that frame and subsequent frames
+continue the ordinal sequence. Every frame is validated before its effects.
+Record frames fit 5 MiB and 1024 items; these are per-frame limits, not limits on
+the entire call. The input half-close ends the logical request sequence.
 
-ExecuteRequest contains store_name and one Command. ExecuteResponse contains one
-Event. Unknown protobuf fields and missing variants are rejected. Scan and Native require their terminal Event and final
-gRPC OK. A failed unary RPC confirms no batch result; mutations are never
-automatically replayed. See [payload contracts](payloads.md).
+ExecuteResponse contains index and Event. Read and mutation results are emitted
+individually in ordinal order. Scan and Native emit their existing typed events
+for command index 1 and require a valid terminal Event plus final gRPC OK.
+The server retains a bounded execution window and publishes it before receiving
+more input. Compatible windows from several clients can share a backend batch.
+Clients send and receive concurrently to allow backpressure in both directions.
+
+Mutate is not an atomic transaction. Same-resource mutations execute in stream
+input order; an invalid later frame does not undo earlier writes. Confirmed item
+results remain evidence after a transport error; missing acknowledgements remain
+unknown and are never replayed automatically. MongoDB Lua windows can share an
+internal short transaction with group rollback on database write error; Search
+uses per-item version conditions. Neither path adds document metadata.
 
 The independent internal [peer.proto](../internal/api/peer/v1/peer.proto), package
 weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory. It exchanges bounded
@@ -58,7 +59,7 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.3.0 and Go SDK v0.5.0.
+safe typed completion. The current dependencies are protocol v0.4.0 and Go SDK v0.6.0.
 
 Internal execution plans and positional result associations are ordinary Go values
 owned by the server. They are not public protobuf messages and do not appear on
