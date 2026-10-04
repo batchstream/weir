@@ -73,7 +73,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	}
 }
 
-func TestRouteLuaUsesSingletonCASBoundary(t *testing.T) {
+func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	config := Config{Store: "search"}
 	adapter := &Adapter{config: config}
 	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.keep()`)}
@@ -90,8 +90,8 @@ func TestRouteLuaUsesSingletonCASBoundary(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if !work.Singleton || work.Backend.(*plan).program == nil {
-		t.Fatal("Lua escaped its bounded CAS execution")
+	if work.Singleton || work.BatchKey != "records" || work.Backend.(*plan).program == nil {
+		t.Fatal("Lua cannot join its index's bounded conditional record batch")
 	}
 }
 

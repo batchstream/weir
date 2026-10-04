@@ -19,7 +19,11 @@ Full encoded requests and responses are bounded to 32 MiB. Mutate is not an atom
 transaction; same-resource mutations execute in input order.
 The server can combine compatible queued RPCs into one backend execution.
 Each RPC keeps independent positional results, cancellation and response budgets;
-this aggregation does not create a transaction across callers.
+this aggregation gives callers no application transaction guarantee. MongoDB Lua
+items can share an internal short transaction, with whole-group rollback on a
+database write error. Search Lua items use individual version conditions within
+bulk writes. Neither path adds metadata fields to business documents, and an
+ambiguous write or commit cannot start a new mutation attempt.
 
 ExecuteRequest contains store_name and one Command. ExecuteResponse contains one
 Event. Commands and Events use version 1; unknown fields/versions are rejected.

@@ -42,11 +42,13 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 	}
 	groups := make([]targetBatch, 0)
 	positions := make(map[namespace]int)
-	var programs []int
+	var programs []*execution.Plan
+	var programPositions []int
 	for i, p := range plans {
 		native := p.Backend.(*plan)
 		if native.action == "program" {
-			programs = append(programs, i)
+			programs = append(programs, p)
+			programPositions = append(programPositions, i)
 			continue
 		}
 		position, exists := positions[native.target]
@@ -96,17 +98,11 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 			signal = batchFeedback(signal, sample)
 		}
 	}
-	for _, i := range programs {
-		p := plans[i]
-		if result := unstarted(ctx, p); result != nil {
-			results[i] = result
-			signal = batchFeedback(signal, execution.Neutral)
-			continue
+	if len(programs) != 0 {
+		replies, sample := a.executePrograms(ctx, programs)
+		for i, reply := range replies {
+			results[programPositions[i]] = reply
 		}
-		// Lua evaluates and commits in its own transaction. Combining independent
-		// programs into one transaction would change their failure guarantees.
-		replies, sample := a.executeProgram(ctx, p)
-		results[i] = replies[0]
 		signal = batchFeedback(signal, sample)
 	}
 	if len(plans) == 0 {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -15,7 +14,6 @@ import (
 )
 
 const programAttempts = 5
-const programLifetime = 5 * time.Second
 
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
@@ -67,7 +65,8 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 		failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
 	}
-	return &next, nil, execution.Healthy
+	write := &next
+	return write, nil, execution.Healthy
 }
 
 func safeProgramSource(v value.Value) bool {

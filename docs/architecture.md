@@ -146,9 +146,10 @@ when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 
 Each Store dispatches while configured max_concurrency and backend working bytes
-permit. Database latency does not train a second concurrency controller. Backend
-failures are returned to callers without automatic retries; pending work remains
-bounded by queue bytes and deadlines.
+permit. Database latency does not train a second concurrency controller. Transport
+failures do not replay mutations; the bounded Lua conflict and confirmed-abort
+retries described below retain the original execution deadline. Pending work
+remains bounded by queue bytes and deadlines.
 
 Scan fetches one bounded document step at a time and releases the execution permit
 before publication. A blocked scan at concurrency one allows independent record
@@ -162,9 +163,24 @@ the checksum detects corruption and is not authentication.
 
 Native execution is a singleton with bounded streaming and backend time. MongoDB
 qualification and native command share a deadline; Search counts actual backend
-I/O time and pauses that allowance during publication. Lua uses native MongoDB
-transactions or Search sequence/primary-term CAS. Transactions are not merged
-across requests, and ambiguous failures cannot start a new mutation attempt.
+I/O time and pauses that allowance during publication. Lua record transforms
+participate in compatible request grouping. MongoDB uses a short snapshot
+transaction for a bounded group: point read, individual Lua evaluation, bulk
+write and commit. No metadata fields are inserted into business documents, and
+external writers need no Weir-specific version convention. A database write
+error can roll back the entire physical transaction. Only a confirmed abort
+allows another read/evaluate/write attempt; an ambiguous commit can retry the
+same commit but cannot replay the mutations. Lua keep, reject and evaluation
+failures are resolved independently before the write phase.
+
+Search uses real-time multi-get and bulk writes with the observed sequence number
+and primary term on each item. Confirmed version conflicts reread and reevaluate
+only the conflicting items; ambiguous write replies are not replayed. Both
+adapters split retained source and generated-write buffers into bounded groups.
+Each caller retains its own cancellation, deadline and result ownership. A caller
+canceled before its write is omitted; a sent write keeps its actual confirmed or
+unknown outcome. Physical MongoDB transaction grouping is not an application
+transaction contract and can vary with traffic, bytes and scheduler capacity.
 
 Shutdown refuses new admission and drains admitted work within a deadline.
 Cancellation stops owned work without claiming a write was not applied. Output
