@@ -131,8 +131,10 @@ func TestReadStreamAccepts513Records(t *testing.T) {
 	waitPeerIdle(t, server)
 }
 
-func TestContinuousBatchReadsAtSessionLimit(t *testing.T) {
+func TestContinuousReadsAtSessionLimit(t *testing.T) {
 	adapter := newPeerAdapter("records")
+	gate := make(chan struct{})
+	adapter.block = gate
 	limits := DefaultLimits()
 	limits.Sessions = 64
 	opts := routeAcceptanceNodeOptions{adapter: adapter, limits: limits}
@@ -149,19 +151,38 @@ func TestContinuousBatchReadsAtSessionLimit(t *testing.T) {
 	var workers sync.WaitGroup
 	for range limits.Sessions {
 		workers.Go(func() {
-			for range 32 {
+			for range 4 {
 				response, err := testutil.ReadRecords(ctx, client, "records", requests)
 				if err != nil {
 					failures <- err
 					return
 				}
 				if len(response) != len(requests) {
-					failures <- fmt.Errorf("batch result count changed: %d", len(response))
+					failures <- fmt.Errorf("read result count changed: %d", len(response))
 					return
+				}
+				for index, result := range response {
+					if result.GetMissing() == nil || result.GetFailure() != nil {
+						failures <- fmt.Errorf("read %d did not return a successful missing result: %v", index, result)
+						return
+					}
 				}
 			}
 		})
 	}
+	// Hold the first results until all native RPC slots are occupied. Each worker
+	// then verifies full record windows and repeated release and reacquisition.
+	for node.server.Snapshot().ActiveRPCs != int64(limits.Sessions) {
+		select {
+		case <-ctx.Done():
+			close(gate)
+			workers.Wait()
+			t.Fatal("concurrent reads did not occupy every session", ctx.Err(), node.server.Snapshot(), node.runtime.Snapshot())
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(gate)
 	workers.Wait()
 	close(failures)
 	for err := range failures {
