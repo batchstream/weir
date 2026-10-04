@@ -2,26 +2,33 @@ package testutil
 
 import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"google.golang.org/protobuf/proto"
 )
 
-// RecordFixture submits one relative request through its public batch RPC.
 type RecordFixture struct {
 	StoreName string
-	Operation *execution.Operation
+	Command   *pb.Command
 }
 
 func RecordRequest(store string, message proto.Message) RecordFixture {
-	operation := &execution.Operation{Index: 1}
+	command := &pb.Command{}
 	switch request := message.(type) {
 	case *pb.ReadRequest:
-		operation.Read = request
+		operation := &pb.Command_Read{Read: request}
+		command.Operation = operation
 	case *pb.MutateRequest:
-		operation.Mutate = request
+		operation := &pb.Command_Mutate{Mutate: request}
+		command.Operation = operation
 	default:
 		panic("record fixture requires a read or mutation request")
 	}
-	fixture := RecordFixture{StoreName: store, Operation: operation}
+	fixture := RecordFixture{StoreName: store, Command: command}
 	return fixture
+}
+
+func NativeCommand(open *pb.NativeOpen, body []byte) *pb.Command {
+	request := &pb.NativeRequest{Open: open, Body: body}
+	operation := &pb.Command_Native{Native: request}
+	command := &pb.Command{Operation: operation}
+	return command
 }

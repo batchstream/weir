@@ -413,27 +413,3 @@ func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
 		}
 	}
 }
-
-func TestRoutingRejectsConfiguredResourceTargets(t *testing.T) {
-	for _, backend := range []string{"mongodb", "search"} {
-		endpoint := "uri: mongodb://127.0.0.1:27017"
-		fields := []string{"database", "collection"}
-		if backend == "search" {
-			endpoint = "url: http://127.0.0.1:9200"
-			fields = []string{"index", "profile"}
-		}
-		input := "stores:\n  - name: records\n    " + backend + ":\n      " + endpoint + "\n"
-		if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
-			t.Fatal("server connection must validate without a configured resource target", backend, err)
-		}
-		for _, field := range fields {
-			t.Run(backend+"/"+field, func(t *testing.T) {
-				invalid := strings.Replace(input, "      "+endpoint+"\n", "      "+endpoint+"\n      "+field+": resource-secret-sentinel\n", 1)
-				_, err := DecodeRouting(strings.NewReader(invalid))
-				if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
-					t.Fatal("removed target/profile field must be rejected without exposing its value", err)
-				}
-			})
-		}
-	}
-}

@@ -35,11 +35,11 @@ func TestMongoScanPublicationFailureIsTerminal(t *testing.T) {
 	defer adapter.closeScan(ctx, work)
 	var end *pb.ScanEnd
 	publicationError := errors.New("publication rejected")
-	emit := func(_ *execution.Plan, output *execution.Output) error {
-		if output.Event.GetDocument() != nil {
+	emit := func(_ *execution.Plan, event *pb.Event) error {
+		if event.GetDocument() != nil {
 			return publicationError
 		}
-		end = output.Event.GetScanEnd()
+		end = event.GetScanEnd()
 		return nil
 	}
 	adapter.streamScan(ctx, work, emit)

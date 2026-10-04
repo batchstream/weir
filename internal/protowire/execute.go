@@ -11,9 +11,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ValidateExecuteFrame bounds nested record counts before protobuf allocates
-// repeated messages. Singular routing and command fields cannot be repeated to
-// bypass the frame's one-kind decode bound.
+// ValidateExecuteFrame rejects oversized frames and repeated routing/command
+// envelopes before protobuf allocates the single request object.
 func ValidateExecuteFrame(data mem.BufferSlice) error {
 	if data.Len() > protocol.MaxExecuteRequestBytes {
 		return status.Error(codes.ResourceExhausted, "execution frame exceeds input byte budget")
@@ -47,7 +46,7 @@ func ValidateExecuteFrame(data mem.BufferSlice) error {
 		}
 		if field == 3 {
 			limited := &io.LimitedReader{R: reader, N: int64(length)}
-			if err := validateCommandFrame(bufio.NewReader(limited), int(length)); err != nil {
+			if err := validateCommandFrame(bufio.NewReader(limited)); err != nil {
 				return err
 			}
 			if limited.N != 0 {
@@ -59,7 +58,7 @@ func ValidateExecuteFrame(data mem.BufferSlice) error {
 	}
 }
 
-func validateCommandFrame(reader *bufio.Reader, bytes int) error {
+func validateCommandFrame(reader *bufio.Reader) error {
 	tag, err := binary.ReadUvarint(reader)
 	if err != nil || tag>>3 < 1 || tag>>3 > 4 {
 		return invalidExecuteFraming()
@@ -68,48 +67,13 @@ func validateCommandFrame(reader *bufio.Reader, bytes int) error {
 	if err != nil {
 		return err
 	}
-	if tag>>3 <= 2 {
-		if bytes > protocol.MaxRecordFrameBytes {
-			return status.Error(codes.ResourceExhausted, "record frame exceeds input byte budget")
-		}
-		limited := &io.LimitedReader{R: reader, N: int64(length)}
-		if err := validateRecordFrame(bufio.NewReader(limited)); err != nil {
-			return err
-		}
-		if limited.N != 0 {
-			return invalidExecuteFraming()
-		}
-	} else if _, err := reader.Discard(int(length)); err != nil {
+	if _, err := reader.Discard(int(length)); err != nil {
 		return invalidExecuteFraming()
 	}
 	if _, err := reader.ReadByte(); err != io.EOF {
 		return invalidExecuteFraming()
 	}
 	return nil
-}
-
-func validateRecordFrame(reader *bufio.Reader) error {
-	count := 0
-	for {
-		tag, err := binary.ReadUvarint(reader)
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil || tag>>3 != 1 {
-			return invalidExecuteFraming()
-		}
-		length, err := messageLength(reader, tag, protocol.MaxRecordFrameBytes)
-		if err != nil {
-			return err
-		}
-		count++
-		if count > protocol.MaxRecordFrameItems {
-			return status.Error(codes.ResourceExhausted, "record metadata exceeds decode budget")
-		}
-		if _, err := reader.Discard(int(length)); err != nil {
-			return invalidExecuteFraming()
-		}
-	}
 }
 
 func messageLength(reader *bufio.Reader, tag uint64, maximum int) (uint64, error) {

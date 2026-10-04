@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 const incrementProgram = `if weir.kind(current) == "missing" then return weir.replace(weir.object("n", weir.i32("1"))) end return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`
@@ -73,11 +74,11 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 		if i == 5 || i == 6 {
 			want = pb.MutationOutcome_NOT_APPLIED
 		}
-		if result.Index != 1 || result.Mutation.GetOutcome() != want {
+		if result.GetMutationResult().GetOutcome() != want {
 			t.Fatal("caller association or isolated result changed", i, result)
 		}
 	}
-	if results[5].Mutation.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[6].Mutation.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+	if results[5].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || results[6].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
 		t.Fatal("Lua failures did not remain independent", results)
 	}
 	if finds.Load() != 1 || writes.Load() != 1 || commits.Load() != 1 {
@@ -114,7 +115,7 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 }
 
 func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
-	for _, mode := range []string{"update", "missing insert"} {
+	for _, mode := range []string{"update", "replace", "delete", "recreate", "missing insert"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture := testmongo.Open(t)
 			collection := fixture.Admin.Database(fixture.DB).Collection("records")
@@ -122,7 +123,7 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 				if id == "counter" && mode == "missing insert" {
 					continue
 				}
-				document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
+				document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}, {Key: "business", Value: true}}
 				if _, err := collection.InsertOne(t.Context(), document); err != nil {
 					t.Fatal(err)
 				}
@@ -135,12 +136,22 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 						return
 					}
 					filter := bson.D{{Key: "_id", Value: "counter"}}
-					document := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int32(20)}, {Key: "native", Value: true}}
+					document := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int32(20)}, {Key: "native", Value: true}, {Key: "business", Value: true}}
 					var err error
-					if mode == "missing insert" {
+					switch mode {
+					case "missing insert":
 						_, err = collection.InsertOne(t.Context(), document)
-					} else {
+					case "replace":
 						_, err = collection.ReplaceOne(t.Context(), filter, document)
+					case "update":
+						fields := bson.D{{Key: "n", Value: int32(20)}, {Key: "native", Value: true}}
+						update := bson.D{{Key: "$set", Value: fields}}
+						_, err = collection.UpdateOne(t.Context(), filter, update)
+					case "delete", "recreate":
+						_, err = collection.DeleteOne(t.Context(), filter)
+						if err == nil && mode == "recreate" {
+							_, err = collection.InsertOne(t.Context(), document)
+						}
 					}
 					if err != nil {
 						t.Error("external writer", err)
@@ -162,7 +173,7 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 			defer cancel()
 			results, _ := adapter.executePrograms(ctx, plans)
 			for _, result := range results {
-				if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+				if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Fatal("confirmed conflict was not recomputed", result)
 				}
 			}
@@ -173,11 +184,16 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 				filter := bson.D{{Key: "_id", Value: id}}
 				raw, err := collection.FindOne(t.Context(), filter).Raw()
 				want := int64(1)
-				if id == "counter" {
+				if id == "counter" && mode != "delete" {
 					want = 21
 				}
 				if err != nil || raw.Lookup("n").AsInt64() != want {
 					t.Fatal("external change lost or peer replayed", id, raw, err)
+				}
+				if id == "peer" || mode != "delete" {
+					if !raw.Lookup("business").Boolean() || id == "counter" && !raw.Lookup("native").Boolean() {
+						t.Fatal("Lua replaced unrelated native fields", id, raw)
+					}
 				}
 			}
 		})
@@ -216,7 +232,7 @@ func TestMongoLuaBatchCommitReplyLossNeverReapplies(t *testing.T) {
 				want = pb.MutationOutcome_UNKNOWN
 			}
 			for _, result := range results {
-				if result.Mutation.GetOutcome() != want {
+				if result.GetMutationResult().GetOutcome() != want {
 					t.Fatal("commit ambiguity misclassified", mode, result)
 				}
 			}
@@ -290,7 +306,7 @@ func TestMongoLuaBatchSchemaRejectionRollsBackThenIsolatesItem(t *testing.T) {
 		}
 		filter := bson.D{{Key: "_id", Value: id}}
 		raw, err := collection.FindOne(t.Context(), filter).Raw()
-		if results[i].Mutation.GetOutcome() != want || err != nil || raw.Lookup("n").Int32() != value {
+		if results[i].GetMutationResult().GetOutcome() != want || err != nil || raw.Lookup("n").Int32() != value {
 			t.Fatal("rollback/isolation lost a peer or replayed the preceding item", id, results[i], raw, err)
 		}
 	}
@@ -332,7 +348,7 @@ func TestMongoLuaBatchLostAbortAcknowledgementNeverRebuilds(t *testing.T) {
 		t.Fatal("unconfirmed rollback cleanup exceeded its bound", time.Since(start))
 	}
 	for _, result := range results {
-		mutation := result.Mutation
+		mutation := result.GetMutationResult()
 		if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE || mutation.GetFailure().GetMessage() != "MongoDB transaction rollback unconfirmed" {
 			t.Fatal("lost rollback acknowledgement allowed transaction rebuild", mutation)
 		}
@@ -405,7 +421,7 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 	defer cancel()
 	results, _ := adapter.executePrograms(ctx, plans)
 	for i, result := range results {
-		if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("bounded batch rejected a valid individual document", i, result)
 		}
 		filter := bson.D{{Key: "_id", Value: ids[i]}}
@@ -416,5 +432,234 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 	}
 	if finds.Load() != 3 || writes.Load() != 2 || commits.Load() != 2 {
 		t.Fatal("retained source bound did not split the uncommitted batch", finds.Load(), writes.Load(), commits.Load())
+	}
+}
+
+func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
+	fixture := testmongo.Open(t)
+	collection := fixture.Admin.Database(fixture.DB).Collection("records")
+	document := bson.D{{Key: "_id", Value: "counter"}, {Key: "n", Value: int32(0)}}
+	if _, err := collection.InsertOne(t.Context(), document); err != nil {
+		t.Fatal(err)
+	}
+	filter := bson.D{{Key: "_id", Value: "counter"}}
+	increment := bson.D{{Key: "n", Value: int32(1)}}
+	update := bson.D{{Key: "$inc", Value: increment}}
+	var reads, writes, commits, aborts atomic.Int32
+	var transactions []int64
+	monitor := &event.CommandMonitor{
+		Started: func(_ context.Context, command *event.CommandStartedEvent) {
+			switch command.CommandName {
+			case "find":
+				reads.Add(1)
+				transactions = append(transactions, command.Command.Lookup("txnNumber").Int64())
+			case "bulkWrite":
+				writes.Add(1)
+			case "commitTransaction":
+				commits.Add(1)
+			case "abortTransaction":
+				aborts.Add(1)
+			}
+		},
+		Succeeded: func(_ context.Context, command *event.CommandSucceededEvent) {
+			if command.CommandName == "find" {
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				if _, err := collection.UpdateOne(ctx, filter, update); err != nil {
+					t.Error("external conflicting write", err)
+				}
+			}
+		},
+	}
+	adapterOptions := adapterTestOptions{fixture: fixture, monitor: monitor}
+	adapter := testAdapter(t, adapterOptions)
+	operation := batchOperationOptions{resource: fixture.DB + "/records/s:counter", program: incrementProgram}
+	work := prepareBatchProgram(t, adapter, operation)
+	plans := []*execution.Plan{work}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	results, _ := adapter.executePrograms(ctx, plans)
+	result := results[0].GetMutationResult()
+	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT || reads.Load() != programAttempts || writes.Load() != programAttempts || aborts.Load() != programAttempts || commits.Load() != 0 {
+		t.Fatal("conflicts escaped the retry bound or committed a stale value", result, reads.Load(), writes.Load(), aborts.Load(), commits.Load())
+	}
+	for index := 1; index < len(transactions); index++ {
+		if transactions[index] <= transactions[index-1] {
+			t.Fatal("conflict reused a previous transaction snapshot", transactions)
+		}
+	}
+	raw, err := collection.FindOne(ctx, filter).Raw()
+	if err != nil || raw.Lookup("n").Int32() != programAttempts {
+		t.Fatal("aborted Lua writes changed the native writer's counter", raw, err)
+	}
+	canceled, stop := context.WithCancel(t.Context())
+	stop()
+	results, _ = adapter.executePrograms(canceled, plans)
+	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || reads.Load() != programAttempts || writes.Load() != programAttempts {
+		t.Fatal("cancelled caller started a new transaction", results[0], reads.Load(), writes.Load())
+	}
+}
+
+func TestMongoLuaCommitCancellationKeepsOriginalDeadline(t *testing.T) {
+	fixture := testmongo.Open(t)
+	var reads, writes, commits atomic.Int32
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, command *event.CommandStartedEvent) {
+		switch command.CommandName {
+		case "find":
+			reads.Add(1)
+		case "bulkWrite":
+			writes.Add(1)
+		case "commitTransaction":
+			commits.Add(1)
+		}
+	}}
+	adapterOptions := adapterTestOptions{fixture: fixture, monitor: monitor}
+	adapter := testAdapter(t, adapterOptions)
+	operation := batchOperationOptions{resource: fixture.DB + "/records/s:deadline", program: incrementProgram}
+	work := prepareBatchProgram(t, adapter, operation)
+	data := bson.D{{Key: "failCommands", Value: bson.A{"commitTransaction"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 250}}
+	testmongo.FailCommand(t, fixture.Admin, data, 1)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	plans := []*execution.Plan{work}
+	results, _ := adapter.executePrograms(ctx, plans)
+	elapsed := time.Since(started)
+	result := results[0].GetMutationResult()
+	if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || reads.Load() != 1 || writes.Load() != 1 || commits.Load() != 1 || elapsed > 350*time.Millisecond {
+		t.Fatal("commit cancellation changed the deadline or replayed Lua", result, reads.Load(), writes.Load(), commits.Load(), elapsed)
+	}
+}
+
+func TestMongoLuaStableUniqueConflictDoesNotRecomputeIndefinitely(t *testing.T) {
+	fixture := testmongo.Open(t)
+	collection := fixture.Admin.Database(fixture.DB).Collection("records")
+	keys := bson.D{{Key: "n", Value: 1}}
+	index := mongo.IndexModel{Keys: keys, Options: options.Index().SetUnique(true)}
+	if _, err := collection.Indexes().CreateOne(t.Context(), index); err != nil {
+		t.Fatal(err)
+	}
+	document := bson.D{{Key: "_id", Value: "existing"}, {Key: "n", Value: int32(1)}, {Key: "business", Value: true}}
+	if _, err := collection.InsertOne(t.Context(), document); err != nil {
+		t.Fatal(err)
+	}
+	var reads, writes, commits atomic.Int32
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, command *event.CommandStartedEvent) {
+		switch command.CommandName {
+		case "find":
+			reads.Add(1)
+		case "bulkWrite":
+			writes.Add(1)
+		case "commitTransaction":
+			commits.Add(1)
+		}
+	}}
+	adapterOptions := adapterTestOptions{fixture: fixture, monitor: monitor}
+	adapter := testAdapter(t, adapterOptions)
+	operation := batchOperationOptions{resource: fixture.DB + "/records/s:new", program: incrementProgram}
+	work := prepareBatchProgram(t, adapter, operation)
+	plans := []*execution.Plan{work}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	results, _ := adapter.executePrograms(ctx, plans)
+	result := results[0].GetMutationResult()
+	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || reads.Load() < 1 || reads.Load() > 2 || writes.Load() != reads.Load() || commits.Load() != 0 {
+		t.Fatal("stable nonidentity constraint kept rebuilding transactions", result, reads.Load(), writes.Load(), commits.Load())
+	}
+	filter := bson.D{{Key: "_id", Value: "existing"}}
+	raw, err := collection.FindOne(ctx, filter).Raw()
+	if err != nil || raw.Lookup("n").Int32() != 1 || !raw.Lookup("business").Boolean() {
+		t.Fatal("rejected transform changed the conflicting document", raw, err)
+	}
+	filter = bson.D{{Key: "_id", Value: "new"}}
+	if err := collection.FindOne(ctx, filter).Err(); err != mongo.ErrNoDocuments {
+		t.Fatal("rejected missing insert persisted", err)
+	}
+}
+
+func TestMongoLuaCloseDuringCommitKeepsUnknownOutcome(t *testing.T) {
+	fixture := testmongo.Open(t)
+	proxy := testmongo.StartProxy(t, fixture)
+	proxy.DropCommand = "commitTransaction"
+	proxy.DropRemaining.Store(1)
+	gate := make(chan struct{})
+	proxy.DropGate = gate
+	defer close(gate)
+	adapterOptions := adapterTestOptions{fixture: fixture, uri: proxy.URI()}
+	adapter := testAdapter(t, adapterOptions)
+	operation := batchOperationOptions{resource: fixture.DB + "/records/s:closing", program: incrementProgram}
+	work := prepareBatchProgram(t, adapter, operation)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	plans := []*execution.Plan{work}
+	done := make(chan []*pb.Event, 1)
+	go func() {
+		results, _ := adapter.executePrograms(ctx, plans)
+		done <- results
+	}()
+	// Wait for a real successful server reply retained by the proxy. The driver
+	// command-start callback alone does not prove a commit reached the database.
+	committed := false
+	for !committed {
+		for _, event := range proxy.Events() {
+			if event.Command == "commitTransaction" && event.Acknowledged && event.Dropped {
+				committed = true
+				break
+			}
+		}
+		if !committed {
+			select {
+			case <-ctx.Done():
+				t.Fatal("commit did not reach the server", ctx.Err())
+			case <-time.After(time.Millisecond):
+			}
+		}
+	}
+	start := time.Now()
+	cancel()
+	if err := adapter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case results := <-done:
+		if result := results[0].GetMutationResult(); result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
+			t.Fatal("close inferred rollback from a missing commit reply", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("transaction execution survived close")
+	}
+	if time.Since(start) > 300*time.Millisecond {
+		t.Fatal("adapter close did not reclaim transaction execution promptly", time.Since(start))
+	}
+	reads, writes, commits := 0, 0, 0
+	var transaction int64
+	session := ""
+	for _, event := range proxy.Events() {
+		switch event.Command {
+		case "find":
+			reads++
+		case "bulkWrite":
+			writes++
+		case "commitTransaction":
+			commits++
+		default:
+			continue
+		}
+		if session == "" {
+			session, transaction = event.Session, event.Transaction
+		} else if session != event.Session || transaction != event.Transaction {
+			t.Fatal("close restarted the transaction", event)
+		}
+	}
+	if reads != 1 || writes != 1 || commits != 1 {
+		t.Fatal("close replayed Lua or commit", reads, writes, commits)
+	}
+	filter := bson.D{{Key: "_id", Value: "closing"}}
+	raw, err := fixture.Admin.Database(fixture.DB).Collection("records").FindOne(t.Context(), filter).Raw()
+	if err != nil || raw.Lookup("n").Int32() != 1 {
+		t.Fatal("intercepted commit did not persist once", raw, err)
+	}
+	if err := adapter.client.Ping(t.Context(), nil); err != mongo.ErrClientDisconnected {
+		t.Fatal("closed adapter retained its client", err)
 	}
 }

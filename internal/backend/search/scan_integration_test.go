@@ -295,7 +295,7 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 		b.Do(t, "PUT", fmt.Sprintf("/%s/_doc/%d", b.Index, i), fmt.Sprintf(`{"n":%d}`, i))
 	}
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-	selector := &pb.Document{MediaType: "application/json", Data: []byte(`{"query":{"range":{"n":{"gte":1}}}}`)}
+	selector := &pb.Document{ContentType: "application/json", Data: []byte(`{"query":{"range":{"n":{"gte":1}}}}`)}
 	req := &pb.ScanRequest{Resource: b.Index, Selector: selector}
 	p, f := a.prepareScan(req)
 	if f != nil {

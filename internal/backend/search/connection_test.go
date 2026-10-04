@@ -163,7 +163,7 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	open := nativeOpen(t, "records", "GET", "/_doc/x")
-	end, _ := runNative(t, a, open, io.NopCloser(strings.NewReader("")))
+	end, _ := runNative(t, a, open, nil)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || calls.Load() != 2 {
 		t.Fatal("native connection config missing")
 	}
@@ -411,7 +411,7 @@ func TestSearchTLSNoRedirectCredentialLeak(t *testing.T) {
 	call := exchange{path: "/redirect", body: []byte(`{}`), limit: 256}
 	_, _, _ = a.request(context.Background(), call)
 	open := nativeOpen(t, "records", "GET", "/_doc/x")
-	end, capture := runNative(t, a, open, io.NopCloser(strings.NewReader("")))
+	end, capture := runNative(t, a, open, nil)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || capture.head == nil || leaked.Load() != 0 {
 		t.Fatal("redirect followed")
 	}

@@ -1,4 +1,4 @@
-// Package testrecords translates backend fixtures into real public batches.
+// Package testrecords prepares backend fixtures through public request validation.
 package testrecords
 
 import (
@@ -7,29 +7,23 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-// New validates a fixture request through the production record constructor.
-func New(store string, operation *execution.Operation) (*execution.Record, *pb.Failure) {
-	if operation == nil || operation.Index == 0 || (operation.Read == nil) == (operation.Mutate == nil) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record fixture")
+func New(store string, input *pb.ExecuteRequest) (*execution.Record, *pb.Failure) {
+	if input == nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing record fixture")
 	}
-	var err error
-	if operation.Read != nil {
-		err = protocol.ValidateReadRequest(operation.Read)
-	} else {
-		err = protocol.ValidateMutationRequest(operation.Mutate)
+	request := &pb.ExecuteRequest{StoreName: store, Index: input.Index, Command: input.Command}
+	if err := protocol.ValidateExecuteRequest(request); err != nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}
-	if err != nil || !protocol.ValidStoreName(store) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid record fixture request")
-	}
-	record, err := execution.NewRecord(store, operation)
+	record, err := execution.NewRecord(store, input.Index, input.Command)
 	if err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}
 	return record, nil
 }
 
-func Prepare(adapter execution.Adapter, store string, operation *execution.Operation) (*execution.Plan, *pb.Failure) {
-	record, failure := New(store, operation)
+func Prepare(adapter execution.Adapter, store string, request *pb.ExecuteRequest) (*execution.Plan, *pb.Failure) {
+	record, failure := New(store, request)
 	if failure != nil {
 		return nil, failure
 	}

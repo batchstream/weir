@@ -90,21 +90,22 @@ func deadlineRuntime(t *testing.T, backend *deadlineBackend, timeout time.Durati
 	return adapter, runtime
 }
 
-func deadlineMutation(t *testing.T, runtime *store.Runtime, action string) *store.PreparedBatch {
+func deadlineMutation(t *testing.T, runtime *store.Runtime, action string) *execution.Plan {
 	t.Helper()
-	document := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":2}`)}
+	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"n":2}`)}
 	request := &pb.MutateRequest{Resource: "records/s:write"}
 	if action == "replace" {
 		request.Action = &pb.MutateRequest_Replace{Replace: document}
 	} else {
 		request.Action = &pb.MutateRequest_Put{Put: document}
 	}
-	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{request}}
-	records, failure := execution.NewMutationRecords("search", batch.Requests, runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
+	operation := &pb.Command_Mutate{Mutate: request}
+	command := &pb.Command{Operation: operation}
+	record, err := execution.NewRecord("search", 1, command)
+	if err != nil {
+		t.Fatal(err)
 	}
-	prepared, failure := runtime.PrepareBatch(records)
+	prepared, failure := runtime.PrepareRecord(record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -120,13 +121,13 @@ func TestConfiguredBackendDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testi
 			caller, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			started := time.Now()
-			ticket, failure, _ := runtime.SubmitBatch(caller, prepared)
+			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results, err := ticket.WaitBatch(caller)
-			if err != nil || len(results) != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || results[0].Mutation.GetFailure() != nil {
-				t.Fatal("legal acknowledgement was cut off by a second deadline", err, results)
+			result, err := ticket.Wait(caller)
+			if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
+				t.Fatal("legal acknowledgement was cut off by a second deadline", err, result)
 			}
 			if elapsed := time.Since(started); elapsed < 2*time.Second || elapsed >= 4*time.Second || backend.writes.Load() != 1 {
 				t.Fatal("deadline or no-replay contract changed", elapsed, backend.writes.Load())
@@ -143,17 +144,17 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 			backend := &deadlineBackend{stall: true, bodyDelay: body}
 			adapter, runtime := deadlineRuntime(t, backend, 80*time.Millisecond)
 			prepared := deadlineMutation(t, runtime, "put")
-			ticket, failure, _ := runtime.SubmitBatch(t.Context(), prepared)
+			ticket, failure, _ := runtime.Submit(t.Context(), prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
 			wait, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			results, err := ticket.WaitBatch(wait)
-			if err != nil || len(results) != 1 {
-				t.Fatal(err, results)
+			result, err := ticket.Wait(wait)
+			if err != nil || result == nil {
+				t.Fatal(err, result)
 			}
-			mutation := results[0].Mutation
+			mutation := result.GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || mutation.GetFailure().GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || backend.writes.Load() != 1 {
 				t.Fatal("deadline lost the sent-write uncertainty or cause", mutation, backend.writes.Load())
 			}
@@ -175,17 +176,17 @@ func TestBackendDeadlineIsCumulativeAcrossQualificationReadAndWrite(t *testing.T
 	_, runtime := deadlineRuntime(t, backend, 150*time.Millisecond)
 	prepared := deadlineMutation(t, runtime, "replace")
 	started := time.Now()
-	ticket, failure, _ := runtime.SubmitBatch(t.Context(), prepared)
+	ticket, failure, _ := runtime.Submit(t.Context(), prepared, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	wait, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	results, err := ticket.WaitBatch(wait)
-	if err != nil || len(results) != 1 {
-		t.Fatal(err, results)
+	result, err := ticket.Wait(wait)
+	if err != nil || result == nil {
+		t.Fatal(err, result)
 	}
-	mutation := results[0].Mutation
+	mutation := result.GetMutationResult()
 	if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || backend.writes.Load() != 1 || time.Since(started) > 500*time.Millisecond {
 		t.Fatal("a later backend stage received a fresh deadline", mutation, backend.writes.Load(), time.Since(started))
 	}
@@ -223,7 +224,7 @@ func TestBulkUnknownRetainsSanitizedFailureCause(t *testing.T) {
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
 			results, _ := adapter.bulkResults(works, test.status, []byte(test.raw), test.err)
-			mutation := results[0].Mutation
+			mutation := results[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != test.code || mutation.GetFailure().GetMessage() != test.message {
 				t.Fatal("uncertainty or sanitized cause changed", mutation)
 			}

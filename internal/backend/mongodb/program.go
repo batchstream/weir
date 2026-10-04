@@ -38,8 +38,8 @@ type programBatch struct {
 // Programs share a short snapshot transaction only when their target and typed
 // identities are distinct. Caller contexts govern evaluation and admission to W,
 // while the shared execution context governs the transaction's wire calls.
-func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) ([]*execution.Result, execution.Feedback) {
-	results := make([]*execution.Result, len(plans))
+func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+	results := make([]*pb.Event, len(plans))
 	signal := execution.Healthy
 	for start := 0; start < len(plans); {
 		target := plans[start].Backend.(*plan).target
@@ -56,7 +56,9 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 		batch := &programBatch{plans: plans[start:end], results: make([]*pb.MutationResult, end-start)}
 		sample := a.runPrograms(ctx, batch)
 		for i, result := range batch.results {
-			results[start+i] = &execution.Result{Index: batch.plans[i].Operation.Index, Mutation: result}
+			value := &pb.Event_MutationResult{MutationResult: result}
+			event := &pb.Event{Value: value}
+			results[start+i] = event
 		}
 		signal = batchFeedback(signal, sample)
 		start = end
@@ -70,7 +72,7 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) execution.Feedback {
 	for i, work := range batch.plans {
 		if result := unstarted(ctx, work); result != nil {
-			batch.results[i] = result.Mutation
+			batch.results[i] = result.GetMutationResult()
 		}
 	}
 	active := batch.active()
@@ -469,7 +471,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
 		}
-		write := &execution.Plan{Operation: work.Operation, Backend: prepared}
+		write := &execution.Plan{Command: work.Command, Backend: prepared}
 		writes = append(writes, write)
 		writePositions = append(writePositions, position)
 	}

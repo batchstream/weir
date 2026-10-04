@@ -71,15 +71,15 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 		work := batchTestPlan(t, adapter, "program", "records/s:"+id)
 		work.Backend.(*plan).program.Source = sources[i]
 		// Independent RPCs all begin at ordinal 1; ownership is by plan pointer.
-		work.Operation.Index = 1
+		work.ID = 1
 		if work.Singleton {
 			t.Fatal("Lua plan excluded from record batching")
 		}
 		works = append(works, work)
 	}
-	results := make(map[*execution.Plan]*execution.Result)
-	emit := func(work *execution.Plan, output *execution.Output) error {
-		results[work] = output.Result
+	results := make(map[*execution.Plan]*pb.Event)
+	emit := func(work *execution.Plan, event *pb.Event) error {
+		results[work] = event
 		return nil
 	}
 	feedback := adapter.Execute(t.Context(), works, emit)
@@ -88,8 +88,8 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 	}
 	for i, work := range works {
 		result := results[work]
-		mutation := result.Mutation
-		if result.Index != 1 || work.Backend.(*plan).action != "program" || work.Backend.(*plan).source != nil {
+		mutation := result.GetMutationResult()
+		if work.Backend.(*plan).action != "program" || work.Backend.(*plan).source != nil {
 			t.Fatal("original plan or RPC ordinal changed", result)
 		}
 		switch i {
@@ -153,7 +153,7 @@ func TestLuaBatchCallerCancellationAndDeadlineKeepPeers(t *testing.T) {
 			if mode == "deadline" {
 				code = pb.FailureCode_DEADLINE_EXCEEDED
 			}
-			if reads.Load() != 1 || writes.Load() != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].Mutation.GetFailure().GetCode() != code || results[1].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+			if reads.Load() != 1 || writes.Load() != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != code || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 				t.Fatal("per-caller lifetime or peer isolation", results, reads.Load(), writes.Load())
 			}
 		})
@@ -219,7 +219,7 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 		t.Fatal("large document pre-read escaped scratch bounds", reads.Load(), maxReadItems.Load(), writes.Load())
 	}
 	for _, result := range results {
-		if result.Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || result.Mutation.GetFailure() != nil {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {
 			t.Fatal("legal large source failed to transform", result)
 		}
 	}
@@ -255,7 +255,7 @@ func TestLuaBatchUsesAbsoluteBackendDeadlineBeyondFiveSeconds(t *testing.T) {
 	defer cancel()
 	works := []*execution.Plan{work}
 	results, _ := adapter.executeRecords(ctx, works)
-	if reads.Load() != 1 || writes.Load() != 1 || results[0].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED || results[0].Mutation.GetFailure() != nil {
+	if reads.Load() != 1 || writes.Load() != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure() != nil {
 		t.Fatal("hidden Lua RMW lifetime overrode legal backend deadline", results, reads.Load(), writes.Load())
 	}
 }

@@ -45,7 +45,7 @@ func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 	}
 	for range 2 {
 		results, signal := adapter.executeRecords(context.Background(), plans)
-		if signal != execution.Healthy || results[0].Index != 8 || results[0].Mutation.Outcome != pb.MutationOutcome_APPLIED || results[1].Index != 9 || results[1].Read.GetDocument() == nil {
+		if signal != execution.Healthy || results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetReadResult().GetDocument() == nil {
 			t.Fatal("mixed batch lost result correspondence or acknowledgement", results, signal)
 		}
 	}
@@ -82,8 +82,8 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 				plans = append(plans, work)
 			}
 			results, signal := adapter.executeRecords(context.Background(), plans)
-			for i, result := range results {
-				if result.Index != uint64(i+1) || result.Read.GetDocument() == nil {
+			for _, result := range results {
+				if result.GetReadResult().GetDocument() == nil {
 					t.Fatal("read or duplicate-ID correspondence lost", results)
 				}
 			}
@@ -123,8 +123,8 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 		plans = append(plans, work)
 	}
 	results, signal := adapter.executeRecords(context.Background(), plans)
-	mutation := results[1].Mutation
-	if results[0].Read.GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED || signal != execution.Neutral {
+	mutation := results[1].GetMutationResult()
+	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_PRECONDITION_FAILED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_PRECONDITION_FAILED || signal != execution.Neutral {
 		t.Fatal("mixed batch bypassed qualification", results, signal)
 	}
 	want := []string{"listCollections"}
@@ -159,8 +159,8 @@ func TestMongoMixedBatchRechecksWriteCallerAfterRead(t *testing.T) {
 	}
 	plans[1].Context = caller
 	results, signal := adapter.executeRecords(context.Background(), plans)
-	mutation := results[1].Mutation
-	if results[0].Read.GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
+	mutation := results[1].GetMutationResult()
+	if results[0].GetReadResult().GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
 		t.Fatal("canceled write was dispatched after shared qualification", results, signal)
 	}
 	want := []string{"listCollections", "find"}

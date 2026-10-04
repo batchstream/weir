@@ -267,10 +267,7 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 		if mode == "ordinary" {
 			request := searchBudgetPut(root, id)
 			recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("search", request))
-			var result *pb.MutationResult
-			if recordResult != nil {
-				result = recordResult.Mutation
-			}
+			result := recordResult.GetMutationResult()
 			if err != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)
 			}
@@ -280,8 +277,8 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 			if err != nil {
 				t.Fatal(err)
 			}
-			doc := &pb.Document{MediaType: search.NativeDescriptor, Data: encoded}
-			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyMediaType: "application/x-ndjson"}
+			doc := &pb.Document{ContentType: search.NativeContentType, Data: encoded}
+			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyContentType: "application/x-ndjson"}
 			nativeCall := &pb.NativeRequest{Open: open, Body: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
 			nativeVariant := &pb.Command_Native{Native: nativeCall}
 			call := &pb.Command{Operation: nativeVariant}

@@ -183,8 +183,8 @@ transport:
 		t.Fatal(err)
 	}
 	defer node.Close(context.Background())
-	if node.budget != 1<<30 {
-		t.Fatal("assembly converted the byte budget a second time", node.budget)
+	if budget := node.guard.Snapshot().Budget; budget != 1<<30 {
+		t.Fatal("assembly converted the byte budget a second time", budget)
 	}
 	raw, err := json.Marshal(cfg)
 	if err != nil {

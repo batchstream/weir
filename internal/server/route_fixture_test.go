@@ -41,10 +41,10 @@ func (*peerAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Fa
 }
 
 func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	operation := record.Operation()
+	command := record.Command()
 	key := record.Key()
-	plan := &execution.Plan{ID: operation.Index, Operation: operation, Key: key, BatchKey: "records", Bytes: operation.RequestBytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
-	if operation.Read != nil {
+	plan := &execution.Plan{ID: record.Index(), Command: command, Key: key, BatchKey: "records", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
+	if command.GetRead() != nil {
 		a.mu.Lock()
 		readBytes := execution.DefaultMaxReadSize
 		for _, document := range a.documents {
@@ -73,20 +73,20 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 	}
 	for _, plan := range plans {
 		a.mu.Lock()
-		result := &execution.Result{Index: plan.ID}
-		if plan.Operation.Read != nil {
+		event := &pb.Event{}
+		if plan.Command.GetRead() != nil {
 			read := protocol.Missing()
 			if document := a.documents[plan.Key]; document != nil {
-				if plan.Results.Reserve(len(document.Data)) {
+				if len(document.Data) <= plan.ResultBytes-execution.ResultOverheadBytes {
 					read = protocol.ReadDocument(document)
 				} else {
 					read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record result budget exhausted"))
 				}
 			}
-			result.Read = read
+			event.Value = &pb.Event_ReadResult{ReadResult: read}
 		} else {
 			a.commands.Add(1)
-			request := plan.Operation.Mutate
+			request := plan.Command.GetMutate()
 			document := request.GetPut()
 			if document == nil {
 				document = request.GetCreate()
@@ -103,10 +103,10 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 			if plan.Key == a.ackFailureKey {
 				failure = a.ackFailure
 			}
-			result.Mutation = protocol.Mutation(pb.MutationOutcome_APPLIED, failure)
+			event.Value = &pb.Event_MutationResult{MutationResult: protocol.Mutation(pb.MutationOutcome_APPLIED, failure)}
 		}
 		a.mu.Unlock()
-		output := &execution.Output{Result: result}
+		output := event
 		_ = emit(plan, output)
 	}
 	return execution.Healthy
@@ -201,7 +201,7 @@ func testRequest() *pb.ReadRequest {
 }
 
 func testMutation(value string) *pb.MutateRequest {
-	document := &pb.Document{MediaType: "application/octet-stream", Data: []byte(value)}
+	document := &pb.Document{ContentType: "application/octet-stream", Data: []byte(value)}
 	action := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: testRequest().Resource, Action: action}
 	return request
@@ -231,10 +231,9 @@ func waitPeerIdle(t *testing.T, s *Server) {
 func routeRead(client pb.StoreServiceClient, ctx context.Context, read *pb.ReadRequest) (*pb.ReadResult, error) {
 	request := &pb.ExecuteRequest{StoreName: "records",
 		Index: 1, Command: &pb.Command{
-			Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{
-				read}}}}}
+			Operation: &pb.Command_Read{Read: read}}}
 
-	response, err := testutil.ReadRecords(ctx, client, request.StoreName, request.Command.GetRead().Requests)
+	response, err := testutil.ReadRecords(ctx, client, request.StoreName, []*pb.ReadRequest{request.Command.GetRead()})
 	if err != nil {
 		return nil, err
 	}
@@ -244,9 +243,9 @@ func routeRead(client pb.StoreServiceClient, ctx context.Context, read *pb.ReadR
 func routeMutate(client pb.StoreServiceClient, ctx context.Context, mutation *pb.MutateRequest) (*pb.MutationResult, error) {
 	request := &pb.ExecuteRequest{StoreName: "records",
 		Index: 1, Command: &pb.Command{
-			Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}}}}
+			Operation: &pb.Command_Mutate{Mutate: mutation}}}
 
-	response, err := testutil.MutateRecords(ctx, client, request.StoreName, request.Command.GetMutate().Requests)
+	response, err := testutil.MutateRecords(ctx, client, request.StoreName, []*pb.MutateRequest{request.Command.GetMutate()})
 	if err != nil {
 		return nil, err
 	}

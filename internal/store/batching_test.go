@@ -17,8 +17,8 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 	if action == "read" || action == "delete" {
 		return p
 	}
-	m := p.Operation.Mutate
-	doc := &pb.Document{MediaType: "application/json", Data: []byte(`{"n":1}`)}
+	m := p.Command.GetMutate()
+	doc := &pb.Document{ContentType: "application/json", Data: []byte(`{"n":1}`)}
 	switch action {
 	case "put":
 		m.Action = &pb.MutateRequest_Put{Put: doc}
@@ -63,7 +63,7 @@ func TestAllRecordActionsShareBatch(t *testing.T) {
 		t.Fatalf("all reads and mutations should share one batch: %v", b)
 	}
 	for i, ticket := range b.items {
-		if ticket.plan.Operation.Index != uint64(i) {
+		if ticket.plan.ID != uint64(i) {
 			t.Fatal("mixed batch changed operation identity")
 		}
 	}
@@ -84,11 +84,11 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	r := newRuntime(nil, limits)
 	session := r.NewSession()
 	defer session.Close()
-	read := recordActionPlan(0, "same", "read")
+	firstWrite := recordActionPlan(0, "same", "put")
 	replace := recordActionPlan(1, "same", "replace")
 	expression := recordActionPlan(2, "other", "expression")
 	program := recordActionPlan(3, "last", "program")
-	for _, p := range []*execution.Plan{read, replace, expression, program} {
+	for _, p := range []*execution.Plan{firstWrite, replace, expression, program} {
 		p.Bytes = limits.BatchBytes / 2
 		if _, failure, _ := r.Submit(context.Background(), p, session); failure != nil {
 			t.Fatal(failure)
@@ -103,7 +103,7 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	r.mu.Lock()
 	first := r.selectLocked(time.Now())
 	r.mu.Unlock()
-	if first == nil || len(first.items) != 2 || first.items[0].plan != read || first.items[1].plan != expression {
+	if first == nil || len(first.items) != 2 || first.items[0].plan != firstWrite || first.items[1].plan != expression {
 		t.Fatal("record duplicate or byte limit ignored", first)
 	}
 	r.mu.Lock()
@@ -116,7 +116,7 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	premature := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if premature != nil {
-		t.Fatal("Replace bypassed its earlier same-session Read")
+		t.Fatal("Replace bypassed its earlier same-session mutation")
 	}
 	r.mu.Lock()
 	finish(r, first)
@@ -145,7 +145,7 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 	case <-a.gate:
 	case <-ctx.Done():
 	}
-	results := make([]*execution.Result, len(plans))
+	results := make([]*pb.Event, len(plans))
 	for i, p := range plans {
 		outcome := pb.MutationOutcome_APPLIED
 		var failure *pb.Failure
@@ -155,10 +155,10 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 		} else if a.phases != nil {
 			a.phases <- p
 		}
-		results[i] = execution.FailedResult(p.Operation, outcome, failure)
+		results[i] = execution.FailedEvent(p.Command, outcome, failure)
 	}
 	for i, result := range results {
-		output := &execution.Output{Result: result}
+		output := result
 		_ = emit(plans[i], output)
 	}
 	return execution.Healthy
@@ -208,7 +208,7 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 		t.Fatal("one caller cancellation poisoned independent execution")
 	}
 	close(gate)
-	if first.Result().Mutation.Outcome != pb.MutationOutcome_NOT_STARTED || second.Result().Mutation.Outcome != pb.MutationOutcome_APPLIED {
+	if recordEvent(t, first).GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || recordEvent(t, second).GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller cancellation lost per-item identity")
 	}
 	first.Ack()
@@ -270,12 +270,12 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 				t.Fatal("abandonment released an in-flight reservation", snapshot)
 			}
 			close(gate)
-			if peer.Result().Mutation.Outcome != pb.MutationOutcome_APPLIED {
+			if recordEvent(t, peer).GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 				t.Fatal("abandonment prevented a peer's already admitted work")
 			}
 			<-abandoned.ready
 			peer.Ack()
-			if len(adapter.phases) != 1 || (<-adapter.phases).Operation.Index != first.Operation.Index {
+			if len(adapter.phases) != 1 || (<-adapter.phases).ID != first.ID {
 				t.Fatal("abandoned item started its next phase")
 			}
 			if snapshot := r.Snapshot(); snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 {

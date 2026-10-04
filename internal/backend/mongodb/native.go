@@ -3,7 +3,6 @@ package mongodb
 import (
 	"context"
 	"errors"
-	"io"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -15,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeDescriptor = "application/vnd.weir.mongodb-command.v1+protobuf"
+const NativeContentType = "application/vnd.weir.mongodb-command.v1+protobuf"
 const NativeCommandLimit = 4 << 20
 
 const NativeResponseLimit = 4 << 20
@@ -28,7 +27,7 @@ func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failu
 	if len(parts) != 2 || !validNamespace(parts) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
-	if open.Descriptor_.MediaType != NativeDescriptor || len(open.Descriptor_.Data) != 0 || open.BodyMediaType != "application/bson" {
+	if open.Descriptor_.ContentType != NativeContentType || len(open.Descriptor_.Data) != 0 || open.BodyContentType != "application/bson" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native requires empty Mongo command descriptor and BSON body")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
@@ -97,11 +96,8 @@ func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, exchange *execution.NativeExchange) (*pb.NativeEnd, execution.Feedback) {
-	raw, err := io.ReadAll(io.LimitReader(exchange.Source, NativeCommandLimit+1))
-	if err != nil {
-		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "incomplete Native BSON input")), execution.Neutral
-	}
+func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) (*pb.NativeEnd, execution.Feedback) {
+	raw := work.Command.GetNative().Body
 	target := work.Backend.(namespace)
 	if f := a.nativeCommand(raw, target); f != nil {
 		return protocol.NativeFailure(false, f), execution.Neutral
@@ -157,13 +153,17 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, excha
 	if len(reply) > NativeResponseLimit || framingErr != nil || !envelopeOK || !validScanBSON(reply, 0, &nodes) {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "invalid or excessive Native BSON reply")), execution.Neutral
 	}
-	head := &pb.NativeHead{BodyMediaType: "application/bson"}
-	if err := exchange.Sink.Head(head); err != nil {
+	head := &pb.NativeHead{BodyContentType: "application/bson"}
+	value := &pb.Event_Head{Head: head}
+	event := &pb.Event{Value: value}
+	if err := emit(work, event); err != nil {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed")), execution.Neutral
 	}
 	for len(reply) > 0 {
 		n := min(len(reply), protocol.NativeChunk)
-		if err := exchange.Sink.Chunk(reply[:n]); err != nil {
+		value := &pb.Event_Chunk{Chunk: append([]byte(nil), reply[:n]...)}
+		event := &pb.Event{Value: value}
+		if err := emit(work, event); err != nil {
 			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed")), execution.Neutral
 		}
 		reply = reply[n:]

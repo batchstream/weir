@@ -10,22 +10,25 @@ independent; see [protocols](protocols.md) and [discovery design](discovery-desi
 ## Public requests and completion
 
 Execute is bidirectional. One finite stream selects a Store and one operation
-kind. ReadBatch and MutationBatch frames carry bounded lists of canonical relative
-resources and a consecutive first-item ordinal. The server validates a frame,
-prepares one finite window, executes and publishes its indexed results, then
-continues receiving. A logical call can contain arbitrarily many frames; it never
-owns a complete-call result table on the server.
+kind. Each Read or Mutate request carries one canonical relative resource and a
+consecutive one-based ordinal. The server validates and prepares each request,
+admits it into the Store scheduler, and publishes its result in input order.
+Receiving and publishing run concurrently through a queue of at most 32 tickets.
+There is no complete-call request or result table on the server.
 
 The SDK Read and Mutate conveniences preflight slice inputs without copying the
 whole call into another protobuf batch. ReadStream and MutateStream offer an
 incremental producer and consumer. Sending and receiving run concurrently with
-bounded frame credits. Convenience methods accumulate output on the caller.
+at most 32 unconfirmed requests and 8 MiB of retained input; a larger legal
+single request occupies the window alone. Each request is sent immediately,
+without waiting for the producer to finish. Convenience methods accumulate output
+on the caller.
 
-Compatible windows from independent streams share database batches. Mutations to
-the same resource execute in stream input order, including after item failures.
-Different streams retain backend concurrency semantics. Mutate is not an atomic
-transaction; a later invalid frame cannot undo earlier effects. There is no durable
-request identity, deduplication or exactly-once guarantee.
+Compatible queued records share database batches within and across streams.
+Mutations to the same resource execute in stream input order, including after
+item failures. Different streams retain backend concurrency semantics. Mutate is
+not an atomic transaction; a later invalid request cannot undo earlier effects.
+There is no durable request identity, deduplication or exactly-once guarantee.
 
 Scan and Native each send one command with index 1 and half-close input. A scan
 page emits documents then ScanEnd; Native emits metadata, chunks and NativeEnd.
@@ -57,7 +60,7 @@ contains only public ownership/address advertisements, never backend credentials
 
 | Budget | Default or bound |
 | --- | --- |
-| Read/Mutate request frame | 5 MiB and 1024 items; no whole-call size limit |
+| Read/Mutate input | One bounded record per request; no whole-call size limit |
 | Record document | 2 MiB; ordinary Read additionally obeys max_read_size |
 | Ordinary Read source | Default 16 KiB; configurable 1 KiB–2 MiB |
 | Native body | MongoDB 4 MiB; Search 8 MiB |
@@ -71,18 +74,20 @@ contains only public ownership/address advertisements, never backend credentials
 | Directory controls | 2 concurrent controls per listener; bounded exchanges |
 | Process admission threshold | 2 GiB |
 
-There is no whole-call item-count limit. Frame bytes, frame metadata, Store budgets
-and physical grouping bounds determine concurrent capacity. A wire pre-scan rejects
-frame expansion beyond the metadata budget before protobuf construction.
+There is no whole-call item-count limit. Individual message bounds, finite ticket
+credits, Store byte budgets and physical grouping bounds determine concurrent
+capacity. A wire pre-scan rejects duplicate routing fields and multiple Command
+variants before protobuf construction.
 
-Each stream retains one bounded input frame and one prepared execution window.
-Read windows reserve output credits from their configured maximum read sizes before
-execution, so an oversized logical call does not consume an entire Store result
-budget. Shared capacity exhaustion waits for admission or cancellation. The server
-publishes and releases a window before advancing to the next window or frame.
-Window result tables and database workspace are independent of total call length.
-Same-resource ordering is maintained across windows. Slow response consumption
-stalls publication and stops further input; queues cannot grow without a bound.
+A stream holds at most 32 admitted or publishing tickets and one currently
+received request awaiting Store admission. Admitted input and prepared metadata
+are charged to the Store pending budget. Read tickets reserve their configured
+maximum result size before execution. Shared capacity exhaustion waits for
+admission or cancellation. Every result remains charged until publication ends;
+slow consumers therefore stop further admission. Terminal events and database
+workspace remain bounded independently of total call length.
+Store shutdown cancels backend work while preserving record results until their
+consumer acknowledges them or the owning RPC ends.
 
 Backend working charges cover bounded native replies and decoding scratch.
 MongoDB uses its native bounded cursor reply; Search caps multi-get response bytes.
@@ -95,8 +100,8 @@ and increase process `memory` to cover it. Configuration rejects an insufficient
 process envelope before opening backends.
 Encoded response bytes remain charged until the native transport frees its final
 buffer reference, including after handler completion. Exhausted output capacity
-fails boundedly. A record window's application result charges remain held until
-every response's encoded buffer ownership ends, then the window is acknowledged.
+fails boundedly. A record's application result charges remain held until its response's encoded
+buffer ownership ends, then its ticket is acknowledged.
 Cancellation releases application data; any independent encoded copy remains
 charged until the transport drops its final reference.
 
@@ -109,16 +114,15 @@ hard VM allocation sandbox.
 
 ## Scheduling and backend work
 
-The current prepared window enters the Store scheduler directly; there is no
-timed collection window or polling. When an execution permit becomes available,
-the scheduler combines compatible queued windows from different streams by
-target namespace, actual input bytes and max_batch_operations. One selected
-execution holds one working envelope sized for its largest operation. Each
-stream advances through sequential bounded windows; multi-namespace work splits
-into compatible backend groups. Repeated mutation keys start a new sequential wave.
-One adapter implementation handles both record groups and Scan/Native plans.
+Each prepared record enters one Store scheduler directly; there is no timed
+collection window or polling. When an execution permit becomes available, the
+scheduler combines compatible queued records by target, actual input bytes and
+max_batch_operations. One selected execution holds one working envelope sized
+for its largest operation. A session/resource key serializes same-resource work
+within a stream; distinct resources and streams can share a physical batch.
+Scan and Native use the same scheduler with their required singleton lifecycle.
 
-Every record keeps its owning RPC context, result budget and ordinal. Backend
+Every record keeps its owning RPC context, result reservation and ordinal. Backend
 results are assigned by dispatched plan identity, because different RPCs can use
 the same ordinal. The shared backend context uses the latest caller deadline,
 capped by the configured backend timeout. Canceling one caller does not interrupt

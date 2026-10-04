@@ -48,10 +48,9 @@ type Runtime struct {
 	queue                                   []*Ticket
 	live                                    map[*Ticket]struct{}
 	batches                                 map[*batch]struct{}
-	keys                                    map[string]*Ticket
+	keys                                    map[resourceKey]*Ticket
 	pendingBytes, resultBytes, workingBytes int
 	active, publishers                      int
-	nextSession                             uint64
 	draining, closed, overloaded            bool
 	wake, changed, done                     chan struct{}
 	closeOnce                               sync.Once
@@ -59,18 +58,14 @@ type Runtime struct {
 	metrics                                 runtimeMetrics
 }
 type Session struct {
-	runtime     *Runtime
-	id          uint64
-	Events      chan *Emission
-	outstanding int
-	closed      bool
+	runtime *Runtime
+	Events  chan *Emission
+	closed  bool
 }
 type Emission struct {
-	Ticket *Ticket
-	Event  *pb.Event
-	End    bool
-	done   chan struct{}
-	once   sync.Once
+	Event *pb.Event
+	done  chan struct{}
+	once  sync.Once
 }
 
 func (e *Emission) Release() {
@@ -80,31 +75,30 @@ func (e *Emission) Release() {
 }
 
 type Ticket struct {
-	id                   uint64
 	publishing, released bool
 	runtime              *Runtime
 	session              *Session
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	plan                 *execution.Plan
-	result               *execution.Result
+	event                *pb.Event
 	ready                chan struct{}
-	sequence             string
 	queuedAt             time.Time
 	state                uint8
 	abandoned, acked     bool
 	stopWatch            func() bool
-	bulk                 *PreparedBatch
-	results              []*execution.Result
-	resultCharge         int
 }
+type resourceKey struct {
+	session  *Session
+	resource string
+}
+
 type batch struct {
-	ctx             context.Context
-	items           []*Ticket
-	cancel          context.CancelFunc
-	backendDeadline time.Time
-	timeoutOwned    bool
-	workingBytes    int
+	ctx          context.Context
+	items        []*Ticket
+	cancel       context.CancelFunc
+	timeoutOwned bool
+	workingBytes int
 }
 type Snapshot struct {
 	Ready, ReadyBytes                     int
@@ -129,17 +123,29 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 	return runtime, nil
 }
 func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
-	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[string]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
+	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[resourceKey]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
 	runtime.metrics = newRuntimeMetrics()
 	return runtime
 }
 func (r *Runtime) NewSession() *Session {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.nextSession++
-	session := &Session{runtime: r, id: r.nextSession, Events: make(chan *Emission, 1)}
+	session := &Session{runtime: r}
 	return session
 }
+
+func (r *Runtime) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+	plan, failure := r.adapter.PrepareRecord(record)
+	if failure != nil {
+		r.metrics.rejections.WithLabelValues("prepare").Inc()
+		return nil, failure
+	}
+	if plan == nil || plan.Command != record.Command() || plan.ID != record.Index() || plan.Streaming || plan.CleanupRequired {
+		return nil, protocol.Fail(pb.FailureCode_INTERNAL, "invalid prepared record")
+	}
+	plan.Bytes = max(plan.Bytes, record.Bytes())
+	plan.ResultBytes = max(plan.ResultBytes, execution.ResultOverheadBytes)
+	return plan, nil
+}
+
 func (r *Runtime) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
 	plan, failure := r.adapter.PrepareCommand(id, call)
 	if failure != nil {
@@ -176,14 +182,9 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
-	ticket := &Ticket{runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: plan, id: plan.ID, ready: make(chan struct{}), queuedAt: time.Now()}
-	if session != nil {
-		session.outstanding++
-	}
-	// Ordering is defined within one RPC. Different RPCs retain the database's
-	// own concurrency semantics and never imply external-write isolation.
-	if session != nil && plan.Key != "" {
-		ticket.sequence = fmt.Sprintf("%d:%s", session.id, plan.Key)
+	ticket := &Ticket{runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: plan, ready: make(chan struct{}), queuedAt: time.Now()}
+	if session != nil && (plan.Command.GetScan() != nil || plan.Command.GetNative() != nil) && session.Events == nil {
+		session.Events = make(chan *Emission, 1)
 	}
 	r.queue = append(r.queue, ticket)
 	r.live[ticket] = struct{}{}
@@ -200,25 +201,18 @@ func (r *Runtime) signal() {
 	}
 }
 func (r *Runtime) notifyLocked() { close(r.changed); r.changed = make(chan struct{}); r.signal() }
-func (t *Ticket) Wait(ctx context.Context) (*execution.Result, error) {
+func (t *Ticket) Wait(ctx context.Context) (*pb.Event, error) {
 	select {
 	case <-t.ready:
 		r := t.runtime
 		r.mu.Lock()
-		result := t.result
+		event := t.event
 		r.mu.Unlock()
-		return result, nil
+		return event, nil
 	case <-ctx.Done():
 		t.Abandon()
 		return nil, ctx.Err()
 	}
-}
-func (t *Ticket) Result() *execution.Result {
-	<-t.ready
-	r := t.runtime
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return t.result
 }
 func (t *Ticket) Ack() {
 	r := t.runtime
@@ -246,11 +240,9 @@ func (s *Session) Close() {
 	s.closed = true
 	for t := range r.live {
 		if t.session == s {
-			if t.session != nil {
-				t.abandoned = true
-			}
+			t.abandoned = true
 			t.cancel()
-			if t.state == 2 && t.session != nil {
+			if t.state == 2 {
 				r.releaseLocked(t)
 			}
 		}
@@ -264,12 +256,6 @@ func (s *Session) Close() {
 		}
 	}
 }
-func (s *Session) Outstanding() int {
-	r := s.runtime
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return s.outstanding
-}
 func (r *Runtime) releaseLocked(t *Ticket) {
 	if t.released {
 		return
@@ -281,32 +267,23 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	}
 	t.released = true
 	delete(r.live, t)
-	if t.bulk != nil {
-		r.pendingBytes -= t.bulk.bytes
-		r.resultBytes -= t.resultCharge
-		t.bulk = nil
-		t.results = nil
-	} else {
-		r.pendingBytes -= t.plan.Bytes
-		r.resultBytes -= t.plan.ResultBytes
-	}
-	if t.session != nil {
-		t.session.outstanding--
-	}
+	r.pendingBytes -= t.plan.Bytes
+	r.resultBytes -= t.plan.ResultBytes
 	t.plan = nil
-	t.result = nil
+	t.event = nil
 	r.notifyLocked()
 }
-func (r *Runtime) completeLocked(t *Ticket, result *execution.Result) {
-	r.terminalLocked(t, result)
+func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
+	r.terminalLocked(t, event)
 	t.state = 2
-	t.result = result
+	t.event = event
 	if t.stopWatch != nil {
 		t.stopWatch()
 	}
 	close(t.ready)
-	if t.sequence != "" && r.keys[t.sequence] == t {
-		delete(r.keys, t.sequence)
+	key := resourceKey{session: t.session, resource: t.plan.Key}
+	if t.session != nil && t.plan.Command.GetMutate() != nil && r.keys[key] == t {
+		delete(r.keys, key)
 	}
 	if t.abandoned || t.session != nil && t.session.closed {
 		r.releaseLocked(t)
@@ -321,20 +298,16 @@ func (r *Runtime) cancelQueuedLocked() {
 			if r.closed {
 				failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
 			}
-			if t.bulk != nil {
-				r.completeBatchLocked(t, failure)
-				continue
-			}
-			var result *execution.Result
-			if t.plan.Operation != nil {
-				result = execution.FailedResult(t.plan.Operation, pb.MutationOutcome_NOT_STARTED, failure)
+			var event *pb.Event
+			if t.plan.Command.GetRead() != nil || t.plan.Command.GetMutate() != nil {
+				event = execution.FailedEvent(t.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
 			}
 			if t.plan.CleanupRequired {
 				t.state = 3
 			} else {
-				r.completeLocked(t, result)
+				r.completeLocked(t, event)
 			}
-			if t.session != nil && !t.acked {
+			if t.session != nil && t.session.Events != nil && !t.acked {
 				var events []*pb.Event
 
 				r.startPublisherLocked(t, events, false)
@@ -381,7 +354,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	if r.active >= r.limits.Concurrency {
 		return nil
 	}
-	seen := make(map[string]bool)
+	seen := make(map[resourceKey]bool)
 	records := make(map[string]bool)
 	selected := make(map[*Ticket]bool)
 	var items []*Ticket
@@ -391,17 +364,12 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		if t.state != 0 {
 			continue
 		}
-		if t.bulk != nil {
-			if len(items) == 0 && t.bulk.workingBytes <= r.limits.WorkingBytes-r.workingBytes {
-				return r.selectBatchLocked(t, now)
-			}
-			continue
-		}
-		if t.sequence != "" {
-			if seen[t.sequence] || (r.keys[t.sequence] != nil && r.keys[t.sequence] != t) {
+		key := resourceKey{session: t.session, resource: t.plan.Key}
+		if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
+			if seen[key] || (r.keys[key] != nil && r.keys[key] != t) {
 				continue
 			}
-			seen[t.sequence] = true
+			seen[key] = true
 		}
 		if t.plan.WorkingBytes > r.limits.WorkingBytes-r.workingBytes {
 			continue
@@ -409,12 +377,13 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		if seed == nil {
 			seed = t
 		}
-		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || records[t.plan.Key] || bytes+t.plan.Bytes > r.limits.BatchBytes) {
+		previousWrite, duplicateResource := records[t.plan.Key]
+		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || (duplicateResource && (previousWrite || t.plan.Command.GetMutate() != nil)) || bytes+t.plan.Bytes > r.limits.BatchBytes) {
 			continue
 		}
 		items = append(items, t)
 		selected[t] = true
-		records[t.plan.Key] = true
+		records[t.plan.Key] = t.plan.Command.GetMutate() != nil
 		bytes += t.plan.Bytes
 		if len(items) >= r.limits.BatchOperations || seed.plan.Singleton {
 			break
@@ -459,18 +428,16 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		cancel()
 		ctx, cancel = context.WithCancel(seed.ctx)
 		owned = false
-		if deadline, ok := ctx.Deadline(); ok {
-			backendDeadline = deadline
-		}
 	}
-	b := &batch{ctx: ctx, items: items, cancel: cancel, backendDeadline: backendDeadline, timeoutOwned: owned, workingBytes: workingBytes}
+	b := &batch{ctx: ctx, items: items, cancel: cancel, timeoutOwned: owned, workingBytes: workingBytes}
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
 			r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(t.queuedAt).Seconds())
 			t.state = 1
-			if t.sequence != "" {
-				r.keys[t.sequence] = t
+			if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
+				key := resourceKey{session: t.session, resource: t.plan.Key}
+				r.keys[key] = t
 			}
 		} else {
 			keep = append(keep, t)
@@ -491,7 +458,7 @@ func (t *Ticket) emit(event *pb.Event) error {
 	if t.session == nil {
 		return nil
 	}
-	emission := &Emission{Ticket: t, Event: event, done: make(chan struct{})}
+	emission := &Emission{Event: event, done: make(chan struct{})}
 	select {
 	case t.session.Events <- emission:
 	case <-t.ctx.Done():
@@ -522,7 +489,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 				}
 			}
 			r.mu.Lock()
-			r.completeLocked(t, t.result)
+			r.completeLocked(t, t.event)
 			r.mu.Unlock()
 		}
 		delivered := true
@@ -552,11 +519,11 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 			_ = r.adapter.ClosePlan(cleanup, t.plan)
 			cancel()
 			r.mu.Lock()
-			r.completeLocked(t, t.result)
+			r.completeLocked(t, t.event)
 			r.mu.Unlock()
 		}
 		if delivered && t.session != nil {
-			emission := &Emission{Ticket: t, End: true, done: make(chan struct{})}
+			emission := &Emission{done: make(chan struct{})}
 			select {
 			case t.session.Events <- emission:
 			case <-t.ctx.Done():
@@ -580,15 +547,10 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 	}()
 }
 func (r *Runtime) execute(b *batch) {
-	if b.items[0].bulk != nil {
-		r.runBatch(b)
-		return
-	}
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
-	events := make(map[*Ticket][]*pb.Event, len(b.items))
-	eventBytes := make(map[*Ticket]int, len(b.items))
-	documentBytes := make(map[*Ticket]int, len(b.items))
+	var events map[*Ticket][]*pb.Event
+	var eventBytes, documentBytes map[*Ticket]int
 	for i, t := range b.items {
 		plan := *t.plan
 		plan.Context = t.ctx
@@ -596,27 +558,34 @@ func (r *Runtime) execute(b *batch) {
 		plans[i] = &plan
 		positions[&plan] = t
 	}
-	emit := func(plan *execution.Plan, output *execution.Output) error {
+	emit := func(plan *execution.Plan, event *pb.Event) error {
 		ticket := positions[plan]
 		if ticket == nil {
 			return fmt.Errorf("adapter emitted unknown plan")
 		}
-		if output == nil {
+		if event == nil {
 			return fmt.Errorf("adapter emitted nil event")
 		}
-		if output.Result != nil {
-			ticket.result = output.Result
+		if plan.Command.GetRead() != nil || plan.Command.GetMutate() != nil {
+			if ticket.event != nil {
+				return fmt.Errorf("record emitted multiple results")
+			}
+			if plan.Command.GetRead() != nil && event.GetReadResult() == nil || plan.Command.GetMutate() != nil && event.GetMutationResult() == nil {
+				return fmt.Errorf("adapter emitted wrong record result")
+			}
+			if proto.Size(event) > plan.ResultBytes {
+				return fmt.Errorf("record result exceeds reservation")
+			}
+			ticket.event = event
 			return nil
-		}
-		event := output.Event
-		if event == nil {
-			return fmt.Errorf("adapter emitted no result or event")
 		}
 		if plan.Streaming {
 			return ticket.emit(event)
 		}
-		if !plan.Singleton && len(events[ticket]) > 0 {
-			return fmt.Errorf("record emitted multiple events")
+		if events == nil {
+			events = make(map[*Ticket][]*pb.Event)
+			eventBytes = make(map[*Ticket]int)
+			documentBytes = make(map[*Ticket]int)
 		}
 		if plan.Command.GetScan() != nil {
 			if len(events[ticket]) >= execution.ScanBatchDocuments+1 {
@@ -667,18 +636,17 @@ func (r *Runtime) execute(b *batch) {
 	}
 	for index, ticket := range b.items {
 		ticket.plan.Continue = plans[index].Continue
-		result := ticket.result
-		if result == nil && ticket.plan.Operation != nil {
+		event := ticket.event
+		if event == nil && (ticket.plan.Command.GetRead() != nil || ticket.plan.Command.GetMutate() != nil) {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no result")
-			result = execution.FailedResult(ticket.plan.Operation, pb.MutationOutcome_UNKNOWN, failure)
-
+			event = execution.FailedEvent(ticket.plan.Command, pb.MutationOutcome_UNKNOWN, failure)
 		}
 		if ticket.plan.Continue || ticket.plan.CleanupRequired {
 			ticket.state = 3
 		} else {
-			r.completeLocked(ticket, result)
+			r.completeLocked(ticket, event)
 		}
-		if ticket.session != nil && !ticket.acked {
+		if ticket.session != nil && ticket.session.Events != nil && !ticket.acked {
 			r.startPublisherLocked(ticket, events[ticket], ticket.plan.Continue)
 		}
 	}
@@ -704,7 +672,7 @@ func (r *Runtime) Snapshot() Snapshot {
 	for t := range r.live {
 		if t.state == 2 {
 			snapshot.Ready++
-			snapshot.ReadyBytes += t.resultReservation()
+			snapshot.ReadyBytes += t.plan.ResultBytes
 		}
 	}
 	return snapshot
@@ -718,6 +686,23 @@ func (r *Runtime) SetOverloaded(value bool) {
 	}
 }
 func (r *Runtime) BeginDrain() { r.mu.Lock(); defer r.mu.Unlock(); r.draining = true; r.notifyLocked() }
+
+// Record results remain consumer-owned until Ack, including sessions used for
+// resource ordering. Scan and Native use session-owned event publishers.
+func (r *Runtime) cancelTicketsLocked() {
+	for ticket := range r.live {
+		record := ticket.plan.Command.GetRead() != nil || ticket.plan.Command.GetMutate() != nil
+		discard := ticket.session != nil && !record
+		if discard {
+			ticket.abandoned = true
+		}
+		ticket.cancel()
+		if ticket.state == 2 && discard {
+			r.releaseLocked(ticket)
+		}
+	}
+}
+
 func (r *Runtime) Close(ctx context.Context) error {
 	r.BeginDrain()
 	select {
@@ -728,15 +713,7 @@ func (r *Runtime) Close(ctx context.Context) error {
 		for b := range r.batches {
 			b.cancel()
 		}
-		for t := range r.live {
-			if t.session != nil {
-				t.abandoned = true
-			}
-			t.cancel()
-			if t.state == 2 && t.session != nil {
-				r.releaseLocked(t)
-			}
-		}
+		r.cancelTicketsLocked()
 		r.notifyLocked()
 		r.mu.Unlock()
 	}
@@ -748,15 +725,7 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	r.closed = true
-	for t := range r.live {
-		if t.session != nil {
-			t.abandoned = true
-		}
-		t.cancel()
-		if t.state == 2 && t.session != nil {
-			r.releaseLocked(t)
-		}
-	}
+	r.cancelTicketsLocked()
 	r.notifyLocked()
 	r.mu.Unlock()
 	r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
@@ -775,15 +744,4 @@ func (r *Runtime) Close(ctx context.Context) error {
 		}
 	}
 	return r.closeErr
-}
-
-func (t *Ticket) ID() uint64 {
-	return t.id
-}
-
-func (t *Ticket) resultReservation() int {
-	if t.bulk != nil {
-		return t.resultCharge
-	}
-	return t.plan.ResultBytes
 }

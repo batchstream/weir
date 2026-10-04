@@ -18,7 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func TestNativeCoalescedWindowsKeepLargeResultsAndRetainedOwners(t *testing.T) {
+func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 	fixture := testmongo.Open(t)
 	document := bson.D{{Key: "_id", Value: "same"}, {Key: "pad", Value: strings.Repeat("x", 1100<<10)}}
 	if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertOne(t.Context(), document); err != nil {
@@ -52,54 +52,59 @@ func TestNativeCoalescedWindowsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 	limits.ResultBytes = 64 << 20
 	runtime := newRuntime(adapter, limits)
 	var tickets []*Ticket
-	for _, count := range []int{31, 1} {
-		request := &pb.ReadBatch{}
-		for range count {
-			read := &pb.ReadRequest{Resource: fixture.DB + "/records/s:same"}
-			request.Requests = append(request.Requests, read)
+	for index := range 32 {
+		read := &pb.ReadRequest{Resource: fixture.DB + "/records/s:same"}
+		operation := &pb.Command_Read{Read: read}
+		command := &pb.Command{Operation: operation}
+		ordinal := uint64(index + 1)
+		if index == 31 {
+			ordinal = 1
 		}
-		records, failure := execution.NewReadRecords("mongo", request.Requests, runtime.PendingByteLimit())
+		record, err := execution.NewRecord("mongo", ordinal, command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		work, failure := runtime.PrepareRecord(record)
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		prepared, failure := runtime.PrepareBatch(records)
+		ticket, failure, _ := runtime.Submit(ctx, work, nil)
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		tickets = append(tickets, submitCrossBatch(t, runtime, ctx, prepared))
+		tickets = append(tickets, ticket)
 	}
 	selected := selectCrossBatch(runtime)
-	if selected == nil || len(selected.items) != 2 {
+	if selected == nil || len(selected.items) != 32 {
 		t.Fatal("compatible actual database RPCs did not coalesce")
 	}
 	runtime.execute(selected)
-	results := crossResults(t, tickets[0])
 	successes := 0
-	for position, result := range results {
-		if result.Index != uint64(position+1) {
-			t.Fatal("first caller results were reordered")
+	for position, ticket := range tickets[:31] {
+		result, err := ticket.Wait(ctx)
+		if err != nil || ticket.plan.ID != uint64(position+1) {
+			t.Fatal("first caller results lost association", err, ticket.plan.ID)
 		}
-		if document := result.Read.GetDocument(); document != nil {
-			successes++
-			if !bytes.Equal(document.Data, raw) {
-				t.Fatal("stored document changed in aggregated response")
-			}
-		} else {
-			t.Fatal("admitted window lost its reserved read result", result)
+		document := result.GetReadResult().GetDocument()
+		if !bytes.Equal(document.GetData(), raw) {
+			t.Fatal("admitted read lost its reserved result or changed the document", result)
 		}
+		successes++
 	}
-	peer := crossResults(t, tickets[1])[0]
-	if successes != len(results) || successes*len(raw) <= 32<<20 || finds.Load() != 1 || peer.Index != 1 || !bytes.Equal(peer.Read.GetDocument().GetData(), raw) {
-		t.Fatal("large result window was truncated or lost peer isolation", successes, len(results), finds.Load(), peer.Read.GetFailure())
+	peer, err := tickets[31].Wait(ctx)
+	if err != nil || successes*len(raw) <= 32<<20 || finds.Load() != 1 || tickets[31].plan.ID != 1 || !bytes.Equal(peer.GetReadResult().GetDocument().GetData(), raw) {
+		t.Fatal("large aggregate was truncated or lost peer isolation", err, successes, finds.Load(), peer)
 	}
-	tickets[0].Ack()
+	for _, ticket := range tickets[:31] {
+		ticket.Ack()
+	}
 	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+len(raw) || snapshot.WorkingBytes != 0 {
-		t.Fatal("first caller did not release only its own response charge", snapshot)
+		t.Fatal("first caller did not release only its own response charges", snapshot)
 	}
-	if !bytes.Equal(peer.Read.GetDocument().GetData(), raw) {
+	if !bytes.Equal(peer.GetReadResult().GetDocument().GetData(), raw) {
 		t.Fatal("first caller release invalidated slower peer's document")
 	}
-	tickets[1].Ack()
+	tickets[31].Ack()
 	waitReleased(t, runtime)
 	if snapshot := runtime.Snapshot(); snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
 		t.Fatal("aggregated native read leaked byte ownership", snapshot)

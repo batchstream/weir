@@ -347,11 +347,11 @@ func TestScanPublicationFailureEndsWithInternalFailure(t *testing.T) {
 	state.opened, state.pit = true, "previous"
 	var end *pb.ScanEnd
 	failed := errors.New("bounded result collector rejected output")
-	emit := func(_ *execution.Plan, output *execution.Output) error {
-		if output.Event.GetDocument() != nil {
+	emit := func(_ *execution.Plan, event *pb.Event) error {
+		if event.GetDocument() != nil {
 			return failed
 		}
-		end = output.Event.GetScanEnd()
+		end = event.GetScanEnd()
 		return nil
 	}
 	adapter.streamScan(context.Background(), work, emit)

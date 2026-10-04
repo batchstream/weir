@@ -2,7 +2,6 @@ package search
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +15,7 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
-func TestSearchMutationWindowsSeparateResultsFromPreReadWorkingMemory(t *testing.T) {
+func TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory(t *testing.T) {
 	type workingCase struct {
 		name  string
 		bytes int
@@ -50,36 +49,36 @@ func TestSearchMutationWindowsSeparateResultsFromPreReadWorkingMemory(t *testing
 						t.Error(err)
 					}
 				})
-				requests := make([]*pb.MutateRequest, 32)
-				for index := range requests {
-					work := batchTestPlan(t, adapter, action, fmt.Sprintf("records/s:%d", index))
-					if work.ResultBytes != execution.ResultOverheadBytes || work.WorkingBytes < 3*execution.BackendBatchBytes {
-						t.Fatal("mutation declarations misplaced pre-read scratch", work.ResultBytes, work.WorkingBytes)
-					}
-					requests[index] = work.Operation.Mutate
+				work := batchTestPlan(t, adapter, action, "records/s:record")
+				if work.ResultBytes != execution.ResultOverheadBytes || work.WorkingBytes < 3*execution.BackendBatchBytes {
+					t.Fatal("mutation declarations misplaced pre-read scratch", work.ResultBytes, work.WorkingBytes)
 				}
-				batch := &pb.MutationBatch{Requests: requests}
-				operation := &pb.Command_Mutate{Mutate: batch}
-				command := &pb.Command{Operation: operation}
-				prepared, count, failure := runtime.PrepareWindow("search", command, 0)
+				record, err := execution.NewRecord("search", 1, work.Command)
+				if err != nil {
+					t.Fatal(err)
+				}
+				prepared, failure := runtime.PrepareRecord(record)
 				if commands.Load() != 0 {
-					t.Fatal("preparing a mutation window performed backend I/O")
+					t.Fatal("preparing a mutation performed backend I/O")
 				}
+				if failure != nil || prepared == nil {
+					t.Fatal(failure)
+				}
+				ticket, failure, _ := runtime.Submit(t.Context(), prepared, nil)
 				if working.name == "insufficient" {
-					if prepared != nil || count != 0 || failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-						t.Fatal("pre-read scratch escaped Store working bound", prepared, count, failure)
+					if ticket != nil || failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT || commands.Load() != 0 {
+						t.Fatal("pre-read scratch escaped Store working bound", ticket, failure, commands.Load())
+					}
+					if snapshot := runtime.Snapshot(); snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 {
+						t.Fatal("impossible working envelope retained admission credits", snapshot)
 					}
 					return
 				}
-				if failure != nil || prepared == nil || count != len(requests) {
-					t.Fatal("mutation pre-read consumed terminal result window credits", count, failure)
-				}
-				ticket, failure, _ := runtime.SubmitBatch(t.Context(), prepared)
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				if snapshot := runtime.Snapshot(); snapshot.ResultBytes != len(requests)*execution.ResultOverheadBytes {
-					t.Fatal("mutation window retained document-sized result credits", snapshot)
+				if snapshot := runtime.Snapshot(); snapshot.ResultBytes != execution.ResultOverheadBytes {
+					t.Fatal("mutation retained document-sized result credits", snapshot)
 				}
 				ticket.Abandon()
 			})
@@ -87,7 +86,7 @@ func TestSearchMutationWindowsSeparateResultsFromPreReadWorkingMemory(t *testing
 	}
 }
 
-func TestSearchCompleteBatchPreflightBeforeAnyCommand(t *testing.T) {
+func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 	for _, path := range []string{"records/i:1", "_records/s:bad", "Records/s:bad", "records"} {
 		t.Run(path, func(t *testing.T) {
 			var commands atomic.Int32
@@ -113,16 +112,16 @@ func TestSearchCompleteBatchPreflightBeforeAnyCommand(t *testing.T) {
 			})
 			empty := &pb.Empty{}
 			action := &pb.MutateRequest_Delete{Delete: empty}
-			first := &pb.MutateRequest{Resource: "records/s:good", Action: action}
-			last := &pb.MutateRequest{Resource: path, Action: action}
-			request := &pb.MutationBatch{Requests: []*pb.MutateRequest{first, last}}
-			records, failure := execution.NewMutationRecords("search", request.Requests, runtime.PendingByteLimit())
-			if failure != nil {
-				t.Fatal("backend-specific fixture failed common validation", failure)
+			mutation := &pb.MutateRequest{Resource: path, Action: action}
+			operation := &pb.Command_Mutate{Mutate: mutation}
+			command := &pb.Command{Operation: operation}
+			record, err := execution.NewRecord("search", 1, command)
+			if err != nil {
+				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareBatch(records)
+			prepared, failure := runtime.PrepareRecord(record)
 			if failure == nil || prepared != nil || commands.Load() != 0 {
-				t.Fatal("late invalid backend input produced a prepared batch or effects", prepared, failure, commands.Load())
+				t.Fatal("invalid backend input produced a plan or effects", prepared, failure, commands.Load())
 			}
 			if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.WorkingBytes != 0 {
 				t.Fatal("failed preflight reserved runtime resources", snapshot)

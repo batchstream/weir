@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	weirclient "github.com/batchstream/weir-go"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"os"
@@ -157,7 +156,7 @@ func startMongoBudgetExecutor(t *testing.T, opts mongoBudgetStart) *mongoBudgetE
 func budgetPut(root, id string) *pb.MutateRequest {
 	doc := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int64(1)}}
 	raw, _ := bson.Marshal(doc)
-	document := &pb.Document{MediaType: "application/bson", Data: raw}
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	action := &pb.MutateRequest_Put{Put: document}
 	request := &pb.MutateRequest{Resource: root + "/s:" + id, Action: action}
 	return request
@@ -186,10 +185,7 @@ func budgetFreshRead(t *testing.T, e *mongoBudgetExecutor, id string) {
 	request := &pb.ReadRequest{Resource: e.root + "/s:" + id}
 	for attempts := 1; ; attempts++ {
 		recordResult, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
-		var result *pb.ReadResult
-		if recordResult != nil {
-			result = recordResult.Read
-		}
+		result := recordResult.GetReadResult()
 		if err == nil && result.GetFailure() == nil {
 			if attempts > 1 {
 				t.Logf("fresh independent read probes recovered PID=%d calls=%d", e.process.command.Process.Pid, attempts)
@@ -231,10 +227,7 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 				for ctx.Err() == nil {
 					request := &pb.ReadRequest{Resource: e.root + "/s:warm"}
 					recordResult2, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
-					var result *pb.ReadResult
-					if recordResult2 != nil {
-						result = recordResult2.Read
-					}
+					result := recordResult2.GetReadResult()
 					if err == nil && result.GetFailure() == nil {
 						reads.Add(1)
 					}
@@ -301,7 +294,7 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	faultRead := &pb.ReadRequest{Resource: peers[2].root + "/s:congestion"}
 	faultResult, faultError := testutil.ExecuteRecord(callCtx, peers[2].client, testutil.RecordRequest("records", faultRead))
 	stop()
-	if faultError != nil || faultResult.Read.GetFailure() == nil {
+	if faultError != nil || faultResult.GetReadResult().GetFailure() == nil {
 		t.Fatal("Mongo congestion lost its read failure", faultError, faultResult)
 	}
 	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
@@ -413,10 +406,7 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 	// Three independent runtimes and a direct native writer compete on one key.
 	initial := budgetPut(peers[0].root, "counter")
 	recordResult3, err := testutil.ExecuteRecord(ctx, peers[0].client, testutil.RecordRequest("records", initial))
-	var result *pb.MutationResult
-	if recordResult3 != nil {
-		result = recordResult3.Mutation
-	}
+	result := recordResult3.GetMutationResult()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result, err)
 	}
@@ -425,16 +415,13 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 			for range 12 {
 				increment := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int64(1)}}}}
 				raw, _ := bson.Marshal(increment)
-				document := &pb.Document{MediaType: mongodb.ExpressionMedia, Data: raw}
+				document := &pb.Document{ContentType: mongodb.ExpressionContentType, Data: raw}
 				form := &pb.Transform_BackendExpression{BackendExpression: document}
 				transform := &pb.Transform{Form: form}
 				action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 				request := &pb.MutateRequest{Resource: e.root + "/s:counter", Action: action}
 				recordResult4, err := testutil.ExecuteRecord(ctx, e.client, testutil.RecordRequest(e.store, request))
-				var result *pb.MutationResult
-				if recordResult4 != nil {
-					result = recordResult4.Mutation
-				}
+				result := recordResult4.GetMutationResult()
 				if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Error("atomic increment", result, err)
 					return
@@ -466,11 +453,9 @@ func mongoBudgetMixed(t *testing.T, peers []*mongoBudgetExecutor, fixture *testm
 		requests := make([]*pb.MutateRequest, 0, 4)
 		for i := range 4 {
 			request := budgetPut(e.root, fmt.Sprintf("bulk%d-%d", e.concurrency, i))
-			fixture := testutil.RecordRequest(e.store, request)
-			requests = append(requests, fixture.Operation.Mutate)
+			requests = append(requests, request)
 		}
-		batch := &pb.MutationBatch{Requests: requests}
-		reply, err := testutil.MutateRecords(ctx, e.client, "records", batch.Requests)
+		reply, err := testutil.MutateRecords(ctx, e.client, "records", requests)
 		if err != nil || len(reply) != len(requests) {
 			t.Fatal("batch mutation", reply, err)
 		}
@@ -574,8 +559,8 @@ func mongoBudgetNative(t *testing.T, e *mongoBudgetExecutor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
-	open := &pb.NativeOpen{Resource: e.root, Descriptor_: descriptor, BodyMediaType: "application/bson"}
+	descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
+	open := &pb.NativeOpen{Resource: e.root, Descriptor_: descriptor, BodyContentType: "application/bson"}
 	filter := bson.D{{Key: "_id", Value: "counter"}}
 	command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: filter}, {Key: "limit", Value: 1}}
 	raw, _ := bson.Marshal(command)
@@ -662,10 +647,7 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	oldRequest := budgetPut(old.root, "lost-reply")
 	go func() {
 		recordResult5, err := testutil.ExecuteRecord(ctx, old.client, testutil.RecordRequest(old.store, oldRequest))
-		var result *pb.MutationResult
-		if recordResult5 != nil {
-			result = recordResult5.Mutation
-		}
+		result := recordResult5.GetMutationResult()
 		if err != nil {
 			t.Error("expected conservative terminal response", err)
 		}
@@ -709,20 +691,13 @@ func mongoBudgetReplacement(t *testing.T, peers []*mongoBudgetExecutor, opts mon
 	})
 	request := budgetPut(replacement.root, "new-independent")
 	recordResult6, err := testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(replacement.store, request))
-	result = nil
-	if recordResult6 != nil {
-		result = recordResult6.Mutation
-	}
+	result = recordResult6.GetMutationResult()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("replacement new mutation", result, err)
 	}
 	request = budgetPut(extra.root, "new-independent-extra")
-	var recordResult7 *execution.Result
-	recordResult7, err = testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(extra.store, request))
-	result = nil
-	if recordResult7 != nil {
-		result = recordResult7.Mutation
-	}
+	recordResult7, err := testutil.ExecuteRecord(ctx, replacement.client, testutil.RecordRequest(extra.store, request))
+	result = recordResult7.GetMutationResult()
 	if err != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("extra Local new mutation", result, err)
 	}
@@ -784,13 +759,12 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 	client := openDiscoveredClient(t, seed.address, []string{"records"})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	fixture := testutil.RecordRequest("records", opts.request)
 	requests := make([]*weirclient.MutateRequest, 0, 4)
 	for range 4 {
 		request := &weirclient.MutateRequest{
-			Resource: fixture.Operation.Mutate.Resource,
+			Resource: opts.request.Resource,
 			Action:   weirclient.MutationPut,
-			Document: fixture.Operation.Mutate.GetPut(),
+			Document: opts.request.GetPut(),
 		}
 		requests = append(requests, request)
 	}
@@ -805,7 +779,7 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 		}
 	}
 	metrics := testmetrics.Scrape(t, seed.diagnostic)
-	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_concurrency_limit"] != nil || metrics["weir_store_executions_total"] != nil || metrics["weir_relay_terminations_total"] != nil {
+	if metrics["weir_backend_connections_limit"] != nil || metrics["weir_store_concurrency_limit"] != nil || metrics["weir_store_executions_total"] != nil {
 		t.Fatal("initialization node owns execution or forwarding")
 	}
 	targets := 0
@@ -826,27 +800,27 @@ func budgetDirectDiscovery(t *testing.T, opts budgetDiscoveryOptions) {
 // The same finite overload shape drives both real adapter profiles. Every batch
 // result is checked; errors are counted and mutations are never replayed.
 func budgetLoadCall(ctx context.Context, client pb.StoreServiceClient, fixture testutil.RecordFixture, mode int) bool {
-	request := fixture.Operation.Mutate
+	request := fixture.Command.GetMutate()
 	switch mode {
 	case 0:
 		response, err := testutil.ExecuteRecord(ctx, client, fixture)
 		if err != nil || response == nil {
 			return false
 		}
-		result := response.Mutation
-		return err == nil && result.GetFailure() == nil && result.GetOutcome() == pb.MutationOutcome_APPLIED
+		result := response.GetMutationResult()
+		return result.GetFailure() == nil && result.GetOutcome() == pb.MutationOutcome_APPLIED
 	case 1:
 		read := &pb.ReadRequest{Resource: request.Resource}
 		response, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest(fixture.StoreName, read))
 		if err != nil || response == nil {
 			return false
 		}
-		result := response.Read
-		return err == nil && result.GetFailure() == nil
+		result := response.GetReadResult()
+		return result.GetFailure() == nil
 	default:
-		batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixture.Operation.Mutate, fixture.Operation.Mutate}}
-		response, err := testutil.MutateRecords(ctx, client, fixture.StoreName, batch.Requests)
-		if err != nil || len(response) != len(batch.Requests) {
+		batch := []*pb.MutateRequest{fixture.Command.GetMutate(), fixture.Command.GetMutate()}
+		response, err := testutil.MutateRecords(ctx, client, fixture.StoreName, batch)
+		if err != nil || len(response) != len(batch) {
 			return false
 		}
 		for _, result := range response {

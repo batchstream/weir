@@ -48,9 +48,6 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan requires one concrete Search index")
 	}
-	if req.ReadMediaType != "" && req.ReadMediaType != "application/json" {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native JSON hits")
-	}
 	native := &scanPlan{
 		index:       parts[0],
 		items:       execution.ScanBatchDocuments,
@@ -60,7 +57,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		fingerprint: protocol.ScanFingerprint(req, a.config.Store, "search:"+a.dialect),
 	}
 	if d := req.Selector; d != nil {
-		if d.MediaType != "application/json" {
+		if d.ContentType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "search selector requires JSON")
 		}
 		if !object(d.Data) || validateJSON(d.Data, 4096) != nil {
@@ -379,7 +376,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 		}
 		last, hasLast = position, true
 		if retaining && acceptedBytes+len(row) <= execution.ScanBatchBytes {
-			doc := &pb.Document{MediaType: "application/json", Data: row}
+			doc := &pb.Document{ContentType: "application/json", Data: row}
 			docs = append(docs, doc)
 			acceptedBytes += len(row)
 			acceptedLast = position

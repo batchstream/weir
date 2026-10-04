@@ -13,7 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-func TestMongoCompleteBatchPreflightBeforeAnyCommand(t *testing.T) {
+func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
 	for _, path := range []string{"db/records/i:01", "1db/records/s:bad", "db/records"} {
 		t.Run(path, func(t *testing.T) {
 			var commands atomic.Int32
@@ -33,16 +33,16 @@ func TestMongoCompleteBatchPreflightBeforeAnyCommand(t *testing.T) {
 			})
 			empty := &pb.Empty{}
 			action := &pb.MutateRequest_Delete{Delete: empty}
-			first := &pb.MutateRequest{Resource: "db/records/s:good", Action: action}
-			last := &pb.MutateRequest{Resource: path, Action: action}
-			request := &pb.MutationBatch{Requests: []*pb.MutateRequest{first, last}}
-			records, failure := execution.NewMutationRecords("mongo", request.Requests, runtime.PendingByteLimit())
-			if failure != nil {
-				t.Fatal("backend-specific fixture failed common validation", failure)
+			mutation := &pb.MutateRequest{Resource: path, Action: action}
+			operation := &pb.Command_Mutate{Mutate: mutation}
+			command := &pb.Command{Operation: operation}
+			record, err := execution.NewRecord("mongo", 1, command)
+			if err != nil {
+				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareBatch(records)
+			prepared, failure := runtime.PrepareRecord(record)
 			if failure == nil || prepared != nil || commands.Load() != 0 {
-				t.Fatal("late invalid backend input produced a prepared batch or effects", prepared, failure, commands.Load())
+				t.Fatal("invalid backend input produced a plan or effects", prepared, failure, commands.Load())
 			}
 			if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.Retained != 0 || snapshot.WorkingBytes != 0 {
 				t.Fatal("failed preflight reserved runtime resources", snapshot)

@@ -39,9 +39,9 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 		}
 	}
 	work := works[0]
-	if work.Operation != nil {
-		result := execution.FailedResult(work.Operation, pb.MutationOutcome_APPLIED, nil)
-		output := &execution.Output{Result: result}
+	if work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
+		result := execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, nil)
+		output := result
 		_ = emit(work, output)
 		return execution.Healthy
 	}
@@ -58,10 +58,10 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 			data = append([]byte(`{"pad":"`), bytes.Repeat([]byte("x"), a.documentBytes-10)...)
 			data = append(data, []byte(`"}`)...)
 		}
-		document := &pb.Document{MediaType: "application/json", Data: data}
+		document := &pb.Document{ContentType: "application/json", Data: data}
 		value := &pb.Event_Document{Document: document}
 		event := &pb.Event{Value: value}
-		output := &execution.Output{Event: event}
+		output := event
 		if err := emit(work, output); err != nil {
 			a.rejected.Store(true)
 			break
@@ -81,7 +81,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 		}
 		variant := &pb.Event_ScanEnd{ScanEnd: end}
 		terminal := &pb.Event{Value: variant}
-		terminalOutput := &execution.Output{Event: terminal}
+		terminalOutput := terminal
 		_ = emit(work, terminalOutput)
 	}
 	return execution.Healthy
@@ -147,7 +147,7 @@ func TestScanPageCompletionAndCleanupFailureReleaseReservations(t *testing.T) {
 			for {
 				select {
 				case emission := <-session.Events:
-					if emission.End {
+					if emission.Event == nil {
 						emission.Release()
 						ticket.Ack()
 						goto finished
@@ -222,7 +222,7 @@ func TestUnifiedStreamingBackpressureAndReservation(t *testing.T) {
 		select {
 		case emission := <-session.Events:
 			emission.Release()
-			if emission.End {
+			if emission.Event == nil {
 				ticket.Ack()
 				goto finished
 			}
@@ -265,7 +265,7 @@ func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	result, err := ticket.Wait(ctx)
-	if err != nil || result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
+	if err != nil || result.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("slow scan monopolized the one execution permit", err, result)
 	}
 	ticket.Ack()
@@ -320,7 +320,7 @@ func TestScanBatchPublicationBounds(t *testing.T) {
 			for {
 				select {
 				case emission := <-session.Events:
-					if emission.End {
+					if emission.Event == nil {
 						emission.Release()
 						ticket.Ack()
 						goto finished
@@ -398,7 +398,7 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 }
 
 func (a *scanTestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	operation := record.Operation()
-	prepared := &execution.Plan{ID: operation.Index, Operation: operation, Key: operation.Resource(), BatchKey: "records", Bytes: 1024, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
+	command := record.Command()
+	prepared := &execution.Plan{ID: record.Index(), Command: command, Key: record.Key(), BatchKey: "records", Bytes: 1024, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	return prepared, nil
 }

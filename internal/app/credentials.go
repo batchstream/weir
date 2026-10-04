@@ -77,7 +77,7 @@ func validCredentialText(value string, maxBytes int) bool {
 }
 
 func (cfg RoutingConfig) resolveCredentials(directory string) error {
-	if err := cfg.validateGraph(); err != nil {
+	if err := cfg.validateStores(); err != nil {
 		return err
 	}
 	// Validate every source first, so a later conflict cannot trigger earlier IO.

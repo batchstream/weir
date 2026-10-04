@@ -23,7 +23,7 @@ type fixture struct {
 	db      string
 }
 
-func setup(t *testing.T) fixture {
+func setup(t *testing.T, manual bool) fixture {
 	backend := testmongo.Open(t)
 	native, db := backend.Admin, backend.DB
 	cfg := mongodb.Config{URI: backend.URI, Store: "mongo"}
@@ -46,11 +46,14 @@ func setup(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := New(a, l)
-	if err != nil {
-		t.Fatal(err)
+	r := newRuntime(a, l)
+	if !manual {
+		go r.loop()
 	}
 	t.Cleanup(func() {
+		if manual {
+			go r.loop()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		if err := r.Close(ctx); err != nil {
@@ -63,12 +66,13 @@ func setup(t *testing.T) fixture {
 func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	read := &pb.ReadRequest{Resource: f.db + "/records/s:" + key}
-	request := &pb.ReadBatch{Requests: []*pb.ReadRequest{read}}
-	records, failure := execution.NewReadRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
+	operation := &pb.Command_Read{Read: read}
+	command := &pb.Command{Operation: operation}
+	record, err := execution.NewRecord("mongo", 1, command)
+	if err != nil {
+		t.Fatal(err)
 	}
-	work, failure := f.runtime.adapter.PrepareRecord(records[0])
+	work, failure := f.runtime.PrepareRecord(record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -82,7 +86,7 @@ func createMutation(t *testing.T, f fixture, key string) *pb.MutateRequest {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &pb.Document{MediaType: "application/bson", Data: raw}
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	action := &pb.MutateRequest_Create{Create: document}
 	mutation := &pb.MutateRequest{Resource: f.db + "/records/s:" + key, Action: action}
 	return mutation
@@ -91,58 +95,77 @@ func createMutation(t *testing.T, f fixture, key string) *pb.MutateRequest {
 func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	t.Helper()
 	mutation := createMutation(t, f, key)
-	request := &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}
-	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
+	operation := &pb.Command_Mutate{Mutate: mutation}
+	command := &pb.Command{Operation: operation}
+	record, err := execution.NewRecord("mongo", 1, command)
+	if err != nil {
+		t.Fatal(err)
 	}
-	work, failure := f.runtime.adapter.PrepareRecord(records[0])
+	work, failure := f.runtime.PrepareRecord(record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	return work
 }
 
-func warm(t *testing.T, f fixture) {
+func submitNativeMutations(t *testing.T, ctx context.Context, f fixture, requests []*pb.MutateRequest) []*Ticket {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	// Same-key requests stay in distinct physical batches but may overlap across
-	// independent callers. Their backlog exercises configured concurrent dispatch.
-	for round := 0; round < 3; round++ {
-		var tickets []*Ticket
-		for i := 0; i < 8; i++ {
-			p := readPlan(t, f, "warm")
-			ticket, failure, _ := f.runtime.Submit(ctx, p, nil)
-			if failure != nil {
-				t.Fatal(failure)
-			}
-			tickets = append(tickets, ticket)
+	var tickets []*Ticket
+	for index, request := range requests {
+		operation := &pb.Command_Mutate{Mutate: request}
+		command := &pb.Command{Operation: operation}
+		record, err := execution.NewRecord("mongo", uint64(index+1), command)
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, ticket := range tickets {
-			result, err := ticket.Wait(ctx)
-			if err != nil || result.Read.GetFailure() != nil {
-				t.Fatal("warm point read failed", err, result)
-			}
-			ticket.Ack()
+		work, failure := f.runtime.PrepareRecord(record)
+		if failure != nil {
+			t.Fatal(failure)
 		}
+		ticket, failure, _ := f.runtime.Submit(ctx, work, nil)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		tickets = append(tickets, ticket)
 	}
-	if f.runtime.Snapshot().ConcurrencyLimit != 2 {
-		t.Fatal("configured concurrency changed", f.runtime.Snapshot())
-	}
+	return tickets
 }
+
+func executeNativeBatch(t *testing.T, f fixture, count int) {
+	t.Helper()
+	selected := selectCrossBatch(f.runtime)
+	if selected == nil || len(selected.items) != count {
+		t.Fatal("admitted independent records did not share physical execution", selected)
+	}
+	f.runtime.execute(selected)
+}
+
 func TestNativeIndependentReadsOverlap(t *testing.T) {
-	f := setup(t)
-	warm(t, f)
+	f := setup(t, false)
 	data := bson.D{{Key: "failCommands", Value: bson.A{"find"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 200}}
 	testmongo.FailCommand(t, f.native, data, 2)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	p := readPlan(t, f, "same")
 	start := time.Now()
-	a, _, _ := f.runtime.Submit(ctx, p, nil)
+	a, failure, _ := f.runtime.Submit(ctx, p, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	// Dispatch the first ticket before admitting the second so this exercises
+	// two physical finds rather than one coalesced find containing both reads.
+	for f.runtime.Snapshot().Active == 0 {
+		select {
+		case <-ctx.Done():
+			t.Fatal("first physical read did not dispatch", ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
 	second := readPlan(t, f, "same")
-	b, _, _ := f.runtime.Submit(ctx, second, nil)
+	b, failure, _ := f.runtime.Submit(ctx, second, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
 	if _, err := a.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +180,7 @@ func TestNativeIndependentReadsOverlap(t *testing.T) {
 	t.Log("same-key independent reads elapsed", time.Since(start))
 }
 func TestNativeIndependentMutationDeadlines(t *testing.T) {
-	f := setup(t)
+	f := setup(t, false)
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 150}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	short, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
@@ -179,7 +202,7 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 		t.Fatal("short caller did not reach its independent deadline", short.Err())
 	}
 	result, err := b.Wait(long)
-	if err != nil || result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
+	if err != nil || result.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 		t.Fatal("unrelated caller cancelled", err, result)
 	}
 	b.Ack()
@@ -194,7 +217,7 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	switch shortResult.Mutation.GetOutcome() {
+	switch shortResult.GetMutationResult().GetOutcome() {
 	case pb.MutationOutcome_NOT_STARTED, pb.MutationOutcome_NOT_APPLIED:
 		if count != 0 {
 			t.Fatal("definite no-effect outcome contradicted persisted write", shortResult, count)
@@ -204,7 +227,7 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 			t.Fatal("acknowledged short write was not persisted", shortResult, count)
 		}
 	case pb.MutationOutcome_UNKNOWN:
-		if shortResult.Mutation.GetFailure() == nil {
+		if shortResult.GetMutationResult().GetFailure() == nil {
 			t.Fatal("uncertain canceled write lost its failure", shortResult)
 		}
 	default:
@@ -217,68 +240,43 @@ func TestNativeIndependentMutationDeadlines(t *testing.T) {
 	}
 }
 func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
-	f := setup(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	f := setup(t, true)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	existing := bson.D{{Key: "_id", Value: "exists"}, {Key: "n", Value: 1}}
 	if _, err := f.native.Database(f.db).Collection("records").InsertOne(ctx, existing); err != nil {
 		t.Fatal(err)
 	}
-	request := &pb.MutationBatch{Requests: []*pb.MutateRequest{createMutation(t, f, "exists"), createMutation(t, f, "new")}}
-	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	prepared, failure := f.runtime.PrepareBatch(records)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ticket, failure, _ := f.runtime.SubmitBatch(ctx, prepared)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	results, err := ticket.WaitBatch(ctx)
-	if err != nil || len(results) != 2 {
-		t.Fatal("item-error batch lost results", err, results)
-	}
-	for i, result := range results {
+	requests := []*pb.MutateRequest{createMutation(t, f, "exists"), createMutation(t, f, "new")}
+	tickets := submitNativeMutations(t, ctx, f, requests)
+	executeNativeBatch(t, f, 2)
+	for index, ticket := range tickets {
+		result, err := ticket.Wait(ctx)
 		want := pb.MutationOutcome_APPLIED
-		if i == 0 {
+		if index == 0 {
 			want = pb.MutationOutcome_NOT_APPLIED
 		}
-		if result.Mutation.Outcome != want {
-			t.Fatal(result)
+		if err != nil || ticket.plan.ID != uint64(index+1) || result.GetMutationResult().GetOutcome() != want {
+			t.Fatal("item-error batch lost independent result association", err, result)
 		}
+		ticket.Ack()
 	}
-	ticket.Ack()
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "closeConnection", Value: true}}
 	testmongo.FailCommand(t, f.native, data, 1)
-	request.Requests = []*pb.MutateRequest{createMutation(t, f, "unknown_a"), createMutation(t, f, "unknown_b")}
-	records, failure = execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	prepared, failure = f.runtime.PrepareBatch(records)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ticket, failure, _ = f.runtime.SubmitBatch(ctx, prepared)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	results, err = ticket.WaitBatch(ctx)
-	if err != nil || len(results) != 2 {
-		t.Fatal("lost reply batch lost results", err, results)
-	}
-	for _, result := range results {
-		if result.Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
-			t.Fatal("lost reply justified a definite write outcome", result)
+	requests = []*pb.MutateRequest{createMutation(t, f, "unknown_a"), createMutation(t, f, "unknown_b")}
+	tickets = submitNativeMutations(t, ctx, f, requests)
+	executeNativeBatch(t, f, 2)
+	for _, ticket := range tickets {
+		result, err := ticket.Wait(ctx)
+		if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+			t.Fatal("lost reply justified a definite write outcome", err, result)
 		}
+		ticket.Ack()
 	}
-	ticket.Ack()
+	waitReleased(t, f.runtime)
 }
 func TestNativeShutdownQueueAndExecution(t *testing.T) {
-	f := setup(t)
+	f := setup(t, false)
 	f.runtime.mu.Lock()
 	f.runtime.limits.Concurrency = 1
 	f.runtime.mu.Unlock()
@@ -287,68 +285,75 @@ func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	p := createPlan(t, f, "executing")
-	a, _, _ := f.runtime.Submit(ctx, p, nil)
+	a, failure, _ := f.runtime.Submit(ctx, p, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
 	for f.runtime.Snapshot().Active == 0 {
-		time.Sleep(time.Millisecond)
+		select {
+		case <-ctx.Done():
+			t.Fatal("executing ticket never dispatched", ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
 	}
 	q := createPlan(t, f, "queued")
-	b, _, _ := f.runtime.Submit(ctx, q, nil)
+	b, failure, _ := f.runtime.Submit(ctx, q, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
 	drain, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer stop()
 	start := time.Now()
 	if err := f.runtime.Close(drain); err != nil {
 		t.Fatal(err)
 	}
-	ar, _ := a.Wait(ctx)
-	br, _ := b.Wait(ctx)
-	if ar.Mutation.Outcome != pb.MutationOutcome_UNKNOWN || br.Mutation.Outcome != pb.MutationOutcome_NOT_STARTED {
+	ar, err := a.Wait(ctx)
+	if err != nil || ar.GetMutationResult() == nil {
+		t.Fatal("forced shutdown discarded the executing ticket's evidence", ar, err)
+	}
+	br, err := b.Wait(ctx)
+	if err != nil || br.GetMutationResult() == nil {
+		t.Fatal("forced shutdown discarded the queued ticket's evidence", br, err)
+	}
+	if ar.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN || br.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal(ar, br)
+	}
+	if snapshot := f.runtime.Snapshot(); snapshot.Retained != 2 || snapshot.ResultBytes != 2*execution.ResultOverheadBytes {
+		t.Fatal("forced shutdown released synchronous evidence before acknowledgement", snapshot)
 	}
 	a.Ack()
 	b.Ack()
-	if time.Since(start) > time.Second || f.runtime.Snapshot().Active != 0 {
-		t.Fatal("unbounded shutdown")
+	if snapshot := f.runtime.Snapshot(); time.Since(start) > time.Second || snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 || snapshot.WorkingBytes != 0 {
+		t.Fatal("shutdown or acknowledgement retained execution state", snapshot)
 	}
 }
 
 func TestNativeWriteConcernAmbiguity(t *testing.T) {
-	f := setup(t)
+	f := setup(t, true)
 	wc := bson.D{{Key: "code", Value: 64}, {Key: "errmsg", Value: "isolated test concern failure"}}
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "writeConcernError", Value: wc}}
 	testmongo.FailCommand(t, f.native, data, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	request := &pb.MutationBatch{Requests: []*pb.MutateRequest{createMutation(t, f, "wc_a"), createMutation(t, f, "wc_b")}}
-	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	prepared, failure := f.runtime.PrepareBatch(records)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ticket, failure, _ := f.runtime.SubmitBatch(ctx, prepared)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	results, err := ticket.WaitBatch(ctx)
-	if err != nil || len(results) != 2 {
-		t.Fatal("write concern batch lost results", err, results)
-	}
-	for i, result := range results {
-		if result.Index != uint64(i+1) || result.Mutation.Outcome != pb.MutationOutcome_UNKNOWN {
-			t.Fatal("write concern batch lost order or uncertainty", result)
+	requests := []*pb.MutateRequest{createMutation(t, f, "wc_a"), createMutation(t, f, "wc_b")}
+	tickets := submitNativeMutations(t, ctx, f, requests)
+	executeNativeBatch(t, f, 2)
+	for index, ticket := range tickets {
+		result, err := ticket.Wait(ctx)
+		if err != nil || ticket.plan.ID != uint64(index+1) || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+			t.Fatal("write concern batch lost association or uncertainty", err, result)
 		}
+		ticket.Ack()
 	}
-	ticket.Ack()
 	filter := bson.D{}
 	n, err := f.native.Database(f.db).Collection("records").CountDocuments(ctx, filter)
 	if err != nil || n != 2 {
 		t.Fatal("fault must follow real writes", n, err)
 	}
+	waitReleased(t, f.runtime)
 }
 func TestNativeCancellationDispatchRace(t *testing.T) {
-	f := setup(t)
+	f := setup(t, false)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	for i := 0; i < 50; i++ {
@@ -375,8 +380,11 @@ func TestNativeCancellationDispatchRace(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}
-		result := ticket.Result()
-		if result.Mutation.Outcome == pb.MutationOutcome_NOT_STARTED {
+		result, err := ticket.Wait(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.GetMutationResult().Outcome == pb.MutationOutcome_NOT_STARTED {
 			filter := bson.D{{Key: "_id", Value: key}}
 			err := f.native.Database(f.db).Collection("records").FindOne(ctx, filter).Err()
 			if err != mongo.ErrNoDocuments {
@@ -387,35 +395,22 @@ func TestNativeCancellationDispatchRace(t *testing.T) {
 	}
 }
 func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
-	f := setup(t)
+	f := setup(t, false)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	request := &pb.MutationBatch{Requests: make([]*pb.MutateRequest, 6)}
-	for i := range request.Requests {
-		request.Requests[i] = createMutation(t, f, fmt.Sprintf("drain_%d", i))
+	requests := make([]*pb.MutateRequest, 6)
+	for index := range requests {
+		requests[index] = createMutation(t, f, fmt.Sprintf("drain_%d", index))
 	}
-	records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	prepared, failure := f.runtime.PrepareBatch(records)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	ticket, failure, _ := f.runtime.SubmitBatch(ctx, prepared)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	results, err := ticket.WaitBatch(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, result := range results {
-		if result.Mutation.Outcome != pb.MutationOutcome_APPLIED {
-			t.Fatal(result)
+	tickets := submitNativeMutations(t, ctx, f, requests)
+	f.runtime.BeginDrain()
+	for _, ticket := range tickets {
+		result, err := ticket.Wait(ctx)
+		if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+			t.Fatal("accepted write failed during graceful drain", err, result)
 		}
+		ticket.Ack()
 	}
-	ticket.Ack()
 	if err := f.runtime.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +437,7 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 		{name: "default_command", command: "count", timeout: 2 * time.Second, block: 3000, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			f := setup(t)
+			f := setup(t, false)
 			f.runtime.mu.Lock()
 			f.runtime.limits.BackendTimeout = test.timeout
 			f.runtime.mu.Unlock()
@@ -453,8 +448,8 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			descriptor := &pb.Document{MediaType: mongodb.NativeDescriptor}
-			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyMediaType: "application/bson"}
+			descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
+			open := &pb.NativeOpen{Resource: f.db + "/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
 			native := &pb.NativeRequest{Open: open, Body: raw}
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
@@ -482,7 +477,7 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 						end = emission.Event.GetNativeEnd()
 					}
 					emission.Release()
-					if emission.End {
+					if emission.Event == nil {
 						ticket.Ack()
 						goto completed
 					}
@@ -509,7 +504,7 @@ func TestRouteNativeBackendIODeadline(t *testing.T) {
 func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 	for _, command := range []string{"find", "commitTransaction"} {
 		t.Run(command, func(t *testing.T) {
-			f := setup(t)
+			f := setup(t, false)
 			timeout := 100 * time.Millisecond
 			f.runtime.mu.Lock()
 			f.runtime.limits.BackendTimeout = timeout
@@ -528,12 +523,13 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 			mutation := &pb.MutateRequest{Resource: f.db + "/records/s:lua-timeout", Action: action}
-			request := &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}
-			records, failure := execution.NewMutationRecords("mongo", request.Requests, f.runtime.PendingByteLimit())
-			if failure != nil {
-				t.Fatal(failure)
+			operation := &pb.Command_Mutate{Mutate: mutation}
+			call := &pb.Command{Operation: operation}
+			record, err := execution.NewRecord("mongo", 1, call)
+			if err != nil {
+				t.Fatal(err)
 			}
-			work, failure := f.runtime.adapter.PrepareRecord(records[0])
+			work, failure := f.runtime.PrepareRecord(record)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -548,7 +544,7 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			if command == "commitTransaction" {
 				expected = pb.MutationOutcome_UNKNOWN
 			}
-			if err != nil || result.Mutation.GetOutcome() != expected || result.Mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
+			if err != nil || result.GetMutationResult().GetOutcome() != expected || result.GetMutationResult().GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
 				t.Fatal("Lua database I/O escaped deadline or lost uncertainty", err, result, elapsed)
 			}
 			ticket.Ack()

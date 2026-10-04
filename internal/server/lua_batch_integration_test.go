@@ -143,10 +143,9 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) {
 	blockerDone := make(chan error, 1)
 	go func() {
 		read := &pb.ReadRequest{Resource: opts.prefix + "blocker"}
-		request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.
-			ReadBatch{Requests: []*pb.ReadRequest{read}}}}}
+		request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Read{Read: read}}}
 
-		_, err := testutil.ReadRecords(ctx, clients[0], request.StoreName, request.Command.GetRead().Requests)
+		_, err := testutil.ReadRecords(ctx, clients[0], request.StoreName, []*pb.ReadRequest{request.Command.GetRead()})
 		blockerDone <- err
 	}()
 	waitLuaRPCRead(t, ctx, opts.gate, 1)
@@ -162,9 +161,9 @@ func runLuaRPCBatch(t *testing.T, opts luaRPCBatchOptions) {
 		workers.Go(func() {
 			defer close(done[i])
 			mutation := luaRPCMutation(opts.prefix+item.id, item.program)
-			request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{mutation}}}}}
+			request := &pb.ExecuteRequest{StoreName: "records", Index: 1, Command: &pb.Command{Operation: &pb.Command_Mutate{Mutate: mutation}}}
 
-			response, err := testutil.MutateRecords(caller, clients[i%len(clients)], request.StoreName, request.Command.GetMutate().Requests)
+			response, err := testutil.MutateRecords(caller, clients[i%len(clients)], request.StoreName, []*pb.MutateRequest{request.Command.GetMutate()})
 			results[i] = luaRPCCallResult{response: response, err: err}
 		})
 	}

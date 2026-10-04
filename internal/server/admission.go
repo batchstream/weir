@@ -37,7 +37,7 @@ func NewAdmission(l Limits) (*Admission, error) {
 		Help: "Process ingress rejection branches; no client-controlled label values.",
 	}
 	a.rejections = prometheus.NewCounterVec(opts, []string{"reason"})
-	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "execute", "operation", "hop"} {
+	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "execute"} {
 		a.rejections.WithLabelValues(reason)
 	}
 	return a, nil
@@ -59,10 +59,6 @@ func (a *Admission) check() error {
 		return status.Error(codes.ResourceExhausted, "process overloaded")
 	}
 	return nil
-}
-
-func (s *Server) enter() error {
-	return s.enterSlots(s.slots)
 }
 
 func (s *Server) enterSlots(slots chan struct{}) error {

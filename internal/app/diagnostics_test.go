@@ -96,10 +96,10 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 		}
 	}
 	other := testmetrics.Scrape(t, second.DiagnosticAddress())
-	if testmetrics.Sum(other, "weir_admission_rejections_total") != 0 || testmetrics.Sum(other, "weir_relay_terminations_total") != 0 {
+	if testmetrics.Sum(other, "weir_admission_rejections_total") != 0 {
 		t.Fatal("registries shared counters")
 	}
-	if len(n.runtimes) != 0 || len(n.targets) != 1 {
+	if len(n.runtimes) != 0 || !n.guard.Snapshot().Observed {
 		t.Fatal("fake Runtime")
 	}
 	n.admission.SetOverloaded(false)
@@ -362,8 +362,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer n.Close(context.Background())
-	// A bounded test collector produces enough output to exercise blocked HTTP sends
-	// independently of the removed remote business runtime.
+	// A bounded test collector produces enough output to exercise blocked HTTP sends.
 	opts := prometheus.GaugeOpts{Name: "weir_test_scrape_padding", Help: "Test-only bounded scrape payload."}
 	padding := prometheus.NewGaugeVec(opts, []string{"entry"})
 	for i := 0; i < 128; i++ {

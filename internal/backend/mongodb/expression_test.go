@@ -13,13 +13,15 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func expressionOperation(resource string, raw []byte) *execution.Operation {
-	doc := &pb.Document{MediaType: ExpressionMedia, Data: raw}
+func expressionOperation(resource string, raw []byte) *pb.ExecuteRequest {
+	doc := &pb.Document{ContentType: ExpressionContentType, Data: raw}
 	form := &pb.Transform_BackendExpression{BackendExpression: doc}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	req := &pb.MutateRequest{Resource: resource, Action: action}
-	op := &execution.Operation{Index: 1, Mutate: req}
+	opOperation := &pb.Command_Mutate{Mutate: req}
+	opCommand := &pb.Command{Operation: opOperation}
+	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	return op
 }
 
@@ -75,7 +77,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	for _, path := range []string{"_id", "a..b", ".a", "a.", "a.$", "a.$[]", "a.$[x]", "a.01", strings.Repeat("a", 1025), strings.Repeat("a.", 33) + "b"} {
 		doc := bson.D{{Key: "$set", Value: bson.D{{Key: path, Value: 1}}}}
-		if f := a.prepareExpression(expressionOperation("x", expressionBSON(t, doc)).Mutate.GetAtomicTransform().GetBackendExpression()); f == nil {
+		if f := a.prepareExpression(expressionOperation("x", expressionBSON(t, doc)).Command.GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
 			t.Fatal(path)
 		}
 	}
@@ -95,11 +97,11 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
 	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
-	op.Mutate.GetAtomicTransform().GetBackendExpression().MediaType = "application/unknown"
+	op.Command.GetMutate().GetAtomicTransform().GetBackendExpression().ContentType = "application/unknown"
 	if _, f := prepareTestRecord(a, op); f.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("unknown profile", f)
 	}
-	op.Mutate.GetAtomicTransform().GetBackendExpression().MediaType = ExpressionMedia
+	op.Command.GetMutate().GetAtomicTransform().GetBackendExpression().ContentType = ExpressionContentType
 	many := make(bson.D, 129)
 	for i := range many {
 		many[i] = bson.E{Key: fmt.Sprintf("field%d", i), Value: 1}
@@ -113,7 +115,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 		nodes[i] = nil
 	}
 	excessive = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: nodes}}}}
-	d := &pb.Document{MediaType: ExpressionMedia, Data: expressionBSON(t, excessive)}
+	d := &pb.Document{ContentType: ExpressionContentType, Data: expressionBSON(t, excessive)}
 	if a.prepareExpression(d) == nil {
 		t.Fatal("node/byte limit")
 	}
@@ -157,7 +159,7 @@ func FuzzMongoExpression(f *testing.F) {
 			return
 		}
 		a := &Adapter{}
-		d := &pb.Document{MediaType: ExpressionMedia, Data: raw}
+		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
 		_ = a.prepareExpression(d)
 		fields, err := scanFields(raw)
 		if err == nil {

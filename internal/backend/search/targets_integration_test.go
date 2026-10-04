@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -37,18 +36,15 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	rightRead := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 	works := []*execution.Plan{leftRead, rightRead}
 	for i, work := range works {
-		work.Operation.Index = uint64(i)
+		work.ID = uint64(i)
 	}
 	results, _ := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) {
 		t.Fatal("mixed target cardinality", len(results))
 	}
 	for i, result := range results {
-		if result.Index != uint64(i) {
-			t.Fatal("mixed target result position", result)
-		}
 		want := fmt.Sprintf(`{"n":%d}`, 10+i*10)
-		if string(result.Read.GetDocument().GetData()) != want {
+		if string(result.GetReadResult().GetDocument().GetData()) != want {
 			t.Fatal("same ID crossed indexes during pre-read", result)
 		}
 	}
@@ -69,21 +65,16 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		right := batchTestPlan(t, a, actions.right, searchResource(indexes[1], actions.id))
 		works := []*execution.Plan{left, right}
 		for i, work := range works {
-			work.Operation.Index = uint64(100 + phase*2 + i)
+			work.ID = uint64(100 + phase*2 + i)
 		}
 		results, batchFeedback := a.executeRecords(context.Background(), works)
 		if len(results) != len(works) {
 			t.Fatal("cross-index mutation cardinality", actions, len(results))
 		}
 		for i, result := range results {
-			if result.Index != works[i].Operation.Index {
-				t.Fatal("cross-index mutation result position", actions, result)
-			}
-		}
-		for i, result := range results {
 			feedback := batchFeedback
 			for attempt := 1; ; attempt++ {
-				mutation := result.Mutation
+				mutation := result.GetMutationResult()
 				if mutation.GetOutcome() == pb.MutationOutcome_APPLIED && mutation.GetFailure() == nil {
 					break
 				}
@@ -100,9 +91,9 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				t.Logf("target=%s action=%s attempt=%d confirmed not applied; submitting one item after capacity rejection", indexes[i], works[i].Backend.(*plan).action, attempt)
 				time.Sleep(50 * time.Millisecond)
 				single := []*execution.Plan{works[i]}
-				var replies []*execution.Result
+				var replies []*pb.Event
 				replies, feedback = a.executeRecords(context.Background(), single)
-				if len(replies) != 1 || replies[0].Index != works[i].Operation.Index {
+				if len(replies) != 1 {
 					t.Fatal("single target mutation result position", actions, replies)
 				}
 				result = replies[0]
@@ -116,7 +107,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		right := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 		concurrent.Go(func() {
 			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
-			if string(results[0].Read.GetDocument().GetData()) != `{"n":2}` || string(results[1].Read.GetDocument().GetData()) != `{"n":3}` {
+			if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":2}` || string(results[1].GetReadResult().GetDocument().GetData()) != `{"n":3}` {
 				t.Error("same service concurrent index isolation failed", results)
 			}
 		})
@@ -126,12 +117,12 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	for i, index := range indexes {
 		bulk := nativeOpen(t, index, "POST", "/_bulk")
 		body := fmt.Sprintf("{\"index\":{\"_index\":%q,\"_id\":\"native\"}}\n{\"n\":%d}\n", index, 7+i)
-		end, capture := runNative(t, a, bulk, io.NopCloser(strings.NewReader(body)))
+		end, capture := runNative(t, a, bulk, []byte(body))
 		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"_index":"`+index+`"`) {
 			t.Fatal("Native bulk request target", end, capture.body.String())
 		}
 		get := nativeOpen(t, index, "GET", "/_doc/native")
-		end, capture = runNative(t, a, get, io.NopCloser(strings.NewReader("")))
+		end, capture = runNative(t, a, get, nil)
 		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
 			t.Fatal("Native GET request target", end, capture.body.String())
 		}

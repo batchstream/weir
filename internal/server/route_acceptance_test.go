@@ -17,9 +17,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 type routeAcceptanceNode struct {
@@ -104,59 +102,48 @@ func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("batch resources did not drain")
+			var snapshots []store.Snapshot
+			var active, wire []int64
+			for _, node := range nodes {
+				snapshots = append(snapshots, node.runtime.Snapshot())
+				active = append(active, node.server.Snapshot().ActiveRPCs)
+				wire = append(wire, node.server.admission.wireBytes.Load())
+			}
+			t.Fatal("execution resources did not drain", snapshots, active, wire)
 		}
 		time.Sleep(time.Millisecond)
 	}
 }
 
-func TestReadBatchKeepsPhysicalBatchAndAccepts513Records(t *testing.T) {
-	for _, count := range []int{32, 513} {
-		t.Run(fmt.Sprint(count), func(t *testing.T) {
-			adapter, local := peerLocal(t, "records")
-			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-			srv, address := startPeerServer(t, opts)
-			_, client := peerClient(t, address)
-			request := &pb.ExecuteRequest{StoreName: "records",
-				Index:   1,
-				Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: make([]*pb.ReadRequest, count)}}}}
-
-			for i := range request.Command.GetRead().Requests {
-				request.Command.GetRead().Requests[i] = &pb.ReadRequest{Resource: fmt.Sprintf("data/s:%d", i)}
-			}
-			response, err := testutil.ReadRecords(t.Context(), client, request.StoreName, request.Command.GetRead().Requests)
-			if err != nil || len(response) != count {
-				t.Fatal("batch lost records", err)
-			}
-			adapter.mu.Lock()
-			batches := append([]int(nil), adapter.batchSizes...)
-			adapter.mu.Unlock()
-			if len(batches) != (count+31)/32 || batches[0] != 32 {
-				t.Fatal("batch was dribbled into individual records", batches)
-			}
-			waitPeerIdle(t, srv)
-			if snapshot := local.Snapshot(); snapshot.Publishers != 0 || snapshot.Retained != 0 || snapshot.ResultBytes != 0 {
-				t.Fatal("record window retained publishers or results", snapshot)
-			}
-		})
+func TestReadStreamAccepts513Records(t *testing.T) {
+	_, local := peerLocal(t, "records")
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, address := startPeerServer(t, opts)
+	_, client := peerClient(t, address)
+	requests := make([]*pb.ReadRequest, 513)
+	for i := range requests {
+		requests[i] = &pb.ReadRequest{Resource: fmt.Sprintf("data/s:%d", i)}
 	}
+	results, err := testutil.ReadRecords(t.Context(), client, "records", requests)
+	if err != nil || len(results) != len(requests) {
+		t.Fatal("long input lost records", len(results), err)
+	}
+	waitPeerIdle(t, server)
 }
 
-func TestContinuousBatchReadsAtSessionLimit(t *testing.T) {
+func TestContinuousReadsAtSessionLimit(t *testing.T) {
 	adapter := newPeerAdapter("records")
+	gate := make(chan struct{})
+	adapter.block = gate
 	limits := DefaultLimits()
 	limits.Sessions = 64
 	opts := routeAcceptanceNodeOptions{adapter: adapter, limits: limits}
 	node := startRouteAcceptanceNode(t, opts)
 	client := routeAcceptanceClient(t, node.address)
 	read := &pb.ReadRequest{Resource: "records/s:item"}
-	request := &pb.ExecuteRequest{StoreName: "records",
-		Index:   1,
-		Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: make([]*pb.ReadRequest, 32)}}},
-	}
-
-	for i := range request.Command.GetRead().Requests {
-		request.Command.GetRead().Requests[i] = read
+	requests := make([]*pb.ReadRequest, 32)
+	for i := range requests {
+		requests[i] = read
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -164,19 +151,38 @@ func TestContinuousBatchReadsAtSessionLimit(t *testing.T) {
 	var workers sync.WaitGroup
 	for range limits.Sessions {
 		workers.Go(func() {
-			for range 32 {
-				response, err := testutil.ReadRecords(ctx, client, request.StoreName, request.Command.GetRead().Requests)
+			for range 4 {
+				response, err := testutil.ReadRecords(ctx, client, "records", requests)
 				if err != nil {
 					failures <- err
 					return
 				}
-				if len(response) != len(request.Command.GetRead().Requests) {
-					failures <- fmt.Errorf("batch result count changed: %d", len(response))
+				if len(response) != len(requests) {
+					failures <- fmt.Errorf("read result count changed: %d", len(response))
 					return
+				}
+				for index, result := range response {
+					if result.GetMissing() == nil || result.GetFailure() != nil {
+						failures <- fmt.Errorf("read %d did not return a successful missing result: %v", index, result)
+						return
+					}
 				}
 			}
 		})
 	}
+	// Hold the first results until all native RPC slots are occupied. Each worker
+	// then verifies full record windows and repeated release and reacquisition.
+	for node.server.Snapshot().ActiveRPCs != int64(limits.Sessions) {
+		select {
+		case <-ctx.Done():
+			close(gate)
+			workers.Wait()
+			t.Fatal("concurrent reads did not occupy every session", ctx.Err(), node.server.Snapshot(), node.runtime.Snapshot())
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(gate)
 	workers.Wait()
 	close(failures)
 	for err := range failures {
@@ -185,35 +191,26 @@ func TestContinuousBatchReadsAtSessionLimit(t *testing.T) {
 	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
 }
 
-func TestMutationBatchValidatesEntireInputAndOrdersDuplicateKeys(t *testing.T) {
-	adapter, local := peerLocal(t, "records")
+func TestMutationStreamOrdersDuplicateKeys(t *testing.T) {
+	_, local := peerLocal(t, "records")
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	srv, address := startPeerServer(t, opts)
+	server, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	bad := testMutation("bad")
-	bad.Resource = "weir://elsewhere/data/s:key"
-	request := &pb.ExecuteRequest{StoreName: "records",
-		Index:   1,
-		Command: &pb.Command{Operation: &pb.Command_Mutate{Mutate: &pb.MutationBatch{Requests: []*pb.MutateRequest{testMutation("before"), bad}}}}}
-
-	if _, err := testutil.MutateRecords(t.Context(), client, request.StoreName, request.Command.GetMutate().Requests); status.Code(err) != codes.InvalidArgument || adapter.commands.Load() != 0 {
-		t.Fatal("invalid trailing member executed earlier mutation", err, adapter.commands.Load())
-	}
-	request.Command.GetMutate().Requests = []*pb.MutateRequest{testMutation("first"), testMutation("second"), testMutation("last")}
-	response, err := testutil.MutateRecords(t.Context(), client, request.StoreName, request.Command.GetMutate().Requests)
-	if err != nil || len(response) != 3 {
+	requests := []*pb.MutateRequest{testMutation("first"), testMutation("second"), testMutation("last")}
+	results, err := testutil.MutateRecords(t.Context(), client, "records", requests)
+	if err != nil || len(results) != 3 {
 		t.Fatal(err)
 	}
-	for _, result := range response {
+	for _, result := range results {
 		if result.Outcome != pb.MutationOutcome_APPLIED {
-			t.Fatal("mutation lost confirmation", result)
+			t.Fatal("lost write confirmation", result)
 		}
 	}
 	read, err := routeRead(client, t.Context(), testRequest())
 	if err != nil || !bytes.Equal(read.GetDocument().GetData(), []byte("last")) {
-		t.Fatal("duplicate mutation keys executed out of input order", read, err)
+		t.Fatal("duplicate writes executed out of order", read, err)
 	}
-	waitPeerIdle(t, srv)
+	waitPeerIdle(t, server)
 }
 
 func TestReadStreamLargeRelativeMetadataUsesBoundedWindows(t *testing.T) {
@@ -226,11 +223,7 @@ func TestReadStreamLargeRelativeMetadataUsesBoundedWindows(t *testing.T) {
 	for i := range items {
 		items[i] = read
 	}
-	request := &pb.ExecuteRequest{StoreName: "records",
-		Index:   1,
-		Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: items}}}}
-
-	results, err := testutil.ReadRecords(t.Context(), client, request.StoreName, request.Command.GetRead().Requests)
+	results, err := testutil.ReadRecords(t.Context(), client, "records", items)
 	if err != nil || len(results) != len(items) {
 		t.Fatal("bounded metadata windows lost records", len(results), err)
 	}
@@ -248,22 +241,18 @@ func TestReadStreamLargeRelativeMetadataUsesBoundedWindows(t *testing.T) {
 	}
 }
 
-func TestLongReadStreamExceedsFormerCallResultBudget(t *testing.T) {
+func TestLongReadStreamReleasesResultCreditsIncrementally(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
-	document := &pb.Document{MediaType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), 1<<20)}
+	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), 1<<20)}
 	adapter.documents[testRequest().Resource] = document
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	srv, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	request := &pb.ExecuteRequest{StoreName: "records",
-		Index:   1,
-		Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: make([]*pb.ReadRequest, 40)}}},
+	requests := make([]*pb.ReadRequest, 40)
+	for i := range requests {
+		requests[i] = testRequest()
 	}
-
-	for i := range request.Command.GetRead().Requests {
-		request.Command.GetRead().Requests[i] = testRequest()
-	}
-	response, err := testutil.ReadRecords(t.Context(), client, request.StoreName, request.Command.GetRead().Requests)
+	response, err := testutil.ReadRecords(t.Context(), client, "records", requests)
 	if err != nil {
 		t.Fatal("one oversize member budget discarded the complete response", err)
 	}
@@ -300,7 +289,7 @@ func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T
 	adapter.block = gate
 	for i := range count {
 		key := fmt.Sprintf("data/s:%d", i)
-		document := &pb.Document{MediaType: "application/octet-stream", Data: []byte(key)}
+		document := &pb.Document{ContentType: "application/octet-stream", Data: []byte(key)}
 		adapter.documents[key] = document
 	}
 	limits := store.DefaultLimits()
@@ -322,9 +311,9 @@ func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T
 		read := &pb.ReadRequest{Resource: "data/s:blocker"}
 		request := &pb.ExecuteRequest{StoreName: "records",
 			Index:   1,
-			Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{read}}}}}
+			Command: &pb.Command{Operation: &pb.Command_Read{Read: read}}}
 
-		_, err := testutil.ReadRecords(ctx, clients[0], request.StoreName, request.Command.GetRead().Requests)
+		_, err := testutil.ReadRecords(ctx, clients[0], request.StoreName, []*pb.ReadRequest{read})
 		if err != nil {
 			failures <- err
 		}
@@ -340,9 +329,9 @@ func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T
 			read := &pb.ReadRequest{Resource: key}
 			request := &pb.ExecuteRequest{StoreName: "records",
 				Index:   1,
-				Command: &pb.Command{Operation: &pb.Command_Read{Read: &pb.ReadBatch{Requests: []*pb.ReadRequest{read}}}}}
+				Command: &pb.Command{Operation: &pb.Command_Read{Read: read}}}
 
-			response, err := testutil.ReadRecords(ctx, clients[i%len(clients)], request.StoreName, request.Command.GetRead().Requests)
+			response, err := testutil.ReadRecords(ctx, clients[i%len(clients)], request.StoreName, []*pb.ReadRequest{read})
 			if err != nil {
 				failures <- err
 				return

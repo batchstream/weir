@@ -14,17 +14,17 @@ import (
 type metricAdapter struct{ scanTestAdapter }
 
 func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
-	results := make([]*execution.Result, len(plans))
+	results := make([]*pb.Event, len(plans))
 	outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_UNKNOWN}
 	for i, p := range plans {
 		var failure *pb.Failure
 		if i > 0 {
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "private backend error")
 		}
-		results[i] = execution.FailedResult(p.Operation, outcomes[i], failure)
+		results[i] = execution.FailedEvent(p.Command, outcomes[i], failure)
 	}
 	for i, result := range results {
-		output := &execution.Output{Result: result}
+		output := result
 		_ = emit(plans[i], output)
 	}
 	return execution.Congested
@@ -97,7 +97,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(limits.Concurrency) {
 		t.Fatal("configured concurrency metric changed")
 	}
-	if testmetrics.Series(families) != 61 {
+	if testmetrics.Series(families) != 56 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

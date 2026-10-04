@@ -50,13 +50,10 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	if len(parts) != 2 || !validNamespace(parts) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Scan target")
 	}
-	if req.ReadMediaType != "" && req.ReadMediaType != "application/bson" {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native BSON")
-	}
 	target := namespace{database: parts[0], collection: parts[1]}
 	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, "mongodb")}
 	if d := req.Selector; d != nil {
-		if d.MediaType != "application/bson" {
+		if d.ContentType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
 		}
 		// Existing bounded codec validates selector structure before any materialized

@@ -315,12 +315,11 @@ func TestLinuxMemoryCLI(t *testing.T) {
 		}
 	}()
 	admitted := budgetPut(root, "admitted")
-	fixtureRequest := testutil.RecordRequest("records", admitted)
-	batch := &pb.MutationBatch{Requests: []*pb.MutateRequest{fixtureRequest.Operation.Mutate}}
+	batch := []*pb.MutateRequest{admitted}
 	responses := make(chan []*pb.MutationResult, 1)
 	callErrors := make(chan error, 1)
 	go func() {
-		response, err := testutil.MutateRecords(ctx, client, "records", batch.Requests)
+		response, err := testutil.MutateRecords(ctx, client, "records", batch)
 		responses <- response
 		callErrors <- err
 	}()

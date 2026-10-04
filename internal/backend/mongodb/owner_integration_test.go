@@ -48,7 +48,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	old := ownerMutation(t, a, f.DB, "remote-tail")
 	next := ownerMutation(t, a, f.DB, "independent")
 	callCtx, stop := context.WithCancel(ctx)
-	result := make(chan []*execution.Result, 1)
+	result := make(chan []*pb.Event, 1)
 	go func() { r, _ := a.executeRecords(callCtx, []*execution.Plan{old}); result <- r }()
 	select {
 	case <-entered:
@@ -58,7 +58,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	t.Logf("%s command=bulkWrite ID=remote-tail observer received; real DB write still held", time.Now().UTC().Format(time.RFC3339Nano))
 	stop()
 	r := <-result
-	if r[0].Mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN {
+	if r[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("cancellation lost uncertainty", r)
 	}
 	// A lost bulkWrite reply also leaves its cursor unknown. Session cleanup
@@ -84,7 +84,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	}
 	t.Logf("%s driver operation returned UNKNOWN, local raw closed: owner=%+v proxy=%d/%d", time.Now().UTC().Format(time.RFC3339Nano), a.dialer.snapshot(), current, peak)
 	r, _ = a.executeRecords(ctx, []*execution.Plan{next})
-	if r[0].Mutation.GetOutcome() != pb.MutationOutcome_APPLIED {
+	if r[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("new independent mutation failed", r)
 	}
 	current, peak = proxy.Sockets()
@@ -126,10 +126,12 @@ func ownerMutation(t *testing.T, a *Adapter, database, id string) *execution.Pla
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := &pb.Document{MediaType: "application/bson", Data: raw}
+	body := &pb.Document{ContentType: "application/bson", Data: raw}
 	put := &pb.MutateRequest_Put{Put: body}
 	req := &pb.MutateRequest{Resource: database + "/records/s:" + id, Action: put}
-	op := &execution.Operation{Index: 1, Mutate: req}
+	opOperation := &pb.Command_Mutate{Mutate: req}
+	opCommand := &pb.Command{Operation: opOperation}
+	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	plan, failure := prepareTestRecord(a, op)
 	if failure != nil {
 		t.Fatal(failure)

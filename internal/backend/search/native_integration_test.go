@@ -13,12 +13,12 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
 func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
-	for _, mode := range []string{"mixed", "multiframe", "drop", "later_invalid", "pipeline"} {
+	for _, mode := range []string{"mixed", "multichunk", "drop", "later_invalid", "pipeline"} {
 		t.Run(mode, func(t *testing.T) {
 			backend := testsearch.Open(t)
 			var calls atomic.Int32
@@ -66,7 +66,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			if mode == "mixed" {
 				body += body + "{\"index\":{\"_id\":\"bad\"}}\n{\"n\":{\"bad\":1}}\n"
 			}
-			if mode == "multiframe" {
+			if mode == "multichunk" {
 				body = "{\"index\":{\"_id\":\"x\"}}\n{\"pad\":\"" + strings.Repeat("x", 150<<10) + "\"}\n"
 			}
 			if mode == "later_invalid" {
@@ -79,7 +79,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 				}
 			}
 			open := nativeOpen(t, backend.Index, "POST", "/_bulk")
-			end, capture := runNative(t, a, open, io.NopCloser(strings.NewReader(body)))
+			end, capture := runNative(t, a, open, []byte(body))
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
 			if mode == "drop" || mode == "later_invalid" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE
@@ -96,16 +96,16 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			if mode == "mixed" && (!strings.Contains(capture.body.String(), `"errors":true`) || !strings.Contains(capture.body.String(), `version_conflict_engine_exception`)) {
 				t.Fatal(capture.body.String())
 			}
-			if mode == "drop" || mode == "multiframe" || mode == "later_invalid" {
+			if mode == "drop" || mode == "multichunk" || mode == "later_invalid" {
 				status, raw := backend.Do(t, "GET", "/"+backend.Index+"/_doc/x", "")
 				if mode != "later_invalid" && status != 200 {
 					t.Fatal(status, string(raw))
 				}
 				t.Logf("%s native bulk calls=%d independent GET status=%d", mode, calls.Load(), status)
 			}
-			if mode == "multiframe" {
+			if mode == "multichunk" {
 				open = nativeOpen(t, backend.Index, "GET", "/_doc/x")
-				end, capture = runNative(t, a, open, io.NopCloser(strings.NewReader("")))
+				end, capture = runNative(t, a, open, nil)
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || capture.chunks < 2 {
 					t.Fatal(end, capture.chunks)
 				}
@@ -114,14 +114,14 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 	}
 }
 
-// This fault proxy deliberately finalizes the first validated item as a complete
-// native upload. It is a request-framing fault experiment, not a claim that the
-// normal ES/OS bulk endpoint processes an unfinished chunked request.
-func TestSearchNativeLaterInvalidAfterRealPrefixApplied(t *testing.T) {
+// A request can lose its reply after a validated prefix reaches the backend.
+// A later invalid target must never escape the Store and must not trigger replay.
+func TestSearchNativeLaterInvalidNeverEscapesOrReplays(t *testing.T) {
 	backend := testsearch.Open(t)
 	first := "{\"create\":{\"_id\":\"prefix\"}}\n{\"n\":1,\"pad\":\"" + strings.Repeat("x", 70<<10) + "\"}\n"
-	applied := make(chan struct{})
 	var calls atomic.Int32
+	var applied atomic.Bool
+	finished := make(chan struct{})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/_bulk") {
 			request, _ := http.NewRequestWithContext(r.Context(), r.Method, backend.URL+r.URL.RequestURI(), nil)
@@ -135,27 +135,31 @@ func TestSearchNativeLaterInvalidAfterRealPrefixApplied(t *testing.T) {
 			io.Copy(w, response.Body)
 			return
 		}
-		// Forward exactly one real command before asking the sender for a later item.
+		calls.Add(1)
+		defer close(finished)
 		prefix := make([]byte, len(first))
 		if _, err := io.ReadFull(r.Body, prefix); err != nil {
 			return
 		}
-		request, _ := http.NewRequestWithContext(r.Context(), "POST", backend.URL+r.URL.Path, strings.NewReader(string(prefix)))
+		// Model a backend that commits a received prefix despite a disconnected
+		// caller; forwarding uses its own bounded context rather than replay.
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		request, _ := http.NewRequestWithContext(ctx, "POST", backend.URL+r.URL.Path, strings.NewReader(string(prefix)))
 		request.GetBody = nil
 		request.Header.Set("Content-Type", "application/x-ndjson")
-		calls.Add(1)
 		response, err := backend.Client.Do(request)
 		if err != nil {
 			return
 		}
 		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		response.Body.Close()
-		if response.StatusCode != 200 || !strings.Contains(string(raw), `"errors":false`) {
-			return
+		applied.Store(response.StatusCode == 200 && strings.Contains(string(raw), `"errors":false`))
+		// The scoped reader must reject the foreign target before sending it.
+		remaining, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if len(remaining) != 0 {
+			t.Error("invalid item escaped scope validation", string(remaining))
 		}
-		close(applied)
-		// Discard the real successful reply and await the later invalid client item.
-		io.Copy(io.Discard, r.Body)
 		conn, _, err := w.(http.Hijacker).Hijack()
 		if err == nil {
 			conn.Close()
@@ -163,7 +167,7 @@ func TestSearchNativeLaterInvalidAfterRealPrefixApplied(t *testing.T) {
 	})
 	proxy := httptest.NewServer(handler)
 	defer proxy.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	cfg := Config{Store: "search", URL: proxy.URL, Pool: 1}
 	a, err := Open(ctx, cfg)
@@ -171,43 +175,39 @@ func TestSearchNativeLaterInvalidAfterRealPrefixApplied(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	source, writer := io.Pipe()
-	defer source.Close()
-	defer writer.Close()
-	sent := make(chan error, 1)
-	go func() {
-		if _, err := io.WriteString(writer, first); err != nil {
-			sent <- err
-			return
-		}
-		select {
-		case <-applied:
-		case <-ctx.Done():
-			writer.CloseWithError(ctx.Err())
-			sent <- ctx.Err()
-			return
-		}
-		_, err := io.WriteString(writer, "{\"delete\":{\"_id\":\"prefix\",\"_index\":\"outside\"}}\n")
-		writer.Close()
-		sent <- err
-	}()
 	open := nativeOpen(t, backend.Index, "POST", "/_bulk")
 	p, f := a.prepareNative(open)
 	if f != nil {
 		t.Fatal(f)
 	}
+	body := first + "{\"delete\":{\"_id\":\"prefix\",\"_index\":\"outside\"}}\n"
+	p.Command = testutil.NativeCommand(open, []byte(body))
 	capture := &nativeCapture{}
-	exchange := &execution.NativeExchange{Source: source, Sink: capture}
-	end, _ := a.executeNative(ctx, p, exchange)
-	if err := <-sent; err != nil {
-		t.Fatal(err)
+	end, _ := a.executeNative(ctx, p, capture.Emit)
+	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {
+		t.Fatal(end)
 	}
-	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || calls.Load() != 1 {
-		t.Fatal(end, calls.Load())
+	// Transport cancellation can prevent even the validated prefix from
+	// reaching the proxy. If it arrived, wait for the independently committed
+	// write and verify the result without claiming cancellation undoes effects.
+	proxy.Close()
+	if calls.Load() > 1 {
+		t.Fatal("Native upload replayed", calls.Load())
+	}
+	if calls.Load() == 1 {
+		select {
+		case <-finished:
+		case <-ctx.Done():
+			t.Fatal("Native proxy did not join")
+		}
 	}
 	status, raw := backend.Do(t, "GET", "/"+backend.Index+"/_doc/prefix", "")
-	if status != 200 || !strings.Contains(string(raw), `"n":1`) {
-		t.Fatal(status, string(raw))
+	if applied.Load() && (status != 200 || !strings.Contains(string(raw), `"n":1`)) {
+		t.Fatal("confirmed prefix did not persist", status, string(raw))
 	}
-	t.Log("fault proxy finalized one validated prefix; native write persisted; later foreign target rejected; no replay")
+	status, raw = backend.Do(t, "GET", "/outside/_doc/prefix", "")
+	if status != 404 {
+		t.Fatal("foreign Native target escaped", status, string(raw))
+	}
+	t.Logf("Native calls=%d committed prefix=%t; foreign target rejected, no replay", calls.Load(), applied.Load())
 }

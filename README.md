@@ -7,10 +7,11 @@ targets. Nodes synchronize their Store directory through bounded periodic peer
 exchanges. Business requests execute only local Stores.
 
 `Execute` is a finite bidirectional stream of typed requests and results. SDK
-Read and Mutate calls send bounded record frames for one Store. The server retains
-one input frame and one execution window per stream, publishes that window's
-results, then continues receiving. Compatible windows from different clients share
-backend batches. Same-resource mutations within a stream execute in input order.
+Read and Mutate calls send one record per request for one Store. The server
+receives through a bounded ticket queue, combines compatible queued records into
+database batches and publishes results in input order. Store byte budgets and
+slow consumption stop further admission. Same-resource mutations within a stream
+execute in input order.
 Lua runs inside the single Weir process. Unconfirmed writes remain indeterminate
 after transport failure and are never automatically replayed.
 
@@ -146,7 +147,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.6.0`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.7.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -177,21 +178,21 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.6.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.6.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.6.0/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.7.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.7.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.7.0/examples/scan) examples
 initialize through a seed. Read and Mutate accept batches for one Store and use
 one bidirectional Execute RPC, with indexed results in input order. There is no
-whole-call byte or item-count limit: each record frame fits 5 MiB and 1024 records.
+whole-call byte or item-count limit; each wire request carries one bounded record.
 Resources are canonical relative paths. ReadStream and MutateStream accept an
 incremental producer and consumer so callers can avoid retaining the full input
 and output. The slice convenience methods accumulate results in client memory.
 The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan
-and Native methods. It pins public protocol v0.4.0. Advanced fixed-owner callers
+and Native methods. It pins public protocol v0.5.0. Advanced fixed-owner callers
 can use Dial and package-level business helpers.
 
 The SDK validates slice inputs before sending them. The server validates each
-frame before executing it; an invalid later frame does not undo earlier effects.
+request before executing it; an invalid later request does not undo earlier effects.
 Mutate is not a transaction. Confirmed indexed results survive a later stream
 failure; unconfirmed mutations may have applied and must not be retried
 automatically. An APPLIED outcome that includes a Failure preserves application

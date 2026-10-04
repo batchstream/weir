@@ -249,7 +249,7 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 }
 
 func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	op := record.Operation()
+	op := record.Command()
 	segments := record.Segments()
 	if len(segments) != 2 || !validIndex(segments[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "one concrete Search index and string ID required")
@@ -260,24 +260,18 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	}
 	native := &plan{index: segments[0], id: key[2:]}
 	work := &execution.Plan{
-		Operation:   op,
+		Command:     op,
 		Key:         record.Key(),
 		Backend:     native,
 		Bytes:       record.Bytes(),
 		ResultBytes: execution.ResultOverheadBytes,
 	}
-	if read := op.Read; read != nil {
-		if read.AdapterOptions != nil || read.ReadMediaType != "" && read.ReadMediaType != "application/json" {
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read representation/options unsupported")
-		}
+	if read := op.GetRead(); read != nil {
 		native.action = "read"
 		// Reserve the exported Read document up to its configured source bound.
 		work.ResultBytes += a.maxReadSize()
 	} else {
-		mutation := op.Mutate
-		if mutation.AdapterOptions != nil {
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "adapter options unsupported")
-		}
+		mutation := op.GetMutate()
 		var document *pb.Document
 		switch action := mutation.Action.(type) {
 		case *pb.MutateRequest_Put:
@@ -293,7 +287,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
 			if program := action.AtomicTransform.GetProgram(); program != nil {
-				if program.Input != nil && program.Input.MediaType != "application/json" {
+				if program.Input != nil && program.Input.ContentType != "application/json" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
 				}
 				input := value.Value{Kind: value.Missing}
@@ -322,7 +316,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "mutation unsupported")
 		}
 		if document != nil {
-			if document.MediaType != "application/json" {
+			if document.ContentType != "application/json" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only JSON source is supported")
 			}
 			if !object(document.Data) || validateJSON(document.Data, 4096) != nil {
@@ -345,19 +339,20 @@ type getReply struct {
 	Status int             `json:"status"`
 }
 
-func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *execution.Result {
+func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.Event {
 	var read *pb.ReadResult
 	switch {
 	case failure != nil:
 		read = protocol.ReadFailure(failure)
 	case !*reply.Found:
 		read = protocol.Missing()
-	case !work.Results.Reserve(len(reply.Source)):
-		read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record batch result budget exhausted"))
+	case len(reply.Source) > work.ResultBytes-execution.ResultOverheadBytes:
+		read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record exceeds result reservation"))
 	default:
-		document := &pb.Document{MediaType: "application/json", Data: reply.Source}
+		document := &pb.Document{ContentType: "application/json", Data: reply.Source}
 		read = protocol.ReadDocument(document)
 	}
-	result := &execution.Result{Index: work.Operation.Index, Read: read}
-	return result
+	value := &pb.Event_ReadResult{ReadResult: read}
+	event := &pb.Event{Value: value}
+	return event
 }

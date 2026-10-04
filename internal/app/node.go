@@ -31,8 +31,6 @@ type Node struct {
 	directory     *directory.Directory
 	servers       []*server.Server
 	listeners     []net.Listener
-	targets       []overload.Target
-	budget        uint64
 	stopGuard     context.CancelFunc
 	guardDone     chan struct{}
 	start         sync.Once
