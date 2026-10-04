@@ -23,7 +23,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeContentType = "application/vnd.weir.search-http.v1+protobuf"
 const NativeBodyLimit = 8 << 20
 
 const NativeResponseLimit = 8 << 20
@@ -34,51 +33,49 @@ const nativeBudget = 4 << 20
 
 type nativePlan struct {
 	index   string
-	request *spb.Request
+	request *spb.HttpRequest
 }
 
-func (a *Adapter) prepareNative(open *pb.NativeOpen) (*execution.Plan, *pb.Failure) {
-	if f := protocol.ValidateNative(open); f != nil {
+func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
+	if f := protocol.ValidateNative(request); f != nil {
 		return nil, f
 	}
-	parts, _ := protocol.ParseRelativeResource(open.Resource)
+	parts, _ := protocol.ParseRelativeResource(request.Resource)
 	if len(parts) != 1 || !validIndex(parts[0]) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one concrete Search index")
 	}
-	if open.Descriptor_.ContentType != NativeContentType {
-		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native descriptor")
+	httpRequest := request.GetSearchHttp()
+	if httpRequest == nil {
+		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Native requires search_http")
 	}
-	descriptor := &spb.Request{}
-	if err := proto.Unmarshal(open.Descriptor_.Data, descriptor); err != nil || len(descriptor.ProtoReflect().GetUnknown()) != 0 {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP descriptor")
-	}
-	if f := nativeDescriptor(descriptor, open.BodyContentType); f != nil {
+	if f := validateNativeHTTPRequest(httpRequest); f != nil {
 		return nil, f
 	}
-	native := &nativePlan{index: parts[0], request: descriptor}
+
+	native := &nativePlan{index: parts[0], request: httpRequest}
 	p := &execution.Plan{
 		Singleton:    true,
-		Key:          open.Resource,
-		Bytes:        proto.Size(open) + execution.EntryOverheadBytes,
-		ResultBytes:  protocol.NativeChunk + protocol.NativeDescriptor + execution.ResultOverheadBytes,
+		Key:          request.Resource,
+		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
+		ResultBytes:  protocol.NativeChunk + protocol.MaxNativeHTTPMetadataBytes + execution.ResultOverheadBytes,
 		WorkingBytes: nativeBudget,
 		Backend:      native,
 	}
 	return p, nil
 }
 
-func nativeDescriptor(d *spb.Request, contentType string) *pb.Failure {
+func validateNativeHTTPRequest(d *spb.HttpRequest) *pb.Failure {
 	unsupported := protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native HTTP operation or option")
 	switch {
 	case d.Method == "POST" && d.Path == "/_bulk":
-		if contentType != "application/x-ndjson" {
+		if d.BodyContentType != "application/x-ndjson" {
 			return unsupported
 		}
 	case d.Method == "GET" && strings.HasPrefix(d.Path, "/_doc/"):
 		id := strings.TrimPrefix(d.Path, "/_doc/")
 		// Deliberately allow only unreserved IDs. No double decoding, encoded slash,
 		// dot traversal or aliases. Record operations support more general IDs.
-		if len(id) == 0 || len(id) > 512 || id == "." || id == ".." || contentType != "" {
+		if len(id) == 0 || len(id) > 512 || id == "." || id == ".." || d.BodyContentType != "" {
 			return unsupported
 		}
 		for _, b := range []byte(id) {
@@ -128,7 +125,7 @@ func nativeDescriptor(d *spb.Request, contentType string) *pb.Failure {
 					return unsupported
 				}
 			}
-			if h.Name == "accept" && value != "application/json" || h.Name == "content-type" && value != contentType {
+			if h.Name == "accept" && value != "application/json" || h.Name == "content-type" && value != d.BodyContentType {
 				return unsupported
 			}
 		}
@@ -283,7 +280,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	}
 	native := p.Backend.(*nativePlan)
 	d := native.request
-	input := p.Command.GetNative().Body
+	input := d.Body
 	var body io.Reader
 	if d.Method == "GET" && len(input) != 0 {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "GET requires an empty body")), execution.Neutral
@@ -319,7 +316,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx)), execution.Neutral
 	}
-	endpoint := a.config.URL + "/" + native.index + d.Path
+	endpoint := a.config.URL + "/" + url.PathEscape(native.index) + d.Path
 	if d.Query != "" {
 		endpoint += "?" + d.Query
 	}
@@ -355,7 +352,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		response.StatusCode == http.StatusSwitchingProtocols {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP response bounds")), execution.Neutral
 	}
-	metadata := &spb.Response{StatusCode: uint32(response.StatusCode)}
+	metadata := &spb.HttpResponse{StatusCode: uint32(response.StatusCode)}
 	names := make([]string, 0, len(response.Header))
 	for name := range response.Header {
 		names = append(names, name)
@@ -368,13 +365,11 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 			metadata.Headers = append(metadata.Headers, h)
 		}
 	}
-	encoded, err := proto.Marshal(metadata)
-	if err != nil || len(encoded) > protocol.NativeDescriptor {
+	if proto.Size(metadata) > protocol.MaxNativeHTTPMetadataBytes {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound")), execution.Neutral
 	}
-	document := &pb.Document{ContentType: NativeContentType, Data: encoded}
 	contentType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	head := &pb.NativeHead{Metadata: document, BodyContentType: contentType}
+	head := &pb.NativeHead{Http: metadata, BodyContentType: contentType}
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Value: value}
 	if err := emit(p, event); err != nil {

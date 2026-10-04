@@ -115,13 +115,13 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	concurrent.Wait()
 
 	for i, index := range indexes {
-		bulk := nativeOpen(t, index, "POST", "/_bulk")
+		bulk := nativeRequest(t, index, "POST", "/_bulk")
 		body := fmt.Sprintf("{\"index\":{\"_index\":%q,\"_id\":\"native\"}}\n{\"n\":%d}\n", index, 7+i)
 		end, capture := runNative(t, a, bulk, []byte(body))
 		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"_index":"`+index+`"`) {
 			t.Fatal("Native bulk request target", end, capture.body.String())
 		}
-		get := nativeOpen(t, index, "GET", "/_doc/native")
+		get := nativeRequest(t, index, "GET", "/_doc/native")
 		end, capture = runNative(t, a, get, nil)
 		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
 			t.Fatal("Native GET request target", end, capture.body.String())

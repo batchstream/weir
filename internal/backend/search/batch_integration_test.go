@@ -65,8 +65,8 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	}
 	defer a.Close()
 	inspections.Store(0)
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`)}
-	form := &pb.Transform_Program{Program: program}
+	program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`)}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.Index + "/s:program", Action: action}
@@ -175,8 +175,8 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`)}
-	form := &pb.Transform_Program{Program: program}
+	program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`)}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: backend.Index + "/s:program", Action: action}

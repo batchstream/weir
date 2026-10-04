@@ -34,8 +34,8 @@ func batchOperation(t testing.TB, opts batchOperationOptions) *pb.ExecuteRequest
 	}
 	request := &pb.MutateRequest{Resource: opts.resource}
 	if opts.action == "program" {
-		program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(opts.program)}
-		form := &pb.Transform_Program{Program: program}
+		program := &pb.LuaTransform{Source: []byte(opts.program)}
+		form := &pb.Transform_Lua{Lua: program}
 		transform := &pb.Transform{Form: form}
 		request.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	} else if opts.action == "delete" {

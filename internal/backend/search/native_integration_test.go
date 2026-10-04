@@ -78,7 +78,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 					t.Fatal(status)
 				}
 			}
-			open := nativeOpen(t, backend.Index, "POST", "/_bulk")
+			open := nativeRequest(t, backend.Index, "POST", "/_bulk")
 			end, capture := runNative(t, a, open, []byte(body))
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
 			if mode == "drop" || mode == "later_invalid" {
@@ -104,7 +104,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 				t.Logf("%s native bulk calls=%d independent GET status=%d", mode, calls.Load(), status)
 			}
 			if mode == "multichunk" {
-				open = nativeOpen(t, backend.Index, "GET", "/_doc/x")
+				open = nativeRequest(t, backend.Index, "GET", "/_doc/x")
 				end, capture = runNative(t, a, open, nil)
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || capture.chunks < 2 {
 					t.Fatal(end, capture.chunks)
@@ -175,13 +175,14 @@ func TestSearchNativeLaterInvalidNeverEscapesOrReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	open := nativeOpen(t, backend.Index, "POST", "/_bulk")
+	open := nativeRequest(t, backend.Index, "POST", "/_bulk")
 	p, f := a.prepareNative(open)
 	if f != nil {
 		t.Fatal(f)
 	}
 	body := first + "{\"delete\":{\"_id\":\"prefix\",\"_index\":\"outside\"}}\n"
-	p.Command = testutil.NativeCommand(open, []byte(body))
+	open.GetSearchHttp().Body = []byte(body)
+	p.Command = testutil.NativeCommand(open)
 	capture := &nativeCapture{}
 	end, _ := a.executeNative(ctx, p, capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {

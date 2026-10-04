@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.5.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.6.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -59,7 +59,7 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.5.0 and Go SDK v0.7.0.
+safe typed completion. The current dependencies are protocol v0.6.0 and Go SDK v0.8.0.
 
 Internal execution plans retain scheduling budgets and backend state. They borrow
 the public Command and publish the public Event directly; no second request or

@@ -24,12 +24,10 @@ import (
 
 	spb "github.com/batchstream/weir-protocol/api/weir/search/v1"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // Reuses packaged fixture ownership and explicit archive/image identities.
@@ -272,14 +270,10 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 				t.Fatal("acknowledged mutation response lost must be UNKNOWN", result, err)
 			}
 		} else {
-			descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
-			encoded, err := proto.Marshal(descriptor)
-			if err != nil {
-				t.Fatal(err)
-			}
-			doc := &pb.Document{ContentType: search.NativeContentType, Data: encoded}
-			open := &pb.NativeOpen{Resource: root, Descriptor_: doc, BodyContentType: "application/x-ndjson"}
-			nativeCall := &pb.NativeRequest{Open: open, Body: []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")}
+			body := []byte("{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":1}\n")
+			httpRequest := &spb.HttpRequest{Method: "POST", Path: "/_bulk", BodyContentType: "application/x-ndjson", Body: body}
+			request := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
+			nativeCall := &pb.NativeRequest{Resource: root, Request: request}
 			nativeVariant := &pb.Command_Native{Native: nativeCall}
 			call := &pb.Command{Operation: nativeVariant}
 			stream, err := testutil.ExecuteEvents(ctx, client, "search", call)

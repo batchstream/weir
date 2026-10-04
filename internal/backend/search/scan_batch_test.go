@@ -28,11 +28,12 @@ type scanSearchRequest struct {
 }
 
 func scanBatchHit(position int, size int) json.RawMessage {
-	base := fmt.Sprintf(`{"_index":"records","_id":"%d","_score":null,"_source":{"pad":""},"sort":[%d]}`, position, position)
-	if size > len(base) {
-		base = strings.Replace(base, `"pad":""`, `"pad":"`+strings.Repeat("x", size-len(base))+`"`, 1)
+	source := fmt.Sprintf(`{"n":%d,"pad":""}`, position)
+	if size > len(source) {
+		source = strings.Replace(source, `"pad":""`, `"pad":"`+strings.Repeat("x", size-len(source))+`"`, 1)
 	}
-	return json.RawMessage(base)
+	raw := fmt.Sprintf(`{"_index":"records","_id":"%d","_score":null,"_source":%s,"sort":[%d]}`, position, source, position)
+	return json.RawMessage(raw)
 }
 
 func scanBatchReply(rows []json.RawMessage) []byte {
@@ -97,9 +98,9 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 		}
 		for offset, document := range page.Documents {
 			var hit struct {
-				Sort []int64
+				N *int64 `json:"n"`
 			}
-			if json.Unmarshal(document.Data, &hit) != nil || len(hit.Sort) != 1 || hit.Sort[0] != int64(state.count)+int64(offset) {
+			if json.Unmarshal(document.Data, &hit) != nil || hit.N == nil || *hit.N != int64(state.count)+int64(offset) {
 				t.Fatal("lost or duplicate hit", document)
 			}
 		}
@@ -280,7 +281,7 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 		var rows []json.RawMessage
 		for position := 0; position < execution.ScanBatchDocuments; position++ {
 			hit := scanBatchHit(position, 0)
-			hit = json.RawMessage(strings.Replace(string(hit), `{"pad":""}`, `{"values":[`+values+`]}`, 1))
+			hit = json.RawMessage(strings.Replace(string(hit), `{"n":0,"pad":""}`, `{"values":[`+values+`]}`, 1))
 			rows = append(rows, hit)
 		}
 		_, _ = w.Write(scanBatchReply(rows))
@@ -299,7 +300,7 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	}
 	excessiveValues := strings.Repeat("0,", 16384) + "0"
 	hit := scanBatchHit(0, 0)
-	hit = json.RawMessage(strings.Replace(string(hit), `{"pad":""}`, `{"values":[`+excessiveValues+`]}`, 1))
+	hit = json.RawMessage(strings.Replace(string(hit), `{"n":0,"pad":""}`, `{"values":[`+excessiveValues+`]}`, 1))
 	state.hasAfter = false
 	rows := []json.RawMessage{hit}
 	page = adapter.scanReply(scanBatchReply(rows), state)

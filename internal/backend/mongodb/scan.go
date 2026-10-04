@@ -35,6 +35,7 @@ type scanPlan struct {
 	pageSize          uint64
 	batchSize         int
 	qualified, closed bool
+	includeID         bool
 }
 
 type scanCheckpoint struct {
@@ -51,51 +52,43 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Scan target")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, "mongodb")}
-	if d := req.Selector; d != nil {
+	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, "mongodb"), includeID: true}
+	if d := req.Filter; d != nil {
 		if d.ContentType != "application/bson" {
-			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
+			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan filter requires BSON")
 		}
-		// Existing bounded codec validates selector structure before any materialized
-		// BSON option list. Scalar types have their original native BSON semantics.
-		if _, err := Decode(d.Data); err != nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive BSON selector")
+		nodes := 4096
+		if !validScanBSON(d.Data, 0, &nodes) {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive BSON filter")
 		}
-		fields, err := scanFields(d.Data)
-		if err != nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid selector")
+		native.filter = bson.RawValue{Type: bson.TypeEmbeddedDocument, Value: d.Data}
+	}
+	if projection := req.Projection; projection != nil {
+		fields := bson.D{}
+		include := projection.Mode == pb.ProjectionMode_INCLUDE
+		native.includeID = !include
+		for _, name := range projection.Fields {
+			if strings.HasPrefix(name, "_id.") {
+				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan projects the complete _id or excludes it")
+			}
+			if name == "_id" {
+				native.includeID = include
+				continue
+			}
+			flag := int32(0)
+			if include {
+				flag = 1
+			}
+			field := bson.E{Key: name, Value: flag}
+			fields = append(fields, field)
 		}
-		// Maintain selector field order. No caller command, lifecycle or partial flags.
-		elements, _ := bson.Raw(d.Data).Elements()
-		for _, e := range elements {
-			key := e.Key()
-			if key != "filter" && key != "sort" && key != "projection" {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "unsupported find selector option")
-			}
-			if fields[key].Type != bson.TypeEmbeddedDocument {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "find option must be a document")
-			}
-			switch key {
-			case "filter":
-				native.filter = e.Value()
-			case "sort":
-				sort, err := scanFields(e.Value().Value)
-				if err != nil || len(sort) != 0 && (len(sort) != 1 || !scanOK(sort["_id"])) {
-					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan requires ascending _id order")
-				}
-			case "projection":
-				projection, err := scanFields(e.Value().Value)
-				if err != nil {
-					return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Scan projection")
-				}
-				for name, value := range projection {
-					if strings.HasPrefix(name, "_id.") || name == "_id" && !scanOK(value) && !(value.Type == bson.TypeBoolean && value.Boolean()) {
-						return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan projection must preserve the original _id")
-					}
-				}
-				option := bson.E{Key: key, Value: e.Value()}
-				native.options = append(native.options, option)
-			}
+		if include {
+			identity := bson.E{Key: "_id", Value: int32(1)}
+			fields = append(fields, identity)
+		}
+		if len(fields) != 0 {
+			option := bson.E{Key: "projection", Value: fields}
+			native.options = append(native.options, option)
 		}
 	}
 	if len(req.ContinuationToken) != 0 {
@@ -203,6 +196,21 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			return page, execution.Neutral
 		}
 		n.last = state
+	}
+	if !n.includeID {
+		for _, document := range page.Documents {
+			start, output := bsoncore.AppendDocumentStart(nil)
+			remaining := document.Data[4 : len(document.Data)-1]
+			for len(remaining) != 0 {
+				element, tail, _ := bsoncore.ReadElement(remaining)
+				remaining = tail
+				if element.Key() != "_id" {
+					output = append(output, element...)
+				}
+			}
+			output, _ = bsoncore.AppendDocumentEnd(output, start)
+			document.Data = output
+		}
 	}
 	if cursor.limited {
 		// Learn from the accepted byte-bounded prefix, not a short logical page.

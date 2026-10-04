@@ -14,7 +14,7 @@ import (
 )
 
 func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
-	for _, path := range []string{"db/records/i:01", "1db/records/s:bad", "db/records"} {
+	for _, path := range []string{"db/records/i:01", "bad.db/records/s:bad", "db/records"} {
 		t.Run(path, func(t *testing.T) {
 			var commands atomic.Int32
 			monitor := &event.CommandMonitor{Started: func(context.Context, *event.CommandStartedEvent) { commands.Add(1) }}
@@ -52,14 +52,24 @@ func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
 }
 
 func TestMongoNamespaceBytePolicy(t *testing.T) {
-	for _, name := range []string{"a", "A", "Z_a09", strings.Repeat("A", 63)} {
-		if !validNamespaceName(name) {
-			t.Fatal("valid namespace rejected", name)
+	for _, name := range []string{"a", "A", "_a", "1a", "a-b", "数据库", strings.Repeat("a", 63)} {
+		if !validDatabaseName(name) {
+			t.Fatal("valid database", name)
 		}
 	}
-	for _, name := range []string{"", "_a", "1a", "a-b", "a.b", "a/", "a\n", "aé", strings.Repeat("a", 64)} {
-		if validNamespaceName(name) {
-			t.Fatal("invalid namespace accepted", name)
+	for _, name := range []string{"", "a.b", "a/", "a\n", strings.Repeat("a", 64)} {
+		if validDatabaseName(name) {
+			t.Fatal("invalid database", name)
+		}
+	}
+	for _, name := range []string{"a.b", "_records", "1记录", strings.Repeat("c", 252)} {
+		if !validNamespace([]string{"db", name}) {
+			t.Fatal("valid collection", name)
+		}
+	}
+	for _, name := range []string{"", "system.users", "x.system.users", "a$b", strings.Repeat("c", 253)} {
+		if validNamespace([]string{"db", name}) {
+			t.Fatal("invalid collection", name)
 		}
 	}
 }

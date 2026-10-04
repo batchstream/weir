@@ -106,12 +106,12 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 		for _, document := range page.Documents {
 			retained += len(document.Data)
 			var hit struct {
-				ID string `json:"_id"`
+				N *int `json:"n"`
 			}
-			if json.Unmarshal(document.Data, &hit) != nil || hit.ID == "" || seen[hit.ID] {
-				t.Fatal("duplicate or invalid native hit", hit.ID)
+			if json.Unmarshal(document.Data, &hit) != nil || hit.N == nil || seen[fmt.Sprint(*hit.N)] {
+				t.Fatal("duplicate or invalid native hit", hit.N)
 			}
-			seen[hit.ID] = true
+			seen[fmt.Sprint(*hit.N)] = true
 		}
 		if retained > execution.ScanBatchBytes {
 			t.Fatal("large source output exceeded retained byte bound", retained)
@@ -139,10 +139,10 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 		t.Fatal("resume lost final source", page.Failure, len(page.Documents))
 	}
 	var last struct {
-		ID string `json:"_id"`
+		N *int `json:"n"`
 	}
-	if json.Unmarshal(page.Documents[0].Data, &last) != nil || seen[last.ID] {
-		t.Fatal("resumed source duplicate", last.ID)
+	if json.Unmarshal(page.Documents[0].Data, &last) != nil || last.N == nil || seen[fmt.Sprint(*last.N)] {
+		t.Fatal("resumed source duplicate", last.N)
 	}
 	resumedState.count++
 	page, _ = adapter.fetchScan(ctx, resumed)

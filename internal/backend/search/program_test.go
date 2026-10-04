@@ -14,7 +14,7 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
+func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	var gets, puts atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/records" {
@@ -65,12 +65,11 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 		client: server.Client(),
 		ctx:    context.Background(),
 	}
-	program := &pb.ProgramTransform{
-		Runtime: "lua.v1",
-		Source:  []byte(`return weir.replace(weir.object("n", weir.add(weir.get(current, "n"), weir.get(input, "step"))))`),
-		Input:   &pb.Document{ContentType: "application/json", Data: []byte(`{"step":1}`)},
+	program := &pb.LuaTransform{
+		Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.get(current, "n"), weir.get(input, "step"))))`),
+		Input:  &pb.Document{ContentType: "application/json", Data: []byte(`{"step":1}`)},
 	}
-	form := &pb.Transform_Program{Program: program}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}
@@ -93,9 +92,9 @@ func TestProgramTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	}
 }
 
-func TestProgramTransformRejectsUnqualifiedPipelines(t *testing.T) {
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte("return weir.keep()")}
-	form := &pb.Transform_Program{Program: program}
+func TestLuaTransformRejectsUnqualifiedPipelines(t *testing.T) {
+	program := &pb.LuaTransform{Source: []byte("return weir.keep()")}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: "records/s:item", Action: action}

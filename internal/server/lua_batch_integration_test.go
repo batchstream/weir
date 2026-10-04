@@ -99,8 +99,8 @@ func luaRPCIndependentCases(count int) []luaRPCCase {
 }
 
 func luaRPCMutation(resource, source string) *pb.MutateRequest {
-	program := &pb.ProgramTransform{Runtime: "lua.v1", Source: []byte(source)}
-	form := &pb.Transform_Program{Program: program}
+	program := &pb.LuaTransform{Source: []byte(source)}
+	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	mutation := &pb.MutateRequest{Resource: resource, Action: action}

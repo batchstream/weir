@@ -2,6 +2,9 @@ package mongodb
 
 import (
 	"context"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -16,24 +19,31 @@ type namespace struct {
 }
 
 func validNamespace(parts []string) bool {
-	return len(parts) >= 2 && validNamespaceName(parts[0]) && validNamespaceName(parts[1])
+	return len(parts) >= 2 && validDatabaseName(parts[0]) && validCollectionName(parts[1]) && len(parts[0])+1+len(parts[1]) <= 255
 }
 
-func validNamespaceName(name string) bool {
-	if len(name) == 0 || len(name) > 63 || !namespaceLetter(name[0]) {
+func validDatabaseName(name string) bool {
+	if len(name) == 0 || len(name) >= 64 || strings.ContainsAny(name, "/\\. \"$*<>:|?") || !utf8.ValidString(name) {
 		return false
 	}
-	for i := 1; i < len(name); i++ {
-		b := name[i]
-		if !namespaceLetter(b) && (b < '0' || b > '9') && b != '_' {
+	for _, character := range name {
+		if unicode.IsControl(character) {
 			return false
 		}
 	}
 	return true
 }
 
-func namespaceLetter(b byte) bool {
-	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+func validCollectionName(name string) bool {
+	if name == "" || strings.ContainsRune(name, '$') || strings.HasPrefix(name, "system.") || strings.Contains(name, ".system.") || !utf8.ValidString(name) {
+		return false
+	}
+	for _, character := range name {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func (n namespace) String() string {
@@ -65,8 +75,11 @@ func (a *Adapter) inspectTarget(ctx context.Context, target namespace) (*pb.Fail
 	if err != nil {
 		return backendFailure(ctx, err), feedback(ctx, err)
 	}
+	if len(specs) == 0 {
+		return protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "target collection does not exist"), execution.Neutral
+	}
 	if len(specs) != 1 || specs[0].Name != target.collection || specs[0].Type != "collection" {
-		return protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "create the target collection before executing requests"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "one concrete collection required"), execution.Neutral
 	}
 	if collation := specs[0].Options.Lookup("collation"); collation.Type != 0 {
 		document, valid := collation.DocumentOK()

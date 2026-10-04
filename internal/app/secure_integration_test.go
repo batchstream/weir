@@ -180,11 +180,10 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if _, err := scan.Recv(); err != io.EOF {
 				t.Fatal(err)
 			}
-			descriptor := &pb.Document{ContentType: mongodb.NativeContentType}
-			nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: descriptor, BodyContentType: "application/bson"}
 			command := bson.D{{Key: "count", Value: "records"}}
 			body, _ := bson.Marshal(command)
-			nativeCall := &pb.NativeRequest{Open: nativeOpen, Body: body}
+			nativeRequest := &pb.NativeRequest_MongodbCommand{MongodbCommand: body}
+			nativeCall := &pb.NativeRequest{Resource: root, Request: nativeRequest}
 			nativeVariant := &pb.Command_Native{Native: nativeCall}
 			call := &pb.Command{Operation: nativeVariant}
 			stream, err := testutil.ExecuteEvents(ctx, client, "mongo", call)

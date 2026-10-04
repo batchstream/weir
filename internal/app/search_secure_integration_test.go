@@ -18,7 +18,6 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
@@ -188,15 +187,10 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	if _, err := scan.Recv(); err != io.EOF {
 		t.Fatal("Scan EOF", err)
 	}
-	descriptor := &spb.Request{Method: "POST", Path: "/_bulk"}
-	encoded, err := proto.Marshal(descriptor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	document := &pb.Document{ContentType: search.NativeContentType, Data: encoded}
-	nativeOpen := &pb.NativeOpen{Resource: root, Descriptor_: document, BodyContentType: "application/x-ndjson"}
 	body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
-	nativeCall := &pb.NativeRequest{Open: nativeOpen, Body: body}
+	httpRequest := &spb.HttpRequest{Method: "POST", Path: "/_bulk", BodyContentType: "application/x-ndjson", Body: body}
+	request := &pb.NativeRequest_SearchHttp{SearchHttp: httpRequest}
+	nativeCall := &pb.NativeRequest{Resource: root, Request: request}
 	nativeVariant := &pb.Command_Native{Native: nativeCall}
 	call := &pb.Command{Operation: nativeVariant}
 	native, err := testutil.ExecuteEvents(ctx, client, "search", call)

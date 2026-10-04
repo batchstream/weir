@@ -2,8 +2,6 @@ package protowire
 
 import (
 	"bufio"
-	"encoding/binary"
-	"io"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	"google.golang.org/grpc/codes"
@@ -20,71 +18,165 @@ func ValidateExecuteFrame(data mem.BufferSlice) error {
 	source := data.Reader()
 	defer source.Close()
 	reader := bufio.NewReader(source)
+	return validateMessageFrame(reader, wireExecute, uint64(data.Len()))
+}
+
+// Message shapes are fixed by the public protocol. Walking nested messages before
+// decoding prevents protobuf's last-value-wins merge from hiding duplicate fields.
+type wireKind uint8
+
+const (
+	wireExecute wireKind = iota + 1
+	wireCommand
+	wireRead
+	wireMutate
+	wireScan
+	wireNative
+	wireDocument
+	wireEmpty
+	wireTransform
+	wireLua
+	wireProjection
+	wireHTTP
+	wireHeader
+)
+
+type wireField struct {
+	number   uint64
+	scalar   bool
+	repeated bool
+	nested   wireKind
+	maximum  int
+	oneof    bool
+}
+
+var requestShapes = [...][]wireField{
+	wireExecute: {{number: 1, maximum: protocol.MaxExecuteRequestBytes},
+		{number: 2, scalar: true}, {number: 3, nested: wireCommand, maximum: protocol.MaxCommandBytes}},
+	wireCommand: {{number: 1, nested: wireRead, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 2, nested: wireMutate, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 3, nested: wireScan, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 4, nested: wireNative, maximum: protocol.MaxCommandBytes, oneof: true}},
+	wireRead: {{number: 1, maximum: protocol.MaxResourceBytes}},
+	wireMutate: {{number: 1, maximum: protocol.MaxResourceBytes},
+		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 3, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 4, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 5, nested: wireEmpty, oneof: true},
+		{number: 6, nested: wireTransform, maximum: protocol.MaxCommandBytes, oneof: true}},
+	wireScan: {{number: 1, maximum: protocol.MaxResourceBytes},
+		{number: 2, nested: wireDocument, maximum: protocol.MaxScanFilterBytes + 256},
+		{number: 3, nested: wireProjection, maximum: 8 << 10},
+		{number: 4, scalar: true},
+		{number: 5, maximum: protocol.MaxScanToken}},
+	wireNative: {{number: 1, maximum: protocol.MaxResourceBytes},
+		{number: 2, maximum: protocol.MaxNativeBodyBytes, oneof: true},
+		{number: 3, nested: wireHTTP, maximum: protocol.MaxCommandBytes, oneof: true}},
+	wireDocument: {{number: 1, maximum: 128},
+		{number: 2, maximum: protocol.MaxCommandBytes}},
+	wireEmpty: {},
+	wireTransform: {{number: 1, nested: wireLua, maximum: protocol.MaxCommandBytes, oneof: true},
+		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true}},
+	wireLua: {{number: 1, maximum: protocol.MaxCommandBytes},
+		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes}},
+	wireProjection: {{number: 1, scalar: true},
+		{number: 2, repeated: true, maximum: 512}},
+	wireHTTP: {{number: 1, maximum: protocol.MaxNativeHTTPMetadataBytes},
+		{number: 2, maximum: protocol.MaxResourceBytes},
+		{number: 3, maximum: protocol.MaxResourceBytes},
+		{number: 4, repeated: true, nested: wireHeader, maximum: protocol.MaxNativeHTTPMetadataBytes},
+		{number: 5, maximum: 128},
+		{number: 6, maximum: protocol.MaxNativeBodyBytes}},
+	wireHeader: {{number: 1, maximum: protocol.MaxNativeHTTPMetadataBytes},
+		{number: 2, repeated: true, maximum: protocol.MaxNativeHTTPMetadataBytes}},
+}
+
+// Every recursion borrows the same buffered reader and owns an exact byte span.
+// Repeated nested headers do not allocate a separate input buffer per message.
+func validateMessageFrame(reader *bufio.Reader, kind wireKind, remaining uint64) error {
 	seen := uint64(0)
-	for {
-		tag, err := binary.ReadUvarint(reader)
-		if err == io.EOF {
-			return nil
-		}
-		field := tag >> 3
-		if err != nil || field < 1 || field > 3 || seen&(1<<field) != 0 {
-			return invalidExecuteFraming()
-		}
-		seen |= 1 << field
-		if field == 2 {
-			if tag&7 != 0 {
-				return invalidExecuteFraming()
-			}
-			if _, err := binary.ReadUvarint(reader); err != nil {
-				return invalidExecuteFraming()
-			}
-			continue
-		}
-		length, err := messageLength(reader, tag, protocol.MaxExecuteRequestBytes)
+	oneof := false
+	repeated := 0
+	metadataBytes := uint64(0)
+	for remaining > 0 {
+		tag, tagBytes, err := frameVarint(reader, remaining)
 		if err != nil {
 			return err
 		}
-		if field == 3 {
-			limited := &io.LimitedReader{R: reader, N: int64(length)}
-			if err := validateCommandFrame(bufio.NewReader(limited)); err != nil {
+		remaining -= tagBytes
+		number := tag >> 3
+		var shape *wireField
+		for i := range requestShapes[kind] {
+			candidate := &requestShapes[kind][i]
+			if candidate.number == number {
+				shape = candidate
+				break
+			}
+		}
+		if shape == nil || !shape.repeated && seen&(1<<number) != 0 || shape.oneof && oneof {
+			return invalidExecuteFraming()
+		}
+		seen |= 1 << number
+		oneof = oneof || shape.oneof
+		if shape.repeated {
+			repeated++
+			if kind == wireProjection && repeated > 128 {
+				return invalidExecuteFraming()
+			}
+		}
+		if shape.scalar {
+			if tag&7 != 0 {
+				return invalidExecuteFraming()
+			}
+			_, consumed, err := frameVarint(reader, remaining)
+			if err != nil {
 				return err
 			}
-			if limited.N != 0 {
+			remaining -= consumed
+			continue
+		}
+		if tag&7 != 2 {
+			return invalidExecuteFraming()
+		}
+		length, lengthBytes, err := frameVarint(reader, remaining)
+		if err != nil {
+			return err
+		}
+		remaining -= lengthBytes
+		if length > uint64(shape.maximum) || length > remaining {
+			return invalidExecuteFraming()
+		}
+		if kind == wireHTTP && number != 6 {
+			metadataBytes += tagBytes + lengthBytes + length
+			if metadataBytes > protocol.MaxNativeHTTPMetadataBytes {
 				return invalidExecuteFraming()
+			}
+		}
+		if shape.nested != 0 {
+			if err := validateMessageFrame(reader, shape.nested, length); err != nil {
+				return err
 			}
 		} else if _, err := reader.Discard(int(length)); err != nil {
 			return invalidExecuteFraming()
 		}
-	}
-}
-
-func validateCommandFrame(reader *bufio.Reader) error {
-	tag, err := binary.ReadUvarint(reader)
-	if err != nil || tag>>3 < 1 || tag>>3 > 4 {
-		return invalidExecuteFraming()
-	}
-	length, err := messageLength(reader, tag, protocol.MaxCommandBytes)
-	if err != nil {
-		return err
-	}
-	if _, err := reader.Discard(int(length)); err != nil {
-		return invalidExecuteFraming()
-	}
-	if _, err := reader.ReadByte(); err != io.EOF {
-		return invalidExecuteFraming()
+		remaining -= length
 	}
 	return nil
 }
 
-func messageLength(reader *bufio.Reader, tag uint64, maximum int) (uint64, error) {
-	if tag&7 != 2 {
-		return 0, invalidExecuteFraming()
+func frameVarint(reader *bufio.Reader, remaining uint64) (uint64, uint64, error) {
+	var value uint64
+	for offset := uint64(0); offset < 10 && offset < remaining; offset++ {
+		next, err := reader.ReadByte()
+		if err != nil || offset == 9 && next > 1 {
+			return 0, 0, invalidExecuteFraming()
+		}
+		value |= uint64(next&0x7f) << (7 * offset)
+		if next < 128 {
+			return value, offset + 1, nil
+		}
 	}
-	length, err := binary.ReadUvarint(reader)
-	if err != nil || length > uint64(maximum) {
-		return 0, invalidExecuteFraming()
-	}
-	return length, nil
+	return 0, 0, invalidExecuteFraming()
 }
 
 func invalidExecuteFraming() error {

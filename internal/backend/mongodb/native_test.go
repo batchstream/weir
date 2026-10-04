@@ -105,8 +105,8 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			defer client.Disconnect(context.Background())
 			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, config: cfg}
-			descriptor := &pb.Document{ContentType: NativeContentType}
-			open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
+			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -123,7 +123,8 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan.Command = testutil.NativeCommand(open, raw)
+			open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+			plan.Command = testutil.NativeCommand(open)
 			end, feedback := a.executeNative(ctx, plan, capture.Emit)
 			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
 				t.Fatal(end, feedback, calls)

@@ -29,8 +29,8 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			descriptor := &pb.Document{ContentType: NativeContentType}
-			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyContentType: "application/bson"}
+			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 			native, failure := adapter.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -49,7 +49,7 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
-	for _, target := range []string{"db", "db/records/extra", "bad.db/records", "db/bad.collection", "_db/records", "db/_records", strings.Repeat("d", 64) + "/records", "db/" + strings.Repeat("c", 64), "db/system.users", "db/%24cmd"} {
+	for _, target := range []string{"db", "db/records/extra", "bad.db/records", strings.Repeat("d", 64) + "/records", "db/" + strings.Repeat("c", 253), "db/system.users", "db/%24cmd"} {
 		t.Run(target, func(t *testing.T) {
 			resource := target
 			opts := batchOperationOptions{resource: resource + "/s:id", action: "read"}
@@ -60,8 +60,8 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			if _, failure := adapter.prepareScan(request); failure == nil {
 				t.Fatal("invalid Scan target accepted")
 			}
-			descriptor := &pb.Document{ContentType: NativeContentType}
-			open := &pb.NativeOpen{Resource: resource, Descriptor_: descriptor, BodyContentType: "application/bson"}
+			nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 			if _, failure := adapter.prepareNative(open); failure == nil {
 				t.Fatal("invalid Native target accepted")
 			}
@@ -106,8 +106,8 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
-	descriptor := &pb.Document{ContentType: NativeContentType}
-	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
+	nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
@@ -115,7 +115,8 @@ func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	command := bson.D{{Key: "count", Value: "other"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	work.Command = testutil.NativeCommand(open, raw)
+	open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+	work.Command = testutil.NativeCommand(open)
 	end, signal := adapter.executeNative(context.Background(), work, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || signal != execution.Neutral {
 		t.Fatal(end, signal)
@@ -219,8 +220,8 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	if page.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(page)
 	}
-	descriptor := &pb.Document{ContentType: NativeContentType}
-	open := &pb.NativeOpen{Resource: "db/records", Descriptor_: descriptor, BodyContentType: "application/bson"}
+	nativeBody := &pb.NativeRequest_MongodbCommand{MongodbCommand: []byte{5, 0, 0, 0, 0}}
+	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 	native, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
@@ -228,7 +229,8 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	command := bson.D{{Key: "count", Value: "records"}}
 	raw := expressionBSON(t, command)
 	capture := &nativeCapture{}
-	native.Command = testutil.NativeCommand(open, raw)
+	open.Request.(*pb.NativeRequest_MongodbCommand).MongodbCommand = raw
+	native.Command = testutil.NativeCommand(open)
 	end, _ := adapter.executeNative(ctx, native, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(end)

@@ -179,7 +179,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		case *pb.MutateRequest_Delete:
 			native.action = "delete"
 		case *pb.MutateRequest_AtomicTransform:
-			if program := v.AtomicTransform.GetProgram(); program != nil {
+			if program := v.AtomicTransform.GetLua(); program != nil {
 				if program.Input != nil && program.Input.ContentType != "application/bson" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
 				}
@@ -256,6 +256,21 @@ func equalID(v value.Value, id any) bool {
 func backendFailure(ctx context.Context, err error) *pb.Failure {
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)
+	}
+	var command mongo.CommandError
+	if errors.As(err, &command) {
+		code := pb.FailureCode_UNAVAILABLE
+		switch command.Code {
+		case 18:
+			code = pb.FailureCode_UNAUTHENTICATED
+		case 13:
+			code = pb.FailureCode_PERMISSION_DENIED
+		case 26:
+			code = pb.FailureCode_TARGET_NOT_FOUND
+		}
+		if code != pb.FailureCode_UNAVAILABLE {
+			return protocol.Fail(code, "backend operation rejected")
+		}
 	}
 	if mongo.IsDuplicateKeyError(err) {
 		return protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "duplicate key")

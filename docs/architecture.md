@@ -31,7 +31,8 @@ not an atomic transaction; a later invalid request cannot undo earlier effects.
 There is no durable request identity, deduplication or exactly-once guarantee.
 
 Scan and Native each send one command with index 1 and half-close input. A scan
-page emits documents then ScanEnd; Native emits metadata, chunks and NativeEnd.
+page emits business documents then ScanEnd; Native emits typed HTTP response
+metadata (Search), body chunks and NativeEnd.
 Success requires the terminal event and final gRPC OK. A scan checkpoint additionally
 requires the terminal document count to match complete delivery.
 
@@ -163,7 +164,7 @@ cursor or cross-page snapshot. Search carries the latest PIT and search_after
 values; the backend snapshot has a 60-second keep-alive. Expiration fails
 explicitly. A previously published PIT remains available after a later
 failed/exhausted page until expiry.
-Checkpoint tokens are bounded, opaque and tied to the target/selector/profile;
+Checkpoint tokens are bounded, opaque and tied to the target/filter/projection;
 the checksum detects corruption and is not authentication.
 
 Native execution is a singleton with bounded streaming and backend time. MongoDB

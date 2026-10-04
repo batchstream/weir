@@ -162,7 +162,7 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 	if _, _, err := a.request(context.Background(), call); err != nil {
 		t.Fatal(err)
 	}
-	open := nativeOpen(t, "records", "GET", "/_doc/x")
+	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	end, _ := runNative(t, a, open, nil)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || calls.Load() != 2 {
 		t.Fatal("native connection config missing")
@@ -177,8 +177,9 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 	}
 	for _, name := range []string{"authorization", "proxy-authorization", "host", "idempotency-key", "x-idempotency-key"} {
 		header := &spb.Header{Name: name, Values: []string{"forbidden"}}
-		d := &spb.Request{Method: "GET", Path: "/_doc/x", Headers: []*spb.Header{header}}
-		if nativeDescriptor(d, "") == nil {
+		d := &spb.HttpRequest{Method: "GET", Path: "/_doc/x", Headers: []*spb.Header{header}}
+		d.BodyContentType = ""
+		if validateNativeHTTPRequest(d) == nil {
 			t.Fatal("caller overrode connection/replay headers")
 		}
 	}
@@ -410,7 +411,7 @@ func TestSearchTLSNoRedirectCredentialLeak(t *testing.T) {
 	a := openTestTLS(t, endpoint.URL, c)
 	call := exchange{path: "/redirect", body: []byte(`{}`), limit: 256}
 	_, _, _ = a.request(context.Background(), call)
-	open := nativeOpen(t, "records", "GET", "/_doc/x")
+	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	end, capture := runNative(t, a, open, nil)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || capture.head == nil || leaked.Load() != 0 {
 		t.Fatal("redirect followed")

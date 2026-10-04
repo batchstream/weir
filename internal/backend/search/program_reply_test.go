@@ -19,7 +19,7 @@ func TestProgramWriteReplyRecognizesRejectionEnvelopes(t *testing.T) {
 	}{
 		{product: ElasticsearchProduct, status: 400, kind: "mapper_parsing_exception", failure: pb.FailureCode_PRECONDITION_FAILED},
 		{product: ElasticsearchProduct, status: 400, kind: "document_parsing_exception", failure: pb.FailureCode_PRECONDITION_FAILED},
-		{product: ElasticsearchProduct, status: 404, kind: "index_not_found_exception", failure: pb.FailureCode_NOT_FOUND},
+		{product: ElasticsearchProduct, status: 404, kind: "index_not_found_exception", failure: pb.FailureCode_TARGET_NOT_FOUND},
 		{product: ElasticsearchProduct, status: 409, kind: "version_conflict_engine_exception", failure: pb.FailureCode_CONFLICT},
 		{product: ElasticsearchProduct, status: 429, kind: "es_rejected_execution_exception", failure: pb.FailureCode_UNAVAILABLE, feedback: execution.Congested},
 		{product: OpenSearchProduct, status: 429, kind: "rejected_execution_exception", failure: pb.FailureCode_UNAVAILABLE, feedback: execution.Congested},
@@ -75,11 +75,7 @@ func TestProgramWriteReplyRequiresCompleteSuccessEvidence(t *testing.T) {
 			t.Fatalf("ambiguous response was accepted: %s: %v", raw, result)
 		}
 	}
-	opts := programWriteReplyOptions{index: "records", id: "item", expectedResult: "updated", status: 200, raw: []byte(success), err: errTimeout}
-	result, feedback := a.programWriteReply(opts)
-	if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
-		t.Fatalf("lost acknowledgement was accepted: %v", result)
-	}
+
 }
 
 func TestProgramWriteReplyRejectsContradictoryErrorEvidence(t *testing.T) {

@@ -31,7 +31,7 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 	program.Current = currentValue
 	transformed, err := luaengine.Evaluate(ctx, program)
 	if err != nil {
-		mutation, feedback := searchLuaFailure(ctx, ctx, err)
+		mutation, feedback := searchLuaFailure(ctx, err)
 		return nil, mutation, feedback
 	}
 	next := *native
@@ -98,12 +98,11 @@ type programWriteReplyOptions struct {
 	expectedResult string
 	status         int
 	raw            []byte
-	err            error
 }
 
 func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.MutationResult, execution.Feedback) {
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "conditional write acknowledgement unavailable or incomplete"))
-	if opts.err != nil || len(opts.raw) > metadataLimit || validateJSON(opts.raw, 4096) != nil {
+	if len(opts.raw) > metadataLimit || validateJSON(opts.raw, 4096) != nil {
 		return unknown, execution.Neutral
 	}
 	var reply expressionResponse
@@ -138,7 +137,7 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.Mutation
 		shards.Successful == nil ||
 		shards.Failed == nil ||
 		*shards.Total < 0 ||
-		*shards.Successful < 0 ||
+		*shards.Successful < 1 ||
 		*shards.Failed < 0 ||
 		*shards.Successful > *shards.Total ||
 		*shards.Failed > *shards.Total-*shards.Successful {
@@ -156,18 +155,15 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.Mutation
 	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil), execution.Healthy
 }
 
-func searchLuaFailure(parent, ctx context.Context, err error) (*pb.MutationResult, execution.Feedback) {
-	if parent.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(parent)), execution.Neutral
+func searchLuaFailure(ctx context.Context, err error) (*pb.MutationResult, execution.Feedback) {
+	if ctx.Err() != nil {
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx)), execution.Neutral
 	}
 	code := pb.FailureCode_INVALID_ARGUMENT
 	message := "Lua program evaluation failed"
 	if errors.Is(err, context.DeadlineExceeded) {
 		code = pb.FailureCode_DEADLINE_EXCEEDED
 		message = "Lua program execution limit exceeded"
-	} else if ctx.Err() != nil {
-		code = pb.FailureCode_DEADLINE_EXCEEDED
-		message = "Lua transform execution deadline exceeded"
 	}
 	failure := protocol.Fail(code, message)
 	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral

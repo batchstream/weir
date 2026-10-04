@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strings"
 	"testing"
 
@@ -239,44 +238,36 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 		}
 	}
 }
-func TestMongoScanSelectorControls(t *testing.T) {
-	a := &Adapter{config: Config{Store: "mongo"}}
-	for _, name := range []string{"find", "aggregate", "allowPartialResults", "tailable", "awaitData", "noCursorTimeout", "batchSize", "limit", "skip", "singleBatch", "maxTimeMS", "getMore", "lsid", "readConcern", "collation"} {
-		selector := bson.D{{Key: name, Value: true}}
-		raw, _ := bson.Marshal(selector)
-		doc := &pb.Document{ContentType: "application/bson", Data: raw}
-		req := &pb.ScanRequest{Resource: "db/records", Selector: doc}
-		if _, f := a.prepareScan(req); f == nil {
-			t.Fatal("allowed unsafe option", name)
-		}
+func TestMongoScanNativeFilterAndProjection(t *testing.T) {
+	config := Config{Store: "mongo"}
+	adapter := &Adapter{config: config}
+	filter := bson.D{{Key: "sort", Value: bson.D{{Key: "$exists", Value: true}}}, {Key: "name", Value: bson.Regex{Pattern: "^a"}}}
+	raw, _ := bson.Marshal(filter)
+	document := &pb.Document{ContentType: "application/bson", Data: raw}
+	projection := &pb.Projection{Mode: pb.ProjectionMode_EXCLUDE, Fields: []string{"_id"}}
+	request := &pb.ScanRequest{Resource: "db/records", Filter: document, Projection: projection}
+	work, failure := adapter.prepareScan(request)
+	if failure != nil {
+		t.Fatal(failure)
 	}
-	raw := make([]byte, protocol.MaxSelector+1)
-	binary.LittleEndian.PutUint32(raw, uint32(len(raw)))
-	doc := &pb.Document{ContentType: "application/bson", Data: raw}
-	req := &pb.ScanRequest{Resource: "db/records", Selector: doc}
-	if _, f := a.prepareScan(req); f == nil {
-		t.Fatal("oversized selector")
+	native := work.Backend.(*scanPlan)
+	encoded, _ := bson.Marshal(scanFindCommand(native))
+	if !bytes.Equal(bson.Raw(encoded).Lookup("filter").Document(), raw) || native.includeID {
+		t.Fatal("native condition changed or identity published")
+	}
+	projection.Fields = []string{"_id.n"}
+	if _, failure := adapter.prepareScan(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
+		t.Fatal("partial identity projection", failure)
+	}
+	document.Data = make([]byte, protocol.MaxScanFilterBytes+1)
+	if _, failure := adapter.prepareScan(request); failure == nil {
+		t.Fatal("oversized filter accepted")
 	}
 }
 
-func TestMongoScanRejectsUnstableIdentitySelectorsAndTokens(t *testing.T) {
+func TestMongoScanRejectsInvalidIdentityTokens(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
-	cases := []bson.D{
-		{{Key: "sort", Value: bson.D{{Key: "n", Value: int32(1)}}}},
-		{{Key: "sort", Value: bson.D{{Key: "_id", Value: int32(-1)}}}},
-		{{Key: "projection", Value: bson.D{{Key: "_id", Value: int32(0)}}}},
-		{{Key: "projection", Value: bson.D{{Key: "_id.n", Value: int32(1)}}}},
-		{{Key: "projection", Value: bson.D{{Key: "_id", Value: "$n"}}}},
-	}
-	for _, selector := range cases {
-		raw, _ := bson.Marshal(selector)
-		document := &pb.Document{ContentType: "application/bson", Data: raw}
-		request := &pb.ScanRequest{Resource: "db/records", Selector: document}
-		if _, failure := adapter.prepareScan(request); failure == nil {
-			t.Fatal("unstable identity selector accepted", selector)
-		}
-	}
 	request := &pb.ScanRequest{Resource: "db/records"}
 	fingerprint := protocol.ScanFingerprint(request, "mongo", "mongodb")
 	identities := []bson.D{

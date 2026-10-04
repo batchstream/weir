@@ -172,17 +172,17 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 							t.Error("Scan target/PIT failure", index, step, page)
 							return
 						}
-						if step == 1 && (len(page.Documents) != 1 || !strings.Contains(string(page.Documents[0].Data), `"_index":"`+index+`"`)) {
+						if step == 1 && (len(page.Documents) != 1 || !strings.Contains(string(page.Documents[0].Data), `"target":"`+index+`"`)) {
 							t.Error("Scan returned another index's hit", index, page)
 						}
 					}
 				})
-				get := nativeOpen(t, index, "GET", "/_doc/same")
+				get := nativeRequest(t, index, "GET", "/_doc/same")
 				end, capture := runNative(t, a, get, nil)
-				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"_index":"`+index+`"`) {
+				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"target":"`+index+`"`) {
 					t.Fatal("Native GET used another target", end, capture.body.String())
 				}
-				bulk := nativeOpen(t, index, "POST", "/_bulk")
+				bulk := nativeRequest(t, index, "POST", "/_bulk")
 				body := fmt.Sprintf("{\"index\":{\"_index\":%q,\"_id\":\"same\"}}\n{}\n", index)
 				end, _ = runNative(t, a, bulk, []byte(body))
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {

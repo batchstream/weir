@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/url"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -94,7 +95,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		body := map[string]any{"ids": ids}
 		encoded, _ := json.Marshal(body)
 		call := exchange{
-			path: "/" + index + "/_mget?realtime=true", body: encoded,
+			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
 			contentType: "application/json", limit: batchBodyLimit,
 			jsonNodes: len(group)*(16384+32) + 1,
 		}
@@ -111,6 +112,8 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		case err == nil && (status == 429 || status == 503):
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
 			feedback = execution.Congested
+		case err == nil && status != 200:
+			failure, feedback = a.nativeResponseFailure(status, raw)
 		}
 		for _, i := range indexes {
 			observation := observedRecord{failure: failure, feedback: feedback}
@@ -147,7 +150,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 					if rejected, sample := a.reject(reply.Error.Type, reply.Status); rejected != nil {
 						observation.failure, observation.feedback = rejected, sample
 					} else if reply.Error.Type == "index_not_found_exception" {
-						observation.failure = protocol.Fail(pb.FailureCode_NOT_FOUND, "requested index missing")
+						observation.failure = protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "requested index missing")
 					}
 				}
 			case reply.Found == nil || reply.Status != 0:

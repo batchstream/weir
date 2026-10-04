@@ -96,7 +96,7 @@ func TestSecureSearchQualification(t *testing.T) {
 		if !strings.Contains(string(source), "9007199254740993") || !strings.Contains(string(source), `"keep":"source"`) {
 			t.Fatal("expression changed unrelated source")
 		}
-		open := nativeOpen(t, b.Index, "POST", "/_bulk")
+		open := nativeRequest(t, b.Index, "POST", "/_bulk")
 		body := "{\"index\":{\"_id\":\"native\"}}\n{\"n\":9007199254740993}\n"
 		end, capture := runNative(t, a, open, []byte(body))
 		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"errors":false`) {
@@ -315,7 +315,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			assertOutcome(t, reply, pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE)
 		}
 	case "native":
-		open := nativeOpen(t, b.Index, "POST", "/_bulk")
+		open := nativeRequest(t, b.Index, "POST", "/_bulk")
 		body := "{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":2}\n"
 		end, _ := runNative(t, a, open, []byte(body))
 		want := pb.NativeCompletion_RESPONSE_INCOMPLETE

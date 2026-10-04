@@ -94,8 +94,8 @@ Lua transforms also combine compatible queued requests: MongoDB batches reads an
 writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.
 Adapters issue their native read and write
-commands for each group. Read results reserve actual retained bytes, rather
-than the configured maximum size multiplied by the number of records. Tune against completed
+commands for each group. Each Read reserves its configured maximum output plus framing before admission;
+that reservation remains held through publication. Tune against completed
 throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
 or container limit for a hard memory boundary. Execution concurrency and backend
 working budgets remain independent of peer discovery.
@@ -178,9 +178,9 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.7.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.7.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.7.0/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.8.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.8.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.8.0/examples/scan) examples
 initialize through a seed. Read and Mutate accept batches for one Store and use
 one bidirectional Execute RPC, with indexed results in input order. There is no
 whole-call byte or item-count limit; each wire request carries one bounded record.
@@ -188,7 +188,7 @@ Resources are canonical relative paths. ReadStream and MutateStream accept an
 incremental producer and consumer so callers can avoid retaining the full input
 and output. The slice convenience methods accumulate results in client memory.
 The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan
-and Native methods. It pins public protocol v0.5.0. Advanced fixed-owner callers
+and Native methods. It pins public protocol v0.6.0. Advanced fixed-owner callers
 can use Dial and package-level business helpers.
 
 The SDK validates slice inputs before sending them. The server validates each
@@ -211,8 +211,10 @@ backend execution permit before sending that batch, so a slow consumer does not
 block other database work. Both backends learn a smaller fetch capacity from
 large documents and retain it in the opaque continuation token. Search also
 reduces an excessive native response before retrying the same read.
-The private MongoDB continuation format has changed; start a new Scan after
-upgrading instead of resuming an earlier token.
+Scan accepts a native filter and explicit INCLUDE/EXCLUDE Projection. Internal
+MongoDB `_id` and Search PIT/sort metadata need not appear in the result. Search
+publishes business `_source` documents, consistent with Read. See the
+[payload contracts](docs/payloads.md) for projection, Lua and Native semantics.
 
 ## Deployment
 
