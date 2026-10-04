@@ -199,9 +199,19 @@ func testMutation(value string) *pb.MutateRequest {
 func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
-	for len(s.slots) != 0 || s.admission.wireBytes.Load() != 0 {
+	for {
+		idle := len(s.slots) == 0 && s.admission.wireBytes.Load() == 0
+		stores := make(map[string]store.Snapshot, len(s.stores))
+		for name, local := range s.stores {
+			snapshot := local.Snapshot()
+			stores[name] = snapshot
+			idle = idle && snapshot.Pending == 0 && snapshot.PendingBytes == 0 && snapshot.Active == 0 && snapshot.Retained == 0 && snapshot.ResultBytes == 0 && snapshot.WorkingBytes == 0 && snapshot.Publishers == 0
+		}
+		if idle {
+			return
+		}
 		if time.Now().After(until) {
-			t.Fatal("RPC transport credits did not release", s.Snapshot(), s.admission.wireBytes.Load())
+			t.Fatal("RPC transport or Store credits did not release", s.Snapshot(), s.admission.wireBytes.Load(), stores)
 		}
 		time.Sleep(time.Millisecond)
 	}
