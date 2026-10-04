@@ -21,6 +21,10 @@ import (
 const scanPageBudget = 24 << 20
 const scanNativeLimit = (16 << 20) + (64 << 10)
 
+// A Scan holds two bounded native wire buffers, the copied output prefix and
+// metadata/framing while validating the entire response.
+const scanWorkingBytes = 48 << 20
+
 type scanPlan struct {
 	count             uint64
 	target            namespace
@@ -29,7 +33,13 @@ type scanPlan struct {
 	last              bson.Raw
 	fingerprint       string
 	pageSize          uint64
+	batchSize         int
 	qualified, closed bool
+}
+
+type scanCheckpoint struct {
+	Last      bson.Raw `bson:"last"`
+	BatchSize int32    `bson:"batch_size"`
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -44,7 +54,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan outputs native BSON")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), fingerprint: protocol.ScanFingerprint(req, "mongodb")}
+	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, "mongodb")}
 	if d := req.Selector; d != nil {
 		if d.MediaType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "find selector requires BSON")
@@ -93,30 +103,35 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	}
 	if len(req.ContinuationToken) != 0 {
 		state, err := protocol.DecodeScanToken(req.ContinuationToken, "mongodb", native.fingerprint)
-		if err != nil || !validScanID(state) {
+		fields, fieldsErr := scanFields(state)
+		last, lastOK := fields["last"].DocumentOK()
+		batchSize, batchOK := fields["batch_size"].Int32OK()
+		if err != nil || fieldsErr != nil || len(fields) != 2 || !lastOK || !validScanID(last) || !batchOK || batchSize < 1 || batchSize > execution.ScanBatchDocuments {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched MongoDB Scan continuation")
 		}
-		native.last = state
+		native.last = last
+		native.batchSize = int(batchSize)
 	}
 	p := &execution.Plan{
 		Singleton:    true,
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + protocol.EntryOverhead + 4096,
-		ResultBytes:  protocol.MaxDocument + protocol.ResultOverhead,
-		WorkingBytes: scanPageBudget,
+		ResultBytes:  execution.ScanResultBytes,
+		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
 	}
 	return p, nil
 }
 
 func scanFindCommand(n *scanPlan) bson.D {
+	batchSize := min(n.pageSize-n.count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
 	order := bson.D{{Key: "_id", Value: int32(1)}}
 	command := bson.D{
 		{Key: "find", Value: n.target.collection},
 		{Key: "sort", Value: order},
 		{Key: "hint", Value: order},
-		{Key: "limit", Value: int64(1)},
-		{Key: "batchSize", Value: int32(1)},
+		{Key: "limit", Value: int64(batchSize)},
+		{Key: "batchSize", Value: int32(batchSize)},
 		{Key: "singleBatch", Value: true},
 		{Key: "allowPartialResults", Value: false},
 	}
@@ -148,6 +163,10 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = protocol.ContextFailure(ctx)
 		return page, execution.Neutral
 	}
+	if n.count >= n.pageSize {
+		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan fetched beyond its logical page")
+		return page, execution.Neutral
+	}
 	if !n.qualified {
 		if failure, signal := a.qualifyTarget(ctx, n.target); failure != nil {
 			page.Failure = failure
@@ -161,7 +180,8 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = backendFailure(ctx, err)
 		return page, feedback(ctx, err)
 	}
-	cursor := &recordCursor{target: n.target, items: 1}
+	batchSize := min(n.pageSize-n.count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
+	cursor := &recordCursor{target: n.target, items: int(batchSize), outputBytes: execution.ScanBatchBytes}
 	page = a.recordCursorReply(raw, cursor, true)
 	if page.Failure != nil {
 		return page, execution.Neutral
@@ -172,9 +192,12 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "single-batch Scan retained a cursor")
 		return page, execution.Neutral
 	}
-	page.Exhausted = len(page.Documents) == 0
+	// singleBatch closes even a byte-truncated native batch. Only an empty
+	// response proves exhaustion; any discarded tail is fetched again from
+	// the last accepted identity.
+	page.Exhausted = len(page.Documents) == 0 && !cursor.limited
 	if len(page.Documents) != 0 {
-		id := bson.Raw(page.Documents[0].Data).Lookup("_id")
+		id := bson.Raw(page.Documents[len(page.Documents)-1].Data).Lookup("_id")
 		identity := bson.D{{Key: "_id", Value: id}}
 		state, err := bson.Marshal(identity)
 		if err != nil || !validScanID(state) {
@@ -184,8 +207,18 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		}
 		n.last = state
 	}
+	if cursor.limited {
+		// Learn from the accepted byte-bounded prefix, not a short logical page.
+		// The next request and its continuation reuse this conservative capacity.
+		n.batchSize = max(1, len(page.Documents))
+	}
 	if !page.Exhausted && n.count+uint64(len(page.Documents)) >= n.pageSize {
-		token, err := protocol.EncodeScanToken("mongodb", n.fingerprint, n.last)
+		checkpoint := scanCheckpoint{Last: n.last, BatchSize: int32(n.batchSize)}
+		state, err := bson.Marshal(checkpoint)
+		var token []byte
+		if err == nil {
+			token, err = protocol.EncodeScanToken("mongodb", n.fingerprint, state)
+		}
 		if err != nil {
 			page.Documents = nil
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")

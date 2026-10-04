@@ -10,6 +10,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"google.golang.org/protobuf/proto"
 )
 
 type Limits struct {
@@ -525,11 +526,12 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 			r.mu.Unlock()
 		}
 		delivered := true
-		for _, event := range events {
+		for index, event := range events {
 			if err := t.emit(event); err != nil {
 				delivered = false
 				break
 			}
+			events[index] = nil
 		}
 		if continuation && delivered && t.ctx.Err() == nil {
 			r.mu.Lock()
@@ -585,6 +587,8 @@ func (r *Runtime) execute(b *batch) {
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
 	events := make(map[*Ticket][]*pb.Event, len(b.items))
+	eventBytes := make(map[*Ticket]int, len(b.items))
+	documentBytes := make(map[*Ticket]int, len(b.items))
 	for i, t := range b.items {
 		plan := *t.plan
 		plan.Context = t.ctx
@@ -614,7 +618,22 @@ func (r *Runtime) execute(b *batch) {
 		if !plan.Singleton && len(events[ticket]) > 0 {
 			return fmt.Errorf("record emitted multiple events")
 		}
-		if len(events[ticket]) >= 2 {
+		if plan.Command.GetScan() != nil {
+			if len(events[ticket]) >= execution.ScanBatchDocuments+1 {
+				return fmt.Errorf("Scan batch exceeds document bound")
+			}
+			if document := event.GetDocument(); document != nil {
+				if len(events[ticket]) >= execution.ScanBatchDocuments || len(document.Data) > execution.ScanBatchBytes-documentBytes[ticket] {
+					return fmt.Errorf("Scan batch exceeds retained output bound")
+				}
+				documentBytes[ticket] += len(document.Data)
+			}
+			size := proto.Size(event)
+			if size > plan.ResultBytes-eventBytes[ticket] {
+				return fmt.Errorf("Scan output exceeds result reservation")
+			}
+			eventBytes[ticket] += size
+		} else if len(events[ticket]) >= 2 {
 			return fmt.Errorf("adapter step exceeds two bounded events")
 		}
 		events[ticket] = append(events[ticket], event)

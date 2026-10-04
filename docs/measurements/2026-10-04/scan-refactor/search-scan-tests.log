@@ -1,0 +1,201 @@
+=== RUN   TestSearchScanLargeSourcesDownsizeAndResume
+    scan_batch_integration_test.go:24: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    scan_batch_integration_test.go:164: 9 one-MiB sources: native request sizes [8 4 3 2 3 3]; first logical page8+resumed1 all unique, bounded output
+2026/10/04 12:24:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanLargeSourcesDownsizeAndResume (3.74s)
+=== RUN   TestSearchScanTraversal
+=== RUN   TestSearchScanTraversal/0
+    scan_integration_test.go:34: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    scan_integration_test.go:87: elasticsearch: complete native hit traversal 0 records
+2026/10/04 12:24:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanTraversal/1
+    scan_integration_test.go:34: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    scan_integration_test.go:87: elasticsearch: complete native hit traversal 1 records
+2026/10/04 12:24:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanTraversal/8
+    scan_integration_test.go:34: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    scan_integration_test.go:87: elasticsearch: complete native hit traversal 8 records
+2026/10/04 12:24:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanTraversal/35
+    scan_integration_test.go:34: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    scan_integration_test.go:87: elasticsearch: complete native hit traversal 35 records
+2026/10/04 12:24:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanTraversal/120
+    scan_integration_test.go:34: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    scan_integration_test.go:87: elasticsearch: complete native hit traversal 120 records
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanTraversal (0.68s)
+    --- PASS: TestSearchScanTraversal/0 (0.08s)
+    --- PASS: TestSearchScanTraversal/1 (0.09s)
+    --- PASS: TestSearchScanTraversal/8 (0.10s)
+    --- PASS: TestSearchScanTraversal/35 (0.14s)
+    --- PASS: TestSearchScanTraversal/120 (0.27s)
+=== RUN   TestSearchScanFaultPages
+=== RUN   TestSearchScanFaultPages/open_1_timeout
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/open_1_early
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/open_1_shards
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/open_1_missing
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/open_1_error_tail
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/open_1_truncate
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/open_1_drop
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_timeout
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_early
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_shards
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_missing
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_hits_missing
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_error_tail
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_truncate
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_1_drop
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=2 released=2
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_timeout
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_early
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_shards
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_missing
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_hits_missing
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_error_tail
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_truncate
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanFaultPages/fetch_2_drop
+    scan_integration_test.go:186: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=2 released=2
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanFaultPages (2.25s)
+    --- PASS: TestSearchScanFaultPages/open_1_timeout (0.10s)
+    --- PASS: TestSearchScanFaultPages/open_1_early (0.09s)
+    --- PASS: TestSearchScanFaultPages/open_1_shards (0.11s)
+    --- PASS: TestSearchScanFaultPages/open_1_missing (0.09s)
+    --- PASS: TestSearchScanFaultPages/open_1_error_tail (0.09s)
+    --- PASS: TestSearchScanFaultPages/open_1_truncate (0.09s)
+    --- PASS: TestSearchScanFaultPages/open_1_drop (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_timeout (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_early (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_shards (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_missing (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_hits_missing (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_error_tail (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_truncate (0.13s)
+    --- PASS: TestSearchScanFaultPages/fetch_1_drop (0.15s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_timeout (0.12s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_early (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_shards (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_missing (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_hits_missing (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_error_tail (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_truncate (0.09s)
+    --- PASS: TestSearchScanFaultPages/fetch_2_drop (0.09s)
+=== RUN   TestSearchScanPITInvalidationAndCancellation
+    scan_integration_test.go:233: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanPITInvalidationAndCancellation (0.08s)
+=== RUN   TestSearchScanNativeQueryWithFinalPipeline
+    scan_integration_test.go:282: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanNativeQueryWithFinalPipeline (0.13s)
+=== RUN   TestSearchScanCancelInFlight
+=== RUN   TestSearchScanCancelInFlight/open
+    scan_integration_test.go:337: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanCancelInFlight/fetch
+    scan_integration_test.go:337: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=2 released=2
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanCancelInFlight (0.22s)
+    --- PASS: TestSearchScanCancelInFlight/open (0.11s)
+    --- PASS: TestSearchScanCancelInFlight/fetch (0.11s)
+=== RUN   TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay
+=== RUN   TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay/drop
+    scan_resume_integration_test.go:51: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+=== RUN   TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay/timeout
+    scan_resume_integration_test.go:51: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:47 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:47 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+2026/10/04 12:24:47 INFO backend_connections_closed backend=search store=search owned=0 peak=1 limit=5 acquired=1 released=1
+--- PASS: TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay (0.34s)
+    --- PASS: TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay/drop (0.18s)
+    --- PASS: TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay/timeout (0.17s)
+=== RUN   TestSearchScanAndNativeRequestTargets
+=== RUN   TestSearchScanAndNativeRequestTargets/elasticsearch
+2026/10/04 12:24:47 INFO backend_connections_closed backend=search store=search owned=0 peak=3 limit=4 acquired=6 released=6
+=== RUN   TestSearchScanAndNativeRequestTargets/opensearch
+2026/10/04 12:24:47 INFO backend_connections_closed backend=search store=search owned=0 peak=3 limit=4 acquired=6 released=6
+--- PASS: TestSearchScanAndNativeRequestTargets (0.01s)
+    --- PASS: TestSearchScanAndNativeRequestTargets/elasticsearch (0.00s)
+    --- PASS: TestSearchScanAndNativeRequestTargets/opensearch (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/search	9.225s

@@ -151,13 +151,26 @@ failures do not replay mutations; the bounded Lua conflict and confirmed-abort
 retries described below retain the original execution deadline. Pending work
 remains bounded by queue bytes and deadlines.
 
-Scan fetches one bounded document step at a time and releases the execution permit
-before publication. A blocked scan at concurrency one allows independent record
-work. Each new page is a new Execute RPC and can select another instance. MongoDB
-uses ascending original BSON _id keysets without a retained cursor or cross-page
-snapshot. Search carries the latest PIT and search_after values; the backend
-snapshot has a 60-second keep-alive. Expiration fails explicitly. A previously
-published PIT remains available after a later failed/exhausted page until expiry.
+Scan fetches up to 128 documents per backend call, bounded by the remaining
+logical page size. It validates the complete native response and retains an
+ordered prefix of at most 4 MiB, then releases the working reservation and
+execution permit before publication. The result reservation remains held through
+publication and request completion. A blocked scan at concurrency one allows
+independent record work. MongoDB reserves 48 MiB and Search 64 MiB of working
+bytes for their native buffers and validation; this bounds admitted work and is
+not a measurement of process RSS. Only a validated empty response establishes
+exhaustion. An unretained tail is fetched again from the last accepted record.
+
+Both backends learn a smaller fetch capacity from the retained prefix size.
+Their opaque continuations carry that capacity, separate from the final
+request's remaining page size. Search also halves an excessive native response's
+fetch size without advancing the checkpoint, using the same PIT and absolute
+fetch deadline. Each new page is a new Execute RPC and can select another
+instance. MongoDB uses ascending original BSON _id keysets without a retained
+cursor or cross-page snapshot. Search carries the latest PIT and search_after
+values; the backend snapshot has a 60-second keep-alive. Expiration fails
+explicitly. A previously published PIT remains available after a later
+failed/exhausted page until expiry.
 Checkpoint tokens are bounded, opaque and tied to the target/selector/profile;
 the checksum detects corruption and is not authentication.
 

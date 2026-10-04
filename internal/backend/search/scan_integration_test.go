@@ -29,7 +29,7 @@ func scanWork(t *testing.T, a *Adapter, index string) *execution.Plan {
 	return p
 }
 func TestSearchScanTraversal(t *testing.T) {
-	for _, size := range []int{0, 1, 8, 35} {
+	for _, size := range []int{0, 1, 8, 35, 120} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			a, b := setupSearch(t)
 			for i := 0; i < size; i++ {
@@ -52,8 +52,8 @@ func TestSearchScanTraversal(t *testing.T) {
 				if page.Failure != nil {
 					t.Fatalf("fetch %d: %v", calls, page.Failure)
 				}
-				if len(page.Documents) > 1 {
-					t.Fatal("scan exceeded one-document page bound", len(page.Documents))
+				if len(page.Documents) > execution.ScanBatchDocuments {
+					t.Fatal("scan exceeded document batch bound", len(page.Documents))
 				}
 				for _, doc := range page.Documents {
 					var hit struct {
@@ -68,6 +68,10 @@ func TestSearchScanTraversal(t *testing.T) {
 					seen[hit.ID] = true
 				}
 				if page.Exhausted {
+					wantCalls := (size+execution.ScanBatchDocuments-1)/execution.ScanBatchDocuments + 2
+					if calls+1 != wantCalls {
+						t.Fatal("Scan did not use bounded native batches", calls+1, wantCalls)
+					}
 					break
 				}
 			}
@@ -212,7 +216,7 @@ func TestSearchScanFaultPages(t *testing.T) {
 					}
 					want := 0
 					if target == "fetch" {
-						want = int(at) - 1
+						want = (int(at) - 1) * 3
 					}
 					if !failed || count != want || calls.Load() != at {
 						t.Fatal("fault/retry contract", failed, count, want, calls.Load())
