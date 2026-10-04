@@ -136,7 +136,9 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL, Pool: 2}
+			// These direct calls bypass Runtime permits: two Scan workers and
+			// one Native exchange need three execution slots in this fixture.
+			cfg := Config{Store: "search", URL: server.URL, Pool: 3}
 			a, err := Open(context.Background(), cfg)
 			if err != nil {
 				t.Fatal(err)
