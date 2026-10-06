@@ -104,7 +104,7 @@ func (c *limitedConn) close(reason string) error {
 
 // gRPC queues trailers behind already-buffered DATA. A peer that never reads can
 // prevent even an error trailer/RST from progressing. Close that bounded connection
-// on a send/input stall; co-resident RPCs lose their responses, never their evidence.
+// on an output stall; co-resident RPCs lose their responses, never their evidence.
 func (s *Server) abortPeer(ctx context.Context) {
 	p, ok := peer.FromContext(ctx)
 	if !ok {

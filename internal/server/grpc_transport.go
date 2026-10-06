@@ -77,14 +77,17 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 	state := &rpcState{server: s, method: methodLabel(info.FullMethodName), slots: slots, cancel: cancel}
 	state.mu.Lock()
 	state.input = time.AfterFunc(s.limits.Stall, func() {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		if state.input == nil || state.finished || rpcContext.Err() != nil {
+			return
+		}
+		state.input = nil
 		s.metrics.watchdogs.WithLabelValues("open").Inc()
-		s.abortPeer(rpcContext)
+		state.cancel()
 	})
 	state.lifetime = context.AfterFunc(rpcContext, func() {
 		state.cancelBeforeDispatch(rpcContext.Err())
-		if rpcContext.Err() == context.DeadlineExceeded {
-			s.abortPeer(rpcContext)
-		}
 	})
 	state.mu.Unlock()
 	tagged := context.WithValue(rpcContext, rpcKey, state)
