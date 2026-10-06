@@ -64,7 +64,7 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 		s.admission.rejections.WithLabelValues("ingress").Inc()
 		return nil, err
 	}
-	slots := s.slots
+	slots := s.admission.slots
 	lifetime := s.limits.RequestLifetime
 	if control {
 		slots = s.control

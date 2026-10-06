@@ -23,14 +23,12 @@ type Node struct {
 	registry      *prometheus.Registry
 	diagnostics   *diagnostics
 	guard         *overload.Guard
-	localNames    []string
 	drains        prometheus.Counter
 	drainDuration prometheus.Histogram
 	admission     *server.Admission
-	runtimes      []*store.Runtime
+	stores        map[string]*store.Runtime
 	directory     *directory.Directory
-	servers       []*server.Server
-	listeners     []net.Listener
+	endpoints     []endpoint
 	stopGuard     context.CancelFunc
 	guardDone     chan struct{}
 	start         sync.Once
@@ -39,6 +37,12 @@ type Node struct {
 	once          sync.Once
 	closeErr      error
 	Errors        chan error
+}
+
+type endpoint struct {
+	listener net.Listener
+	server   *server.Server
+	peer     bool
 }
 
 func (n *Node) Start(startup context.Context) error {
@@ -62,10 +66,9 @@ func (n *Node) Start(startup context.Context) error {
 			n.guard.Run(ctx)
 		}()
 
-		for i, srv := range n.servers {
-			listener := n.listeners[i]
-			n.serving.Go(func() { n.listenerEnded(srv.Serve(listener)) })
-			<-srv.Serving()
+		for _, endpoint := range n.endpoints {
+			n.serving.Go(func() { n.listenerEnded(endpoint.server.Serve(endpoint.listener)) })
+			<-endpoint.server.Serving()
 		}
 
 		n.directory.Start(ctx)
@@ -84,9 +87,9 @@ func (n *Node) Start(startup context.Context) error {
 }
 
 func (n *Node) Addresses() []string {
-	addresses := make([]string, len(n.listeners))
-	for i, listener := range n.listeners {
-		addresses[i] = listener.Addr().String()
+	addresses := make([]string, len(n.endpoints))
+	for i, endpoint := range n.endpoints {
+		addresses[i] = endpoint.listener.Addr().String()
 	}
 	return addresses
 }
@@ -108,30 +111,32 @@ func (n *Node) Close(ctx context.Context) error {
 			n.stopGuard()
 			<-n.guardDone
 		}
-		for _, runtime := range n.runtimes {
+		for _, runtime := range n.stores {
 			runtime.BeginDrain()
 		}
 
-		remaining := len(n.servers) + len(n.runtimes)
+		finished := make(chan error, len(n.endpoints)+len(n.stores)+1)
+		remaining := 0
 		if n.directory != nil {
 			remaining++
-		}
-		finished := make(chan error, remaining)
-		if n.directory != nil {
 			go func() { finished <- n.directory.Close(drain) }()
 		}
-		for _, srv := range n.servers {
-			go func() { finished <- srv.Shutdown(drain) }()
+		for _, endpoint := range n.endpoints {
+			if endpoint.server != nil {
+				remaining++
+				go func() { finished <- endpoint.server.Shutdown(drain) }()
+			}
 		}
-		for _, runtime := range n.runtimes {
+		for _, runtime := range n.stores {
+			remaining++
 			go func() { finished <- runtime.Close(drain) }()
 		}
 		for range remaining {
 			n.closeErr = errors.Join(n.closeErr, <-finished)
 		}
 
-		for _, listener := range n.listeners {
-			_ = listener.Close()
+		for _, endpoint := range n.endpoints {
+			_ = endpoint.listener.Close()
 		}
 
 		n.drainDuration.Observe(time.Since(started).Seconds())

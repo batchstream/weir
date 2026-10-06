@@ -61,7 +61,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_executions_total") != 0 {
 		t.Fatal("diagnostics executed database work")
 	}
-	for _, runtime := range n.runtimes {
+	for _, runtime := range n.stores {
 		runtime.SetOverloaded(true)
 	}
 	if health(t, n, "/readyz") != 200 {

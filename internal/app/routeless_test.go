@@ -87,8 +87,7 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if len(node.runtimes) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) ||
-		len(node.localNames) != 0 {
+	if len(node.stores) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) {
 		t.Fatal("an empty graph must construct admission only, with no backend or remote state")
 	}
 	if node.ready() {
@@ -124,7 +123,7 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Fatal("an unknown Store must return a routing status on either listener", readErr, closeErr)
 		}
 	}
-	if len(node.runtimes) != 0 || health(t, node, "/readyz") != 200 {
+	if len(node.stores) != 0 || health(t, node, "/readyz") != 200 {
 		t.Fatal("unknown Store traffic must not create backends or alter readiness")
 	}
 	addresses = append(addresses, node.DiagnosticAddress())

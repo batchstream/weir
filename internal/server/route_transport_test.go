@@ -80,7 +80,7 @@ func TestBatchGracefulDrainPreservesAdmittedMutation(t *testing.T) {
 	shutdown := make(chan error, 1)
 	go func() { shutdown <- srv.Shutdown(ctx) }()
 	select {
-	case <-srv.draining:
+	case <-srv.admission.draining:
 	case <-ctx.Done():
 		t.Fatal("server did not begin drain")
 	}

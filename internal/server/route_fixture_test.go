@@ -211,7 +211,7 @@ func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
 	for {
-		idle := len(s.slots) == 0 && s.admission.wireBytes.Load() == 0
+		idle := len(s.admission.slots) == 0 && s.admission.wireBytes.Load() == 0
 		stores := make(map[string]store.Snapshot, len(s.stores))
 		for name, local := range s.stores {
 			snapshot := local.Snapshot()

@@ -50,7 +50,7 @@ type Runtime struct {
 	batches                                 map[*batch]struct{}
 	keys                                    map[resourceKey]*Ticket
 	pendingBytes, resultBytes, workingBytes int
-	active, publishers                      int
+	publishers                              int
 	draining, closed, overloaded            bool
 	wake, changed, done                     chan struct{}
 	closeOnce                               sync.Once
@@ -343,7 +343,7 @@ func (r *Runtime) loop() {
 			}
 			go r.execute(b)
 		}
-		finish := r.draining && len(r.queue) == 0 && r.active == 0 && r.publishers == 0
+		finish := r.draining && len(r.queue) == 0 && len(r.batches) == 0 && r.publishers == 0
 		r.mu.Unlock()
 		if finish {
 			return
@@ -351,7 +351,7 @@ func (r *Runtime) loop() {
 	}
 }
 func (r *Runtime) selectLocked(now time.Time) *batch {
-	if r.active >= r.limits.Concurrency {
+	if len(r.batches) >= r.limits.Concurrency {
 		return nil
 	}
 	seen := make(map[resourceKey]bool)
@@ -447,7 +447,6 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		r.queue[i] = nil
 	}
 	r.queue = keep
-	r.active++
 	r.workingBytes += workingBytes
 	r.batches[b] = struct{}{}
 	r.notifyLocked()
@@ -628,7 +627,6 @@ func (r *Runtime) execute(b *batch) {
 	b.cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.active--
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	if r.closed {
@@ -656,7 +654,7 @@ func (r *Runtime) execute(b *batch) {
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: r.active, Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Feedback: "unobserved"}
+	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches), Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Feedback: "unobserved"}
 	if r.metrics.observed {
 		snapshot.Feedback = "neutral"
 		if r.metrics.feedback == execution.Healthy {
