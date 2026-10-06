@@ -137,11 +137,11 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					t.Fatal("only the client deadline closed the stalled connection", readErr)
 				}
 				deadline := time.Now().Add(time.Second)
-				for (len(srv.connectionSlots) != 0 || len(srv.slots) != 0 || len(srv.control) != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(deadline) {
+				for (len(srv.connectionSlots) != 0 || len(srv.admission.slots) != 0 || len(srv.control) != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(deadline) {
 					time.Sleep(time.Millisecond)
 				}
-				if time.Since(started) > 1500*time.Millisecond || len(srv.connectionSlots) != 0 || len(srv.slots) != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
-					t.Fatal("stalled transport leaked resources or executed", time.Since(started), len(srv.connectionSlots), len(srv.slots))
+				if time.Since(started) > 1500*time.Millisecond || len(srv.connectionSlots) != 0 || len(srv.admission.slots) != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
+					t.Fatal("stalled transport leaked resources or executed", time.Since(started), len(srv.connectionSlots), len(srv.admission.slots))
 				}
 			})
 		}

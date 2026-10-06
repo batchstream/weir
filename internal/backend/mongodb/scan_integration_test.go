@@ -222,7 +222,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 		t.Fatal("first Scan batch failed", first.Failure, len(first.Documents))
 	}
 	state := work.Backend.(*scanPlan)
-	state.count += uint64(len(first.Documents))
+	state.Count += uint64(len(first.Documents))
 	checkpoint := append([]byte(nil), state.last...)
 	proxy.DropRemaining.Store(1)
 	lost, _ := adapter.fetchScan(ctx, work)
@@ -248,10 +248,10 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 			t.Fatal("explicit retry skipped or duplicated a record", id, index)
 		}
 	}
-	state.count += uint64(len(recovered.Documents))
+	state.Count += uint64(len(recovered.Documents))
 	end, _ := adapter.fetchScan(ctx, work)
-	if end.Failure != nil || !end.Exhausted || len(end.Documents) != 0 || state.count != records {
-		t.Fatal("explicit retry did not reach exhaustion", end, state.count)
+	if end.Failure != nil || !end.Exhausted || len(end.Documents) != 0 || state.Count != records {
+		t.Fatal("explicit retry did not reach exhaustion", end, state.Count)
 	}
 }
 
@@ -312,7 +312,7 @@ func TestMongoScanTraversal(t *testing.T) {
 					}
 					seen[id] = true
 				}
-				p.Backend.(*scanPlan).count += uint64(len(page.Documents))
+				p.Backend.(*scanPlan).Count += uint64(len(page.Documents))
 				if page.Exhausted {
 					break
 				}
@@ -508,7 +508,7 @@ func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
 				if pageBytes > execution.ScanBatchBytes {
 					t.Fatal("Scan copied more than its output prefix budget", pageBytes)
 				}
-				work.Backend.(*scanPlan).count += uint64(len(page.Documents))
+				work.Backend.(*scanPlan).Count += uint64(len(page.Documents))
 				if page.Exhausted {
 					break
 				}

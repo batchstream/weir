@@ -84,7 +84,7 @@ func TestDirectoryWithdrawalDoesNotDelayAdmittedWriteDrain(t *testing.T) {
 	closed := make(chan error, 1)
 	go func() { closed <- node.Close(ctx) }()
 	until := time.Now().Add(200 * time.Millisecond)
-	for !node.runtimes[0].Snapshot().Draining {
+	for !node.stores["records"].Snapshot().Draining {
 		if time.Now().After(until) {
 			t.Fatal("directory withdrawal consumed the business drain budget")
 		}

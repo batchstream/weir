@@ -52,16 +52,16 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// One bounded business stream replaces the separate Read and Mutate RPCs.
-	// Both application and peer listeners expose a fixed transport vocabulary.
-	const maximumSeries = 1420
+	// 16 Mongo Stores at 63 each + 2 listener transports at 30 each +
+	// 13 admission + 2 directory + 7 diagnostics + 36 Node lifecycle/memory.
+	const maximumSeries = 1126
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}
 	if testmetrics.Sum(families, "weir_store_executions_total") != 0 {
 		t.Fatal("diagnostics executed database work")
 	}
-	for _, runtime := range n.runtimes {
+	for _, runtime := range n.stores {
 		runtime.SetOverloaded(true)
 	}
 	if health(t, n, "/readyz") != 200 {

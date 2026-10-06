@@ -54,9 +54,7 @@ type Server struct {
 	control         chan struct{}
 	connectionSlots chan struct{}
 	limits          Limits
-	slots           chan struct{}
 	grpc            *grpc.Server
-	draining        chan struct{}
 	once            sync.Once
 	connections     sync.Map
 	metrics         transportMetrics
@@ -100,8 +98,6 @@ func New(cfg Config) (*Server, error) {
 		peer:      cfg.Peer,
 		control:   make(chan struct{}, 2),
 		limits:    l,
-		slots:     cfg.Admission.slots,
-		draining:  cfg.Admission.draining,
 	}
 	s.metrics = newTransportMetrics()
 	s.connectionSlots = cfg.Admission.connections

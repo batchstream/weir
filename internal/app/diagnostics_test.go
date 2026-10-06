@@ -99,7 +99,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	if testmetrics.Sum(other, "weir_admission_rejections_total") != 0 {
 		t.Fatal("registries shared counters")
 	}
-	if len(n.runtimes) != 0 || !n.guard.Snapshot().Observed {
+	if len(n.stores) != 0 || !n.guard.Snapshot().Observed {
 		t.Fatal("fake Runtime")
 	}
 	n.admission.SetOverloaded(false)
@@ -436,7 +436,7 @@ func TestDiagnosticsDisabledAndFatalListenerReadiness(t *testing.T) {
 	_ = disabled.Close(context.Background())
 	n := diagnosticNode(t)
 	n.Start(context.Background())
-	_ = n.listeners[0].Close()
+	_ = n.endpoints[0].listener.Close()
 	select {
 	case <-n.Errors:
 	case <-time.After(time.Second):

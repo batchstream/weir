@@ -100,16 +100,16 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 			var hit struct {
 				N *int64 `json:"n"`
 			}
-			if json.Unmarshal(document.Data, &hit) != nil || hit.N == nil || *hit.N != int64(state.count)+int64(offset) {
+			if json.Unmarshal(document.Data, &hit) != nil || hit.N == nil || *hit.N != int64(state.Count)+int64(offset) {
 				t.Fatal("lost or duplicate hit", document)
 			}
 		}
-		state.count += uint64(len(page.Documents))
+		state.Count += uint64(len(page.Documents))
 		token = page.NextContinuationToken
 	}
 	wantSizes := []int{128, 122}
-	if !reflect.DeepEqual(sizes, wantSizes) || state.count != 250 || state.after != 249 || len(token) == 0 {
-		t.Fatal("batch efficiency/page checkpoint", sizes, state.count, state.after)
+	if !reflect.DeepEqual(sizes, wantSizes) || state.Count != 250 || state.after != 249 || len(token) == 0 {
+		t.Fatal("batch efficiency/page checkpoint", sizes, state.Count, state.after)
 	}
 	request.ContinuationToken = token
 	resumed, failure := adapter.prepareScan(request)
@@ -125,10 +125,10 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 		if page.Failure != nil {
 			t.Fatal(page.Failure)
 		}
-		resumedState.count += uint64(len(page.Documents))
+		resumedState.Count += uint64(len(page.Documents))
 		if page.Exhausted {
-			if resumedState.count != 50 || step != 1 {
-				t.Fatal("resume omissions", resumedState.count, step)
+			if resumedState.Count != 50 || step != 1 {
+				t.Fatal("resume omissions", resumedState.Count, step)
 			}
 			return
 		}
@@ -215,7 +215,7 @@ func TestScanDownsizesExcessiveResponsesWithoutAdvancing(t *testing.T) {
 		if page.Failure != nil || len(page.Documents) != 2 || page.Exhausted {
 			t.Fatal("downsize lost bounded result", page)
 		}
-		state.count += uint64(len(page.Documents))
+		state.Count += uint64(len(page.Documents))
 	}
 	wantSizes := []int{8, 4, 2, 2}
 	wantPositions := []int64{7, 7, 7, 9}

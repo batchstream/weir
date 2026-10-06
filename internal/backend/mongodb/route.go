@@ -91,7 +91,6 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 }
 
 func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit execution.Emit) execution.Feedback {
-	work.Continue = false
 	timeout := work.BackendTimeout
 	if timeout <= 0 {
 		timeout = 2 * time.Second
@@ -100,30 +99,7 @@ func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit exe
 	page, feedback := a.fetchScan(fetchContext, work)
 	cancel()
 	state := work.Backend.(*scanPlan)
-	for _, document := range page.Documents {
-		value := &pb.Event_Document{Document: document}
-		event := &pb.Event{Value: value}
-		if err := emit(work, event); err != nil {
-			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan result publication failed")
-			if ctx.Err() != nil {
-				page.Failure = protocol.ContextFailure(ctx)
-			}
-			break
-		}
-		state.count++
-	}
-	if page.Failure != nil || page.Exhausted || page.Complete {
-		end := &pb.ScanEnd{DocumentCount: state.count, Failure: page.Failure}
-		if page.Failure == nil {
-			end.Exhausted = page.Exhausted
-			end.NextContinuationToken = page.NextContinuationToken
-		}
-		value := &pb.Event_ScanEnd{ScanEnd: end}
-		event := &pb.Event{Value: value}
-		_ = emit(work, event)
-	} else {
-		work.Continue = true
-	}
+	state.PublishPage(ctx, work, page, emit)
 	return feedback
 }
 

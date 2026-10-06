@@ -10,7 +10,9 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/testutil"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -112,7 +114,7 @@ func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(node.runtimes) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) {
+	if len(node.stores) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) {
 		t.Fatal("directory-only created database state")
 	}
 	node.Start(context.Background())
@@ -243,6 +245,74 @@ func TestEphemeralListenersSeparateBusinessAndDirectory(t *testing.T) {
 		if status.Code(err) != want || result != nil {
 			t.Fatal("listener accepted unsupported business destination", i, result, err)
 		}
+	}
+}
+
+func TestListenerRolesMatchAddressesAndMetricLabels(t *testing.T) {
+	for _, mode := range []string{"application", "peer", "both"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := emptyConfig(t)
+			if mode != "application" {
+				cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+			}
+			if mode == "peer" {
+				cfg.Basic.Listeners.Application = ""
+			}
+			node, err := Open(t.Context(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = node.Close(context.Background()) })
+			if err := node.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			roles := []string{mode}
+			if mode == "both" {
+				roles = []string{"application", "peer"}
+			}
+			addresses := node.Addresses()
+			if len(addresses) != len(roles) {
+				t.Fatal("listener count changed", addresses)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			for i, role := range roles {
+				options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry()}
+				connection, err := grpc.NewClient("passthrough:///"+addresses[i], options...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = connection.Close() })
+				client := pb.NewStoreServiceClient(connection)
+				request := &pb.ResolveStoreRequest{StoreName: "missing"}
+				_, err = client.ResolveStore(ctx, request)
+				want := codes.Unavailable
+				if role == "peer" {
+					want = codes.Unimplemented
+				}
+				if status.Code(err) != want {
+					t.Fatal("address serves the wrong listener role", role, err)
+				}
+				peer := peerpb.NewPeerDiscoveryServiceClient(connection)
+				exchange := &peerpb.SyncDirectoryRequest{}
+				_, err = peer.SyncDirectory(ctx, exchange)
+				want = codes.Unimplemented
+				if role == "peer" {
+					want = codes.OK
+				}
+				if status.Code(err) != want {
+					t.Fatal("directory service does not match listener role", role, err)
+				}
+			}
+			families := testmetrics.Registry(t, node.registry)
+			for _, role := range []string{"application", "peer"} {
+				labels := map[string]string{"listener": role}
+				metric := testmetrics.Sample(families, "weir_rpc_completions_total", labels)
+				if (metric != nil) != (mode == "both" || mode == role) {
+					t.Fatal("listener metrics use the wrong role", role)
+				}
+			}
+		})
 	}
 }
 

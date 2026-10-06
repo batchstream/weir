@@ -57,7 +57,7 @@ func TestDispatchedRPCAdmissionRemainsWhileHandlerWorks(t *testing.T) {
 	cancel()
 	state := accepted.Value(rpcKey).(*rpcState)
 	state.cancelBeforeDispatch(context.Canceled)
-	if len(server.slots) != 1 {
+	if len(server.admission.slots) != 1 {
 		t.Fatal("active handler admission released on caller cancellation")
 	}
 	end := &stats.End{Error: context.Canceled, EndTime: time.Now()}
@@ -98,7 +98,7 @@ func TestHandlerCompletionReleasesAdmissionBeforeTransportEnd(t *testing.T) {
 			}
 			server, _ := startPeerServer(t, opts)
 			info := &tap.Info{FullMethodName: method}
-			slots := server.slots
+			slots := server.admission.slots
 			if method == pb.StoreService_ResolveStore_FullMethodName || opts.peer {
 				slots = server.control
 			}

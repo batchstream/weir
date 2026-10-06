@@ -37,7 +37,6 @@ func recordEvent(t testing.TB, ticket *Ticket) *pb.Event {
 }
 func finish(r *Runtime, b *batch) {
 	b.cancel()
-	r.active--
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
 	for _, t := range b.items {

@@ -372,7 +372,8 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	mongo := mongoFixtureConfig(t, mongoFixture.URI)
 	mongoLocal := &Local{MongoDB: mongo}
 	backend := &Search{URL: search.URL}
-	searchLocal := &Local{Search: backend}
+	// Match the Search fixture's single write thread for deterministic smoke operations.
+	searchLocal := &Local{Search: backend, MaxConcurrency: 1}
 	mongoStore := StoreConfig{Name: "mongo", Local: mongoLocal}
 	searchStore := StoreConfig{Name: "search", Local: searchLocal}
 	cfg := emptyConfig(t)
@@ -436,8 +437,14 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			if metrics["weir_store_executions_total"] != nil {
 				t.Fatal("directory node executed business")
 			}
-		} else if testmetrics.Sum(metrics, "weir_store_records_total") != 12 {
-			t.Fatal("owner business operations duplicated", testmetrics.Sum(metrics, "weir_store_records_total"))
+		} else {
+			// Each of the two Stores completes 2 SDK records, 4 direct/read-batch
+			// records, 2 creates and 2 readbacks. Native and Scan are commands.
+			const expectedRecords = 20
+			records := testmetrics.Sum(metrics, "weir_store_records_total")
+			if records != expectedRecords {
+				t.Fatal("owner business record count changed", records)
+			}
 		}
 	}
 	t.Logf("independent processes A=%d B=%d C=%d: A learned both Store targets via B; initialized SDK persisted direct writes on C; nonowner rejects Route and has no business runtime", first.command.Process.Pid, middle.command.Process.Pid, owner.command.Process.Pid)

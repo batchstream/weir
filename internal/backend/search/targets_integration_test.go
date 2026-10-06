@@ -123,15 +123,27 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		}
 		get := nativeRequest(t, index, "GET", "/_doc/native")
 		end, capture = runNative(t, a, get, nil)
-		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
+		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE ||
+			!strings.Contains(capture.body.String(), `"_index":"`+index+`"`) ||
+			!strings.Contains(capture.body.String(), `"_id":"native"`) ||
+			!strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
 			t.Fatal("Native GET request target", end, capture.body.String())
+		}
+		expected := map[string]int{"same": 2 + i, "expression": 2, "put": 2, "create": 2, "native": 7 + i}
+		// Business markers identify each source without exposing native hit metadata.
+		for record := range expected {
+			body := fmt.Sprintf(`{"doc":{"target":%q,"record":%q}}`, index, record)
+			status, raw := backend.Do(t, "POST", "/"+index+"/_update/"+record, body)
+			if status != 200 {
+				t.Fatal("mark Scan source", record, status, string(raw))
+			}
 		}
 		status, raw := backend.Do(t, "POST", "/"+index+"/_refresh", "")
 		if status != 200 {
 			t.Fatal("target refresh", status, string(raw))
 		}
 		work := scanWork(t, a, index)
-		seenSame, seenNative := false, false
+		seen := make(map[string]bool, len(expected))
 		for step := 0; ; step++ {
 			if step > 10 {
 				t.Fatal("target Scan failed to exhaust")
@@ -141,28 +153,32 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				t.Fatal("target Scan", page.Failure)
 			}
 			for _, document := range page.Documents {
-				var hit struct {
-					Index string `json:"_index"`
-					ID    string `json:"_id"`
+				var source struct {
+					Target string `json:"target"`
+					Record string `json:"record"`
+					N      *int   `json:"n"`
 				}
-				if err := json.Unmarshal(document.Data, &hit); err != nil {
+				if err := json.Unmarshal(document.Data, &source); err != nil {
 					t.Fatal(err)
 				}
-				if hit.Index != index {
-					t.Fatal("PIT hit crossed request target", string(document.Data))
+				if source.Target != index {
+					t.Fatal("Scan source crossed request target", string(document.Data))
 				}
-				if hit.ID == "same" {
-					seenSame = true
-				} else if hit.ID == "native" {
-					seenNative = true
+				want, exists := expected[source.Record]
+				if !exists || source.N == nil || *source.N != want {
+					t.Fatal("Scan published an unexpected record or value", string(document.Data))
 				}
+				if seen[source.Record] {
+					t.Fatal("Scan duplicated a record", string(document.Data))
+				}
+				seen[source.Record] = true
 			}
 			if page.Exhausted {
 				break
 			}
 		}
-		if failure := a.closeScan(context.Background(), work); failure != nil || !seenSame || !seenNative {
-			t.Fatal("target PIT traversal/cleanup", failure, seenSame, seenNative)
+		if failure := a.closeScan(context.Background(), work); failure != nil || len(seen) != len(expected) {
+			t.Fatal("target PIT traversal/cleanup", failure, seen)
 		}
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
-func (n *Node) registerMetrics(cfg Config) error {
+func (n *Node) registerMetrics() error {
 	processOptions := collectors.ProcessCollectorOpts{}
 	for _, collector := range []prometheus.Collector{
 		collectors.NewGoCollector(),
@@ -22,8 +22,8 @@ func (n *Node) registerMetrics(cfg Config) error {
 		return err
 	}
 
-	for i, runtime := range n.runtimes {
-		labels := prometheus.Labels{"store": n.localNames[i]}
+	for name, runtime := range n.stores {
+		labels := prometheus.Labels{"store": name}
 		if err := prometheus.WrapRegistererWith(labels, n.registry).Register(runtime); err != nil {
 			return err
 		}
@@ -33,13 +33,13 @@ func (n *Node) registerMetrics(cfg Config) error {
 		return err
 	}
 
-	for i, srv := range n.servers {
+	for _, endpoint := range n.endpoints {
 		name := "application"
-		if cfg.Basic.Listeners.Application == "" || i == 1 {
+		if endpoint.peer {
 			name = "peer"
 		}
 		labels := prometheus.Labels{"listener": name}
-		if err := prometheus.WrapRegistererWith(labels, n.registry).Register(srv); err != nil {
+		if err := prometheus.WrapRegistererWith(labels, n.registry).Register(endpoint.server); err != nil {
 			return err
 		}
 	}

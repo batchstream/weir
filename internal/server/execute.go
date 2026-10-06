@@ -20,7 +20,7 @@ type ExecutionSnapshot struct {
 }
 
 func (s *Server) Snapshot() ExecutionSnapshot {
-	snapshot := ExecutionSnapshot{ActiveRPCs: int64(len(s.slots))}
+	snapshot := ExecutionSnapshot{ActiveRPCs: int64(len(s.admission.slots))}
 	return snapshot
 }
 
@@ -318,7 +318,7 @@ func (s *Server) submitPlan(ctx context.Context, runtime *store.Runtime, plan *e
 		case <-changed:
 		case <-ctx.Done():
 			return nil, protocol.ContextFailure(ctx)
-		case <-s.draining:
+		case <-s.admission.draining:
 			return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "draining")
 		}
 	}

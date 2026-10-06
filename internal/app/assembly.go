@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/batchstream/weir/internal/backend/mongodb"
@@ -32,6 +34,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	node := &Node{
 		admission: admission,
+		stores:    make(map[string]*store.Runtime, len(cfg.Routing.Stores)),
 		Errors:    make(chan error, 3),
 		state:     "constructed",
 		registry:  prometheus.NewRegistry(),
@@ -59,7 +62,6 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		}
 	}()
 
-	stores := make(map[string]*store.Runtime)
 	for _, definition := range cfg.Routing.Stores {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -68,10 +70,8 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		node.runtimes = append(node.runtimes, runtime)
-		node.localNames = append(node.localNames, definition.Name)
 		overloadTargets = append(overloadTargets, runtime)
-		stores[definition.Name] = runtime
+		node.stores[definition.Name] = runtime
 	}
 
 	applicationAddress, peerAddress := "", ""
@@ -86,7 +86,8 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err != nil {
 			return nil, errors.New("listener startup failed")
 		}
-		node.listeners = append(node.listeners, listener)
+		bound := endpoint{listener: listener, peer: i == 1}
+		node.endpoints = append(node.endpoints, bound)
 		if i == 0 {
 			applicationAddress = listener.Addr().String()
 		} else {
@@ -99,14 +100,15 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		peerAddress = discovery.PeerAddress
 	}
 	targets := discovery.Advertise
-	if len(targets) == 0 && len(node.localNames) != 0 {
+	if len(targets) == 0 && len(node.stores) != 0 {
 		targets = []string{applicationAddress}
 	}
+	storeNames := slices.Sorted(maps.Keys(node.stores))
 	directoryConfig := directory.Config{
 		Group:       discovery.Group,
 		PeerAddress: peerAddress,
 		Targets:     targets,
-		Stores:      node.localNames,
+		Stores:      storeNames,
 		Seeds:       discovery.Seeds,
 	}
 	node.directory, err = directory.New(directoryConfig)
@@ -114,26 +116,23 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 
-	for i, address := range []string{cfg.Basic.Listeners.Application, cfg.Basic.Listeners.Peer} {
-		if address == "" {
-			continue
-		}
+	for i, endpoint := range node.endpoints {
 		options := server.Config{
-			Stores:    stores,
+			Stores:    node.stores,
 			Directory: node.directory,
 			Limits:    limits,
 			Admission: admission,
-			Peer:      i == 1,
+			Peer:      endpoint.peer,
 		}
 		listenerServer, err := server.New(options)
 		if err != nil {
 			return nil, err
 		}
-		node.servers = append(node.servers, listenerServer)
+		node.endpoints[i].server = listenerServer
 	}
 
 	node.guard = overload.New(overloadTargets, uint64(cfg.Basic.Memory))
-	if err := node.registerMetrics(cfg); err != nil {
+	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}
 	if cfg.Basic.Diagnostics.Address != "" {
