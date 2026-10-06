@@ -95,7 +95,7 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 	}
 	work.Command = testutil.NativeCommand(open)
 	done := make(chan *pb.NativeEnd, 1)
-	go func() { end, _ := a.executeNative(ctx, work, emit); done <- end }()
+	go func() { end := a.executeNative(ctx, work, emit); done <- end }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -237,7 +237,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan *pb.NativeEnd, 1)
-	go func() { end, _ := a.executeNative(ctx, plan, capture.Emit); done <- end }()
+	go func() { end := a.executeNative(ctx, plan, capture.Emit); done <- end }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):

@@ -166,13 +166,13 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 							t.Error(failure)
 						}
 					}()
-					for step := range 3 {
-						page, _ := a.fetchScan(scanContext, work)
-						if page.Failure != nil || page.Exhausted != (step == 2) {
+					for step := range 2 {
+						page := a.fetchScan(scanContext, work)
+						if page.Failure != nil || page.Exhausted != (step == 1) {
 							t.Error("Scan target/PIT failure", index, step, page)
 							return
 						}
-						if step == 1 && (len(page.Documents) != 1 || !strings.Contains(string(page.Documents[0].Data), `"target":"`+index+`"`)) {
+						if step == 0 && (len(page.Documents) != 1 || !strings.Contains(string(page.Documents[0].Data), `"target":"`+index+`"`)) {
 							t.Error("Scan returned another index's hit", index, page)
 						}
 					}

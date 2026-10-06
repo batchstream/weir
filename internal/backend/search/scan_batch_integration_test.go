@@ -37,20 +37,21 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	var mu sync.Mutex
 	var sizes []int
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/_search" {
-			t.Error("unexpected resumed Scan endpoint", r.URL.Path)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
 		raw, err := io.ReadAll(io.LimitReader(r.Body, metadataLimit))
-		var request scanSearchRequest
-		if err != nil || json.Unmarshal(raw, &request) != nil {
+		if err != nil {
 			t.Error(err)
 			return
 		}
-		mu.Lock()
-		sizes = append(sizes, request.Size)
-		mu.Unlock()
+		if r.URL.Path == "/_search" {
+			var request scanSearchRequest
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			mu.Lock()
+			sizes = append(sizes, request.Size)
+			mu.Unlock()
+		}
 		forward, err := http.NewRequestWithContext(r.Context(), r.Method, backend.URL+r.URL.RequestURI(), bytes.NewReader(raw))
 		if err != nil {
 			t.Error(err)
@@ -73,15 +74,11 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	config.URL = proxy.URL
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// Allocate the PIT through the real adapter before the fetch-only proxy is used.
+	// Trace every native fetch, including the first one sharing PIT allocation.
 	request := &pb.ScanRequest{Resource: backend.Index, PageSize: 8}
 	work, failure := base.prepareScan(request)
 	if failure != nil {
 		t.Fatal(failure)
-	}
-	page, _ := base.fetchScan(ctx, work)
-	if page.Failure != nil {
-		t.Fatal(page.Failure)
 	}
 	state := work.Backend.(*scanPlan)
 	defer func() {
@@ -98,7 +95,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	seen := map[string]bool{}
 	var token []byte
 	for step := 0; step < 4; step++ {
-		page, _ := adapter.fetchScan(ctx, work)
+		page := adapter.fetchScan(ctx, work)
 		if page.Failure != nil || page.Exhausted || len(page.Documents) == 0 {
 			t.Fatal("bounded large-source page", step, page.Failure, len(page.Documents))
 		}
@@ -134,7 +131,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	if resumedState.batchSize != 3 {
 		t.Fatal("resume forgot retained-prefix capacity", resumedState.batchSize)
 	}
-	page, _ = adapter.fetchScan(ctx, resumed)
+	page := adapter.fetchScan(ctx, resumed)
 	if page.Failure != nil || len(page.Documents) != 1 || page.Exhausted {
 		t.Fatal("resume lost final source", page.Failure, len(page.Documents))
 	}
@@ -145,7 +142,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 		t.Fatal("resumed source duplicate", last.N)
 	}
 	resumedState.Count++
-	page, _ = adapter.fetchScan(ctx, resumed)
+	page = adapter.fetchScan(ctx, resumed)
 	if page.Failure != nil || !page.Exhausted || len(page.Documents) != 0 {
 		t.Fatal("validated final response did not exhaust", page.Failure)
 	}

@@ -82,7 +82,7 @@ func runSearch(t *testing.T, a *Adapter, work *execution.Plan) *pb.Event {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	results, _ := a.executeRecords(ctx, []*execution.Plan{work})
+	results := a.executeRecords(ctx, []*execution.Plan{work})
 	if len(results) != 1 {
 		t.Fatal("result cardinality")
 	}

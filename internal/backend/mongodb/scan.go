@@ -108,7 +108,6 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		native.batchSize = int(batchSize)
 	}
 	p := &execution.Plan{
-		Singleton:    true,
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
 		ResultBytes:  execution.ScanResultBytes,
@@ -151,21 +150,21 @@ func scanFindCommand(n *scanPlan) bson.D {
 	return command
 }
 
-func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
+func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.ScanPage {
 	n := p.Backend.(*scanPlan)
 	page := &execution.ScanPage{}
 	if n.closed || ctx.Err() != nil {
 		page.Failure = protocol.ContextFailure(ctx)
-		return page, execution.Neutral
+		return page
 	}
 	if n.Count >= n.pageSize {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan fetched beyond its logical page")
-		return page, execution.Neutral
+		return page
 	}
 	if !n.qualified {
-		if failure, signal := a.qualifyTarget(ctx, n.target); failure != nil {
+		if failure := a.qualifyTarget(ctx, n.target); failure != nil {
 			page.Failure = failure
-			return page, signal
+			return page
 		}
 		n.qualified = true
 	}
@@ -173,19 +172,19 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
 	if err != nil {
 		page.Failure = backendFailure(ctx, err)
-		return page, feedback(ctx, err)
+		return page
 	}
 	batchSize := min(n.pageSize-n.Count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
 	cursor := &recordCursor{target: n.target, items: int(batchSize), outputBytes: execution.ScanBatchBytes}
 	page = a.recordCursorReply(raw, cursor, true)
 	if page.Failure != nil {
-		return page, execution.Neutral
+		return page
 	}
 	if cursor.cursor != 0 {
 		page.Documents = nil
 		page.Exhausted = false
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "single-batch Scan retained a cursor")
-		return page, execution.Neutral
+		return page
 	}
 	// singleBatch closes even a byte-truncated native batch. Only an empty
 	// response proves exhaustion; any discarded tail is fetched again from
@@ -198,7 +197,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		if err != nil || !validScanID(state) {
 			page.Documents = nil
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan _id is invalid or exceeds continuation bound")
-			return page, execution.Neutral
+			return page
 		}
 		n.last = state
 	}
@@ -232,12 +231,12 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		if err != nil {
 			page.Documents = nil
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")
-			return page, execution.Neutral
+			return page
 		}
 		page.Complete = true
 		page.NextContinuationToken = token
 	}
-	return page, execution.Healthy
+	return page
 }
 
 func validScanID(raw []byte) bool {

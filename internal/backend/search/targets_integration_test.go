@@ -38,7 +38,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 	for i, work := range works {
 		work.ID = uint64(i)
 	}
-	results, _ := a.executeRecords(context.Background(), works)
+	results := a.executeRecords(context.Background(), works)
 	if len(results) != len(works) {
 		t.Fatal("mixed target cardinality", len(results))
 	}
@@ -67,12 +67,12 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		for i, work := range works {
 			work.ID = uint64(100 + phase*2 + i)
 		}
-		results, batchFeedback := a.executeRecords(context.Background(), works)
+		results := a.executeRecords(context.Background(), works)
 		if len(results) != len(works) {
 			t.Fatal("cross-index mutation cardinality", actions, len(results))
 		}
 		for i, result := range results {
-			feedback := batchFeedback
+
 			for attempt := 1; ; attempt++ {
 				mutation := result.GetMutationResult()
 				if mutation.GetOutcome() == pb.MutationOutcome_APPLIED && mutation.GetFailure() == nil {
@@ -81,9 +81,8 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				failure := mutation.GetFailure()
 				if mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED ||
 					failure.GetCode() != pb.FailureCode_UNAVAILABLE ||
-					failure.GetMessage() != "backend capacity unavailable" ||
-					feedback != execution.Congested {
-					t.Fatal("cross-index mutation failed without confirmed capacity rejection", actions, result, feedback)
+					failure.GetMessage() != "backend capacity unavailable" {
+					t.Fatal("cross-index mutation failed without confirmed capacity rejection", actions, result)
 				}
 				if attempt == 3 {
 					t.Fatal("target mutation remained capacity-rejected after three attempts", actions, result)
@@ -92,7 +91,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 				single := []*execution.Plan{works[i]}
 				var replies []*pb.Event
-				replies, feedback = a.executeRecords(context.Background(), single)
+				replies = a.executeRecords(context.Background(), single)
 				if len(replies) != 1 {
 					t.Fatal("single target mutation result position", actions, replies)
 				}
@@ -106,7 +105,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		left := batchTestPlan(t, a, "read", searchResource(indexes[0], "same"))
 		right := batchTestPlan(t, a, "read", searchResource(indexes[1], "same"))
 		concurrent.Go(func() {
-			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
+			results := a.executeRecords(context.Background(), []*execution.Plan{left, right})
 			if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":2}` || string(results[1].GetReadResult().GetDocument().GetData()) != `{"n":3}` {
 				t.Error("same service concurrent index isolation failed", results)
 			}
@@ -148,7 +147,7 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 			if step > 10 {
 				t.Fatal("target Scan failed to exhaust")
 			}
-			page, _ := a.fetchScan(context.Background(), work)
+			page := a.fetchScan(context.Background(), work)
 			if page.Failure != nil {
 				t.Fatal("target Scan", page.Failure)
 			}

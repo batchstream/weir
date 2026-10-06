@@ -84,7 +84,6 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		native.batchSize = checkpoint.BatchSize
 	}
 	p := &execution.Plan{
-		Singleton:    true,
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
 		ResultBytes:  execution.ScanResultBytes,
@@ -94,22 +93,22 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	return p, nil
 }
 
-func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.ScanPage, execution.Feedback) {
+func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.ScanPage {
 	n := p.Backend.(*scanPlan)
 	page := &execution.ScanPage{}
 	if n.closed || ctx.Err() != nil {
 		page.Failure = protocol.ContextFailure(ctx)
-		return page, execution.Neutral
+		return page
 	}
 	if !n.opened {
-		caps, f, fb := a.inspect(ctx, n.index, false)
+		caps, f := a.inspect(ctx, n.index, false)
 		if f != nil {
 			page.Failure = f
-			return page, fb
+			return page
 		}
 		if !caps.source {
 			page.Failure = protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan requires stored full source")
-			return page, execution.Neutral
+			return page
 		}
 		call := exchange{
 			path:  "/" + url.PathEscape(n.index) + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
@@ -121,26 +120,24 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		}
 		n.opened = true
 		status, raw, err := a.request(ctx, call)
-		f, fb = a.scanExchangeFailure(ctx, status, raw, err)
+		f = a.scanExchangeFailure(ctx, status, raw, err)
 		if f != nil {
 			page.Failure = f
-			return page, fb
+			return page
 		}
 		page.Failure = a.openPITReply(raw, n)
 		if page.Failure != nil {
-			return page, execution.Neutral
+			return page
 		}
-		// Opening is a scheduler step of its own. Return an empty, nonterminal page
-		// so the same continuation yields before the first search fetch.
-		return page, execution.Healthy
+		// Opening and fetching share the same bounded backend deadline.
 	}
 	if n.pit == "" {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "PIT unavailable")
-		return page, execution.Neutral
+		return page
 	}
 	if n.Count >= n.pageSize {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan fetched beyond its logical page")
-		return page, execution.Neutral
+		return page
 	}
 	remaining := n.pageSize - n.Count
 	n.items = min(n.batchSize, execution.ScanBatchDocuments, int(remaining))
@@ -187,17 +184,17 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 			n.batchSize = n.items
 			continue
 		}
-		f, fb := a.scanExchangeFailure(ctx, status, reply, err)
+		f := a.scanExchangeFailure(ctx, status, reply, err)
 		if f != nil {
 			page.Failure = f
-			return page, fb
+			return page
 		}
 		raw = reply
 		break
 	}
 	page = a.scanReply(raw, n)
 	if page.Failure != nil {
-		return page, execution.Neutral
+		return page
 	}
 	if !page.Exhausted && n.Count+uint64(len(page.Documents)) >= n.pageSize {
 		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after, BatchSize: n.batchSize}
@@ -206,34 +203,33 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		if err != nil {
 			page.Documents = nil
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")
-			return page, execution.Neutral
+			return page
 		}
 		page.Complete = true
 		page.NextContinuationToken = token
 	}
-	return page, execution.Healthy
+	return page
 }
-
-func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, raw []byte, err error) (*pb.Failure, execution.Feedback) {
+func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, raw []byte, err error) *pb.Failure {
 	if ctx.Err() != nil {
-		return protocol.ContextFailure(ctx), execution.Neutral
+		return protocol.ContextFailure(ctx)
 	}
 	if err == errTimeout {
-		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "Scan backend call timed out"), execution.Congested
+		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "Scan backend call timed out")
 	}
 	if err == errResponseLimit {
-		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan native response exceeds byte bound"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan native response exceeds byte bound")
 	}
 	if err == errTransport || status == 429 || status == 503 {
-		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "Scan backend unavailable"), execution.Congested
+		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "Scan backend unavailable")
 	}
 	if err != nil {
-		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid, truncated or excessive Scan response"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid, truncated or excessive Scan response")
 	}
 	if status != 200 {
 		return a.nativeResponseFailure(status, raw)
 	}
-	return nil, execution.Neutral
+	return nil
 }
 
 func (a *Adapter) openPITReply(raw []byte, n *scanPlan) *pb.Failure {

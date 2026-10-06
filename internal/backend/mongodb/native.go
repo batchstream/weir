@@ -33,7 +33,6 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	target := namespace{database: parts[0], collection: parts[1]}
 	p := &execution.Plan{
 		Backend:      target,
-		Singleton:    true,
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
@@ -96,14 +95,14 @@ func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) *pb.NativeEnd {
 	raw := work.Command.GetNative().Request.Data
 	target := work.Backend.(namespace)
 	if f := a.nativeCommand(raw, target); f != nil {
-		return protocol.NativeFailure(false, f), execution.Neutral
+		return protocol.NativeFailure(false, f)
 	}
 	if ctx.Err() != nil {
-		return protocol.NativeFailure(false, protocol.ContextFailure(ctx)), execution.Neutral
+		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
 	timeout := work.BackendTimeout
 	if timeout <= 0 {
@@ -111,13 +110,12 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	}
 	backendContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if failure, signal := a.qualifyTarget(backendContext, target); failure != nil {
-		return protocol.NativeFailure(false, failure), signal
+	if failure := a.qualifyTarget(backendContext, target); failure != nil {
+		return protocol.NativeFailure(false, failure)
 	}
 	command := bson.Raw(raw)
 	reply, err := a.client.Database(target.database).RunCommand(backendContext, command).Raw()
 	failure := backendFailure(backendContext, err)
-	signal := feedback(backendContext, err)
 	// MongoDB retains one bounded raw reply. Once it is available, delivery uses
 	// the caller's lifetime rather than charging output stalls to backend I/O.
 	cancel()
@@ -130,56 +128,42 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	// Raw is the actual driver-retained wire response, including ok:0 and write
 	// errors. Never reconstruct BSON from the Go error or normalize write effects.
 	if len(reply) == 0 {
-		return protocol.NativeFailure(true, failure), execution.Neutral
+		return protocol.NativeFailure(true, failure)
 	}
 	nodes := 65536
 	fields, framingErr := scanFields(reply)
 	envelopeOK := false
-	commandOK := false
 	switch fields["ok"].Type {
 	case bson.TypeDouble:
 		n := fields["ok"].Double()
 		envelopeOK = n == 0 || n == 1
-		commandOK = n == 1
 	case bson.TypeInt32:
 		n := fields["ok"].Int32()
 		envelopeOK = n == 0 || n == 1
-		commandOK = n == 1
 	case bson.TypeInt64:
 		n := fields["ok"].Int64()
 		envelopeOK = n == 0 || n == 1
-		commandOK = n == 1
 	}
 	if len(reply) > NativeResponseLimit || framingErr != nil || !envelopeOK || !validScanBSON(reply, 0, &nodes) {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "invalid or excessive Native BSON reply")), execution.Neutral
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "invalid or excessive Native BSON reply"))
 	}
 	head := &pb.NativeHead{BodyContentType: "application/bson"}
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Value: value}
 	if err := emit(work, event); err != nil {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed")), execution.Neutral
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed"))
 	}
 	for len(reply) > 0 {
 		n := min(len(reply), protocol.NativeChunk)
 		value := &pb.Event_Chunk{Chunk: append([]byte(nil), reply[:n]...)}
 		event := &pb.Event{Value: value}
 		if err := emit(work, event); err != nil {
-			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed")), execution.Neutral
+			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native response delivery failed"))
 		}
 		reply = reply[n:]
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-	// Reuse known command-error congestion without interpreting native write effects.
-	resultFeedback := execution.Neutral
-	var commandFailure mongo.CommandError
-	if errors.As(err, &commandFailure) && signal == execution.Congested {
-		resultFeedback = execution.Congested
-	} else if err == nil && commandOK && ctx.Err() == nil {
-		// Record a complete command envelope without interpreting Native write
-		// effects or asserting a mutation outcome.
-		resultFeedback = execution.Completed
-	}
-	return end, resultFeedback
+	return end
 }
 
 // Walk already validated bounded bytes, without materializing a query tree.

@@ -43,12 +43,12 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	result, _ := adapter.executeRecords(ctx, []*execution.Plan{plan})
+	result := adapter.executeRecords(ctx, []*execution.Plan{plan})
 	if result[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal(result)
 	}
 	read := prepareCounter(t, adapter, fixture.DB+"/records/s:secure")
-	result, _ = adapter.executeRecords(ctx, []*execution.Plan{read})
+	result = adapter.executeRecords(ctx, []*execution.Plan{read})
 	if result[0].GetReadResult().GetDocument() == nil {
 		t.Fatal(result)
 	}
@@ -63,7 +63,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 					t.Fatal("server qualification must not require target privileges", err)
 				}
 				work := prepareCounter(t, bad, fixture.DB+"/records/s:secure")
-				replies, _ := bad.executeRecords(ctx, []*execution.Plan{work})
+				replies := bad.executeRecords(ctx, []*execution.Plan{work})
 				if replies[0].GetReadResult().GetFailure() == nil || replies[0].GetReadResult().GetDocument() != nil {
 					t.Fatal("request bypassed target privilege check", replies)
 				}
@@ -180,7 +180,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 				data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "errorCode", Value: int32(391)}, {Key: "appName", Value: "weir:mongo"}}
 				testmongo.FailCommand(t, native, data, 1)
 			}
-			results, _ := adapter.executeRecords(ctx, []*execution.Plan{work})
+			results := adapter.executeRecords(ctx, []*execution.Plan{work})
 			if results[0].GetMutationResult().Outcome == pb.MutationOutcome_APPLIED || results[0].GetMutationResult().Outcome == pb.MutationOutcome_NOT_STARTED {
 				t.Fatal("391 produced unjustified outcome", results)
 			}
@@ -208,7 +208,7 @@ func verifyReconnectRead(t *testing.T, adapter *Adapter, proxy *testmongo.Proxy,
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	plan := prepareCounter(t, adapter, resource)
-	results, _ := adapter.executeRecords(ctx, []*execution.Plan{plan})
+	results := adapter.executeRecords(ctx, []*execution.Plan{plan})
 	if results[0].GetReadResult().GetDocument() == nil {
 		t.Fatal("new connection did not recover after lost reply", results)
 	}

@@ -35,8 +35,8 @@ func searchFinitePage(t *testing.T, adapter *Adapter, request *pb.ScanRequest) (
 		return nil
 	}
 	for step := uint64(0); step <= uint64(request.PageSize)+2; step++ {
-		adapter.streamScan(ctx, work, emit)
-		if !work.Continue {
+		continuation := adapter.streamScan(ctx, work, emit)
+		if !continuation {
 			return documents, end
 		}
 	}

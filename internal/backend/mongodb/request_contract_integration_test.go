@@ -47,7 +47,7 @@ func TestMongoScanNativeBSONProjectionAndConcreteNames(t *testing.T) {
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		page, _ := adapter.fetchScan(context.Background(), work)
+		page := adapter.fetchScan(context.Background(), work)
 		want, _ := bson.Marshal(expected)
 		if page.Failure != nil || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, want) || !page.Complete || len(page.NextContinuationToken) == 0 {
 			t.Fatal("native BSON projection or concrete namespace changed", mode, page.Failure)
@@ -57,7 +57,7 @@ func TestMongoScanNativeBSONProjectionAndConcreteNames(t *testing.T) {
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		empty, _ := adapter.fetchScan(t.Context(), resumed)
+		empty := adapter.fetchScan(t.Context(), resumed)
 		if empty.Failure != nil || !empty.Exhausted || len(empty.Documents) != 0 {
 			t.Fatal("hidden identity broke resume", empty.Failure)
 		}
@@ -87,7 +87,7 @@ func TestMongoLuaStandardMergeCreatesMissingRecord(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	results, _ := adapter.executePrograms(t.Context(), []*execution.Plan{work})
+	results := adapter.executePrograms(t.Context(), []*execution.Plan{work})
 	if len(results) != 1 || results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().Failure != nil {
 		t.Fatal("standard merge did not create", results)
 	}

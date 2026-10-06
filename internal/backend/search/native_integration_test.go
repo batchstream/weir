@@ -184,7 +184,7 @@ func TestSearchNativeLaterInvalidNeverEscapesOrReplays(t *testing.T) {
 	}
 	p.Command = testutil.NativeCommand(open)
 	capture := &nativeCapture{}
-	end, _ := a.executeNative(ctx, p, capture.Emit)
+	end := a.executeNative(ctx, p, capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {
 		t.Fatal(end)
 	}

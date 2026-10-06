@@ -48,7 +48,7 @@ func TestSearchScanTraversal(t *testing.T) {
 				if calls > size+1 {
 					t.Fatal("did not exhaust")
 				}
-				page, _ := a.fetchScan(ctx, p)
+				page := a.fetchScan(ctx, p)
 				if page.Failure != nil {
 					t.Fatalf("fetch %d: %v", calls, page.Failure)
 				}
@@ -65,7 +65,7 @@ func TestSearchScanTraversal(t *testing.T) {
 					seen[source.ID] = true
 				}
 				if page.Exhausted {
-					wantCalls := (size+execution.ScanBatchDocuments-1)/execution.ScanBatchDocuments + 2
+					wantCalls := (size+execution.ScanBatchDocuments-1)/execution.ScanBatchDocuments + 1
 					if calls+1 != wantCalls {
 						t.Fatal("Scan did not use bounded native batches", calls+1, wantCalls)
 					}
@@ -201,7 +201,7 @@ func TestSearchScanFaultPages(t *testing.T) {
 					count := 0
 					failed := false
 					for i := 0; i < 4; i++ {
-						page, _ := a.fetchScan(ctx, p)
+						page := a.fetchScan(ctx, p)
 						if page.Failure != nil {
 							if len(page.Documents) != 0 || page.Exhausted {
 								t.Fatal("failed page leaked hits", page)
@@ -236,11 +236,12 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	defer cancel()
 	p := scanWork(t, a, b.Index)
 	defer a.closeScan(ctx, p)
-	page, _ := a.fetchScan(ctx, p)
-	if page.Failure != nil {
+	page := a.fetchScan(ctx, p)
+	if page.Failure != nil || len(page.Documents) != 3 || page.Exhausted {
 		t.Fatal(page)
 	}
 	n := p.Backend.(*scanPlan)
+	n.Count += uint64(len(page.Documents))
 	endpoint := "/_pit"
 	body := map[string]any{"id": n.pit}
 	if b.Product == OpenSearchProduct {
@@ -252,7 +253,7 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	if status != 200 {
 		t.Fatal("native PIT invalidation", status)
 	}
-	page, _ = a.fetchScan(ctx, p)
+	page = a.fetchScan(ctx, p)
 	if page.Failure == nil || len(page.Documents) != 0 {
 		t.Fatal("expired PIT silently restarted", page)
 	}
@@ -260,14 +261,15 @@ func TestSearchScanPITInvalidationAndCancellation(t *testing.T) {
 	for _, stage := range []string{"open", "fetch"} {
 		p := scanWork(t, a, b.Index)
 		if stage == "fetch" {
-			page, _ := a.fetchScan(ctx, p)
-			if page.Failure != nil {
+			page := a.fetchScan(ctx, p)
+			if page.Failure != nil || len(page.Documents) != 3 || page.Exhausted {
 				t.Fatal(page)
 			}
+			p.Backend.(*scanPlan).Count += uint64(len(page.Documents))
 		}
 		stopped, stop := context.WithCancel(ctx)
 		stop()
-		page, _ := a.fetchScan(stopped, p)
+		page := a.fetchScan(stopped, p)
 		if page.Failure == nil || len(page.Documents) != 0 {
 			t.Fatal("cancel ignored")
 		}
@@ -306,7 +308,7 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 		if step > 5 {
 			t.Fatal("did not exhaust")
 		}
-		page, _ := a.fetchScan(ctx, p)
+		page := a.fetchScan(ctx, p)
 		if page.Failure != nil {
 			t.Fatal(page.Failure)
 		}
@@ -342,17 +344,9 @@ func TestSearchScanCancelInFlight(t *testing.T) {
 			}
 			defer a.Close()
 			p := scanWork(t, a, b.Index)
-			if target == "fetch" {
-				ctx, stop := context.WithTimeout(context.Background(), time.Second)
-				page, _ := a.fetchScan(ctx, p)
-				stop()
-				if page.Failure != nil {
-					t.Fatal(page)
-				}
-			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			ended := make(chan *execution.ScanPage, 1)
-			go func() { page, _ := a.fetchScan(ctx, p); ended <- page }()
+			go func() { page := a.fetchScan(ctx, p); ended <- page }()
 			until := time.Now().Add(700 * time.Millisecond)
 			for calls.Load() == 0 && time.Now().Before(until) {
 				time.Sleep(time.Millisecond)

@@ -16,9 +16,8 @@ const batchBodyLimit = execution.BackendBatchBytes
 const getFramingLimit = 32 << 10
 
 type observedRecord struct {
-	reply    *getReply
-	failure  *pb.Failure
-	feedback execution.Feedback
+	reply   *getReply
+	failure *pb.Failure
 }
 
 type recordGroup struct {
@@ -79,7 +78,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 				caller = work.Context
 			}
 			if caller.Err() != nil {
-				observation := observedRecord{failure: protocol.ContextFailure(caller), feedback: execution.Neutral}
+				observation := observedRecord{failure: protocol.ContextFailure(caller)}
 				observed[i] = observation
 				continue
 			}
@@ -101,22 +100,18 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		}
 		status, raw, err := a.request(ctx, call)
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
-		feedback := execution.Neutral
 		switch {
 		case ctx.Err() != nil:
 			failure = protocol.ContextFailure(ctx)
-		case err == errTransport:
-			feedback = execution.Congested
 		case err == errResponseLimit:
 			failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record response exceeds configured read bound")
 		case err == nil && (status == 429 || status == 503):
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
-			feedback = execution.Congested
 		case err == nil && status != 200:
-			failure, feedback = a.nativeResponseFailure(status, raw)
+			failure = a.nativeResponseFailure(status, raw)
 		}
 		for _, i := range indexes {
-			observation := observedRecord{failure: failure, feedback: feedback}
+			observation := observedRecord{failure: failure}
 			observed[i] = observation
 		}
 		if err != nil || status != 200 {
@@ -140,48 +135,36 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		}
 		for i := range envelope.Docs {
 			reply := &envelope.Docs[i]
-			observation := observedRecord{reply: reply, feedback: execution.Healthy}
+			observation := observedRecord{reply: reply}
 			switch {
 			case reply.Error != nil:
 				observation.reply = nil
 				observation.failure = failure
-				observation.feedback = execution.Neutral
 				if reply.Found == nil && reply.Seq == nil && reply.Term == nil && len(reply.Source) == 0 {
-					if rejected, sample := a.reject(reply.Error.Type, reply.Status); rejected != nil {
-						observation.failure, observation.feedback = rejected, sample
+					if rejected := a.reject(reply.Error.Type, reply.Status); rejected != nil {
+						observation.failure = rejected
 					} else if reply.Error.Type == "index_not_found_exception" {
 						observation.failure = protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "requested index missing")
 					}
 				}
 			case reply.Found == nil || reply.Status != 0:
-				observation.reply, observation.failure, observation.feedback = nil, failure, execution.Neutral
+				observation.reply, observation.failure = nil, failure
 			case !*reply.Found:
 				if reply.Seq != nil || reply.Term != nil || len(reply.Source) != 0 {
-					observation.reply, observation.failure, observation.feedback = nil, failure, execution.Neutral
+					observation.reply, observation.failure = nil, failure
 				}
 			case reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source):
-				observation.reply, observation.failure, observation.feedback = nil, failure, execution.Neutral
+				observation.reply, observation.failure = nil, failure
 			case validateJSON(reply.Source, 16384) != nil:
-				observation.reply, observation.failure, observation.feedback = nil, failure, execution.Neutral
+				observation.reply, observation.failure = nil, failure
 			case len(reply.Source) > a.sourceLimit(group[i]):
 				observation.reply = nil
 				observation.failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit")
-				observation.feedback = execution.Neutral
 			}
 			observed[indexes[i]] = observation
 		}
 	}
 	return observed
-}
-
-func combineFeedback(current, next execution.Feedback) execution.Feedback {
-	if current == execution.Congested || next == execution.Congested {
-		return execution.Congested
-	}
-	if current == execution.Neutral || next == execution.Neutral {
-		return execution.Neutral
-	}
-	return execution.Healthy
 }
 
 type recordWrite struct {
@@ -194,7 +177,6 @@ type recordBatch struct {
 	ctx      context.Context
 	results  []*pb.Event
 	attempts []int
-	feedback execution.Feedback
 	request  bytes.Buffer
 	pending  []recordWrite
 	retry    []int
@@ -266,7 +248,6 @@ func (b *recordBatch) flush() {
 	for _, item := range b.pending {
 		if failure := b.callerFailure(item.work); failure != nil {
 			b.results[item.position] = execution.FailedEvent(item.work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
-			b.feedback = combineFeedback(b.feedback, execution.Neutral)
 			continue
 		}
 		length += copy(body[length:], body[item.start:item.end])
@@ -281,8 +262,7 @@ func (b *recordBatch) flush() {
 			mutation: true,
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
-		replies, sample := b.adapter.bulkResults(works, status, raw, err)
-		b.feedback = combineFeedback(b.feedback, sample)
+		replies := b.adapter.bulkResults(works, status, raw, err)
 		for i, position := range positions {
 			b.results[position] = replies[i]
 			program := works[i].Backend.(*plan).program
@@ -303,16 +283,15 @@ func (b *recordBatch) flush() {
 	b.pending = b.pending[:0]
 }
 
-func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) []*pb.Event {
 	if len(works) == 0 {
-		return nil, execution.Neutral
+		return nil
 	}
 	batch := recordBatch{
 		adapter:  a,
 		ctx:      ctx,
 		results:  make([]*pb.Event, len(works)),
 		attempts: make([]int, len(works)),
-		feedback: execution.Healthy,
 	}
 	totalBytes := 0
 	for _, work := range works {
@@ -323,19 +302,18 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 		for i, work := range works {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
 		}
-		return batch.results, execution.Neutral
+		return batch.results
 	}
 	positions := make([]int, 0, len(works))
 	for i, work := range works {
 		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
-			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
 		}
 		positions = append(positions, i)
 	}
 	if len(positions) == 0 {
-		return batch.results, batch.feedback
+		return batch.results
 	}
 	type qualification struct {
 		caps    capabilities
@@ -348,22 +326,17 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 		work := works[i]
 		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
-			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
 		}
 		native := work.Backend.(*plan)
 		target, exists := qualified[native.index]
 		if !exists {
-			caps, failure, sample := a.inspect(ctx, native.index, false)
+			caps, failure := a.inspect(ctx, native.index, false)
 			target = qualification{caps: caps, failure: failure}
 			qualified[native.index] = target
-			if failure != nil {
-				batch.feedback = combineFeedback(batch.feedback, sample)
-			}
 		}
 		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
-			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 			continue
 		}
 		caps := target.caps
@@ -380,7 +353,6 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 		}
 		if denied != nil {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-			batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 		}
 	}
 	for len(positions) != 0 {
@@ -411,7 +383,6 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 				}
 				if denied := batch.callerFailure(work); denied != nil {
 					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 					continue
 				}
 				action := work.Backend.(*plan).action
@@ -424,7 +395,6 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 			for offset, record := range a.mget(ctx, readWorks) {
 				i := readPositions[offset]
 				work := works[i]
-				batch.feedback = combineFeedback(batch.feedback, record.feedback)
 				if work.Backend.(*plan).action == "read" {
 					batch.results[i] = readResult(work, record.reply, record.failure)
 				} else if record.failure != nil {
@@ -440,7 +410,6 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 				}
 				if denied := batch.callerFailure(work); denied != nil {
 					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 					continue
 				}
 				native := work.Backend.(*plan)
@@ -449,7 +418,6 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 				if native.action == "replace" && !*current.Found {
 					denied := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
 					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
-					batch.feedback = combineFeedback(batch.feedback, execution.Neutral)
 					continue
 				}
 				if native.action == "program" {
@@ -459,16 +427,14 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 					if work.Context != nil {
 						stop = context.AfterFunc(work.Context, cancel)
 					}
-					next, mutation, sample := evaluateProgram(programContext, native, current)
+					next, mutation := evaluateProgram(programContext, native, current)
 					if stop != nil {
 						stop()
 					}
 					cancel()
 					if denied := batch.callerFailure(work); denied != nil {
 						mutation = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, denied)
-						sample = execution.Neutral
 					}
-					batch.feedback = combineFeedback(batch.feedback, sample)
 					if mutation != nil {
 						batch.results[i] = execution.FailedEvent(work.Command, mutation.Outcome, mutation.Failure)
 						continue
@@ -489,5 +455,5 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) (
 			batch.results[i] = nil
 		}
 	}
-	return batch.results, batch.feedback
+	return batch.results
 }

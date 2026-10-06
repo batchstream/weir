@@ -119,7 +119,7 @@ func TestMongoPointReadRejectsMalformedCursorEvidence(t *testing.T) {
 				}
 				plans = append(plans, p)
 			}
-			replies, _ := a.executeRecords(context.Background(), plans)
+			replies := a.executeRecords(context.Background(), plans)
 			for _, reply := range replies {
 				if reply.GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 					t.Fatal("malformed response justified a read or missing record", reply)
@@ -149,7 +149,7 @@ func TestMongoPointReadMatchesTypedIDsAcrossPages(t *testing.T) {
 		}
 		plans = append(plans, p)
 	}
-	replies, _ := a.executeRecords(context.Background(), plans)
+	replies := a.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		if i < 3 && reply.GetReadResult().GetDocument() == nil || i == 3 && reply.GetReadResult().GetMissing() == nil {
 			t.Fatal("result identity/order mismatch", replies)
@@ -272,14 +272,14 @@ func TestMongoVerboseWriteCursorKeepsItemIndexesAndSessionAcrossPages(t *testing
 		}
 		plans = append(plans, p)
 	}
-	replies, signal := a.executeRecords(context.Background(), plans)
+	replies := a.executeRecords(context.Background(), plans)
 	for _, reply := range replies {
 		if reply.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("verbose results lost item correspondence", replies)
 		}
 	}
-	if signal != execution.Healthy || len(commands) != 2 || commands[0] != "bulkWrite" || commands[1] != "getMore" || !bytes.Equal(sessions[0], sessions[1]) {
-		t.Fatal("cursor was restarted or changed session", commands, signal)
+	if len(commands) != 2 || commands[0] != "bulkWrite" || commands[1] != "getMore" || !bytes.Equal(sessions[0], sessions[1]) {
+		t.Fatal("cursor was restarted or changed session", commands)
 	}
 }
 
@@ -308,16 +308,16 @@ func TestMongoReadContinuationStopsWhenItsCallersCancel(t *testing.T) {
 		p.Context = caller
 		plans = append(plans, p)
 	}
-	replies, signal := a.executeRecords(context.Background(), plans)
-	if replies[0].GetReadResult().GetDocument() == nil || replies[1].GetReadResult().GetFailure().GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
-		t.Fatal("canceled reads consumed further cursor work", replies, signal)
+	replies := a.executeRecords(context.Background(), plans)
+	if replies[0].GetReadResult().GetDocument() == nil || replies[1].GetReadResult().GetFailure().GetCode() != pb.FailureCode_CANCELLED {
+		t.Fatal("canceled reads consumed further cursor work", replies)
 	}
 	if len(commands) != 3 || commands[0] != "listCollections" || commands[1] != "find" || commands[2] != "killCursors" {
 		t.Fatal("canceled cursor was continued", commands)
 	}
 }
 
-func TestMongoCanceledProgramBatchHasNeutralFeedback(t *testing.T) {
+func TestMongoCanceledProgramBatchDoesNotStartWrites(t *testing.T) {
 	caller, cancel := context.WithCancel(context.Background())
 	cancel()
 	native := &plan{action: "program"}
@@ -325,9 +325,9 @@ func TestMongoCanceledProgramBatchHasNeutralFeedback(t *testing.T) {
 	op := &pb.ExecuteRequest{Index: 1, Command: opCommand}
 	p := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native, Context: caller}
 	a := &Adapter{}
-	replies, signal := a.executeRecords(context.Background(), []*execution.Plan{p})
-	if replies[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || signal != execution.Neutral {
-		t.Fatal("cancellation generated healthy feedback", replies, signal)
+	replies := a.executeRecords(context.Background(), []*execution.Plan{p})
+	if replies[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED {
+		t.Fatal("canceled program started writing", replies)
 	}
 }
 
@@ -357,9 +357,9 @@ func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
 		t.Fatal(failure)
 	}
 	p.Bytes = execution.BackendBatchBytes + 1
-	results, feedback := a.executeRecords(context.Background(), []*execution.Plan{p})
-	if len(results) != 1 || results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || feedback != execution.Neutral {
-		t.Fatal("oversized native input reached backend work", results, feedback)
+	results := a.executeRecords(context.Background(), []*execution.Plan{p})
+	if len(results) != 1 || results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+		t.Fatal("oversized native input reached backend work", results)
 	}
 }
 
@@ -387,7 +387,7 @@ func TestMongoReadAggregationAccepts513DistinctDocuments(t *testing.T) {
 			t.Fatal(failure)
 		}
 	}
-	replies, _ := adapter.executeRecords(t.Context(), plans)
+	replies := adapter.executeRecords(t.Context(), plans)
 	for i, reply := range replies {
 		if reply.GetReadResult().GetDocument() == nil {
 			t.Fatalf("record %d failed: %v", i, reply)
@@ -425,7 +425,7 @@ func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
 			if mode == "first canceled" {
 				cancelFirst()
 			}
-			replies, _ := adapter.executeRecords(t.Context(), plans)
+			replies := adapter.executeRecords(t.Context(), plans)
 			raw := expressionBSON(t, document)
 			if len(replies) != 2 || !bytes.Equal(replies[1].GetReadResult().GetDocument().GetData(), raw) {
 				t.Fatal("first RPC budget/cancellation poisoned same-ID peer", replies)

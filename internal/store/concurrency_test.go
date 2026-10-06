@@ -13,7 +13,7 @@ import (
 type concurrencyAdapter struct {
 	lifecycleAdapter
 	started chan struct{}
-	finish  chan execution.Feedback
+	finish  chan struct{}
 }
 
 func (adapter *concurrencyAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
@@ -22,11 +22,11 @@ func (adapter *concurrencyAdapter) PrepareRecord(record *execution.Record) (*exe
 	return work, failure
 }
 
-func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	adapter.started <- struct{}{}
-	feedback := execution.Neutral
+
 	select {
-	case feedback = <-adapter.finish:
+	case <-adapter.finish:
 	case <-ctx.Done():
 	}
 	for _, work := range plans {
@@ -34,10 +34,10 @@ func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*executi
 		output := result
 		_ = emit(work, output)
 	}
-	return feedback
+	return false
 }
 
-func TestBackendFeedbackDoesNotReduceConfiguredDispatch(t *testing.T) {
+func TestCompletionPreservesConfiguredDispatch(t *testing.T) {
 	for _, capacity := range []int{3, 4} {
 		name := fmt.Sprintf("working_slots=%d", capacity)
 		t.Run(name, func(t *testing.T) {
@@ -45,7 +45,7 @@ func TestBackendFeedbackDoesNotReduceConfiguredDispatch(t *testing.T) {
 			limits.Concurrency = 4
 			limits.BatchOperations = 1
 			limits.WorkingBytes = capacity * (16 << 20)
-			adapter := &concurrencyAdapter{started: make(chan struct{}, 8), finish: make(chan execution.Feedback, 8)}
+			adapter := &concurrencyAdapter{started: make(chan struct{}, 8), finish: make(chan struct{}, 8)}
 			runtime, err := New(adapter, limits)
 			if err != nil {
 				t.Fatal(err)
@@ -81,19 +81,18 @@ func TestBackendFeedbackDoesNotReduceConfiguredDispatch(t *testing.T) {
 			if snapshot := runtime.Snapshot(); snapshot.Active != capacity || snapshot.Pending != 8-capacity || snapshot.WorkingBytes != capacity*(16<<20) {
 				t.Fatal("execution exceeded configured or working-byte capacity", snapshot)
 			}
-			adapter.finish <- execution.Congested
-			// Other active calls remain blocked. A completed congested call
-			// must immediately admit the next queued batch at the same limit.
+			adapter.finish <- struct{}{}
+			// Completing one call must immediately admit the next queued batch.
 			select {
 			case <-adapter.started:
 			case <-time.After(500 * time.Millisecond):
-				t.Fatal("backend feedback left configured capacity idle", runtime.Snapshot())
+				t.Fatal("completion left configured capacity idle", runtime.Snapshot())
 			}
 			if snapshot := runtime.Snapshot(); snapshot.Active != capacity || snapshot.ConcurrencyLimit != limits.Concurrency {
-				t.Fatal("feedback changed dispatch capacity", snapshot)
+				t.Fatal("completion changed dispatch capacity", snapshot)
 			}
 			for range 7 {
-				adapter.finish <- execution.Healthy
+				adapter.finish <- struct{}{}
 			}
 			for _, ticket := range tickets {
 				_, err = ticket.Wait(ctx)

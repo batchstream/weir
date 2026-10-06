@@ -15,7 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
 	bytes := 0
 	for _, p := range plans {
@@ -31,7 +31,7 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 		for i, p := range plans {
 			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, failure)
 		}
-		return results, execution.Neutral
+		return results
 	}
 	type targetBatch struct {
 		plans                         []*execution.Plan
@@ -70,55 +70,37 @@ func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) (
 		}
 	}
 
-	signal := execution.Healthy
 	for position := range groups {
 		group := &groups[position]
-		if replies, sample := a.qualifyRecordBatch(ctx, group.plans); replies != nil {
+		if replies := a.qualifyRecordBatch(ctx, group.plans); replies != nil {
 			for i, reply := range replies {
 				results[group.positions[i]] = reply
 			}
-			signal = batchFeedback(signal, sample)
 			continue
 		}
 		group.qualified = true
 		if len(group.reads) != 0 {
-			replies, sample := a.executeReads(ctx, group.reads)
+			replies := a.executeReads(ctx, group.reads)
 			for i, reply := range replies {
 				results[group.readPositions[i]] = reply
 			}
-			signal = batchFeedback(signal, sample)
 		}
 	}
 	for _, group := range groups {
 		if group.qualified && len(group.writes) != 0 {
-			replies, sample := a.executeWrites(ctx, group.writes)
+			replies := a.executeWrites(ctx, group.writes)
 			for i, reply := range replies {
 				results[group.writePositions[i]] = reply
 			}
-			signal = batchFeedback(signal, sample)
 		}
 	}
 	if len(programs) != 0 {
-		replies, sample := a.executePrograms(ctx, programs)
+		replies := a.executePrograms(ctx, programs)
 		for i, reply := range replies {
 			results[programPositions[i]] = reply
 		}
-		signal = batchFeedback(signal, sample)
 	}
-	if len(plans) == 0 {
-		signal = execution.Neutral
-	}
-	return results, signal
-}
-
-func batchFeedback(current, next execution.Feedback) execution.Feedback {
-	if current == execution.Congested || next == execution.Congested {
-		return execution.Congested
-	}
-	if current == execution.Neutral || next == execution.Neutral {
-		return execution.Neutral
-	}
-	return execution.Healthy
+	return results
 }
 
 func unstarted(ctx context.Context, p *execution.Plan) *pb.Event {
@@ -131,7 +113,7 @@ func unstarted(ctx context.Context, p *execution.Plan) *pb.Event {
 	return nil
 }
 
-func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
 	skipped := make([]bool, len(plans))
 	ids := make(bson.A, 0, len(plans))
@@ -151,7 +133,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 		positions[id] = append(positions[id], i)
 	}
 	if len(ids) == 0 {
-		return results, execution.Neutral
+		return results
 	}
 
 	filter := bson.D{{Key: "_id", Value: ids[0]}}
@@ -286,11 +268,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) ([]
 		event := &pb.Event{Value: value}
 		results[i] = event
 	}
-	signal := feedback(ctx, err)
-	if !valid && signal == execution.Healthy {
-		signal = execution.Neutral
-	}
-	return results, signal
+	return results
 }
 
 func rawRecordID(raw bson.RawValue) (any, bool) {
@@ -308,7 +286,7 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 	return nil, false
 }
 
-func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
@@ -345,7 +323,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 		ops = append(ops, op)
 	}
 	if len(active) == 0 {
-		return results, execution.Neutral
+		return results
 	}
 
 	namespaceInfo := bson.D{{Key: "ns", Value: target.String()}}
@@ -366,7 +344,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 		for i, p := range active {
 			results[positions[i]] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, backendFailure(ctx, err))
 		}
-		return results, feedback(ctx, err)
+		return results
 	}
 	state.cursor.session = session
 	state.cursor.items = len(active)
@@ -407,15 +385,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) ([
 		event := &pb.Event{Value: value}
 		results[positions[i]] = event
 	}
-	signal := feedback(ctx, err)
-	uncertain := false
-	for _, result := range state.results {
-		uncertain = uncertain || result == nil || result.Outcome == pb.MutationOutcome_UNKNOWN
-	}
-	if (!valid || uncertain) && signal == execution.Healthy {
-		signal = execution.Neutral
-	}
-	return results, signal
+	return results
 }
 
 type writeBatch struct {

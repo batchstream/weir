@@ -124,9 +124,9 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		works[i] = batchTestPlan(t, a, target.action, resource)
 		works[i].ID = uint64(i)
 	}
-	results, feedback := a.executeRecords(context.Background(), works)
-	if len(results) != len(works) || feedback != execution.Healthy || inspections.Load() != 2 || reads.Load() != 2 || writes.Load() != 1 {
-		t.Fatal("mixed index request framing", len(results), feedback, inspections.Load(), reads.Load(), writes.Load())
+	results := a.executeRecords(context.Background(), works)
+	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 2 || writes.Load() != 1 {
+		t.Fatal("mixed index request framing", len(results), inspections.Load(), reads.Load(), writes.Load())
 	}
 	for i, result := range results {
 		if i < 2 {
@@ -144,7 +144,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		left := batchTestPlan(t, a, "read", "left/s:same")
 		right := batchTestPlan(t, a, "read", "right/s:same")
 		concurrent.Go(func() {
-			results, _ := a.executeRecords(context.Background(), []*execution.Plan{left, right})
+			results := a.executeRecords(context.Background(), []*execution.Plan{left, right})
 			if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":10}` || string(results[1].GetReadResult().GetDocument().GetData()) != `{"n":20}` {
 				t.Error("concurrent request changed adapter target", results)
 			}
@@ -239,7 +239,7 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			left := batchTestPlan(t, a, action, "left/s:same")
 			right := batchTestPlan(t, a, action, "right/s:same")
 			works := []*execution.Plan{left, right}
-			results, _ := a.executeRecords(context.Background(), works)
+			results := a.executeRecords(context.Background(), works)
 			for _, result := range results {
 				if action == "read" {
 					if result.GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
@@ -329,9 +329,9 @@ func TestSearchQualificationRechecksCancelledCallers(t *testing.T) {
 			}
 			ctx, stop := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer stop()
-			results, feedback := a.executeRecords(ctx, works)
-			if len(results) != len(works) || writes.Load() != 1 || feedback != execution.Neutral {
-				t.Fatal("cancelled target blocked valid caller", results, writes.Load(), feedback)
+			results := a.executeRecords(ctx, works)
+			if len(results) != len(works) || writes.Load() != 1 {
+				t.Fatal("cancelled target blocked valid caller", results, writes.Load())
 			}
 			for i, result := range results {
 				mutation := result.GetMutationResult()

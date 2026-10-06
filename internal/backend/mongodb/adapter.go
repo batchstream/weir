@@ -119,7 +119,6 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if hello.SetName == "" || hello.Msg == "isdbgrid" || hello.MaxMessage > 48<<20 {
 		return fmt.Errorf("MongoDB requires a replica set, no mongos, and bounded native messages")
 	}
-
 	return nil
 }
 
@@ -277,25 +276,4 @@ func backendFailure(ctx context.Context, err error) *pb.Failure {
 	}
 	// Backend strings may contain user data; never copy them into wire errors.
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend operation failed")
-}
-
-func feedback(ctx context.Context, err error) execution.Feedback {
-	if err == nil || errors.Is(err, mongo.ErrNoDocuments) {
-		return execution.Healthy
-	}
-	if ctx.Err() != nil {
-		return execution.Neutral
-	}
-	var ce mongo.CommandError
-	if errors.As(err, &ce) && (ce.Code == 91 || ce.Code == 189 || ce.Code == 16500) {
-		return execution.Congested
-	}
-	// Only Runtime knows whether a deadline belongs to its backend cap or a caller.
-	if mongo.IsTimeout(err) {
-		return execution.Neutral
-	}
-	if mongo.IsNetworkError(err) {
-		return execution.Congested
-	}
-	return execution.Neutral
 }

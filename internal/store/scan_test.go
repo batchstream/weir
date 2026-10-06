@@ -25,13 +25,13 @@ type scanTestAdapter struct {
 }
 
 func (a *scanTestAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
-	work := &execution.Plan{ID: id, Command: call, Key: "scan", Singleton: true, CleanupRequired: true, Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, WorkingBytes: 24 << 20}
+	work := &execution.Plan{ID: id, Command: call, Key: "scan", Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, WorkingBytes: 24 << 20}
 	if a.documents > 1 {
 		work.ResultBytes = execution.ScanResultBytes
 	}
 	return work, nil
 }
-func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) bool {
 	if a.started != nil {
 		select {
 		case a.started <- struct{}{}:
@@ -43,7 +43,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 		result := execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, nil)
 		output := result
 		_ = emit(work, output)
-		return execution.Healthy
+		return false
 	}
 	count := a.fetches.Add(1)
 	pages := a.pages
@@ -68,11 +68,11 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 		}
 		emitted++
 	}
-	work.Continue = int(count) < pages
+	continuation := int(count) < pages
 	if a.rejected.Load() {
-		work.Continue = false
+		continuation = false
 	}
-	if !work.Continue {
+	if !continuation {
 		end := &pb.ScanEnd{DocumentCount: uint64((int(count)-1)*documents + emitted), Exhausted: len(a.nextToken) == 0, NextContinuationToken: bytes.Clone(a.nextToken)}
 		if a.rejected.Load() {
 			end.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "test adapter exceeded Scan output budget")
@@ -84,7 +84,7 @@ func (a *scanTestAdapter) Execute(ctx context.Context, works []*execution.Plan, 
 		terminalOutput := terminal
 		_ = emit(work, terminalOutput)
 	}
-	return execution.Healthy
+	return continuation
 }
 func (a *scanTestAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure {
 	a.cleanups.Add(1)

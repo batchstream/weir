@@ -18,8 +18,8 @@ type lifecycleAdapter struct{ closes atomic.Int32 }
 func (a *lifecycleAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, nil
 }
-func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) execution.Feedback {
-	return execution.Neutral
+func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) bool {
+	return false
 }
 func (a *lifecycleAdapter) Close() error { a.closes.Add(1); return nil }
 func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
@@ -69,7 +69,7 @@ type forcedCloseAdapter struct {
 	started chan struct{}
 }
 
-func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	for _, work := range plans {
 		outcome := pb.MutationOutcome_APPLIED
 		var failure *pb.Failure
@@ -82,7 +82,7 @@ func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*executi
 		event := execution.FailedEvent(work.Command, outcome, failure)
 		_ = emit(work, event)
 	}
-	return execution.Neutral
+	return false
 }
 func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) {
 	for _, sessionOwned := range []bool{false, true} {

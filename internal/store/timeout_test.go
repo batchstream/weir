@@ -8,13 +8,14 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
-type canceledFeedbackAdapter struct {
+type deadlineAdapter struct {
 	lifecycleAdapter
 }
 
-func (a *canceledFeedbackAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *deadlineAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	<-ctx.Done()
 	for _, plan := range plans {
 		failure := protocol.ContextFailure(ctx)
@@ -22,12 +23,12 @@ func (a *canceledFeedbackAdapter) Execute(ctx context.Context, plans []*executio
 		output := result
 		_ = emit(plan, output)
 	}
-	return execution.Congested
+	return false
 }
 
-func TestRuntimeCanceledCallDoesNotBecomeBackendCongestion(t *testing.T) {
+func TestRuntimeCanceledCallDoesNotCountAsBackendTimeout(t *testing.T) {
 	limits := DefaultLimits()
-	adapter := &canceledFeedbackAdapter{}
+	adapter := &deadlineAdapter{}
 	runtime := newRuntime(adapter, limits)
 	ctx, cancel := context.WithCancel(context.Background())
 	work := plan(1, "canceled", false)
@@ -44,18 +45,21 @@ func TestRuntimeCanceledCallDoesNotBecomeBackendCongestion(t *testing.T) {
 	cancel()
 	b.cancel()
 	runtime.execute(b)
-	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "neutral" {
+	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency {
 		t.Fatal("caller cancellation reduced backend capacity", got)
 	}
 	if recordEvent(t, ticket).GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
-		t.Fatal("feedback changed uncertain write evidence")
+		t.Fatal("cancellation changed uncertain write evidence")
+	}
+	if got := testmetrics.Sample(testmetrics.Gather(t, runtime), "weir_store_backend_timeouts_total", nil).GetCounter().GetValue(); got != 0 {
+		t.Fatal("caller cancellation counted as backend timeout", got)
 	}
 	ticket.Ack()
 }
 
-func TestRuntimeOwnedBackendDeadlineRemainsCongestion(t *testing.T) {
+func TestRuntimeOwnedBackendDeadlineCountsTimeout(t *testing.T) {
 	limits := DefaultLimits()
-	adapter := &canceledFeedbackAdapter{}
+	adapter := &deadlineAdapter{}
 	runtime := newRuntime(adapter, limits)
 	work := plan(1, "timeout", false)
 	ticket, failure, _ := runtime.Submit(context.Background(), work, nil)
@@ -71,8 +75,11 @@ func TestRuntimeOwnedBackendDeadlineRemainsCongestion(t *testing.T) {
 	b.cancel()
 	b.ctx, b.cancel = context.WithDeadline(context.Background(), time.Unix(1, 0))
 	runtime.execute(b)
-	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "congested" {
-		t.Fatal("backend deadline lost its congestion evidence or changed configured capacity", got)
+	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency {
+		t.Fatal("backend deadline changed configured capacity", got)
+	}
+	if got := testmetrics.Sample(testmetrics.Gather(t, runtime), "weir_store_backend_timeouts_total", nil).GetCounter().GetValue(); got != 1 {
+		t.Fatal("backend deadline was not counted", got)
 	}
 	ticket.Ack()
 }
@@ -104,8 +111,8 @@ func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {
 	}
 	stop()
 	runtime.execute(b)
-	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency || got.Feedback != "healthy" {
-		t.Fatal("a partially canceled batch changed configured capacity or feedback", got)
+	if got := runtime.Snapshot(); got.ConcurrencyLimit != limits.Concurrency {
+		t.Fatal("a partially canceled batch changed configured capacity", got)
 	}
 	if recordEvent(t, tickets[0]).GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || recordEvent(t, tickets[1]).GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("cancellation leaked into the healthy caller's mutation evidence")

@@ -6,7 +6,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 )
 
 const ExpressionContentType = "application/vnd.weir.search-update.v1+json"
@@ -83,15 +82,15 @@ type expressionReplyOptions struct {
 	raw    []byte
 }
 
-func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResult, execution.Feedback) {
+func (a *Adapter) expressionReply(opts expressionReplyOptions) *pb.MutationResult {
 	n, status, raw := opts.native, opts.status, opts.raw
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "update acknowledgement unavailable or incomplete"))
 	if len(raw) > metadataLimit || validateJSON(raw, 4096) != nil {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	var response expressionResponse
 	if json.Unmarshal(raw, &response) != nil {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	if response.Error != nil {
 		if response.Status != status ||
@@ -100,16 +99,16 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 			response.Seq != nil ||
 			response.Term != nil ||
 			response.Shards != nil {
-			return unknown, execution.Neutral
+			return unknown
 		}
-		failure, sample := a.reject(response.Error.Type, status)
+		failure := a.reject(response.Error.Type, status)
 		if status == 404 && response.Error.Type == "document_missing_exception" {
 			failure = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
 		}
 		if failure != nil {
-			return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), sample
+			return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
-		return unknown, execution.Neutral
+		return unknown
 	}
 	if status != 200 ||
 		response.Index != n.index ||
@@ -121,7 +120,7 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 		response.Term == nil ||
 		*response.Term < 1 ||
 		response.Shards == nil {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	shards := response.Shards
 	if shards.Total == nil ||
@@ -132,22 +131,22 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) (*pb.MutationResu
 		*shards.Failed < 0 ||
 		*shards.Successful > *shards.Total ||
 		*shards.Failed > *shards.Total-*shards.Successful {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	switch response.Result {
 	case "noop":
 		if *shards.Successful < 1 || *shards.Failed != 0 {
-			return unknown, execution.Neutral
+			return unknown
 		}
 	case "updated":
 		if *shards.Successful < 1 {
-			return unknown, execution.Neutral
+			return unknown
 		}
 	default:
-		return unknown, execution.Neutral
+		return unknown
 	}
 	if *shards.Failed > 0 {
-		return protocol.Mutation(pb.MutationOutcome_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "update acknowledged but replica acknowledgement failed")), execution.Neutral
+		return protocol.Mutation(pb.MutationOutcome_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "update acknowledged but replica acknowledgement failed"))
 	}
-	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil), execution.Healthy
+	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 }

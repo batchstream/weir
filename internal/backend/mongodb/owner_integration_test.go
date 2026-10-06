@@ -53,7 +53,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 	next := ownerMutation(t, a, f.DB, "independent")
 	callCtx, stop := context.WithCancel(ctx)
 	result := make(chan []*pb.Event, 1)
-	go func() { r, _ := a.executeRecords(callCtx, []*execution.Plan{old}); result <- r }()
+	go func() { r := a.executeRecords(callCtx, []*execution.Plan{old}); result <- r }()
 	select {
 	case <-entered:
 	case <-ctx.Done():
@@ -87,7 +87,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 		t.Fatal("lost reply session was not cleaned exactly once", cleanups)
 	}
 	t.Logf("%s driver operation returned UNKNOWN, local raw closed: owner=%+v proxy=%d/%d", time.Now().UTC().Format(time.RFC3339Nano), a.dialer.snapshot(), current, peak)
-	r, _ = a.executeRecords(ctx, []*execution.Plan{next})
+	r = a.executeRecords(ctx, []*execution.Plan{next})
 	if r[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("new independent mutation failed", r)
 	}

@@ -110,7 +110,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 		t.Fatal(failure)
 	}
 	for _, raw := range []string{`{}`, `{"errors":false,"took":0,"items":[]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"a","status":404}}]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"other","status":200}}]}`} {
-		results, _ := a.bulkResults([]*execution.Plan{work}, 200, []byte(raw), nil)
+		results := a.bulkResults([]*execution.Plan{work}, 200, []byte(raw), nil)
 		if results[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("invented acknowledgement", raw)
 		}
@@ -123,7 +123,7 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	a := &Adapter{dialect: ElasticsearchProduct}
 	for _, code := range []int{200, 400, 404, 429, 500} {
-		failure, _ := a.reject("version_conflict_engine_exception", code)
+		failure := a.reject("version_conflict_engine_exception", code)
 		if failure != nil {
 			t.Fatal("mismatched error/status treated as definite", code)
 		}
@@ -137,7 +137,7 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)
-	results, _ := a.bulkResults([]*execution.Plan{work}, 200, raw, nil)
+	results := a.bulkResults([]*execution.Plan{work}, 200, raw, nil)
 	if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("positive primary acknowledgement discarded", results)
 	}
@@ -147,10 +147,10 @@ func TestFiniteCongestionProducts(t *testing.T) {
 	for _, product := range []string{ElasticsearchProduct, OpenSearchProduct} {
 		a := &Adapter{dialect: product}
 		for _, name := range []string{"es_rejected_execution_exception", "rejected_execution_exception"} {
-			failure, feedback := a.reject(name, 429)
+			failure := a.reject(name, 429)
 			matches := product == ElasticsearchProduct && name == "es_rejected_execution_exception" || product == OpenSearchProduct && name == "rejected_execution_exception"
-			if (failure != nil) != matches || (feedback == execution.Congested) != matches {
-				t.Fatal(product, name, failure, feedback)
+			if (failure != nil) != matches {
+				t.Fatal(product, name, failure)
 			}
 		}
 	}

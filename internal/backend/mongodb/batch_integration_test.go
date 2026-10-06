@@ -69,7 +69,7 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	replies, _ := a.executeRecords(context.Background(), plans)
+	replies := a.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		operation := operations[i]
 		if operation.action == "read" {
@@ -123,7 +123,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 		}
 		plans = append(plans, p)
 	}
-	replies, _ := a.executeRecords(context.Background(), plans)
+	replies := a.executeRecords(context.Background(), plans)
 	if replies[0].GetReadResult().GetMissing() == nil || replies[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || replies[2].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || replies[3].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal(replies)
 	}
@@ -163,7 +163,7 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	replies, _ := a.executeRecords(context.Background(), plans)
+	replies := a.executeRecords(context.Background(), plans)
 	for _, reply := range replies {
 		if reply.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("lost mixed-write acknowledgement became definite", replies)
@@ -230,7 +230,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			if mode == "first canceled" {
 				cancel()
 			}
-			replies, _ := adapter.executeRecords(t.Context(), plans)
+			replies := adapter.executeRecords(t.Context(), plans)
 			raw := expressionBSON(t, document)
 			if finds.Load() != 1 || len(replies) != 2 || !bytes.Equal(replies[1].GetReadResult().GetDocument().GetData(), raw) {
 				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies)

@@ -56,7 +56,7 @@ func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, 
 	return plan, nil
 }
 
-func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	a.mu.Lock()
 	a.batchSizes = append(a.batchSizes, len(plans))
 	a.mu.Unlock()
@@ -68,7 +68,7 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 		select {
 		case <-a.block:
 		case <-ctx.Done():
-			return execution.Neutral
+			return false
 		}
 	}
 	for _, plan := range plans {
@@ -109,7 +109,7 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 		output := event
 		_ = emit(plan, output)
 	}
-	return execution.Healthy
+	return false
 }
 
 func (a *peerAdapter) Close() error                                         { a.closed.Add(1); return nil }

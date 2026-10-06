@@ -200,7 +200,7 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	close(nativeGate)
 	peers[2].proxy.observation.hold(nil, 0)
 	workers.Wait()
-	// A synthetic 429 preserves backend failure feedback without changing
+	// A synthetic 429 preserves backend read failure evidence without changing
 	// configured execution capacity. The overload segment uses real admission.
 	peers[2].proxy.reject.Store(true)
 	callCtx, stop := context.WithTimeout(context.Background(), time.Second)
@@ -214,10 +214,10 @@ func TestSearchSharedProcessBudget(t *testing.T) {
 	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
 		t.Fatal("Search backend failure changed configured execution limits")
 	}
-	feedbackLabels := map[string]string{"feedback": "congested"}
-	feedback := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_feedback", feedbackLabels)
-	if feedback.GetGauge().GetValue() != 1 {
-		t.Fatal("Search backend congestion was not observable")
+	failureLabels := map[string]string{"operation": "read", "outcome": "failure"}
+	failures := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_records_total", failureLabels)
+	if failures.GetCounter().GetValue() < 1 {
+		t.Fatal("backend read failure was not counted")
 	}
 	for _, e := range peers {
 		searchBudgetRead(t, e)

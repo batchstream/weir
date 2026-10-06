@@ -87,7 +87,7 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	replies, signal := adapter.executeRecords(context.Background(), plans)
+	replies := adapter.executeRecords(context.Background(), plans)
 	for i, reply := range replies {
 		want := int32(1)
 		if i == 1 {
@@ -98,9 +98,7 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 			t.Fatal("namespace/id correspondence lost", i, reply)
 		}
 	}
-	if signal != execution.Healthy {
-		t.Fatal(signal)
-	}
+
 }
 
 func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
@@ -117,9 +115,9 @@ func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	capture := &nativeCapture{}
 	open.Request.Data = raw
 	work.Command = testutil.NativeCommand(open)
-	end, signal := adapter.executeNative(context.Background(), work, capture.Emit)
-	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || signal != execution.Neutral {
-		t.Fatal(end, signal)
+	end := adapter.executeNative(context.Background(), work, capture.Emit)
+	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil {
+		t.Fatal(end)
 	}
 }
 
@@ -150,7 +148,7 @@ func TestMongoQualificationFailureDoesNotAttemptWrites(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results, _ := adapter.executeRecords(context.Background(), []*execution.Plan{work})
+			results := adapter.executeRecords(context.Background(), []*execution.Plan{work})
 			if results[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutationResult().Failure == nil || len(commands) != 1 || commands[0] != "listCollections" {
 				t.Fatal("target rejection performed a write", results, commands)
 			}
@@ -179,7 +177,7 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 				t.Fatal(failure)
 			}
 			work.Context = caller
-			results, signal := adapter.executeRecords(context.Background(), []*execution.Plan{work})
+			results := adapter.executeRecords(context.Background(), []*execution.Plan{work})
 			code := results[0].GetReadResult().GetFailure().GetCode()
 			if action == "put" {
 				code = results[0].GetMutationResult().GetFailure().GetCode()
@@ -187,8 +185,8 @@ func TestMongoCallerCanceledDuringQualificationIsNotDispatched(t *testing.T) {
 					t.Fatal(results)
 				}
 			}
-			if code != pb.FailureCode_CANCELLED || signal != execution.Neutral || len(commands) != 1 || commands[0] != "listCollections" {
-				t.Fatal("canceled caller dispatched after metadata I/O", results, signal, commands)
+			if code != pb.FailureCode_CANCELLED || len(commands) != 1 || commands[0] != "listCollections" {
+				t.Fatal("canceled caller dispatched after metadata I/O", results, commands)
 			}
 		})
 	}
@@ -206,9 +204,9 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		results, signal := adapter.executeRecords(ctx, []*execution.Plan{work})
-		if signal != execution.Neutral || results[0] == nil {
-			t.Fatal(results, signal)
+		results := adapter.executeRecords(ctx, []*execution.Plan{work})
+		if results[0] == nil {
+			t.Fatal(results)
 		}
 	}
 	request := &pb.ScanRequest{Resource: "db/records"}
@@ -216,7 +214,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	page, _ := adapter.fetchScan(ctx, scan)
+	page := adapter.fetchScan(ctx, scan)
 	if page.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(page)
 	}
@@ -231,7 +229,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	capture := &nativeCapture{}
 	open.Request.Data = raw
 	native.Command = testutil.NativeCommand(open)
-	end, _ := adapter.executeNative(ctx, native, capture.Emit)
+	end := adapter.executeNative(ctx, native, capture.Emit)
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure.GetCode() != pb.FailureCode_CANCELLED {
 		t.Fatal(end)
 	}

@@ -44,9 +44,9 @@ func TestMongoMixedBatchRetainsQualificationAcrossExecutions(t *testing.T) {
 		plans = append(plans, work)
 	}
 	for range 2 {
-		results, signal := adapter.executeRecords(context.Background(), plans)
-		if signal != execution.Healthy || results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetReadResult().GetDocument() == nil {
-			t.Fatal("mixed batch lost result correspondence or acknowledgement", results, signal)
+		results := adapter.executeRecords(context.Background(), plans)
+		if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetReadResult().GetDocument() == nil {
+			t.Fatal("mixed batch lost result correspondence or acknowledgement", results)
 		}
 	}
 	want := []string{"listCollections", "find", "bulkWrite", "find", "bulkWrite"}
@@ -81,15 +81,13 @@ func TestMongoPointReadUsesEqualityForOneUniqueID(t *testing.T) {
 				}
 				plans = append(plans, work)
 			}
-			results, signal := adapter.executeRecords(context.Background(), plans)
+			results := adapter.executeRecords(context.Background(), plans)
 			for _, result := range results {
 				if result.GetReadResult().GetDocument() == nil {
 					t.Fatal("read or duplicate-ID correspondence lost", results)
 				}
 			}
-			if signal != execution.Healthy {
-				t.Fatal(signal)
-			}
+
 			if len(documents) == 1 {
 				if id, ok := filter.StringValueOK(); !ok || id != "a" {
 					t.Fatal("singleton read did not use equality", filter)
@@ -122,10 +120,10 @@ func TestMongoMixedBatchRejectsUnqualifiedTargetBeforeReadingOrWriting(t *testin
 		}
 		plans = append(plans, work)
 	}
-	results, signal := adapter.executeRecords(context.Background(), plans)
+	results := adapter.executeRecords(context.Background(), plans)
 	mutation := results[1].GetMutationResult()
-	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_UNSUPPORTED || signal != execution.Neutral {
-		t.Fatal("mixed batch bypassed qualification", results, signal)
+	if results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_UNSUPPORTED {
+		t.Fatal("mixed batch bypassed qualification", results)
 	}
 	want := []string{"listCollections"}
 	if !reflect.DeepEqual(commands, want) {
@@ -158,10 +156,10 @@ func TestMongoMixedBatchRechecksWriteCallerAfterRead(t *testing.T) {
 		plans = append(plans, work)
 	}
 	plans[1].Context = caller
-	results, signal := adapter.executeRecords(context.Background(), plans)
+	results := adapter.executeRecords(context.Background(), plans)
 	mutation := results[1].GetMutationResult()
-	if results[0].GetReadResult().GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED || signal != execution.Neutral {
-		t.Fatal("canceled write was dispatched after shared qualification", results, signal)
+	if results[0].GetReadResult().GetDocument() == nil || mutation.Outcome != pb.MutationOutcome_NOT_STARTED || mutation.Failure.GetCode() != pb.FailureCode_CANCELLED {
+		t.Fatal("canceled write was dispatched after shared qualification", results)
 	}
 	want := []string{"listCollections", "find"}
 	if !reflect.DeepEqual(commands, want) {

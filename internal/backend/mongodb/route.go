@@ -35,8 +35,6 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	if work == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing operation")
 	}
-	work.CleanupRequired = input.GetScan() != nil
-	work.Streaming = input.GetNative() != nil
 	work.Command = input
 	work.ID = id
 	work.Bytes = max(work.Bytes, 2*proto.Size(input)+4096)
@@ -68,43 +66,43 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	return work, nil
 }
 
-func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) bool {
 	if len(works) == 0 {
-		return execution.Neutral
+		return false
 	}
 	work := works[0]
 	if work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
-		results, feedback := a.executeRecords(ctx, works)
+		results := a.executeRecords(ctx, works)
 		for i, result := range results {
 			_ = emit(works[i], result)
 		}
-		return feedback
+		return false
 	}
 	if work.Command.GetScan() != nil {
 		return a.streamScan(ctx, work, emit)
 	}
-	end, feedback := a.executeNative(ctx, work, emit)
+	end := a.executeNative(ctx, work, emit)
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Value: value}
 	_ = emit(work, event)
-	return feedback
+	return false
 }
 
-func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit execution.Emit) bool {
 	timeout := work.BackendTimeout
 	if timeout <= 0 {
 		timeout = 2 * time.Second
 	}
 	fetchContext, cancel := context.WithTimeout(ctx, timeout)
-	page, feedback := a.fetchScan(fetchContext, work)
+	page := a.fetchScan(fetchContext, work)
 	cancel()
 	state := work.Backend.(*scanPlan)
-	state.PublishPage(ctx, work, page, emit)
-	return feedback
+	continuation, _ := state.PublishPage(ctx, work, page, emit)
+	return continuation
 }
 
 func (a *Adapter) ClosePlan(ctx context.Context, work *execution.Plan) *pb.Failure {
-	if work.CleanupRequired {
+	if work.Command.GetScan() != nil {
 		return a.closeScan(ctx, work)
 	}
 	return nil

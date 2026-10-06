@@ -249,6 +249,12 @@ or pass `go test -p=1`: fault tests change the instance's global `failCommand`
 failpoint, so concurrent packages can overwrite each other's faults and cleanup.
 Matched direct/Weir benchmarks and current blackbox integration live in the
 independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
+
+Monitoring migrations: `weir_store_feedback` is removed. Use per-record outcome
+counters for backend evidence and `weir_store_backend_timeouts_total` for
+Runtime-owned backend deadlines reached while callers remain interested. Neither
+caller cancellation nor Native's separate I/O timeout is counted as such a deadline.
+
 Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
 

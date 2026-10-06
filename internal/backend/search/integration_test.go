@@ -67,10 +67,8 @@ func TestSearchMixedBulk(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	results, feedback := a.executeRecords(ctx, works)
-	if feedback != execution.Neutral {
-		t.Fatal("business conflict classified as congestion", feedback)
-	}
+	results := a.executeRecords(ctx, works)
+
 	assertOutcome(t, results[0], pb.MutationOutcome_APPLIED, 0)
 	assertOutcome(t, results[1], pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)
 	assertOutcome(t, results[2], pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED)

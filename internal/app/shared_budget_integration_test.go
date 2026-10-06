@@ -300,12 +300,12 @@ func TestMongoSharedProcessBudget(t *testing.T) {
 	if budgetConcurrency(t, peers[2].process) != 4 || budgetConcurrency(t, peers[1].process) != 2 {
 		t.Fatal("backend failure changed configured execution limits")
 	}
-	feedbackLabels := map[string]string{"feedback": "congested"}
-	feedback := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_feedback", feedbackLabels)
-	if feedback.GetGauge().GetValue() != 1 {
-		t.Fatal("Mongo backend congestion was not observable")
+	failureLabels := map[string]string{"operation": "read", "outcome": "failure"}
+	failures := testmetrics.Sample(testmetrics.Scrape(t, peers[2].process.diagnostic), "weir_store_records_total", failureLabels)
+	if failures.GetCounter().GetValue() < 1 {
+		t.Fatal("backend read failure was not counted")
 	}
-	t.Log("real failCommand 16500: read failure and congestion feedback preserved; configured C4 and C2 unchanged")
+	t.Log("real failCommand 16500: read failure counted; configured C4 and C2 unchanged")
 	mongoBudgetOverload(t, peers, observation)
 	mongoBudgetMixed(t, peers, fixture, observation)
 	discovery := budgetDiscoveryOptions{

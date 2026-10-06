@@ -12,27 +12,14 @@ import (
 const DefaultMaxReadSize = 16 << 10
 
 type Plan struct {
-	ID                                   uint64
-	Command                              *pb.Command
-	Key, BatchKey                        string
-	Bytes, ResultBytes, WorkingBytes     int
-	Continue, CleanupRequired, Streaming bool
-	Singleton                            bool
-	Context                              context.Context
-	BackendTimeout                       time.Duration
-	Backend                              any
+	ID                               uint64
+	Command                          *pb.Command
+	Key, BatchKey                    string
+	Bytes, ResultBytes, WorkingBytes int
+	Context                          context.Context
+	BackendTimeout                   time.Duration
+	Backend                          any
 }
-
-type Feedback uint8
-
-const (
-	Neutral Feedback = iota
-	Healthy
-	Congested
-	// Completed records a complete Native transport exchange. Its opaque body
-	// makes no assertion about business or write effects.
-	Completed
-)
 
 // Emit borrows an event until it returns. Callers must not mutate its contents.
 // One caller's canceled emission does not cancel other members of a shared batch.
@@ -41,7 +28,8 @@ type Emit func(*Plan, *pb.Event) error
 type Adapter interface {
 	PrepareCommand(uint64, *pb.Command) (*Plan, *pb.Failure)
 	PrepareRecord(*Record) (*Plan, *pb.Failure)
-	Execute(context.Context, []*Plan, Emit) Feedback
+	// Execute returns true only for a nonterminal singleton Scan step.
+	Execute(context.Context, []*Plan, Emit) bool
 	ClosePlan(context.Context, *Plan) *pb.Failure
 	Close() error
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -35,9 +34,9 @@ func TestMongoScanProjectionKeepsPrivateCheckpointAndNativeBSON(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			page, signal := adapter.fetchScan(context.Background(), work)
+			page := adapter.fetchScan(context.Background(), work)
 			want, _ := bson.Marshal(expected)
-			if page.Failure != nil || signal != execution.Healthy || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, want) || !page.Complete || len(page.NextContinuationToken) == 0 {
+			if page.Failure != nil || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, want) || !page.Complete || len(page.NextContinuationToken) == 0 {
 				t.Fatal("projection damaged native BSON or checkpoint", page.Failure)
 			}
 			state, err := protocol.DecodeScanToken(page.NextContinuationToken, "mongodb", work.Backend.(*scanPlan).fingerprint)

@@ -97,9 +97,9 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	for i, work := range works {
 		work.ID = uint64(100 + i)
 	}
-	results, feedback := a.executeRecords(context.Background(), works)
-	if inspections.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) || feedback != execution.Neutral {
-		t.Fatal("aggregate backend call counts", inspections.Load(), reads.Load(), writes.Load(), len(results), feedback)
+	results := a.executeRecords(context.Background(), works)
+	if inspections.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 || len(results) != len(works) {
+		t.Fatal("aggregate backend call counts", inspections.Load(), reads.Load(), writes.Load(), len(results))
 	}
 	if results[0].GetReadResult().GetDocument() == nil || results[1].GetReadResult().GetMissing() == nil {
 		t.Fatal("batched read evidence", results[:2])
@@ -189,9 +189,9 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 	}
 	put := searchPlan(t, a, "put", searchResource(backend.Index, "put"))
 	works := []*execution.Plan{programWork, put}
-	results, feedback := a.executeRecords(context.Background(), works)
-	if len(results) != 2 || reads.Load() != 2 || writes.Load() != 2 || feedback != execution.Neutral {
-		t.Fatal("conditional subset retry counts", len(results), reads.Load(), writes.Load(), feedback)
+	results := a.executeRecords(context.Background(), works)
+	if len(results) != 2 || reads.Load() != 2 || writes.Load() != 2 {
+		t.Fatal("conditional subset retry counts", len(results), reads.Load(), writes.Load())
 	}
 	for _, result := range results {
 		assertOutcome(t, result, pb.MutationOutcome_APPLIED, 0)

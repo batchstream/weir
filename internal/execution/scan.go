@@ -19,10 +19,9 @@ type ScanProgress struct {
 }
 
 // PublishPage counts documents accepted by emit, terminates failed pages without
-// a checkpoint and schedules nonterminal pages to continue. A true result means
-// emit accepted a continuation token; it does not confirm delivery to the caller.
-func (s *ScanProgress) PublishPage(ctx context.Context, work *Plan, page *ScanPage, emit Emit) bool {
-	work.Continue = false
+// a checkpoint. The first result schedules another bounded backend fetch. The
+// second means emit accepted a token, not that the caller received it.
+func (s *ScanProgress) PublishPage(ctx context.Context, work *Plan, page *ScanPage, emit Emit) (continuation, transferred bool) {
 	for _, document := range page.Documents {
 		value := &pb.Event_Document{Document: document}
 		event := &pb.Event{Value: value}
@@ -36,8 +35,7 @@ func (s *ScanProgress) PublishPage(ctx context.Context, work *Plan, page *ScanPa
 		s.Count++
 	}
 	if page.Failure == nil && !page.Exhausted && !page.Complete {
-		work.Continue = true
-		return false
+		return true, false
 	}
 	end := &pb.ScanEnd{DocumentCount: s.Count, Failure: page.Failure}
 	if page.Failure == nil {
@@ -47,5 +45,5 @@ func (s *ScanProgress) PublishPage(ctx context.Context, work *Plan, page *ScanPa
 	value := &pb.Event_ScanEnd{ScanEnd: end}
 	event := &pb.Event{Value: value}
 	err := emit(work, event)
-	return err == nil && len(end.NextContinuationToken) != 0
+	return false, err == nil && len(end.NextContinuationToken) != 0
 }

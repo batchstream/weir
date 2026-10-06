@@ -117,14 +117,14 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 			for _, id := range []string{"changed", "peer"} {
 				work := batchTestPlan(t, adapter, "program", searchResource(backend.Index, id))
 				work.Backend.(*plan).program.Source = `return weir.replace(weir.set(current, "n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`
-				if work.Singleton {
+				if work.Command.GetScan() != nil || work.Command.GetNative() != nil {
 					t.Fatal("Lua plan cannot enter scheduler batch")
 				}
 				works = append(works, work)
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			results, _ := adapter.executeRecords(ctx, works)
+			results := adapter.executeRecords(ctx, works)
 			wantCalls := int32(2)
 			outcome := pb.MutationOutcome_APPLIED
 			code := pb.FailureCode(0)

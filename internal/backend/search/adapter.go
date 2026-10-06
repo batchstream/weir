@@ -178,39 +178,38 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	return nil
 }
 
-func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capabilities, *pb.Failure, execution.Feedback) {
+func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capabilities, *pb.Failure) {
 	lookup, err := a.targets.Acquire(ctx, target)
 	if err != nil {
 		caps := capabilities{}
-		return caps, protocol.ContextFailure(ctx), execution.Neutral
+		return caps, protocol.ContextFailure(ctx)
 	}
 	if lookup.Cached {
-		return lookup.Value, nil, execution.Neutral
+		return lookup.Value, nil
 	}
-	caps, failure, signal := a.inspectTarget(ctx, target, native)
+	caps, failure := a.inspectTarget(ctx, target, native)
 	a.targets.Complete(target, lookup, caps, failure == nil && ctx.Err() == nil)
 	if ctx.Err() != nil {
-		return caps, protocol.ContextFailure(ctx), execution.Neutral
+		return caps, protocol.ContextFailure(ctx)
 	}
-	return caps, failure, signal
+	return caps, failure
 }
-
-func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool) (capabilities, *pb.Failure, execution.Feedback) {
+func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool) (capabilities, *pb.Failure) {
 	caps := capabilities{}
 	call := exchange{path: "/" + url.PathEscape(target) + "?flat_settings=true", limit: metadataLimit, native: native}
 	status, raw, err := a.request(ctx, call)
 	if err == errTransport && ctx.Err() == nil {
-		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed"), execution.Congested
+		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed")
 	}
 	if err != nil {
-		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification response unavailable"), execution.Neutral
+		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification response unavailable")
 	}
 	if status == 429 || status == 503 {
-		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable"), execution.Congested
+		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
 	}
 	if status != 200 {
-		failure, signal := a.nativeResponseFailure(status, raw)
-		return caps, failure, signal
+		failure := a.nativeResponseFailure(status, raw)
+		return caps, failure
 	}
 	type indexInfo struct {
 		DataStream string `json:"data_stream"`
@@ -226,7 +225,7 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 	}
 	var indexes map[string]indexInfo
 	if json.Unmarshal(raw, &indexes) != nil || len(indexes) != 1 {
-		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "index qualification invalid"), execution.Neutral
+		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "index qualification invalid")
 	}
 	index, ok := indexes[target]
 	if !ok ||
@@ -236,7 +235,7 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 		index.Mappings.Routing.Required ||
 		index.Settings["index.routing_partition_size"] != "" && index.Settings["index.routing_partition_size"] != "1" ||
 		index.Settings["index.mode"] != "" && index.Settings["index.mode"] != "standard" {
-		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "single-primary concrete standard index with default routing required"), execution.Neutral
+		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "single-primary concrete standard index with default routing required")
 	}
 	source := index.Mappings.Source
 	caps.source = (source.Enabled == nil || *source.Enabled) &&
@@ -248,7 +247,7 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 	defaultPipeline := index.Settings["index.default_pipeline"]
 	caps.nativeWrite = (defaultPipeline == "" || defaultPipeline == "_none") && (final == "" || final == "_none")
 	caps.write = caps.source && (final == "" || final == "_none")
-	return caps, nil, execution.Neutral
+	return caps, nil
 }
 
 func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
