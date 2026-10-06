@@ -129,12 +129,21 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 			!strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
 			t.Fatal("Native GET request target", end, capture.body.String())
 		}
+		expected := map[string]int{"same": 2 + i, "expression": 2, "put": 2, "create": 2, "native": 7 + i}
+		// Business markers identify each source without exposing native hit metadata.
+		for record := range expected {
+			body := fmt.Sprintf(`{"doc":{"target":%q,"record":%q}}`, index, record)
+			status, raw := backend.Do(t, "POST", "/"+index+"/_update/"+record, body)
+			if status != 200 {
+				t.Fatal("mark Scan source", record, status, string(raw))
+			}
+		}
 		status, raw := backend.Do(t, "POST", "/"+index+"/_refresh", "")
 		if status != 200 {
 			t.Fatal("target refresh", status, string(raw))
 		}
 		work := scanWork(t, a, index)
-		seenSame, seenNative := false, false
+		seen := make(map[string]bool, len(expected))
 		for step := 0; ; step++ {
 			if step > 10 {
 				t.Fatal("target Scan failed to exhaust")
@@ -145,29 +154,31 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 			}
 			for _, document := range page.Documents {
 				var source struct {
-					N *int `json:"n"`
+					Target string `json:"target"`
+					Record string `json:"record"`
+					N      *int   `json:"n"`
 				}
 				if err := json.Unmarshal(document.Data, &source); err != nil {
 					t.Fatal(err)
 				}
-				if source.N == nil {
-					t.Fatal("Scan did not publish business source", string(document.Data))
+				if source.Target != index {
+					t.Fatal("Scan source crossed request target", string(document.Data))
 				}
-				if *source.N == 8-i {
-					t.Fatal("Native source crossed Scan request target", string(document.Data))
+				want, exists := expected[source.Record]
+				if !exists || source.N == nil || *source.N != want {
+					t.Fatal("Scan published an unexpected record or value", string(document.Data))
 				}
-				if *source.N == 2+i {
-					seenSame = true
-				} else if *source.N == 7+i {
-					seenNative = true
+				if seen[source.Record] {
+					t.Fatal("Scan duplicated a record", string(document.Data))
 				}
+				seen[source.Record] = true
 			}
 			if page.Exhausted {
 				break
 			}
 		}
-		if failure := a.closeScan(context.Background(), work); failure != nil || !seenSame || !seenNative {
-			t.Fatal("target PIT traversal/cleanup", failure, seenSame, seenNative)
+		if failure := a.closeScan(context.Background(), work); failure != nil || len(seen) != len(expected) {
+			t.Fatal("target PIT traversal/cleanup", failure, seen)
 		}
 	}
 }
