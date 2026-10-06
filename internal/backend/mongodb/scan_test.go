@@ -25,7 +25,7 @@ func TestMongoScanFindUsesRemainingBoundedBatch(t *testing.T) {
 		}
 		state := work.Backend.(*scanPlan)
 		for _, emitted := range []uint64{0, uint64(size) - 1} {
-			state.count = emitted
+			state.Count = emitted
 			command := scanFindCommand(state)
 			raw, err := bson.Marshal(command)
 			if err != nil {

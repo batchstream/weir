@@ -116,7 +116,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 		if retained > execution.ScanBatchBytes {
 			t.Fatal("large source output exceeded retained byte bound", retained)
 		}
-		state.count += uint64(len(page.Documents))
+		state.Count += uint64(len(page.Documents))
 		if page.Complete {
 			token = page.NextContinuationToken
 			break
@@ -144,7 +144,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	if json.Unmarshal(page.Documents[0].Data, &last) != nil || last.N == nil || seen[fmt.Sprint(*last.N)] {
 		t.Fatal("resumed source duplicate", last.N)
 	}
-	resumedState.count++
+	resumedState.Count++
 	page, _ = adapter.fetchScan(ctx, resumed)
 	if page.Failure != nil || !page.Exhausted || len(page.Documents) != 0 {
 		t.Fatal("validated final response did not exhaust", page.Failure)

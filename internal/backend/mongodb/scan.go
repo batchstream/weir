@@ -26,7 +26,7 @@ const scanNativeLimit = (16 << 20) + (64 << 10)
 const scanWorkingBytes = 48 << 20
 
 type scanPlan struct {
-	count             uint64
+	execution.ScanProgress
 	target            namespace
 	options           bson.D
 	filter            bson.RawValue
@@ -119,7 +119,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 }
 
 func scanFindCommand(n *scanPlan) bson.D {
-	batchSize := min(n.pageSize-n.count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
+	batchSize := min(n.pageSize-n.Count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
 	order := bson.D{{Key: "_id", Value: int32(1)}}
 	command := bson.D{
 		{Key: "find", Value: n.target.collection},
@@ -158,7 +158,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = protocol.ContextFailure(ctx)
 		return page, execution.Neutral
 	}
-	if n.count >= n.pageSize {
+	if n.Count >= n.pageSize {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan fetched beyond its logical page")
 		return page, execution.Neutral
 	}
@@ -175,7 +175,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = backendFailure(ctx, err)
 		return page, feedback(ctx, err)
 	}
-	batchSize := min(n.pageSize-n.count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
+	batchSize := min(n.pageSize-n.Count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
 	cursor := &recordCursor{target: n.target, items: int(batchSize), outputBytes: execution.ScanBatchBytes}
 	page = a.recordCursorReply(raw, cursor, true)
 	if page.Failure != nil {
@@ -222,7 +222,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		// The next request and its continuation reuse this conservative capacity.
 		n.batchSize = max(1, len(page.Documents))
 	}
-	if !page.Exhausted && n.count+uint64(len(page.Documents)) >= n.pageSize {
+	if !page.Exhausted && n.Count+uint64(len(page.Documents)) >= n.pageSize {
 		checkpoint := scanCheckpoint{Last: n.last, BatchSize: int32(n.batchSize)}
 		state, err := bson.Marshal(checkpoint)
 		var token []byte

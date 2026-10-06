@@ -22,7 +22,7 @@ const pitKeepAlive = "60s"
 const maxPITBytes = 16 << 10
 
 type scanPlan struct {
-	count                    uint64
+	execution.ScanProgress
 	index                    string
 	query                    json.RawMessage
 	projection               *pb.Projection
@@ -138,11 +138,11 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "PIT unavailable")
 		return page, execution.Neutral
 	}
-	if n.count >= n.pageSize {
+	if n.Count >= n.pageSize {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan fetched beyond its logical page")
 		return page, execution.Neutral
 	}
-	remaining := n.pageSize - n.count
+	remaining := n.pageSize - n.Count
 	n.items = min(n.batchSize, execution.ScanBatchDocuments, int(remaining))
 	sort := "_shard_doc"
 	if a.dialect == OpenSearchProduct {
@@ -199,7 +199,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) (*execution.
 	if page.Failure != nil {
 		return page, execution.Neutral
 	}
-	if !page.Exhausted && n.count+uint64(len(page.Documents)) >= n.pageSize {
+	if !page.Exhausted && n.Count+uint64(len(page.Documents)) >= n.pageSize {
 		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after, BatchSize: n.batchSize}
 		state, _ := json.Marshal(checkpoint)
 		token, err := protocol.EncodeScanToken("search:"+a.dialect, n.fingerprint, state)
