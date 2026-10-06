@@ -34,8 +34,8 @@ type Config struct {
 }
 
 type record struct {
-	announcement    *peerpb.NodeAnnouncement
-	expires, forget time.Time
+	announcement *peerpb.NodeAnnouncement
+	expires      time.Time
 }
 
 type Directory struct {
@@ -98,7 +98,7 @@ func New(cfg Config) (*Directory, error) {
 	}
 	now := time.Now()
 	announcement := &peerpb.NodeAnnouncement{IncarnationId: self, Revision: 1, PeerEndpoint: cfg.PeerAddress, ReplicaGroup: cfg.Group, StoreNames: stores, StoreEndpoints: targets}
-	owned := record{announcement: announcement, expires: now.Add(Lease), forget: now.Add(3 * Lease)}
+	owned := record{announcement: announcement, expires: now.Add(Lease)}
 	d := &Directory{self: self, records: map[string]record{self: owned}, seeds: seeds, done: make(chan struct{})}
 	return d, nil
 }
@@ -212,7 +212,7 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 		return status.Error(codes.Unavailable, "directory closed")
 	}
 	for id, owned := range d.records {
-		if id != d.self && !now.Before(owned.forget) {
+		if id != d.self && !now.Before(owned.expires.Add(2*Lease)) {
 			delete(d.records, id)
 		}
 	}
@@ -255,7 +255,7 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 		copy := proto.Clone(ad).(*peerpb.NodeAnnouncement)
 		copy.LeaseRemainingMs = 0
 		expires := now.Add(time.Duration(ad.LeaseRemainingMs) * time.Millisecond)
-		updated := record{announcement: copy, expires: expires, forget: expires.Add(2 * Lease)}
+		updated := record{announcement: copy, expires: expires}
 		d.records[ad.IncarnationId] = updated
 	}
 	return nil

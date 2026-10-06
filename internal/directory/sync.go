@@ -37,10 +37,9 @@ func (d *Directory) renew(now time.Time) {
 	}
 	owned.announcement.Revision++
 	owned.expires = now.Add(Lease)
-	owned.forget = now.Add(3 * Lease)
 	d.records[d.self] = owned
 	for id, remote := range d.records {
-		if id != d.self && !now.Before(remote.forget) {
+		if id != d.self && !now.Before(remote.expires.Add(2*Lease)) {
 			delete(d.records, id)
 		}
 	}
