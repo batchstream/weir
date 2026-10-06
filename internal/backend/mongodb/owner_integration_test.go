@@ -5,6 +5,7 @@ package mongodb
 import (
 	"context"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,9 @@ import (
 )
 
 func TestMongoOwnerRemoteTail(t *testing.T) {
+	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
+		t.Skip("secure profile opt-in")
+	}
 	f := testmongo.OpenSecure(t)
 	proxy := testmongo.StartProxy(t, &f.Fixture)
 	entered, gate := make(chan struct{}), make(chan struct{})
@@ -158,6 +162,9 @@ func (c *retirementConn) Close() error {
 // A fixed-driver probe, separate from the production Open qualification below:
 // expiring an idle pool member forces removeConnection -> async raw Close -> dial.
 func TestMongoDriverRetirementOwnership(t *testing.T) {
+	if os.Getenv("WEIR_MONGO_SECURE_INTEGRATION") != "1" {
+		t.Skip("secure profile opt-in")
+	}
 	f := testmongo.OpenSecure(t)
 	d := newBoundedDialer(2, 3)
 	cfg := Config{URI: f.URI, Store: "mongo", Pool: 1}

@@ -123,7 +123,10 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 		}
 		get := nativeRequest(t, index, "GET", "/_doc/native")
 		end, capture = runNative(t, a, get, nil)
-		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
+		if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE ||
+			!strings.Contains(capture.body.String(), `"_index":"`+index+`"`) ||
+			!strings.Contains(capture.body.String(), `"_id":"native"`) ||
+			!strings.Contains(capture.body.String(), fmt.Sprintf(`"n":%d`, 7+i)) {
 			t.Fatal("Native GET request target", end, capture.body.String())
 		}
 		status, raw := backend.Do(t, "POST", "/"+index+"/_refresh", "")
@@ -141,19 +144,21 @@ func TestSearchMultipleRequestTargets(t *testing.T) {
 				t.Fatal("target Scan", page.Failure)
 			}
 			for _, document := range page.Documents {
-				var hit struct {
-					Index string `json:"_index"`
-					ID    string `json:"_id"`
+				var source struct {
+					N *int `json:"n"`
 				}
-				if err := json.Unmarshal(document.Data, &hit); err != nil {
+				if err := json.Unmarshal(document.Data, &source); err != nil {
 					t.Fatal(err)
 				}
-				if hit.Index != index {
-					t.Fatal("PIT hit crossed request target", string(document.Data))
+				if source.N == nil {
+					t.Fatal("Scan did not publish business source", string(document.Data))
 				}
-				if hit.ID == "same" {
+				if *source.N == 8-i {
+					t.Fatal("Native source crossed Scan request target", string(document.Data))
+				}
+				if *source.N == 2+i {
 					seenSame = true
-				} else if hit.ID == "native" {
+				} else if *source.N == 7+i {
 					seenNative = true
 				}
 			}

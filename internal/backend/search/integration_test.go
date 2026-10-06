@@ -47,7 +47,7 @@ func TestSearchCRUD(t *testing.T) {
 	if result.GetReadResult().GetMissing() != nil || result.GetReadResult().GetFailure() == nil {
 		t.Fatal("index missing is not record missing", result)
 	}
-	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "plain"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
+	assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(b.Index, "plain"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_TARGET_NOT_FOUND)
 	status, _ = b.Do(t, "HEAD", "/"+b.Index, "")
 	if status != 404 {
 		t.Fatal("index recreated", status)
