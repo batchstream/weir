@@ -7,6 +7,11 @@ in-memory directory. Business payloads never travel through another Weir node.
 Lua evaluates inside the main process. Public and private peer schemas are
 independent; see [protocols](protocols.md) and [discovery design](discovery-design.md).
 
+The Node owns one map of local Stores and one ordered set of listener endpoints.
+Each endpoint binds its listener, server and application/peer role. Startup,
+shutdown and metrics use those same owned resources; directory Store names are
+derived from the Store map.
+
 ## Public requests and completion
 
 Execute is bidirectional. One finite stream selects a Store and one operation
@@ -139,7 +144,8 @@ one check; failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 
-Each Store dispatches while configured max_concurrency and backend working bytes
+The active batch set is the source of truth for execution concurrency. Each Store
+dispatches while configured max_concurrency and backend working bytes
 permit. Transport failures do not replay mutations; the bounded Lua conflict and confirmed-abort
 retries described below retain the original execution deadline. Pending work
 remains bounded by queue bytes and deadlines.
@@ -155,6 +161,8 @@ not a measurement of process RSS. Only a validated empty response establishes
 exhaustion. An unretained tail is fetched again from the last accepted record.
 
 Both backends learn a smaller fetch capacity from the retained prefix size.
+They share the Scan event publication and count state; native fetching and
+checkpoint cleanup remain backend responsibilities.
 Their opaque continuations carry that capacity, separate from the final
 request's remaining page size. Search also halves an excessive native response's
 fetch size without advancing the checkpoint, using the same PIT and absolute
