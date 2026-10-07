@@ -110,9 +110,9 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 			}
 		}
 	}
-	results, feedback := a.executeRecords(context.Background(), works)
-	if feedback != execution.Healthy || len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {
-		t.Fatalf("batch counts/results: feedback=%v qualification=%d reads=%d writes=%d results=%v", feedback, qualifications.Load(), reads.Load(), writes.Load(), results)
+	results := a.executeRecords(context.Background(), works)
+	if len(results) != len(works) || qualifications.Load() != 1 || reads.Load() != 1 || writes.Load() != 1 {
+		t.Fatalf("batch counts/results: qualification=%d reads=%d writes=%d results=%v", qualifications.Load(), reads.Load(), writes.Load(), results)
 	}
 	if string(results[0].GetReadResult().GetDocument().GetData()) != `{"n":9007199254740993}` || results[1].GetReadResult().GetMissing() == nil {
 		t.Fatal("read source/missing evidence", results[:2])
@@ -154,9 +154,9 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "read", "records/s:first"), batchTestPlan(t, a, "read", "records/s:second")}
-			results, signal := a.executeRecords(context.Background(), works)
-			if signal != execution.Neutral || len(results) != 2 || results[1].GetReadResult().GetFailure() == nil {
-				t.Fatal("incomplete/error evidence", results, signal)
+			results := a.executeRecords(context.Background(), works)
+			if len(results) != 2 || results[1].GetReadResult().GetFailure() == nil {
+				t.Fatal("incomplete/error evidence", results)
 			}
 			if (results[0].GetReadResult().GetDocument() != nil) != (mode == "item_error") {
 				t.Fatal("positional evidence or error isolation", results)
@@ -211,7 +211,7 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			cfg := Config{Store: "search", URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "program", "records/s:program"), batchTestPlan(t, a, "put", "records/s:put")}
-			results, signal := a.executeRecords(context.Background(), works)
+			results := a.executeRecords(context.Background(), works)
 			wantCalls, wantOutcome := int32(2), pb.MutationOutcome_APPLIED
 			if mode == "unknown" {
 				wantCalls, wantOutcome = 1, pb.MutationOutcome_UNKNOWN
@@ -219,8 +219,8 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			if mode == "exhausted" {
 				wantCalls = programAttempts
 			}
-			if reads.Load() != wantCalls || writes.Load() != wantCalls || signal != execution.Neutral {
-				t.Fatal("unbounded/ambiguous retry", reads.Load(), writes.Load(), signal)
+			if reads.Load() != wantCalls || writes.Load() != wantCalls {
+				t.Fatal("unbounded/ambiguous retry", reads.Load(), writes.Load())
 			}
 			for i, result := range results {
 				expected := wantOutcome
@@ -265,7 +265,7 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 	replace := batchTestPlan(t, a, "replace", "records/s:replace")
 	replace.Context = caller
 	put := batchTestPlan(t, a, "put", "records/s:put")
-	results, _ := a.executeRecords(context.Background(), []*execution.Plan{replace, put})
+	results := a.executeRecords(context.Background(), []*execution.Plan{replace, put})
 	if writes.Load() != 1 || results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_CANCELLED || results[1].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 		t.Fatal("caller isolation", results, writes.Load())
 	}

@@ -56,20 +56,19 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 		cancelAfterReply bool
 		invalidOK        bool
 		completion       pb.NativeCompletion
-		feedback         execution.Feedback
 	}{
-		{name: "shutdown", code: 91, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
-		{name: "stepdown", code: 189, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
-		{name: "capacity", code: 16500, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
-		{name: "deterministic_error", code: 2, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "success", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Completed},
-		{name: "canceled_after_reply", cancelAfterReply: true, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "invalid_ok", invalidOK: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "success_head_failure", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "success_chunk_failure", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "head_failure", code: 16500, failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "chunk_failure", code: 16500, failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "oversized", code: 16500, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "shutdown", code: 91, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "stepdown", code: 189, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "capacity", code: 16500, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "deterministic_error", code: 2, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "success", completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "canceled_after_reply", cancelAfterReply: true, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "invalid_ok", invalidOK: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "success_head_failure", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "success_chunk_failure", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "head_failure", code: 16500, failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "chunk_failure", code: 16500, failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "oversized", code: 16500, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}}
@@ -125,9 +124,9 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			}
 			open.Request.Data = raw
 			plan.Command = testutil.NativeCommand(open)
-			end, feedback := a.executeNative(ctx, plan, capture.Emit)
-			if end.Completion != test.completion || feedback != test.feedback || calls != 2 {
-				t.Fatal(end, feedback, calls)
+			end := a.executeNative(ctx, plan, capture.Emit)
+			if end.Completion != test.completion || calls != 2 {
+				t.Fatal(end, calls)
 			}
 			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
 				want, err := bson.Marshal(response)
@@ -220,8 +219,8 @@ func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
 	}
 	work.Command = testutil.NativeCommand(request)
 	capture := &nativeCapture{}
-	end, feedback := adapter.executeNative(context.Background(), work, capture.Emit)
-	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || feedback != execution.Neutral || capture.head != nil || capture.body.Len() != 0 {
-		t.Fatal("invalid BSON reached backend", end, feedback)
+	end := adapter.executeNative(context.Background(), work, capture.Emit)
+	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || capture.head != nil || capture.body.Len() != 0 {
+		t.Fatal("invalid BSON reached backend", end)
 	}
 }

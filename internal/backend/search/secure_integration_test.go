@@ -83,7 +83,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("int64 source changed")
 		}
 		works := []*execution.Plan{searchPlan(t, a, "put", searchResource(b.Index, "bulk-a")), searchPlan(t, a, "put", searchResource(b.Index, "bulk-b"))}
-		replies, _ := a.executeRecords(context.Background(), works)
+		replies := a.executeRecords(context.Background(), works)
 		if len(replies) != 2 {
 			t.Fatal("bulk association")
 		}
@@ -107,7 +107,7 @@ func TestSecureSearchQualification(t *testing.T) {
 		count := 0
 		exhausted := false
 		for step := 0; step < 12; step++ {
-			page, _ := a.fetchScan(context.Background(), scan)
+			page := a.fetchScan(context.Background(), scan)
 			if page.Failure != nil {
 				t.Fatal("secure PIT", page.Failure)
 			}
@@ -293,7 +293,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			}
 			t.Logf("confirmed commit then drain=%s; all ledger/socket counts zero", time.Since(start))
 		} else {
-			replies, _ = a.executeRecords(context.Background(), works)
+			replies = a.executeRecords(context.Background(), works)
 		}
 		for _, reply := range replies {
 			if fault == "stale" {

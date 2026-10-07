@@ -80,14 +80,14 @@ func TestSearchSmallReadProfileBatches128Records(t *testing.T) {
 		work := batchTestPlan(t, adapter, "read", fmt.Sprintf("records/s:%d", i))
 		plans = append(plans, work)
 	}
-	results, signal := adapter.executeRecords(context.Background(), plans)
+	results := adapter.executeRecords(context.Background(), plans)
 	for _, result := range results {
 		if result.GetReadResult().GetDocument() == nil {
 			t.Fatal("small record failed", result)
 		}
 	}
-	if requests.Load() != 1 || idsPerRequest.Load() != 128 || signal != execution.Healthy {
-		t.Fatal("small read profile did not collect the complete batch", requests.Load(), idsPerRequest.Load(), signal)
+	if requests.Load() != 1 || idsPerRequest.Load() != 128 {
+		t.Fatal("small read profile did not collect the complete batch", requests.Load(), idsPerRequest.Load())
 	}
 }
 
@@ -137,7 +137,7 @@ func TestSearchReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 				t.Fatal("read profile affected mutation admission", failure)
 			}
 			works := []*execution.Plan{read, write}
-			results, _ := adapter.executeRecords(context.Background(), works)
+			results := adapter.executeRecords(context.Background(), works)
 			result := results[0].GetReadResult()
 			if size <= limit && len(result.GetDocument().Data) != size || size > limit && result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal("read size boundary was not enforced", size, result)

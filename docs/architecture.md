@@ -57,6 +57,11 @@ reserves an RPC slot before DATA decoding. Request deadlines, cancellation and
 input-stall watchdogs apply to discovery and streaming requests. An expired request
 that never reaches a handler still releases its slot.
 
+Deadlines and idle input cancel only their owning RPC, so other calls on the same
+HTTP/2 connection continue. Native keepalive bounds a connection that cannot
+advance its HTTP/2 framing. Output flow-control stalls and socket write stalls
+still close the affected connection; confirmed mutation evidence remains valid.
+
 The SDK reuses round-robin channels with native adaptive HTTP/2 flow control.
 Directory and DNS refresh change selection for future RPCs without moving an
 active call. Both listeners require deployment-isolated networking; the directory
@@ -127,6 +132,9 @@ max_batch_operations. One selected execution holds one working envelope sized
 for its largest operation. A session/resource key serializes same-resource work
 within a stream; distinct resources and streams can share a physical batch.
 Scan and Native use the same scheduler with their required singleton lifecycle.
+Execution mode and cleanup follow the command type. A Scan adapter returns whether
+another bounded fetch is needed; the scheduler retains no duplicate mode flags or
+mutable continuation flag on the plan.
 
 Every record keeps its owning RPC context, result reservation and ordinal. Backend
 results are assigned by dispatched plan identity, because different RPCs can use
@@ -149,6 +157,13 @@ dispatches while configured max_concurrency and backend working bytes
 permit. Transport failures do not replay mutations; the bounded Lua conflict and confirmed-abort
 retries described below retain the original execution deadline. Pending work
 remains bounded by queue bytes and deadlines.
+
+Metrics observe execution rather than control scheduling. The former
+`weir_store_feedback` last-result gauge is removed.
+`weir_store_backend_timeouts_total` counts Runtime-owned backend deadlines reached
+while a caller remains interested; caller cancellation and Native's separately
+managed backend I/O allowance are outside this counter. Per-record outcome
+counters retain the actual backend evidence, including unknown writes.
 
 Scan fetches up to 128 documents per backend call, bounded by the remaining
 logical page size. It validates the complete native response and retains an

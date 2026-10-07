@@ -91,3 +91,11 @@ func TestCanceledSingletonDoesNotRunOrPoisonPeer(t *testing.T) {
 	}
 	ticket.Ack()
 }
+
+func nativeCall() *pb.Command {
+	body := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
+	request := &pb.NativeRequest{Resource: "records", Request: body}
+	variant := &pb.Command_Native{Native: request}
+	command := &pb.Command{Operation: variant}
+	return command
+}

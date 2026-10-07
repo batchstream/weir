@@ -107,7 +107,6 @@ type Snapshot struct {
 	ResultBytes, WorkingBytes, Publishers int
 	ConcurrencyLimit                      int
 	Draining, Closed, Overloaded          bool
-	Feedback                              string
 }
 
 func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
@@ -138,7 +137,7 @@ func (r *Runtime) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
 		return nil, failure
 	}
-	if plan == nil || plan.Command != record.Command() || plan.ID != record.Index() || plan.Streaming || plan.CleanupRequired {
+	if plan == nil || plan.Command != record.Command() || plan.ID != record.Index() || plan.Command.GetNative() != nil || plan.Command.GetScan() != nil {
 		return nil, protocol.Fail(pb.FailureCode_INTERNAL, "invalid prepared record")
 	}
 	plan.Bytes = max(plan.Bytes, record.Bytes())
@@ -169,10 +168,11 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if session != nil && (session.runtime != r || session.closed) {
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "session closed"), changed
 	}
-	if plan != nil && (plan.CleanupRequired || plan.Streaming) && session == nil {
+	singleton := plan != nil && (plan.Command.GetScan() != nil || plan.Command.GetNative() != nil)
+	if singleton && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!plan.Singleton && (plan.Bytes > r.limits.BatchBytes)) {
+	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!singleton && plan.Bytes > r.limits.BatchBytes) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
 	}
 	if plan.Bytes > r.limits.PendingBytes-r.pendingBytes || plan.ResultBytes > r.limits.ResultBytes-r.resultBytes {
@@ -302,7 +302,7 @@ func (r *Runtime) cancelQueuedLocked() {
 			if t.plan.Command.GetRead() != nil || t.plan.Command.GetMutate() != nil {
 				event = execution.FailedEvent(t.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
 			}
-			if t.plan.CleanupRequired {
+			if t.plan.Command.GetScan() != nil {
 				t.state = 3
 			} else {
 				r.completeLocked(t, event)
@@ -377,15 +377,17 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		if seed == nil {
 			seed = t
 		}
+		seedSingleton := seed.plan.Command.GetScan() != nil || seed.plan.Command.GetNative() != nil
+		singleton := t.plan.Command.GetScan() != nil || t.plan.Command.GetNative() != nil
 		previousWrite, duplicateResource := records[t.plan.Key]
-		if len(items) > 0 && (seed.plan.Singleton || t.plan.Singleton || seed.plan.BatchKey != t.plan.BatchKey || (duplicateResource && (previousWrite || t.plan.Command.GetMutate() != nil)) || bytes+t.plan.Bytes > r.limits.BatchBytes) {
+		if len(items) > 0 && (seedSingleton || singleton || seed.plan.BatchKey != t.plan.BatchKey || (duplicateResource && (previousWrite || t.plan.Command.GetMutate() != nil)) || bytes+t.plan.Bytes > r.limits.BatchBytes) {
 			continue
 		}
 		items = append(items, t)
 		selected[t] = true
 		records[t.plan.Key] = t.plan.Command.GetMutate() != nil
 		bytes += t.plan.Bytes
-		if len(items) >= r.limits.BatchOperations || seed.plan.Singleton {
+		if len(items) >= r.limits.BatchOperations || seedSingleton {
 			break
 		}
 	}
@@ -424,7 +426,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	// Only Native emits directly during execution. Its backend calls enforce
 	// their own I/O cap, while output stalls follow the caller's lifetime. Scan
 	// pages and Lua results publish after execution releases this bounded batch.
-	if seed.plan.Streaming {
+	if seed.plan.Command.GetNative() != nil {
 		cancel()
 		ctx, cancel = context.WithCancel(seed.ctx)
 		owned = false
@@ -474,7 +476,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 	r.publishers++
 	t.publishing = true
 	go func() {
-		if !continuation && t.plan.CleanupRequired {
+		if !continuation && t.plan.Command.GetScan() != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			failure := r.adapter.ClosePlan(cleanup, t.plan)
 			cancel()
@@ -578,7 +580,7 @@ func (r *Runtime) execute(b *batch) {
 			ticket.event = event
 			return nil
 		}
-		if plan.Streaming {
+		if plan.Command.GetNative() != nil {
 			return ticket.emit(event)
 		}
 		if events == nil {
@@ -587,6 +589,13 @@ func (r *Runtime) execute(b *batch) {
 			documentBytes = make(map[*Ticket]int)
 		}
 		if plan.Command.GetScan() != nil {
+			if event.GetDocument() == nil && event.GetScanEnd() == nil {
+				return fmt.Errorf("adapter emitted wrong Scan result")
+			}
+			buffered := events[ticket]
+			if len(buffered) != 0 && buffered[len(buffered)-1].GetScanEnd() != nil {
+				return fmt.Errorf("adapter emitted after Scan terminal result")
+			}
 			if len(events[ticket]) >= execution.ScanBatchDocuments+1 {
 				return fmt.Errorf("Scan batch exceeds document bound")
 			}
@@ -610,7 +619,16 @@ func (r *Runtime) execute(b *batch) {
 	r.metrics.executions.WithLabelValues("execution").Inc()
 	r.metrics.batch.Observe(float64(len(plans)))
 	started := time.Now()
-	feedback := r.adapter.Execute(b.ctx, plans, emit)
+	continuation := r.adapter.Execute(b.ctx, plans, emit)
+	// Only a singleton Scan can schedule another bounded fetch.
+	continuation = continuation && len(plans) == 1 && plans[0].Command.GetScan() != nil
+	if continuation {
+		ticket := b.items[0]
+		buffered := events[ticket]
+		if len(buffered) != 0 && buffered[len(buffered)-1].GetScanEnd() != nil {
+			continuation = false
+		}
+	}
 	r.metrics.duration.WithLabelValues("execution").Observe(time.Since(started).Seconds())
 	interested := false
 	for _, ticket := range b.items {
@@ -618,55 +636,35 @@ func (r *Runtime) execute(b *batch) {
 			interested = true
 		}
 	}
-	if !interested {
-		// A canceled caller is not evidence that the database lost capacity.
-		feedback = execution.Neutral
-	} else if b.timeoutOwned && b.ctx.Err() == context.DeadlineExceeded {
-		feedback = execution.Congested
+	if interested && b.timeoutOwned && b.ctx.Err() == context.DeadlineExceeded {
+		r.metrics.backendTimeouts.Inc()
 	}
 	b.cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.workingBytes -= b.workingBytes
 	delete(r.batches, b)
-	if r.closed {
-		feedback = execution.Neutral
-	}
-	for index, ticket := range b.items {
-		ticket.plan.Continue = plans[index].Continue
+	for _, ticket := range b.items {
 		event := ticket.event
 		if event == nil && (ticket.plan.Command.GetRead() != nil || ticket.plan.Command.GetMutate() != nil) {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no result")
 			event = execution.FailedEvent(ticket.plan.Command, pb.MutationOutcome_UNKNOWN, failure)
 		}
-		if ticket.plan.Continue || ticket.plan.CleanupRequired {
+		if ticket.plan.Command.GetScan() != nil {
 			ticket.state = 3
 		} else {
 			r.completeLocked(ticket, event)
 		}
 		if ticket.session != nil && ticket.session.Events != nil && !ticket.acked {
-			r.startPublisherLocked(ticket, events[ticket], ticket.plan.Continue)
+			r.startPublisherLocked(ticket, events[ticket], continuation && ticket.plan.Command.GetScan() != nil)
 		}
 	}
-	r.metrics.feedback, r.metrics.observed = feedback, true
 	r.notifyLocked()
 }
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches), Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded, Feedback: "unobserved"}
-	if r.metrics.observed {
-		snapshot.Feedback = "neutral"
-		if r.metrics.feedback == execution.Healthy {
-			snapshot.Feedback = "healthy"
-		}
-		if r.metrics.feedback == execution.Congested {
-			snapshot.Feedback = "congested"
-		}
-		if r.metrics.feedback == execution.Completed {
-			snapshot.Feedback = "completed"
-		}
-	}
+	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches), Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
 	for t := range r.live {
 		if t.state == 2 {
 			snapshot.Ready++

@@ -68,7 +68,7 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 		opts := batchOperationOptions{resource: fixture.DB + "/records/" + resource, index: 1, program: sources[i]}
 		plans[i] = prepareBatchProgram(t, adapter, opts)
 	}
-	results, _ := adapter.executePrograms(t.Context(), plans)
+	results := adapter.executePrograms(t.Context(), plans)
 	for i, result := range results {
 		want := pb.MutationOutcome_APPLIED
 		if i == 5 || i == 6 {
@@ -171,7 +171,7 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
-			results, _ := adapter.executePrograms(ctx, plans)
+			results := adapter.executePrograms(ctx, plans)
 			for _, result := range results {
 				if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Fatal("confirmed conflict was not recomputed", result)
@@ -226,7 +226,7 @@ func TestMongoLuaBatchCommitReplyLossNeverReapplies(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			results, _ := adapter.executePrograms(ctx, plans)
+			results := adapter.executePrograms(ctx, plans)
 			want := pb.MutationOutcome_APPLIED
 			if mode == "all" {
 				want = pb.MutationOutcome_UNKNOWN
@@ -297,7 +297,7 @@ func TestMongoLuaBatchSchemaRejectionRollsBackThenIsolatesItem(t *testing.T) {
 		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: source}
 		plans = append(plans, prepareBatchProgram(t, adapter, opts))
 	}
-	results, _ := adapter.executePrograms(t.Context(), plans)
+	results := adapter.executePrograms(t.Context(), plans)
 	for i, id := range []string{"before", "invalid", "after"} {
 		want := pb.MutationOutcome_APPLIED
 		value := int32(1)
@@ -343,7 +343,7 @@ func TestMongoLuaBatchLostAbortAcknowledgementNeverRebuilds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	start := time.Now()
-	results, _ := adapter.executePrograms(ctx, plans)
+	results := adapter.executePrograms(ctx, plans)
 	if time.Since(start) > 1500*time.Millisecond {
 		t.Fatal("unconfirmed rollback cleanup exceeded its bound", time.Since(start))
 	}
@@ -419,7 +419,7 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
-	results, _ := adapter.executePrograms(ctx, plans)
+	results := adapter.executePrograms(ctx, plans)
 	for i, result := range results {
 		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 			t.Fatal("bounded batch rejected a valid individual document", i, result)
@@ -478,7 +478,7 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 	plans := []*execution.Plan{work}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	results, _ := adapter.executePrograms(ctx, plans)
+	results := adapter.executePrograms(ctx, plans)
 	result := results[0].GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT || reads.Load() != programAttempts || writes.Load() != programAttempts || aborts.Load() != programAttempts || commits.Load() != 0 {
 		t.Fatal("conflicts escaped the retry bound or committed a stale value", result, reads.Load(), writes.Load(), aborts.Load(), commits.Load())
@@ -494,7 +494,7 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 	}
 	canceled, stop := context.WithCancel(t.Context())
 	stop()
-	results, _ = adapter.executePrograms(canceled, plans)
+	results = adapter.executePrograms(canceled, plans)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || reads.Load() != programAttempts || writes.Load() != programAttempts {
 		t.Fatal("cancelled caller started a new transaction", results[0], reads.Load(), writes.Load())
 	}
@@ -523,7 +523,7 @@ func TestMongoLuaCommitCancellationKeepsOriginalDeadline(t *testing.T) {
 	defer cancel()
 	started := time.Now()
 	plans := []*execution.Plan{work}
-	results, _ := adapter.executePrograms(ctx, plans)
+	results := adapter.executePrograms(ctx, plans)
 	elapsed := time.Since(started)
 	result := results[0].GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || reads.Load() != 1 || writes.Load() != 1 || commits.Load() != 1 || elapsed > 350*time.Millisecond {
@@ -561,7 +561,7 @@ func TestMongoLuaStableUniqueConflictDoesNotRecomputeIndefinitely(t *testing.T) 
 	plans := []*execution.Plan{work}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	results, _ := adapter.executePrograms(ctx, plans)
+	results := adapter.executePrograms(ctx, plans)
 	result := results[0].GetMutationResult()
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || reads.Load() < 1 || reads.Load() > 2 || writes.Load() != reads.Load() || commits.Load() != 0 {
 		t.Fatal("stable nonidentity constraint kept rebuilding transactions", result, reads.Load(), writes.Load(), commits.Load())
@@ -594,7 +594,7 @@ func TestMongoLuaCloseDuringCommitKeepsUnknownOutcome(t *testing.T) {
 	plans := []*execution.Plan{work}
 	done := make(chan []*pb.Event, 1)
 	go func() {
-		results, _ := adapter.executePrograms(ctx, plans)
+		results := adapter.executePrograms(ctx, plans)
 		done <- results
 	}()
 	// Wait for a real successful server reply retained by the proxy. The driver

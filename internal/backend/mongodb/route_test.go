@@ -46,9 +46,9 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		}
 		return nil
 	}
-	feedback := adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
-	if events != 1 || feedback != execution.Healthy {
-		t.Fatal("large legal record failed", events, feedback)
+	adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
+	if events != 1 {
+		t.Fatal("large legal record failed", events)
 	}
 	emptyRecord := &execution.Record{}
 	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
@@ -73,7 +73,7 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if work.Singleton || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" || work.WorkingBytes != programWorkingBytes {
+	if work.Command.GetScan() != nil || work.Command.GetNative() != nil || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" || work.WorkingBytes != programWorkingBytes {
 		t.Fatal("Lua plan did not declare bounded transaction batching")
 	}
 }

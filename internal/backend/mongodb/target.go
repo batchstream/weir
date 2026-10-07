@@ -52,62 +52,61 @@ func (n namespace) String() string {
 
 // Collection structure is a deployment prerequisite and stays stable while the
 // Store is open. Actual read/write commands still enforce backend permissions.
-func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) (*pb.Failure, execution.Feedback) {
+func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) *pb.Failure {
 	lookup, err := a.targets.Acquire(ctx, target)
 	if err != nil {
-		return protocol.ContextFailure(ctx), execution.Neutral
+		return protocol.ContextFailure(ctx)
 	}
 	if lookup.Cached {
-		return nil, execution.Healthy
+		return nil
 	}
-	failure, signal := a.inspectTarget(ctx, target)
+	failure := a.inspectTarget(ctx, target)
 	empty := struct{}{}
 	a.targets.Complete(target, lookup, empty, failure == nil && ctx.Err() == nil)
 	if ctx.Err() != nil {
-		return protocol.ContextFailure(ctx), execution.Neutral
+		return protocol.ContextFailure(ctx)
 	}
-	return failure, signal
+	return failure
 }
 
-func (a *Adapter) inspectTarget(ctx context.Context, target namespace) (*pb.Failure, execution.Feedback) {
+func (a *Adapter) inspectTarget(ctx context.Context, target namespace) *pb.Failure {
 	filter := bson.D{{Key: "name", Value: target.collection}}
 	specs, err := a.client.Database(target.database).ListCollectionSpecifications(ctx, filter)
 	if err != nil {
-		return backendFailure(ctx, err), feedback(ctx, err)
+		return backendFailure(ctx, err)
 	}
 	if len(specs) == 0 {
-		return protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "target collection does not exist"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_TARGET_NOT_FOUND, "target collection does not exist")
 	}
 	if len(specs) != 1 || specs[0].Name != target.collection || specs[0].Type != "collection" {
-		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "one concrete collection required"), execution.Neutral
+		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "one concrete collection required")
 	}
 	if collation := specs[0].Options.Lookup("collation"); collation.Type != 0 {
 		document, valid := collation.DocumentOK()
 		locale, validLocale := document.Lookup("locale").StringValueOK()
 		if !valid || !validLocale || locale != "simple" {
-			return protocol.Fail(pb.FailureCode_UNSUPPORTED, "simple collation required"), execution.Neutral
+			return protocol.Fail(pb.FailureCode_UNSUPPORTED, "simple collation required")
 		}
 	}
 	if capped := specs[0].Options.Lookup("capped"); capped.Type != 0 {
 		value, valid := capped.BooleanOK()
 		if !valid || value {
-			return protocol.Fail(pb.FailureCode_UNSUPPORTED, "capped collections unsupported"), execution.Neutral
+			return protocol.Fail(pb.FailureCode_UNSUPPORTED, "capped collections unsupported")
 		}
 	}
-	return nil, execution.Healthy
+	return nil
 }
 
 // A cancelled group never contacts MongoDB. Read and write commands within one
 // Execute share this qualification; later calls reuse successful target checks.
 // Command builders recheck callers because metadata I/O can outlive them.
-func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	var failure *pb.Failure
-	signal := execution.Neutral
 	for _, work := range plans {
 		if unstarted(ctx, work) == nil {
-			failure, signal = a.qualifyTarget(ctx, work.Backend.(*plan).target)
+			failure = a.qualifyTarget(ctx, work.Backend.(*plan).target)
 			if failure == nil {
-				return nil, signal
+				return nil
 			}
 			break
 		}
@@ -120,5 +119,5 @@ func (a *Adapter) qualifyRecordBatch(ctx context.Context, plans []*execution.Pla
 		}
 		results[i] = result
 	}
-	return results, signal
+	return results
 }

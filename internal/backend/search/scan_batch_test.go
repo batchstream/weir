@@ -92,7 +92,7 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 	defer cancel()
 	var token []byte
 	for step := 0; step < 2; step++ {
-		page, _ := adapter.fetchScan(ctx, work)
+		page := adapter.fetchScan(ctx, work)
 		if page.Failure != nil || page.Exhausted || page.Complete != (step == 1) {
 			t.Fatal("batched fetch", step, page)
 		}
@@ -121,7 +121,7 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 		t.Fatal("checkpoint lost bounded fetch size", resumedState)
 	}
 	for step := 0; step < 2; step++ {
-		page, _ := adapter.fetchScan(ctx, resumed)
+		page := adapter.fetchScan(ctx, resumed)
 		if page.Failure != nil {
 			t.Fatal(page.Failure)
 		}
@@ -211,7 +211,7 @@ func TestScanDownsizesExcessiveResponsesWithoutAdvancing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for step := 0; step < 2; step++ {
-		page, _ := adapter.fetchScan(ctx, work)
+		page := adapter.fetchScan(ctx, work)
 		if page.Failure != nil || len(page.Documents) != 2 || page.Exhausted {
 			t.Fatal("downsize lost bounded result", page)
 		}
@@ -239,7 +239,7 @@ func TestScanSingleExcessiveResponseFailsWithoutReplay(t *testing.T) {
 	}
 	state := work.Backend.(*scanPlan)
 	state.opened, state.pit, state.after, state.hasAfter = true, "previous", 7, true
-	page, _ := adapter.fetchScan(context.Background(), work)
+	page := adapter.fetchScan(context.Background(), work)
 	if page.Failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || len(page.Documents) != 0 || state.after != 7 || calls != 1 {
 		t.Fatal("single excessive result was retried or advanced", page, calls, state.after)
 	}
@@ -269,7 +269,7 @@ func TestScanDownsizingRetainsOriginalDeadline(t *testing.T) {
 	state.opened, state.pit, state.after, state.hasAfter = true, "previous", 7, true
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	page, _ := adapter.fetchScan(ctx, work)
+	page := adapter.fetchScan(ctx, work)
 	if page.Failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || len(page.Documents) != 0 || state.after != 7 || calls.Load() != 2 {
 		t.Fatal("retry refreshed the deadline or advanced", page, calls.Load(), state.after)
 	}
@@ -294,7 +294,7 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	}
 	state := work.Backend.(*scanPlan)
 	state.opened, state.pit = true, "previous"
-	page, _ := adapter.fetchScan(context.Background(), work)
+	page := adapter.fetchScan(context.Background(), work)
 	if page.Failure != nil || len(page.Documents) != execution.ScanBatchDocuments || !page.Complete {
 		t.Fatal("valid structured batch used a singleton JSON limit", page.Failure, len(page.Documents))
 	}
@@ -355,8 +355,117 @@ func TestScanPublicationFailureEndsWithInternalFailure(t *testing.T) {
 		end = event.GetScanEnd()
 		return nil
 	}
-	adapter.streamScan(context.Background(), work, emit)
-	if work.Continue || end == nil || end.Failure.GetCode() != pb.FailureCode_INTERNAL || end.DocumentCount != 0 || end.Exhausted || len(end.NextContinuationToken) != 0 {
-		t.Fatal("collector failure became cancellation or successful terminal", work.Continue, end)
+	continuation := adapter.streamScan(context.Background(), work, emit)
+	if continuation || end == nil || end.Failure.GetCode() != pb.FailureCode_INTERNAL || end.DocumentCount != 0 || end.Exhausted || len(end.NextContinuationToken) != 0 {
+		t.Fatal("collector failure became cancellation or successful terminal", continuation, end)
+	}
+}
+
+func TestScanOpenAndFetchShareDeadlineAndCleanup(t *testing.T) {
+	for _, phase := range []string{"success", "cumulative_deadline", "caller_canceled"} {
+		t.Run(phase, func(t *testing.T) {
+			var searches, cleanups atomic.Int32
+			started := make(chan struct{}, 1)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				switch r.URL.Path {
+				case "/records":
+					_, _ = io.WriteString(w, testIndexReply)
+				case "/records/_pit":
+					if phase == "cumulative_deadline" {
+						time.Sleep(120 * time.Millisecond)
+					}
+					_, _ = io.WriteString(w, `{"id":"opened","_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}`)
+				case "/_search":
+					count := searches.Add(1)
+					if phase == "caller_canceled" {
+						started <- struct{}{}
+						<-r.Context().Done()
+						return
+					}
+					if phase == "cumulative_deadline" {
+						timer := time.NewTimer(120 * time.Millisecond)
+						defer timer.Stop()
+						select {
+						case <-timer.C:
+						case <-r.Context().Done():
+							return
+						}
+					}
+					var rows []json.RawMessage
+					if count == 1 {
+						rows = append(rows, scanBatchHit(0, 0))
+					}
+					_, _ = w.Write(scanBatchReply(rows))
+				case "/_pit":
+					if r.Method != http.MethodDelete {
+						t.Error("unexpected PIT cleanup method", r.Method)
+					}
+					cleanups.Add(1)
+					_, _ = io.WriteString(w, `{"succeeded":true,"num_freed":1}`)
+				default:
+					t.Error("unexpected Scan request", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			})
+			adapter := scanBatchAdapter(t, handler)
+			request := &pb.ScanRequest{Resource: "records", PageSize: 2}
+			variant := &pb.Command_Scan{Scan: request}
+			command := &pb.Command{Operation: variant}
+			work, failure := adapter.PrepareCommand(1, command)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			work.BackendTimeout = 200 * time.Millisecond
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			var end *pb.ScanEnd
+			documents := 0
+			emit := func(_ *execution.Plan, event *pb.Event) error {
+				if event.GetDocument() != nil {
+					documents++
+				} else {
+					end = event.GetScanEnd()
+				}
+				return nil
+			}
+			var continuation bool
+			if phase == "caller_canceled" {
+				done := make(chan bool, 1)
+				go func() { done <- adapter.Execute(ctx, []*execution.Plan{work}, emit) }()
+				select {
+				case <-started:
+					cancel()
+				case <-ctx.Done():
+					t.Fatal("first Scan fetch did not start")
+				}
+				continuation = <-done
+			} else {
+				continuation = adapter.Execute(ctx, []*execution.Plan{work}, emit)
+			}
+			if phase == "success" {
+				if !continuation || documents != 1 || end != nil || searches.Load() != 1 {
+					t.Fatal("PIT opening became an empty scheduler step", continuation, documents, end, searches.Load())
+				}
+				continuation = adapter.Execute(ctx, []*execution.Plan{work}, emit)
+				if continuation || end.GetFailure() != nil || !end.GetExhausted() || end.GetDocumentCount() != 1 {
+					t.Fatal("Scan terminal evidence changed", continuation, end)
+				}
+			} else {
+				code := pb.FailureCode_DEADLINE_EXCEEDED
+				if phase == "caller_canceled" {
+					code = pb.FailureCode_CANCELLED
+				}
+				if continuation || documents != 0 || end.GetFailure().GetCode() != code || end.GetExhausted() || len(end.GetNextContinuationToken()) != 0 || searches.Load() != 1 {
+					t.Fatal("Scan restarted its deadline or continued after cancellation", continuation, documents, end, searches.Load())
+				}
+			}
+			cleanup, stop := context.WithTimeout(context.Background(), time.Second)
+			failure = adapter.ClosePlan(cleanup, work)
+			stop()
+			if failure != nil || cleanups.Load() != 1 {
+				t.Fatal("allocated PIT was not cleaned up", failure, cleanups.Load())
+			}
+		})
 	}
 }

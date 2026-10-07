@@ -89,7 +89,7 @@ func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson
 	work.Command = testutil.NativeCommand(open)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end, _ := adapter.executeNative(ctx, work, capture.Emit)
+	end := adapter.executeNative(ctx, work, capture.Emit)
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil {
 		t.Fatal(end)
 	}
@@ -111,7 +111,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	results, _ := adapter.executeRecords(ctx, plans)
+	results := adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		if result.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target create failed", i, result)
@@ -123,7 +123,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		work.ID = uint64(30 + i)
 		plans = append(plans, work)
 	}
-	results, _ = adapter.executeRecords(ctx, plans)
+	results = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		document := result.GetReadResult().GetDocument()
 		if document == nil || bson.Raw(document.Data).Lookup("n").Int32() != int32(i+1) {
@@ -142,7 +142,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			plans = append(plans, work)
 		}
 	}
-	results, _ = adapter.executeRecords(ctx, plans)
+	results = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		if i%2 == 0 {
 			document := result.GetReadResult().GetDocument()
@@ -167,7 +167,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		}
 		plans = append(plans, work)
 	}
-	results, _ = adapter.executeRecords(ctx, plans)
+	results = adapter.executeRecords(ctx, plans)
 	for i, result := range results {
 		if result.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal("mixed target Lua failed", i, result)
@@ -188,7 +188,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 		}
 		seen := make(map[string]bool)
 		for pageNumber := 0; pageNumber < 5; pageNumber++ {
-			page, _ := adapter.fetchScan(ctx, work)
+			page := adapter.fetchScan(ctx, work)
 			if page.Failure != nil {
 				t.Fatal(target, page.Failure)
 			}
@@ -245,13 +245,13 @@ func TestMongoResourceTargetsConcurrent(t *testing.T) {
 					t.Error(failure)
 					return
 				}
-				results, _ := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
+				results := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
 				if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 					t.Error(target, results)
 					return
 				}
 				read := prepareCounter(t, fixture.adapter, targetResource(target)+"/s:same")
-				results, _ = fixture.adapter.executeRecords(ctx, []*execution.Plan{read})
+				results = fixture.adapter.executeRecords(ctx, []*execution.Plan{read})
 				readDocument := results[0].GetReadResult().GetDocument()
 				if readDocument == nil || bson.Raw(readDocument.Data).Lookup("n").Int32() != int32(i) {
 					t.Error("concurrent target state crossed namespace", target, results)
@@ -299,7 +299,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					if failure != nil {
 						t.Fatal(failure)
 					}
-					page, _ := fixture.adapter.fetchScan(ctx, work)
+					page := fixture.adapter.fetchScan(ctx, work)
 					if page.Failure == nil || len(page.Documents) != 0 || page.Exhausted {
 						t.Fatal("unqualified Scan target accepted", page)
 					}
@@ -320,7 +320,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					capture := &nativeCapture{}
 					open.Request.Data = raw
 					work.Command = testutil.NativeCommand(open)
-					end, _ := fixture.adapter.executeNative(ctx, work, capture.Emit)
+					end := fixture.adapter.executeNative(ctx, work, capture.Emit)
 					if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || capture.head != nil {
 						t.Fatal("unqualified Native target accepted", end)
 					}
@@ -336,7 +336,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					if failure != nil {
 						t.Fatal(failure)
 					}
-					results, _ := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
+					results := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
 					if action == "read" {
 						if results[0].GetReadResult().GetFailure() == nil || results[0].GetReadResult().GetMissing() != nil {
 							t.Fatal("unqualified point read target accepted", results)

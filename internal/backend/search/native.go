@@ -55,7 +55,6 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 
 	native := &nativePlan{index: parts[0], request: httpRequest, body: body}
 	p := &execution.Plan{
-		Singleton:    true,
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + protocol.MaxNativeMetadataBytes + execution.ResultOverheadBytes,
@@ -332,7 +331,7 @@ func (b *nativeIOBudget) failure(caller context.Context, message string) *pb.Fai
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, message)
 }
 
-func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) (*pb.NativeEnd, execution.Feedback) {
+func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) *pb.NativeEnd {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	if a.ctx != nil {
@@ -355,27 +354,27 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	budget.timer = time.AfterFunc(timeout, func() { stopBackend(context.DeadlineExceeded) })
 	defer budget.timer.Stop()
 	defer stopBackend(nil)
-	caps, failure, sample := a.inspect(backendContext, native.index, true)
+	caps, failure := a.inspect(backendContext, native.index, true)
 	if failure != nil {
 		if backendContext.Err() != nil {
 			failure = budget.failure(ctx, "Native index qualification incomplete")
 		}
-		return protocol.NativeFailure(false, failure), sample
+		return protocol.NativeFailure(false, failure)
 	}
 	if d.Method != "GET" {
 		if !caps.nativeWrite {
-			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native bulk requires no default/final ingest pipeline")), execution.Neutral
+			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native bulk requires no default/final ingest pipeline"))
 		}
 		reader := &nativeBulkReader{reader: bufio.NewReaderSize(bytes.NewReader(input), 4096), index: native.index}
 		first, err := reader.item()
 		if err != nil {
-			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid first Native bulk item")), execution.Neutral
+			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid first Native bulk item"))
 		}
 		reader.current = first
 		body = reader
 	}
 	if ctx.Err() != nil {
-		return protocol.NativeFailure(false, protocol.ContextFailure(ctx)), execution.Neutral
+		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
 	endpoint := a.config.URL + "/" + url.PathEscape(native.index) + d.URL.Path
 	if d.URL.RawQuery != "" {
@@ -383,7 +382,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	}
 	request, err := http.NewRequestWithContext(backendContext, d.Method, endpoint, body)
 	if err != nil {
-		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP request")), execution.Neutral
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP request"))
 	}
 	a.configureRequest(request)
 
@@ -407,17 +406,17 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	response, err := a.nativeClient.Do(request)
 	budget.pause()
 	if err != nil {
-		return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete")), execution.Neutral
+		return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete"))
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 100 || response.StatusCode > 599 {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "invalid Native HTTP response status")), execution.Neutral
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "invalid Native HTTP response status"))
 	}
 	if response.ContentLength > NativeResponseLimit ||
 		response.Header.Get("Content-Encoding") != "" ||
 		len(response.Trailer) != 0 ||
 		response.StatusCode == http.StatusSwitchingProtocols {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP response bounds")), execution.Neutral
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP response bounds"))
 	}
 	var metadata bytes.Buffer
 	fmt.Fprintf(&metadata, "HTTP/1.1 %d %s\r\n", response.StatusCode, http.StatusText(response.StatusCode))
@@ -431,7 +430,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		case "content-type", "content-length", "warning", "x-opaque-id", "x-elastic-product", "location", "retry-after", "etag":
 			for _, value := range response.Header.Values(name) {
 				if metadata.Len()+len(name)+len(value)+6 > protocol.MaxNativeMetadataBytes {
-					return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound")), execution.Neutral
+					return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound"))
 				}
 				fmt.Fprintf(&metadata, "%s: %s\r\n", name, value)
 			}
@@ -444,47 +443,39 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Value: value}
 	if err := emit(p, event); err != nil {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable")), execution.Neutral
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable"))
 	}
 	buffer := make([]byte, protocol.NativeChunk)
 	total := 0
 	for {
 		if !budget.resume() {
-			return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete")), execution.Neutral
+			return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete"))
 		}
 		n, err := response.Body.Read(buffer)
 		budget.pause()
 		total += n
 		if total > NativeResponseLimit {
-			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native response limit")), execution.Neutral
+			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native response limit"))
 		}
 		if n > 0 {
 			value := &pb.Event_Chunk{Chunk: append([]byte(nil), buffer[:n]...)}
 			event := &pb.Event{Value: value}
 			if err := emit(p, event); err != nil {
-				return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable")), execution.Neutral
+				return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable"))
 			}
 		}
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP response truncated")), execution.Neutral
+			return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP response truncated"))
 		}
 	}
 	if len(response.Trailer) != 0 {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native HTTP trailers unsupported")), execution.Neutral
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native HTTP trailers unsupported"))
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
-	// Native bodies stay opaque. Record completed GET exchanges without
-	// asserting business success; bulk 2xx can still contain item-level failures.
-	feedback := execution.Neutral
-	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusServiceUnavailable {
-		feedback = execution.Congested
-	} else if d.Method == http.MethodGet && response.StatusCode >= 200 && response.StatusCode < 300 && ctx.Err() == nil {
-		feedback = execution.Completed
-	}
-	return end, feedback
+	return end
 }
 
 // nativeHTTPBody joins finite in-memory validation reads when the HTTP transport

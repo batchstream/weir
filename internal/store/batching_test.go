@@ -139,7 +139,7 @@ type recordBatchAdapter struct {
 	gate    <-chan struct{}
 }
 
-func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	a.started <- plans
 	select {
 	case <-a.gate:
@@ -161,7 +161,7 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 		output := result
 		_ = emit(plans[i], output)
 	}
-	return execution.Healthy
+	return false
 }
 
 func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {

@@ -98,7 +98,7 @@ func TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	results, _ := a.executeRecords(ctx, plans)
+	results := a.executeRecords(ctx, plans)
 	for _, r := range results {
 		if r.GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal(r)
@@ -154,7 +154,7 @@ func TestMissingDeleteBatchAcknowledgedWithoutRead(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	results, _ := a.executeRecords(ctx, plans)
+	results := a.executeRecords(ctx, plans)
 	for _, r := range results {
 		if r.GetMutationResult().Outcome != pb.MutationOutcome_APPLIED {
 			t.Fatal(r)

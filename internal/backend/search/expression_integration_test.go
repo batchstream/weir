@@ -254,20 +254,18 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 				<-start
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				rs, sample := a.executeRecords(ctx, []*execution.Plan{p})
+				rs := a.executeRecords(ctx, []*execution.Plan{p})
 				r := rs[0].GetMutationResult()
 				switch {
 				case r.Outcome == pb.MutationOutcome_APPLIED:
 					applied.Add(1)
 				case r.Outcome == pb.MutationOutcome_NOT_APPLIED && r.GetFailure().GetCode() == pb.FailureCode_CONFLICT:
 					conflicts.Add(1)
-					if sample != execution.Neutral {
-						t.Error("conflict congestion")
-					}
-				case r.Outcome == pb.MutationOutcome_NOT_APPLIED && r.GetFailure().GetCode() == pb.FailureCode_UNAVAILABLE && sample == execution.Congested:
+
+				case r.Outcome == pb.MutationOutcome_NOT_APPLIED && r.GetFailure().GetCode() == pb.FailureCode_UNAVAILABLE && r.GetFailure().GetMessage() == "backend capacity unavailable":
 					congested.Add(1)
 				default:
-					t.Error("unexpected contention result", r, sample)
+					t.Error("unexpected contention result", r)
 				}
 			})
 		}
@@ -302,9 +300,9 @@ func TestSearchExpressionRealConflictEvidence(t *testing.T) {
 	}
 	n := &plan{id: "counter"}
 	opts := expressionReplyOptions{native: n, status: code, raw: raw}
-	result, sample := a.expressionReply(opts)
-	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT || sample != execution.Neutral {
-		t.Fatal(result, sample)
+	result := a.expressionReply(opts)
+	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
+		t.Fatal(result)
 	}
 	_, after := b.Do(t, "GET", "/"+b.Index+"/_doc/counter", "")
 	if !strings.Contains(string(after), `"n":10`) {

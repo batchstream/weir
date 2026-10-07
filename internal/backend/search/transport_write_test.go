@@ -96,9 +96,9 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	results, feedback := adapter.bulkResults(works, 0, nil, err)
-	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || feedback != execution.Neutral {
-		t.Fatal("connection queue cancellation became a committed write or congestion", results, feedback)
+	results := adapter.bulkResults(works, 0, nil, err)
+	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+		t.Fatal("connection queue cancellation became a committed write or congestion", results)
 	}
 }
 
@@ -129,9 +129,9 @@ func TestBulkCustomTransportCannotProveAnUnsentWrite(t *testing.T) {
 		}
 		work := unsentWritePlan()
 		works := []*execution.Plan{work}
-		results, feedback := adapter.bulkResults(works, 0, nil, err)
-		if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
-			t.Fatal("custom transport uncertainty became successful or unapplied", results, feedback)
+		results := adapter.bulkResults(works, 0, nil, err)
+		if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+			t.Fatal("custom transport uncertainty became successful or unapplied", results)
 		}
 	}
 }
@@ -156,9 +156,9 @@ func TestBulkConnectionAcquiredBeforeWriteFailureRemainsUnknown(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	results, feedback := adapter.bulkResults(works, 0, nil, err)
-	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
-		t.Fatal("uncertain connected failure became unapplied", results, feedback)
+	results := adapter.bulkResults(works, 0, nil, err)
+	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+		t.Fatal("uncertain connected failure became unapplied", results)
 	}
 }
 
@@ -187,9 +187,9 @@ func TestBulkBeforeConnectionFailureWasNotApplied(t *testing.T) {
 			}
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
-			results, feedback := adapter.bulkResults(works, 0, nil, err)
-			if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED || feedback != execution.Neutral {
-				t.Fatal("unsent write changed evidence or capacity", results, feedback)
+			results := adapter.bulkResults(works, 0, nil, err)
+			if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
+				t.Fatal("unsent write changed evidence or capacity", results)
 			}
 		})
 	}
@@ -234,8 +234,8 @@ func TestBulkCommittedReplyLossRemainsUnknownWithoutReplay(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	results, feedback := adapter.bulkResults(works, 0, nil, err)
-	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN || feedback != execution.Neutral {
-		t.Fatal("lost acknowledgement changed mutation certainty", results, feedback)
+	results := adapter.bulkResults(works, 0, nil, err)
+	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+		t.Fatal("lost acknowledgement changed mutation certainty", results)
 	}
 }

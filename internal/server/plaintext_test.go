@@ -147,3 +147,83 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 		}
 	}
 }
+
+func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
+	adapter, local := peerLocal(t, "records")
+	limits := DefaultLimits()
+	limits.Stall = 75 * time.Millisecond
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
+	server, address := startPeerServer(t, opts)
+	conn, err := net.DialTimeout("tcp", address, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := io.WriteString(conn, http2.ClientPreface); err != nil {
+		t.Fatal(err)
+	}
+	framer := http2.NewFramer(conn, conn)
+	if err := framer.WriteSettings(); err != nil {
+		t.Fatal(err)
+	}
+	var block bytes.Buffer
+	encoder := hpack.NewEncoder(&block)
+	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
+	for _, field := range fields {
+		if err := encoder.WriteField(field); err != nil {
+			t.Fatal(err)
+		}
+	}
+	headers := http2.HeadersFrameParam{StreamID: 1, BlockFragment: block.Bytes(), EndHeaders: true}
+	if err := framer.WriteHeaders(headers); err != nil {
+		t.Fatal(err)
+	}
+	var encoded bytes.Buffer
+	writer := http2.NewFramer(&encoded, nil)
+	if err := writer.WriteData(1, false, make([]byte, 4096)); err != nil {
+		t.Fatal(err)
+	}
+	// Leave the HTTP/2 reader inside a DATA frame, beyond RPC context control.
+	if _, err := conn.Write(encoded.Bytes()[:10]); err != nil {
+		t.Fatal(err)
+	}
+	ended := false
+	for {
+		frame, err := framer.ReadFrame()
+		if err != nil {
+			if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+				t.Fatal("only the client deadline closed the partial-frame connection", err)
+			}
+			break
+		}
+		switch frame := frame.(type) {
+		case *http2.SettingsFrame:
+			if !frame.IsAck() {
+				if err := framer.WriteSettingsAck(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		case *http2.PingFrame:
+			if !frame.IsAck() {
+				// These bytes cannot be parsed as PING while DATA is incomplete.
+				_ = framer.WritePing(true, frame.Data)
+			}
+		case *http2.RSTStreamFrame:
+			ended = ended || frame.StreamID == 1
+		case *http2.HeadersFrame:
+			ended = ended || frame.StreamID == 1 && frame.StreamEnded()
+		}
+	}
+	if !ended {
+		t.Fatal("RPC input timeout did not terminate its stream before the connection")
+	}
+	until := time.Now().Add(time.Second)
+	for len(server.connectionSlots) != 0 && time.Now().Before(until) {
+		time.Sleep(time.Millisecond)
+	}
+	waitPeerIdle(t, server)
+	if len(server.connectionSlots) != 0 || adapter.commands.Load() != 0 || len(adapter.seen) != 0 {
+		t.Fatal("partial HTTP/2 frame retained resources or executed a record")
+	}
+}

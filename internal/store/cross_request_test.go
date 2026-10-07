@@ -33,14 +33,14 @@ func (a *crossRequestAdapter) PrepareRecord(record *execution.Record) (*executio
 	work := &execution.Plan{ID: record.Index(), Command: record.Command(), Key: record.Key(), BatchKey: record.Segments()[0], Bytes: record.Bytes(), ResultBytes: bytes, WorkingBytes: 1024}
 	return work, nil
 }
-func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	call := crossRequestCall{ctx: ctx, plans: plans}
 	a.calls <- call
 	if a.gate != nil {
 		select {
 		case <-a.gate:
 		case <-ctx.Done():
-			return execution.Neutral
+			return false
 		}
 	}
 	for _, work := range plans {
@@ -59,10 +59,10 @@ func (a *crossRequestAdapter) Execute(ctx context.Context, plans []*execution.Pl
 			event = execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, nil)
 		}
 		if err := emit(work, event); err != nil {
-			return execution.Neutral
+			return false
 		}
 	}
-	return execution.Healthy
+	return false
 }
 func prepareCrossRecord(t testing.TB, runtime *Runtime, index uint64, resource string) *execution.Plan {
 	t.Helper()

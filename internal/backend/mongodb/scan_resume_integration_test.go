@@ -38,8 +38,8 @@ func mongoFinitePage(t *testing.T, adapter *Adapter, request *pb.ScanRequest) ([
 		return nil
 	}
 	for step := uint64(0); step <= uint64(request.PageSize)+2; step++ {
-		adapter.streamScan(ctx, work, emit)
-		if !work.Continue {
+		continuation := adapter.streamScan(ctx, work, emit)
+		if !continuation {
 			return documents, end
 		}
 	}
@@ -277,7 +277,7 @@ func TestMongoScanDeepKeysetUsesIDIndexAndIncludesMaxKey(t *testing.T) {
 	if stats.Returned != 1 || stats.Documents > 2 || stats.Keys > 2 {
 		t.Fatal("deep keyset scanned earlier records", stats)
 	}
-	page, _ := adapter.fetchScan(ctx, work)
+	page := adapter.fetchScan(ctx, work)
 	if page.Failure != nil || len(page.Documents) != 1 || bson.Raw(page.Documents[0].Data).Lookup("_id").Int32() != 1000 || !page.Complete {
 		t.Fatal("deep page", page)
 	}

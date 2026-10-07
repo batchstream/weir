@@ -79,7 +79,7 @@ func TestMongoReadSizeLimitDoesNotConstrainOrMisreportWrites(t *testing.T) {
 			}
 			plans = append(plans, work)
 		}
-		results, _ := adapter.executeRecords(context.Background(), plans)
+		results := adapter.executeRecords(context.Background(), plans)
 		read := results[0].GetReadResult()
 		if size <= limit && len(read.GetDocument().Data) != size || size > limit && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 			t.Fatal("read size boundary was not enforced", size, read)

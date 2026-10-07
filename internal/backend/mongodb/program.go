@@ -38,9 +38,8 @@ type programBatch struct {
 // Programs share a short snapshot transaction only when their target and typed
 // identities are distinct. Caller contexts govern evaluation and admission to W,
 // while the shared execution context governs the transaction's wire calls.
-func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.Event, execution.Feedback) {
+func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
-	signal := execution.Healthy
 	for start := 0; start < len(plans); {
 		target := plans[start].Backend.(*plan).target
 		ids := make(map[any]bool)
@@ -54,22 +53,17 @@ func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) 
 			end++
 		}
 		batch := &programBatch{plans: plans[start:end], results: make([]*pb.MutationResult, end-start)}
-		sample := a.runPrograms(ctx, batch)
+		a.runPrograms(ctx, batch)
 		for i, result := range batch.results {
 			value := &pb.Event_MutationResult{MutationResult: result}
 			event := &pb.Event{Value: value}
 			results[start+i] = event
 		}
-		signal = batchFeedback(signal, sample)
 		start = end
 	}
-	if len(plans) == 0 {
-		signal = execution.Neutral
-	}
-	return results, signal
+	return results
 }
-
-func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) execution.Feedback {
+func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 	for i, work := range batch.plans {
 		if result := unstarted(ctx, work); result != nil {
 			batch.results[i] = result.GetMutationResult()
@@ -77,17 +71,17 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 	}
 	active := batch.active()
 	if len(active) == 0 {
-		return execution.Neutral
+		return
 	}
 	target := batch.plans[active[0]].Backend.(*plan).target
-	if failure, signal := a.qualifyTarget(ctx, target); failure != nil {
+	if failure := a.qualifyTarget(ctx, target); failure != nil {
 		batch.fail(pb.MutationOutcome_NOT_STARTED, failure)
-		return signal
+		return
 	}
 	session, err := a.client.StartSession()
 	if err != nil {
 		batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, err))
-		return execution.Neutral
+		return
 	}
 	ambiguous := false
 	defer func() {
@@ -103,11 +97,11 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 		batch.cancelled(ctx)
 		active = batch.active()
 		if len(active) == 0 {
-			return execution.Neutral
+			return
 		}
 		if err = session.StartTransaction(programTransactionOptions()); err != nil {
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, err))
-			return execution.Neutral
+			return
 		}
 		readPlans := make([]*execution.Plan, len(active))
 		for i, position := range active {
@@ -118,30 +112,32 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 			aborted := a.abortProgramTransaction(session)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return execution.Neutral
+				return
 			}
 			if errors.Is(readErr, errProgramBatchBound) && len(active) > 1 {
-				return a.splitPrograms(ctx, batch, active)
+				a.splitPrograms(ctx, batch, active)
+				return
 			}
 			if shouldRetryProgramTransaction(readErr) && pauseProgram(ctx) {
 				continue
 			}
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
-			return feedback(ctx, readErr)
+			return
 		}
 		writes, writePositions, transformErr := a.transformPrograms(txctx, batch, active, documents)
 		if transformErr != nil {
 			aborted := a.abortProgramTransaction(session)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return execution.Neutral
+				return
 			}
 			if errors.Is(transformErr, errProgramBatchBound) && len(batch.active()) > 1 {
-				return a.splitPrograms(ctx, batch, batch.active())
+				a.splitPrograms(ctx, batch, batch.active())
+				return
 			}
 			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Lua batch exceeds retained document bound")
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
-			return execution.Neutral
+			return
 		}
 		// A cancellation during another member's Lua evaluation only excludes
 		// this caller's not-yet-sent write. Nothing is retracted after W starts.
@@ -159,20 +155,20 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 		writes, writePositions = keptWrites, keptPositions
 		if len(writes) == 0 {
 			a.abortProgramTransaction(session)
-			return execution.Healthy
+			return
 		}
 		replies, writeErr := a.writePrograms(txctx, writes)
 		if writeErr != nil {
 			aborted := a.abortProgramTransaction(session)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return execution.Neutral
+				return
 			}
 			if shouldRetryProgramTransaction(writeErr) && pauseProgram(ctx) {
 				continue
 			}
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, writeErr))
-			return feedback(ctx, writeErr)
+			return
 		}
 		rejected, retry := false, false
 		for i, reply := range replies {
@@ -193,7 +189,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 			aborted := a.abortProgramTransaction(session)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return execution.Neutral
+				return
 			}
 			if !retry {
 				for i, reply := range replies {
@@ -203,7 +199,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 				}
 				if len(batch.active()) == len(active) {
 					batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB batch write acknowledgement incomplete"))
-					return execution.Neutral
+					return
 				}
 			}
 			if pauseProgram(ctx) {
@@ -218,7 +214,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 			release()
 			if err == nil {
 				batch.fail(pb.MutationOutcome_APPLIED, nil)
-				return execution.Healthy
+				return
 			}
 			if !ambiguous && !programHasLabel(err, "UnknownTransactionCommitResult") && programHasLabel(err, "TransientTransactionError") {
 				retryTransaction = true
@@ -243,7 +239,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) executio
 		failure = protocol.ContextFailure(ctx)
 	}
 	batch.fail(outcome, failure)
-	return execution.Neutral
+	return
 }
 
 func (b *programBatch) active() []int {
@@ -284,21 +280,19 @@ func programCallerFailure(ctx context.Context, work *execution.Plan) *pb.Failure
 	return nil
 }
 
-func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positions []int) execution.Feedback {
-	signal := execution.Healthy
+func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positions []int) {
 	for _, part := range [][]int{positions[:len(positions)/2], positions[len(positions)/2:]} {
 		plans := make([]*execution.Plan, len(part))
 		for i, position := range part {
 			plans[i] = batch.plans[position]
 		}
 		child := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
-		sample := a.runPrograms(ctx, child)
+		a.runPrograms(ctx, child)
 		for i, position := range part {
 			batch.results[position] = child.results[i]
 		}
-		signal = batchFeedback(signal, sample)
 	}
-	return signal
+	return
 }
 
 func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]bson.Raw, error) {
@@ -416,7 +410,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 			continue
 		}
 		if transformErr != nil {
-			result, _ := luaProgramFailure(ctx, transformErr)
+			result := luaProgramFailure(ctx, transformErr)
 			batch.results[position] = result
 			continue
 		}
@@ -557,9 +551,9 @@ func withMongoIdentity(document value.Value, identity value.Field, id any) (valu
 	return result, true
 }
 
-func luaProgramFailure(ctx context.Context, err error) (*pb.MutationResult, execution.Feedback) {
+func luaProgramFailure(ctx context.Context, err error) *pb.MutationResult {
 	if ctx.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx)), execution.Neutral
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx))
 	}
 	code := pb.FailureCode_INVALID_ARGUMENT
 	message := "Lua program evaluation failed"
@@ -568,7 +562,7 @@ func luaProgramFailure(ctx context.Context, err error) (*pb.MutationResult, exec
 		message = "Lua program execution limit exceeded"
 	}
 	failure := protocol.Fail(code, message)
-	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
+	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 }
 
 func shouldRetryProgramTransaction(err error) bool {

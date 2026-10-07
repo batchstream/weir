@@ -34,16 +34,16 @@ func (a *sdkIngressReadAdapter) PrepareRecord(record *execution.Record) (*execut
 	return plan, nil
 }
 
-func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	for _, plan := range plans {
 		read := protocol.Missing()
 		result := &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}
 		output := result
 		if err := emit(plan, output); err != nil {
-			return execution.Neutral
+			return false
 		}
 	}
-	return execution.Healthy
+	return false
 }
 
 func (a *sdkIngressReadAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }

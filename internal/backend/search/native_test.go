@@ -103,7 +103,7 @@ func runNative(t *testing.T, a *Adapter, request *pb.NativeRequest, body []byte)
 	p.Command = testutil.NativeCommand(request)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	end, _ := a.executeNative(ctx, p, capture.Emit)
+	end := a.executeNative(ctx, p, capture.Emit)
 	return end, capture
 }
 
@@ -276,22 +276,21 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 		failChunk       bool
 		cancelAfterHead bool
 		completion      pb.NativeCompletion
-		feedback        execution.Feedback
 	}{
-		{name: "complete_get", status: 200, body: `{"_index":"records","_id":"x","found":true}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Completed},
-		{name: "empty_get", status: 204, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Completed},
-		{name: "complete_bulk", method: "POST", status: 200, body: `{"errors":false,"items":[]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "capacity", status: 429, body: "opaque capacity response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
-		{name: "unavailable", status: 503, body: "opaque unavailable response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Congested},
-		{name: "native_bad_request", status: 400, body: `{"error":"native request"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "mixed_bulk", method: "POST", status: 200, body: `{"errors":true,"items":[{"index":{"status":429}}]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "unknown_http_error", status: 500, body: `{"error":"unknown"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "redirect", status: 307, completion: pb.NativeCompletion_RESPONSE_COMPLETE, feedback: execution.Neutral},
-		{name: "canceled_get", status: 200, body: "reply", cancelAfterHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "truncated_capacity", status: 429, body: "short", truncated: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "oversized_capacity", status: 429, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "head_failure", status: 503, body: "unavailable", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
-		{name: "chunk_failure", status: 429, body: "capacity", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, feedback: execution.Neutral},
+		{name: "complete_get", status: 200, body: `{"_index":"records","_id":"x","found":true}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "empty_get", status: 204, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "complete_bulk", method: "POST", status: 200, body: `{"errors":false,"items":[]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "capacity", status: 429, body: "opaque capacity response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "unavailable", status: 503, body: "opaque unavailable response\n", completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "native_bad_request", status: 400, body: `{"error":"native request"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "mixed_bulk", method: "POST", status: 200, body: `{"errors":true,"items":[{"index":{"status":429}}]}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "unknown_http_error", status: 500, body: `{"error":"unknown"}`, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "redirect", status: 307, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
+		{name: "canceled_get", status: 200, body: "reply", cancelAfterHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "truncated_capacity", status: 429, body: "short", truncated: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "oversized_capacity", status: 429, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "head_failure", status: 503, body: "unavailable", failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "chunk_failure", status: 429, body: "capacity", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -343,9 +342,9 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 				capture.cancelAfterHead = cancel
 			}
 			plan.Command = testutil.NativeCommand(open)
-			end, feedback := a.executeNative(ctx, plan, capture.Emit)
-			if end.Completion != test.completion || feedback != test.feedback || calls.Load() != 1 {
-				t.Fatal(end, feedback, calls.Load())
+			end := a.executeNative(ctx, plan, capture.Emit)
+			if end.Completion != test.completion || calls.Load() != 1 {
+				t.Fatal(end, calls.Load())
 			}
 			if test.completion == pb.NativeCompletion_RESPONSE_COMPLETE {
 				metadata := nativeMetadata(t, capture.head)
@@ -386,9 +385,9 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			}
 			capture := &nativeCapture{}
 			plan.Command = testutil.NativeCommand(open)
-			end, feedback := a.executeNative(ctx, plan, capture.Emit)
-			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || feedback != execution.Congested || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
-				t.Fatal(end, feedback, calls.Load(), capture)
+			end := a.executeNative(ctx, plan, capture.Emit)
+			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
+				t.Fatal(end, calls.Load(), capture)
 			}
 		})
 	}

@@ -13,7 +13,7 @@ import (
 
 type metricAdapter struct{ scanTestAdapter }
 
-func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	results := make([]*pb.Event, len(plans))
 	outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_UNKNOWN}
 	for i, p := range plans {
@@ -27,7 +27,7 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 		output := result
 		_ = emit(plans[i], output)
 	}
-	return execution.Congested
+	return false
 }
 func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
@@ -97,7 +97,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(limits.Concurrency) {
 		t.Fatal("configured concurrency metric changed")
 	}
-	if testmetrics.Series(families) != 56 {
+	if testmetrics.Series(families) != 52 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

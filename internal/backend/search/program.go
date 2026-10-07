@@ -8,7 +8,6 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
 )
@@ -17,44 +16,44 @@ const programAttempts = 5
 
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
-func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult, execution.Feedback) {
+func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {
 	currentValue := value.Value{Kind: value.Missing}
 	if *current.Found {
 		var err error
 		currentValue, err = value.DecodeJSON(current.Source)
 		if err != nil {
 			failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored JSON source cannot be transformed losslessly")
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 	}
 	program := *native.program
 	program.Current = currentValue
 	transformed, err := luaengine.Evaluate(ctx, program)
 	if err != nil {
-		mutation, feedback := searchLuaFailure(ctx, err)
-		return nil, mutation, feedback
+		mutation := searchLuaFailure(ctx, err)
+		return nil, mutation
 	}
 	next := *native
 	switch transformed.Action {
 	case "keep":
-		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil), execution.Healthy
+		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 	case "reject":
 		failure := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, transformed.Message)
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Healthy
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	case "delete":
 		if !*current.Found {
-			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil), execution.Healthy
+			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		}
 		next.action, next.expectedResult = "delete", "deleted"
 	case "replace":
 		if !safeProgramSource(transformed.Value) {
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement contains unsupported Search fields")
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 		source, err := value.EncodeJSON(transformed.Value)
 		if err != nil || len(source) > protocol.MaxDocument {
 			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Lua replacement exceeds Search source limits")
-			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 		next.source = source
 		next.action, next.expectedResult = "create", "created"
@@ -63,10 +62,10 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 		}
 	default:
 		failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
-		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
 	write := &next
-	return write, nil, execution.Healthy
+	return write, nil
 }
 
 func safeProgramSource(v value.Value) bool {
@@ -100,24 +99,24 @@ type programWriteReplyOptions struct {
 	raw            []byte
 }
 
-func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.MutationResult, execution.Feedback) {
+func (a *Adapter) programWriteReply(opts programWriteReplyOptions) *pb.MutationResult {
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "conditional write acknowledgement unavailable or incomplete"))
 	if len(opts.raw) > metadataLimit || validateJSON(opts.raw, 4096) != nil {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	var reply expressionResponse
 	if json.Unmarshal(opts.raw, &reply) != nil {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	if reply.Error != nil {
 		if reply.Status != opts.status || reply.Result != "" || reply.Version != nil || reply.Seq != nil || reply.Term != nil || reply.Shards != nil {
-			return unknown, execution.Neutral
+			return unknown
 		}
-		failure, signal := a.reject(reply.Error.Type, opts.status)
+		failure := a.reject(reply.Error.Type, opts.status)
 		if failure == nil {
-			return unknown, execution.Neutral
+			return unknown
 		}
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), signal
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
 	if opts.status != 200 && opts.status != 201 ||
 		reply.Index != opts.index ||
@@ -130,7 +129,7 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.Mutation
 		reply.Term == nil ||
 		*reply.Term < 1 ||
 		reply.Shards == nil {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	shards := reply.Shards
 	if shards.Total == nil ||
@@ -141,23 +140,23 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) (*pb.Mutation
 		*shards.Failed < 0 ||
 		*shards.Successful > *shards.Total ||
 		*shards.Failed > *shards.Total-*shards.Successful {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	if opts.expectedResult == "created" && opts.status != 201 ||
 		opts.expectedResult == "updated" && opts.status != 200 ||
 		opts.expectedResult == "deleted" && opts.status != 200 {
-		return unknown, execution.Neutral
+		return unknown
 	}
 	if *shards.Failed > 0 {
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "conditional write acknowledged but replica acknowledgement failed")
-		return protocol.Mutation(pb.MutationOutcome_APPLIED, failure), execution.Neutral
+		return protocol.Mutation(pb.MutationOutcome_APPLIED, failure)
 	}
-	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil), execution.Healthy
+	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 }
 
-func searchLuaFailure(ctx context.Context, err error) (*pb.MutationResult, execution.Feedback) {
+func searchLuaFailure(ctx context.Context, err error) *pb.MutationResult {
 	if ctx.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx)), execution.Neutral
+		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx))
 	}
 	code := pb.FailureCode_INVALID_ARGUMENT
 	message := "Lua program evaluation failed"
@@ -166,5 +165,5 @@ func searchLuaFailure(ctx context.Context, err error) (*pb.MutationResult, execu
 		message = "Lua program execution limit exceeded"
 	}
 	failure := protocol.Fail(code, message)
-	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure), execution.Neutral
+	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 }

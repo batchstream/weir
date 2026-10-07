@@ -8,6 +8,7 @@ import (
 
 func TestWorkingBudgetBackfillsIndependentWorkWithoutBreakingSessionOrder(t *testing.T) {
 	limits := DefaultLimits()
+	limits.BatchOperations = 1
 	limits.WorkingBytes = 48 << 20
 	runtime := newRuntime(nil, limits)
 	session := runtime.NewSession()
@@ -27,7 +28,6 @@ func TestWorkingBudgetBackfillsIndependentWorkWithoutBreakingSessionOrder(t *tes
 	for index, workload := range workloads {
 		work := plan(uint64(index+1), workload.key, false)
 		work.WorkingBytes = workload.bytes
-		work.Singleton = true
 		ticket, failure, _ := runtime.Submit(ctx, work, session)
 		if failure != nil {
 			t.Fatal(failure)

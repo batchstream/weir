@@ -44,16 +44,16 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				command := &pb.Command{Operation: variant}
 				work := &execution.Plan{Command: command, Backend: native}
 				raw := []byte(fmt.Sprintf(`{"errors":false,"took":1,"items":[{%q:{"_index":"records","_id":"item","status":%d,"_version":1,"_seq_no":0,"_primary_term":1,"result":%q,"_shards":{"total":%d,"successful":%d,"failed":%d}}}]}`, operation, status, action, total, successful, failed))
-				results, signal := adapter.bulkResults([]*execution.Plan{work}, 200, raw, nil)
+				results := adapter.bulkResults([]*execution.Plan{work}, 200, raw, nil)
 				result := results[0].GetMutationResult()
 				if evidence == "zero" {
-					if result.Outcome != pb.MutationOutcome_UNKNOWN || result.Failure == nil || signal != execution.Neutral {
-						t.Fatal("zero primary acknowledgement accepted", result, signal)
+					if result.Outcome != pb.MutationOutcome_UNKNOWN || result.Failure == nil {
+						t.Fatal("zero primary acknowledgement accepted", result)
 					}
 				} else if result.Outcome != pb.MutationOutcome_APPLIED || (result.Failure != nil) != (evidence == "replica_failure") {
 					t.Fatal("confirmed application evidence lost", result)
 				}
-				lost, _ := adapter.bulkResults([]*execution.Plan{work}, 200, raw, errTimeout)
+				lost := adapter.bulkResults([]*execution.Plan{work}, 200, raw, errTimeout)
 				if lost[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("transport failure trusted body", lost[0])
 				}
@@ -69,6 +69,17 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				paths := map[string]int{}
 				escaped := "/" + url.PathEscape(index)
 				handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/_search" {
+						var request scanSearchRequest
+						if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.PIT.ID != "snapshot" {
+							t.Error("Scan fetch lost its qualified index PIT", request.PIT.ID, err)
+							w.WriteHeader(500)
+							return
+						}
+						paths["/_search"]++
+						_, _ = w.Write(scanBatchReply(nil))
+						return
+					}
 					if !strings.HasPrefix(r.URL.EscapedPath(), escaped) || strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")[0] != index {
 						t.Errorf("index was decoded twice or split: %s", r.RequestURI)
 						w.WriteHeader(500)
@@ -117,13 +128,13 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				page, _ := adapter.fetchScan(context.Background(), scan)
+				page := adapter.fetchScan(context.Background(), scan)
 				if page.Failure != nil {
 					t.Fatal(page.Failure)
 				}
 				native := nativeRequest(t, resource, "GET", "/_doc/item")
 				end, _ := runNative(t, adapter, native, nil)
-				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || paths["/_mget"] != 1 || paths["/_doc/item"] != 1 || paths[""] != 1 {
+				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || paths["/_mget"] != 1 || paths["/_doc/item"] != 1 || paths[""] != 1 || paths["/_search"] != 1 {
 					t.Fatal("typed operations did not share concrete index", end, paths)
 				}
 			})
@@ -165,7 +176,7 @@ func TestSearchScanProjectionPublishesSourceAndBindsCheckpoint(t *testing.T) {
 			}
 			state := work.Backend.(*scanPlan)
 			state.opened, state.pit = true, "snapshot"
-			page, _ := adapter.fetchScan(context.Background(), work)
+			page := adapter.fetchScan(context.Background(), work)
 			if page.Failure != nil || len(page.Documents) != 1 || string(page.Documents[0].Data) != `{"n":9223372036854775807}` || !page.Complete || calls != 1 {
 				t.Fatal("hit metadata leaked or private cursor lost", page.Failure)
 			}
@@ -210,7 +221,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			if observations[0].failure.GetCode() != item.code {
 				t.Fatal("warm read classification", observations[0].failure)
 			}
-			_, failure, _ = adapter.inspectTarget(context.Background(), "records", false)
+			_, failure = adapter.inspectTarget(context.Background(), "records", false)
 			if failure.GetCode() != item.code {
 				t.Fatal("initial classification differed", failure)
 			}

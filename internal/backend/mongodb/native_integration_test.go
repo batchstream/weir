@@ -11,7 +11,6 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -78,10 +77,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			capture := &nativeCapture{}
 			open.Request.Data = raw
 			plan.Command = testutil.NativeCommand(open)
-			end, feedback := a.executeNative(ctx, plan, capture.Emit)
-			if mode == "overload" && feedback != execution.Congested {
-				t.Fatal("known Mongo overload did not supply congestion feedback", feedback)
-			}
+			end := a.executeNative(ctx, plan, capture.Emit)
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
 			if mode == "drop" || mode == "response_limit" || mode == "reauth" && os.Getenv("WEIR_MONGO_PROFILE") == "tls" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE

@@ -80,7 +80,7 @@ func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	results, _ := a.executeRecords(context.Background(), []*execution.Plan{work})
+	results := a.executeRecords(context.Background(), []*execution.Plan{work})
 	if len(results) != 1 {
 		t.Fatalf("unexpected transform result: %#v", results)
 	}
@@ -125,7 +125,7 @@ func TestLuaTransformRejectsUnqualifiedPipelines(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			results, _ := a.executeRecords(context.Background(), []*execution.Plan{work})
+			results := a.executeRecords(context.Background(), []*execution.Plan{work})
 			if len(results) != 1 || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
 				t.Fatalf("pipeline was not rejected: %#v", results)
 			}

@@ -220,12 +220,12 @@ func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			work := plan(1, "singleton", false)
-			work.Singleton, work.Streaming = true, streaming
-			var session *Session
+			work.Command = scanCall()
 			if streaming {
-				session = runtime.NewSession()
-				defer session.Close()
+				work.Command = nativeCall()
 			}
+			session := runtime.NewSession()
+			defer session.Close()
 			ticket, failure, _ := runtime.Submit(ctx, work, session)
 			if failure != nil {
 				t.Fatal(failure)
@@ -336,7 +336,10 @@ func TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge(t *testing.T) 
 				work := plan(1, "command", false)
 				work.Command = nil
 				work.Command = scanCall()
-				work.Singleton, work.Streaming = true, streaming
+				work.Command = scanCall()
+				if streaming {
+					work.Command = nativeCall()
+				}
 				if resource == "input" {
 					work.Bytes = execution.EntryOverheadBytes - 1
 				} else {

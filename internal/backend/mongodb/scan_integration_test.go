@@ -42,9 +42,9 @@ func TestMongoScanPublicationFailureIsTerminal(t *testing.T) {
 		end = event.GetScanEnd()
 		return nil
 	}
-	adapter.streamScan(ctx, work, emit)
-	if end == nil || end.Failure == nil || end.Failure.Code != pb.FailureCode_INTERNAL || end.DocumentCount != 0 || work.Continue || end.Exhausted || len(end.NextContinuationToken) != 0 || ctx.Err() != nil {
-		t.Fatal("publication failure did not terminate the Scan", end, work.Continue, ctx.Err())
+	continuation := adapter.streamScan(ctx, work, emit)
+	if end == nil || end.Failure == nil || end.Failure.Code != pb.FailureCode_INTERNAL || end.DocumentCount != 0 || continuation || end.Exhausted || len(end.NextContinuationToken) != 0 || ctx.Err() != nil {
+		t.Fatal("publication failure did not terminate the Scan", end, continuation, ctx.Err())
 	}
 }
 
@@ -217,7 +217,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 		t.Fatal(failure)
 	}
 	defer adapter.closeScan(ctx, work)
-	first, _ := adapter.fetchScan(ctx, work)
+	first := adapter.fetchScan(ctx, work)
 	if first.Failure != nil || len(first.Documents) != execution.ScanBatchDocuments {
 		t.Fatal("first Scan batch failed", first.Failure, len(first.Documents))
 	}
@@ -225,7 +225,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 	state.Count += uint64(len(first.Documents))
 	checkpoint := append([]byte(nil), state.last...)
 	proxy.DropRemaining.Store(1)
-	lost, _ := adapter.fetchScan(ctx, work)
+	lost := adapter.fetchScan(ctx, work)
 	if lost.Failure == nil || len(lost.Documents) != 0 || lost.Exhausted || !bytes.Equal(state.last, checkpoint) {
 		t.Fatal("lost Scan reply advanced the checkpoint", lost)
 	}
@@ -238,7 +238,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 	if finds != 2 {
 		t.Fatal("lost batch was automatically replayed", finds)
 	}
-	recovered, _ := adapter.fetchScan(ctx, work)
+	recovered := adapter.fetchScan(ctx, work)
 	if recovered.Failure != nil || len(recovered.Documents) != records-execution.ScanBatchDocuments {
 		t.Fatal("explicit retry did not recover the lost batch", recovered.Failure, len(recovered.Documents))
 	}
@@ -249,7 +249,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 		}
 	}
 	state.Count += uint64(len(recovered.Documents))
-	end, _ := adapter.fetchScan(ctx, work)
+	end := adapter.fetchScan(ctx, work)
 	if end.Failure != nil || !end.Exhausted || len(end.Documents) != 0 || state.Count != records {
 		t.Fatal("explicit retry did not reach exhaustion", end, state.Count)
 	}
@@ -298,7 +298,7 @@ func TestMongoScanTraversal(t *testing.T) {
 				if calls > size+1 {
 					t.Fatal("did not exhaust")
 				}
-				page, _ := a.fetchScan(ctx, p)
+				page := a.fetchScan(ctx, p)
 				if page.Failure != nil {
 					t.Fatalf("fetch %d: %v", calls, page.Failure)
 				}
@@ -360,7 +360,7 @@ func TestMongoScanFaultPagesAndNoAutomaticRetry(t *testing.T) {
 				p := scanWork(t, a, db)
 				defer a.closeScan(ctx, p)
 				if stage == "next" {
-					page, _ := a.fetchScan(ctx, p)
+					page := a.fetchScan(ctx, p)
 					if page.Failure != nil || len(page.Documents) != 4 {
 						t.Fatal(page)
 					}
@@ -370,7 +370,7 @@ func TestMongoScanFaultPagesAndNoAutomaticRetry(t *testing.T) {
 				} else {
 					proxy.AlterRemaining.Store(1)
 				}
-				page, _ := a.fetchScan(ctx, p)
+				page := a.fetchScan(ctx, p)
 				if page.Failure == nil || len(page.Documents) != 0 || page.Exhausted {
 					t.Fatal("failed page exposed documents", page)
 				}
@@ -418,7 +418,7 @@ func TestMongoScanFetchCancellation(t *testing.T) {
 			p := scanWork(t, a, db)
 			defer a.closeScan(ctx, p)
 			if mode == "cancel_next" {
-				page, _ := a.fetchScan(ctx, p)
+				page := a.fetchScan(ctx, p)
 				if page.Failure != nil || len(page.Documents) != 4 {
 					t.Fatal(page)
 				}
@@ -429,7 +429,7 @@ func TestMongoScanFetchCancellation(t *testing.T) {
 			defer stop()
 
 			start := time.Now()
-			page, _ := a.fetchScan(attempt, p)
+			page := a.fetchScan(attempt, p)
 			if page.Failure == nil || len(page.Documents) != 0 || time.Since(start) > 500*time.Millisecond {
 				t.Fatal("cursor fault/cancel", page, time.Since(start))
 			}
@@ -490,7 +490,7 @@ func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
 				if fetch > count {
 					t.Fatal("bounded scan did not produce exhaustion evidence")
 				}
-				page, _ := adapter.fetchScan(ctx, work)
+				page := adapter.fetchScan(ctx, work)
 				if page.Failure != nil || len(page.Documents) > execution.ScanBatchDocuments {
 					t.Fatal("bounded page failed", page.Failure, len(page.Documents))
 				}

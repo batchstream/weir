@@ -323,12 +323,12 @@ type orderedRecordAdapter struct {
 	second chan struct{}
 }
 
-func (adapter *orderedRecordAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) execution.Feedback {
+func (adapter *orderedRecordAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	if plans[0].Key == "records/s:first" {
 		select {
 		case <-adapter.first:
 		case <-ctx.Done():
-			return execution.Neutral
+			return false
 		}
 	} else {
 		close(adapter.second)

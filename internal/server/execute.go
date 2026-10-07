@@ -74,13 +74,10 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 	defer func() {
 		cancel()
 		session.Close()
-		input.mu.Lock()
-		receiving := input.waiting
-		input.mu.Unlock()
-		// A canceled native RPC already unblocks Recv. An output error with a live
-		// RPC needs transport cancellation only when its receiver is inside Recv.
-		if receiving && stream.Context().Err() == nil {
-			s.abortPeer(stream.Context())
+		// gRPC uses the tap context for native Recv. Cancel this RPC before
+		// joining its receiver, including handler failures with a live caller.
+		if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok {
+			state.cancel()
 		}
 		<-receiverDone
 	}()
@@ -120,8 +117,10 @@ func (input *recordInput) armIdleLocked(server *Server) {
 		stalled := input.waiting && len(input.credits) == RecordStreamItems-1 && !time.Now().Before(input.idleDeadline)
 		input.mu.Unlock()
 		if stalled {
-			server.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
-			server.abortPeer(input.stream.Context())
+			if state, ok := input.stream.Context().Value(rpcKey).(*rpcState); ok && input.stream.Context().Err() == nil {
+				server.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
+				state.cancel()
+			}
 		}
 	})
 }
@@ -224,8 +223,10 @@ func commandKind(command *pb.Command) string {
 
 func (s *Server) receiveFrame(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) (*pb.ExecuteRequest, error) {
 	timer := time.AfterFunc(s.limits.Stall, func() {
-		s.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
-		s.abortPeer(stream.Context())
+		if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok && stream.Context().Err() == nil {
+			s.metrics.watchdogs.WithLabelValues("input_or_result").Inc()
+			state.cancel()
+		}
 	})
 	defer timer.Stop()
 	return stream.Recv()

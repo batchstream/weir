@@ -32,7 +32,7 @@ func executeMongoExpression(t *testing.T, a *Adapter, p *execution.Plan) *pb.Mut
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	results, _ := a.executeRecords(ctx, []*execution.Plan{p})
+	results := a.executeRecords(ctx, []*execution.Plan{p})
 	return results[0].GetMutationResult()
 }
 
