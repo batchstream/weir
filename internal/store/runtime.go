@@ -75,18 +75,18 @@ func (e *Emission) Release() {
 }
 
 type Ticket struct {
-	publishing, released bool
-	runtime              *Runtime
-	session              *Session
-	ctx                  context.Context
-	cancel               context.CancelFunc
-	plan                 *execution.Plan
-	event                *pb.Event
-	ready                chan struct{}
-	queuedAt             time.Time
-	state                uint8
-	abandoned, acked     bool
-	stopWatch            func() bool
+	publishing       bool
+	runtime          *Runtime
+	session          *Session
+	ctx              context.Context
+	cancel           context.CancelFunc
+	plan             *execution.Plan
+	event            *pb.Event
+	ready            chan struct{}
+	queuedAt         time.Time
+	state            uint8
+	abandoned, acked bool
+	stopWatch        func() bool
 }
 type resourceKey struct {
 	session  *Session
@@ -257,7 +257,7 @@ func (s *Session) Close() {
 	}
 }
 func (r *Runtime) releaseLocked(t *Ticket) {
-	if t.released {
+	if t.plan == nil {
 		return
 	}
 	t.acked = true
@@ -265,7 +265,6 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	if t.publishing {
 		return
 	}
-	t.released = true
 	delete(r.live, t)
 	r.pendingBytes -= t.plan.Bytes
 	r.resultBytes -= t.plan.ResultBytes

@@ -18,7 +18,6 @@ import (
 type Node struct {
 	mu            sync.Mutex
 	closed        bool
-	started       bool
 	state         string
 	registry      *prometheus.Registry
 	diagnostics   *diagnostics
@@ -57,7 +56,6 @@ func (n *Node) Start(startup context.Context) error {
 			return
 		}
 
-		n.started = true
 		ctx, cancel := context.WithCancel(context.Background())
 		n.stopGuard = cancel
 		n.guardDone = make(chan struct{})

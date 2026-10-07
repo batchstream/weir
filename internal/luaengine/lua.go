@@ -299,10 +299,7 @@ func luaInt32(state *lua.LState) int {
 	if err != nil || state.GetTop() != 1 {
 		state.RaiseError("invalid int32")
 	}
-	v, err := value.Integer(value.Int32, n)
-	if err != nil {
-		state.RaiseError("invalid int32")
-	}
+	v := value.Value{Kind: value.Int32, Integer: n}
 	return pushCheckedValue(state, v)
 }
 
@@ -311,10 +308,7 @@ func luaInt64(state *lua.LState) int {
 	if err != nil || state.GetTop() != 1 {
 		state.RaiseError("invalid int64")
 	}
-	v, err := value.Integer(value.Int64, n)
-	if err != nil {
-		state.RaiseError("invalid int64")
-	}
+	v := value.Value{Kind: value.Int64, Integer: n}
 	return pushCheckedValue(state, v)
 }
 

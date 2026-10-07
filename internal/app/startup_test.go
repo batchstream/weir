@@ -39,7 +39,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 			if err := node.Start(ctx); !errors.Is(err, context.Canceled) {
 				t.Fatal("Start ignored cancellation", err)
 			}
-			if node.started || node.ready() || node.stopGuard != nil {
+			if node.ready() || node.stopGuard != nil {
 				t.Fatal("canceled Start published serving resources")
 			}
 		}
@@ -55,7 +55,7 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 		}
 		group.Wait()
 		stop()
-		if node.ready() || node.started {
+		if node.ready() || node.stopGuard != nil {
 			t.Fatal("canceled or closed node became ready")
 		}
 		families := testmetrics.Registry(t, node.registry)

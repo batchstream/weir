@@ -190,11 +190,10 @@ func mergeObjects(base, patch Value, depth int, used *budget) (Value, error) {
 	for _, field := range patch.Fields {
 		patchFields[field.Name] = field.Value
 	}
-	baseNames := make(map[string]struct{}, len(base.Fields))
 	result := Value{Kind: Object, Fields: make([]Field, 0, len(base.Fields)+len(patch.Fields))}
 	for _, field := range base.Fields {
-		baseNames[field.Name] = struct{}{}
 		child, exists := patchFields[field.Name]
+		delete(patchFields, field.Name)
 		if exists && child.Kind == Missing {
 			continue
 		}
@@ -227,13 +226,14 @@ func mergeObjects(base, patch Value, depth int, used *budget) (Value, error) {
 		result.Fields = append(result.Fields, field)
 	}
 	for _, field := range patch.Fields {
-		if _, exists := baseNames[field.Name]; exists || field.Value.Kind == Missing {
+		if _, exists := patchFields[field.Name]; !exists || field.Value.Kind == Missing {
 			continue
 		}
 		copied := field.Value
 		var err error
 		if copied.Kind == Object {
-			copied, err = mergeObjects(Value{Kind: Object}, copied, depth+1, used)
+			emptyBase := Value{Kind: Object}
+			copied, err = mergeObjects(emptyBase, copied, depth+1, used)
 		} else {
 			copied, err = clone(copied, depth+1, used)
 		}

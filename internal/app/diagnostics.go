@@ -186,7 +186,7 @@ func (n *Node) closeDiagnostics() {
 		_ = d.http.Close()
 	}
 	_ = d.listener.Close()
-	if n.started {
+	if n.stopGuard != nil {
 		<-d.done
 	}
 }

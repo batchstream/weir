@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -96,7 +95,7 @@ func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 type responseBufferOwner struct {
 	admission *Admission
 	bytes     int64
-	released  atomic.Bool
+	released  bool
 	mu        sync.Mutex
 	message   any
 	timer     *time.Timer
@@ -112,20 +111,22 @@ func (*responseBufferOwner) Get(length int) *[]byte {
 func (owner *responseBufferOwner) Put(*[]byte) {
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
-	if owner.released.CompareAndSwap(false, true) {
-		owner.cleanup.Stop()
-		if owner.timer != nil {
-			owner.timer.Stop()
-			owner.timer = nil
-		}
-		if owner.message != nil {
-			owner.admission.responses.CompareAndDelete(owner.message, owner)
-		}
-		owner.admission.wireBytes.Add(-owner.bytes)
-		owner.message = nil
-		if owner.done != nil {
-			close(owner.done)
-		}
+	if owner.released {
+		return
+	}
+	owner.released = true
+	owner.cleanup.Stop()
+	if owner.timer != nil {
+		owner.timer.Stop()
+		owner.timer = nil
+	}
+	if owner.message != nil {
+		owner.admission.responses.CompareAndDelete(owner.message, owner)
+	}
+	owner.admission.wireBytes.Add(-owner.bytes)
+	owner.message = nil
+	if owner.done != nil {
+		close(owner.done)
 	}
 }
 
@@ -134,13 +135,13 @@ func (owner *responseBufferOwner) Put(*[]byte) {
 func (owner *responseBufferOwner) watch(ctx context.Context, server *Server) {
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
-	if owner.released.Load() {
+	if owner.released {
 		return
 	}
 	owner.timer = time.AfterFunc(server.limits.Stall, func() {
 		owner.mu.Lock()
 		defer owner.mu.Unlock()
-		if owner.released.Load() {
+		if owner.released {
 			return
 		}
 		owner.timer = nil

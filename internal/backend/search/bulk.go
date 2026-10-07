@@ -41,10 +41,14 @@ func (a *Adapter) reject(errorType string, status int) *pb.Failure {
 }
 func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) []*pb.Event {
 	results := make([]*pb.Event, len(works))
+	outcome := pb.MutationOutcome_UNKNOWN
 	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write acknowledgement invalid or incomplete")
 	// A timeout changes what we know about the reply, never whether a connected
 	// mutation might have committed. Keep causes fixed and omit native bodies.
 	switch err {
+	case errWriteNotSent:
+		outcome = pb.MutationOutcome_NOT_APPLIED
+		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")
 	case errTimeout:
 		failure = protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "backend write deadline exceeded; acknowledgement unavailable")
 	case errCanceled:
@@ -57,14 +61,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write response invalid or incomplete; acknowledgement unavailable")
 	}
 	for i, work := range works {
-		results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_UNKNOWN, failure)
-	}
-	if err == errWriteNotSent {
-		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")
-		for i, work := range works {
-			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
-		}
-		return results
+		results[i] = execution.FailedEvent(work.Command, outcome, failure)
 	}
 	if err != nil || len(raw) > responseLimit || validateJSON(raw, 16384) != nil {
 		return results

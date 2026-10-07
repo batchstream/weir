@@ -99,7 +99,8 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		if len(active) == 0 {
 			return
 		}
-		if err = session.StartTransaction(programTransactionOptions()); err != nil {
+		transaction := options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()).SetReadPreference(readpref.Primary())
+		if err = session.StartTransaction(transaction); err != nil {
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, err))
 			return
 		}
@@ -118,7 +119,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 				a.splitPrograms(ctx, batch, active)
 				return
 			}
-			if shouldRetryProgramTransaction(readErr) && pauseProgram(ctx) {
+			if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx) {
 				continue
 			}
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
@@ -164,7 +165,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
 				return
 			}
-			if shouldRetryProgramTransaction(writeErr) && pauseProgram(ctx) {
+			if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx) {
 				continue
 			}
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, writeErr))
@@ -565,10 +566,6 @@ func luaProgramFailure(ctx context.Context, err error) *pb.MutationResult {
 	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 }
 
-func shouldRetryProgramTransaction(err error) bool {
-	return programHasLabel(err, "TransientTransactionError")
-}
-
 func programHasLabel(err error, label string) bool {
 	var serverError mongo.ServerError
 	return errors.As(err, &serverError) && serverError.HasErrorLabel(label)
@@ -608,8 +605,4 @@ func pauseProgram(ctx context.Context) bool {
 	case <-timer.C:
 		return true
 	}
-}
-
-func programTransactionOptions() *options.TransactionOptionsBuilder {
-	return options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()).SetReadPreference(readpref.Primary())
 }
