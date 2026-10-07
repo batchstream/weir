@@ -1,7 +1,7 @@
-github.com/batchstream/weir-go v0.9.0 h1:a4pGdTJd9/5Y8QMTz37ipHpfSXztpPB84Wm4Wl0fc7A=
-github.com/batchstream/weir-go v0.9.0/go.mod h1:lAlK3m/CBl+WZUhMIKwhGdqoeb4wnoteKWppyCfgZLo=
-github.com/batchstream/weir-protocol v0.7.0 h1:+LSSLPCWv8GL8RgkH06LYNT8wDN5tFRAs0rle1Ym4sY=
-github.com/batchstream/weir-protocol v0.7.0/go.mod h1:hHmwPoE9yHYAz7Auc3a14Ijo/uxAef4sQ9nBtyXNcGc=
+github.com/batchstream/weir-go v0.10.0 h1:D4sv8YoXqUP44W+jd/DsbsW6NkZqK5FTbNFWqhDaABA=
+github.com/batchstream/weir-go v0.10.0/go.mod h1:ud7wNpCOrnNuIfwu7CPxkveku9qNi9NrBxuNv44NBfk=
+github.com/batchstream/weir-protocol v0.8.0 h1:A+diMm2VPP0YoAsnVQJTW71rf1vV+IVMyUQ02zta2Oo=
+github.com/batchstream/weir-protocol v0.8.0/go.mod h1:hHmwPoE9yHYAz7Auc3a14Ijo/uxAef4sQ9nBtyXNcGc=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
