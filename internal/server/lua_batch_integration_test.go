@@ -81,7 +81,7 @@ type luaRPCCase struct {
 }
 
 func luaRPCIncrement(amount int64) string {
-	return fmt.Sprintf(`return weir.replace(weir.set(current, "n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("%d"))))`, amount)
+	return fmt.Sprintf(`return function(current, incoming) current.n = current.n + %d; return current end`, amount)
 }
 
 func luaRPCIndependentCases(count int) []luaRPCCase {
@@ -89,10 +89,10 @@ func luaRPCIndependentCases(count int) []luaRPCCase {
 	for i := range cases {
 		cases[i] = luaRPCCase{id: fmt.Sprintf("record-%02d", i), program: luaRPCIncrement(int64(i + 1)), outcome: pb.MutationOutcome_APPLIED, wantN: int64(i + 1)}
 	}
-	cases[count-4].program, cases[count-4].wantN = "return weir.keep()", 0
-	cases[count-3].program, cases[count-3].wantN = `return weir.reject("caller rejected")`, 0
+	cases[count-4].program, cases[count-4].wantN = "return function(current, incoming) return weir.keep() end", 0
+	cases[count-3].program, cases[count-3].wantN = `return function(current, incoming) return weir.reject("caller rejected") end`, 0
 	cases[count-3].outcome, cases[count-3].failure = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PRECONDITION_FAILED
-	cases[count-2].program, cases[count-2].wantN = "return current.missing_method()", 0
+	cases[count-2].program, cases[count-2].wantN = "return function(current, incoming) return current.missing_method() end", 0
 	cases[count-2].outcome, cases[count-2].failure = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_INVALID_ARGUMENT
 	cases[count-1].canceled, cases[count-1].wantN = true, 0
 	return cases

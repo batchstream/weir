@@ -65,7 +65,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 	}
 	defer a.Close()
 	inspections.Store(0)
-	program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`)}
+	program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return {n = current.n + 1} end`)}
 	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
@@ -175,7 +175,7 @@ func TestSearchMixedLuaConflictRereadsOnlyConditionalItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`)}
+	program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return {n = current.n + 1} end`)}
 	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

@@ -27,9 +27,10 @@ const (
 )
 
 type Program struct {
-	Source  string
-	Current value.Value
-	Input   value.Value
+	Source     string
+	Current    value.Value
+	Input      value.Value
+	ObservedAt time.Time
 }
 
 type Result struct {

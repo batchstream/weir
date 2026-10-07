@@ -2,13 +2,16 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -16,6 +19,8 @@ import (
 
 func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	var gets, puts atomic.Int32
+	var timestampMu sync.Mutex
+	var timestamps []string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/records" {
 			_, _ = io.WriteString(w, `{"records":{"settings":{"index.uuid":"test","index.number_of_shards":"1"},"mappings":{"_source":{"enabled":true}}}}`)
@@ -40,14 +45,21 @@ func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 				return
 			}
 			attempt := puts.Add(1)
-			wantBody, wantSequence := `{"n":2}`, "1"
+			wantCount, wantSequence := 2, "1"
 			if attempt == 2 {
-				wantBody, wantSequence = `{"n":11}`, "2"
+				wantCount, wantSequence = 11, "2"
 			}
 			lines := strings.Split(strings.TrimSpace(string(body)), "\n")
-			if len(lines) != 2 || lines[1] != wantBody || !strings.Contains(lines[0], `"if_seq_no":`+wantSequence) || !strings.Contains(lines[0], `"if_primary_term":1`) {
+			var source struct {
+				N         int    `json:"n"`
+				UpdatedAt string `json:"updated_at"`
+			}
+			if len(lines) != 2 || json.Unmarshal([]byte(lines[1]), &source) != nil || source.N != wantCount || source.UpdatedAt == "" || !strings.Contains(lines[0], `"if_seq_no":`+wantSequence) || !strings.Contains(lines[0], `"if_primary_term":1`) {
 				t.Errorf("conditional replacement %d: body=%s query=%s", attempt, body, r.URL.RawQuery)
 			}
+			timestampMu.Lock()
+			timestamps = append(timestamps, source.UpdatedAt)
+			timestampMu.Unlock()
 			if attempt == 1 {
 				_, _ = io.WriteString(w, `{"errors":true,"took":1,"items":[{"index":{"_index":"records","_id":"item","error":{"type":"version_conflict_engine_exception"},"status":409}}]}`)
 				return
@@ -66,7 +78,7 @@ func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 		ctx:    context.Background(),
 	}
 	program := &pb.LuaTransform{
-		Source: []byte(`return weir.replace(weir.object("n", weir.add(weir.get(current, "n"), weir.get(input, "step"))))`),
+		Source: []byte(`return function(current, incoming) return {n = current.n + incoming.step, updated_at = weir.time.now()} end`),
 		Input:  &pb.Document{ContentType: "application/json", Data: []byte(`{"step":1}`)},
 	}
 	form := &pb.Transform_Lua{Lua: program}
@@ -90,10 +102,16 @@ func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 	if gets.Load() != 2 || puts.Load() != 2 {
 		t.Fatalf("conflict did not cause a fresh read and evaluation: gets=%d puts=%d", gets.Load(), puts.Load())
 	}
+	timestampMu.Lock()
+	defer timestampMu.Unlock()
+	observedAt := work.Backend.(*plan).program.ObservedAt
+	if observedAt.IsZero() || len(timestamps) != 2 || timestamps[0] != timestamps[1] || timestamps[0] != observedAt.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("CAS retry changed operation observation time: %v observed=%v", timestamps, observedAt)
+	}
 }
 
 func TestLuaTransformRejectsUnqualifiedPipelines(t *testing.T) {
-	program := &pb.LuaTransform{Source: []byte("return weir.keep()")}
+	program := &pb.LuaTransform{Source: []byte("return function(current, incoming) return weir.keep() end")}
 	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

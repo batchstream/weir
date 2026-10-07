@@ -62,7 +62,7 @@ func TestMongoMixedRecordBatchUsesPointReadAndVerboseBulkWrite(t *testing.T) {
 		if operation.action == "expression" {
 			document = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(1)}}}}
 		}
-		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + operation.id, action: operation.action, index: uint64(i + 3), document: document, program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
+		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + operation.id, action: operation.action, index: uint64(i + 3), document: document, program: `return function(current, incoming) current.n = current.n + 1; return current end`}
 		work, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)
@@ -113,7 +113,7 @@ func TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers(t *testing.T)
 	for i, action := range []string{"read", "put", "put", "program"} {
 		id := []string{"read-missing", "canceled-write", "peer-write", "canceled-program"}[i]
 		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(1)}}
-		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: document, program: "return weir.keep()"}
+		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, action: action, index: uint64(i), document: document, program: "return function(current, incoming) return weir.keep() end"}
 		p, failure := prepareTestRecord(a, batchOperation(t, options))
 		if failure != nil {
 			t.Fatal(failure)

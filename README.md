@@ -132,6 +132,9 @@ Application and peer listeners use plaintext gRPC on an isolated network. Peer
 metadata is not authentication. Lua programs must be trusted: a fresh restricted
 VM, execution/source/value/stack limits and bounded concurrency do not impose a
 hard allocation limit on arbitrary Lua objects.
+Transforms use `function(current, incoming)` with ordinary Lua tables, precise
+64-bit integers and a fixed operation timestamp; see the [Lua guide](docs/lua.md)
+and [product example](examples/lua/product.lua).
 
 The [public and peer protocols](docs/protocols.md) are independent schemas and
 services. The public schema is suitable for future language-specific bindings.

@@ -388,6 +388,9 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 				continue
 			}
 		}
+		if native.program.ObservedAt.IsZero() {
+			native.program.ObservedAt = time.Now()
+		}
 		program := *native.program
 		program.Current = current
 		evaluateContext, cancel := context.WithCancel(ctx)

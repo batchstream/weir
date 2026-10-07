@@ -60,17 +60,34 @@ though no write is needed. `APPLIED` can include a Failure when application is
 confirmed but replica acknowledgement fails. `UNKNOWN` retains ambiguity even
 when a later error has a definite classification.
 
-Lua receives a typed missing value when no old document exists; this differs
-from a document field containing BSON/JSON null. `weir.merge(current,input)`
-treats missing current as an empty object, so
-`return weir.replace(weir.merge(current,input))` can atomically create the record.
-MongoDB restores the resource `_id`; Search uses the resource ID. Concurrent
-first creation retries only a confirmed transaction/CAS conflict from a fresh
-read. `weir.keep()` preserves the record, `weir.delete()` removes it,
-`weir.replace(object)` replaces/creates it, and `weir.reject(message)` returns
-`NOT_APPLIED/PRECONDITION_FAILED`. Returning an object directly is shorthand for
-replace; returning nil or no value is shorthand for keep. These are active Lua
-semantics. Programs run in the main Weir process.
+Lua source must return exactly one function, called as
+`function(current, incoming)`. Missing current or omitted Input is Lua nil.
+Objects and arrays are ordinary Lua tables: fields can be read, assigned and
+deleted with nil; arrays support `#`, iteration, insertion, sorting and filtering.
+The callback must return exactly one object to create/replace the record, or an
+explicit `weir.keep()`, `weir.delete()` or `weir.reject(message)` action. Nil,
+missing returns, multiple returns and scalar results are errors. Reject returns
+`NOT_APPLIED/PRECONDITION_FAILED`. The previous global-value/helper API is removed.
+
+`weir.object()` and `weir.array()` construct explicitly typed empty containers;
+an unmarked empty `{}` is an object. Unmarked nonempty tables with dense integer
+keys starting at 1 are arrays; tables with string keys are objects. Mixed keys,
+sparse arrays, cycles, functions and non-document values cannot be written.
+`weir.null()` represents an explicit BSON/JSON null without deleting a field.
+Input tables retain their container types even when emptied.
+
+Lua 5.4 integers preserve all 64 bits, while floats remain distinct. Existing
+MongoDB int32 fields remain int32 when assigned an in-range integer and promote
+to int64 outside that range; newly created integer fields are int64. Arithmetic
+uses Lua integer overflow and float-promotion rules. Binary, BSON extended values
+and exact JSON number spellings remain typed leaves when carried through the
+script. See [Lua transforms](lua.md) for constructors, libraries and examples.
+
+`weir.time.now()` returns a UTC RFC3339Nano string captured once per operation;
+confirmed transaction/CAS retries reuse it. MongoDB restores the resource `_id`;
+Search uses the resource ID. Concurrent first creation retries only a confirmed
+transaction/CAS conflict from a fresh read. Uncertain writes never replay the
+business callback. Programs run in the main Weir process.
 
 MongoDB Native supports `count` and `findAndModify`, with the command's collection
 matching the target. Its bounded allowlist validates query/sort/fields/update,

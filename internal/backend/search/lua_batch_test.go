@@ -59,12 +59,12 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: t.Context()}
 	ids := []string{"replace", "keep", "reject", "invalid", "delete", "create"}
 	sources := []string{
-		`return weir.replace(weir.set(current, "n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`,
-		`return weir.keep()`,
-		`return weir.reject("business rule")`,
+		`return function(current, incoming) current.n = current.n + 1; return current end`,
+		`return function(current, incoming) return weir.keep() end`,
+		`return function(current, incoming) return weir.reject("business rule") end`,
 		`return "invalid result"`,
-		`return weir.delete()`,
-		`return weir.replace(weir.object("n", weir.i64("3")))`,
+		`return function(current, incoming) return weir.delete() end`,
+		`return function(current, incoming) return {n = 3} end`,
 	}
 	works := make([]*execution.Plan, 0, len(ids))
 	for i, id := range ids {
