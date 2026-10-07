@@ -36,7 +36,8 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				} else if evidence == "replica_failure" {
 					total, failed = 2, 1
 				}
-				native := &plan{index: "records", id: "item", action: operation, expectedResult: action, program: &luaengine.Program{}}
+				program := &luaengine.Program{}
+				native := &plan{index: "records", id: "item", action: operation, program: program}
 				empty := &pb.Empty{}
 				mutationAction := &pb.MutateRequest_Delete{Delete: empty}
 				mutation := &pb.MutateRequest{Resource: "records/s:item", Action: mutationAction}

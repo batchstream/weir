@@ -289,18 +289,21 @@ func TestSearchExpressionRealConflictEvidence(t *testing.T) {
 	if json.Unmarshal(raw, &prior) != nil {
 		t.Fatal("prior")
 	}
-	// A controlled stale native OCC condition obtains an actual backend 409.
+	// A controlled stale native OCC condition obtains an actual bulk item 409.
 	// The public profile does NOT send a caller-selected OCC condition. This
 	// qualifies error evidence, not a claim that the proxy paused inside Update.
 	b.Do(t, "PUT", "/"+b.Index+"/_doc/counter", `{"n":10}`)
-	path := fmt.Sprintf("/%s/_update/counter?retry_on_conflict=0&if_seq_no=%d&if_primary_term=%d", b.Index, prior.Seq, prior.Term)
-	code, raw := b.Do(t, "POST", path, `{"doc":{"n":20}}`)
-	if code != 409 {
+	body := fmt.Sprintf(`{"update":{"_index":%q,"_id":"counter","retry_on_conflict":0,"if_seq_no":%d,"if_primary_term":%d}}
+{"doc":{"n":20}}
+`, b.Index, prior.Seq, prior.Term)
+	code, raw := b.Do(t, "POST", "/_bulk", body)
+	if code != 200 {
 		t.Fatal(code, string(raw))
 	}
-	n := &plan{id: "counter"}
-	opts := expressionReplyOptions{native: n, status: code, raw: raw}
-	result := a.expressionReply(opts)
+	n := &plan{index: b.Index, id: "counter", action: "expression"}
+	work := &execution.Plan{Backend: n}
+	results := a.bulkResults([]*execution.Plan{work}, code, raw, nil)
+	result := results[0].GetMutationResult()
 	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 		t.Fatal(result)
 	}
