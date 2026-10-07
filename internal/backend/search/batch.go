@@ -70,7 +70,6 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		group := make([]*execution.Plan, 0, end-start)
 		indexes := make([]int, 0, end-start)
 		ids := make([]string, 0, end-start)
-		bound = getFramingLimit
 		for i := start; i < end; i++ {
 			work := works[i]
 			caller := ctx
@@ -85,7 +84,6 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 			group = append(group, work)
 			indexes = append(indexes, i)
 			ids = append(ids, work.Backend.(*plan).id)
-			bound += len(work.Backend.(*plan).id) + 16
 		}
 		start = end
 		if len(group) == 0 {

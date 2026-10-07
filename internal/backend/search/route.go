@@ -47,7 +47,9 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		return nil, failure
 	}
 	work.ID = record.Index()
-	work.WorkingBytes = a.readWorkingBytes()
+	// One body, one decoded source set and parsing scratch are bounded by
+	// the complete response cap, independent of the declared single record size.
+	work.WorkingBytes = 3 * batchBodyLimit
 	native := work.Backend.(*plan)
 	work.BatchKey = native.index
 	return work, nil
