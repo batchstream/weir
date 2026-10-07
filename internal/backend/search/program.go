@@ -3,12 +3,12 @@ package search
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
 )
@@ -34,8 +34,7 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 	program.Current = currentValue
 	transformed, err := luaengine.Evaluate(ctx, program)
 	if err != nil {
-		mutation := searchLuaFailure(ctx, err)
-		return nil, mutation
+		return nil, execution.LuaFailure(ctx, err)
 	}
 	next := *native
 	switch transformed.Action {
@@ -146,18 +145,4 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) *pb.MutationR
 		return protocol.Mutation(pb.MutationOutcome_APPLIED, failure)
 	}
 	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
-}
-
-func searchLuaFailure(ctx context.Context, err error) *pb.MutationResult {
-	if ctx.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx))
-	}
-	code := pb.FailureCode_INVALID_ARGUMENT
-	message := "Lua program evaluation failed"
-	if errors.Is(err, context.DeadlineExceeded) {
-		code = pb.FailureCode_DEADLINE_EXCEEDED
-		message = "Lua program execution limit exceeded"
-	}
-	failure := protocol.Fail(code, message)
-	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 }
