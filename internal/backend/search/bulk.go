@@ -13,6 +13,37 @@ type nativeError struct {
 	Type string `json:"type"`
 }
 
+type bulkItem struct {
+	Index   string                                    `json:"_index"`
+	ID      string                                    `json:"_id"`
+	Result  string                                    `json:"result"`
+	Version *int64                                    `json:"_version"`
+	Seq     *int64                                    `json:"_seq_no"`
+	Term    *int64                                    `json:"_primary_term"`
+	Shards  *struct{ Total, Successful, Failed *int } `json:"_shards"`
+	Error   *nativeError                              `json:"error"`
+	Status  int                                       `json:"status"`
+}
+
+func (item *bulkItem) validShards() bool {
+	shards := item.Shards
+	return shards != nil &&
+		shards.Total != nil && shards.Successful != nil && shards.Failed != nil &&
+		*shards.Successful >= 1 && *shards.Total >= *shards.Successful &&
+		*shards.Failed >= 0 && *shards.Failed <= *shards.Total-*shards.Successful
+}
+
+func (native *plan) bulkAction() string {
+	switch native.action {
+	case "replace":
+		return "index"
+	case "expression":
+		return "update"
+	default:
+		return native.action
+	}
+}
+
 func (a *Adapter) reject(errorType string, status int) *pb.Failure {
 	switch {
 	case status == 401 && errorType == "security_exception":
@@ -101,17 +132,11 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	}
 	// Validate the entire positional correspondence before trusting any item.
 	hadErrors := false
-	items := make([]expressionResponse, len(works))
+	items := make([]bulkItem, len(works))
 	for i, work := range works {
 		native := work.Backend.(*plan)
-		action := native.action
-		if action == "replace" {
-			action = "index"
-		} else if action == "expression" {
-			action = "update"
-		}
 		entry := envelope.Items[i]
-		encoded, ok := entry[action]
+		encoded, ok := entry[native.bulkAction()]
 		item := &items[i]
 		if !ok || len(entry) != 1 || json.Unmarshal(encoded, item) != nil || item.Index != native.index || item.ID != native.id {
 			return results
@@ -123,56 +148,52 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	}
 	for i, work := range works {
 		native := work.Backend.(*plan)
-		action := native.action
-		if action == "replace" {
-			action = "index"
-		} else if action == "expression" {
-			action = "update"
-		}
-		encoded := envelope.Items[i][action]
 		item := &items[i]
-		if native.program != nil || native.action == "expression" {
-			var mutation *pb.MutationResult
+		transformed := native.program != nil || native.action == "expression"
+		acknowledgement := "write"
+		if transformed {
+			acknowledgement = "update"
 			if native.program != nil {
-				opts := programWriteReplyOptions{
-					index:          native.index,
-					id:             native.id,
-					expectedResult: native.expectedResult,
-					status:         item.Status,
-					raw:            encoded,
-				}
-				mutation = a.programWriteReply(opts)
-			} else {
-				opts := expressionReplyOptions{native: native, status: item.Status, raw: encoded}
-				mutation = a.expressionReply(opts)
+				acknowledgement = "conditional write"
 			}
-			results[i] = execution.FailedEvent(work.Command, mutation.Outcome, mutation.Failure)
-			continue
+			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, acknowledgement+" acknowledgement unavailable or incomplete")
+			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_UNKNOWN, failure)
+			encoded := envelope.Items[i][native.bulkAction()]
+			if len(encoded) > metadataLimit || validateJSON(encoded, 4096) != nil {
+				continue
+			}
 		}
 		if item.Error != nil {
 			failure := a.reject(item.Error.Type, item.Status)
+			if native.action == "expression" && item.Status == 404 && item.Error.Type == "document_missing_exception" {
+				failure = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record missing")
+			}
 			if item.Status < 400 || failure == nil || item.Result != "" || item.Version != nil || item.Seq != nil || item.Term != nil || item.Shards != nil {
 				continue
 			}
-			if native.action == "create" && failure.Code == pb.FailureCode_CONFLICT {
+			if native.action == "create" && native.program == nil && failure.Code == pb.FailureCode_CONFLICT {
 				failure = protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, "record already exists")
 			}
 			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
 		}
 		valid := false
-		switch action {
+		switch native.action {
 		case "create":
 			valid = item.Status == 201 && item.Result == "created"
 		case "index":
-			valid = item.Status == 201 && item.Result == "created" || item.Status == 200 && item.Result == "updated"
+			valid = item.Status == 200 && item.Result == "updated" ||
+				native.program == nil && item.Status == 201 && item.Result == "created"
+		case "replace":
+			valid = item.Status == 200 && item.Result == "updated"
 		case "delete":
-			valid = item.Status == 200 && item.Result == "deleted" || item.Status == 404 && item.Result == "not_found"
-		}
-		if native.action == "replace" && item.Result != "updated" {
-			valid = false
+			valid = item.Status == 200 && item.Result == "deleted" ||
+				native.program == nil && item.Status == 404 && item.Result == "not_found"
+		case "expression":
+			valid = item.Status == 200 && (item.Result == "updated" || item.Result == "noop")
 		}
 		if !valid ||
+			transformed && (item.Version == nil || *item.Version < 1) ||
 			item.Seq == nil ||
 			item.Term == nil ||
 			*item.Seq < 0 ||
@@ -180,9 +201,12 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			!item.validShards() {
 			continue
 		}
+		if native.action == "expression" && item.Result == "noop" && *item.Shards.Failed != 0 {
+			continue
+		}
 		var postWriteFailure *pb.Failure
 		if *item.Shards.Failed != 0 {
-			postWriteFailure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write acknowledged but replica acknowledgement failed")
+			postWriteFailure = protocol.Fail(pb.FailureCode_UNAVAILABLE, acknowledgement+" acknowledged but replica acknowledgement failed")
 		}
 		results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, postWriteFailure)
 	}

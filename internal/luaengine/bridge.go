@@ -150,14 +150,8 @@ func (b *bridge) wrapLeaf(v value.Value) vm.Value {
 	return vm.NewUserdataValue(leaf, b.leafMeta)
 }
 
+// toLua converts values already checked by ValidateProgram.
 func (b *bridge) toLua(v value.Value) (vm.Value, error) {
-	if err := value.Validate(v); err != nil {
-		return vm.Nil, err
-	}
-	return b.encode(v)
-}
-
-func (b *bridge) encode(v value.Value) (vm.Value, error) {
 	if b.state != nil {
 		if err := b.state.CheckInterrupt(); err != nil {
 			return vm.Nil, err
@@ -235,7 +229,7 @@ func (b *bridge) encodeChild(v value.Value) (vm.Value, value.Value, error) {
 			return vm.NewFloat(number), hint, nil
 		}
 	}
-	converted, err := b.encode(v)
+	converted, err := b.toLua(v)
 	return converted, hint, err
 }
 

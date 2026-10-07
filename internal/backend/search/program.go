@@ -2,13 +2,12 @@ package search
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
 )
@@ -34,8 +33,7 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 	program.Current = currentValue
 	transformed, err := luaengine.Evaluate(ctx, program)
 	if err != nil {
-		mutation := searchLuaFailure(ctx, err)
-		return nil, mutation
+		return nil, execution.LuaFailure(ctx, err)
 	}
 	next := *native
 	switch transformed.Action {
@@ -48,7 +46,7 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 		if !*current.Found {
 			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		}
-		next.action, next.expectedResult = "delete", "deleted"
+		next.action = "delete"
 	case "replace":
 		if !safeProgramSource(transformed.Value) {
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement contains unsupported Search fields")
@@ -60,9 +58,9 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
 		next.source = source
-		next.action, next.expectedResult = "create", "created"
+		next.action = "create"
 		if *current.Found {
-			next.action, next.expectedResult = "index", "updated"
+			next.action = "index"
 		}
 	default:
 		failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
@@ -93,71 +91,4 @@ func safeProgramSource(v value.Value) bool {
 		}
 	}
 	return v.Kind != value.Missing && v.Kind != value.Bytes && (v.Kind != value.Extended || value.IsJSONNumber(v))
-}
-
-type programWriteReplyOptions struct {
-	index          string
-	id             string
-	expectedResult string
-	status         int
-	raw            []byte
-}
-
-func (a *Adapter) programWriteReply(opts programWriteReplyOptions) *pb.MutationResult {
-	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "conditional write acknowledgement unavailable or incomplete"))
-	if len(opts.raw) > metadataLimit || validateJSON(opts.raw, 4096) != nil {
-		return unknown
-	}
-	var reply expressionResponse
-	if json.Unmarshal(opts.raw, &reply) != nil {
-		return unknown
-	}
-	if reply.Error != nil {
-		if reply.Status != opts.status || reply.Result != "" || reply.Version != nil || reply.Seq != nil || reply.Term != nil || reply.Shards != nil {
-			return unknown
-		}
-		failure := a.reject(reply.Error.Type, opts.status)
-		if failure == nil {
-			return unknown
-		}
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-	}
-	if opts.status != 200 && opts.status != 201 ||
-		reply.Index != opts.index ||
-		reply.ID != opts.id ||
-		reply.Result != opts.expectedResult ||
-		reply.Version == nil ||
-		*reply.Version < 1 ||
-		reply.Seq == nil ||
-		*reply.Seq < 0 ||
-		reply.Term == nil ||
-		*reply.Term < 1 ||
-		!reply.validShards() {
-		return unknown
-	}
-	shards := reply.Shards
-	if opts.expectedResult == "created" && opts.status != 201 ||
-		opts.expectedResult == "updated" && opts.status != 200 ||
-		opts.expectedResult == "deleted" && opts.status != 200 {
-		return unknown
-	}
-	if *shards.Failed > 0 {
-		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "conditional write acknowledged but replica acknowledgement failed")
-		return protocol.Mutation(pb.MutationOutcome_APPLIED, failure)
-	}
-	return protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
-}
-
-func searchLuaFailure(ctx context.Context, err error) *pb.MutationResult {
-	if ctx.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx))
-	}
-	code := pb.FailureCode_INVALID_ARGUMENT
-	message := "Lua program evaluation failed"
-	if errors.Is(err, context.DeadlineExceeded) {
-		code = pb.FailureCode_DEADLINE_EXCEEDED
-		message = "Lua program execution limit exceeded"
-	}
-	failure := protocol.Fail(code, message)
-	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 }

@@ -412,8 +412,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 			continue
 		}
 		if transformErr != nil {
-			result := luaProgramFailure(ctx, transformErr)
-			batch.results[position] = result
+			batch.results[position] = execution.LuaFailure(ctx, transformErr)
 			continue
 		}
 		prepared := &plan{target: native.target, id: native.id}
@@ -551,20 +550,6 @@ func withMongoIdentity(document value.Value, identity value.Field, id any) (valu
 		return zero, false
 	}
 	return result, true
-}
-
-func luaProgramFailure(ctx context.Context, err error) *pb.MutationResult {
-	if ctx.Err() != nil {
-		return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.ContextFailure(ctx))
-	}
-	code := pb.FailureCode_INVALID_ARGUMENT
-	message := "Lua program evaluation failed"
-	if errors.Is(err, context.DeadlineExceeded) {
-		code = pb.FailureCode_DEADLINE_EXCEEDED
-		message = "Lua program execution limit exceeded"
-	}
-	failure := protocol.Fail(code, message)
-	return protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 }
 
 func programHasLabel(err error, label string) bool {

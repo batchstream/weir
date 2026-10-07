@@ -195,13 +195,11 @@ func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
 	native := work.Backend.(*plan)
 	metadata := map[string]any{"_index": native.index, "_id": native.id}
-	action := native.action
-	switch action {
+	action := native.bulkAction()
+	switch native.action {
 	case "expression":
-		action = "update"
 		metadata["retry_on_conflict"] = 0
 	case "replace":
-		action = "index"
 		metadata["pipeline"] = "_none"
 	default:
 		if action != "delete" {

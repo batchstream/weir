@@ -50,12 +50,11 @@ type Adapter struct {
 }
 
 type plan struct {
-	index          string
-	id             string
-	action         string
-	source         []byte
-	program        *luaengine.Program
-	expectedResult string
+	index   string
+	id      string
+	action  string
+	source  []byte
+	program *luaengine.Program
 }
 
 type capabilities struct{ source, write, nativeWrite bool }

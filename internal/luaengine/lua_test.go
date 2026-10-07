@@ -237,6 +237,27 @@ func TestEvaluateSourceValueAndLibraryResultBounds(t *testing.T) {
 	}
 }
 
+func TestEvaluateRejectsInvalidValuesBeforeRunningSource(t *testing.T) {
+	noncanonical := value.Value{Kind: value.Bool, Text: "unexpected payload"}
+	overflow := value.Value{Kind: value.Int32, Integer: 2147483648}
+	duplicate := ValueObject(Field("same", ValueInt32(1)), Field("same", ValueInt32(2)))
+	invalidUTF8 := ValueString(string([]byte{255}))
+	for _, invalid := range []value.Value{noncanonical, overflow, duplicate, invalidUTF8} {
+		for _, name := range []string{"current", "input"} {
+			program := testProgram(`error("source executed")`)
+			if name == "current" {
+				program.Current = invalid
+			} else {
+				program.Input = invalid
+			}
+			_, err := luaengine.Evaluate(context.Background(), program)
+			if err == nil || !strings.HasPrefix(err.Error(), "invalid "+name+" value:") {
+				t.Fatalf("invalid %s kind %v reached Lua source: %v", name, invalid.Kind, err)
+			}
+		}
+	}
+}
+
 func TestEvaluateProductExampleUsesStableObservationTime(t *testing.T) {
 	source, err := os.ReadFile("../../examples/lua/product.lua")
 	if err != nil {
