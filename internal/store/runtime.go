@@ -393,30 +393,23 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	if len(items) == 0 {
 		return nil
 	}
+	backendDeadline := now.Add(r.limits.BackendTimeout)
 	workingBytes := 0
-	for _, item := range items {
-		workingBytes = max(workingBytes, item.plan.WorkingBytes)
-	}
-	if r.workingBytes+workingBytes > r.limits.WorkingBytes {
-		return nil
-	}
+	latest := now
 	for _, t := range items {
 		if t.ctx.Err() != nil || t.abandoned {
 			r.cancelQueuedLocked()
 			return nil
 		}
-	}
-	latest := now
-	for _, t := range items {
+		workingBytes = max(workingBytes, t.plan.WorkingBytes)
 		deadline, ok := t.ctx.Deadline()
 		if !ok {
-			deadline = now.Add(r.limits.BackendTimeout)
+			deadline = backendDeadline
 		}
 		if deadline.After(latest) {
 			latest = deadline
 		}
 	}
-	backendDeadline := now.Add(r.limits.BackendTimeout)
 	owned := !backendDeadline.After(latest)
 	if latest.Before(backendDeadline) {
 		backendDeadline = latest
