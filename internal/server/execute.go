@@ -41,9 +41,10 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 	if err := protocol.ValidateExecuteRequest(request); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	runtime, err := s.hostedStore(request.StoreName)
-	if err != nil {
-		return err
+	runtime, ok := s.stores[request.StoreName]
+	if !ok {
+		s.admission.rejections.WithLabelValues("execute").Inc()
+		return status.Error(codes.Unavailable, "Store is not hosted here; ResolveStore before sending business requests")
 	}
 	kind := commandKind(request.Command)
 	if kind == "scan" || kind == "native" {

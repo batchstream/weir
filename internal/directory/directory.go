@@ -40,13 +40,13 @@ type record struct {
 
 type Directory struct {
 	peerpb.UnimplementedPeerDiscoveryServiceServer
-	mu              sync.Mutex
-	self            string
-	records         map[string]record
-	seeds           []string
-	started, closed bool
-	cancel          context.CancelFunc
-	done            chan struct{}
+	mu      sync.Mutex
+	self    string
+	records map[string]record
+	seeds   []string
+	closed  bool
+	cancel  context.CancelFunc
+	done    chan struct{}
 }
 
 func New(cfg Config) (*Directory, error) {

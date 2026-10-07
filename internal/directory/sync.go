@@ -20,10 +20,9 @@ import (
 func (d *Directory) Start(ctx context.Context) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.started || d.closed {
+	if d.cancel != nil || d.closed {
 		return
 	}
-	d.started = true
 	ctx, d.cancel = context.WithCancel(ctx)
 	go d.run(ctx)
 }
@@ -140,7 +139,7 @@ func (d *Directory) Close(ctx context.Context) error {
 		return nil
 	}
 	d.closed = true
-	started, cancel := d.started, d.cancel
+	cancel := d.cancel
 	owned := d.records[d.self]
 	owned.announcement.Revision++
 	owned.announcement.Withdrawn = true
@@ -149,7 +148,7 @@ func (d *Directory) Close(ctx context.Context) error {
 	owned.expires = time.Now().Add(Lease)
 	d.records[d.self] = owned
 	d.mu.Unlock()
-	if started {
+	if cancel != nil {
 		cancel()
 		<-d.done
 	}

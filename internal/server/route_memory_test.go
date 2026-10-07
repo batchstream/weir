@@ -3,21 +3,22 @@ package server
 import (
 	"bytes"
 	"encoding/binary"
-	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
-	"github.com/batchstream/weir/internal/directory"
-	"github.com/batchstream/weir/internal/store"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/hpack"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"net"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
+	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/store"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/hpack"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestEncodedResponseCreditsFollowFinalTransportReference(t *testing.T) {
@@ -54,6 +55,44 @@ func TestEncodedResponseCreditsFollowFinalTransportReference(t *testing.T) {
 		if admission.wireBytes.Load() != 0 {
 			t.Fatal("transport final free leaked encoded byte credits")
 		}
+	}
+}
+
+func TestEncodedResponseConcurrentCleanupReturnsCreditOnce(t *testing.T) {
+	limits := DefaultLimits()
+	admission, err := NewAdmission(limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := &responseCodec{admission: admission}
+	response := &pb.ExecuteResponse{Index: 1}
+	encoded, err := codec.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := admission.responses.Load(response)
+	if !ok {
+		t.Fatal("encoded response did not retain its owner")
+	}
+	owner := entry.(*responseBufferOwner)
+	start := make(chan struct{})
+	var group sync.WaitGroup
+	group.Go(func() { <-start; encoded.Free() })
+	for range 8 {
+		group.Go(func() { <-start; owner.Put(nil) })
+	}
+	close(start)
+	group.Wait()
+	if admission.wireBytes.Load() != 0 {
+		t.Fatal("concurrent native and orphan cleanup returned credits more than once")
+	}
+	if _, retained := admission.responses.Load(response); retained {
+		t.Fatal("concurrent cleanup retained the source message")
+	}
+	select {
+	case <-owner.done:
+	default:
+		t.Fatal("concurrent cleanup did not complete publication ownership")
 	}
 }
 
