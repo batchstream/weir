@@ -128,20 +128,10 @@ func (a *Adapter) programWriteReply(opts programWriteReplyOptions) *pb.MutationR
 		*reply.Seq < 0 ||
 		reply.Term == nil ||
 		*reply.Term < 1 ||
-		reply.Shards == nil {
+		!reply.validShards() {
 		return unknown
 	}
 	shards := reply.Shards
-	if shards.Total == nil ||
-		shards.Successful == nil ||
-		shards.Failed == nil ||
-		*shards.Total < 0 ||
-		*shards.Successful < 1 ||
-		*shards.Failed < 0 ||
-		*shards.Successful > *shards.Total ||
-		*shards.Failed > *shards.Total-*shards.Successful {
-		return unknown
-	}
 	if opts.expectedResult == "created" && opts.status != 201 ||
 		opts.expectedResult == "updated" && opts.status != 200 ||
 		opts.expectedResult == "deleted" && opts.status != 200 {

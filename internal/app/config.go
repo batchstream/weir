@@ -143,10 +143,6 @@ func address(value string, loopback bool) bool {
 		portErr == nil && number >= 0 && number <= 65535
 }
 
-func validName(name string) bool {
-	return protocol.ValidStoreName(name)
-}
-
 func (cfg Config) Validate() error {
 	if err := cfg.Basic.Validate(); err != nil {
 		return err
@@ -356,7 +352,7 @@ func (cfg RoutingConfig) validateStores() error {
 	}
 	names := make(map[string]bool)
 	for _, definition := range cfg.Stores {
-		if !validName(definition.Name) || names[definition.Name] || definition.Local == nil {
+		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] || definition.Local == nil {
 			return errors.New("invalid or duplicate Store")
 		}
 		if (definition.MongoDB == nil) == (definition.Search == nil) {

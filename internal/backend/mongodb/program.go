@@ -393,13 +393,11 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 		evaluateContext, cancel := context.WithCancel(ctx)
 		var stop func() bool
 		if work.Context != nil {
-			stop = context.AfterFunc(work.Context, cancel)
 			if deadline, exists := work.Context.Deadline(); exists {
 				cancel()
 				evaluateContext, cancel = context.WithDeadline(ctx, deadline)
-				stop()
-				stop = context.AfterFunc(work.Context, cancel)
 			}
+			stop = context.AfterFunc(work.Context, cancel)
 		}
 		transformed, transformErr := luaengine.Evaluate(evaluateContext, program)
 		if stop != nil {

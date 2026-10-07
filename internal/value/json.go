@@ -152,7 +152,7 @@ func EncodeJSON(v Value) ([]byte, error) {
 		return nil, err
 	}
 	var output bytes.Buffer
-	if err := appendJSON(&output, v, 0); err != nil {
+	if err := appendJSON(&output, v); err != nil {
 		return nil, err
 	}
 	if output.Len() > MaxBytes {
@@ -161,10 +161,7 @@ func EncodeJSON(v Value) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func appendJSON(output *bytes.Buffer, v Value, depth int) error {
-	if depth > MaxDepth {
-		return fmt.Errorf("JSON depth limit")
-	}
+func appendJSON(output *bytes.Buffer, v Value) error {
 	switch v.Kind {
 	case Null:
 		output.WriteString("null")
@@ -191,7 +188,7 @@ func appendJSON(output *bytes.Buffer, v Value, depth int) error {
 			if i > 0 {
 				output.WriteByte(',')
 			}
-			if err := appendJSON(output, item, depth+1); err != nil {
+			if err := appendJSON(output, item); err != nil {
 				return err
 			}
 		}
@@ -208,7 +205,7 @@ func appendJSON(output *bytes.Buffer, v Value, depth int) error {
 			}
 			output.Write(quoted)
 			output.WriteByte(':')
-			if err := appendJSON(output, field.Value, depth+1); err != nil {
+			if err := appendJSON(output, field.Value); err != nil {
 				return err
 			}
 		}

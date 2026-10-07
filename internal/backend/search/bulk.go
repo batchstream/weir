@@ -177,14 +177,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			item.Term == nil ||
 			*item.Seq < 0 ||
 			*item.Term < 1 ||
-			item.Shards == nil ||
-			item.Shards.Successful == nil ||
-			item.Shards.Total == nil ||
-			item.Shards.Failed == nil ||
-			*item.Shards.Successful < 1 ||
-			*item.Shards.Total < *item.Shards.Successful ||
-			*item.Shards.Failed < 0 ||
-			*item.Shards.Failed > *item.Shards.Total-*item.Shards.Successful {
+			!item.validShards() {
 			continue
 		}
 		var postWriteFailure *pb.Failure

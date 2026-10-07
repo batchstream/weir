@@ -127,6 +127,88 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	}
 }
 
+func TestMixedWriteShardEvidenceNeverReplaysUnknown(t *testing.T) {
+	cases := []struct {
+		name, shards  string
+		applied       bool
+		replicaFailed bool
+	}{
+		{name: "null", shards: `null`},
+		{name: "missing total", shards: `{"successful":1,"failed":0}`},
+		{name: "missing successful", shards: `{"total":1,"failed":0}`},
+		{name: "missing failed", shards: `{"total":1,"successful":1}`},
+		{name: "negative total", shards: `{"total":-1,"successful":1,"failed":0}`},
+		{name: "negative successful", shards: `{"total":1,"successful":-1,"failed":0}`},
+		{name: "no primary acknowledgement", shards: `{"total":1,"successful":0,"failed":0}`},
+		{name: "negative failed", shards: `{"total":1,"successful":1,"failed":-1}`},
+		{name: "successful exceeds total", shards: `{"total":1,"successful":2,"failed":0}`},
+		{name: "failed exceeds remainder", shards: `{"total":2,"successful":1,"failed":2}`},
+		{name: "excessive counts", shards: `{"total":1,"successful":9223372036854775807,"failed":9223372036854775807}`},
+		{name: "healthy", shards: `{"total":1,"successful":1,"failed":0}`, applied: true},
+		{name: "replica failure", shards: `{"total":2,"successful":1,"failed":1}`, applied: true, replicaFailed: true},
+	}
+	for _, tc := range cases {
+		for _, expressionResult := range []string{"updated", "noop"} {
+			t.Run(tc.name+"/"+expressionResult, func(t *testing.T) {
+				var reads, writes atomic.Int32
+				reply := fmt.Sprintf(`{"errors":false,"took":1,"items":[
+{"index":{"_index":"records","_id":"put","status":200,"result":"updated","_version":1,"_seq_no":2,"_primary_term":1,"_shards":%s}},
+{"update":{"_index":"records","_id":"expression","status":200,"result":%q,"_version":1,"_seq_no":2,"_primary_term":1,"_shards":%s}},
+{"index":{"_index":"records","_id":"program","status":200,"result":"updated","_version":1,"_seq_no":2,"_primary_term":1,"_shards":%s}}]}`,
+					tc.shards, expressionResult, tc.shards, tc.shards)
+				handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case "/records":
+						_, _ = io.WriteString(w, testIndexReply)
+					case "/records/_mget":
+						reads.Add(1)
+						_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
+					case "/_bulk":
+						writes.Add(1)
+						_, _ = io.WriteString(w, reply)
+					default:
+						t.Errorf("unexpected request: %s", r.URL.Path)
+						http.NotFound(w, r)
+					}
+				})
+				server := httptest.NewServer(handler)
+				defer server.Close()
+				cfg := Config{Store: "search", URL: server.URL}
+				a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
+				actions := []string{"put", "expression", "program"}
+				works := make([]*execution.Plan, len(actions))
+				for i, action := range actions {
+					works[i] = batchTestPlan(t, a, action, "records/s:"+action)
+				}
+				results := a.executeRecords(t.Context(), works)
+				if len(results) != len(works) {
+					t.Fatal("missing acknowledgement results", len(results))
+				}
+				for i, event := range results {
+					want := pb.MutationOutcome_UNKNOWN
+					if tc.applied && (i != 1 || expressionResult != "noop" || !tc.replicaFailed) {
+						want = pb.MutationOutcome_APPLIED
+					}
+					mutation := event.GetMutationResult()
+					if mutation.GetOutcome() != want {
+						t.Fatalf("%s acknowledgement outcome: got %v, want %v", actions[i], mutation, want)
+					}
+					if want == pb.MutationOutcome_APPLIED && !tc.replicaFailed {
+						if mutation.GetFailure() != nil {
+							t.Fatal("healthy acknowledgement retained a failure", actions[i], mutation)
+						}
+					} else if mutation.GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+						t.Fatal("incomplete or replica-failed acknowledgement lost failure evidence", actions[i], mutation)
+					}
+				}
+				if reads.Load() != 1 || writes.Load() != 1 {
+					t.Fatal("write acknowledgement caused replay or Lua reevaluation", reads.Load(), writes.Load())
+				}
+			})
+		}
+	}
+}
+
 func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T) {
 	for _, mode := range []string{"reordered", "missing", "item_error"} {
 		t.Run(mode, func(t *testing.T) {

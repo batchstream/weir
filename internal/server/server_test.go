@@ -22,7 +22,12 @@ func TestConnectionBoundAndSingleClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{admission: admission}
+	config := Config{Admission: admission, Limits: limits}
+	s, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.grpc.Stop)
 	bounded := &limitedListener{Listener: listener, slots: admission.connections, server: s}
 	accepted := make(chan net.Conn, 4)
 	done := make(chan struct{})

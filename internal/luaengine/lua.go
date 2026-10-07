@@ -122,10 +122,11 @@ func installModule(state *lua.LState) {
 	state.SetGlobal("weir", module)
 }
 
-func pushValue(state *lua.LState, v value.Value) {
+func pushValue(state *lua.LState, v value.Value) int {
 	userdata := state.NewUserData()
 	userdata.Value = v
 	state.Push(userdata)
+	return 1
 }
 
 func pushAction(state *lua.LState, result Result) int {
@@ -159,8 +160,7 @@ func pushCheckedValue(state *lua.LState, v value.Value) int {
 	if err := value.Validate(v); err != nil {
 		state.RaiseError("invalid typed value")
 	}
-	pushValue(state, v)
-	return 1
+	return pushValue(state, v)
 }
 
 func luaKind(state *lua.LState) int {
@@ -190,7 +190,7 @@ func luaGet(state *lua.LState) int {
 	if err != nil {
 		state.RaiseError("field lookup failed")
 	}
-	return pushCheckedValue(state, cloned)
+	return pushValue(state, cloned)
 }
 
 func luaSet(state *lua.LState) int {
@@ -242,7 +242,7 @@ func luaMerge(state *lua.LState) int {
 	if err != nil {
 		state.RaiseError("merge rejected")
 	}
-	return pushCheckedValue(state, merged)
+	return pushValue(state, merged)
 }
 
 func luaObject(state *lua.LState) int {

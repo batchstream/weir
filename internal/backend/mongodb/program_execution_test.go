@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaengine"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -181,6 +183,55 @@ func TestMongoLuaBatchCallerCancellationDoesNotCancelPeers(t *testing.T) {
 				t.Fatal("caller cancellation poisoned the shared transaction", phase, results, commits)
 			}
 		})
+	}
+}
+
+func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T) {
+	config := Config{Store: "mongo"}
+	adapter := &Adapter{config: config}
+	var plans []*execution.Plan
+	var documents []bson.Raw
+	for _, id := range []string{"a", "b"} {
+		source := `return weir.replace(weir.set(current, "n", weir.i32("1")))`
+		if id == "a" {
+			source = `while true do end`
+		}
+		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: source}
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		work.Context = t.Context()
+		plans = append(plans, work)
+		document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: int32(0)}}
+		raw, err := bson.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		documents = append(documents, raw)
+	}
+	batch := &programBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
+	caller, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	plans[0].Context = caller
+	timer := time.AfterFunc(100*time.Millisecond, cancel)
+	defer timer.Stop()
+	positions := []int{0, 1}
+	started := time.Now()
+	writes, writePositions, err := adapter.transformPrograms(t.Context(), batch, positions, documents)
+	if err != nil || len(writes) != 1 || len(writePositions) != 1 || writePositions[0] != 1 {
+		t.Fatal("caller cancellation stopped its peer's evaluation", writes, writePositions, err)
+	}
+	result := batch.results[0]
+	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED || batch.results[1] != nil {
+		t.Fatal("evaluation lost caller cancellation evidence or completed an uncommitted peer", batch.results)
+	}
+	if time.Since(started) >= luaengine.ExecutionTimeout-100*time.Millisecond {
+		t.Fatal("caller cancellation waited for the Lua execution cap")
+	}
+	native := writes[0].Backend.(*plan)
+	if native.action != "replace" || native.id != "b" || native.document.Lookup("n").Int32() != 1 {
+		t.Fatal("peer replacement changed after caller cancellation", native)
 	}
 }
 
