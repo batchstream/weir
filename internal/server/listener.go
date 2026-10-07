@@ -66,10 +66,8 @@ func (l *limitedListener) Accept() (net.Conn, error) {
 		case l.slots <- struct{}{}:
 			c := &limitedConn{Conn: conn, slots: l.slots, server: l.server}
 			l.server.connections.Store(conn.RemoteAddr().String(), c)
-			if l.server.limits.Stall > 0 {
-				timer := time.AfterFunc(min(5*time.Second, l.server.limits.Stall), func() { _ = c.close("open") })
-				c.opening.Store(timer)
-			}
+			timer := time.AfterFunc(min(5*time.Second, l.server.limits.Stall), func() { _ = c.close("open") })
+			c.opening.Store(timer)
 			return c, nil
 		default:
 			l.server.admission.rejections.WithLabelValues("connections").Inc()
@@ -78,10 +76,8 @@ func (l *limitedListener) Accept() (net.Conn, error) {
 	}
 }
 func (c *limitedConn) Write(data []byte) (int, error) {
-	if c.server.limits.Stall > 0 {
-		if err := c.Conn.SetWriteDeadline(time.Now().Add(c.server.limits.Stall)); err != nil {
-			return 0, err
-		}
+	if err := c.Conn.SetWriteDeadline(time.Now().Add(c.server.limits.Stall)); err != nil {
+		return 0, err
 	}
 	return c.Conn.Write(data)
 }

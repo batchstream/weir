@@ -72,6 +72,88 @@ func TestCanceledStartNeverReadyAndClosesOnce(t *testing.T) {
 	}
 }
 
+func TestCloseBeforeStartNeverPublishesServingResources(t *testing.T) {
+	cfg := emptyConfig(t)
+	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"
+	node, err := Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = node.Close(context.Background()) })
+	if err := node.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := node.Start(t.Context()); err == nil || err.Error() != "node closed" {
+		t.Fatal("closed node accepted Start", err)
+	}
+	if node.ready() || node.stopGuard != nil || node.state != "closed" || len(node.Errors) != 0 {
+		t.Fatal("Start after Close published serving resources")
+	}
+}
+
+func TestDrainingListenerReportsPreserveShutdownState(t *testing.T) {
+	seed, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = seed.Close() })
+	if err := seed.(*net.TCPListener).SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	cfg := emptyConfig(t)
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	cfg.Basic.Discovery.Seeds = []string{seed.Addr().String()}
+	node, err := Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = node.Close(context.Background()) })
+	if err := node.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := seed.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = initial.Close() })
+	closed := make(chan error, 1)
+	go func() { closed <- node.Close(t.Context()) }()
+	// The seed withholds its HTTP/2 handshake, keeping withdrawal pending while
+	// the real data listeners finish and report their shutdown to the node.
+	withdrawal, err := seed.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = withdrawal.Close() })
+	select {
+	case err := <-node.Errors:
+		if err != nil {
+			t.Fatal("normal listener shutdown failed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("draining listener did not report shutdown")
+	}
+	node.mu.Lock()
+	state := node.state
+	node.mu.Unlock()
+	if state != "draining" || node.ready() {
+		t.Fatal("listener shutdown replaced the draining state", state)
+	}
+	_ = seed.Close()
+	_ = withdrawal.Close()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("node did not finish shutdown after seed release")
+	}
+	if node.state != "closed" {
+		t.Fatal("node did not publish closed state", node.state)
+	}
+}
+
 func TestCloseJoinsListenerReports(t *testing.T) {
 	cfg := emptyConfig(t)
 	cfg.Basic.Listeners.Peer, cfg.Basic.Diagnostics.Address = "127.0.0.1:0", "127.0.0.1:0"

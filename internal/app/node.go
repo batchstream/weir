@@ -17,7 +17,6 @@ import (
 
 type Node struct {
 	mu            sync.Mutex
-	closed        bool
 	state         string
 	registry      *prometheus.Registry
 	diagnostics   *diagnostics
@@ -48,7 +47,7 @@ func (n *Node) Start(startup context.Context) error {
 	n.start.Do(func() {
 		n.mu.Lock()
 		defer n.mu.Unlock()
-		if n.closed {
+		if n.state == "draining" || n.state == "closed" {
 			n.startErr = errors.New("node closed")
 			return
 		}
@@ -98,7 +97,6 @@ func (n *Node) Close(ctx context.Context) error {
 		defer cancel()
 
 		n.mu.Lock()
-		n.closed = true
 		n.state = "draining"
 		started := time.Now()
 		n.drains.Inc()
@@ -156,7 +154,7 @@ func (n *Node) ready() bool {
 
 func (n *Node) listenerEnded(err error) {
 	n.mu.Lock()
-	if !n.closed {
+	if n.state != "draining" && n.state != "closed" {
 		n.state = "failed"
 	}
 	n.mu.Unlock()
