@@ -55,13 +55,12 @@ func ValidateConfig(cfg Config) error {
 		return errors.New("invalid MongoDB URI options")
 	}
 	options := make(map[string]string, len(query))
-	seen := make(map[string]bool, len(query))
 	for key, values := range query {
 		name := strings.ToLower(key)
-		if len(values) != 1 || seen[name] {
+		_, exists := options[name]
+		if len(values) != 1 || exists {
 			return errors.New("duplicate MongoDB URI option")
 		}
-		seen[name] = true
 		if len(values[0]) > 2048 {
 			return errors.New("MongoDB URI option exceeds bound")
 		}
