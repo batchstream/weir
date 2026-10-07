@@ -519,7 +519,7 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			}
 			data := bson.D{{Key: "failCommands", Value: bson.A{command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 			testmongo.FailCommand(t, f.native, data, 1)
-			program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
+			program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
 			form := &pb.Transform_Lua{Lua: program}
 			transform := &pb.Transform{Form: form}
 			action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

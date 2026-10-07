@@ -199,7 +199,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 	cancel()
 	for _, action := range []string{"read", "put", "program"} {
 		document := bson.D{{Key: "_id", Value: "same"}}
-		opts := batchOperationOptions{resource: "db/records/s:same", action: action, document: document, program: "return weir.keep()"}
+		opts := batchOperationOptions{resource: "db/records/s:same", action: action, document: document, program: "return function(current, incoming) return weir.keep() end"}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)

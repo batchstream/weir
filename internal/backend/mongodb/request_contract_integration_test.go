@@ -64,11 +64,11 @@ func TestMongoScanNativeBSONProjectionAndConcreteNames(t *testing.T) {
 	}
 }
 
-func TestMongoLuaStandardMergeCreatesMissingRecord(t *testing.T) {
+func TestMongoLuaBusinessFunctionCreatesMissingRecord(t *testing.T) {
 	fixture := testmongo.Open(t)
 	adapterOptions := adapterTestOptions{fixture: fixture}
 	adapter := testAdapter(t, adapterOptions)
-	operation := batchOperationOptions{resource: fixture.DB + "/records/s:merge", program: `return weir.replace(weir.merge(current,input))`}
+	operation := batchOperationOptions{resource: fixture.DB + "/records/s:merge", program: `return function(current, incoming) return incoming end`}
 	operation.action = "program"
 	request := batchOperation(t, operation)
 	patch := bson.D{{Key: "n", Value: int32(7)}, {Key: "business", Value: true}}
@@ -89,7 +89,7 @@ func TestMongoLuaStandardMergeCreatesMissingRecord(t *testing.T) {
 	}
 	results := adapter.executePrograms(t.Context(), []*execution.Plan{work})
 	if len(results) != 1 || results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().Failure != nil {
-		t.Fatal("standard merge did not create", results)
+		t.Fatal("business function did not create", results)
 	}
 	filter := bson.D{{Key: "_id", Value: "merge"}}
 	stored, err := fixture.Admin.Database(fixture.DB).Collection("records").FindOne(t.Context(), filter).Raw()

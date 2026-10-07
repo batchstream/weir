@@ -5,6 +5,7 @@ package mongodb
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-const incrementProgram = `if weir.kind(current) == "missing" then return weir.replace(weir.object("n", weir.i32("1"))) end return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`
+const incrementProgram = `return function(current, incoming) current = current or {}; current.n = (current.n or 0) + 1; return current end`
 
 func prepareBatchProgram(t *testing.T, adapter *Adapter, opts batchOperationOptions) *execution.Plan {
 	t.Helper()
@@ -62,7 +63,7 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 	adapterOpts := adapterTestOptions{fixture: fixture, monitor: monitor}
 	adapter := testAdapter(t, adapterOpts)
 	resources := []string{"s:a", "i:7", "oid:" + objectID.Hex(), "s:delete", "s:keep", "s:reject", "s:invalid", "s:new", "s:missing-delete"}
-	sources := []string{incrementProgram, incrementProgram, incrementProgram, `return weir.delete()`, `return weir.keep()`, `return weir.reject("business constraint")`, `return print("unavailable")`, incrementProgram, `return weir.delete()`}
+	sources := []string{incrementProgram, incrementProgram, incrementProgram, `return function(current, incoming) return weir.delete() end`, `return function(current, incoming) return weir.keep() end`, `return function(current, incoming) return weir.reject("business constraint") end`, `return function(current, incoming) return print("unavailable") end`, incrementProgram, `return function(current, incoming) return weir.delete() end`}
 	plans := make([]*execution.Plan, len(resources))
 	for i, resource := range resources {
 		opts := batchOperationOptions{resource: fixture.DB + "/records/" + resource, index: 1, program: sources[i]}
@@ -108,7 +109,7 @@ func TestMongoLuaBatchUsesOneReadWriteCommitAndPreservesDocuments(t *testing.T) 
 	filter := bson.D{{Key: "_id", Value: "new"}}
 	raw, err := collection.FindOne(t.Context(), filter).Raw()
 	fields, fieldErr := raw.Elements()
-	if err != nil || fieldErr != nil || len(fields) != 2 || raw.Lookup("n").Int32() != 1 {
+	if err != nil || fieldErr != nil || len(fields) != 2 || raw.Lookup("n").Type != bson.TypeInt64 || raw.Lookup("n").Int64() != 1 {
 		t.Fatal("missing record creation injected fields or failed", raw, err)
 	}
 	t.Log("9 independent Lua items: one snapshot find, five mixed writes in one bulkWrite, one commit, unchanged identity types and business fields")
@@ -129,7 +130,28 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 				}
 			}
 			var finds, writes, commits atomic.Int32
-			monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
+			var timestampMu sync.Mutex
+			var timestamps []string
+			monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+				if e.CommandName != "bulkWrite" {
+					return
+				}
+				operations, err := e.Command.Lookup("ops").Array().Values()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				for _, operation := range operations {
+					op := operation.Document()
+					document := op.Lookup("updateMods")
+					if document.Type == 0 {
+						document = op.Lookup("document")
+					}
+					timestampMu.Lock()
+					timestamps = append(timestamps, document.Document().Lookup("updated_at").StringValue())
+					timestampMu.Unlock()
+				}
+			}, Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
 				switch e.CommandName {
 				case "find":
 					if finds.Add(1) != 1 {
@@ -166,7 +188,8 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 			adapter := testAdapter(t, adapterOpts)
 			var plans []*execution.Plan
 			for _, id := range []string{"counter", "peer"} {
-				opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}
+				source := `return function(current, incoming) current = current or {}; current.n = (current.n or 0) + 1; current.updated_at = weir.time.now(); return current end`
+				opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: source}
 				plans = append(plans, prepareBatchProgram(t, adapter, opts))
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
@@ -180,6 +203,18 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 			if finds.Load() < 2 || writes.Load() < 1 || commits.Load() != 1 {
 				t.Fatal("fresh transaction did not reread the batch", finds.Load(), writes.Load(), commits.Load())
 			}
+			timestampMu.Lock()
+			if len(timestamps) < 2 {
+				timestampMu.Unlock()
+				t.Fatal("no transactional Lua writes observed", timestamps)
+			}
+			for i, timestamp := range timestamps {
+				observedAt := plans[i%len(plans)].Backend.(*plan).program.ObservedAt
+				if observedAt.IsZero() || timestamp != observedAt.UTC().Format(time.RFC3339Nano) {
+					t.Errorf("transaction retry changed observation time: %s observed=%v", timestamp, observedAt)
+				}
+			}
+			timestampMu.Unlock()
 			for _, id := range []string{"counter", "peer"} {
 				filter := bson.D{{Key: "_id", Value: id}}
 				raw, err := collection.FindOne(t.Context(), filter).Raw()
@@ -189,6 +224,11 @@ func TestMongoLuaBatchNativeConflictRecomputesPeers(t *testing.T) {
 				}
 				if err != nil || raw.Lookup("n").AsInt64() != want {
 					t.Fatal("external change lost or peer replayed", id, raw, err)
+				}
+				for _, work := range plans {
+					if work.Backend.(*plan).id == id && raw.Lookup("updated_at").StringValue() != work.Backend.(*plan).program.ObservedAt.UTC().Format(time.RFC3339Nano) {
+						t.Fatal("stored observation time changed after native conflict", id, raw)
+					}
 				}
 				if id == "peer" || mode != "delete" {
 					if !raw.Lookup("business").Boolean() || id == "counter" && !raw.Lookup("native").Boolean() {
@@ -292,7 +332,7 @@ func TestMongoLuaBatchSchemaRejectionRollsBackThenIsolatesItem(t *testing.T) {
 	for _, id := range []string{"before", "invalid", "after"} {
 		source := incrementProgram
 		if id == "invalid" {
-			source = `return weir.replace(weir.set(current, "n", weir.i32("-1")))`
+			source = `return function(current, incoming) current.n = -1; return current end`
 		}
 		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: source}
 		plans = append(plans, prepareBatchProgram(t, adapter, opts))
@@ -335,7 +375,7 @@ func TestMongoLuaBatchLostAbortAcknowledgementNeverRebuilds(t *testing.T) {
 	for _, id := range []string{"before", "invalid", "after"} {
 		source := incrementProgram
 		if id == "invalid" {
-			source = `return weir.replace(weir.set(current, "n", weir.i32("-1")))`
+			source = `return function(current, incoming) current.n = -1; return current end`
 		}
 		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: source}
 		plans = append(plans, prepareBatchProgram(t, adapter, opts))
@@ -656,7 +696,7 @@ func TestMongoLuaCloseDuringCommitKeepsUnknownOutcome(t *testing.T) {
 	}
 	filter := bson.D{{Key: "_id", Value: "closing"}}
 	raw, err := fixture.Admin.Database(fixture.DB).Collection("records").FindOne(t.Context(), filter).Raw()
-	if err != nil || raw.Lookup("n").Int32() != 1 {
+	if err != nil || raw.Lookup("n").Type != bson.TypeInt64 || raw.Lookup("n").Int64() != 1 {
 		t.Fatal("intercepted commit did not persist once", raw, err)
 	}
 	if err := adapter.client.Ping(t.Context(), nil); err != mongo.ErrClientDisconnected {

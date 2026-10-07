@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func TestMongoProgramCommitRetries(t *testing.T) {
 			defer client.Disconnect(context.Background())
 			a := &Adapter{client: client}
 			a.config.Store = "mongo"
-			operationOpts := batchOperationOptions{resource: "db/records/s:item", action: "program", program: `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`}
+			operationOpts := batchOperationOptions{resource: "db/records/s:item", action: "program", program: `return function(current, incoming) current.n = current.n + 1; return current end`}
 			work, failure := prepareTestRecord(a, batchOperation(t, operationOpts))
 			if failure != nil {
 				t.Fatal(failure)
@@ -162,7 +163,7 @@ func TestMongoLuaBatchCallerCancellationDoesNotCancelPeers(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			var plans []*execution.Plan
 			for _, id := range []string{"a", "b"} {
-				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return function(current, incoming) current.n = 1; return current end`}
 				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)
@@ -192,9 +193,9 @@ func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T)
 	var plans []*execution.Plan
 	var documents []bson.Raw
 	for _, id := range []string{"a", "b"} {
-		source := `return weir.replace(weir.set(current, "n", weir.i32("1")))`
+		source := `return function(current, incoming) current.n = 1; return current end`
 		if id == "a" {
-			source = `while true do end`
+			source = `return function(current, incoming) local text = "` + strings.Repeat("lowercase", 900) + `"; while true do local upper = string.upper(text) end end`
 		}
 		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: source}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
@@ -255,7 +256,7 @@ func TestMongoLuaBatchMalformedWriteAcknowledgementNeverCommits(t *testing.T) {
 		}
 	}}
 	adapter := batchMockAdapter(t, responses, monitor)
-	opts := batchOperationOptions{resource: "db/records/s:a", action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+	opts := batchOperationOptions{resource: "db/records/s:a", action: "program", program: `return function(current, incoming) current.n = 1; return current end`}
 	work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 	if failure != nil {
 		t.Fatal(failure)
@@ -309,7 +310,7 @@ func TestMongoLuaBatchCursorContinuationsKeepTransactionIdentity(t *testing.T) {
 	adapter := batchMockAdapter(t, responses, monitor)
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
-		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return function(current, incoming) current.n = 1; return current end`}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
@@ -351,7 +352,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 	adapter := batchMockAdapter(t, responses, monitor)
 	var plans []*execution.Plan
 	for _, id := range []string{"a", "b"} {
-		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return function(current, incoming) current.n = 1; return current end`}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
 			t.Fatal(failure)
@@ -411,7 +412,7 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 			adapter := batchMockAdapter(t, responses, monitor)
 			var plans []*execution.Plan
 			for _, id := range []string{"a", "b"} {
-				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return weir.replace(weir.set(current, "n", weir.i32("1")))`}
+				opts := batchOperationOptions{resource: "db/records/s:" + id, action: "program", program: `return function(current, incoming) current.n = 1; return current end`}
 				work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 				if failure != nil {
 					t.Fatal(failure)

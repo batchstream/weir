@@ -105,12 +105,12 @@ class PackageTests(unittest.TestCase):
 
     def test_binary_target_and_linked_dependency_validation(self):
         lines = 'binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n'
-        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/yuin/gopher-lua\tv1.1.1\th1:fixture\n', ('linux', 'arm64'), True)):
+        for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/iceisfun/golua\tv1.1.1\th1:fixture\n', ('linux', 'arm64'), True)):
             result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
             with patch.object(subprocess, 'run', return_value=result):
                 if success:
                     self.assertEqual(package.build_info(Path('binary'), target, {})['linked_modules'],
-                                     [['github.com/yuin/gopher-lua', 'v1.1.1', 'h1:fixture']] if extra else [])
+                                     [['github.com/iceisfun/golua', 'v1.1.1', 'h1:fixture']] if extra else [])
                 else:
                     with self.assertRaises(ValueError):
                         package.build_info(Path('binary'), target, {})

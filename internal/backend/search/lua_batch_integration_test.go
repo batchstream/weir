@@ -21,6 +21,8 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 	for _, mode := range []string{"conflict", "lost_acknowledgement"} {
 		t.Run(mode, func(t *testing.T) {
 			base, backend := setupSearch(t)
+			observedAt := time.Date(2026, time.October, 7, 1, 2, 3, 456789000, time.UTC)
+			wantTime := `"` + observedAt.Format(time.RFC3339Nano) + `"`
 			for _, id := range []string{"changed", "peer"} {
 				status, raw := backend.Do(t, "PUT", "/"+backend.Index+"/_doc/"+id, `{"n":1,"keep":"business"}`)
 				if status != http.StatusCreated {
@@ -66,7 +68,7 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 					}
 					for i := 1; i < len(lines); i += 2 {
 						var source map[string]json.RawMessage
-						if json.Unmarshal([]byte(lines[i]), &source) != nil || len(source) != 2 || string(source["keep"]) != `"business"` {
+						if json.Unmarshal([]byte(lines[i]), &source) != nil || len(source) != 3 || string(source["keep"]) != `"business"` || string(source["updated_at"]) != wantTime {
 							t.Error("custom metadata injected into business source", lines[i])
 						}
 					}
@@ -116,7 +118,8 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 			works := make([]*execution.Plan, 0, 2)
 			for _, id := range []string{"changed", "peer"} {
 				work := batchTestPlan(t, adapter, "program", searchResource(backend.Index, id))
-				work.Backend.(*plan).program.Source = `return weir.replace(weir.set(current, "n", weir.add(weir.to64(weir.get(current, "n")), weir.i64("1"))))`
+				work.Backend.(*plan).program.Source = `return function(current, incoming) current.n = current.n + 1; current.updated_at = weir.time.now(); return current end`
+				work.Backend.(*plan).program.ObservedAt = observedAt
 				if work.Command.GetScan() != nil || work.Command.GetNative() != nil {
 					t.Fatal("Lua plan cannot enter scheduler batch")
 				}
@@ -145,7 +148,7 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 				if mode == "conflict" && id == "changed" {
 					wantCount, wantVersion = "11", 3
 				}
-				if status != http.StatusOK || json.Unmarshal(raw, &observed) != nil || observed.Version != wantVersion || len(observed.Source) != 2 || string(observed.Source["n"]) != wantCount || string(observed.Source["keep"]) != `"business"` {
+				if status != http.StatusOK || json.Unmarshal(raw, &observed) != nil || observed.Version != wantVersion || len(observed.Source) != 3 || string(observed.Source["n"]) != wantCount || string(observed.Source["keep"]) != `"business"` || string(observed.Source["updated_at"]) != wantTime {
 					t.Fatal("directly observed business state/version", id, status, string(raw))
 				}
 			}

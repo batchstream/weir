@@ -53,7 +53,7 @@ func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
 	if string(work.Backend.(*plan).source) != string(document.Data) {
 		t.Fatal("source modified")
 	}
-	program := &pb.LuaTransform{Source: []byte("return weir.keep()")}
+	program := &pb.LuaTransform{Source: []byte("return function(current, incoming) return weir.keep() end")}
 	programForm := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: programForm}
 	mutation.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

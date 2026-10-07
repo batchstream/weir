@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -25,6 +26,9 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 			failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored JSON source cannot be transformed losslessly")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
+	}
+	if native.program.ObservedAt.IsZero() {
+		native.program.ObservedAt = time.Now()
 	}
 	program := *native.program
 	program.Current = currentValue

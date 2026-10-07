@@ -159,7 +159,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			resource: targetResource(target) + "/s:shared",
 			action:   "program",
 			index:    uint64(50 + i),
-			program:  `return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("10"))))`,
+			program:  `return function(current, incoming) current.n = current.n + 10; return current end`,
 		}
 		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 		if failure != nil {
@@ -330,7 +330,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 						resource: resource + "/s:new",
 						action:   action,
 						document: document,
-						program:  `return weir.replace(weir.object("n", weir.i32("1")))`,
+						program:  `return function(current, incoming) return {n = 1} end`,
 					}
 					work, failure := prepareTestRecord(fixture.adapter, batchOperation(t, opts))
 					if failure != nil {

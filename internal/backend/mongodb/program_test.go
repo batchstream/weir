@@ -11,7 +11,7 @@ import (
 func TestPrepareLuaTransformUsesBuiltInLuaAndBSONInput(t *testing.T) {
 	config := Config{Store: "mongo"}
 	a := &Adapter{config: config}
-	program := &pb.LuaTransform{Source: []byte("return weir.keep()")}
+	program := &pb.LuaTransform{Source: []byte("return function(current, incoming) return weir.keep() end")}
 	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

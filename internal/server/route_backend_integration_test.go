@@ -103,7 +103,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	if _, err := backend.Admin.Database(backend.DB).Collection("records").InsertOne(ctx, counter); err != nil {
 		t.Fatal(err)
 	}
-	program := &pb.LuaTransform{Source: []byte(`return weir.replace(weir.set(current, "n", weir.add(weir.get(current, "n"), weir.i32("1"))))`)}
+	program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
 	form := &pb.Transform_Lua{Lua: program}
 	transform := &pb.Transform{Form: form}
 	action := &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}

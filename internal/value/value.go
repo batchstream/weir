@@ -46,44 +46,6 @@ func Integer(kind Kind, n int64) (Value, error) {
 	v := Value{Kind: kind, Integer: n}
 	return v, nil
 }
-func Convert(v Value, kind Kind) (Value, error) {
-	var zero Value
-	if v.Kind != Int32 && v.Kind != Int64 {
-		return zero, fmt.Errorf("not an integer")
-	}
-	return Integer(kind, v.Integer)
-}
-func Arithmetic(a, b Value, op byte) (Value, error) {
-	var zero Value
-	if a.Kind != b.Kind || a.Kind != Int32 && a.Kind != Int64 {
-		return zero, fmt.Errorf("explicit integer conversion required")
-	}
-	x, y := a.Integer, b.Integer
-	var n int64
-	switch op {
-	case '+':
-		if y > 0 && x > math.MaxInt64-y || y < 0 && x < math.MinInt64-y {
-			return zero, fmt.Errorf("overflow")
-		}
-		n = x + y
-	case '-':
-		if y < 0 && x > math.MaxInt64+y || y > 0 && x < math.MinInt64+y {
-			return zero, fmt.Errorf("overflow")
-		}
-		n = x - y
-	case '*':
-		if x == math.MinInt64 && y == -1 || y == math.MinInt64 && x == -1 {
-			return zero, fmt.Errorf("overflow")
-		}
-		n = x * y
-		if y != 0 && n/y != x {
-			return zero, fmt.Errorf("overflow")
-		}
-	default:
-		return zero, fmt.Errorf("invalid operator")
-	}
-	return Integer(a.Kind, n)
-}
 func (v Value) Lookup(name string) (Value, error) {
 	var found Value
 	seen := false
