@@ -76,6 +76,14 @@ type expressionResponse struct {
 	Status  int                                       `json:"status"`
 }
 
+func (response *expressionResponse) validShards() bool {
+	shards := response.Shards
+	return shards != nil &&
+		shards.Total != nil && shards.Successful != nil && shards.Failed != nil &&
+		*shards.Successful >= 1 && *shards.Total >= *shards.Successful &&
+		*shards.Failed >= 0 && *shards.Failed <= *shards.Total-*shards.Successful
+}
+
 type expressionReplyOptions struct {
 	native *plan
 	status int
@@ -119,29 +127,16 @@ func (a *Adapter) expressionReply(opts expressionReplyOptions) *pb.MutationResul
 		*response.Seq < 0 ||
 		response.Term == nil ||
 		*response.Term < 1 ||
-		response.Shards == nil {
+		!response.validShards() {
 		return unknown
 	}
 	shards := response.Shards
-	if shards.Total == nil ||
-		shards.Successful == nil ||
-		shards.Failed == nil ||
-		*shards.Total < 0 ||
-		*shards.Successful < 0 ||
-		*shards.Failed < 0 ||
-		*shards.Successful > *shards.Total ||
-		*shards.Failed > *shards.Total-*shards.Successful {
-		return unknown
-	}
 	switch response.Result {
 	case "noop":
-		if *shards.Successful < 1 || *shards.Failed != 0 {
+		if *shards.Failed != 0 {
 			return unknown
 		}
 	case "updated":
-		if *shards.Successful < 1 {
-			return unknown
-		}
 	default:
 		return unknown
 	}
