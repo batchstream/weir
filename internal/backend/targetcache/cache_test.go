@@ -56,7 +56,11 @@ func TestFailedReservationCanBeCheckedAgain(t *testing.T) {
 	if err != nil || retry.Cached {
 		t.Fatal("failed check was retained", retry, err)
 	}
+	// Old owners cannot complete a new check, and repeated completion must not
+	// discard or replace the successful result.
+	cache.Complete("records", failed, 99, true)
 	cache.Complete("records", retry, 42, true)
+	cache.Complete("records", retry, 99, false)
 	hot, err := cache.Acquire(ctx, "records")
 	if err != nil || !hot.Cached || hot.Value != 42 {
 		t.Fatal("successful retry was not retained", hot, err)

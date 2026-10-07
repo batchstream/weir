@@ -3,6 +3,7 @@ package targetcache
 
 import (
 	"context"
+	"slices"
 	"sync"
 )
 
@@ -10,8 +11,7 @@ const Capacity = 64
 
 type entry[V any] struct {
 	value V
-	ready chan struct{}
-	done  bool
+	ready chan struct{} // nil after completion
 }
 
 type Lookup[V any] struct {
@@ -42,7 +42,7 @@ func (c *Cache[K, V]) Acquire(ctx context.Context, key K) (Lookup[V], error) {
 			c.changed = make(chan struct{})
 		}
 		if existing := c.entries[key]; existing != nil {
-			if existing.done {
+			if existing.ready == nil {
 				lookup := Lookup[V]{Value: existing.value, Cached: true}
 				c.mu.Unlock()
 				return lookup, ctx.Err()
@@ -57,9 +57,9 @@ func (c *Cache[K, V]) Acquire(ctx context.Context, key K) (Lookup[V], error) {
 		}
 		if len(c.entries) == Capacity {
 			for i, oldest := range c.order {
-				if c.entries[oldest].done {
+				if c.entries[oldest].ready == nil {
 					delete(c.entries, oldest)
-					c.order = append(c.order[:i], c.order[i+1:]...)
+					c.order = slices.Delete(c.order, i, i+1)
 					break
 				}
 			}
@@ -88,22 +88,18 @@ func (c *Cache[K, V]) Complete(key K, lookup Lookup[V], value V, success bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	pending := lookup.entry
-	if pending == nil || c.entries[key] != pending || pending.done {
+	if pending == nil || c.entries[key] != pending || pending.ready == nil {
 		return
 	}
 	if success {
 		pending.value = value
-		pending.done = true
 	} else {
 		delete(c.entries, key)
-		for i, target := range c.order {
-			if target == key {
-				c.order = append(c.order[:i], c.order[i+1:]...)
-				break
-			}
-		}
+		position := slices.Index(c.order, key)
+		c.order = slices.Delete(c.order, position, position+1)
 	}
 	close(pending.ready)
+	pending.ready = nil
 	close(c.changed)
 	c.changed = make(chan struct{})
 }
@@ -111,8 +107,7 @@ func (c *Cache[K, V]) Complete(key K, lookup Lookup[V], value V, success bool) {
 func wait(ctx context.Context, ready <-chan struct{}) error {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
 	case <-ready:
-		return ctx.Err()
 	}
+	return ctx.Err()
 }
