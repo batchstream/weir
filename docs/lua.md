@@ -29,8 +29,15 @@ or one explicit action:
 | `weir.reject(message)` | NOT_APPLIED/PRECONDITION_FAILED |
 
 Nil, missing/multiple return values, arrays and scalar results are invalid.
-Source must return the function itself; the old global `current`/`input` and
-opaque-value helper interface are removed.
+Source must return the function itself. The current and input documents are
+callback arguments; they are not globals.
+
+This entry point, result actions, value conversion, helper meanings and restricted
+environment are the `weir.v1` Lua contract. Runtime implementation updates must
+preserve these script behaviors. New helpers may be additive; changes to existing
+semantics require an explicit public contract change, rather than interpreting
+the same source differently after an upgrade. There is one runtime contract and
+no per-request language selector.
 
 ## Document values
 
@@ -76,6 +83,9 @@ changes to the resource `_id`.
 
 The environment provides iteration, type inspection, assertions, errors,
 protected calls, deterministic math, and bounded string/table operations.
+The base functions are `assert`, `error`, `type`, `tostring`, `tonumber`, `pairs`,
+`ipairs`, `next`, `pcall`, `xpcall`, `select`, `rawequal` and `rawlen`; `_VERSION`
+is `Lua 5.4`.
 String functions are `len`, `sub`, `upper`, `lower`, `reverse`, `byte`, `char` and
 `format`; table functions are `insert`, `remove`, `sort` and `concat`.
 `string.upper/lower` use Lua's ASCII case rules and preserve other UTF-8 bytes.

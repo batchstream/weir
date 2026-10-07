@@ -309,27 +309,50 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	}
 }
 
-func TestScanCheckpointBatchSizeBounds(t *testing.T) {
-	adapter := &Adapter{dialect: ElasticsearchProduct, config: Config{Store: "search"}}
-	for _, batchSize := range []int{-1, 0, 1, 128, 129} {
-		request := &pb.ScanRequest{Resource: "records"}
-		fingerprint := protocol.ScanFingerprint(request, "search", "search:"+adapter.dialect)
-		checkpoint := scanCheckpoint{PIT: "previous", After: 7, BatchSize: batchSize}
-		state, _ := json.Marshal(checkpoint)
-		token, err := protocol.EncodeScanToken("search:"+adapter.dialect, fingerprint, state)
-		if err != nil {
-			t.Fatal(err)
-		}
-		request.ContinuationToken = token
-		work, failure := adapter.prepareScan(request)
-		valid := batchSize >= 1 && batchSize <= execution.ScanBatchDocuments
-		if valid {
-			if failure != nil || work.Backend.(*scanPlan).batchSize != batchSize {
-				t.Fatal("valid checkpoint batch size rejected", batchSize, failure)
+func TestScanCheckpointContainsTraversalStateOnly(t *testing.T) {
+	config := Config{Store: "search"}
+	adapter := &Adapter{dialect: ElasticsearchProduct, config: config}
+	for _, mode := range []string{"valid", "missing_pit", "negative_after", "internal_capacity", "extra", "duplicate", "wrong_profile"} {
+		t.Run(mode, func(t *testing.T) {
+			request := &pb.ScanRequest{Resource: "records"}
+			profile := adapter.scanProfile()
+			fingerprint := protocol.ScanFingerprint(request, "search", profile)
+			checkpoint := scanCheckpoint{PIT: "previous", After: 7}
+			state, _ := json.Marshal(checkpoint)
+			switch mode {
+			case "missing_pit":
+				state = []byte(`{"pit":"","after":7}`)
+			case "negative_after":
+				state = []byte(`{"pit":"previous","after":-1}`)
+			case "internal_capacity":
+				state = []byte(`{"pit":"previous","after":7,"batch_size":3}`)
+			case "extra":
+				state = []byte(`{"pit":"previous","after":7,"unknown":true}`)
+			case "duplicate":
+				state = []byte(`{"pit":"previous","after":7,"after":8}`)
+			case "wrong_profile":
+				profile = "search:" + adapter.dialect + ":v2"
 			}
-		} else if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
-			t.Fatal("checkpoint batch size escaped bound", batchSize, work, failure)
-		}
+			token, err := protocol.EncodeScanToken(profile, fingerprint, state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.ContinuationToken = token
+			work, failure := adapter.prepareScan(request)
+			if mode != "valid" {
+				if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+					t.Fatal("invalid checkpoint reached backend work", mode, failure)
+				}
+				return
+			}
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			resumed := work.Backend.(*scanPlan)
+			if resumed.batchSize != execution.ScanBatchDocuments || resumed.pit != "previous" || resumed.after != 7 || !resumed.resumed {
+				t.Fatal("checkpoint lost traversal state or inherited internal tuning", resumed)
+			}
+		})
 	}
 }
 

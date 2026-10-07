@@ -39,8 +39,8 @@ func TestMongoScanProjectionKeepsPrivateCheckpointAndNativeBSON(t *testing.T) {
 			if page.Failure != nil || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, want) || !page.Complete || len(page.NextContinuationToken) == 0 {
 				t.Fatal("projection damaged native BSON or checkpoint", page.Failure)
 			}
-			state, err := protocol.DecodeScanToken(page.NextContinuationToken, "mongodb", work.Backend.(*scanPlan).fingerprint)
-			if err != nil || bson.Raw(state).Lookup("last").Document().Lookup("_id").StringValue() != "original" {
+			state, err := protocol.DecodeScanToken(page.NextContinuationToken, scanProfile, work.Backend.(*scanPlan).fingerprint)
+			if err != nil || bson.Raw(state).Lookup("_id").StringValue() != "original" {
 				t.Fatal("projected result lost private identity", err)
 			}
 			request.ContinuationToken = page.NextContinuationToken

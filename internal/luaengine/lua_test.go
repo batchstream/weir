@@ -3,6 +3,7 @@ package luaengine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -72,6 +73,54 @@ func TestEvaluateRequiresFunctionAndExplicitResult(t *testing.T) {
 		if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
 			t.Fatalf("accepted invalid source/result %q", source)
 		}
+	}
+}
+
+func TestEvaluateMissingDocumentsAreNilCallbackArguments(t *testing.T) {
+	for _, missingCurrent := range []bool{false, true} {
+		for _, missingInput := range []bool{false, true} {
+			for _, action := range []luaengine.Action{luaengine.Keep, luaengine.Delete, luaengine.Reject, luaengine.Replace} {
+				source := `return function(current, incoming)
+					assert((current == nil) == ` + fmt.Sprint(missingCurrent) + `)
+					assert((incoming == nil) == ` + fmt.Sprint(missingInput) + `)
+					if current ~= nil then assert(current.n == 1) end
+					if incoming ~= nil then assert(weir.kind(incoming) == "object") end
+					return `
+				if action == luaengine.Replace {
+					source += "weir.object()"
+				} else if action == luaengine.Reject {
+					source += "weir.reject('rejected')"
+				} else {
+					source += "weir." + string(action) + "()"
+				}
+				source += " end"
+				program := testProgram(source)
+				if missingCurrent {
+					program.Current = value.Value{}
+				}
+				if missingInput {
+					program.Input = value.Value{}
+				}
+				got, err := luaengine.Evaluate(context.Background(), program)
+				if err != nil || got.Action != action || action == luaengine.Reject && got.Message != "rejected" {
+					t.Fatalf("current missing=%t, input missing=%t, action=%s: %#v (%v)", missingCurrent, missingInput, action, got, err)
+				}
+			}
+		}
+	}
+}
+
+func TestEvaluateLua54LanguageContract(t *testing.T) {
+	program := testProgram(`return function()
+		assert(_VERSION == "Lua 5.4")
+		assert(math.type(7) == "integer" and math.type(7.0) == "float")
+		assert(math.maxinteger == 9223372036854775807)
+		assert(math.maxinteger + 1 == math.mininteger)
+		assert(7 // 2 == 3 and (5 & 3) == 1 and (1 << 4) == 16)
+		return weir.keep()
+	end`)
+	if _, err := luaengine.Evaluate(context.Background(), program); err != nil {
+		t.Fatal(err)
 	}
 }
 
