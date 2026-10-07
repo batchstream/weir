@@ -48,7 +48,7 @@ func TestMongoScanPublicationFailureIsTerminal(t *testing.T) {
 	}
 }
 
-func TestMongoScanLearnsPrefixCapacityAcrossContinuation(t *testing.T) {
+func TestMongoScanLearnsPrefixCapacityWithinEachPage(t *testing.T) {
 	backend := testmongo.Open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -101,8 +101,8 @@ func TestMongoScanLearnsPrefixCapacityAcrossContinuation(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if work.Backend.(*scanPlan).batchSize != 3 {
-		t.Fatal("short logical remainder replaced learned capacity", work.Backend.(*scanPlan).batchSize)
+	if work.Backend.(*scanPlan).batchSize != execution.ScanBatchDocuments {
+		t.Fatal("resume inherited internal batch tuning", work.Backend.(*scanPlan).batchSize)
 	}
 	if failure := adapter.closeScan(ctx, work); failure != nil {
 		t.Fatal(failure)
@@ -119,10 +119,10 @@ func TestMongoScanLearnsPrefixCapacityAcrossContinuation(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(limits) != 23 || limits[0] != 16 || limits[5] != 1 || limits[6] != 3 || nativeRows.Load() != 76 || nativeBytes.Load() > 80<<20 {
-		t.Fatal("Scan repeatedly fetched discarded tails or lost learned capacity", limits, nativeRows.Load(), nativeBytes.Load())
+	if len(limits) != 23 || limits[0] != 16 || limits[5] != 1 || limits[6] != execution.ScanBatchDocuments || nativeRows.Load() > 2*records || nativeBytes.Load() > 128<<20 {
+		t.Fatal("Scan repeatedly fetched discarded tails within a page", limits, nativeRows.Load(), nativeBytes.Load())
 	}
-	t.Logf("records=%d findCommands=%d nativeRows=%d nativeBytes=%d learnedCapacity=3 shortPageTail=1 resumedCapacity=3", records, len(limits), nativeRows.Load(), nativeBytes.Load())
+	t.Logf("records=%d findCommands=%d nativeRows=%d nativeBytes=%d learnedCapacity=3 shortPageTail=1 resumedCapacity=128", records, len(limits), nativeRows.Load(), nativeBytes.Load())
 }
 
 func TestMongoScanBatchesHundredsOfRecordsAcrossPages(t *testing.T) {

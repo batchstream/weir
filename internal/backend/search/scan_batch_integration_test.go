@@ -128,8 +128,8 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 		t.Fatal(failure)
 	}
 	resumedState := resumed.Backend.(*scanPlan)
-	if resumedState.batchSize != 3 {
-		t.Fatal("resume forgot retained-prefix capacity", resumedState.batchSize)
+	if resumedState.batchSize != execution.ScanBatchDocuments {
+		t.Fatal("resume inherited internal batch tuning", resumedState.batchSize)
 	}
 	page := adapter.fetchScan(ctx, resumed)
 	if page.Failure != nil || len(page.Documents) != 1 || page.Exhausted {
@@ -149,7 +149,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	mu.Lock()
 	observed := append([]int(nil), sizes...)
 	mu.Unlock()
-	if len(observed) != 6 || observed[0] != 8 || observed[1] != 4 || observed[2] != 3 || observed[3] != 2 || observed[4] != 3 || observed[5] != 3 {
+	if len(observed) != 6 || observed[0] != 8 || observed[1] != 4 || observed[2] != 3 || observed[3] != 2 || observed[4] != 8 || observed[5] != 7 {
 		t.Fatal("physical read sizing or resume regressed", observed)
 	}
 	if protocol.ScanPageSize(request) != 8 {

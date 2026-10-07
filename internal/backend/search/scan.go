@@ -37,9 +37,14 @@ type scanPlan struct {
 }
 
 type scanCheckpoint struct {
-	PIT       string `json:"pit"`
-	After     int64  `json:"after"`
-	BatchSize int    `json:"batch_size"`
+	PIT   string `json:"pit"`
+	After int64  `json:"after"`
+}
+
+// The profile fixes the PIT checkpoint and dialect-specific ordering semantics.
+// Native batch capacity is learned within each page, never part of a token.
+func (a *Adapter) scanProfile() string {
+	return "search:" + a.dialect + ":v1"
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -56,7 +61,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		batchSize:   execution.ScanBatchDocuments,
 		query:       json.RawMessage(`{"match_all":{}}`),
 		pageSize:    protocol.ScanPageSize(req),
-		fingerprint: protocol.ScanFingerprint(req, a.config.Store, "search:"+a.dialect),
+		fingerprint: protocol.ScanFingerprint(req, a.config.Store, a.scanProfile()),
 	}
 	if d := req.Filter; d != nil {
 		if d.ContentType != "application/json" {
@@ -69,11 +74,14 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	}
 	native.projection = req.Projection
 	if len(req.ContinuationToken) != 0 {
-		raw, err := protocol.DecodeScanToken(req.ContinuationToken, "search:"+a.dialect, native.fingerprint)
+		raw, err := protocol.DecodeScanToken(req.ContinuationToken, a.scanProfile(), native.fingerprint)
+		if err != nil {
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched Search Scan continuation")
+		}
 		var checkpoint scanCheckpoint
 		decodeErr := json.Unmarshal(raw, &checkpoint)
 		canonical, _ := json.Marshal(checkpoint)
-		if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 || checkpoint.BatchSize < 1 || checkpoint.BatchSize > execution.ScanBatchDocuments {
+		if decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched Search Scan continuation")
 		}
 		native.pit = checkpoint.PIT
@@ -81,7 +89,6 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		native.hasAfter = true
 		native.opened = true
 		native.resumed = true
-		native.batchSize = checkpoint.BatchSize
 	}
 	p := &execution.Plan{
 		Key:          req.Resource,
@@ -197,9 +204,9 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		return page
 	}
 	if !page.Exhausted && n.Count+uint64(len(page.Documents)) >= n.pageSize {
-		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after, BatchSize: n.batchSize}
+		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after}
 		state, _ := json.Marshal(checkpoint)
-		token, err := protocol.EncodeScanToken("search:"+a.dialect, n.fingerprint, state)
+		token, err := protocol.EncodeScanToken(a.scanProfile(), n.fingerprint, state)
 		if err != nil {
 			page.Documents = nil
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")

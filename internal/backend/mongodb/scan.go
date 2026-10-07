@@ -25,6 +25,10 @@ const scanNativeLimit = (16 << 20) + (64 << 10)
 // metadata/framing while validating the entire response.
 const scanWorkingBytes = 48 << 20
 
+// This profile fixes the checkpoint shape and ascending native BSON _id order.
+// Scheduling and native batch limits are deliberately outside the profile.
+const scanProfile = "mongodb:v1"
+
 type scanPlan struct {
 	execution.ScanProgress
 	target            namespace
@@ -38,11 +42,6 @@ type scanPlan struct {
 	includeID         bool
 }
 
-type scanCheckpoint struct {
-	Last      bson.Raw `bson:"last"`
-	BatchSize int32    `bson:"batch_size"`
-}
-
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateScan(req); f != nil {
 		return nil, f
@@ -52,7 +51,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Scan target")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, "mongodb"), includeID: true}
+	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, scanProfile), includeID: true}
 	if d := req.Filter; d != nil {
 		if d.ContentType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan filter requires BSON")
@@ -97,15 +96,11 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		}
 	}
 	if len(req.ContinuationToken) != 0 {
-		state, err := protocol.DecodeScanToken(req.ContinuationToken, "mongodb", native.fingerprint)
-		fields, fieldsErr := scanFields(state)
-		last, lastOK := fields["last"].DocumentOK()
-		batchSize, batchOK := fields["batch_size"].Int32OK()
-		if err != nil || fieldsErr != nil || len(fields) != 2 || !lastOK || !validScanID(last) || !batchOK || batchSize < 1 || batchSize > execution.ScanBatchDocuments {
+		state, err := protocol.DecodeScanToken(req.ContinuationToken, scanProfile, native.fingerprint)
+		if err != nil || !validScanID(state) {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched MongoDB Scan continuation")
 		}
-		native.last = last
-		native.batchSize = int(batchSize)
+		native.last = state
 	}
 	p := &execution.Plan{
 		Key:          req.Resource,
@@ -218,16 +213,11 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 	}
 	if cursor.limited {
 		// Learn from the accepted byte-bounded prefix, not a short logical page.
-		// The next request and its continuation reuse this conservative capacity.
+		// Subsequent fetches in this logical page reuse this conservative capacity.
 		n.batchSize = max(1, len(page.Documents))
 	}
 	if !page.Exhausted && n.Count+uint64(len(page.Documents)) >= n.pageSize {
-		checkpoint := scanCheckpoint{Last: n.last, BatchSize: int32(n.batchSize)}
-		state, err := bson.Marshal(checkpoint)
-		var token []byte
-		if err == nil {
-			token, err = protocol.EncodeScanToken("mongodb", n.fingerprint, state)
-		}
+		token, err := protocol.EncodeScanToken(scanProfile, n.fingerprint, n.last)
 		if err != nil {
 			page.Documents = nil
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")

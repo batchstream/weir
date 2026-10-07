@@ -21,8 +21,10 @@ func ValidateExecuteFrame(data mem.BufferSlice) error {
 	return validateMessageFrame(reader, wireExecute, uint64(data.Len()))
 }
 
-// Message shapes are fixed by the public protocol. Walking nested messages before
-// decoding prevents protobuf's last-value-wins merge from hiding duplicate fields.
+// Requests fail closed on unknown fields: silently dropping a future condition or
+// command option could change its effects. This is separate from response readers,
+// which may ignore additive metadata. Walking nested messages before decoding also
+// bounds allocations and prevents last-value-wins from hiding duplicate fields.
 type wireKind uint8
 
 const (

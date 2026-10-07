@@ -39,53 +39,50 @@ func TestMongoScanFindUsesRemainingBoundedBatch(t *testing.T) {
 	}
 }
 
-func TestMongoScanCheckpointRequiresBoundedCapacityAndNativeIdentity(t *testing.T) {
+func TestMongoScanCheckpointRequiresNativeIdentityOnly(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
 	request := &pb.ScanRequest{Resource: "db/records", PageSize: 1}
-	fingerprint := protocol.ScanFingerprint(request, "mongo", "mongodb")
+	fingerprint := protocol.ScanFingerprint(request, "mongo", scanProfile)
 	nested := bson.D{{Key: "ordered", Value: int32(1)}, {Key: "second", Value: int64(2)}}
 	identity := bson.D{{Key: "_id", Value: nested}}
 	last, err := bson.Marshal(identity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"valid", "missing_capacity", "zero_capacity", "excess_capacity", "wrong_capacity_type", "extra", "duplicate", "invalid_identity", "missing_batch_size"} {
+	for _, mode := range []string{"valid", "missing_identity", "internal_capacity", "extra", "duplicate", "invalid_identity", "wrong_profile"} {
 		t.Run(mode, func(t *testing.T) {
-			checkpoint := bson.D{{Key: "last", Value: bson.Raw(last)}, {Key: "batch_size", Value: int32(3)}}
+			checkpoint := append(bson.D(nil), identity...)
+			profile := scanProfile
 			switch mode {
-			case "missing_capacity":
-				checkpoint = checkpoint[:1]
-			case "zero_capacity":
-				checkpoint[1].Value = int32(0)
-			case "excess_capacity":
-				checkpoint[1].Value = int32(execution.ScanBatchDocuments + 1)
-			case "wrong_capacity_type":
-				checkpoint[1].Value = int64(3)
+			case "missing_identity":
+				checkpoint = bson.D{}
+			case "internal_capacity":
+				field := bson.E{Key: "batch_size", Value: int32(3)}
+				checkpoint = append(checkpoint, field)
 			case "extra":
 				field := bson.E{Key: "unknown", Value: int32(1)}
 				checkpoint = append(checkpoint, field)
 			case "duplicate":
-				checkpoint = append(checkpoint, checkpoint[1])
+				checkpoint = append(checkpoint, checkpoint[0])
 			case "invalid_identity":
-				invalid := bson.D{{Key: "_id", Value: bson.A{int32(1)}}}
-				checkpoint[0].Value = invalid
-			case "missing_batch_size":
-				checkpoint = identity
+				checkpoint[0].Value = bson.A{int32(1)}
+			case "wrong_profile":
+				profile = "mongodb:v2"
 			}
 			state, err := bson.Marshal(checkpoint)
 			if err != nil {
 				t.Fatal(err)
 			}
-			token, err := protocol.EncodeScanToken("mongodb", fingerprint, state)
+			token, err := protocol.EncodeScanToken(profile, fingerprint, state)
 			if err != nil {
 				t.Fatal(err)
 			}
 			request.ContinuationToken = token
 			work, failure := adapter.prepareScan(request)
 			if mode != "valid" {
-				if failure == nil {
-					t.Fatal("invalid checkpoint was accepted", mode)
+				if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+					t.Fatal("invalid checkpoint was accepted before backend work", mode, failure)
 				}
 				return
 			}
@@ -98,8 +95,8 @@ func TestMongoScanCheckpointRequiresBoundedCapacityAndNativeIdentity(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if native.batchSize != 3 || !bytes.Equal(native.last, last) || bson.Raw(raw).Lookup("batchSize").Int32() != 1 {
-				t.Fatal("logical remainder changed learned capacity or BSON identity", native.batchSize, native.last, command)
+			if native.batchSize != execution.ScanBatchDocuments || !bytes.Equal(native.last, last) || bson.Raw(raw).Lookup("batchSize").Int32() != 1 {
+				t.Fatal("checkpoint changed BSON identity or inherited internal tuning", native.batchSize, native.last, command)
 			}
 		})
 	}
@@ -269,7 +266,7 @@ func TestMongoScanRejectsInvalidIdentityTokens(t *testing.T) {
 	config := Config{Store: "mongo"}
 	adapter := &Adapter{config: config}
 	request := &pb.ScanRequest{Resource: "db/records"}
-	fingerprint := protocol.ScanFingerprint(request, "mongo", "mongodb")
+	fingerprint := protocol.ScanFingerprint(request, "mongo", scanProfile)
 	identities := []bson.D{
 		{{Key: "other", Value: "id"}},
 		{{Key: "_id", Value: bson.A{int32(1)}}},
@@ -277,7 +274,7 @@ func TestMongoScanRejectsInvalidIdentityTokens(t *testing.T) {
 	}
 	for _, identity := range identities {
 		raw, _ := bson.Marshal(identity)
-		token, err := protocol.EncodeScanToken("mongodb", fingerprint, raw)
+		token, err := protocol.EncodeScanToken(scanProfile, fingerprint, raw)
 		if err != nil {
 			t.Fatal(err)
 		}
