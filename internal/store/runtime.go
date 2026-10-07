@@ -549,8 +549,9 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 func (r *Runtime) execute(b *batch) {
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
-	var events map[*Ticket][]*pb.Event
-	var eventBytes, documentBytes map[*Ticket]int
+	// Scan batches are singleton; Record and Native results bypass this buffer.
+	var events []*pb.Event
+	var eventBytes, documentBytes int
 	for i, t := range b.items {
 		plan := *t.plan
 		plan.Context = t.ctx
@@ -582,37 +583,31 @@ func (r *Runtime) execute(b *batch) {
 		if plan.Command.GetNative() != nil {
 			return ticket.emit(event)
 		}
-		if events == nil {
-			events = make(map[*Ticket][]*pb.Event)
-			eventBytes = make(map[*Ticket]int)
-			documentBytes = make(map[*Ticket]int)
-		}
 		if plan.Command.GetScan() != nil {
 			if event.GetDocument() == nil && event.GetScanEnd() == nil {
 				return fmt.Errorf("adapter emitted wrong Scan result")
 			}
-			buffered := events[ticket]
-			if len(buffered) != 0 && buffered[len(buffered)-1].GetScanEnd() != nil {
+			if len(events) != 0 && events[len(events)-1].GetScanEnd() != nil {
 				return fmt.Errorf("adapter emitted after Scan terminal result")
 			}
-			if len(events[ticket]) >= execution.ScanBatchDocuments+1 {
+			if len(events) >= execution.ScanBatchDocuments+1 {
 				return fmt.Errorf("Scan batch exceeds document bound")
 			}
 			if document := event.GetDocument(); document != nil {
-				if len(events[ticket]) >= execution.ScanBatchDocuments || len(document.Data) > execution.ScanBatchBytes-documentBytes[ticket] {
+				if len(events) >= execution.ScanBatchDocuments || len(document.Data) > execution.ScanBatchBytes-documentBytes {
 					return fmt.Errorf("Scan batch exceeds retained output bound")
 				}
-				documentBytes[ticket] += len(document.Data)
+				documentBytes += len(document.Data)
 			}
 			size := proto.Size(event)
-			if size > plan.ResultBytes-eventBytes[ticket] {
+			if size > plan.ResultBytes-eventBytes {
 				return fmt.Errorf("Scan output exceeds result reservation")
 			}
-			eventBytes[ticket] += size
-		} else if len(events[ticket]) >= 2 {
+			eventBytes += size
+		} else if len(events) >= 2 {
 			return fmt.Errorf("adapter step exceeds two bounded events")
 		}
-		events[ticket] = append(events[ticket], event)
+		events = append(events, event)
 		return nil
 	}
 	r.metrics.executions.WithLabelValues("execution").Inc()
@@ -621,12 +616,8 @@ func (r *Runtime) execute(b *batch) {
 	continuation := r.adapter.Execute(b.ctx, plans, emit)
 	// Only a singleton Scan can schedule another bounded fetch.
 	continuation = continuation && len(plans) == 1 && plans[0].Command.GetScan() != nil
-	if continuation {
-		ticket := b.items[0]
-		buffered := events[ticket]
-		if len(buffered) != 0 && buffered[len(buffered)-1].GetScanEnd() != nil {
-			continuation = false
-		}
+	if continuation && len(events) != 0 && events[len(events)-1].GetScanEnd() != nil {
+		continuation = false
 	}
 	r.metrics.duration.WithLabelValues("execution").Observe(time.Since(started).Seconds())
 	interested := false
@@ -655,7 +646,7 @@ func (r *Runtime) execute(b *batch) {
 			r.completeLocked(ticket, event)
 		}
 		if ticket.session != nil && ticket.session.Events != nil && !ticket.acked {
-			r.startPublisherLocked(ticket, events[ticket], continuation && ticket.plan.Command.GetScan() != nil)
+			r.startPublisherLocked(ticket, events, continuation && ticket.plan.Command.GetScan() != nil)
 		}
 	}
 	r.notifyLocked()
