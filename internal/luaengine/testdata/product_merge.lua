@@ -92,7 +92,9 @@ local function merge_string_set(current, incoming, field)
     current[field] = union_strings(current[field], values)
 end
 
-local function history(current, incoming, field, key_function, limit)
+local function history(opts)
+    local current, incoming, field = opts.current, opts.incoming, opts.field
+    local key_function, limit = opts.key_function, opts.limit
     local items = current[field]
     local additions = incoming[field]
     if additions ~= nil and #additions > 0 then
@@ -179,23 +181,29 @@ return function(current, incoming)
         current.brand = string.upper(incoming.brand)
     end
 
-    history(current, incoming, "solds", function(item)
+    local history_options = {current = current, incoming = incoming, field = "solds", limit = 20}
+    history_options.key_function = function(item)
         local record_at = item.record_at or ""
         if #record_at > 10 then
             record_at = string.sub(record_at, 1, 10)
         end
         return tostring(item.sold or 0) .. "-" .. tostring(item.period_hours or 0) .. "-" .. record_at
-    end, 20)
+    end
+    history(history_options)
 
-    history(current, incoming, "stocks", function(item)
+    history_options.field = "stocks"
+    history_options.key_function = function(item)
         return tostring(item.stock or 0) .. canonical(item.variables or {})
-    end, 20)
+    end
+    history(history_options)
 
     if incoming.comment_count ~= nil and incoming.comment_count ~= 0 then
         current.comment_count = incoming.comment_count
     end
 
-    history(current, incoming, "comments", canonical, 20)
+    history_options.field = "comments"
+    history_options.key_function = canonical
+    history(history_options)
 
     if incoming.rating ~= nil then
         current.rating = incoming.rating
