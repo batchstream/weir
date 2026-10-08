@@ -22,7 +22,7 @@ func TestDecodeBasicDefaultsAndListenerRequirement(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults := DefaultConfig().Basic
-	if cfg.Memory != defaults.Memory || cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
+	if cfg.Transport != defaults.Transport || defaults.Listeners.Application != "" {
 		t.Fatal("process defaults changed")
 	}
 	input = "{}\n"
@@ -50,12 +50,12 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 			raw := string(basic)
 			duplicate := "MEMORY: 512MiB\n"
 			crossField := "stores: []\n"
-			nestedDuplicate := strings.Replace(raw, "max_connections: 16", "max_connections: 16\n    MAX_CONNECTIONS: 16", 1)
+			nestedDuplicate := strings.Replace(raw, "stall: 30s", "stall: 30s\n    STALL: 30s", 1)
 			if document == "routing" {
 				raw = string(routing)
 				duplicate = "STORES: []\n"
 				crossField = "listeners: {}\n"
-				nestedDuplicate = strings.Replace(raw, "max_concurrency: 0", "max_concurrency: 0\n      MAX_CONCURRENCY: 0", 1)
+				nestedDuplicate = strings.Replace(raw, "max_batch_operations: 0", "max_batch_operations: 0\n      MAX_BATCH_OPERATIONS: 0", 1)
 			}
 			var decodeErr error
 			if document == "basic" {
@@ -157,7 +157,7 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input = strings.Replace(string(basic), "max_sessions: 4", "max_sessions: 4\n    max_ſessions: 4", 1)
+	input = strings.Replace(string(basic), "stall: 30s", "stall: 30s\n        ſtall: 30s", 1)
 	if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "duplicate configuration field") {
 		t.Fatal("Unicode case alias overwrote basic field", err)
 	}
@@ -174,7 +174,7 @@ func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 		"listeners: ~\n",
 		"memory:\n",
 		"transport: null\n",
-		"transport:\n  max_connections: null\n",
+		"transport:\n  timeouts:\n    stall: null\n",
 		"transport:\n  timeouts:\n    request: null\n",
 	} {
 		input := fragment + string(raw)
@@ -332,15 +332,15 @@ func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 func TestConfigurationScalarTypes(t *testing.T) {
 	basic := "listeners:\n  application: 127.0.0.1:0\n"
 	for _, fragment := range []string{
-		"listeners:\n  application: 127001\n", basic + "memory: true\n", basic + "diagnostics:\n  allow_intranet: yes\n", basic + "diagnostics:\n  allow_intranet: 'true'\n", basic + "transport:\n  max_connections: '16'\n", basic + "transport:\n  max_sessions: 4.0\n", basic + "discovery:\n  seeds: [123]\n",
+		"listeners:\n  application: 127001\n", basic + "diagnostics:\n  allow_intranet: yes\n", basic + "diagnostics:\n  allow_intranet: 'true'\n", basic + "transport:\n  timeouts:\n    stall: true\n", basic + "discovery:\n  seeds: [123]\n",
 	} {
 		_, err := DecodeBasic(strings.NewReader(fragment))
 		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
 			t.Fatal("basic field accepted implicit type coercion", err)
 		}
 	}
-	input := "stores:\n  - name: records\n    search:\n      url: http://127.0.0.1:9200\n    max_concurrency: 2\n"
-	for _, replacement := range [][2]string{{"name: records", "name: true"}, {"url: http://127.0.0.1:9200", "url: 123"}, {"max_concurrency: 2", "max_concurrency: '2'"}} {
+	input := "stores:\n  - name: records\n    search:\n      url: http://127.0.0.1:9200\n    max_batch_operations: 2\n"
+	for _, replacement := range [][2]string{{"name: records", "name: true"}, {"url: http://127.0.0.1:9200", "url: 123"}, {"max_batch_operations: 2", "max_batch_operations: '2'"}} {
 		invalid := strings.Replace(input, replacement[0], replacement[1], 1)
 		_, err := DecodeRouting(strings.NewReader(invalid))
 		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
@@ -375,7 +375,7 @@ func TestRoutingNullFields(t *testing.T) {
 	}
 	for _, document := range []string{
 		"stores: [null]\n",
-		"stores:\n  - name: database\n    mongodb:\n      uri: mongodb://127.0.0.1:27017\n    max_concurrency: null\n",
+		"stores:\n  - name: database\n    mongodb:\n      uri: mongodb://127.0.0.1:27017\n    max_batch_operations: null\n",
 	} {
 		if _, err := DecodeRouting(strings.NewReader(document)); err == nil {
 			t.Fatal("null Store or required scalar accepted")

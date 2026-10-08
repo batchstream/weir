@@ -27,7 +27,7 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 		a := &lifecycleAdapter{}
 		limits := DefaultLimits()
 		if !valid {
-			limits.Concurrency = 0
+			limits.QueueOperations = -1
 		}
 		runtime, err := New(a, limits)
 		if !valid {
@@ -93,7 +93,7 @@ func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) 
 			t.Run(fmt.Sprintf("session=%t/close=%t", sessionOwned, closeSession), func(t *testing.T) {
 				adapter := &forcedCloseAdapter{started: make(chan struct{})}
 				limits := DefaultLimits()
-				limits.Concurrency = 1
+
 				limits.BatchOperations = 1
 				runtime, err := New(adapter, limits)
 				if err != nil {
@@ -122,20 +122,15 @@ func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) 
 				case <-time.After(time.Second):
 					t.Fatal("active execution did not start")
 				}
-				queuedPlan := plan(3, "queued", false)
-				queued, failure, _ := runtime.Submit(t.Context(), queuedPlan, session)
-				if failure != nil {
-					t.Fatal(failure)
-				}
-				// Expiration enters forced cancellation with one completed, one active
-				// and one queued record, without relying on database or timer scheduling.
+				// Forced cancellation keeps both completed and active record evidence
+				// until their consumer acknowledges it or closes the session.
 				closeContext, cancel := context.WithCancel(t.Context())
 				cancel()
 				if err := runtime.Close(closeContext); err != nil {
 					t.Fatal(err)
 				}
-				tickets := []*Ticket{ready, active, queued}
-				outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_UNKNOWN, pb.MutationOutcome_NOT_STARTED}
+				tickets := []*Ticket{ready, active}
+				outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_UNKNOWN}
 				for index, ticket := range tickets {
 					event, err := ticket.Wait(t.Context())
 					if err != nil || event == nil || event.GetMutationResult().GetOutcome() != outcomes[index] {
@@ -145,18 +140,17 @@ func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) 
 						t.Fatal("canceled write lost its failure evidence", index, event)
 					}
 				}
-				if snapshot := runtime.Snapshot(); snapshot.Retained != 3 || snapshot.Ready != 3 || snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.ResultBytes != 3*execution.ResultOverheadBytes || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 {
+				if snapshot := runtime.Snapshot(); snapshot.Retained != 2 || snapshot.Ready != 2 || snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.ResultBytes != 2*execution.ResultOverheadBytes || snapshot.WorkingBytes != 0 || snapshot.Publishers != 0 {
 					t.Fatal("forced shutdown released record consumer ownership", snapshot)
 				}
 				if closeSession {
 					session.Close()
 				} else {
 					ready.Ack()
-					if snapshot := runtime.Snapshot(); snapshot.Retained != 2 || snapshot.ResultBytes != 2*execution.ResultOverheadBytes {
+					if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes {
 						t.Fatal("first acknowledgement released its peer", snapshot)
 					}
 					active.Ack()
-					queued.Ack()
 				}
 				if snapshot := runtime.Snapshot(); snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 {
 					t.Fatal("consumer release leaked record ownership", snapshot)

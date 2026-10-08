@@ -194,7 +194,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 					valid = false
 					break
 				}
-				oversized := len(raw) > a.maxReadSize()
+				oversized := len(raw) > protocol.MaxDocument
 				if !oversized {
 					nodes := 65536
 					if !validScanBSON(raw, 0, &nodes) {

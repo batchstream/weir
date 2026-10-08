@@ -23,7 +23,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			native, db := backend.Admin, backend.DB
 			proxy := testmongo.StartProxy(t, backend)
 			// Reconnect verification reads the fixture's complete 150KiB document.
-			cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1, MaxReadSize: 256 << 10}
+			cfg := Config{URI: proxy.URI(), Store: "mongo"}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

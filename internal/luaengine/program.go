@@ -11,10 +11,8 @@ import (
 )
 
 const (
-	MaxSourceBytes   = 16 << 10
-	MaxMessageBytes  = 1024
-	ExecutionTimeout = 500 * time.Millisecond
-	maxConcurrent    = 4
+	MaxSourceBytes  = 16 << 10
+	MaxMessageBytes = 1024
 )
 
 type Action string

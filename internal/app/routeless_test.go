@@ -2,9 +2,6 @@ package app
 
 import (
 	"context"
-	"github.com/batchstream/weir/internal/testutil"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"net"
 	"os"
 	"path/filepath"
@@ -15,9 +12,12 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
+	"github.com/batchstream/weir/internal/testutil"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 func TestLoadWithoutRoutingDoesNotDiscoverFiles(t *testing.T) {
@@ -87,7 +87,7 @@ func TestRoutelessNodeLifecycleAndUnknownStore(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if len(node.stores) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) {
+	if len(node.stores) != 0 || node.guard.Snapshot().Budget == 0 {
 		t.Fatal("an empty graph must construct admission only, with no backend or remote state")
 	}
 	if node.ready() {

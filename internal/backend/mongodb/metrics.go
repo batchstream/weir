@@ -7,14 +7,14 @@ import (
 )
 
 type connectionSnapshot struct {
-	Owned, Peak, Limit, Dialing, Closing int
-	Acquired, Released                   uint64
+	Owned, Peak, Dialing, Closing int
+	Acquired, Released            uint64
 }
 
-func (d *boundedDialer) snapshot() connectionSnapshot {
+func (d *connectionOwner) snapshot() connectionSnapshot {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	s := connectionSnapshot{Owned: d.owned, Peak: d.peak, Limit: d.limit, Dialing: d.dialing,
+	s := connectionSnapshot{Owned: d.owned, Peak: d.peak, Dialing: d.dialing,
 		Closing: d.closing, Acquired: d.acquired, Released: d.released}
 	return s
 }
@@ -23,7 +23,7 @@ func (a *Adapter) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCo
 
 func (a *Adapter) Collect(ch chan<- prometheus.Metric) {
 	s := a.dialer.snapshot()
-	values := map[string]float64{"owned": float64(s.Owned), "peak": float64(s.Peak), "limit": float64(s.Limit),
+	values := map[string]float64{"owned": float64(s.Owned), "peak": float64(s.Peak),
 		"dialing": float64(s.Dialing), "closing": float64(s.Closing), "acquired": float64(s.Acquired), "released": float64(s.Released)}
 	for name, value := range values {
 		desc := prometheus.NewDesc(
@@ -39,6 +39,6 @@ func (a *Adapter) Collect(ch chan<- prometheus.Metric) {
 func (a *Adapter) logConnections() {
 	s := a.dialer.snapshot()
 	slog.Info("backend_connections_closed", "backend", "mongo", "store", a.config.Store,
-		"owned", s.Owned, "peak", s.Peak, "limit", s.Limit, "dialing", s.Dialing,
+		"owned", s.Owned, "peak", s.Peak, "dialing", s.Dialing,
 		"closing", s.Closing, "acquired", s.Acquired, "released", s.Released)
 }

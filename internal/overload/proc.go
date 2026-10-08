@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -27,12 +26,11 @@ type memoryLevel struct {
 
 // Linux parsing is kept portable so offline race tests can exercise real owned
 // files on every development platform. Only memory_linux.go selects /proc.
-// After discovery, topology and limits are static. Changes latch until restart.
+// Each complete observation discovers the current hierarchy and memory limits.
 type memoryProfile struct {
 	proc     string
 	identity cgroupIdentity
 	levels   []memoryLevel
-	changed  bool
 }
 
 // Mount ID and device distinguish replacement mounts at the same path. The
@@ -64,10 +62,6 @@ func (p *memoryProfile) observe() observation {
 
 func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 	snapshot := CgroupSnapshot{State: "unknown", Scope: "none", Levels: len(p.levels)}
-	if p.changed {
-		snapshot.State = "profile_changed"
-		return snapshot, false, false
-	}
 	membership, err := readFile(filepath.Join(p.proc, "cgroup"), maxCgroupBytes)
 	if err != nil {
 		return snapshot, false, false
@@ -96,7 +90,7 @@ func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 		}
 		// A previously readable top pair disappearing is missing evidence, not a
 		// confirmed unlimited/controller change. Preserve the trusted profile.
-		if level.absent && p.levels != nil && identity == p.identity && !p.levels[i].absent {
+		if level.absent && p.levels != nil && identity == p.identity && i < len(p.levels) && !p.levels[i].absent {
 			return snapshot, false, false
 		}
 		levels = append(levels, level)
@@ -106,6 +100,7 @@ func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 		if !level.finite {
 			continue
 		}
+		snapshot.Capacity = smallerBudget(snapshot.Capacity, level.limit)
 		high = high || level.limit == 0 || current >= watermark(level.limit, 80, true)
 		low = low && level.limit != 0 && current <= watermark(level.limit, 70, false)
 		if !snapshot.Finite || pressureGreater(current, level.limit, snapshot) {
@@ -116,13 +111,7 @@ func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 			}
 		}
 	}
-	// Commit only a fully validated observation. Transient failures cannot turn
-	// a tentative mapping/limit difference into a permanent profile change.
-	if p.levels != nil && (identity != p.identity || !slices.Equal(levels, p.levels)) {
-		p.changed = true
-		snapshot.State = "profile_changed"
-		return snapshot, false, false
-	}
+	// Replace the profile only after the entire hierarchy validates.
 	p.identity, p.levels = identity, levels
 	snapshot.State, snapshot.Valid = "v2", true
 	return snapshot, high, low

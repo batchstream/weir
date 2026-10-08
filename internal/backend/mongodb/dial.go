@@ -13,42 +13,33 @@ import (
 	"github.com/batchstream/weir-protocol/api/netlimit"
 )
 
-const mongoMaxConnecting = 2
+var errConnections = errors.New("MongoDB connection owner closed")
 
-var errConnections = errors.New("MongoDB connection owner closed or bounded")
-
-// The driver's pool map can retire a connection before raw Close. This owner
-// retains P+1 credits across lookup, TCP, TLS, authentication and raw Close.
-// Direct/poll has two pool creator workers and one heartbeat dialer, even
-// when P=1: pool retirement can overlap a creator that is still exiting.
-type boundedDialer struct {
+// connectionOwner tracks raw sockets through shutdown without a capacity gate.
+type connectionOwner struct {
 	resolver  *net.Resolver
 	tlsConfig *tls.Config
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	closed    bool
-	limit     int
-	maxDials  int
 	owned     int
 	peak      int
 	dialing   int
 	closing   int
 	acquired  uint64
 	released  uint64
-	changed   chan struct{}
 	conns     map[*mongoConn]struct{}
 	workers   sync.WaitGroup
 }
 
-func newBoundedDialer(limit, maxDials int) *boundedDialer {
+func newConnectionOwner() *connectionOwner {
 	ctx, cancel := context.WithCancel(context.Background())
-	d := &boundedDialer{ctx: ctx, cancel: cancel, limit: limit, maxDials: maxDials,
-		changed: make(chan struct{}), conns: make(map[*mongoConn]struct{})}
+	d := &connectionOwner{ctx: ctx, cancel: cancel, conns: make(map[*mongoConn]struct{})}
 	return d
 }
 
-func (d *boundedDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+func (d *connectionOwner) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	conn, err := d.dialConnection(ctx, network, address)
 	if err != nil {
 		return nil, err
@@ -57,10 +48,10 @@ func (d *boundedDialer) DialContext(ctx context.Context, network, address string
 	return bounded, nil
 }
 
-// OCSP uses this same raw owner with one slot, without the Mongo wire guard.
-func (d *boundedDialer) dialConnection(ctx context.Context, network, address string) (net.Conn, error) {
+// OCSP uses the same raw socket ownership without the Mongo wire guard.
+func (d *connectionOwner) dialConnection(ctx context.Context, network, address string) (net.Conn, error) {
 	d.mu.Lock()
-	if d.closed || d.dialing == d.maxDials {
+	if d.closed {
 		d.mu.Unlock()
 		return nil, errConnections
 	}
@@ -143,47 +134,34 @@ func (d *boundedDialer) dialConnection(ctx context.Context, network, address str
 	return conn, nil
 }
 
-func (d *boundedDialer) acquire(ctx context.Context) error {
+func (d *connectionOwner) acquire(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if d.closed {
-			return errConnections
-		}
-		if d.owned < d.limit {
-			d.owned++
-			d.acquired++
-			d.peak = max(d.peak, d.owned)
-			return nil
-		}
-		changed := d.changed
-		d.mu.Unlock()
-		select {
-		case <-changed:
-		case <-ctx.Done():
-		}
-		d.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	if d.closed {
+		return errConnections
+	}
+	d.owned++
+	d.acquired++
+	d.peak = max(d.peak, d.owned)
+	return nil
 }
 
-func (d *boundedDialer) releaseLocked() {
+func (d *connectionOwner) releaseLocked() {
 	d.owned--
 	d.released++
-	close(d.changed)
-	d.changed = make(chan struct{})
 }
 
-func (d *boundedDialer) stop() {
+func (d *connectionOwner) stop() {
 	d.mu.Lock()
 	d.closed = true
 	d.cancel()
 	d.mu.Unlock()
 }
 
-func (d *boundedDialer) close() {
+func (d *connectionOwner) close() {
 	d.stop()
 	d.mu.Lock()
 	conns := make([]*mongoConn, 0, len(d.conns))
@@ -200,7 +178,7 @@ func (d *boundedDialer) close() {
 type mongoConn struct {
 	net.Conn
 	raw   net.Conn
-	owner *boundedDialer
+	owner *connectionOwner
 	once  sync.Once
 	err   error
 }

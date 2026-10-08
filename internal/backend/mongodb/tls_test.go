@@ -185,7 +185,7 @@ func TestMongoTLSVerificationAndOCSP(t *testing.T) {
 			if mode == "bad_root" {
 				config.RootCAs = x509.NewCertPool()
 			}
-			d := newBoundedDialer(5, 3)
+			d := newConnectionOwner()
 			d.tlsConfig = config
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 			defer cancel()
@@ -231,7 +231,7 @@ func TestMongoTLSWireGuardBeforeDriverHeader(t *testing.T) {
 				message = message[:len(message)-1]
 			}
 			address := tlsWireServer(t, cert.config, message)
-			d := newBoundedDialer(5, 3)
+			d := newConnectionOwner()
 			d.tlsConfig = &tls.Config{RootCAs: cert.roots}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -272,7 +272,7 @@ func TestMongoTLSHandshakeStallCancellation(t *testing.T) {
 			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 			_, _ = io.Copy(io.Discard, conn)
 		}()
-		d := newBoundedDialer(5, 3)
+		d := newConnectionOwner()
 		d.tlsConfig = &tls.Config{}
 		duration := 20 * time.Millisecond
 		if i == 12 {
@@ -311,7 +311,7 @@ func TestMongoDNSCancellation(t *testing.T) {
 	fixture.Set("mongo.weir.test", answer)
 	baseline := runtime.NumGoroutine()
 	for i := 0; i < 8; i++ {
-		d := newBoundedDialer(5, 3)
+		d := newConnectionOwner()
 		d.resolver = fixture.Resolver()
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		start := time.Now()

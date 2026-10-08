@@ -62,19 +62,18 @@ func (b *deadlineBackend) serve(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, reply)
 }
 
-func deadlineRuntime(t *testing.T, backend *deadlineBackend, timeout time.Duration) (*Adapter, *store.Runtime) {
+func deadlineRuntime(t *testing.T, backend *deadlineBackend) (*Adapter, *store.Runtime) {
 	t.Helper()
 	handler := http.HandlerFunc(backend.serve)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	config := Config{Store: "search", URL: server.URL, Pool: 1}
+	config := Config{Store: "search", URL: server.URL}
 	adapter, err := Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	limits := store.DefaultLimits()
-	limits.Concurrency = 1
-	limits.BackendTimeout = timeout
+
 	runtime, err := store.New(adapter, limits)
 	if err != nil {
 		_ = adapter.Close()
@@ -112,11 +111,11 @@ func deadlineMutation(t *testing.T, runtime *store.Runtime, action string) *exec
 	return prepared
 }
 
-func TestConfiguredBackendDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testing.T) {
+func TestCallerDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testing.T) {
 	for _, body := range []bool{false, true} {
 		t.Run(map[bool]string{false: "headers", true: "body"}[body], func(t *testing.T) {
 			backend := &deadlineBackend{writeDelay: 2150 * time.Millisecond, bodyDelay: body}
-			_, runtime := deadlineRuntime(t, backend, 4*time.Second)
+			_, runtime := deadlineRuntime(t, backend)
 			prepared := deadlineMutation(t, runtime, "put")
 			caller, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
@@ -142,9 +141,11 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 	for _, body := range []bool{false, true} {
 		t.Run(map[bool]string{false: "headers", true: "body"}[body], func(t *testing.T) {
 			backend := &deadlineBackend{stall: true, bodyDelay: body}
-			adapter, runtime := deadlineRuntime(t, backend, 80*time.Millisecond)
+			adapter, runtime := deadlineRuntime(t, backend)
 			prepared := deadlineMutation(t, runtime, "put")
-			ticket, failure, _ := runtime.Submit(t.Context(), prepared, nil)
+			caller, stopCaller := context.WithTimeout(t.Context(), 80*time.Millisecond)
+			defer stopCaller()
+			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -161,22 +162,24 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 			ticket.Ack()
 			assertDeadlineReleased(t, runtime)
 			until := time.Now().Add(time.Second)
-			for len(adapter.dialer.slots) != 0 && time.Now().Before(until) {
+			for searchOwned(adapter.dialer) != 0 && time.Now().Before(until) {
 				time.Sleep(time.Millisecond)
 			}
-			if len(adapter.dialer.slots) != 0 {
+			if searchOwned(adapter.dialer) != 0 {
 				t.Fatal("aborted request retained its connection")
 			}
 		})
 	}
 }
 
-func TestBackendDeadlineIsCumulativeAcrossQualificationReadAndWrite(t *testing.T) {
+func TestCallerDeadlineCoversQualificationReadAndWrite(t *testing.T) {
 	backend := &deadlineBackend{qualificationDelay: 60 * time.Millisecond, readDelay: 60 * time.Millisecond, writeDelay: 60 * time.Millisecond}
-	_, runtime := deadlineRuntime(t, backend, 150*time.Millisecond)
+	_, runtime := deadlineRuntime(t, backend)
 	prepared := deadlineMutation(t, runtime, "replace")
 	started := time.Now()
-	ticket, failure, _ := runtime.Submit(t.Context(), prepared, nil)
+	caller, stopCaller := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	defer stopCaller()
+	ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}

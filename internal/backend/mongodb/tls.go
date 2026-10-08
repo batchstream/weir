@@ -28,7 +28,7 @@ var errTLSBound = errors.New("MongoDB TLS profile exceeds certificate or OCSP bo
 // ApplyURI normally loads the CA without a size limit. Remove its CA option and
 // supply the same exclusive root pool using a bounded regular-file read.
 // ValidateConfig must precede this function (including all file and DNS access).
-func connectionOptions(cfg Config, dialer *boundedDialer) (*options.ClientOptions, error) {
+func connectionOptions(cfg Config, dialer *connectionOwner) (*options.ClientOptions, error) {
 	parsed, err := url.Parse(cfg.URI)
 	if err != nil {
 		return nil, errors.New("invalid MongoDB connection profile")
@@ -143,7 +143,7 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 			return nil, errTLSBound
 		}
 	}
-	dialer := newBoundedDialer(1, 1)
+	dialer := newConnectionOwner()
 	defer dialer.close()
 	transport := &http.Transport{
 		DialContext:            dialer.dialConnection,

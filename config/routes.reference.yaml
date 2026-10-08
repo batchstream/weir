@@ -70,37 +70,33 @@ stores:
       # To use this source, keep password empty. Example: secrets/mongo-password.
       password_file: ""
 
-    # Maximum simultaneous backend executions for this Store.
-    # Required: no. Default: 2; explicit 0 also selects 2.
-    # Allowed: integer 1..32768, subject to the process memory budget.
-    # Also determines adapter pool concurrency; reserve 2MiB per execution slot.
-    max_concurrency: 2
-
-    # Maximum operations combined into one scheduled backend batch.
+    # Maximum operations combined into one compatible backend batch.
     # Required: no. Default: 32; explicit 0 also selects 32.
-    # Allowed: positive integer. Actual input bytes and backend working memory
-    # can split batches further; this setting introduces no collection delay.
+    # Allowed: positive integer. Batches are dispatched without a collection delay.
+    # Backend encoding boundaries may split the physical exchange further.
     max_batch_operations: 32
 
-    # Maximum document payload returned by an ordinary Read.
-    # Required: no. Default: "16KiB". Allowed: "1KiB".."2MiB" inclusive.
-    # Read admission reserves this output bound plus framing. Oversized documents
-    # fail boundedly; increasing the limit does not raise the protocol's 2MiB cap.
-    max_read_size: 16KiB
+    # Maximum retained input bytes combined into one ordinary backend batch.
+    # Required: no. Default: "8MiB". Allowed: positive integer byte size fitting
+    # the platform integer and at least the per-operation metadata overhead.
+    # Includes scheduler metadata. An operation must fit on its own.
+    # Scan and Native are singleton streaming operations with protocol bounds.
+    max_batch_bytes: 8MiB
 
-    # Per-Store budget for retained backend inputs, reads and generated writes.
-    # Required: no. Default: "384MiB". Allowed: at least "24MiB", fitting a signed
-    # platform integer and the process memory budget together with other bounds.
-    # This budget is shared across active executions, not allocated per slot.
-    # Syntax: integer + B | KiB | MiB | GiB; no fractional byte sizes.
-    working_memory: 384MiB
+    # Capacity for operations waiting to be dispatched by this Store.
+    # Required: no. Default: the child defaults below.
+    # Running operations and completed results do not retain this queue capacity.
+    # When full, business streams wait for space or their caller context to end.
+    batch_queue:
+      # Maximum waiting operations. Default: 1024; explicit 0 selects 1024.
+      # Allowed: positive integer. Count and byte limits apply together.
+      max_operations: 1024
 
-    # Maximum backend execution/I/O time for each dispatched group or scan page.
-    # Required: no. Default: "2s". Allowed: positive Go duration, e.g. 250ms, 10s.
-    # Queueing consumes the RPC lifetime separately. A shorter caller deadline
-    # still wins; uncertain write outcomes are not automatically replayed.
-    # MongoDB Lua transforms execute in the main Weir process.
-    backend_timeout: 2s
+      # Maximum waiting input bytes, including per-operation scheduler metadata.
+      # Default: "32MiB". Allowed: positive platform integer byte size, at least
+      # the metadata overhead. Syntax: integer + B | KiB | MiB | GiB.
+      # A single operation exceeding the queue/batch capacity fails validation.
+      max_bytes: 32MiB
 
   # Search Store example; uses the same Store naming and scheduler bounds above.
   - # Required: yes. Unique Store name, with the same format as the Mongo example.
@@ -147,23 +143,30 @@ stores:
         # Replace this example with your trust bundle, or "" for system roots.
         ca_file: /etc/weir/ca.pem
 
-    # Backend execution/pool concurrency. Default: 2; 0 selects the default.
-    # Allowed: integer 1..32768 fitting the process budget; 2MiB reserved per slot.
-    max_concurrency: 2
-
-    # Operations per scheduled batch. Default: 32; 0 selects the default.
-    # Allowed: positive integer. Actual input bytes/working memory may split it.
+    # Maximum operations combined into one compatible backend batch.
+    # Required: no. Default: 32; explicit 0 also selects 32.
+    # Allowed: positive integer. Batches are dispatched without a collection delay.
+    # Backend encoding boundaries may split the physical exchange further.
     max_batch_operations: 32
 
-    # Ordinary Read payload limit. Default: 16KiB; allowed: 1KiB..2MiB inclusive.
-    # Read admission reserves the bound plus framing; oversized documents fail.
-    max_read_size: 16KiB
+    # Maximum retained input bytes combined into one ordinary backend batch.
+    # Required: no. Default: "8MiB". Allowed: positive integer byte size fitting
+    # the platform integer and at least the per-operation metadata overhead.
+    # Includes scheduler metadata. An operation must fit on its own.
+    # Scan and Native are singleton streaming operations with protocol bounds.
+    max_batch_bytes: 8MiB
 
-    # Shared backend workspace. Default: 384MiB; minimum: 24MiB, subject to the
-    # platform integer and process memory bounds. Uses B | KiB | MiB | GiB.
-    working_memory: 384MiB
+    # Capacity for operations waiting to be dispatched by this Store.
+    # Required: no. Default: the child defaults below.
+    # Running operations and completed results do not retain this queue capacity.
+    # When full, business streams wait for space or their caller context to end.
+    batch_queue:
+      # Maximum waiting operations. Default: 1024; explicit 0 selects 1024.
+      # Allowed: positive integer. Count and byte limits apply together.
+      max_operations: 1024
 
-    # Backend group/page I/O budget. Default: 2s; allowed: positive Go duration.
-    # Search Native uses this as a cumulative I/O budget, paused during publication.
-    # This is separate from transport.timeouts.request and transport.timeouts.stall.
-    backend_timeout: 2s
+      # Maximum waiting input bytes, including per-operation scheduler metadata.
+      # Default: "32MiB". Allowed: positive platform integer byte size, at least
+      # the metadata overhead. Syntax: integer + B | KiB | MiB | GiB.
+      # A single operation exceeding the queue/batch capacity fails validation.
+      max_bytes: 32MiB

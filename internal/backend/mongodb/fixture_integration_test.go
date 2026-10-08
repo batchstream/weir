@@ -29,7 +29,7 @@ func testAdapter(t *testing.T, o adapterTestOptions) *Adapter {
 		proxy.Monitor = o.monitor
 		o.uri = proxy.URI()
 	}
-	cfg := Config{URI: o.uri, Store: "mongo", Pool: 4}
+	cfg := Config{URI: o.uri, Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

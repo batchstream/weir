@@ -41,7 +41,7 @@ func setup(t *testing.T, manual bool) fixture {
 	l := DefaultLimits()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	cfg.Pool = uint64(l.Concurrency)
+
 	a, err := mongodb.Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -275,11 +275,8 @@ func TestNativeBatchItemAndUncertainErrors(t *testing.T) {
 	}
 	waitReleased(t, f.runtime)
 }
-func TestNativeShutdownQueueAndExecution(t *testing.T) {
+func TestNativeShutdownPreservesDispatchedEvidence(t *testing.T) {
 	f := setup(t, false)
-	f.runtime.mu.Lock()
-	f.runtime.limits.Concurrency = 1
-	f.runtime.mu.Unlock()
 	data := bson.D{{Key: "failCommands", Value: bson.A{"bulkWrite"}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 	testmongo.FailCommand(t, f.native, data, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -315,7 +312,8 @@ func TestNativeShutdownQueueAndExecution(t *testing.T) {
 	if err != nil || br.GetMutationResult() == nil {
 		t.Fatal("forced shutdown discarded the queued ticket's evidence", br, err)
 	}
-	if ar.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN || br.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
+	if ar.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN ||
+		(br.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED && br.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED && br.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN) {
 		t.Fatal(ar, br)
 	}
 	if snapshot := f.runtime.Snapshot(); snapshot.Retained != 2 || snapshot.ResultBytes != 2*execution.ResultOverheadBytes {
@@ -425,91 +423,55 @@ func TestNativeGracefulDrainCompletesAccepted(t *testing.T) {
 	}
 }
 
-func TestRouteNativeBackendIODeadline(t *testing.T) {
-	for _, test := range []struct {
-		name, command string
-		timeout       time.Duration
-		block         int32
-		completion    pb.NativeCompletion
-	}{
-		{name: "configured_command", command: "count", timeout: 100 * time.Millisecond, block: 500, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
-		{name: "configured_qualification", command: "listCollections", timeout: 100 * time.Millisecond, block: 500, completion: pb.NativeCompletion_NATIVE_NOT_STARTED},
-		{name: "default_command", command: "count", timeout: 2 * time.Second, block: 3000, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
-	} {
-		t.Run(test.name, func(t *testing.T) {
+func TestNativeCallerCancellationReleasesExecution(t *testing.T) {
+	for _, commandName := range []string{"count", "listCollections"} {
+		t.Run(commandName, func(t *testing.T) {
 			f := setup(t, false)
-			f.runtime.mu.Lock()
-			f.runtime.limits.BackendTimeout = test.timeout
-			f.runtime.mu.Unlock()
-			data := bson.D{{Key: "failCommands", Value: bson.A{test.command}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: test.block}}
+			data := bson.D{{Key: "failCommands", Value: bson.A{commandName}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 			testmongo.FailCommand(t, f.native, data, 1)
 			command := bson.D{{Key: "count", Value: "records"}}
 			raw, err := bson.Marshal(command)
 			if err != nil {
 				t.Fatal(err)
 			}
-			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-			open := &pb.NativeRequest{Resource: f.db + "/records", Request: nativeBody}
-			open.Request.Data = raw
-			native := open
+			body := &pb.Document{ContentType: "application/bson", Data: raw}
+			native := &pb.NativeRequest{Resource: f.db + "/records", Request: body}
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
 			work, failure := f.runtime.PrepareCommand(1, call)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			caller, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
 			session := f.runtime.NewSession()
 			defer session.Close()
-			started := time.Now()
-			ticket, failure, _ := f.runtime.Submit(ctx, work, session)
+			ticket, failure, _ := f.runtime.Submit(caller, work, session)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			var end *pb.NativeEnd
-			for {
+			for caller.Err() == nil {
 				select {
 				case emission := <-session.Events:
-					if emission.Event.GetNativeEnd() != nil {
-						if end != nil {
-							t.Fatal("multiple native completion events")
-						}
-						end = emission.Event.GetNativeEnd()
-					}
 					emission.Release()
-					if emission.Event == nil {
-						ticket.Ack()
-						goto completed
-					}
-				case <-ctx.Done():
-					t.Fatal("backend deadline failed to release request", ctx.Err())
+				case <-caller.Done():
 				}
 			}
-		completed:
-			elapsed := time.Since(started)
-			if end.GetCompletion() != test.completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > test.timeout+500*time.Millisecond {
-				t.Fatal("native backend I/O escaped configured cap", end, elapsed, test.timeout)
-			}
+			ticket.Abandon()
+			session.Close()
 			waitReleased(t, f.runtime)
-			filter := bson.D{}
-			count, err := f.native.Database(f.db).Collection("records").CountDocuments(ctx, filter)
-			if err != nil || count != 0 {
-				t.Fatal("deadline affected independent backend connection", count, err)
+			if caller.Err() != context.DeadlineExceeded {
+				t.Fatal("caller deadline cause lost", caller.Err())
 			}
-			t.Logf("blocked %s: configured=%s elapsed=%s completion=%s", test.command, test.timeout, elapsed, end.Completion)
 		})
 	}
 }
 
-func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
+func TestLuaCallerDeadlineKeepsCommitUncertainty(t *testing.T) {
 	for _, command := range []string{"find", "commitTransaction"} {
 		t.Run(command, func(t *testing.T) {
 			f := setup(t, false)
 			timeout := 100 * time.Millisecond
-			f.runtime.mu.Lock()
-			f.runtime.limits.BackendTimeout = timeout
-			f.runtime.mu.Unlock()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			document := bson.D{{Key: "_id", Value: "lua-timeout"}, {Key: "n", Value: int32(1)}}
@@ -534,8 +496,10 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
+			caller, stopCaller := context.WithTimeout(ctx, timeout)
+			defer stopCaller()
 			started := time.Now()
-			ticket, failure, _ := f.runtime.Submit(ctx, work, nil)
+			ticket, failure, _ := f.runtime.Submit(caller, work, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -572,7 +536,7 @@ func TestRouteLuaDatabaseIODeadlineAndCommitUncertainty(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
-			t.Logf("blocked %s: cap=%s elapsed=%s outcome=%s", command, timeout, elapsed, expected)
+			t.Logf("blocked %s: caller deadline=%s elapsed=%s outcome=%s", command, timeout, elapsed, expected)
 		})
 	}
 }

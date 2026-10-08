@@ -15,10 +15,11 @@ type Target interface {
 // Guard owns the existing memory sampler and exposes its last observation.
 // There is no second diagnostics sampling loop.
 type Guard struct {
-	mu      sync.Mutex
-	targets []Target
-	state   Snapshot
-	profile memoryProfile
+	mu            sync.Mutex
+	targets       []Target
+	state         Snapshot
+	profile       memoryProfile
+	processBudget uint64
 }
 
 type Snapshot struct {
@@ -35,9 +36,10 @@ type Snapshot struct {
 // reports the leaf current and Finite=false. Paths never leave the sampler.
 type CgroupSnapshot struct {
 	Current, Limit uint64
+	Capacity       uint64
 	Levels         int
 	Finite, Valid  bool
-	State          string // not_applicable, v2, unknown, profile_changed
+	State          string // not_applicable, v2, unknown
 	Scope          string // none, leaf, ancestor
 }
 
@@ -49,9 +51,10 @@ type observation struct {
 	high, low    bool
 }
 
-func New(targets []Target, budget uint64) *Guard {
+func New(targets []Target) *Guard {
+	budget := processMemoryBudget()
 	state := Snapshot{Budget: budget}
-	guard := &Guard{targets: targets, state: state, profile: newMemoryProfile()}
+	guard := &Guard{targets: targets, state: state, profile: newMemoryProfile(), processBudget: budget}
 	// Publish the first observation before listeners can admit any work.
 	guard.sample(guard.profile.observe())
 	return guard
@@ -81,10 +84,20 @@ func (g *Guard) sample(o observation) {
 	defer g.mu.Unlock()
 	g.state.Bytes, g.state.Source, g.state.Observed = o.bytes, o.source, true
 	g.state.ProcessValid, g.state.Cgroup = o.processValid, o.cgroup
-	g.state.Unknown = !o.processValid || o.cgroup.State == "unknown" || o.cgroup.State == "profile_changed"
-	if g.state.Unknown || g.state.Budget == 0 || o.high || o.bytes >= watermark(g.state.Budget, 80, true) {
+	g.state.Unknown = !o.processValid || o.cgroup.State == "unknown"
+	g.state.Budget = g.processBudget
+	if o.cgroup.Valid && o.cgroup.Finite {
+		capacity := o.cgroup.Capacity
+		if capacity == 0 {
+			capacity = o.cgroup.Limit
+		}
+		g.state.Budget = smallerBudget(g.state.Budget, capacity)
+	}
+	// Missing observations do not manufacture overload. Actual process or
+	// container pressure controls admission once a trustworthy sample exists.
+	if o.high || o.processValid && g.processBudget != 0 && o.bytes >= watermark(g.processBudget, 80, true) {
 		g.state.Latched = true
-	} else if o.low && o.bytes <= watermark(g.state.Budget, 70, false) {
+	} else if !g.state.Unknown && o.processValid && !o.high && (!o.cgroup.Valid || o.low) && (g.processBudget == 0 || o.bytes <= watermark(g.processBudget, 70, false)) {
 		g.state.Latched = false
 	}
 	for _, target := range g.targets {
@@ -105,4 +118,15 @@ func goBytes() uint64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m.Sys - m.HeapReleased
+}
+
+// Zero means no known limit, not a zero-byte resource allowance.
+func smallerBudget(left, right uint64) uint64 {
+	if left == 0 {
+		return right
+	}
+	if right == 0 {
+		return left
+	}
+	return min(left, right)
 }

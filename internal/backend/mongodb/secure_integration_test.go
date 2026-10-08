@@ -24,7 +24,7 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	fixture := testmongo.OpenSecure(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cfg := Config{URI: fixture.URI, Store: "mongo", Pool: 4}
+	cfg := Config{URI: fixture.URI, Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	adapter, err := Open(ctx, cfg)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 		if i%2 == 0 {
 			uri = fixture.BadCAURI
 		}
-		cfg := Config{URI: uri, Store: "mongo", Pool: 1}
+		cfg := Config{URI: uri, Store: "mongo"}
 		cfg = mongoFixtureConfig(t, cfg)
 		ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 		start := time.Now()
@@ -109,7 +109,7 @@ func TestMongoSCRAMTLSRepeatedFailureAndClose(t *testing.T) {
 			t.Fatal("failure/close exceeded finite deadline")
 		}
 	}
-	cfg := Config{URI: fixture.URI, Store: "mongo", Pool: 1}
+	cfg := Config{URI: fixture.URI, Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	for i := 0; i < 4; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -142,7 +142,7 @@ func TestMongoSCRAMTLS391NoReplay(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
 			proxy := testmongo.StartProxy(t, backend)
-			cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
+			cfg := Config{URI: proxy.URI(), Store: "mongo"}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()

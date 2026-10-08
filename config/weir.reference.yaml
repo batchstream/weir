@@ -1,6 +1,6 @@
 # Weir process configuration reference
 #
-# Copy this file to weir.yaml, then edit listener addresses and memory for the node.
+# Copy this file to weir.yaml, then edit listener addresses for the node.
 # Copy routes.reference.yaml to routes.yaml only when hosting local Stores.
 # Validate the edited files before starting:
 #   weir check --config weir.yaml --routes routes.yaml
@@ -55,43 +55,20 @@ diagnostics:
   # true requires a nonempty address. Exec probes still target a loopback address.
   allow_intranet: false
 
-# Process admission/overload budget, not an OS-enforced memory limit.
-# Required: no. Default: "2GiB".
-# Allowed: integer + B | KiB | MiB | GiB, from 64MiB through 64GiB inclusive.
-# Examples: "67108864B", "512MiB", "1GiB". Fractional sizes are not accepted.
-# Set the deployment/container memory limit separately.
-# Startup checks that the transport, Store queues/results, backend working
-# budgets and concurrency reservations fit together within this process budget.
-# The overload guard also observes actual process memory during execution.
-memory: "2GiB"
+# Memory capacity is detected automatically from the visible container limits,
+# physical host memory and a finite process address-space limit. There is no
+# configurable process memory budget or startup reservation calculation.
+# Container/OS limits provide the hard boundary; overload admission observes use.
 
-# Shared ingress connection/session admission and RPC deadlines.
+# Transport progress deadlines. Business RPCs inherit the client context.
 # Required: no. Default: all child defaults below. Allowed: this mapping.
 transport:
-  # Maximum accepted data-plane connections on application business ingress.
-  # Required: no. Default: 16. Allowed: integer 1..262144, subject to memory.
-  # The process reserves 256KiB per application connection. Peer connections
-  # have their own fixed limit and are not configured by this field.
-  max_connections: 16
-
-  # Maximum concurrent business RPCs on application business ingress.
-  # Required: no. Default: 4. Allowed: integer 1..2048, subject to memory.
-  # Sessions are shared across application RPCs. The current protocol reserves
-  # 32MiB per session; Store queue/result/working budgets are reserved separately.
-  max_sessions: 4
-
-  # Total RPC lifetimes and stream-progress timeout.
+  # Stream-progress timeout.
   # Required: no. Default: all child defaults below. Allowed: this mapping.
-  # Each value is a duration string, e.g. "500ms", "1.5s", "30s", "5m".
+  # The value is a duration string, e.g. "500ms", "1.5s", "30s", "5m".
   # Supported units: ns, us/µs/μs, ms, s, m, h; combined forms such as "1m30s"
   # are accepted. Values must be positive and fit a signed 64-bit nanosecond count.
   timeouts:
-    # Maximum lifetime of one business RPC.
-    # Required: no. Default: "15m". Allowed: positive duration.
-    # A shorter caller deadline still wins. Queueing and response publication
-    # consume this lifetime; each Store's backend_timeout separately bounds I/O.
-    request: "15m"
-
     # Maximum wait for transport/stream progress.
     # Required: no. Default: "30s". Allowed: positive duration.
     # Slow or stalled stream publication is canceled when progress stops for

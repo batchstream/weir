@@ -40,7 +40,9 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 			for i := 0; i < 3; i++ {
 				calls.Go(func() {
 					call := exchange{path: "/slow", limit: 256, native: i == 2}
-					_, _, err := a.request(context.Background(), call)
+					ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+					_, _, err := a.request(ctx, call)
+					cancel()
 					if err == nil {
 						t.Error("accepted incomplete response")
 					}
@@ -53,14 +55,14 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 					t.Fatal("did not fill normal plus native pools")
 				}
 			}
-			if len(a.dialer.slots) != 3 {
+			if searchOwned(a.dialer) != 3 {
 				t.Fatal("expected ordinary 2 + native 1 sockets")
 			}
 			start := time.Now()
 			_ = a.Close()
 			calls.Wait()
 			elapsed := time.Since(start)
-			if elapsed > time.Second || len(a.dialer.slots) != 0 {
+			if elapsed > time.Second || searchOwned(a.dialer) != 0 {
 				t.Fatal("Close left sockets/work", elapsed)
 			}
 			_ = a.Close()
@@ -111,7 +113,7 @@ func TestSearchTLSNativeSlowConsumerCloseJoins(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Close did not join Native publication")
 	}
-	if len(a.dialer.slots) != 0 {
+	if searchOwned(a.dialer) != 0 {
 		t.Fatal("Native retained sockets")
 	}
 	t.Logf("slow consumer: Close+join=%s; retained sockets=0", time.Since(start))
@@ -121,7 +123,7 @@ func TestSearchDNSRepeatedCancelledOpenJoins(t *testing.T) {
 	dns := testdns.Start(t)
 	answer := testdns.Answer{Drop: true}
 	dns.Set("search.test", answer)
-	cfg := Config{Store: "search", URL: "http://search.test:9200", Pool: 2, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "http://search.test:9200", Resolver: dns.Resolver()}
 	before := runtime.NumGoroutine()
 	for i := 0; i < 24; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -139,7 +141,7 @@ func TestSearchDNSRepeatedCancelledOpenJoins(t *testing.T) {
 	t.Logf("24 cancelled Open attempts: each <1s; goroutines before=%d after=%d", before, runtime.NumGoroutine())
 }
 
-func TestSearchTLSResponseHardDeadline(t *testing.T) {
+func TestSearchTLSResponseUsesCallerDeadline(t *testing.T) {
 	for _, body := range []bool{false, true} {
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if qualification(w, r) {
@@ -156,13 +158,15 @@ func TestSearchTLSResponseHardDeadline(t *testing.T) {
 		a := openTestTLS(t, endpoint.URL, c)
 		call := exchange{path: "/hard-deadline", limit: 256}
 		start := time.Now()
-		_, _, err := a.request(context.Background(), call)
+		ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
+		_, _, err := a.request(ctx, call)
+		cancel()
 		elapsed := time.Since(start)
-		if err == nil || elapsed > 3*time.Second || elapsed < 1500*time.Millisecond {
-			t.Fatal("2s hard response deadline", elapsed, err)
+		if err == nil || elapsed > time.Second || elapsed < 60*time.Millisecond {
+			t.Fatal("caller response deadline", elapsed, err)
 		}
 		_ = a.Close()
-		t.Logf("TLS body=%v no caller deadline: call terminated in %s", body, elapsed)
+		t.Logf("TLS body=%v caller deadline: call terminated in %s", body, elapsed)
 	}
 }
 
@@ -173,7 +177,7 @@ func TestSearchDNSRequestCancellationEndsDetachedDial(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { qualification(w, r) })
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", URL: "https://search.test:" + port, Pool: 2, Connection: c, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "https://search.test:" + port, Connection: c, Resolver: dns.Resolver()}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -191,10 +195,10 @@ func TestSearchDNSRequestCancellationEndsDetachedDial(t *testing.T) {
 			t.Fatal("dropped DNS succeeded")
 		}
 		deadline := time.Now().Add(300 * time.Millisecond)
-		for len(a.dialer.slots) != 0 && time.Now().Before(deadline) {
+		for searchOwned(a.dialer) != 0 && time.Now().Before(deadline) {
 			time.Sleep(time.Millisecond)
 		}
-		if len(a.dialer.slots) != 0 {
+		if searchOwned(a.dialer) != 0 {
 			t.Fatal("request cancellation left a detached resolver until connect timeout")
 		}
 	}
@@ -221,7 +225,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	})
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", URL: "https://search.test:" + port, Pool: 2, Connection: c, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "https://search.test:" + port, Connection: c, Resolver: dns.Resolver()}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)

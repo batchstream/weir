@@ -1,12 +1,11 @@
 package server
 
-import "github.com/batchstream/weir/internal/testutil"
-
 import (
 	"bytes"
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -34,11 +34,11 @@ type routeAcceptanceNodeOptions struct {
 
 func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *routeAcceptanceNode {
 	t.Helper()
-	if opts.limits.Sessions == 0 {
+	if opts.limits.Stall == 0 {
 		opts.limits = DefaultLimits()
 		opts.limits.Stall = 5 * time.Second
 	}
-	if opts.store.Concurrency == 0 {
+	if opts.store.BatchOperations == 0 {
 		opts.store = store.DefaultLimits()
 	}
 	local, err := store.New(opts.adapter, opts.store)
@@ -101,6 +101,14 @@ func assertRouteAcceptanceIdle(t testing.TB, nodes []*routeAcceptanceNode) {
 		if idle {
 			return
 		}
+		// Orphaned transport buffers are reclaimed after they become unreachable.
+		// Cancellation and the collection of their storage can occur separately.
+		for _, node := range nodes {
+			if node.server.admission.wireBytes.Load() != 0 {
+				runtime.GC()
+				break
+			}
+		}
 		if time.Now().After(deadline) {
 			var snapshots []store.Snapshot
 			var active, wire []int64
@@ -131,12 +139,12 @@ func TestReadStreamAccepts513Records(t *testing.T) {
 	waitPeerIdle(t, server)
 }
 
-func TestContinuousReadsAtSessionLimit(t *testing.T) {
+func TestContinuousReadsAcrossConcurrentSessions(t *testing.T) {
 	adapter := newPeerAdapter("records")
 	gate := make(chan struct{})
 	adapter.block = gate
 	limits := DefaultLimits()
-	limits.Sessions = 64
+	const sessions = 64
 	opts := routeAcceptanceNodeOptions{adapter: adapter, limits: limits}
 	node := startRouteAcceptanceNode(t, opts)
 	client := routeAcceptanceClient(t, node.address)
@@ -147,9 +155,9 @@ func TestContinuousReadsAtSessionLimit(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	failures := make(chan error, limits.Sessions)
+	failures := make(chan error, sessions)
 	var workers sync.WaitGroup
-	for range limits.Sessions {
+	for range sessions {
 		workers.Go(func() {
 			for range 4 {
 				response, err := testutil.ReadRecords(ctx, client, "records", requests)
@@ -170,9 +178,9 @@ func TestContinuousReadsAtSessionLimit(t *testing.T) {
 			}
 		})
 	}
-	// Hold the first results until all native RPC slots are occupied. Each worker
+	// Hold the first results until all concurrent RPCs have returned a result. Each worker
 	// then verifies full record windows and repeated release and reacquisition.
-	for node.server.Snapshot().ActiveRPCs != int64(limits.Sessions) {
+	for node.server.Snapshot().ActiveRPCs != int64(sessions) {
 		select {
 		case <-ctx.Done():
 			close(gate)
@@ -275,7 +283,7 @@ func TestLongReadStreamReleasesResultCreditsIncrementally(t *testing.T) {
 	}
 }
 
-func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T) {
+func TestConcurrentClientRPCsKeepResponseOwnershipAndBatchBounds(t *testing.T) {
 	const count = 512
 	gate := make(chan struct{})
 	defer func() {
@@ -293,10 +301,9 @@ func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T
 		adapter.documents[key] = document
 	}
 	limits := store.DefaultLimits()
-	limits.Concurrency = 1
-	limits.BackendTimeout = 5 * time.Second
+
 	transport := DefaultLimits()
-	transport.Sessions = count + 1
+
 	opts := routeAcceptanceNodeOptions{adapter: adapter, store: limits, limits: transport}
 	node := startRouteAcceptanceNode(t, opts)
 	clients := make([]pb.StoreServiceClient, 4)
@@ -341,7 +348,7 @@ func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T
 			}
 		})
 	}
-	for node.runtime.Snapshot().Pending != count {
+	for node.runtime.Snapshot().Retained != count+1 {
 		select {
 		case <-ctx.Done():
 			close(gate)
@@ -359,13 +366,15 @@ func TestIndependentClientRPCsCoalesceWithoutCrossingResponseOwners(t *testing.T
 	adapter.mu.Lock()
 	sizes := append([]int(nil), adapter.batchSizes...)
 	adapter.mu.Unlock()
-	if len(sizes) != 1+count/limits.BatchOperations || sizes[0] != 1 {
-		t.Fatal("independent RPCs were not coalesced into bounded adapter executions", sizes)
-	}
-	for _, size := range sizes[1:] {
-		if size != limits.BatchOperations {
-			t.Fatal("single-record RPCs did not fill physical batches", sizes)
+	total := 0
+	for _, size := range sizes {
+		if size < 1 || size > limits.BatchOperations {
+			t.Fatal("physical batch exceeded configured operation bound", sizes)
 		}
+		total += size
+	}
+	if total != count+1 {
+		t.Fatal("concurrent callers lost or duplicated execution", total)
 	}
 	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
 }

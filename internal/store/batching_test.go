@@ -204,7 +204,7 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 		t.Fatal("caller contexts were crossed between dispatches")
 	}
 	cancelFirst()
-	if dispatchedSecond[0].Context.Err() != nil || a.ctx.Err() != nil || b.ctx.Err() != nil {
+	if dispatchedSecond[0].Context.Err() != nil || b.ctx.Err() != nil {
 		t.Fatal("one caller cancellation poisoned independent execution")
 	}
 	close(gate)
@@ -282,57 +282,5 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 				t.Fatal("terminal abandoned record leaked credits", snapshot)
 			}
 		})
-	}
-}
-
-func TestEveryRecordActionSharesConcurrencyLimit(t *testing.T) {
-	gate := make(chan struct{})
-	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, len(recordActions)), gate: gate}
-	limits := DefaultLimits()
-	limits.Concurrency = 1
-	limits.BatchOperations = 1
-	r, err := New(adapter, limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		select {
-		case <-gate:
-		default:
-			close(gate)
-		}
-		_ = r.Close(context.Background())
-	}()
-	var tickets []*Ticket
-	for i, action := range recordActions {
-		p := recordActionPlan(uint64(i), action, action)
-		ticket, failure, _ := r.Submit(context.Background(), p, nil)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		tickets = append(tickets, ticket)
-	}
-	select {
-	case <-adapter.started:
-	case <-time.After(time.Second):
-		t.Fatal("scheduler did not dispatch the first operation")
-	}
-	select {
-	case <-adapter.started:
-		t.Fatal("operation bypassed the shared concurrency limit")
-	case <-time.After(20 * time.Millisecond):
-	}
-	if snapshot := r.Snapshot(); snapshot.Active != 1 || snapshot.Pending != len(recordActions)-1 {
-		t.Fatal("record ledger does not bound every operation", snapshot)
-	}
-	close(gate)
-	for _, ticket := range tickets {
-		wait, cancel := context.WithTimeout(context.Background(), time.Second)
-		_, err := ticket.Wait(wait)
-		cancel()
-		if err != nil {
-			t.Fatal(err)
-		}
-		ticket.Ack()
 	}
 }

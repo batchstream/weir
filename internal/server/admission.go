@@ -4,40 +4,33 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type Admission struct {
-	slots, connections chan struct{}
-	draining           chan struct{}
-	once               sync.Once
-	overloaded         atomic.Bool
-	rejections         *prometheus.CounterVec
-	wireBytes          atomic.Int64
-	wireLimit          int64
-	responses          sync.Map
+	draining          chan struct{}
+	once              sync.Once
+	overloaded        atomic.Bool
+	rejections        *prometheus.CounterVec
+	wireBytes         atomic.Int64
+	activeRPCs        atomic.Int64
+	activeConnections atomic.Int64
+	responses         sync.Map
 }
 
 func NewAdmission(l Limits) (*Admission, error) {
 	if err := l.Validate(); err != nil {
 		return nil, err
 	}
-	a := &Admission{
-		slots:       make(chan struct{}, l.Sessions),
-		connections: make(chan struct{}, l.Connections),
-		draining:    make(chan struct{}),
-		wireLimit:   int64(l.Sessions)*protocol.MaxExecuteResponseBytes + 4*directory.MaxSyncBytes,
-	}
+	a := &Admission{draining: make(chan struct{})}
 	opts := prometheus.CounterOpts{
 		Name: "weir_admission_rejections_total",
 		Help: "Process ingress rejection branches; no client-controlled label values.",
 	}
 	a.rejections = prometheus.NewCounterVec(opts, []string{"reason"})
-	for _, reason := range []string{"connections", "sessions", "draining", "overload", "ingress", "method", "execute"} {
+	for _, reason := range []string{"draining", "overload", "ingress", "method", "execute"} {
 		a.rejections.WithLabelValues(reason)
 	}
 	return a, nil
@@ -59,17 +52,4 @@ func (a *Admission) check() error {
 		return status.Error(codes.ResourceExhausted, "process overloaded")
 	}
 	return nil
-}
-
-func (s *Server) enterSlots(slots chan struct{}) error {
-	if err := s.admission.check(); err != nil {
-		return err
-	}
-	select {
-	case slots <- struct{}{}:
-		return nil
-	default:
-		s.admission.rejections.WithLabelValues("sessions").Inc()
-		return status.Error(codes.ResourceExhausted, "session limit")
-	}
 }

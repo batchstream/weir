@@ -153,11 +153,11 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 
 	desc = prometheus.NewDesc(
 		"weir_memory_cgroup_state",
-		"Static visible cgroup profile. Changed profiles require restart; hidden ancestors are not observed.",
+		"Current visible cgroup profile, refreshed after complete observations; hidden ancestors are not observed.",
 		[]string{"state"},
 		nil,
 	)
-	for _, state := range []string{"not_applicable", "v2", "unknown", "profile_changed"} {
+	for _, state := range []string{"not_applicable", "v2", "unknown"} {
 		value := 0.0
 		if memory.Cgroup.State == state {
 			value = 1

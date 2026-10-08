@@ -3,7 +3,6 @@ package mongodb
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -104,21 +103,14 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
-	timeout := work.BackendTimeout
-	if timeout <= 0 {
-		timeout = 2 * time.Second
-	}
-	backendContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	if failure := a.qualifyTarget(backendContext, target); failure != nil {
+	if failure := a.qualifyTarget(ctx, target); failure != nil {
 		return protocol.NativeFailure(false, failure)
 	}
 	command := bson.Raw(raw)
-	reply, err := a.client.Database(target.database).RunCommand(backendContext, command).Raw()
-	failure := backendFailure(backendContext, err)
+	reply, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
+	failure := backendFailure(ctx, err)
 	// MongoDB retains one bounded raw reply. Once it is available, delivery uses
 	// the caller's lifetime rather than charging output stalls to backend I/O.
-	cancel()
 	if err != nil && len(reply) == 0 {
 		var native mongo.CommandError
 		if errors.As(err, &native) {

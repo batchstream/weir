@@ -52,8 +52,7 @@ func (o *scanRPCObservation) snapshot() []int {
 func startScanRPCNode(t *testing.T, adapter execution.Adapter) *routeAcceptanceNode {
 	t.Helper()
 	limits := store.DefaultLimits()
-	limits.Concurrency = 1
-	limits.BackendTimeout = 8 * time.Second
+
 	ingress := DefaultLimits()
 	ingress.Stall = 10 * time.Second
 	opts := routeAcceptanceNodeOptions{adapter: adapter, store: limits, limits: ingress}
@@ -260,7 +259,7 @@ func TestRouteMongoScanBatches513DocumentsAcrossInstances(t *testing.T) {
 			proxy.Monitor = monitor
 			opts := scanRPCRestartOptions{resource: backend.DB + "/records", pageSize: pageSize, ids: ids, documentID: scanRPCMongoDocumentID, observation: observation}
 			opts.open = func(t *testing.T) execution.Adapter {
-				config := mongodb.Config{Store: "records", URI: proxy.URI(), Pool: 2, MaxReadSize: protocol.MaxDocument}
+				config := mongodb.Config{Store: "records", URI: proxy.URI()}
 				adapter, err := mongodb.Open(t.Context(), config)
 				if err != nil {
 					t.Fatal(err)
@@ -324,7 +323,7 @@ func TestRouteSearchScanBatches513DocumentsAcrossInstances(t *testing.T) {
 			proxyURL := scanRPCSearchProxy(t, backend, observation)
 			opts := scanRPCRestartOptions{resource: backend.Index, pageSize: pageSize, ids: ids, documentID: scanRPCSearchDocumentID, observation: observation}
 			opts.open = func(t *testing.T) execution.Adapter {
-				config := search.Config{Store: "records", URL: proxyURL, Pool: 2, MaxReadSize: protocol.MaxDocument}
+				config := search.Config{Store: "records", URL: proxyURL}
 				adapter, err := search.Open(t.Context(), config)
 				if err != nil {
 					t.Fatal(err)
@@ -349,7 +348,7 @@ type scanRPCStallOptions struct {
 	filter       *pb.Document
 }
 
-func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
+func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions) {
 	t.Helper()
 	node := startScanRPCNode(t, opts.adapter)
 	client := routeAcceptanceClient(t, node.address)
@@ -379,7 +378,7 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 			stalledSince = time.Time{}
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("slow Scan consumer retained the only execution permit", snapshot)
+			t.Fatal("slow Scan consumer retained the execution workspace", snapshot)
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -391,7 +390,7 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	response, err := testutil.ReadRecords(readContext, client, batch.StoreName, []*pb.ReadRequest{batch.Command.GetRead()})
 	stop()
 	if err != nil || len(response) != 1 || response[0].GetFailure() != nil || response[0].GetDocument() == nil {
-		t.Fatal("independent Read was blocked by a slow Scan at concurrency one", response, err)
+		t.Fatal("independent Read was blocked by a slow Scan while another Scan consumer was stalled", response, err)
 	}
 	// A separate Scan remains live while the first caller cancels. Its context,
 	// plan and backend continuation must survive that cancellation.
@@ -403,12 +402,9 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.Now().Add(2 * time.Second)
-	for node.server.Snapshot().ActiveRPCs < 2 {
-		if time.Now().After(deadline) {
-			t.Fatal("independent Scan did not start before cancellation")
-		}
-		time.Sleep(time.Millisecond)
+	firstEvent, err := survivor.Recv()
+	if err != nil || firstEvent.GetDocument() == nil {
+		t.Fatal("independent Scan did not publish before cancellation", firstEvent, err)
 	}
 	cancel()
 	// gRPC may already have queued complete document frames before it observes
@@ -422,7 +418,7 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 			t.Fatal("canceled Scan did not return caller cancellation", err)
 		}
 	}
-	count := 0
+	count := 1
 	var end *pb.ScanEnd
 	for {
 		event, err := survivor.Recv()
@@ -463,10 +459,10 @@ func assertScanRPCStallReleasesPermit(t *testing.T, opts scanRPCStallOptions) {
 	assertRouteAcceptanceIdle(t, []*routeAcceptanceNode{node})
 }
 
-func TestRouteMongoScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
+func TestRouteMongoScanSlowConsumerDoesNotBlockIndependentExecution(t *testing.T) {
 	backend := testmongo.Open(t)
 	seedScanRPCMongo(t, backend, 40, 128<<10)
-	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 2, MaxReadSize: protocol.MaxDocument}
+	config := mongodb.Config{Store: "records", URI: backend.URI}
 	adapter, err := mongodb.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -479,18 +475,18 @@ func TestRouteMongoScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
 	opts := scanRPCStallOptions{adapter: adapter, resource: backend.DB + "/records", readResource: backend.DB + "/records/s:record_0000", filter: document}
-	assertScanRPCStallReleasesPermit(t, opts)
+	assertScanRPCStallReleasesExecution(t, opts)
 }
 
-func TestRouteSearchScanSlowConsumerDoesNotHoldExecutionPermit(t *testing.T) {
+func TestRouteSearchScanSlowConsumerDoesNotBlockIndependentExecution(t *testing.T) {
 	backend := testsearch.Open(t)
 	seedScanRPCSearch(t, backend, 40, 128<<10)
-	config := search.Config{Store: "records", URL: backend.URL, Pool: 2, MaxReadSize: protocol.MaxDocument}
+	config := search.Config{Store: "records", URL: backend.URL}
 	adapter, err := search.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"term":{"n":0}}`)}
 	opts := scanRPCStallOptions{adapter: adapter, resource: backend.Index, readResource: backend.Index + "/s:record_0000", filter: document}
-	assertScanRPCStallReleasesPermit(t, opts)
+	assertScanRPCStallReleasesExecution(t, opts)
 }

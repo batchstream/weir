@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
@@ -76,7 +75,7 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	backend := testmongo.Open(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 4, MaxReadSize: protocol.MaxDocument}
+	config := mongodb.Config{Store: "records", URI: backend.URI}
 	adapter, err := mongodb.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +161,7 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 			proxy.DropRemaining.Store(1)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			config := mongodb.Config{Store: "records", URI: proxy.URI(), Pool: 1}
+			config := mongodb.Config{Store: "records", URI: proxy.URI()}
 			adapter, err := mongodb.Open(ctx, config)
 			if err != nil {
 				t.Fatal(err)
@@ -232,7 +231,7 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	config := search.Config{Store: "records", URL: backend.URL, Pool: 4, MaxReadSize: protocol.MaxDocument}
+	config := search.Config{Store: "records", URL: backend.URL}
 	adapter, err := search.Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +283,7 @@ func TestRouteSearch2MiBRecordAndAppliedReplyLoss(t *testing.T) {
 				_, _ = io.Copy(writer, response.Body)
 			}))
 			t.Cleanup(proxy.Close)
-			config := search.Config{Store: "records", URL: proxy.URL, Pool: 1}
+			config := search.Config{Store: "records", URL: proxy.URL}
 			adapter, err := search.Open(ctx, config)
 			if err != nil {
 				t.Fatal(err)

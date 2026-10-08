@@ -17,12 +17,7 @@ const maxMongoURIBytes = 4096
 // ValidateConfig is pure and accepts only the audited single-endpoint profiles.
 // Credentials are supplied separately; the URI never carries user information.
 func ValidateConfig(cfg Config) error {
-	if cfg.Pool < 1 {
-		return errors.New("invalid MongoDB configuration")
-	}
-	if cfg.MaxReadSize != 0 && (cfg.MaxReadSize < 1024 || cfg.MaxReadSize > protocol.MaxDocument) {
-		return errors.New("MongoDB maximum read size must be between 1 KiB and 2 MiB")
-	}
+
 	if !protocol.ValidStoreName(cfg.Store) {
 		return errors.New("invalid MongoDB Store")
 	}

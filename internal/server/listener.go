@@ -14,7 +14,7 @@ import (
 func (s *Server) Serving() <-chan struct{} { return s.serving }
 func (s *Server) Serve(listener net.Listener) error {
 	close(s.serving)
-	bounded := &limitedListener{Listener: listener, slots: s.connectionSlots, server: s}
+	bounded := &limitedListener{Listener: listener, server: s}
 	err := s.grpc.Serve(bounded)
 	if errors.Is(err, grpc.ErrServerStopped) {
 		return nil
@@ -46,34 +46,25 @@ func (s *Server) Shutdown(ctx context.Context) error {
 type limitedListener struct {
 	server *Server
 	net.Listener
-	slots chan struct{}
 }
 type limitedConn struct {
 	server *Server
 	net.Conn
-	slots   chan struct{}
 	closed  atomic.Bool
 	opening atomic.Pointer[time.Timer]
 }
 
 func (l *limitedListener) Accept() (net.Conn, error) {
-	for {
-		conn, err := l.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-		select {
-		case l.slots <- struct{}{}:
-			c := &limitedConn{Conn: conn, slots: l.slots, server: l.server}
-			l.server.connections.Store(conn.RemoteAddr().String(), c)
-			timer := time.AfterFunc(min(5*time.Second, l.server.limits.Stall), func() { _ = c.close("open") })
-			c.opening.Store(timer)
-			return c, nil
-		default:
-			l.server.admission.rejections.WithLabelValues("connections").Inc()
-			_ = conn.Close()
-		}
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
 	}
+	l.server.admission.activeConnections.Add(1)
+	c := &limitedConn{Conn: conn, server: l.server}
+	l.server.connections.Store(conn.RemoteAddr().String(), c)
+	timer := time.AfterFunc(min(5*time.Second, l.server.limits.Stall), func() { _ = c.close("open") })
+	c.opening.Store(timer)
+	return c, nil
 }
 func (c *limitedConn) Write(data []byte) (int, error) {
 	if err := c.Conn.SetWriteDeadline(time.Now().Add(c.server.limits.Stall)); err != nil {
@@ -91,7 +82,7 @@ func (c *limitedConn) close(reason string) error {
 		if reason != "" {
 			c.server.metrics.forced.WithLabelValues(reason).Inc()
 		}
-		defer func() { <-c.slots }()
+		c.server.admission.activeConnections.Add(-1)
 		c.server.connections.CompareAndDelete(c.RemoteAddr().String(), c)
 		return c.Conn.Close()
 	}

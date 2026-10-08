@@ -23,7 +23,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
 	replies := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
 	adapter := batchMockAdapter(t, replies, nil)
-	adapter.config.MaxReadSize = protocol.MaxDocument
+
 	request := &pb.ReadRequest{Resource: "db/records/s:a"}
 	operation := &pb.Command_Read{Read: request}
 	command := &pb.Command{Operation: operation}
@@ -97,7 +97,7 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	work.BackendTimeout = 50 * time.Millisecond
+
 	var end *pb.NativeEnd
 	emit := func(_ *execution.Plan, event *pb.Event) error {
 		if event.GetHead() != nil || event.GetChunk() != nil {
@@ -110,7 +110,7 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	}
 	started := time.Now()
 	adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
-	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.GetFailure() != nil || time.Since(started) < 3*work.BackendTimeout {
+	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.GetFailure() != nil || time.Since(started) < 150*time.Millisecond {
 		t.Fatal("output stalls consumed backend I/O budget", end, time.Since(started))
 	}
 }

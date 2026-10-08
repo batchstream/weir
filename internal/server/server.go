@@ -16,24 +16,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// SessionMemoryBytes covers three maximum request representations, decoded
-// frame metadata, one encoded response, and fixed transport flow-control slack.
-// Store pending/results/working budgets are reserved separately.
-const SessionMemoryBytes = ((3*protocol.MaxExecuteRequestBytes + protocol.MaxExecuteResponseBytes + (2 << 20) + (1 << 20) - 1) / (1 << 20)) * (1 << 20)
-
 type Limits struct {
-	Connections, Sessions  int
-	RequestLifetime, Stall time.Duration
+	Stall time.Duration
 }
 
 func DefaultLimits() Limits {
-	l := Limits{
-		Connections:     16,
-		Sessions:        4,
-		RequestLifetime: 15 * time.Minute,
-		Stall:           30 * time.Second,
-	}
-	return l
+	limits := Limits{Stall: 30 * time.Second}
+	return limits
 }
 
 type Config struct {
@@ -47,26 +36,21 @@ type Config struct {
 
 type Server struct {
 	pb.UnimplementedStoreServiceServer
-	stores          map[string]*store.Runtime
-	directory       *directory.Directory
-	admission       *Admission
-	peer            bool
-	control         chan struct{}
-	connectionSlots chan struct{}
-	limits          Limits
-	grpc            *grpc.Server
-	once            sync.Once
-	connections     sync.Map
-	metrics         transportMetrics
-	serving         chan struct{}
+	stores      map[string]*store.Runtime
+	directory   *directory.Directory
+	admission   *Admission
+	peer        bool
+	limits      Limits
+	grpc        *grpc.Server
+	once        sync.Once
+	connections sync.Map
+	metrics     transportMetrics
+	serving     chan struct{}
 }
 
 func (l Limits) Validate() error {
-	if l.Connections < 1 || uint64(l.Connections) > (64<<30)/(256<<10) ||
-		l.Sessions < 1 || uint64(l.Sessions) > (64<<30)/SessionMemoryBytes ||
-		l.RequestLifetime <= 0 ||
-		l.Stall <= 0 {
-		return status.Error(codes.InvalidArgument, "invalid transport bounds")
+	if l.Stall <= 0 {
+		return status.Error(codes.InvalidArgument, "invalid transport stall timeout")
 	}
 	return nil
 }
@@ -78,9 +62,6 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.Admission == nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid Stores or ingress bounds")
-	}
-	if cap(cfg.Admission.slots) != l.Sessions || cap(cfg.Admission.connections) != l.Connections {
-		return nil, status.Error(codes.InvalidArgument, "inconsistent shared admission bounds")
 	}
 	stores := make(map[string]*store.Runtime, len(cfg.Stores))
 	seen := make(map[*store.Runtime]bool)
@@ -96,14 +77,9 @@ func New(cfg Config) (*Server, error) {
 		directory: cfg.Directory,
 		admission: cfg.Admission,
 		peer:      cfg.Peer,
-		control:   make(chan struct{}, 2),
 		limits:    l,
 	}
 	s.metrics = newTransportMetrics()
-	s.connectionSlots = cfg.Admission.connections
-	if cfg.Peer {
-		s.connectionSlots = make(chan struct{}, 16)
-	}
 	s.serving = make(chan struct{})
 	statistics := transportStats{}
 	codec := &responseCodec{admission: s.admission}
@@ -115,13 +91,10 @@ func New(cfg Config) (*Server, error) {
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(receiveBytes),
 		grpc.MaxSendMsgSize(sendBytes),
-		grpc.MaxConcurrentStreams(uint32(l.Sessions + cap(s.control))),
 		grpc.MaxHeaderListSize(16 << 10),
 		grpc.InitialWindowSize(64 << 10),
 		grpc.InitialConnWindowSize(64 << 10),
 		grpc.InTapHandle(s.admitRPC),
-		grpc.UnaryInterceptor(unaryRPC),
-		grpc.StreamInterceptor(streamRPC),
 		grpc.StatsHandler(statistics),
 		grpc.ForceServerCodecV2(codec),
 		grpc.KeepaliveParams(keepaliveParameters),

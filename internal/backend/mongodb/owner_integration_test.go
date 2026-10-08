@@ -40,7 +40,7 @@ func TestMongoOwnerRemoteTail(t *testing.T) {
 			}
 		}
 	}}
-	cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
+	cfg := Config{URI: proxy.URI(), Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -166,8 +166,8 @@ func TestMongoDriverRetirementOwnership(t *testing.T) {
 		t.Skip("secure profile opt-in")
 	}
 	f := testmongo.OpenSecure(t)
-	d := newBoundedDialer(2, 3)
-	cfg := Config{URI: f.URI, Store: "mongo", Pool: 1}
+	d := newConnectionOwner()
+	cfg := Config{URI: f.URI, Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)

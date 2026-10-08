@@ -121,7 +121,7 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport(1)
+			transport := newTransport()
 			defer transport.CloseIdleConnections()
 			a := &Adapter{dialect: ElasticsearchProduct, config: Config{URL: server.URL}, ctx: context.Background(), client: &http.Client{Transport: transport, CheckRedirect: noRedirect}}
 			call := exchange{path: "/_search", body: []byte("{}"), limit: responseLimit}

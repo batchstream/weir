@@ -20,12 +20,12 @@ type ExecutionSnapshot struct {
 }
 
 func (s *Server) Snapshot() ExecutionSnapshot {
-	snapshot := ExecutionSnapshot{ActiveRPCs: int64(len(s.admission.slots))}
+	snapshot := ExecutionSnapshot{ActiveRPCs: s.admission.activeRPCs.Load()}
 	return snapshot
 }
 
 // RecordStreamItems bounds admitted and publishing records per stream. Store
-// byte reservations independently bound their retained input and result data.
+// queue capacity bounds waiting inputs; active results follow stream backpressure.
 const RecordStreamItems = 32
 
 // Execute consumes single requests while the shared Store scheduler aggregates

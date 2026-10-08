@@ -78,7 +78,7 @@ func TestSearchProductDetection(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL, Pool: 1}
+			cfg := Config{Store: "search", URL: server.URL}
 			a, err := Open(context.Background(), cfg)
 			if tc.product == "" {
 				if a != nil {

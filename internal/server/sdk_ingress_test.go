@@ -121,7 +121,7 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 				}
 			})
 			limits := server.DefaultLimits()
-			limits.Connections = count
+
 			admission, err := server.NewAdmission(limits)
 			if err != nil {
 				t.Fatal(err)

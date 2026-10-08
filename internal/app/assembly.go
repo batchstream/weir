@@ -131,7 +131,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		node.endpoints[i].server = listenerServer
 	}
 
-	node.guard = overload.New(overloadTargets, uint64(cfg.Basic.Memory))
+	node.guard = overload.New(overloadTargets)
 	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}

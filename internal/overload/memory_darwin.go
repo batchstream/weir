@@ -41,7 +41,7 @@ func bindLibproc() {
 				libproc.handle = 0
 			}
 			libproc.call = nil
-			slog.Error("Darwin process memory unavailable; admission closed", "error", libproc.err)
+			slog.Error("Darwin process memory observation unavailable", "error", libproc.err)
 		}
 	}()
 	var usage rusageV0

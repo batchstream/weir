@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"io"
 	"net"
 	"testing"
 	"time"
@@ -10,75 +9,54 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
-func TestConnectionBoundAndSingleClose(t *testing.T) {
+func TestConnectionsHaveNoAdmissionCapAndCloseOnce(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
 	limits := DefaultLimits()
-	limits.Connections = 2
 	admission, err := NewAdmission(limits)
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := Config{Admission: admission, Limits: limits}
-	s, err := New(config)
+	server, err := New(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(s.grpc.Stop)
-	bounded := &limitedListener{Listener: listener, slots: admission.connections, server: s}
-	accepted := make(chan net.Conn, 4)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			conn, err := bounded.Accept()
-			if err != nil {
-				return
-			}
-			accepted <- conn
-		}
-	}()
-	var peers, servers []net.Conn
+	defer server.grpc.Stop()
+	wrapper := &limitedListener{Listener: listener, server: server}
+	var clients, accepted []net.Conn
 	defer func() {
-		for _, conn := range peers {
+		for _, conn := range clients {
 			_ = conn.Close()
 		}
-		for _, conn := range servers {
+		for _, conn := range accepted {
 			_ = conn.Close()
 		}
-		_ = listener.Close()
-		<-done
 	}()
-	for i := 0; i < 2; i++ {
-		conn, err := net.Dial("tcp", listener.Addr().String())
+	for range 32 {
+		client, err := net.Dial("tcp", listener.Addr().String())
 		if err != nil {
 			t.Fatal(err)
 		}
-		peers = append(peers, conn)
-		select {
-		case server := <-accepted:
-			servers = append(servers, server)
-		case <-time.After(time.Second):
-			t.Fatal("accept stalled")
+		clients = append(clients, client)
+		conn, err := wrapper.Accept()
+		if err != nil {
+			t.Fatal(err)
 		}
+		accepted = append(accepted, conn)
 	}
-	extra, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
+	if admission.activeConnections.Load() != 32 {
+		t.Fatal("connections were capped")
 	}
-	defer extra.Close()
-	_ = extra.SetReadDeadline(time.Now().Add(time.Second))
-	buf := make([]byte, 1)
-	if _, err = extra.Read(buf); err != io.EOF {
-		t.Fatal("excess connection not rejected", err)
+	for _, conn := range accepted {
+		_ = conn.Close()
+		_ = conn.Close()
 	}
-	_ = servers[0].Close()
-	_ = servers[0].Close()
-	if len(bounded.slots) != 1 {
-		t.Fatal("connection credit closed more than once")
+	if admission.activeConnections.Load() != 0 {
+		t.Fatal("close was not idempotent")
 	}
 }
 

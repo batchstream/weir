@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/execution"
@@ -35,7 +36,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 			finds.Add(1)
 		}
 	}}
-	config := mongodb.Config{URI: proxy.URI(), Store: "mongo", Pool: 1, MaxReadSize: len(raw)}
+	config := mongodb.Config{URI: proxy.URI(), Store: "mongo"}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	adapter, err := mongodb.Open(ctx, config)
@@ -48,8 +49,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 		}
 	}()
 	limits := DefaultLimits()
-	limits.Concurrency = 1
-	limits.ResultBytes = 64 << 20
+
 	runtime := newRuntime(adapter, limits)
 	var tickets []*Ticket
 	for index := range 32 {
@@ -98,7 +98,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 	for _, ticket := range tickets[:31] {
 		ticket.Ack()
 	}
-	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+len(raw) || snapshot.WorkingBytes != 0 {
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+protocol.MaxDocument || snapshot.WorkingBytes != 0 {
 		t.Fatal("first caller did not release only its own response charges", snapshot)
 	}
 	if !bytes.Equal(peer.GetReadResult().GetDocument().GetData(), raw) {

@@ -28,13 +28,10 @@ type Config struct {
 	Store    string
 	Username string
 	Password string
-	Pool     uint64
-	// MaxReadSize bounds ordinary Record Read only; zero uses the 16 KiB default.
-	MaxReadSize int
 }
 
 type Adapter struct {
-	dialer   *boundedDialer
+	dialer   *connectionOwner
 	client   *mongo.Client
 	config   Config
 	once     sync.Once
@@ -54,10 +51,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
-	if cfg.MaxReadSize == 0 {
-		cfg.MaxReadSize = execution.DefaultMaxReadSize
-	}
-	dialer := newBoundedDialer(int(cfg.Pool)+1, mongoMaxConnecting+1)
+	dialer := newConnectionOwner()
 	complete := false
 	defer func() {
 		if !complete {
@@ -70,9 +64,8 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	opts.SetDirect(true).
 		SetAppName("weir:" + cfg.Store).
-		SetMaxPoolSize(cfg.Pool).
+		SetMaxPoolSize(0).
 		SetMinPoolSize(0).
-		SetMaxConnecting(mongoMaxConnecting).
 		SetRetryWrites(false).
 		SetRetryReads(false).
 		SetMaxAdaptiveRetries(0).
@@ -84,7 +77,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		SetReadPreference(readpref.Primary()).
 		SetWriteConcern(writeconcern.Majority())
 	if opts.Timeout != nil {
-		return nil, fmt.Errorf("client timeoutMS is unsupported; runtime owns execution deadlines")
+		return nil, fmt.Errorf("client timeoutMS is unsupported; caller context owns execution deadlines")
 	}
 	if err := opts.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid MongoDB connection profile")
@@ -161,7 +154,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
 	if r := op.GetRead(); r != nil {
 		native.action = "read"
-		p.ResultBytes += a.maxReadSize()
+		p.ResultBytes += protocol.MaxDocument
 	} else {
 		m := op.GetMutate()
 		var d *pb.Document

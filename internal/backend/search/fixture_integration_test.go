@@ -16,7 +16,7 @@ import (
 func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	t.Helper()
 	backend := testsearch.Open(t)
-	cfg := Config{Store: "search", URL: backend.URL, Pool: 4}
+	cfg := Config{Store: "search", URL: backend.URL}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	adapter, err := Open(ctx, cfg)

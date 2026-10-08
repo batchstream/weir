@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -53,7 +52,7 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	work.ID = record.Index()
 	operation := record.Command()
 	if operation.GetRead() != nil {
-		work.WorkingBytes = a.readWorkingBytes()
+		work.WorkingBytes = 2*scanNativeLimit + 4*protocol.MaxDocument
 	} else {
 		work.WorkingBytes = 24 << 20
 	}
@@ -89,13 +88,7 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 }
 
 func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit execution.Emit) bool {
-	timeout := work.BackendTimeout
-	if timeout <= 0 {
-		timeout = 2 * time.Second
-	}
-	fetchContext, cancel := context.WithTimeout(ctx, timeout)
-	page := a.fetchScan(fetchContext, work)
-	cancel()
+	page := a.fetchScan(ctx, work)
 	state := work.Backend.(*scanPlan)
 	continuation, _ := state.PublishPage(ctx, work, page, emit)
 	return continuation

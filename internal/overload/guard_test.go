@@ -16,7 +16,7 @@ func (t *guardTarget) SetOverloaded(value bool) { t.latched.Store(value) }
 func TestGuardHysteresisAndUnknown(t *testing.T) {
 	target := &guardTarget{}
 	state := Snapshot{Budget: 1000}
-	guard := &Guard{targets: []Target{target}, state: state}
+	guard := &Guard{targets: []Target{target}, state: state, processBudget: 1000}
 	cg := CgroupSnapshot{State: "v2", Valid: true}
 	for _, step := range []struct {
 		n                      uint64
@@ -38,11 +38,11 @@ func TestGuardHysteresisAndUnknown(t *testing.T) {
 			t.Fatal(s, step)
 		}
 	}
-	for _, status := range []string{"unknown", "profile_changed"} {
+	for _, status := range []string{"unknown"} {
 		cg.State = status
 		o := observation{bytes: 0, source: "linux_rss", processValid: true, cgroup: cg, low: true}
 		guard.sample(o)
-		if s := guard.Snapshot(); !s.Latched || !s.Unknown {
+		if s := guard.Snapshot(); s.Latched || !s.Unknown {
 			t.Fatal(s)
 		}
 	}
@@ -54,8 +54,8 @@ func TestGuardHysteresisAndUnknown(t *testing.T) {
 func TestGuardStartupRunCancelAndSnapshots(t *testing.T) {
 	target := &guardTarget{}
 	targets := []Target{target}
-	guard := New(targets, 1)
-	if s := guard.Snapshot(); !s.Observed || !s.Latched || !target.latched.Load() {
+	guard := New(targets)
+	if s := guard.Snapshot(); !s.Observed || s.Budget == 0 || s.Latched != target.latched.Load() {
 		t.Fatal("startup must sample synchronously", s)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

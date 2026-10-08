@@ -11,7 +11,6 @@ import (
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/directory"
-	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 )
@@ -26,7 +25,6 @@ type Config struct {
 type BasicConfig struct {
 	Listeners   ListenerConfig    `json:"listeners" yaml:"listeners"`
 	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
-	Memory      ByteSize          `json:"memory" yaml:"memory"`
 	Transport   TransportConfig   `json:"transport" yaml:"transport"`
 	Discovery   DiscoveryConfig   `json:"discovery" yaml:"discovery"`
 }
@@ -61,13 +59,18 @@ type StoreConfig struct {
 }
 
 type Local struct {
-	MongoDB            *Mongo    `json:"mongodb" yaml:"mongodb"`
-	Search             *Search   `json:"search" yaml:"search"`
-	MaxConcurrency     int       `json:"max_concurrency" yaml:"max_concurrency"`
-	MaxBatchOperations int       `json:"max_batch_operations" yaml:"max_batch_operations"`
-	MaxReadSize        *ByteSize `json:"max_read_size,omitempty" yaml:"max_read_size,omitempty"`
-	WorkingMemory      *ByteSize `json:"working_memory,omitempty" yaml:"working_memory,omitempty"`
-	BackendTimeout     *Duration `json:"backend_timeout,omitempty" yaml:"backend_timeout,omitempty"`
+	MongoDB            *Mongo           `json:"mongodb" yaml:"mongodb"`
+	Search             *Search          `json:"search" yaml:"search"`
+	MaxBatchOperations int              `json:"max_batch_operations" yaml:"max_batch_operations"`
+	MaxBatchBytes      *ByteSize        `json:"max_batch_bytes,omitempty" yaml:"max_batch_bytes,omitempty"`
+	BatchQueue         BatchQueueConfig `json:"batch_queue" yaml:"batch_queue"`
+}
+
+// BatchQueueConfig bounds waiting work. Dispatch releases queue capacity;
+// running operations and completed results do not consume this capacity.
+type BatchQueueConfig struct {
+	MaxOperations int       `json:"max_operations" yaml:"max_operations"`
+	MaxBytes      *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
 }
 
 type Mongo struct {
@@ -93,44 +96,24 @@ type SearchConnection struct {
 }
 
 type TransportConfig struct {
-	MaxConnections int               `json:"max_connections" yaml:"max_connections"`
-	MaxSessions    int               `json:"max_sessions" yaml:"max_sessions"`
-	Timeouts       TransportTimeouts `json:"timeouts" yaml:"timeouts"`
+	Timeouts TransportTimeouts `json:"timeouts" yaml:"timeouts"`
 }
 
 type TransportTimeouts struct {
-	Request Duration `json:"request" yaml:"request"`
-	Stall   Duration `json:"stall" yaml:"stall"`
+	Stall Duration `json:"stall" yaml:"stall"`
 }
 
 func DefaultConfig() Config {
 	defaults := server.DefaultLimits()
-	timeouts := TransportTimeouts{
-		Request: Duration(defaults.RequestLifetime),
-		Stall:   Duration(defaults.Stall),
-	}
-	transport := TransportConfig{
-		MaxConnections: defaults.Connections,
-		MaxSessions:    defaults.Sessions,
-		Timeouts:       timeouts,
-	}
-	basic := BasicConfig{
-		Memory:    2 << 30,
-		Transport: transport,
-	}
-
+	timeouts := TransportTimeouts{Stall: Duration(defaults.Stall)}
+	transport := TransportConfig{Timeouts: timeouts}
+	basic := BasicConfig{Transport: transport}
 	cfg := Config{Basic: basic}
 	return cfg
 }
 
 func (cfg TransportConfig) serverLimits() server.Limits {
-	timeouts := cfg.Timeouts
-	limits := server.Limits{
-		Connections:     cfg.MaxConnections,
-		Sessions:        cfg.MaxSessions,
-		RequestLifetime: time.Duration(timeouts.Request),
-		Stall:           time.Duration(timeouts.Stall),
-	}
+	limits := server.Limits{Stall: time.Duration(cfg.Timeouts.Stall)}
 	return limits
 }
 
@@ -154,43 +137,7 @@ func (cfg Config) Validate() error {
 	if err := cfg.validateDiscovery(); err != nil {
 		return err
 	}
-	if uint64(cfg.Basic.Memory) < cfg.ReservedMemory() {
-		return errors.New("process memory budget cannot cover declared Route and Store bounds")
-	}
 	return nil
-}
-
-// ReservedMemory is a conservative application/transport working-set envelope.
-// Runtime heap and RSS additionally include GC slack, stacks and driver/native
-// allocations; the overload guard enforces the configured process threshold.
-func (cfg Config) ReservedMemory() uint64 {
-	if cfg.Basic.Transport.serverLimits().Validate() != nil {
-		return (64 << 30) + 1
-	}
-	transportCosts := []uint64{uint64(cfg.Basic.Transport.MaxSessions) * uint64(server.SessionMemoryBytes), uint64(cfg.Basic.Transport.MaxConnections) * (256 << 10)}
-	budget := addMemoryBudget(64<<20, transportCosts)
-	for _, service := range cfg.Routing.Stores {
-		if service.Local != nil {
-			limits := service.Local.runtimeLimits()
-			if limits.Validate() != nil {
-				return (64 << 30) + 1
-			}
-			costs := []uint64{uint64(limits.PendingBytes), uint64(limits.ResultBytes), uint64(limits.WorkingBytes), uint64(limits.Concurrency) * (2 << 20)}
-			budget = addMemoryBudget(budget, costs)
-		}
-	}
-	return budget
-}
-
-func addMemoryBudget(budget uint64, costs []uint64) uint64 {
-	const maximum = 64 << 30
-	for _, cost := range costs {
-		if budget > maximum || cost > maximum-budget {
-			return maximum + 1
-		}
-		budget += cost
-	}
-	return budget
 }
 
 func (cfg BasicConfig) Validate() error {
@@ -231,9 +178,6 @@ func (cfg BasicConfig) Validate() error {
 		}
 	}
 
-	if cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
-		return errors.New("invalid process bounds")
-	}
 	return cfg.Transport.serverLimits().Validate()
 }
 
@@ -311,12 +255,6 @@ func (cfg RoutingConfig) Validate() error {
 	}
 	for _, service := range cfg.Stores {
 		l := service.Local
-		if l.BackendTimeout != nil && *l.BackendTimeout <= 0 {
-			return errors.New("backend_timeout must be positive")
-		}
-		if l.MaxReadSize != nil && (*l.MaxReadSize < 1<<10 || *l.MaxReadSize > protocol.MaxDocument) {
-			return errors.New("max_read_size must be between 1KiB and 2MiB")
-		}
 		limits := l.runtimeLimits()
 		if err := limits.Validate(); err != nil {
 			return err
@@ -360,23 +298,26 @@ func (cfg RoutingConfig) validateStores() error {
 
 func (l *Local) runtimeLimits() store.Limits {
 	limits := store.DefaultLimits()
-	if l.BackendTimeout != nil {
-		limits.BackendTimeout = time.Duration(*l.BackendTimeout)
-	}
-	if l.MaxConcurrency != 0 {
-		limits.Concurrency = l.MaxConcurrency
-	}
 	if l.MaxBatchOperations != 0 {
 		limits.BatchOperations = l.MaxBatchOperations
 	}
-	if l.WorkingMemory != nil {
-		limits.WorkingBytes = int(*l.WorkingMemory)
-		if uint64(*l.WorkingMemory) > uint64(^uint(0)>>1) {
-			limits.WorkingBytes = -1
-		}
+	if l.MaxBatchBytes != nil {
+		limits.BatchBytes = boundedSize(*l.MaxBatchBytes)
 	}
-
+	if l.BatchQueue.MaxOperations != 0 {
+		limits.QueueOperations = l.BatchQueue.MaxOperations
+	}
+	if l.BatchQueue.MaxBytes != nil {
+		limits.QueueBytes = boundedSize(*l.BatchQueue.MaxBytes)
+	}
 	return limits
+}
+
+func boundedSize(size ByteSize) int {
+	if uint64(size) > uint64(^uint(0)>>1) {
+		return -1
+	}
+	return int(size)
 }
 
 func (l *Local) searchConfig(name string) search.Config {
@@ -389,14 +330,9 @@ func (l *Local) searchConfig(name string) search.Config {
 		}
 	}
 	cfg := search.Config{
-		Store:       name,
-		URL:         l.Search.URL,
-		Pool:        l.runtimeLimits().Concurrency,
-		Connection:  connection,
-		MaxReadSize: execution.DefaultMaxReadSize,
-	}
-	if l.MaxReadSize != nil {
-		cfg.MaxReadSize = int(*l.MaxReadSize)
+		Store:      name,
+		URL:        l.Search.URL,
+		Connection: connection,
 	}
 	return cfg
 }
@@ -404,15 +340,10 @@ func (l *Local) searchConfig(name string) search.Config {
 func (l *Local) mongoConfig(name string) mongodb.Config {
 	m := l.MongoDB
 	cfg := mongodb.Config{
-		URI:         m.URI,
-		Username:    m.Username,
-		Password:    m.Password,
-		Store:       name,
-		Pool:        uint64(l.runtimeLimits().Concurrency),
-		MaxReadSize: execution.DefaultMaxReadSize,
-	}
-	if l.MaxReadSize != nil {
-		cfg.MaxReadSize = int(*l.MaxReadSize)
+		URI:      m.URI,
+		Username: m.Username,
+		Password: m.Password,
+		Store:    name,
 	}
 	return cfg
 }

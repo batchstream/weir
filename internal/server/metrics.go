@@ -97,15 +97,12 @@ func (a *Admission) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeBy
 
 func (a *Admission) Collect(ch chan<- prometheus.Metric) {
 	values := map[string]int{
-		"connections":                 len(a.connections),
-		"connections_limit":           cap(a.connections),
-		"sessions":                    len(a.slots),
-		"sessions_limit":              cap(a.slots),
-		"queued_response_bytes":       int(a.wireBytes.Load()),
-		"queued_response_bytes_limit": int(a.wireLimit),
+		"connections":           int(a.activeConnections.Load()),
+		"sessions":              int(a.activeRPCs.Load()),
+		"queued_response_bytes": int(a.wireBytes.Load()),
 	}
 	for name, value := range values {
-		desc := prometheus.NewDesc("weir_ingress_"+name, "Shared application/peer admission occupancy or limit.", nil, nil)
+		desc := prometheus.NewDesc("weir_ingress_"+name, "Shared application/peer ingress occupancy.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
 	}
 	a.rejections.Collect(ch)

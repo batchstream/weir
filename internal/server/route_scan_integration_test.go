@@ -122,7 +122,7 @@ func TestRouteMongoScanContinuesOnNewInstanceAfterOriginShutdown(t *testing.T) {
 		wantIDs:  ids,
 	}
 	opts.open = func(t *testing.T) execution.Adapter {
-		config := mongodb.Config{Store: "records", URI: backend.URI, Pool: 2}
+		config := mongodb.Config{Store: "records", URI: backend.URI}
 		adapter, err := mongodb.Open(ctx, config)
 		if err != nil {
 			t.Fatal(err)
@@ -165,7 +165,7 @@ func TestRouteSearchScanContinuesOnNewInstanceAfterOriginShutdown(t *testing.T) 
 		wantIDs:  ids,
 	}
 	opts.open = func(t *testing.T) execution.Adapter {
-		config := search.Config{Store: "records", URL: backend.URL, Pool: 2}
+		config := search.Config{Store: "records", URL: backend.URL}
 		adapter, err := search.Open(ctx, config)
 		if err != nil {
 			t.Fatal(err)

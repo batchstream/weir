@@ -1,4 +1,4 @@
-// Package store owns one bounded admission ledger and scheduler for each Store.
+// Package store batches waiting operations and owns their execution and publication.
 package store
 
 import (
@@ -13,30 +13,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Limits controls batching and waiting work, not backend execution concurrency.
 type Limits struct {
-	PendingBytes, ResultBytes                int
-	WorkingBytes                             int
-	Concurrency, BatchOperations, BatchBytes int
-	BackendTimeout                           time.Duration
+	QueueOperations, QueueBytes int
+	BatchOperations, BatchBytes int
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{
-		PendingBytes: 32 << 20, ResultBytes: 32 << 20,
-		WorkingBytes: 384 << 20,
-		Concurrency:  2, BatchOperations: 32, BatchBytes: 8 << 20,
-		BackendTimeout: 2 * time.Second,
-	}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20}
 	return limits
 }
-func (l Limits) Validate() error {
-	if l.PendingBytes < protocol.MaxExecuteRequestBytes ||
-		l.ResultBytes < protocol.MaxDocument+execution.ResultOverheadBytes ||
-		l.WorkingBytes < 24<<20 ||
-		l.Concurrency < 1 || uint64(l.Concurrency) > (64<<30)/(2<<20) || l.BatchOperations < 1 ||
-		l.BatchBytes < protocol.MaxDocument+4096 || l.BatchBytes > 32<<20 ||
-		l.BackendTimeout <= 0 {
-		return fmt.Errorf("invalid runtime bounds")
+
+func (limits Limits) Validate() error {
+	if limits.QueueOperations < 1 || limits.QueueBytes < execution.EntryOverheadBytes ||
+		limits.BatchOperations < 1 || limits.BatchBytes < execution.EntryOverheadBytes {
+		return fmt.Errorf("invalid batch or queue bounds")
 	}
 	return nil
 }
@@ -97,7 +88,6 @@ type batch struct {
 	ctx          context.Context
 	items        []*Ticket
 	cancel       context.CancelFunc
-	timeoutOwned bool
 	workingBytes int
 }
 type Snapshot struct {
@@ -105,7 +95,6 @@ type Snapshot struct {
 	Pending, PendingBytes                 int
 	Active, Retained                      int
 	ResultBytes, WorkingBytes, Publishers int
-	ConcurrencyLimit                      int
 	Draining, Closed, Overloaded          bool
 }
 
@@ -172,10 +161,10 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if singleton && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 || plan.Bytes > r.limits.PendingBytes || plan.ResultBytes > r.limits.ResultBytes || plan.WorkingBytes > r.limits.WorkingBytes || (!singleton && plan.Bytes > r.limits.BatchBytes) {
+	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 || plan.Bytes > r.limits.QueueBytes || (!singleton && plan.Bytes > r.limits.BatchBytes) {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
 	}
-	if plan.Bytes > r.limits.PendingBytes-r.pendingBytes || plan.ResultBytes > r.limits.ResultBytes-r.resultBytes {
+	if len(r.queue) >= r.limits.QueueOperations || plan.Bytes > r.limits.QueueBytes-r.pendingBytes {
 		if session == nil {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
 		}
@@ -266,7 +255,6 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 		return
 	}
 	delete(r.live, t)
-	r.pendingBytes -= t.plan.Bytes
 	r.resultBytes -= t.plan.ResultBytes
 	t.plan = nil
 	t.event = nil
@@ -293,6 +281,7 @@ func (r *Runtime) cancelQueuedLocked() {
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if t.ctx.Err() != nil || t.abandoned || r.closed {
+			r.pendingBytes -= t.plan.Bytes
 			failure := protocol.ContextFailure(t.ctx)
 			if r.closed {
 				failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
@@ -332,7 +321,12 @@ func (r *Runtime) loop() {
 				interested = interested || t.ctx.Err() == nil && !t.abandoned
 			}
 			if !interested {
-				b.cancel()
+				// Let the deadline context retain its cause when the final caller
+				// expires; cancellation must not turn it into context.Canceled.
+				deadline, bounded := b.ctx.Deadline()
+				if !bounded || time.Now().Before(deadline) {
+					b.cancel()
+				}
 			}
 		}
 		for !r.closed {
@@ -350,9 +344,6 @@ func (r *Runtime) loop() {
 	}
 }
 func (r *Runtime) selectLocked(now time.Time) *batch {
-	if len(r.batches) >= r.limits.Concurrency {
-		return nil
-	}
 	seen := make(map[resourceKey]bool)
 	records := make(map[string]bool)
 	selected := make(map[*Ticket]bool)
@@ -369,9 +360,6 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 				continue
 			}
 			seen[key] = true
-		}
-		if t.plan.WorkingBytes > r.limits.WorkingBytes-r.workingBytes {
-			continue
 		}
 		if seed == nil {
 			seed = t
@@ -393,40 +381,38 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	if len(items) == 0 {
 		return nil
 	}
-	backendDeadline := now.Add(r.limits.BackendTimeout)
 	workingBytes := 0
-	latest := now
-	for _, t := range items {
-		if t.ctx.Err() != nil || t.abandoned {
+	var latest time.Time
+	allBounded := true
+	for _, ticket := range items {
+		if ticket.ctx.Err() != nil || ticket.abandoned {
 			r.cancelQueuedLocked()
 			return nil
 		}
-		workingBytes = max(workingBytes, t.plan.WorkingBytes)
-		deadline, ok := t.ctx.Deadline()
-		if !ok {
-			deadline = backendDeadline
-		}
+		workingBytes = max(workingBytes, ticket.plan.WorkingBytes)
+		deadline, bounded := ticket.ctx.Deadline()
+		allBounded = allBounded && bounded
 		if deadline.After(latest) {
 			latest = deadline
 		}
 	}
-	owned := !backendDeadline.After(latest)
-	if latest.Before(backendDeadline) {
-		backendDeadline = latest
-	}
-	ctx, cancel := context.WithDeadline(context.Background(), backendDeadline)
-	// Only Native emits directly during execution. Its backend calls enforce
-	// their own I/O cap, while output stalls follow the caller's lifetime. Scan
-	// pages and Lua results publish after execution releases this bounded batch.
-	if seed.plan.Command.GetNative() != nil {
-		cancel()
+	// A shared batch lives while any caller remains interested. An unbounded
+	// caller must not inherit another caller's deadline. Per-plan contexts still
+	// carry individual cancellation and deadline evidence into the adapters.
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if len(items) == 1 {
 		ctx, cancel = context.WithCancel(seed.ctx)
-		owned = false
+	} else if allBounded {
+		ctx, cancel = context.WithDeadline(context.Background(), latest)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
 	}
-	b := &batch{ctx: ctx, items: items, cancel: cancel, timeoutOwned: owned, workingBytes: workingBytes}
+	b := &batch{ctx: ctx, items: items, cancel: cancel, workingBytes: workingBytes}
 	keep := r.queue[:0]
 	for _, t := range r.queue {
 		if selected[t] {
+			r.pendingBytes -= t.plan.Bytes
 			r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(t.queuedAt).Seconds())
 			t.state = 1
 			if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
@@ -495,11 +481,22 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 		}
 		if continuation && delivered && t.ctx.Err() == nil {
 			r.mu.Lock()
-			if !t.abandoned && !r.closed && !t.session.closed {
+			for !t.abandoned && !r.closed && !t.session.closed && t.ctx.Err() == nil &&
+				(len(r.queue) >= r.limits.QueueOperations || t.plan.Bytes > r.limits.QueueBytes-r.pendingBytes) {
+				changed := r.changed
+				r.mu.Unlock()
+				select {
+				case <-changed:
+				case <-t.ctx.Done():
+				}
+				r.mu.Lock()
+			}
+			if !t.abandoned && !r.closed && !t.session.closed && t.ctx.Err() == nil {
 				t.publishing = false
 				r.publishers--
 				t.state = 0
 				t.queuedAt = time.Now()
+				r.pendingBytes += t.plan.Bytes
 				r.queue = append(r.queue, t)
 				r.notifyLocked()
 				r.mu.Unlock()
@@ -548,7 +545,6 @@ func (r *Runtime) execute(b *batch) {
 	for i, t := range b.items {
 		plan := *t.plan
 		plan.Context = t.ctx
-		plan.BackendTimeout = r.limits.BackendTimeout
 		plans[i] = &plan
 		positions[&plan] = t
 	}
@@ -613,15 +609,6 @@ func (r *Runtime) execute(b *batch) {
 		continuation = false
 	}
 	r.metrics.duration.WithLabelValues("execution").Observe(time.Since(started).Seconds())
-	interested := false
-	for _, ticket := range b.items {
-		if ticket.ctx.Err() == nil {
-			interested = true
-		}
-	}
-	if interested && b.timeoutOwned && b.ctx.Err() == context.DeadlineExceeded {
-		r.metrics.backendTimeouts.Inc()
-	}
 	b.cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -647,7 +634,7 @@ func (r *Runtime) execute(b *batch) {
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches), Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, ConcurrencyLimit: r.limits.Concurrency, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
+	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches), Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
 	for t := range r.live {
 		if t.state == 2 {
 			snapshot.Ready++
