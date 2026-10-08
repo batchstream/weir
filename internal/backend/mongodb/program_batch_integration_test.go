@@ -11,6 +11,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -452,6 +453,9 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 	}}
 	adapterOpts := adapterTestOptions{fixture: fixture, monitor: monitor}
 	adapter := testAdapter(t, adapterOpts)
+	settings := backend.DefaultOptions()
+	settings.ExchangeBytes = 8 << 20
+	adapter.config.Options = &settings
 	var plans []*execution.Plan
 	for _, id := range ids {
 		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: incrementProgram}

@@ -191,7 +191,7 @@ func TestScanDownsizesExcessiveResponsesWithoutAdvancing(t *testing.T) {
 		sizes = append(sizes, request.Size)
 		positions = append(positions, request.After[0])
 		if request.Size > 2 {
-			w.Header().Set("Content-Length", fmt.Sprint(responseLimit+1))
+			w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -229,7 +229,7 @@ func TestScanSingleExcessiveResponseFailsWithoutReplay(t *testing.T) {
 	calls := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		w.Header().Set("Content-Length", fmt.Sprint(responseLimit+1))
+		w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
 		w.WriteHeader(http.StatusOK)
 	})
 	adapter := scanBatchAdapter(t, handler)
@@ -251,7 +251,7 @@ func TestScanDownsizingRetainsOriginalDeadline(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		if calls.Add(1) == 1 {
-			w.Header().Set("Content-Length", fmt.Sprint(responseLimit+1))
+			w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -332,7 +332,7 @@ func TestScanCheckpointContainsTraversalStateOnly(t *testing.T) {
 			case "duplicate":
 				state = []byte(`{"pit":"previous","after":7,"after":8}`)
 			case "wrong_profile":
-				profile = "backend:\n  search:" + adapter.dialect + ":v2"
+				profile = "search:" + adapter.dialect + ":v2"
 			}
 			token, err := protocol.EncodeScanToken(profile, fingerprint, state)
 			if err != nil {
@@ -525,5 +525,29 @@ func TestConfiguredSearchScanBatchAndNoShardTimeout(t *testing.T) {
 	page := adapter.fetchScan(t.Context(), work)
 	if page.Failure != nil || len(page.Documents) != 1 {
 		t.Fatal(page.Failure)
+	}
+}
+
+func TestScanFetchAcceptsConfiguredExchangeAboveEightMiB(t *testing.T) {
+	var rows []json.RawMessage
+	for i := range 10 {
+		rows = append(rows, scanBatchHit(i, 1<<20))
+	}
+	reply := scanBatchReply(rows)
+	settings := backend.DefaultOptions()
+	settings.Scan.Bytes = 16 << 20
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(reply) })
+	adapter := scanBatchAdapter(t, handler)
+	adapter.config.Options = &settings
+	request := &pb.ScanRequest{Resource: "records", PageSize: 10}
+	work, failure := adapter.prepareScan(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	state := work.Backend.(*scanPlan)
+	state.opened, state.pit = true, "previous"
+	page := adapter.fetchScan(t.Context(), work)
+	if page.Failure != nil || len(page.Documents) != 10 {
+		t.Fatal("configured large Scan fetch failed", page.Failure, len(page.Documents))
 	}
 }

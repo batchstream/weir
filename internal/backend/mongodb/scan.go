@@ -57,7 +57,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		if d.ContentType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan filter requires BSON")
 		}
-		nodes := 4096
+		nodes := len(d.Data)
 		if !validScanBSON(d.Data, 0, &nodes) {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive BSON filter")
 		}
@@ -234,7 +234,7 @@ func validScanID(raw []byte) bool {
 	if len(raw) > protocol.MaxScanState {
 		return false
 	}
-	nodes := 65536
+	nodes := len(raw)
 	if !validScanBSON(raw, 0, &nodes) {
 		return false
 	}
@@ -318,9 +318,6 @@ func scanFields(raw []byte) (map[string]bson.RawValue, error) {
 	fields := make(map[string]bson.RawValue)
 	rest := raw[4 : len(raw)-1]
 	for len(rest) > 0 {
-		if len(fields) >= 32 {
-			return nil, fmt.Errorf("envelope field limit")
-		}
 		element, tail, ok := bsoncore.ReadElement(rest)
 		if !ok {
 			return nil, fmt.Errorf("invalid element")

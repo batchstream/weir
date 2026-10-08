@@ -107,3 +107,27 @@ overload:
 		}
 	}
 }
+
+func TestMongoConnectionWorkerConfiguration(t *testing.T) {
+	input := `stores:
+  - name: mongo
+    backend:
+      mongodb:
+        uri: mongodb://127.0.0.1:27017
+        pool:
+          max_connecting: 32
+`
+	cfg, err := DecodeRouting(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := cfg.Stores[0].Local.mongoConfig("mongo")
+	if native.MaxConnecting != 32 {
+		t.Fatal("connection worker configuration not propagated", native.MaxConnecting)
+	}
+	for _, invalid := range []string{"-1", "18446744073709551615", "two"} {
+		if _, err := DecodeRouting(strings.NewReader(strings.Replace(input, "32", invalid, 1))); err == nil {
+			t.Fatal("invalid worker count accepted", invalid)
+		}
+	}
+}

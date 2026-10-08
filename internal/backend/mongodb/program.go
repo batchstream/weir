@@ -309,7 +309,15 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	}
 	selector := bson.D{{Key: "$in", Value: ids}}
 	filter := bson.D{{Key: "_id", Value: selector}}
-	command := bson.D{{Key: "find", Value: target.collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: int32(len(ids))}, {Key: "allowPartialResults", Value: false}}
+	var command any = bson.D{{Key: "find", Value: target.collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: int32(len(ids))}, {Key: "allowPartialResults", Value: false}}
+	encoded, err := bson.Marshal(command)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > a.commandBytes()-(64<<10) {
+		return nil, errProgramBatchBound
+	}
+	command = bson.Raw(encoded)
 	state := &recordCursor{target: target, items: len(ids)}
 	documents := make([]bson.Raw, len(plans))
 	held, received := 0, 0

@@ -94,7 +94,6 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		call := exchange{
 			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
 			contentType: "application/json", limit: a.options().ExchangeBytes,
-			jsonNodes: len(group)*(16384+32) + 1,
 		}
 		status, raw, err := a.request(ctx, call)
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
@@ -153,7 +152,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 				}
 			case reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source):
 				observation.reply, observation.failure = nil, failure
-			case validateJSON(reply.Source, 16384) != nil:
+			case validateJSON(reply.Source, len(reply.Source)) != nil:
 				observation.reply, observation.failure = nil, failure
 			case len(reply.Source) > protocol.MaxDocument:
 				observation.reply = nil

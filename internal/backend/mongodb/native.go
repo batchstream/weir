@@ -42,7 +42,7 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 
 func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive ordered BSON command")
-	nodes := 65536
+	nodes := len(raw)
 	if len(raw) > NativeCommandLimit {
 		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native BSON command limit")
 	}
@@ -122,7 +122,7 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	if len(reply) == 0 {
 		return protocol.NativeFailure(true, failure)
 	}
-	nodes := 65536
+	nodes := len(raw)
 	fields, framingErr := scanFields(reply)
 	envelopeOK := false
 	switch fields["ok"].Type {

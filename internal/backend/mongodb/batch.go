@@ -146,13 +146,30 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 		selector := bson.D{{Key: "$in", Value: ids}}
 		filter[0].Value = selector
 	}
-	command := bson.D{
+	var command any = bson.D{
 		{Key: "find", Value: target.collection},
 		{Key: "filter", Value: filter},
 		{Key: "limit", Value: int64(len(ids))},
 		{Key: "batchSize", Value: int32(len(ids))},
 		{Key: "allowPartialResults", Value: false},
 	}
+	encoded, marshalErr := bson.Marshal(command)
+	if marshalErr != nil || len(encoded) > a.commandBytes()-(64<<10) {
+		if marshalErr == nil && len(plans) > 1 {
+			middle := len(plans) / 2
+			copy(results[:middle], a.executeReads(ctx, plans[:middle]))
+			copy(results[middle:], a.executeReads(ctx, plans[middle:]))
+			return results
+		}
+		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "encoded read exceeds MongoDB native BSON command boundary")
+		for i, work := range plans {
+			if !skipped[i] {
+				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			}
+		}
+		return results
+	}
+	command = bson.Raw(encoded)
 	state := &recordCursor{target: target, items: len(ids)}
 	session, err := a.client.StartSession()
 	valid := err == nil
@@ -201,7 +218,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				}
 				oversized := len(raw) > protocol.MaxDocument
 				if !oversized {
-					nodes := 65536
+					nodes := len(raw)
 					if !validScanBSON(raw, 0, &nodes) {
 						valid = false
 						break
@@ -429,7 +446,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 	if len(raw) > scanNativeLimit {
 		return false
 	}
-	nodes := 65536
+	nodes := len(raw)
 	if !validScanBSON(raw, 0, &nodes) {
 		return false
 	}

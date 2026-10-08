@@ -33,7 +33,6 @@ type exchange struct {
 	limit       int
 	method      string
 	contentType string
-	jsonNodes   int
 	native      bool
 	mutation    bool
 }

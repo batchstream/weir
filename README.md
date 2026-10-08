@@ -106,7 +106,8 @@ backend pools, RPCs and connections have no Weir concurrency cap. Ordinary Read
 uses the protocol's 2MiB document bound.
 
 Store settings are grouped by responsibility: `backend` holds connection establishment
-and completed target caching, `batching` holds aggregation/exchange/queue sizes,
+and completed target caching (MongoDB connection workers are under
+`backend.mongodb.pool`), `batching` holds aggregation/exchange/queue sizes,
 `streaming` holds pending results and Scan batches, and `lua` holds optional VM
 and value conversion budgets. The former flat keys are rejected. Business work
 has no default instruction budget or server-selection deadline; native exchanges

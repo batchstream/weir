@@ -137,9 +137,10 @@ Metrics observe execution rather than control scheduling. The former
 Queue occupancy and capacity metrics describe waiting operations. Active execution
 and per-record outcome counters retain actual backend evidence, including unknown writes.
 
-Scan fetches up to 128 documents per backend call, bounded by the remaining
-logical page size. It validates the complete native response and retains an
-ordered prefix of at most 4 MiB, then finishes backend execution before publication.
+Scan fetches up to `streaming.scan.max_batch_documents` (default 128) per backend
+call, bounded by the remaining logical page size. It validates the complete native response and retains an
+ordered prefix bounded by `streaming.scan.max_batch_bytes` (default 4 MiB), then
+finishes backend execution before publication.
 The result remains owned through publication and request completion. A blocked
 Scan reader does not stop independent work. MongoDB estimates 48 MiB and Search
 64 MiB of working bytes for native buffers and validation; these metrics do not
@@ -161,9 +162,9 @@ failed/exhausted page until expiry.
 Checkpoint tokens are bounded, opaque and tied to the target/filter/projection;
 the checksum detects corruption and is not authentication.
 
-Native execution is a singleton with bounded streaming and backend time. MongoDB
-qualification and native command share a deadline; Search counts actual backend
-I/O time and pauses that allowance during publication. Lua record transforms
+Native execution is a singleton with bounded streaming. Qualification, native
+commands and publication inherit the caller context, without an added backend
+execution deadline. Lua record transforms
 participate in compatible request grouping. MongoDB uses a short snapshot
 transaction for a bounded group: point read, individual Lua evaluation, bulk
 write and commit. No metadata fields are inserted into business documents, and

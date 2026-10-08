@@ -75,14 +75,14 @@ func TestMongoExpressionValidation(t *testing.T) {
 			}
 		})
 	}
-	for _, path := range []string{"_id", "a..b", ".a", "a.", "a.$", "a.$[]", "a.$[x]", "a.01", strings.Repeat("a", 1025), strings.Repeat("a.", 33) + "b"} {
+	for _, path := range []string{"_id", "a..b", ".a", "a.", "a.$", "a.$[]", "a.$[x]", "a.01"} {
 		doc := bson.D{{Key: "$set", Value: bson.D{{Key: path, Value: 1}}}}
 		if f := a.prepareExpression(expressionOperation("x", expressionBSON(t, doc)).Command.GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
 			t.Fatal(path)
 		}
 	}
 	nested := bson.D{{Key: "x", Value: 1}}
-	for i := 0; i < 33; i++ {
+	for i := 0; i < 101; i++ {
 		nested = bson.D{{Key: "x", Value: nested}}
 	}
 	doc := bson.D{{Key: "$set", Value: nested}}
@@ -107,17 +107,17 @@ func TestMongoExpressionValidation(t *testing.T) {
 		many[i] = bson.E{Key: fmt.Sprintf("field%d", i), Value: 1}
 	}
 	excessive := bson.D{{Key: "$set", Value: many}}
-	if _, f := prepareTestRecord(a, expressionOperation("db/records/s:a", expressionBSON(t, excessive))); f == nil {
-		t.Fatal("path count")
+	if _, f := prepareTestRecord(a, expressionOperation("db/records/s:a", expressionBSON(t, excessive))); f != nil {
+		t.Fatal("valid path count rejected", f)
 	}
-	nodes := make(bson.A, 4096)
+	nodes := make(bson.A, 2500)
 	for i := range nodes {
 		nodes[i] = nil
 	}
 	excessive = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: nodes}}}}
 	d := &pb.Document{ContentType: ExpressionContentType, Data: expressionBSON(t, excessive)}
-	if a.prepareExpression(d) == nil {
-		t.Fatal("node/byte limit")
+	if f := a.prepareExpression(d); f != nil {
+		t.Fatal("valid nodes rejected", f)
 	}
 }
 

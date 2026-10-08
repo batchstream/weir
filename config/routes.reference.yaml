@@ -53,6 +53,13 @@ stores:
         # use the process working directory. Prefer an absolute path.
         uri: mongodb://127.0.0.1:27017/?directConnection=true
 
+        # Connection creation workers per MongoDB endpoint. Default: 2; 0 selects 2.
+        # The native driver creates this many goroutines; it cannot represent an
+        # unlimited worker count. Increase this for connection-establishment bursts.
+        # This does not cap active connections or operations: the pool is unlimited.
+        pool:
+          max_connecting: 2
+
         # Optional inline SCRAM username. Default: "" (no username value).
         # Allowed: valid UTF-8 text, 1..128 bytes, without control characters.
         # Mutually exclusive with username_file. Username and password must each

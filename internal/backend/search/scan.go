@@ -44,7 +44,7 @@ type scanCheckpoint struct {
 // The profile fixes the PIT checkpoint and dialect-specific ordering semantics.
 // Native batch capacity is learned within each page, never part of a token.
 func (a *Adapter) scanProfile() string {
-	return "backend:\n  search:" + a.dialect + ":v1"
+	return "search:" + a.dialect + ":v1"
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -177,10 +177,9 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		body["size"] = n.items
 		encoded, _ := json.Marshal(body)
 		call := exchange{
-			path:      "/_search?allow_partial_search_results=false",
-			body:      encoded,
-			limit:     responseLimit,
-			jsonNodes: n.items*(16384+32) + 64,
+			path:  "/_search?allow_partial_search_results=false",
+			body:  encoded,
+			limit: a.options().ExchangeBytes,
 		}
 		status, reply, err := a.request(ctx, call)
 		// The read-only search has not advanced its checkpoint. Retry an excessive

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,11 +25,12 @@ import (
 )
 
 type Config struct {
-	Options  *backend.Options
-	URI      string
-	Store    string
-	Username string
-	Password string
+	Options       *backend.Options
+	MaxConnecting uint64
+	URI           string
+	Store         string
+	Username      string
+	Password      string
 }
 
 type Adapter struct {
@@ -70,6 +70,9 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 	cfg.Options = &settings
+	if cfg.MaxConnecting == 0 {
+		cfg.MaxConnecting = 2
+	}
 
 	dialer := newConnectionOwner()
 	dialer.timeout = settings.ConnectTimeout
@@ -86,7 +89,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	opts.SetDirect(true).
 		SetAppName("weir:" + cfg.Store).
 		SetMaxPoolSize(0).
-		SetMaxConnecting(math.MaxUint64).
+		SetMaxConnecting(cfg.MaxConnecting).
 		SetMinPoolSize(0).
 		SetRetryWrites(false).
 		SetRetryReads(false).
@@ -232,7 +235,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			if d.ContentType != "application/bson" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
 			}
-			doc, err := Decode(d.Data, value.DefaultLimits())
+			doc, err := Decode(d.Data, nativeValueLimits(d.Data))
 			if err != nil {
 				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "BSON validation/limits failed")
 			}

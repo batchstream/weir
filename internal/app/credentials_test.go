@@ -80,7 +80,7 @@ func TestCredentialConfigurationFieldsRemainInline(t *testing.T) {
 			cfg := credentialTestConfig(t, backend)
 			local := cfg.Routing.Stores[0].Local
 			var source any = local.Backend.MongoDB
-			expected := map[string]string{
+			expected := map[string]any{
 				"username":      "user-secret-sentinel",
 				"password":      " password-secret-sentinel:@/%?汉 ",
 				"username_file": "",
@@ -88,6 +88,8 @@ func TestCredentialConfigurationFieldsRemainInline(t *testing.T) {
 			}
 			if backend == "mongodb" {
 				expected["uri"] = local.Backend.MongoDB.URI
+				pool := map[string]any{"max_connecting": 0}
+				expected["pool"] = pool
 			} else {
 				source = local.Backend.Search.Connection
 				expected["ca_file"] = local.Backend.Search.Connection.CAFile
@@ -101,7 +103,7 @@ func TestCredentialConfigurationFieldsRemainInline(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, raw := range [][]byte{jsonRaw, yamlRaw} {
-				var fields map[string]string
+				var fields map[string]any
 				if err := yaml.Unmarshal(raw, &fields); err != nil || !reflect.DeepEqual(fields, expected) {
 					t.Fatal("serialized backend changed its credential field layout", err)
 				}

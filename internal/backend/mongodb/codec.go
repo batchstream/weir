@@ -22,8 +22,14 @@ var extendedTypes = map[bson.Type]string{
 
 type codecBudget struct {
 	nodes  int
-	bytes  int
 	limits value.Limits
+}
+
+// Ordinary BSON follows the protocol size and MongoDB native nesting boundary.
+// Lua conversion limits apply only when constructing Lua values.
+func nativeValueLimits(raw []byte) value.Limits {
+	limits := value.Limits{MaxBytes: protocol.MaxDocument, MaxDepth: 100, MaxNodes: len(raw)}
+	return limits
 }
 
 func Decode(raw bson.Raw, limits value.Limits) (value.Value, error) {
@@ -183,10 +189,6 @@ func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
 }
 func encodeValue(v value.Value, depth int, b *codecBudget) (bsoncore.Value, error) {
 	var zero bsoncore.Value
-	b.bytes += len(v.Text) + len(v.Data) + 32
-	if b.bytes > protocol.MaxDocument*2 {
-		return zero, fmt.Errorf("allocation limit")
-	}
 	rv := bsoncore.Value{}
 	switch v.Kind {
 	case value.Null:

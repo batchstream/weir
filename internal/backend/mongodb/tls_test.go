@@ -243,7 +243,7 @@ func TestMongoTLSWireGuardBeforeDriverHeader(t *testing.T) {
 			conn.SetReadDeadline(time.Now().Add(time.Second))
 			header := make([]byte, 4)
 			n, err := conn.Read(header)
-			if mode == "good" {
+			if mode == "good" || mode == "errors" {
 				if n != 4 || err != nil {
 					t.Fatal(n, err)
 				}

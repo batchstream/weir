@@ -134,8 +134,13 @@ type BatchQueueConfig struct {
 }
 
 type Mongo struct {
-	URI         string `json:"uri" yaml:"uri"`
+	Pool        MongoPoolConfig `json:"pool" yaml:"pool"`
+	URI         string          `json:"uri" yaml:"uri"`
 	Credentials `yaml:",inline"`
+}
+
+type MongoPoolConfig struct {
+	MaxConnecting uint64 `json:"max_connecting" yaml:"max_connecting"`
 }
 
 type Credentials struct {
@@ -460,11 +465,12 @@ func (l *Local) mongoConfig(name string) mongodb.Config {
 	m := l.Backend.MongoDB
 	settings := l.backendOptions()
 	cfg := mongodb.Config{
-		Options:  &settings,
-		URI:      m.URI,
-		Username: m.Username,
-		Password: m.Password,
-		Store:    name,
+		Options:       &settings,
+		URI:           m.URI,
+		MaxConnecting: m.Pool.MaxConnecting,
+		Username:      m.Username,
+		Password:      m.Password,
+		Store:         name,
 	}
 	return cfg
 }

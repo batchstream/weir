@@ -94,7 +94,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	for i, work := range works {
 		results[i] = execution.FailedEvent(work.Command, outcome, failure)
 	}
-	if err != nil || len(raw) > responseLimit || validateJSON(raw, len(raw)) != nil {
+	if err != nil || len(raw) > a.options().ExchangeBytes || validateJSON(raw, len(raw)) != nil {
 		return results
 	}
 	if status != 200 {
