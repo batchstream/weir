@@ -25,8 +25,16 @@ program transforms require a replica set with transactions.
 
 ```sh
 go build -o bin/weir ./cmd/weir
-bin/weir check --config config/weir.yaml --routes config/routes.yaml
-bin/weir serve --config config/weir.yaml --routes config/routes.yaml
+cp config/weir.reference.yaml weir.yaml
+cp config/routes.reference.yaml routes.yaml
+```
+
+Edit the copied files for your listener addresses, backend endpoints, credentials
+and CA paths, then validate and start the node:
+
+```sh
+bin/weir check --config weir.yaml --routes routes.yaml
+bin/weir serve --config weir.yaml --routes routes.yaml
 ```
 
 The basic process configuration and optional local Store document are separate.
@@ -80,8 +88,10 @@ For dynamic instance addresses, `peer_address_env` can name one environment vari
 containing the complete peer host:port; it is mutually exclusive with `peer_address`.
 Only this explicit address source is expanded during configuration loading.
 
-The [process reference](config/weir.yaml) and [Store reference](config/routes.yaml)
-list the field bounds and defaults. Both files use strict single-document YAML:
+The [process reference](config/weir.reference.yaml) and [Store reference](config/routes.reference.yaml)
+document each field's purpose, defaults, bounds and related settings. They are
+templates to copy and edit, and are also included under `config/` in release archives.
+Reference files are not automatically loaded. Both files use strict single-document YAML:
 unknown/duplicate fields, anchors, aliases, explicit tags and documents over
 128 KiB are rejected. `weir check` validates configuration without connecting to
 peers or backends. Configuration changes take effect after a restart.
@@ -265,8 +275,8 @@ Build reproducible archives from a clean commit with
 
 | Command | Purpose |
 | --- | --- |
-| `weir serve --config config/weir.yaml --routes config/routes.yaml` | Start discovery and configured local Stores. |
-| `weir check --config config/weir.yaml --routes config/routes.yaml` | Validate process settings, Stores and credential files. |
+| `weir serve --config weir.yaml --routes routes.yaml` | Start discovery and configured local Stores from edited reference files. |
+| `weir check --config weir.yaml --routes routes.yaml` | Validate process settings, Stores and credential files. |
 | `weir version` | Print build identity. |
 | `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
 

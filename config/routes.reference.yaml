@@ -1,0 +1,169 @@
+# Weir local Store configuration reference
+#
+# Copy this file to routes.yaml, select the Stores to host and edit backend values.
+# Pair it with an edited weir.yaml copied from weir.reference.yaml:
+#   weir check --config weir.yaml --routes routes.yaml
+#   weir serve --config weir.yaml --routes routes.yaml
+# This reference is not auto-discovered. --routes defaults to "" (no local Stores).
+# The example username/password and CA path must be replaced for your backend.
+# check validates configuration and credential files without accessing backends,
+# DNS, listeners or CA files. serve also qualifies backend connectivity and policy.
+# Changes require a restart.
+#
+# Syntax: one YAML mapping, exact lowercase field names, maximum 128KiB and
+# 12 nested levels. Unknown/duplicate keys, multiple documents, anchors, aliases,
+# merge keys and explicit tags are rejected. Strings are literal, without expansion.
+# Omit optional fields for defaults; an empty YAML value is null, not omission.
+# Adapter/connection blocks and stores may be null; scalar fields may not be null.
+# Null Store entries are invalid. Use strings for byte sizes and durations.
+#
+# Required: no. Default: no local Stores. Allowed: 0..16 Store definitions.
+# Empty/missing stores (or stores: []) supports a node that only serves discovery.
+# Each Store requires one backend: mongodb or search. Remote Stores are learned
+# through peer discovery. Database/collection/index targets come from request URIs.
+# Hosting a local Store also requires listeners.application in the process file.
+stores:
+  # MongoDB Store example. Backend names are local identities visible to clients.
+  - # Required: yes. No default. Allowed: 1..63 lowercase ASCII letters/digits
+    # and single internal hyphens; start with a letter, end with a letter/digit.
+    # Names must be unique in this file. Example: mongo or product-search.
+    name: mongo
+
+    # MongoDB connection settings. Required when this Store has no search block.
+    # Omit the unused search block; a Store cannot enable both adapters.
+    mongodb:
+      # Required: yes. No default. Allowed: mongodb:// with exactly one IP/DNS
+      # host and explicit port 1..65535, at most 4096 bytes, without userinfo.
+      # No database path, mongodb+srv, multi-host or topology discovery options.
+      # Accepted options: directConnection=true, serverMonitoringMode=poll,
+      # authSource, authMechanism=SCRAM-SHA-256, tls=true and tlsCAFile.
+      # Authentication requires both credentials below plus explicit authSource,
+      # authMechanism=SCRAM-SHA-256 and tls=true. Without credentials, auth/TLS
+      # options are rejected. No tlsInsecure or certificate-verification bypass.
+      # Authenticated example (keep username/password outside the URI):
+      # mongodb://mongo.example:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
+      # tlsCAFile is optional, URL-encoded and read at startup; relative CA paths
+      # use the process working directory. Prefer an absolute path.
+      uri: mongodb://127.0.0.1:27017/?directConnection=true
+
+      # Optional inline SCRAM username. Default: "" (no username value).
+      # Allowed: valid UTF-8 text, 1..128 bytes, without control characters.
+      # Mutually exclusive with username_file. Username and password must each
+      # have a value or file source together; both may be absent for no auth.
+      username: ""
+
+      # Optional inline SCRAM password. Default: "" (no password value).
+      # Allowed: valid UTF-8 text, 1..256 bytes, without control characters.
+      # Mutually exclusive with password_file. Spaces and punctuation are kept.
+      password: ""
+
+      # Optional username file. Default: "" (no file source).
+      # Path: 1..2048 UTF-8 bytes, nonblank, without control characters.
+      # Relative paths resolve from this routes document's directory; symlinks
+      # may point to regular files. File content follows username's text limit.
+      # Load/check reads it once and removes one final LF or CRLF only.
+      # To use this source, keep username empty. Example: secrets/mongo-username.
+      username_file: ""
+
+      # Optional password file. Default: "" (no file source).
+      # Same path/read rules as username_file; content follows password's limit.
+      # To use this source, keep password empty. Example: secrets/mongo-password.
+      password_file: ""
+
+    # Maximum simultaneous backend executions for this Store.
+    # Required: no. Default: 2; explicit 0 also selects 2.
+    # Allowed: integer 1..32768, subject to the process memory budget.
+    # Also determines adapter pool concurrency; reserve 2MiB per execution slot.
+    max_concurrency: 2
+
+    # Maximum operations combined into one scheduled backend batch.
+    # Required: no. Default: 32; explicit 0 also selects 32.
+    # Allowed: positive integer. Actual input bytes and backend working memory
+    # can split batches further; this setting introduces no collection delay.
+    max_batch_operations: 32
+
+    # Maximum document payload returned by an ordinary Read.
+    # Required: no. Default: "16KiB". Allowed: "1KiB".."2MiB" inclusive.
+    # Read admission reserves this output bound plus framing. Oversized documents
+    # fail boundedly; increasing the limit does not raise the protocol's 2MiB cap.
+    max_read_size: 16KiB
+
+    # Per-Store budget for retained backend inputs, reads and generated writes.
+    # Required: no. Default: "384MiB". Allowed: at least "24MiB", fitting a signed
+    # platform integer and the process memory budget together with other bounds.
+    # This budget is shared across active executions, not allocated per slot.
+    # Syntax: integer + B | KiB | MiB | GiB; no fractional byte sizes.
+    working_memory: 384MiB
+
+    # Maximum backend execution/I/O time for each dispatched group or scan page.
+    # Required: no. Default: "2s". Allowed: positive Go duration, e.g. 250ms, 10s.
+    # Queueing consumes the RPC lifetime separately. A shorter caller deadline
+    # still wins; uncertain write outcomes are not automatically replayed.
+    # MongoDB Lua transforms execute in the main Weir process.
+    backend_timeout: 2s
+
+  # Search Store example; uses the same Store naming and scheduler bounds above.
+  - # Required: yes. Unique Store name, with the same format as the Mongo example.
+    name: search
+
+    # Search connection settings. Required when this Store has no mongodb block.
+    search:
+      # Required: yes. No default. Allowed: one http:// or https:// IP/DNS origin
+      # with an explicit port 1..65535, at most 1024 bytes.
+      # No userinfo, path (including a trailing slash), query or fragment.
+      # The request URI selects the index. Auth and custom CA settings need HTTPS.
+      url: https://127.0.0.1:9200
+
+      # Optional authentication/trust settings. Default: omitted (system HTTPS
+      # roots and no credentials). If present, URL must be HTTPS and this block
+      # must contain credentials or a CA file; an empty connection is invalid.
+      connection:
+        # Optional HTTP Basic username. Default: "". Allowed: valid UTF-8 text,
+        # 1..128 bytes, without control characters or colons.
+        # Mutually exclusive with username_file. Both username and password
+        # need value/file sources together. This value is an example placeholder.
+        username: weir
+
+        # Optional HTTP Basic password. Default: "". Allowed: valid UTF-8 text,
+        # 1..256 bytes, without control characters. Spaces/punctuation are kept.
+        # Mutually exclusive with password_file. Replace this example value.
+        password: change-me
+
+        # Optional username file. Default: "". Same path/content/read rules as
+        # mongodb.username_file, plus Search's username restriction on colons.
+        # Clear username before setting this path; keep a paired password source.
+        username_file: ""
+
+        # Optional password file. Default: "". Same path/content/read rules as
+        # mongodb.password_file. Clear password before setting this path.
+        password_file: ""
+
+        # Optional PEM CA bundle for this connection. Default: "" (system roots).
+        # Path: at most 2048 UTF-8 bytes, without control characters. The regular
+        # file must contain a valid PEM certificate bundle and be at most 256KiB.
+        # A supplied bundle replaces system roots; hostname verification remains
+        # enabled. Relative paths use the process working directory, unlike
+        # credential files. Read only at serve/startup, not by Load/check.
+        # Replace this example with your trust bundle, or "" for system roots.
+        ca_file: /etc/weir/ca.pem
+
+    # Backend execution/pool concurrency. Default: 2; 0 selects the default.
+    # Allowed: integer 1..32768 fitting the process budget; 2MiB reserved per slot.
+    max_concurrency: 2
+
+    # Operations per scheduled batch. Default: 32; 0 selects the default.
+    # Allowed: positive integer. Actual input bytes/working memory may split it.
+    max_batch_operations: 32
+
+    # Ordinary Read payload limit. Default: 16KiB; allowed: 1KiB..2MiB inclusive.
+    # Read admission reserves the bound plus framing; oversized documents fail.
+    max_read_size: 16KiB
+
+    # Shared backend workspace. Default: 384MiB; minimum: 24MiB, subject to the
+    # platform integer and process memory bounds. Uses B | KiB | MiB | GiB.
+    working_memory: 384MiB
+
+    # Backend group/page I/O budget. Default: 2s; allowed: positive Go duration.
+    # Search Native uses this as a cumulative I/O budget, paused during publication.
+    # This is separate from transport.timeouts.request and transport.timeouts.stall.
+    backend_timeout: 2s

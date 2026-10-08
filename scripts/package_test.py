@@ -39,8 +39,8 @@ class PackageTests(unittest.TestCase):
         self.assertFalse(package.allowed('cmd/other-product/main.go'))
         included = (
             'README.md',
-            'config/weir.yaml',
-            'config/routes.yaml',
+            'config/weir.reference.yaml',
+            'config/routes.reference.yaml',
             'deploy/docker/Dockerfile',
             'deploy/docker/weir.yaml',
             'deploy/docker/routes.yaml',
@@ -125,8 +125,8 @@ class PackageTests(unittest.TestCase):
                 'deploy/docker/base.json': json.dumps(base).encode(),
                 'deploy/docker/Dockerfile': b'product Dockerfile',
                 'README.md': b'fixture docs',
-                'config/weir.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
-                'config/routes.yaml': b'# Complete local Store reference\nstores: []\n',
+                'config/weir.reference.yaml': b'# Complete process reference\nlisteners:\n  application: 127.0.0.1:7447\n',
+                'config/routes.reference.yaml': b'# Complete local Store reference\nstores: []\n',
                 'deploy/docker/weir.yaml': b'listeners:\n  application: 127.0.0.1:7447\n',
                 'deploy/docker/routes.yaml': b'stores: []\n',
             }
@@ -170,8 +170,8 @@ class PackageTests(unittest.TestCase):
             archive_path = opts['output'] / 'weir-linux-arm64.tar.gz'
             with tarfile.open(archive_path) as archive:
                 configurations = {
-                    'config/weir.yaml': 'config/weir.yaml',
-                    'config/routes.yaml': 'config/routes.yaml',
+                    'config/weir.reference.yaml': 'config/weir.reference.yaml',
+                    'config/routes.reference.yaml': 'config/routes.reference.yaml',
                 }
                 yaml_files = {name for name in archive.getnames() if name.endswith('.yaml')}
                 self.assertEqual(yaml_files, set(configurations))

@@ -265,7 +265,7 @@ func TestCLIConfigurationPathsAreRelativeToWorkingDirectory(t *testing.T) {
 }
 
 func TestCLIHasNoConfigurationFallback(t *testing.T) {
-	for _, filename := range []string{filepath.Join("config", "weir.yaml"), "weir.json"} {
+	for _, filename := range []string{filepath.Join("config", "weir.reference.yaml"), "weir.json"} {
 		t.Run(filename, func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			basic := `listeners:

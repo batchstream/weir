@@ -7,12 +7,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/batchstream/weir/internal/testutil"
 )
 
 func TestBasicConfigurationFile(t *testing.T) {
-	filename := filepath.Join(testutil.Root(t), "config", "weir.yaml")
+	filename := filepath.Join(testutil.Root(t), "config", "weir.reference.yaml")
 	cfg, err := Load(filename, "")
 	if err != nil {
 		t.Fatal("basic configuration must load without routing", err)
@@ -27,7 +28,7 @@ func TestBasicConfigurationFile(t *testing.T) {
 }
 
 func TestRoutingConfigurationFile(t *testing.T) {
-	filename := filepath.Join(testutil.Root(t), "config", "routes.yaml")
+	filename := filepath.Join(testutil.Root(t), "config", "routes.reference.yaml")
 	raw, err := os.ReadFile(filename)
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +44,9 @@ func TestRoutingConfigurationFile(t *testing.T) {
 		limits := definition.runtimeLimits()
 		if limits.Concurrency != 2 || limits.BatchOperations != 32 {
 			t.Fatal("documented scheduler defaults differ")
+		}
+		if limits.WorkingBytes != 384<<20 || limits.BackendTimeout != 2*time.Second {
+			t.Fatal("documented working memory or backend timeout differs")
 		}
 		if definition.Name == "mongo" {
 			if definition.MongoDB == nil || definition.Search != nil || definition.mongoConfig("mongo").MaxReadSize != 16<<10 {
