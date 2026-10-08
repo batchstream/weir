@@ -12,7 +12,6 @@ import (
 )
 
 var errInvalidLuaResult = errors.New("Lua callback must return one object or explicit action")
-var evaluations = make(chan struct{}, maxConcurrent)
 
 func Evaluate(ctx context.Context, program Program) (Result, error) {
 	var empty Result
@@ -22,19 +21,11 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	if program.ObservedAt.IsZero() {
 		program.ObservedAt = time.Now()
 	}
-	ctx, cancel := context.WithTimeout(ctx, ExecutionTimeout)
-	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
 	if err := ValidateProgram(program); err != nil {
 		return empty, err
-	}
-	select {
-	case evaluations <- struct{}{}:
-		defer func() { <-evaluations }()
-	case <-ctx.Done():
-		return empty, ctx.Err()
 	}
 	if err := ctx.Err(); err != nil {
 		return empty, err

@@ -27,10 +27,8 @@ const OpenSearchProduct = "opensearch"
 type Config struct {
 	Store string
 	URL   string
-	Pool  int
-	// MaxReadSize bounds ordinary Record Read only; zero uses the 16 KiB default.
-	MaxReadSize int
-	Connection  *Connection
+
+	Connection *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
 	Resolver *net.Resolver
 }
@@ -75,9 +73,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
-	if cfg.MaxReadSize == 0 {
-		cfg.MaxReadSize = execution.DefaultMaxReadSize
-	}
 	cfg.URL, _ = canonicalURL(cfg.URL)
 	if cfg.Connection != nil {
 		connection := *cfg.Connection
@@ -92,15 +87,14 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		ctx:       lifetime,
 		resolver:  cfg.Resolver,
 		tlsConfig: tlsConfig,
-		slots:     make(chan struct{}, cfg.Pool+1),
 		conns:     make(map[*searchConn]struct{}),
 	}
-	transport := newTransport(cfg.Pool)
+	transport := newTransport()
 	transport.DialContext = dialer.dial
 	transport.DialTLSContext = dialer.dial
 	transport.TLSClientConfig = tlsConfig
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-	nativeTransport := newTransport(1)
+	nativeTransport := newTransport()
 	nativeTransport.DialContext = dialer.dial
 	nativeTransport.DialTLSContext = dialer.dial
 	nativeTransport.TLSClientConfig = tlsConfig
@@ -270,7 +264,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	if read := op.GetRead(); read != nil {
 		native.action = "read"
 		// Reserve the exported Read document up to its configured source bound.
-		work.ResultBytes += a.maxReadSize()
+		work.ResultBytes += protocol.MaxDocument
 	} else {
 		mutation := op.GetMutate()
 		var document *pb.Document

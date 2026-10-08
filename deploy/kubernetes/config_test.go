@@ -16,12 +16,12 @@ func TestDeploymentConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Basic.Listeners.Application != "0.0.0.0:7447" || cfg.Basic.Diagnostics.Address != "127.0.0.1:7449" || cfg.Basic.Memory != app.ByteSize(2<<30) {
-		t.Fatal("Pod bind or memory budget changed")
+	if cfg.Basic.Listeners.Application != "0.0.0.0:7447" || cfg.Basic.Diagnostics.Address != "127.0.0.1:7449" {
+		t.Fatal("Pod bind changed")
 	}
 	local := cfg.Routing.Stores[0].Local
-	if local.MaxConcurrency != 2 || local.MaxBatchOperations != 32 || local.MaxReadSize == nil || *local.MaxReadSize != app.ByteSize(16<<10) {
-		t.Fatal("Pod routing does not use the tuned small-document defaults")
+	if local.MaxBatchOperations != 32 {
+		t.Fatal("Pod routing has unexpected batching defaults")
 	}
 
 	raw, err := os.ReadFile("weir.json")

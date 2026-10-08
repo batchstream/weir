@@ -10,7 +10,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/luaengine"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -227,7 +226,7 @@ func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T)
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED || batch.results[1] != nil {
 		t.Fatal("evaluation lost caller cancellation evidence or completed an uncommitted peer", batch.results)
 	}
-	if time.Since(started) >= luaengine.ExecutionTimeout-100*time.Millisecond {
+	if time.Since(started) >= 500*time.Millisecond-100*time.Millisecond {
 		t.Fatal("caller cancellation waited for the Lua execution cap")
 	}
 	native := writes[0].Backend.(*plan)

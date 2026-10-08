@@ -206,7 +206,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 				fmt.Fprintf(w, `{"error":{"type":%q},"status":%d}`, item.kind, item.status)
 			})
 			adapter := scanBatchAdapter(t, handler)
-			adapter.config.MaxReadSize = execution.DefaultMaxReadSize
+
 			read := &pb.ReadRequest{Resource: "records/s:item"}
 			variant := &pb.Command_Read{Read: read}
 			command := &pb.Command{Operation: variant}

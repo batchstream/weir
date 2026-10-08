@@ -35,7 +35,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 		cfg.Routing.Stores = append(cfg.Routing.Stores, service)
 
 	}
-	cfg.Basic.Memory = ByteSize(cfg.ReservedMemory())
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	n, err := Open(ctx, cfg)

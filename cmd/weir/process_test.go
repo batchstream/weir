@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net"
 	"net/http"
@@ -25,10 +24,13 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/app"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 // This fixture speaks only enough synthetic HTTP to reach lifecycle boundaries.
@@ -121,8 +123,8 @@ func (b *startupBackend) config() app.Config {
 		URL: b.server.URL,
 	}
 	local := &app.Local{
-		Search:             backend,
-		MaxConcurrency:     1,
+		Search: backend,
+
 		MaxBatchOperations: 1,
 	}
 	service := app.StoreConfig{Name: "records", Local: local}
@@ -391,7 +393,7 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 				backend := &app.Search{
 					URL: held.server.URL,
 				}
-				local := &app.Local{Search: backend, MaxConcurrency: 1}
+				local := &app.Local{Search: backend}
 				second := app.StoreConfig{Name: "second", Local: local}
 
 				cfg.Routing.Stores = append(cfg.Routing.Stores, second)
@@ -634,7 +636,7 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	backend := &app.Search{
 		URL: held.server.URL,
 	}
-	local := &app.Local{Search: backend, MaxConcurrency: 1}
+	local := &app.Local{Search: backend}
 	service := app.StoreConfig{Name: "second", Local: local}
 
 	cfg.Routing.Stores = append(cfg.Routing.Stores, service)
@@ -741,8 +743,9 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	default:
 	}
 	event(t, done)
-	if callErr != nil || result.GetOutcome() != pb.MutationOutcome_UNKNOWN {
-		t.Fatal("in-flight result must remain UNKNOWN", result, callErr)
+	if callErr == nil && result.GetOutcome() != pb.MutationOutcome_UNKNOWN ||
+		callErr != nil && status.Code(callErr) != codes.Unavailable && status.Code(callErr) != codes.DeadlineExceeded && status.Code(callErr) != codes.Canceled {
+		t.Fatal("forced shutdown must preserve uncertainty", result, callErr)
 	}
 	event(t, b.canceled)
 	p.wait(t, 0)

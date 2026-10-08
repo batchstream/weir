@@ -27,12 +27,10 @@ type Connection struct {
 // ValidateConfig is pure: app validates the complete graph with these same
 // rules before Open can read a CA file, resolve a hostname or contact a backend.
 func ValidateConfig(cfg Config) error {
-	if !protocol.ValidStoreName(cfg.Store) || cfg.Pool < 1 {
+	if !protocol.ValidStoreName(cfg.Store) {
 		return errors.New("invalid Search configuration")
 	}
-	if cfg.MaxReadSize != 0 && (cfg.MaxReadSize < 1024 || cfg.MaxReadSize > protocol.MaxDocument) {
-		return errors.New("Search maximum read size must be between 1 KiB and 2 MiB")
-	}
+
 	endpoint, err := canonicalURL(cfg.URL)
 	if err != nil {
 		return err

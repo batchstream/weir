@@ -24,7 +24,7 @@ import (
 
 func secureConfig(b *testsearch.Backend) Config {
 	connection := &Connection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
-	cfg := Config{Store: "search", URL: b.URL, Pool: 4, Connection: connection}
+	cfg := Config{Store: "search", URL: b.URL, Connection: connection}
 	return cfg
 }
 func secureAdapter(t *testing.T, b *testsearch.Backend) *Adapter {
@@ -274,7 +274,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 				t.Fatal("write was not independently acknowledged")
 			}
 			snap := owner.Snapshot()
-			if snap.Active != 1 || snap.Retained != 1 || snap.ResultBytes > limits.ResultBytes {
+			if snap.Active != 1 || snap.Retained != 1 || snap.ResultBytes > 32<<20 {
 				t.Fatal("pre-drain ledger", snap)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
@@ -288,7 +288,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			ticket.Ack()
 			replies = []*pb.Event{reply}
 			snap = owner.Snapshot()
-			if snap.Active != 0 || snap.Retained != 0 || snap.Pending != 0 || len(a.dialer.slots) != 0 || time.Since(start) > time.Second {
+			if snap.Active != 0 || snap.Retained != 0 || snap.Pending != 0 || searchOwned(a.dialer) != 0 || time.Since(start) > time.Second {
 				t.Fatal("drain leaked ledger/socket", snap)
 			}
 			t.Logf("confirmed commit then drain=%s; all ledger/socket counts zero", time.Since(start))

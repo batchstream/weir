@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
@@ -96,7 +95,7 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	cfg := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
+	cfg := Config{Store: "search", URL: server.URL}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 	actions := []string{"read", "read", "replace", "expression", "program", "put", "create", "delete"}
 	ids := []string{"read", "missing", "replace", "expression", "program", "put", "create", "delete"}

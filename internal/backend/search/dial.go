@@ -12,14 +12,12 @@ import (
 	"github.com/batchstream/weir-protocol/api/netlimit"
 )
 
-// One owner covers both HTTP pools, including detached net/http dial attempts.
-// A slot is held from lookup until raw socket Close. DNS is at most two sockets
-// per slot, before its one TCP socket; no resolver workers survive a dial.
+// One owner joins raw sockets and HTTP dial attempts during adapter shutdown.
 type connectionDialer struct {
 	ctx                context.Context
 	resolver           *net.Resolver
 	tlsConfig          *tls.Config
-	slots              chan struct{}
+	owned              int
 	mu                 sync.Mutex
 	closed             bool
 	peak               int
@@ -49,20 +47,15 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 		defer stopRequest()
 	}
 	d.mu.Lock()
-	select {
-	case d.slots <- struct{}{}:
-		d.peak = max(d.peak, len(d.slots))
-		d.acquired++
-	default:
-		d.mu.Unlock()
-		return nil, errTransport
-	}
+	d.owned++
+	d.peak = max(d.peak, d.owned)
+	d.acquired++
 	d.mu.Unlock()
 	owned := false
 	defer func() {
 		if !owned {
 			d.mu.Lock()
-			<-d.slots
+			d.owned--
 			d.released++
 			d.mu.Unlock()
 		}
@@ -161,7 +154,7 @@ func (c *searchConn) Close() error {
 		c.err = c.raw.Close()
 		c.owner.mu.Lock()
 		delete(c.owner.conns, c)
-		<-c.owner.slots
+		c.owner.owned--
 		c.owner.released++
 		c.owner.mu.Unlock()
 	})

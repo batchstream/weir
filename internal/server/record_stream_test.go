@@ -49,7 +49,7 @@ func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
 			t.Fatal("lost indexed large result", index, response, err)
 		}
 		snapshot := local.Snapshot()
-		if snapshot.ResultBytes > store.DefaultLimits().ResultBytes || snapshot.Retained > 2 || snapshot.Publishers != 0 {
+		if snapshot.ResultBytes > 2*protocol.MaxDocument+1024 || snapshot.Retained > 2 || snapshot.Publishers != 0 {
 			t.Fatal("logical stream accumulated result owners", snapshot)
 		}
 		if index < count {
@@ -347,7 +347,7 @@ func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T)
 	adapter := &orderedRecordAdapter{peerAdapter: newPeerAdapter("records"), first: gate, second: make(chan struct{})}
 	limits := store.DefaultLimits()
 	limits.BatchOperations = 1
-	limits.Concurrency = 2
+
 	opts := routeAcceptanceNodeOptions{adapter: adapter, store: limits}
 	node := startRouteAcceptanceNode(t, opts)
 	client := routeAcceptanceClient(t, node.address)
@@ -544,7 +544,7 @@ func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if snapshot := local.Snapshot(); snapshot.Retained != RecordStreamItems || snapshot.ResultBytes >= store.DefaultLimits().ResultBytes || snapshot.Publishers != 0 || stream.received.Load() != RecordStreamItems {
+	if snapshot := local.Snapshot(); snapshot.Retained != RecordStreamItems || snapshot.Publishers != 0 || stream.received.Load() != RecordStreamItems {
 		t.Fatal("slow output did not pause request input independently of Store bytes", snapshot, stream.received.Load())
 	}
 	cancel()

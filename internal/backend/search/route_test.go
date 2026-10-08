@@ -31,7 +31,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	config := Config{Store: "search", URL: server.URL, MaxReadSize: protocol.MaxDocument}
+	config := Config{Store: "search", URL: server.URL}
 	adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: server.Client(), ctx: context.Background()}
 	request := &pb.ReadRequest{Resource: "records/s:a"}
 	operation := &pb.Command_Read{Read: request}
@@ -141,7 +141,7 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			work.BackendTimeout = 100 * time.Millisecond
+
 			var end *pb.NativeEnd
 			var body strings.Builder
 			emit := func(_ *execution.Plan, event *pb.Event) error {
@@ -156,7 +156,11 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 				}
 				return nil
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			callerTimeout := 100 * time.Millisecond
+			if phase == "slow_output" {
+				callerTimeout = time.Second
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), callerTimeout)
 			defer cancel()
 			started := time.Now()
 			adapter.Execute(ctx, []*execution.Plan{work}, emit)
@@ -165,7 +169,7 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 				t.Fatal("missing native completion")
 			}
 			if phase == "slow_output" {
-				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || body.String() != "complete" || elapsed < 3*work.BackendTimeout {
+				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || body.String() != "complete" || elapsed < 300*time.Millisecond {
 					t.Fatal("output backpressure consumed backend I/O budget", end, body.String(), elapsed)
 				}
 				return
@@ -176,7 +180,7 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 				completion = pb.NativeCompletion_NATIVE_NOT_STARTED
 				expectedCalls = 0
 			}
-			if end.Completion != completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || calls.Load() != expectedCalls || elapsed > 5*work.BackendTimeout {
+			if end.Completion != completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || calls.Load() != expectedCalls || elapsed > 2*callerTimeout {
 				t.Fatal("backend phase escaped cumulative I/O deadline", phase, end, calls.Load(), elapsed)
 			}
 		})

@@ -138,7 +138,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 			defer server.Close()
 			// These direct calls bypass Runtime permits: two Scan workers and
 			// one Native exchange need three execution slots in this fixture.
-			cfg := Config{Store: "search", URL: server.URL, Pool: 3}
+			cfg := Config{Store: "search", URL: server.URL}
 			a, err := Open(context.Background(), cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -160,7 +160,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				}
 				scans.Go(func() {
 					defer func() {
-						cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), fallbackRequestTimeout)
+						cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 2*time.Second)
 						defer cancelCleanup()
 						if failure := a.closeScan(cleanupContext, work); failure != nil {
 							t.Error(failure)

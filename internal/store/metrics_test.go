@@ -31,7 +31,7 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 }
 func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
-	limits.PendingBytes = protocol.MaxExecuteRequestBytes
+	limits.QueueBytes = protocol.MaxExecuteRequestBytes
 	limits.BatchOperations = 3
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
@@ -40,7 +40,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	var tickets []*Ticket
 	for i, key := range []string{"a", "b", "c", "d"} {
 		p := plan(uint64(i), key, false)
-		p.Bytes = limits.PendingBytes / 4
+		p.Bytes = limits.QueueBytes / 4
 		ticket, f, _ := r.Submit(ctx, p, nil)
 		if f != nil {
 			t.Fatal(f)
@@ -48,7 +48,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 		tickets = append(tickets, ticket)
 	}
 	p := plan(4, "rejected", false)
-	p.Bytes = limits.PendingBytes / 4
+	p.Bytes = limits.QueueBytes / 4
 	if _, f, _ := r.Submit(ctx, p, nil); f == nil {
 		t.Fatal("missing rejection")
 	}
@@ -94,10 +94,10 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 		}
 	}
 	families := testmetrics.Gather(t, r)
-	if testmetrics.Sum(families, "weir_store_concurrency_limit") != float64(limits.Concurrency) {
+	if testmetrics.Sum(families, "weir_store_pending_entries_limit") != float64(limits.QueueOperations) {
 		t.Fatal("configured concurrency metric changed")
 	}
-	if testmetrics.Series(families) != 52 {
+	if testmetrics.Series(families) != 49 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

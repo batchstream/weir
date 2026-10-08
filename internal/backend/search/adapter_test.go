@@ -82,7 +82,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport(1)
+			transport := newTransport()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}

@@ -137,11 +137,11 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					t.Fatal("only the client deadline closed the stalled connection", readErr)
 				}
 				deadline := time.Now().Add(time.Second)
-				for (len(srv.connectionSlots) != 0 || len(srv.admission.slots) != 0 || len(srv.control) != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(deadline) {
+				for (srv.admission.activeConnections.Load() != 0 || srv.admission.activeRPCs.Load() != 0 || srv.admission.wireBytes.Load() != 0) && time.Now().Before(deadline) {
 					time.Sleep(time.Millisecond)
 				}
-				if time.Since(started) > 1500*time.Millisecond || len(srv.connectionSlots) != 0 || len(srv.admission.slots) != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
-					t.Fatal("stalled transport leaked resources or executed", time.Since(started), len(srv.connectionSlots), len(srv.admission.slots))
+				if time.Since(started) > 1500*time.Millisecond || srv.admission.activeConnections.Load() != 0 || srv.admission.activeRPCs.Load() != 0 || len(adapter.seen) != 0 || adapter.commands.Load() != 0 {
+					t.Fatal("stalled transport leaked resources or executed", time.Since(started), srv.admission.activeConnections.Load(), srv.admission.activeRPCs.Load())
 				}
 			})
 		}
@@ -219,11 +219,11 @@ func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
 		t.Fatal("RPC input timeout did not terminate its stream before the connection")
 	}
 	until := time.Now().Add(time.Second)
-	for len(server.connectionSlots) != 0 && time.Now().Before(until) {
+	for server.admission.activeConnections.Load() != 0 && time.Now().Before(until) {
 		time.Sleep(time.Millisecond)
 	}
 	waitPeerIdle(t, server)
-	if len(server.connectionSlots) != 0 || adapter.commands.Load() != 0 || len(adapter.seen) != 0 {
+	if server.admission.activeConnections.Load() != 0 || adapter.commands.Load() != 0 || len(adapter.seen) != 0 {
 		t.Fatal("partial HTTP/2 frame retained resources or executed a record")
 	}
 }

@@ -1,7 +1,5 @@
 package server
 
-import "github.com/batchstream/weir/internal/testutil"
-
 import (
 	"context"
 	"net"
@@ -15,6 +13,7 @@ import (
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -46,7 +45,7 @@ func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, 
 	plan := &execution.Plan{ID: record.Index(), Command: command, Key: key, BatchKey: "records", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	if command.GetRead() != nil {
 		a.mu.Lock()
-		readBytes := execution.DefaultMaxReadSize
+		readBytes := protocol.MaxDocument
 		for _, document := range a.documents {
 			readBytes = max(readBytes, len(document.Data))
 		}
@@ -147,7 +146,7 @@ type peerServerOptions struct {
 
 func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 	t.Helper()
-	if opts.limits.Sessions == 0 {
+	if opts.limits.Stall == 0 {
 		opts.limits = DefaultLimits()
 		opts.limits.Stall = time.Second
 	}
@@ -211,7 +210,7 @@ func waitPeerIdle(t *testing.T, s *Server) {
 	t.Helper()
 	until := time.Now().Add(3 * time.Second)
 	for {
-		idle := len(s.admission.slots) == 0 && s.admission.wireBytes.Load() == 0
+		idle := s.admission.activeRPCs.Load() == 0 && s.admission.wireBytes.Load() == 0
 		stores := make(map[string]store.Snapshot, len(s.stores))
 		for name, local := range s.stores {
 			snapshot := local.Snapshot()

@@ -11,7 +11,7 @@ import (
 func TestProfileUnrelatedRecordsAndOrder(t *testing.T) {
 	f := fixture(t)
 	state := Snapshot{Budget: 1 << 20}
-	g := &Guard{state: state}
+	g := &Guard{state: state, processBudget: state.Budget}
 	mount := fmt.Sprintf("1 0 0:1 / %s rw - cgroup2 cgroup rw\n", f.mount)
 	unrelated := "99 0 0:99 / /unrelated rw - tmpfs tmpfs rw\n"
 	// Same coverage, different mount point: selection must not depend on line order.
@@ -43,7 +43,7 @@ func TestProfileTransientTopologyRecovery(t *testing.T) {
 					t.Fatal(err)
 				}
 				state := Snapshot{Budget: 1 << 20}
-				g := &Guard{state: state}
+				g := &Guard{state: state, processBudget: state.Budget}
 				for _, current := range []string{"100", "850", "750"} {
 					f.level(t, "a", "1000", current)
 					g.sample(f.profile.observe())
@@ -114,21 +114,21 @@ func TestProfileValidatedIdentityChange(t *testing.T) {
 			case "limit":
 				f.level(t, "a", "2000", "100")
 			}
-			// Incomplete observations must not commit a permanent identity change.
+			// Incomplete observations must not replace the validated profile.
 			current := filepath.Join(f.mount, "a", "memory.current")
 			f.write(t, current, "bad")
 			if o := f.profile.observe(); o.cgroup.State != "unknown" {
 				t.Fatal(o)
 			}
 			f.write(t, current, "100")
-			if o := f.profile.observe(); o.cgroup.State != "profile_changed" {
+			if o := f.profile.observe(); !o.cgroup.Valid {
 				t.Fatal(o)
 			}
 			f.write(t, filepath.Join(f.proc, "mountinfo"), original)
 			f.write(t, filepath.Join(f.proc, "cgroup"), "0::/a/leaf\n")
 			f.level(t, "a", "1000", "100")
-			if o := f.profile.observe(); o.cgroup.State != "profile_changed" || o.low {
-				t.Fatal("confirmed change cannot be undone", o)
+			if o := f.profile.observe(); !o.cgroup.Valid || !o.low {
+				t.Fatal("restored hierarchy must be rediscovered", o)
 			}
 		})
 	}
@@ -139,15 +139,15 @@ func TestProfileStartupTopologyUnknown(t *testing.T) {
 	mount := fmt.Sprintf("1 0 0:1 / %s rw - cgroup2 cgroup rw\n", f.mount)
 	f.write(t, filepath.Join(f.proc, "mountinfo"), "bad")
 	state := Snapshot{Budget: 1 << 20}
-	g := &Guard{state: state}
+	g := &Guard{state: state, processBudget: state.Budget}
 	g.sample(f.profile.observe())
-	if s := g.Snapshot(); !s.Unknown || !s.Latched {
+	if s := g.Snapshot(); !s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.write(t, filepath.Join(f.proc, "mountinfo"), mount)
 	f.level(t, "a", "1000", "750")
 	g.sample(f.profile.observe())
-	if s := g.Snapshot(); s.Unknown || !s.Latched {
+	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.level(t, "a", "1000", "700")
@@ -164,14 +164,14 @@ func TestProfileLowMalformedRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := Snapshot{Budget: 1 << 20}
-	g := &Guard{state: state}
+	g := &Guard{state: state, processBudget: state.Budget}
 	g.sample(f.profile.observe())
 	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.write(t, filepath.Join(f.proc, "mountinfo"), "temporarily invalid topology")
 	g.sample(f.profile.observe())
-	if s := g.Snapshot(); !s.Unknown || !s.Latched {
+	if s := g.Snapshot(); !s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.write(t, filepath.Join(f.proc, "mountinfo"), string(original))

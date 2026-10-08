@@ -5,7 +5,6 @@ listeners:
 diagnostics:
   address: "127.0.0.1:7449"
 
-memory: "2GiB"
 
 discovery:
   group: records

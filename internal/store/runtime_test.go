@@ -49,7 +49,7 @@ func finish(r *Runtime, b *batch) {
 }
 func TestAdmissionBoundsAndReservation(t *testing.T) {
 	l := DefaultLimits()
-	l.PendingBytes = 2 * l.BatchBytes
+	l.QueueBytes = 2 * l.BatchBytes
 	l.BatchOperations = 1
 	r := newRuntime(nil, l)
 	defer func() {
@@ -62,7 +62,7 @@ func TestAdmissionBoundsAndReservation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	p := plan(0, "a", false)
-	p.Bytes = l.PendingBytes / 2
+	p.Bytes = l.QueueBytes / 2
 	a, f, _ := r.Submit(ctx, p, nil)
 	if f != nil {
 		t.Fatal(f)
@@ -80,13 +80,10 @@ func TestAdmissionBoundsAndReservation(t *testing.T) {
 	finish(r, b)
 	r.mu.Unlock()
 	_, f, _ = r.Submit(ctx, p, nil)
-	if f == nil {
-		t.Fatal("unacked result must retain credit")
+	if f != nil {
+		t.Fatal("dispatch did not release waiting queue capacity", f)
 	}
 	a.Ack()
-	if _, f, _ = r.Submit(ctx, p, nil); f != nil {
-		t.Fatal(f)
-	}
 	r.SetOverloaded(true)
 	if _, f, _ = r.Submit(ctx, p, nil); f == nil || f.Code != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("overload")
@@ -211,83 +208,6 @@ func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 	}
 }
 
-func TestOnlyDirectStreamingExecutionUsesCallerLifetime(t *testing.T) {
-	for _, streaming := range []bool{false, true} {
-		t.Run(fmt.Sprint(streaming), func(t *testing.T) {
-			limits := DefaultLimits()
-			limits.BackendTimeout = 50 * time.Millisecond
-			runtime := newRuntime(nil, limits)
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			work := plan(1, "singleton", false)
-			work.Command = scanCall()
-			if streaming {
-				work.Command = nativeCall()
-			}
-			session := runtime.NewSession()
-			defer session.Close()
-			ticket, failure, _ := runtime.Submit(ctx, work, session)
-			if failure != nil {
-				t.Fatal(failure)
-			}
-			runtime.mu.Lock()
-			batch := runtime.selectLocked(time.Now())
-			runtime.mu.Unlock()
-			if batch == nil {
-				t.Fatal("singleton was not selected")
-			}
-			defer batch.cancel()
-			deadline, exists := batch.ctx.Deadline()
-			if !exists {
-				t.Fatal("execution lost fixed deadline")
-			}
-			if streaming {
-				if time.Until(deadline) < 900*time.Millisecond || batch.timeoutOwned {
-					t.Fatal("output stalls would consume backend execution deadline", deadline)
-				}
-			} else if time.Until(deadline) > limits.BackendTimeout || !batch.timeoutOwned {
-				t.Fatal("nonstreaming singleton bypassed backend deadline", deadline)
-			}
-			runtime.mu.Lock()
-			finish(runtime, batch)
-			runtime.mu.Unlock()
-			ticket.Ack()
-		})
-	}
-}
-func TestSlowConsumerRetainedBound(t *testing.T) {
-	l := DefaultLimits()
-	l.BatchOperations = 1
-	l.ResultBytes = 2 * (protocol.MaxDocument + execution.ResultOverheadBytes)
-	r := newRuntime(nil, l)
-	s := r.NewSession()
-	ctx := context.Background()
-	for i := 0; i < 2; i++ {
-		p := plan(uint64(i), fmt.Sprint(i), true)
-		_, f, _ := r.Submit(ctx, p, s)
-		if f != nil {
-			t.Fatal(f)
-		}
-		r.mu.Lock()
-		b := r.selectLocked(time.Now())
-		finish(r, b)
-		r.mu.Unlock()
-	}
-	p := plan(2, "third", true)
-	for i := 0; i < 10000; i++ {
-		if _, f, _ := r.Submit(ctx, p, s); f == nil {
-			t.Fatal("unbounded retained results")
-		}
-	}
-	snap := r.Snapshot()
-	if snap.Retained != 2 || snap.Active != 0 || snap.Pending != 0 {
-		t.Fatal(snap)
-	}
-	s.Close()
-	if r.Snapshot().Retained != 0 {
-		t.Fatal("result credits leaked")
-	}
-}
 func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
 	limits := DefaultLimits()
 	adapter := &lifecycleAdapter{}

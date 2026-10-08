@@ -32,14 +32,14 @@ import (
 func TestSearchConnectionValidation(t *testing.T) {
 	good := []string{"http://10.0.0.1:9200", "https://Search.Example:443", "https://[::1]:9200", "http://127.0.0.1:9200", "https://192.168.1.2:443"}
 	for _, endpoint := range good {
-		cfg := Config{Store: "search", Pool: 4, URL: endpoint}
+		cfg := Config{Store: "search", URL: endpoint}
 		if err := ValidateConfig(cfg); err != nil {
 			t.Fatal("valid endpoint rejected", err)
 		}
 	}
 	bad := []string{"http://host", "http://host:", "http://host:0", "http://host:65536", "http://host:+80", "https://a:b@host:443", "http://host:80/", "http://host:80?", "http://host:80#", "http://host:80/path", "http://host:80?q=v", "http://host:80#f", "http://%68ost:80", "http://[host]:80", "http://[fe80::1%25en0]:80", "http://127.1:80", "http://0127.0.0.1:80", "http://0.0.0.0:80", "http://[::]:80", "http://224.1.2.3:80", "http://host.:80", "http://.host:80", "http://bad_host:80", "http://-host:80", "http://host-:80", "http://a..b:80", "http://é.example:80", "http://host:80\\evil", "ftp://host:80", "https:host:443", strings.Repeat("a", 1025)}
 	for _, endpoint := range bad {
-		cfg := Config{Store: "search", Pool: 4, URL: endpoint}
+		cfg := Config{Store: "search", URL: endpoint}
 		if err := ValidateConfig(cfg); err == nil {
 			t.Fatal("invalid endpoint accepted")
 		}
@@ -47,7 +47,7 @@ func TestSearchConnectionValidation(t *testing.T) {
 	for _, mode := range []string{"http-auth", "missing-user", "missing-password", "long-user", "long-pass", "colon", "control", "ca-http", "long-ca", "empty"} {
 		t.Run(mode, func(t *testing.T) {
 			c := &Connection{Username: "user", Password: "password-sentinel", CAFile: "/missing/ca-sentinel.pem"}
-			cfg := Config{Store: "search", Pool: 4, URL: "https://unresolved.invalid:443", Connection: c}
+			cfg := Config{Store: "search", URL: "https://unresolved.invalid:443", Connection: c}
 			if err := ValidateConfig(cfg); err != nil {
 				t.Fatal("preflight accessed CA or DNS", err)
 			}
@@ -133,7 +133,7 @@ func qualification(w http.ResponseWriter, r *http.Request) bool {
 }
 func openTestTLS(t *testing.T, endpoint string, connection *Connection) *Adapter {
 	t.Helper()
-	cfg := Config{Store: "search", Pool: 2, URL: endpoint, Connection: connection}
+	cfg := Config{Store: "search", URL: endpoint, Connection: connection}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 			t.Fatal("unsafe transport defaults")
 		}
 	}
-	if !a.nativeTransport.DisableKeepAlives || a.nativeTransport.MaxConnsPerHost != 1 || a.transport.MaxConnsPerHost != 2 {
+	if !a.nativeTransport.DisableKeepAlives || a.nativeTransport.MaxConnsPerHost != 0 || a.transport.MaxConnsPerHost != 0 {
 		t.Fatal("pool policy")
 	}
 	for _, name := range []string{"authorization", "proxy-authorization", "idempotency-key", "x-idempotency-key"} {
@@ -193,7 +193,7 @@ func TestSearchTLSValidationAndCAErrors(t *testing.T) {
 	for _, mode := range []string{"wrong-ca", "expired", "missing-ca", "oversize-ca", "malformed-ca", "directory-ca", "system-roots"} {
 		t.Run(mode, func(t *testing.T) {
 			connection := *c
-			cfg := Config{Store: "search", Pool: 1, URL: endpoint.URL, Connection: &connection}
+			cfg := Config{Store: "search", URL: endpoint.URL, Connection: &connection}
 			switch mode {
 			case "wrong-ca":
 				connection.CAFile = other.CAFile
@@ -240,7 +240,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 	})
 	endpoint, c := tlsEndpoint(t, handler, false)
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(endpoint.URL, "https://"))
-	cfg := Config{Store: "search", Pool: 1, URL: "https://SEARCH.test:" + port, Connection: c, Resolver: dns.Resolver()}
+	cfg := Config{Store: "search", URL: "https://SEARCH.test:" + port, Connection: c, Resolver: dns.Resolver()}
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +300,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 			// net/http detaches dial cancellation; Close must synchronously join it.
 			before = time.Now()
 			_ = a.Close()
-			if time.Since(before) > time.Second || len(a.dialer.slots) != 0 {
+			if time.Since(before) > time.Second || searchOwned(a.dialer) != 0 {
 				t.Fatal("DNS Close leaked lookup")
 			}
 			dns.Set("search.test", answer)
@@ -349,7 +349,7 @@ func TestSearchTLSHandshakePoolCloseBound(t *testing.T) {
 	for round := 0; round < 8; round++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-		d := &connectionDialer{ctx: ctx, tlsConfig: tlsConfig, slots: make(chan struct{}, 3), conns: make(map[*searchConn]struct{})}
+		d := &connectionDialer{ctx: ctx, tlsConfig: tlsConfig, conns: make(map[*searchConn]struct{})}
 		var workers sync.WaitGroup
 		for i := 0; i < 16; i++ {
 			workers.Go(func() {
@@ -363,30 +363,30 @@ func TestSearchTLSHandshakePoolCloseBound(t *testing.T) {
 			})
 		}
 		until := time.Now().Add(time.Second)
-		for len(d.slots) < 3 && time.Now().Before(until) {
+		for searchOwned(d) < 16 && time.Now().Before(until) {
 			time.Sleep(time.Millisecond)
 		}
-		if len(d.slots) > 3 {
+		if searchOwned(d) != 16 {
 			t.Fatal("handshake capacity exceeded")
 		}
 		start := time.Now()
 		cancel()
 		d.close()
 		workers.Wait()
-		if time.Since(start) > time.Second || len(d.slots) != 0 {
+		if time.Since(start) > time.Second || searchOwned(d) != 0 {
 			t.Fatal("Close did not join handshake and release slots")
 		}
 		d.close()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	config := &tls.Config{MinVersion: tls.VersionTLS12}
-	d := &connectionDialer{ctx: ctx, tlsConfig: config, slots: make(chan struct{}, 1), conns: make(map[*searchConn]struct{})}
+	d := &connectionDialer{ctx: ctx, tlsConfig: config, conns: make(map[*searchConn]struct{})}
 	start := time.Now()
 	conn, dialErr := d.dial(context.Background(), "tcp", listener.Addr().String())
 	elapsed := time.Since(start)
 	cancel()
 	d.close()
-	if conn != nil || dialErr == nil || elapsed < 1500*time.Millisecond || elapsed > 3*time.Second || len(d.slots) != 0 {
+	if conn != nil || dialErr == nil || elapsed < 1500*time.Millisecond || elapsed > 3*time.Second || searchOwned(d) != 0 {
 		t.Fatal("hard handshake deadline", elapsed)
 	}
 	t.Logf("silent TLS peer with no caller deadline: handshake terminated in %s", elapsed)
@@ -442,9 +442,15 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	crowded.TLS = &tls.Config{Certificates: []tls.Certificate{pair}}
 	crowded.StartTLS()
 	defer crowded.Close()
-	cfg := Config{Store: "search", Pool: 1, URL: crowded.URL, Connection: c}
+	cfg := Config{Store: "search", URL: crowded.URL, Connection: c}
 	rejected, err := Open(context.Background(), cfg)
 	if rejected != nil || err == nil {
 		t.Fatal("excessive certificate chain accepted")
 	}
+}
+
+func searchOwned(dialer *connectionDialer) int {
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	return dialer.owned
 }

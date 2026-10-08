@@ -13,7 +13,7 @@ import (
 func TestMongoOpenDoesNotQueryServerVersion(t *testing.T) {
 	fixture := testmongo.Open(t)
 	proxy := testmongo.StartProxy(t, fixture)
-	cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
+	cfg := Config{URI: proxy.URI(), Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

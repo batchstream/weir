@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/batchstream/weir/internal/testutil"
 )
@@ -42,18 +41,18 @@ func TestRoutingConfigurationFile(t *testing.T) {
 	}
 	for _, definition := range cfg.Stores {
 		limits := definition.runtimeLimits()
-		if limits.Concurrency != 2 || limits.BatchOperations != 32 {
+		if limits.BatchOperations != 32 || limits.BatchBytes != 8<<20 {
 			t.Fatal("documented scheduler defaults differ")
 		}
-		if limits.WorkingBytes != 384<<20 || limits.BackendTimeout != 2*time.Second {
+		if limits.QueueOperations != 1024 || limits.QueueBytes != 32<<20 {
 			t.Fatal("documented working memory or backend timeout differs")
 		}
 		if definition.Name == "mongo" {
-			if definition.MongoDB == nil || definition.Search != nil || definition.mongoConfig("mongo").MaxReadSize != 16<<10 {
+			if definition.MongoDB == nil || definition.Search != nil {
 				t.Fatal("invalid documented Mongo Store")
 			}
 		} else if definition.Name == "search" {
-			if definition.Search == nil || definition.MongoDB != nil || definition.searchConfig("search").MaxReadSize != 16<<10 {
+			if definition.Search == nil || definition.MongoDB != nil {
 				t.Fatal("invalid documented Search Store")
 			}
 			backend := definition.Search

@@ -191,7 +191,7 @@ func TestScanPageCompletionAndCleanupFailureReleaseReservations(t *testing.T) {
 func TestUnifiedStreamingBackpressureAndReservation(t *testing.T) {
 	adapter := &scanTestAdapter{pages: 20}
 	limits := DefaultLimits()
-	limits.Concurrency = 1
+
 	runtime, err := New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ finished:
 func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	adapter := &scanTestAdapter{pages: 5, documents: execution.ScanBatchDocuments}
 	limits := DefaultLimits()
-	limits.Concurrency = 1
+
 	runtime, err := New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)

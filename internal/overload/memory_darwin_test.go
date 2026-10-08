@@ -13,15 +13,15 @@ func TestDarwinFootprintValidationAndRecovery(t *testing.T) {
 	}
 	state := Snapshot{Budget: 1000}
 	target := &guardTarget{}
-	guard := &Guard{state: state, targets: []Target{target}}
+	guard := &Guard{state: state, processBudget: state.Budget, targets: []Target{target}}
 	for _, step := range []struct {
 		status         int32
 		bytes          uint64
 		valid, latched bool
 	}{
-		{-1, 0, false, true}, {0, 500, true, false}, {0, 850, true, true}, {0, 750, true, true},
-		{-1, 500, false, true}, {0, 750, true, true}, {0, 500, true, false}, {0, 0, false, true},
-		{0, math.MaxUint64, false, true}, {0, math.MaxInt64, true, true}, {1, 500, false, true}, {0, 500, true, false},
+		{-1, 0, false, false}, {0, 500, true, false}, {0, 850, true, true}, {0, 750, true, true},
+		{-1, 500, false, true}, {0, 750, true, true}, {0, 500, true, false}, {0, 0, false, false},
+		{0, math.MaxUint64, false, false}, {0, math.MaxInt64, true, true}, {1, 500, false, true}, {0, 500, true, false},
 	} {
 		guard.sample(footprintObservation(step.status, step.bytes))
 		got := guard.Snapshot()

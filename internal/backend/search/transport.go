@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -14,10 +15,6 @@ import (
 
 const metadataLimit = 256 << 10
 const responseLimit = 8 << 20
-
-// An exchange inherits the execution's absolute deadline. Only callers outside
-// the Store runtime without a deadline need this fallback.
-const fallbackRequestTimeout = 2 * time.Second
 
 // Connection setup has its own bound; it does not limit a connected request's
 // headers or acknowledgement body.
@@ -44,12 +41,7 @@ type exchange struct {
 type requestContextKey struct{}
 
 func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, error) {
-	var cancel context.CancelFunc
-	if _, bounded := ctx.Deadline(); bounded {
-		ctx, cancel = context.WithCancel(ctx)
-	} else {
-		ctx, cancel = context.WithTimeout(ctx, fallbackRequestTimeout)
-	}
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if a.ctx.Err() != nil {
 		if call.mutation {
@@ -171,14 +163,14 @@ func (a *Adapter) configureRequest(request *http.Request) {
 		request.SetBasicAuth(connection.Username, connection.Password)
 	}
 }
-func newTransport(pool int) *http.Transport {
+func newTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: connectionTimeout, KeepAlive: 30 * time.Second}
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	transport := &http.Transport{
 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
-		DisableCompression: true, MaxConnsPerHost: pool, MaxIdleConns: pool,
-		MaxIdleConnsPerHost: pool, IdleConnTimeout: 30 * time.Second,
+		DisableCompression: true, MaxConnsPerHost: 0,
+		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: 30 * time.Second,
 		MaxResponseHeaderBytes: 32 << 10,
 		TLSHandshakeTimeout:    connectionTimeout,
 	}

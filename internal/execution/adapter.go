@@ -3,13 +3,9 @@ package execution
 
 import (
 	"context"
-	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
-
-// DefaultMaxReadSize bounds ordinary Record Read sources when no limit is set.
-const DefaultMaxReadSize = 16 << 10
 
 type Plan struct {
 	ID                               uint64
@@ -17,7 +13,6 @@ type Plan struct {
 	Key, BatchKey                    string
 	Bytes, ResultBytes, WorkingBytes int
 	Context                          context.Context
-	BackendTimeout                   time.Duration
 	Backend                          any
 }
 

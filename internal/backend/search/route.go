@@ -2,7 +2,6 @@ package search
 
 import (
 	"context"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -78,13 +77,7 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 }
 
 func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit execution.Emit) bool {
-	timeout := work.BackendTimeout
-	if timeout <= 0 {
-		timeout = 2 * time.Second
-	}
-	fetchContext, cancel := context.WithTimeout(ctx, timeout)
-	page := a.fetchScan(fetchContext, work)
-	cancel()
+	page := a.fetchScan(ctx, work)
 	state := work.Backend.(*scanPlan)
 	continuation, transferred := state.PublishPage(ctx, work, page, emit)
 	if transferred {

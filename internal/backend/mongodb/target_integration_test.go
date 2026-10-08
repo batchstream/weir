@@ -45,7 +45,7 @@ func openTargetFixture(t *testing.T) targetFixture {
 			t.Fatal(err)
 		}
 	}
-	config := Config{URI: fixture.URI, Store: "mongo", Pool: 4}
+	config := Config{URI: fixture.URI, Store: "mongo"}
 	config = mongoFixtureConfig(t, config)
 	if config.Username != "" {
 		// Expand only this temporary user's access to these owned test databases.

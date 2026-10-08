@@ -48,9 +48,7 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 		return nil, status.Error(codes.ResourceExhausted, "response exceeds protobuf byte bound")
 	}
 	capacity := max(size, 1025)
-	if !codec.admission.reserveWire(capacity) {
-		return nil, status.Error(codes.ResourceExhausted, "queued response byte budget exhausted")
-	}
+	codec.admission.wireBytes.Add(int64(capacity))
 	pool := &responseBufferOwner{admission: codec.admission, bytes: int64(capacity), message: value, done: make(chan struct{})}
 	codec.admission.responses.Store(value, pool)
 	data := make([]byte, 0, capacity)
@@ -148,18 +146,6 @@ func (owner *responseBufferOwner) watch(ctx context.Context, server *Server) {
 		server.metrics.watchdogs.WithLabelValues("output").Inc()
 		server.abortPeer(ctx)
 	})
-}
-
-func (a *Admission) reserveWire(bytes int) bool {
-	for {
-		current := a.wireBytes.Load()
-		if int64(bytes) > a.wireLimit-current {
-			return false
-		}
-		if a.wireBytes.CompareAndSwap(current, current+int64(bytes)) {
-			return true
-		}
-	}
 }
 
 // On cancellation the completed Send no longer needs the original document.

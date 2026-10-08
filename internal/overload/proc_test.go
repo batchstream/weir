@@ -96,7 +96,7 @@ func (f *procFixture) level(t *testing.T, name, limit, current string) {
 func TestVisibleAncestorPressureAndRecovery(t *testing.T) {
 	f := fixture(t)
 	state := Snapshot{Budget: 1 << 20}
-	guard := &Guard{state: state}
+	guard := &Guard{state: state, processBudget: state.Budget}
 	for _, step := range []struct {
 		current string
 		latched bool
@@ -123,13 +123,13 @@ func TestVisibleAncestorPressureAndRecovery(t *testing.T) {
 	}
 }
 
-func TestProfileFailureAndStaticChanges(t *testing.T) {
+func TestProfileFailureAndDynamicChanges(t *testing.T) {
 	for _, failure := range []string{"permission", "current_missing", "current_malformed", "current_overflow", "max_partial", "rss_missing", "rss_overflow", "oversized", "escape"} {
 		t.Run(failure, func(t *testing.T) {
 			f := fixture(t)
 			f.level(t, "a", "1000", "850")
 			state := Snapshot{Budget: 1 << 20}
-			guard := &Guard{state: state}
+			guard := &Guard{state: state, processBudget: state.Budget}
 			guard.sample(f.profile.observe())
 			if !guard.Snapshot().Latched {
 				t.Fatal("initial pressure")
@@ -213,7 +213,7 @@ func TestProfileFailureAndStaticChanges(t *testing.T) {
 				f.level(t, "a", "max", "0")
 			}
 			for range 2 {
-				if o := f.profile.observe(); o.cgroup.State != "profile_changed" || o.low {
+				if o := f.profile.observe(); !o.cgroup.Valid || !o.low {
 					t.Fatal(o)
 				}
 			}

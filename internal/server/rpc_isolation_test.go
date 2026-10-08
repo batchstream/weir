@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"testing"
@@ -14,7 +13,7 @@ import (
 )
 
 func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
-	for _, mode := range []string{"caller-deadline", "server-deadline", "initial-input-stall", "idle-input-stall"} {
+	for _, mode := range []string{"caller-deadline", "initial-input-stall", "idle-input-stall"} {
 		t.Run(mode, func(t *testing.T) {
 			gate := make(chan struct{})
 			defer func() {
@@ -29,11 +28,8 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			secondAdapter.block = gate
 			limits := DefaultLimits()
 			limits.Stall = 2 * time.Second
-			limits.RequestLifetime = 2 * time.Second
+
 			expected := codes.DeadlineExceeded
-			if mode == "server-deadline" {
-				limits.RequestLifetime = 500 * time.Millisecond
-			}
 			if mode == "initial-input-stall" || mode == "idle-input-stall" {
 				limits.Stall = 150 * time.Millisecond
 				expected = codes.Canceled
@@ -85,10 +81,6 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 					time.Sleep(time.Millisecond)
 				}
 			}
-			if mode == "server-deadline" {
-				// The later RPC has its own service lifetime on the same connection.
-				time.Sleep(150 * time.Millisecond)
-			}
 			second, err := client.Execute(ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -110,7 +102,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 			}
 			var connection *limitedConn
 			server.connections.Range(func(_, value any) bool { connection = value.(*limitedConn); return false })
-			if connection == nil || len(server.connectionSlots) != 1 {
+			if connection == nil || server.admission.activeConnections.Load() != 1 {
 				t.Fatal("RPCs did not share one connection")
 			}
 			for {
@@ -140,82 +132,4 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 	}
 }
 
-func TestRPCOutputAdmissionFailureKeepsSharedConnection(t *testing.T) {
-	gate := make(chan struct{})
-	defer func() {
-		select {
-		case <-gate:
-		default:
-			close(gate)
-		}
-	}()
-	firstAdapter, firstStore := peerLocal(t, "records")
-	secondAdapter, secondStore := peerLocal(t, "mutations")
-	firstAdapter.block, secondAdapter.block = gate, gate
-	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), 16<<10)}
-	firstAdapter.documents[testRequest().Resource] = document
-	limits := DefaultLimits()
-	admission, err := NewAdmission(limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The large Read cannot be encoded; the small mutation result still fits.
-	admission.wireLimit = 2048
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": firstStore, "mutations": secondStore}, limits: limits, admission: admission}
-	server, address := startPeerServer(t, opts)
-	_, client := peerClient(t, address)
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	first, err := client.Execute(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := readFrame(1, testRequest())
-	if err := first.Send(request); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-firstAdapter.seen:
-	case <-ctx.Done():
-		t.Fatal("Read did not reach its backend")
-	}
-	second, err := client.Execute(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mutation := testMutation("confirmed")
-	operation := &pb.Command_Mutate{Mutate: mutation}
-	command := &pb.Command{Operation: operation}
-	request = &pb.ExecuteRequest{StoreName: "mutations", Index: 1, Command: command}
-	if err := second.Send(request); err != nil {
-		t.Fatal(err)
-	}
-	if err := second.CloseSend(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-secondAdapter.seen:
-	case <-ctx.Done():
-		t.Fatal("mutation did not reach its backend")
-	}
-	var connection *limitedConn
-	server.connections.Range(func(_, value any) bool { connection = value.(*limitedConn); return false })
-	if connection == nil || len(server.connectionSlots) != 1 {
-		t.Fatal("RPCs did not share one connection")
-	}
-	close(gate)
-	if _, err := first.Recv(); status.Code(err) != codes.Internal {
-		t.Fatal("Read did not fail its output admission", err)
-	}
-	response, err := second.Recv()
-	if err != nil || response.GetEvent().GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatal("Read output failure lost mutation confirmation", response, err)
-	}
-	if _, err := second.Recv(); err != io.EOF {
-		t.Fatal(err)
-	}
-	waitPeerIdle(t, server)
-	if connection.closed.Load() || secondAdapter.commands.Load() != 1 {
-		t.Fatal("output rejection closed the connection or repeated the mutation", connection.closed.Load(), secondAdapter.commands.Load())
-	}
-}
+// The large Read cannot be encoded; the small mutation result still fits.

@@ -14,6 +14,7 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -23,7 +24,7 @@ import (
 
 func TestEncodedResponseCreditsFollowFinalTransportReference(t *testing.T) {
 	limits := DefaultLimits()
-	limits.Sessions = 1
+
 	admission, err := NewAdmission(limits)
 	if err != nil {
 		t.Fatal(err)
@@ -93,30 +94,6 @@ func TestEncodedResponseConcurrentCleanupReturnsCreditOnce(t *testing.T) {
 	case <-owner.done:
 	default:
 		t.Fatal("concurrent cleanup did not complete publication ownership")
-	}
-}
-
-func TestEncodedResponseBudgetDoesNotWaitOnPartialOwners(t *testing.T) {
-	limits := DefaultLimits()
-	limits.Sessions = 1
-	admission, err := NewAdmission(limits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	codec := &responseCodec{admission: admission}
-	admission.wireLimit = 2048
-	response := &pb.ExecuteResponse{Index: 1}
-	first, err := codec.Marshal(response)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer first.Free()
-	if second, err := codec.Marshal(response); err == nil {
-		second.Free()
-		t.Fatal("encoded response quota was exceeded")
-	}
-	if admission.wireBytes.Load() != 1025 {
-		t.Fatal("failed encoded admission charged memory")
 	}
 }
 
@@ -211,7 +188,7 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 		}
 		if snapshot := local.Snapshot(); snapshot.ResultBytes > 0 {
 			bounded = true
-			if snapshot.Retained > RecordStreamItems || snapshot.ResultBytes > store.DefaultLimits().ResultBytes || snapshot.Publishers != 0 {
+			if snapshot.Retained > RecordStreamItems || snapshot.ResultBytes > RecordStreamItems*(protocol.MaxDocument+execution.ResultOverheadBytes) || snapshot.Publishers != 0 {
 				t.Fatal("slow reader accumulated result windows", snapshot)
 			}
 		}

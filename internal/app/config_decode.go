@@ -187,7 +187,7 @@ func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string
 	case yaml.ScalarNode:
 		expectedTag := "!!str"
 		switch field {
-		case "max_connections", "max_sessions", "max_concurrency", "max_batch_operations":
+		case "max_operations", "max_batch_operations":
 			expectedTag = "!!int"
 		case "allow_intranet":
 			expectedTag = "!!bool"

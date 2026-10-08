@@ -204,7 +204,7 @@ func TestMongoScanLostBatchReplyKeepsLastAcceptedCheckpoint(t *testing.T) {
 	}
 	proxy := testmongo.StartProxy(t, backend)
 	proxy.DropCommand = "find"
-	config := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
+	config := Config{URI: proxy.URI(), Store: "mongo"}
 	config = mongoFixtureConfig(t, config)
 	adapter, err := Open(ctx, config)
 	if err != nil {
@@ -269,7 +269,7 @@ func TestMongoScanTraversal(t *testing.T) {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
-			cfg := Config{URI: backend.URI, Store: "mongo", Pool: 1}
+			cfg := Config{URI: backend.URI, Store: "mongo"}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -350,7 +350,7 @@ func TestMongoScanFaultPagesAndNoAutomaticRetry(t *testing.T) {
 					proxy.AlterMode = mode
 					proxy.AlterRemaining.Store(0)
 				}
-				cfg := Config{URI: proxy.URI(), Store: "mongo", Pool: 1}
+				cfg := Config{URI: proxy.URI(), Store: "mongo"}
 				cfg = mongoFixtureConfig(t, cfg)
 				a, err := Open(ctx, cfg)
 				if err != nil {
@@ -400,7 +400,7 @@ func TestMongoScanFetchCancellation(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
-			cfg := Config{URI: backend.URI, Store: "mongo", Pool: 1}
+			cfg := Config{URI: backend.URI, Store: "mongo"}
 			cfg = mongoFixtureConfig(t, cfg)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

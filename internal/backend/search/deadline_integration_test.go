@@ -17,7 +17,7 @@ import (
 	"github.com/batchstream/weir/internal/store"
 )
 
-func TestRealSearchBackendDeadlineAcknowledgements(t *testing.T) {
+func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 	cases := []struct {
 		name    string
 		body    bool
@@ -77,14 +77,13 @@ func TestRealSearchBackendDeadlineAcknowledgements(t *testing.T) {
 			t.Cleanup(proxy.Close)
 			config := base.config
 			config.URL = proxy.URL
-			config.Pool = 1
+
 			adapter, err := Open(t.Context(), config)
 			if err != nil {
 				t.Fatal(err)
 			}
 			limits := store.DefaultLimits()
-			limits.Concurrency = 1
-			limits.BackendTimeout = test.timeout
+
 			runtime, err := store.New(adapter, limits)
 			if err != nil {
 				_ = adapter.Close()
@@ -110,22 +109,24 @@ func TestRealSearchBackendDeadlineAcknowledgements(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			caller, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			caller, cancel := context.WithTimeout(t.Context(), test.timeout)
 			defer cancel()
 			started := time.Now()
 			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			result, err := ticket.Wait(caller)
+			wait, stop := context.WithTimeout(t.Context(), 5*time.Second)
+			defer stop()
+			result, err := ticket.Wait(wait)
 			if err != nil || result.GetMutationResult().GetOutcome() != test.outcome {
 				t.Fatal("real acknowledgement certainty changed", err, result)
 			}
 			failure = result.GetMutationResult().GetFailure()
 			elapsed := time.Since(started)
 			if test.outcome == pb.MutationOutcome_APPLIED {
-				if failure != nil || elapsed < 2*time.Second || elapsed >= limits.BackendTimeout {
-					t.Fatal("real acknowledgement was cut off before the configured deadline", failure, elapsed)
+				if failure != nil || elapsed < 2*time.Second || elapsed >= 4*time.Second {
+					t.Fatal("real acknowledgement was cut off before the caller deadline", failure, elapsed)
 				}
 			} else if failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || failure.GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || elapsed < test.timeout || elapsed > test.timeout+time.Second {
 				t.Fatal("lost real acknowledgement discarded its deadline cause", failure, elapsed)

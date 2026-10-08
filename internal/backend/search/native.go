@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -291,48 +290,8 @@ func (r *nativeBulkReader) Read(dst []byte) (int, error) {
 	return n, nil
 }
 
-// One native HTTP exchange retains a cumulative backend I/O allowance. Pausing
-// it while publishing a head or chunk preserves streaming output backpressure
-// without granting each subsequent body read a fresh timeout.
-type nativeIOBudget struct {
-	ctx       context.Context
-	cancel    context.CancelCauseFunc
-	timer     *time.Timer
-	remaining time.Duration
-	started   time.Time
-}
-
-func (b *nativeIOBudget) pause() {
-	if !b.timer.Stop() {
-		b.cancel(context.DeadlineExceeded)
-	}
-	b.remaining -= time.Since(b.started)
-}
-
-func (b *nativeIOBudget) resume() bool {
-	if b.remaining <= 0 {
-		b.cancel(context.DeadlineExceeded)
-	}
-	if b.ctx.Err() != nil {
-		return false
-	}
-	b.started = time.Now()
-	b.timer.Reset(b.remaining)
-	return true
-}
-
-func (b *nativeIOBudget) failure(caller context.Context, message string) *pb.Failure {
-	if caller.Err() != nil {
-		return protocol.ContextFailure(caller)
-	}
-	if context.Cause(b.ctx) == context.DeadlineExceeded {
-		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "Native backend I/O deadline")
-	}
-	return protocol.Fail(pb.FailureCode_UNAVAILABLE, message)
-}
-
 func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) *pb.NativeEnd {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if a.ctx != nil {
 		if a.ctx.Err() != nil {
@@ -345,19 +304,10 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	d := native.request
 	input := native.body
 	var body io.Reader
-	timeout := p.BackendTimeout
-	if timeout <= 0 {
-		timeout = fallbackRequestTimeout
-	}
-	backendContext, stopBackend := context.WithCancelCause(ctx)
-	budget := &nativeIOBudget{ctx: backendContext, cancel: stopBackend, remaining: timeout, started: time.Now()}
-	budget.timer = time.AfterFunc(timeout, func() { stopBackend(context.DeadlineExceeded) })
-	defer budget.timer.Stop()
-	defer stopBackend(nil)
-	caps, failure := a.inspect(backendContext, native.index, true)
+	caps, failure := a.inspect(ctx, native.index, true)
 	if failure != nil {
-		if backendContext.Err() != nil {
-			failure = budget.failure(ctx, "Native index qualification incomplete")
+		if ctx.Err() != nil {
+			failure = protocol.ContextFailure(ctx)
 		}
 		return protocol.NativeFailure(false, failure)
 	}
@@ -380,7 +330,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	if d.URL.RawQuery != "" {
 		endpoint += "?" + d.URL.RawQuery
 	}
-	request, err := http.NewRequestWithContext(backendContext, d.Method, endpoint, body)
+	request, err := http.NewRequestWithContext(ctx, d.Method, endpoint, body)
 	if err != nil {
 		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid HTTP request"))
 	}
@@ -404,9 +354,8 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		defer request.Body.Close()
 	}
 	response, err := a.nativeClient.Do(request)
-	budget.pause()
 	if err != nil {
-		return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete"))
+		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete"))
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 100 || response.StatusCode > 599 {
@@ -448,11 +397,10 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	buffer := make([]byte, protocol.NativeChunk)
 	total := 0
 	for {
-		if !budget.resume() {
-			return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP exchange incomplete"))
+		if ctx.Err() != nil {
+			return protocol.NativeFailure(true, protocol.ContextFailure(ctx))
 		}
 		n, err := response.Body.Read(buffer)
-		budget.pause()
 		total += n
 		if total > NativeResponseLimit {
 			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native response limit"))
@@ -468,7 +416,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 			break
 		}
 		if err != nil {
-			return protocol.NativeFailure(true, budget.failure(ctx, "Native HTTP response truncated"))
+			return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP response truncated"))
 		}
 	}
 	if len(response.Trailer) != 0 {
@@ -501,4 +449,11 @@ func (b *nativeHTTPBody) Close() error {
 	b.closed = true
 	b.Reader = nil
 	return nil
+}
+
+func nativeExchangeFailure(ctx context.Context, message string) *pb.Failure {
+	if ctx.Err() != nil {
+		return protocol.ContextFailure(ctx)
+	}
+	return protocol.Fail(pb.FailureCode_UNAVAILABLE, message)
 }

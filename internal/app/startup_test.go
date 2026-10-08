@@ -18,7 +18,8 @@ func TestCanceledOpenAndValidationPrecedence(t *testing.T) {
 	if node, err := Open(ctx, cfg); node != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled Open acquired a node", node, err)
 	}
-	cfg.Basic.Memory = 0
+
+	cfg.Basic.Listeners.Application = "invalid-listener"
 	if node, err := Open(ctx, cfg); node != nil || err == nil || errors.Is(err, context.Canceled) {
 		t.Fatal("cancellation hid a real configuration failure", node, err)
 	}

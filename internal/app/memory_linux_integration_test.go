@@ -275,7 +275,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	monitor := &event.CommandMonitor{Started: observer.start, Succeeded: observer.finish}
 	proxy.Monitor = monitor
 	backend := mongoFixtureConfig(t, proxy.URI())
-	local := &Local{MongoDB: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
+	local := &Local{MongoDB: backend, MaxBatchOperations: 1}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -284,8 +284,6 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
 	cfg.Routing.Stores = []StoreConfig{service}
 
-	// The declaration covers native buffers; cgroup pressure still uses its 512MiB limit.
-	cfg.Basic.Memory = 2 << 30
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
 	root := db + "/records"

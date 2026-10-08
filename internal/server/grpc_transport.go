@@ -7,8 +7,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
-	"github.com/batchstream/weir/internal/directory"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
@@ -20,13 +18,12 @@ type rpcContextKey uint8
 
 const rpcKey rpcContextKey = 0
 
-// rpcState admits input before gRPC reads or decodes DATA. Handler completion
-// releases that slot; result and encoded output have their own byte budgets.
+// rpcState checks ingress before gRPC reads DATA, tracks RPC lifetime and
+// cancels streams that stop making input progress.
 type rpcState struct {
 	mu       sync.Mutex
 	server   *Server
 	method   string
-	slots    chan struct{}
 	cancel   context.CancelFunc
 	input    *time.Timer
 	lifetime func() bool
@@ -45,15 +42,14 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 			}
 		}
 	}
-	control := false
 	allowed := false
 	switch info.FullMethodName {
 	case pb.StoreService_Execute_FullMethodName:
 		allowed = !s.peer
 	case pb.StoreService_ResolveStore_FullMethodName:
-		allowed, control = !s.peer, true
+		allowed = !s.peer
 	case peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName:
-		allowed, control = s.peer && s.directory != nil, true
+		allowed = s.peer && s.directory != nil
 	}
 	if !allowed {
 		s.admission.rejections.WithLabelValues("method").Inc()
@@ -64,17 +60,12 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 		s.admission.rejections.WithLabelValues("ingress").Inc()
 		return nil, err
 	}
-	slots := s.admission.slots
-	lifetime := s.limits.RequestLifetime
-	if control {
-		slots = s.control
-		lifetime = min(directory.SyncTimeout, s.limits.Stall)
-	}
-	if err := s.enterSlots(slots); err != nil {
+	if err := s.admission.check(); err != nil {
 		return nil, err
 	}
-	rpcContext, cancel := context.WithTimeout(ingress, lifetime)
-	state := &rpcState{server: s, method: methodLabel(info.FullMethodName), slots: slots, cancel: cancel}
+	rpcContext, cancel := context.WithCancel(ingress)
+	s.admission.activeRPCs.Add(1)
+	state := &rpcState{server: s, method: methodLabel(info.FullMethodName), cancel: cancel}
 	state.mu.Lock()
 	state.input = time.AfterFunc(s.limits.Stall, func() {
 		state.mu.Lock()
@@ -99,7 +90,7 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 }
 
 // The transport may abort an already expired tap before TagRPC/Stats.End.
-// Once dispatched, cancellation cannot release a still-running handler's slot.
+// Once dispatched, Stats.End owns completion accounting.
 func (state *rpcState) cancelBeforeDispatch(err error) {
 	state.mu.Lock()
 	if state.started || state.finished {
@@ -119,33 +110,6 @@ func (state *rpcState) decoded() {
 	}
 }
 
-func (state *rpcState) releaseAdmission() {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	state.releaseAdmissionLocked()
-}
-
-func (state *rpcState) releaseAdmissionLocked() {
-	if state.slots != nil {
-		<-state.slots
-		state.slots = nil
-	}
-}
-
-func unaryRPC(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if state, ok := ctx.Value(rpcKey).(*rpcState); ok {
-		defer state.releaseAdmission()
-	}
-	return handler(ctx, request)
-}
-
-func streamRPC(server any, stream grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok {
-		defer state.releaseAdmission()
-	}
-	return handler(server, stream)
-}
-
 func (state *rpcState) finish(err error) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -157,6 +121,7 @@ func (state *rpcState) finishLocked(err error) {
 		return
 	}
 	state.finished = true
+	state.server.admission.activeRPCs.Add(-1)
 	if state.input != nil {
 		state.input.Stop()
 	}
@@ -164,7 +129,6 @@ func (state *rpcState) finishLocked(err error) {
 		state.lifetime()
 	}
 	state.server.metrics.rpcs.WithLabelValues(state.method, statusLabel(err)).Inc()
-	state.releaseAdmissionLocked()
 	state.cancel()
 }
 

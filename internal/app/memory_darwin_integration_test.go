@@ -5,125 +5,37 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/testutil/testmemory"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-func TestDarwinMemoryApplication(t *testing.T) {
+func TestDarwinAutomaticMemoryApplication(t *testing.T) {
 	if os.Getenv("WEIR_MEMORY_DARWIN_NATIVE") != "1" {
 		t.Skip("explicit Darwin memory native fixture required")
 	}
 	fixture := testmongo.OpenSecure(t)
-	proxy := testmongo.StartProxy(t, &fixture.Fixture)
-	proxy.DropCommand = "bulkWrite"
-	cfg := packagedConfig(t, proxy.URI())
-	cfg.Basic.Memory = ByteSize(testmemory.Budget)
+	cfg := packagedConfig(t, fixture.URI)
 	n := secureNode(t, cfg)
 	client := endpointProcessClient(t, n.Addresses()[0])
 	packagedCalls(t, client, fixture)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	read := &pb.ReadRequest{Resource: fixture.DB + "/records/s:artifact"}
-	var producers sync.WaitGroup
-	producers.Add(2)
-	for range 2 {
-		go func() {
-			defer producers.Done()
-			for ctx.Err() == nil {
-				call, stop := context.WithTimeout(ctx, 40*time.Millisecond)
-				_, _ = testutil.ExecuteRecord(call, client, testutil.RecordRequest("records", read))
-				stop()
-				time.Sleep(5 * time.Millisecond)
-			}
-		}()
+	snapshot := n.guard.Snapshot()
+	if snapshot.Budget == 0 || snapshot.Unknown || snapshot.Latched || !snapshot.ProcessValid {
+		t.Fatal("automatic memory capacity or observation unavailable", snapshot)
 	}
-	defer func() {
-		cancel()
-		producers.Wait()
-	}()
-	// Include diagnostics and continuous traffic in the measured baseline.
 	darwinMetrics(t, n.DiagnosticAddress())
-	time.Sleep(500 * time.Millisecond)
-	runtime.GC()
-	pressure := testmemory.Open(t)
-	for _, step := range []struct {
-		label   string
-		percent uint64
-		latched bool
-	}{{"high", 85, true}, {"middle", 75, true}, {"low", 0, false}} {
-		pressure.Set(t, step.percent)
-		runtime.GC()
-		started := time.Now()
-		if step.label == "middle" {
-			time.Sleep(300 * time.Millisecond)
-		}
-		for {
-			s := n.guard.Snapshot()
-			oracle := testmemory.Oracle(t)
-			if !s.Unknown && s.Latched == step.latched && testmemory.Difference(s.Bytes, oracle) < testmemory.Tolerance {
-				if step.label == "middle" && (s.Bytes <= testmemory.Budget*70/100 || s.Bytes >= testmemory.Budget*80/100) {
-					t.Fatal("outside middle band", s)
-				}
-				t.Logf("app %s elapsed=%s footprint=%d SDK_oracle=%d latched=%v", step.label, time.Since(started), s.Bytes, oracle, s.Latched)
-				break
-			}
-			if time.Since(started) > 2*time.Second {
-				t.Fatal("fixed app convergence", s, oracle)
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		darwinMetrics(t, n.DiagnosticAddress())
-		if step.latched {
-			request := budgetPut(fixture.DB+"/records", "refused")
-			recordResult, err := testutil.ExecuteRecord(ctx, client, testutil.RecordRequest("records", request))
-			result := recordResult.GetMutationResult()
-			if result != nil || status.Code(err) != codes.ResourceExhausted {
-				t.Fatal("unsafe overload admission", result, err)
-			}
-		}
-	}
-	cancel()
-	producers.Wait()
-	filter := bson.D{{Key: "_id", Value: "refused"}}
-	check, stop := context.WithTimeout(context.Background(), 3*time.Second)
-	count, err := fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(check, filter)
-	stop()
-	if err != nil || count != 0 {
-		t.Fatal("rejected mutation reached backend", count, err)
-	}
-	packagedCalls(t, client, fixture)
-	darwinUnknown(t, client, fixture, proxy)
-	began := time.Now()
-	for range 3 {
-		if err := n.Close(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if time.Since(began) > 3*time.Second {
-		t.Fatal("fixed repeated Close bound")
-	}
-	budgetWait(t, "app proxy sockets released", func() bool {
-		n, _ := proxy.Sockets()
-		return n == 0
-	})
-	t.Logf("continuous reads/cancellation, no rejected DB mutation; restored Read/Mutate/Bulk; repeated Close=%s sockets=0", time.Since(began))
 }
 
 func darwinMetrics(t *testing.T, address string) {
@@ -210,7 +122,7 @@ func TestDarwinMemoryArtifact(t *testing.T) {
 	monitor := &event.CommandMonitor{Started: observation.start, Succeeded: observation.finish}
 	proxy.Monitor = monitor
 	cfg := packagedConfig(t, proxy.URI())
-	cfg.Basic.Memory = ByteSize(testmemory.Budget)
+
 	p := startProcess(t, binary, cfg)
 	t.Logf("owned artifact PID=%d", p.command.Process.Pid)
 	client := endpointProcessClient(t, p.address)

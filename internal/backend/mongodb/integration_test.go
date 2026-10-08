@@ -22,7 +22,7 @@ func TestPartialInitializationAndClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	before := connectionCount(t, native)
-	cfg := Config{URI: backend.URI, Store: "mongo", Pool: 1}
+	cfg := Config{URI: backend.URI, Store: "mongo"}
 	cfg = mongoFixtureConfig(t, cfg)
 	for i := 0; i < 5; i++ {
 		attempt, err := Open(ctx, cfg)

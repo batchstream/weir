@@ -2,7 +2,6 @@ package store
 
 import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -10,7 +9,6 @@ type runtimeMetrics struct {
 	executions, rejections, records *prometheus.CounterVec
 	queue, duration                 *prometheus.HistogramVec
 	batch                           prometheus.Histogram
-	backendTimeouts                 prometheus.Counter
 }
 
 func newRuntimeMetrics() runtimeMetrics {
@@ -20,8 +18,7 @@ func newRuntimeMetrics() runtimeMetrics {
 	queueOptions := prometheus.HistogramOpts{Name: "weir_store_queue_wait_seconds", Help: "Time from admission to dispatch.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	durationOptions := prometheus.HistogramOpts{Name: "weir_store_execution_seconds", Help: "Adapter invocation duration including bounded streaming output.", Buckets: []float64{.001, .01, .1, 1, 10}}
 	batchOptions := prometheus.HistogramOpts{Name: "weir_store_batch_operations", Help: "Operations per bounded invocation.", Buckets: []float64{1, 2, 4, 8, 16, 128}}
-	timeoutOptions := prometheus.CounterOpts{Name: "weir_store_backend_timeouts_total", Help: "Runtime backend execution deadlines reached while callers remain interested."}
-	metrics := runtimeMetrics{backendTimeouts: prometheus.NewCounter(timeoutOptions), records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
+	metrics := runtimeMetrics{records: prometheus.NewCounterVec(recordOptions, []string{"operation", "outcome"}), executions: prometheus.NewCounterVec(execOptions, []string{"kind"}), rejections: prometheus.NewCounterVec(rejectOptions, []string{"reason"}), queue: prometheus.NewHistogramVec(queueOptions, []string{"kind"}), duration: prometheus.NewHistogramVec(durationOptions, []string{"kind"}), batch: prometheus.NewHistogram(batchOptions)}
 	for _, outcome := range []string{"applied", "not_applied", "not_started", "unknown", "invalid"} {
 		metrics.records.WithLabelValues("mutate", outcome)
 	}
@@ -44,19 +41,17 @@ func (r *Runtime) Collect(ch chan<- prometheus.Metric) {
 		"result_reserved_entries": float64(snapshot.Retained), "result_reserved_bytes": float64(snapshot.ResultBytes),
 		"working_reserved_bytes": float64(snapshot.WorkingBytes), "retained_results": float64(snapshot.Ready), "retained_result_reserved_bytes": float64(snapshot.ReadyBytes),
 		"active_executions": float64(snapshot.Active), "publishers": float64(snapshot.Publishers),
-		"pending_reserved_bytes_limit": float64(r.limits.PendingBytes),
-		"result_reserved_bytes_limit":  float64(r.limits.ResultBytes),
-		"working_reserved_bytes_limit": float64(r.limits.WorkingBytes),
-		"concurrency_limit":            float64(snapshot.ConcurrencyLimit), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
+		"pending_reserved_bytes_limit": float64(r.limits.QueueBytes),
+		"pending_entries_limit":        float64(r.limits.QueueOperations), "draining": boolValue(snapshot.Draining), "closed": boolValue(snapshot.Closed), "overloaded": boolValue(snapshot.Overloaded),
 	}
 	for name, value := range values {
-		description := prometheus.NewDesc("weir_store_"+name, "Bounded local admission reservations; bytes do not represent heap or RSS.", nil, nil)
+		description := prometheus.NewDesc("weir_store_"+name, "Queue capacity and execution/publication accounting; byte estimates do not represent heap or RSS.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(description, prometheus.GaugeValue, value)
 	}
 	if collector, ok := r.adapter.(prometheus.Collector); ok {
 		collector.Collect(ch)
 	}
-	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.queue, r.metrics.duration, r.metrics.batch, r.metrics.backendTimeouts}
+	collectors := []prometheus.Collector{r.metrics.records, r.metrics.executions, r.metrics.rejections, r.metrics.queue, r.metrics.duration, r.metrics.batch}
 	for _, collector := range collectors {
 		collector.Collect(ch)
 	}

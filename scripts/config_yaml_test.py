@@ -10,7 +10,7 @@ class ConfigurationYAML(unittest.TestCase):
         config = {
             "listeners": {"application": "0.0.0.0:7447"},
             "memory": "512MiB",
-            "services": [{"name": "yes", "local": {"max_concurrency": 4}}],
+            "services": [{"name": "yes", "local": {"max_batch_operations": 4}}],
             "diagnostics": {"allow_intranet": False},
         }
         expected = (
@@ -20,7 +20,7 @@ class ConfigurationYAML(unittest.TestCase):
             '"services":\n'
             '  - "name": "yes"\n'
             '    "local":\n'
-            '      "max_concurrency": 4\n'
+            '      "max_batch_operations": 4\n'
             '"diagnostics":\n'
             '  "allow_intranet": false\n'
         )

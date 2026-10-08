@@ -27,7 +27,7 @@ func emptyConfig(t *testing.T) Config {
 }
 
 func TestConfigurationValidation(t *testing.T) {
-	for _, mode := range []string{"duplicate-store", "missing-backend", "overflow", "zero-session"} {
+	for _, mode := range []string{"duplicate-store", "missing-backend"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := credentialTestConfig(t, "search")
 			switch mode {
@@ -35,10 +35,6 @@ func TestConfigurationValidation(t *testing.T) {
 				cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
 			case "missing-backend":
 				cfg.Routing.Stores[0].Local = nil
-			case "overflow":
-				cfg.Basic.Transport.MaxSessions = int(^uint(0) >> 1)
-			case "zero-session":
-				cfg.Basic.Transport.MaxSessions = 0
 			}
 			if err := cfg.Validate(); err == nil {
 				t.Fatal("invalid configuration accepted")
@@ -114,7 +110,7 @@ func TestAssemblyDirectoryOnlyPartialListenerAndConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(node.stores) != 0 || node.guard.Snapshot().Budget != uint64(cfg.Basic.Memory) {
+	if len(node.stores) != 0 || node.guard.Snapshot().Budget == 0 {
 		t.Fatal("directory-only created database state")
 	}
 	node.Start(context.Background())

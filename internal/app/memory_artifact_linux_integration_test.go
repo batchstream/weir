@@ -63,7 +63,7 @@ func TestLinuxMemoryArtifactObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := packagedConfig(t, uri)
-	cfg.Basic.Memory = 2 << 30
+
 	p := startProcess(t, "/fixture/weir", cfg)
 	client := endpointProcessClient(t, p.address)
 	request := budgetPut(db+"/records", "observed")

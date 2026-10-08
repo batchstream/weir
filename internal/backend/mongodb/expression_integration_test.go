@@ -39,7 +39,7 @@ func executeMongoExpression(t *testing.T, a *Adapter, p *execution.Plan) *pb.Mut
 func TestMongoExpressionAtomicAndNumeric(t *testing.T) {
 	backend := testmongo.Open(t)
 	client, db := backend.Admin, backend.DB
-	cfg := Config{Store: "mongo", URI: backend.URI, Pool: 4}
+	cfg := Config{Store: "mongo", URI: backend.URI}
 	cfg = mongoFixtureConfig(t, cfg)
 	a, err := Open(context.Background(), cfg)
 	if err != nil {
@@ -258,7 +258,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			opts := adapterTestOptions{fixture: backend, uri: proxy.URI()}
 			a := testAdapter(t, opts)
 			limits := store.DefaultLimits()
-			limits.Concurrency = 1
+
 			runtime, err := store.New(a, limits)
 			if err != nil {
 				t.Fatal(err)

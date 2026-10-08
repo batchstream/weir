@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net"
 	"net/http"
@@ -24,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
@@ -215,7 +215,7 @@ func packagedSearchConfig(b *testsearch.Backend) Config {
 	credentials := Credentials{Username: b.Username, Password: b.Password}
 	connection := &SearchConnection{Credentials: credentials, CAFile: b.CAFile}
 	backend := &Search{URL: b.URL, Connection: connection}
-	local := &Local{Search: backend, MaxConcurrency: 2, MaxBatchOperations: 1}
+	local := &Local{Search: backend, MaxBatchOperations: 1}
 	service := StoreConfig{Name: "search", Local: local}
 
 	cfg := DefaultConfig()

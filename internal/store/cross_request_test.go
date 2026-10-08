@@ -193,41 +193,6 @@ func TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation(t *testing.T) {
 	}
 }
 
-func TestSharedRecordBudgetBlocksUntilPublicationAcknowledgement(t *testing.T) {
-	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 2), maxReadBytes: protocol.MaxDocument}
-	limits := DefaultLimits()
-	limits.ResultBytes = protocol.MaxDocument + execution.ResultOverheadBytes
-	runtime := newRuntime(adapter, limits)
-	first := prepareCrossRecord(t, runtime, 1, "records/s:first")
-	second := prepareCrossRecord(t, runtime, 2, "records/s:second")
-	ticket, failure, _ := runtime.Submit(t.Context(), first, nil)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	runtime.execute(selectCrossBatch(runtime))
-	if recordEvent(t, ticket).GetReadResult().GetDocument() == nil {
-		t.Fatal("lost first document")
-	}
-	_, failure, changed := runtime.Submit(t.Context(), second, nil)
-	if failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-		t.Fatal("completed owner released credits before Ack", failure)
-	}
-	ticket.Ack()
-	select {
-	case <-changed:
-	default:
-		t.Fatal("returned credit did not wake admission")
-	}
-	next, failure, _ := runtime.Submit(t.Context(), second, nil)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	runtime.execute(selectCrossBatch(runtime))
-	next.Ack()
-	if snapshot := runtime.Snapshot(); snapshot.ResultBytes != 0 || snapshot.Retained != 0 {
-		t.Fatal("result reservation leaked", snapshot)
-	}
-}
 func TestPreparedRecordMetadataFloorAndOversizedBudget(t *testing.T) {
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 1)}
 	runtime := newRuntime(adapter, DefaultLimits())
@@ -235,7 +200,7 @@ func TestPreparedRecordMetadataFloorAndOversizedBudget(t *testing.T) {
 	if work.Bytes <= execution.EntryOverheadBytes {
 		t.Fatal("record metadata floor was discounted", work.Bytes)
 	}
-	work.ResultBytes = runtime.limits.ResultBytes + 1
+	work.Bytes = runtime.limits.QueueBytes + 1
 	_, failure, _ := runtime.Submit(t.Context(), work, nil)
 	if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT || runtime.Snapshot().Retained != 0 {
 		t.Fatal("oversized single record entered admission", failure)

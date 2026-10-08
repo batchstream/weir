@@ -155,7 +155,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 				observation.reply, observation.failure = nil, failure
 			case validateJSON(reply.Source, 16384) != nil:
 				observation.reply, observation.failure = nil, failure
-			case len(reply.Source) > a.sourceLimit(group[i]):
+			case len(reply.Source) > protocol.MaxDocument:
 				observation.reply = nil
 				observation.failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit")
 			}
@@ -361,7 +361,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				work := works[positions[end]]
 				native := work.Backend.(*plan)
 				if batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
-					bound := a.sourceLimit(work) + getFramingLimit
+					bound := protocol.MaxDocument + getFramingLimit
 					if bound > batchBodyLimit-readBytes {
 						break
 					}

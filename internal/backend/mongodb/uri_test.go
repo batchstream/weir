@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidateMongoConfigProfiles(t *testing.T) {
-	cfg := Config{Store: "mongo", Pool: 1}
+	cfg := Config{Store: "mongo"}
 	for _, uri := range []string{
 		"mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll",
 		"mongodb://[::1]:27028/",
@@ -36,7 +36,6 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 	base := Config{
 		URI:   "mongodb://127.0.0.1:27028/",
 		Store: "mongo",
-		Pool:  1,
 	}
 	var cases []Config
 	for _, uri := range []string{
@@ -108,13 +107,11 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		invalid.Username, invalid.Password = pair.username, pair.password
 		cases = append(cases, invalid)
 	}
-	for _, field := range []string{"store", "pool-zero"} {
+	for _, field := range []string{"store"} {
 		invalid := base
 		switch field {
 		case "store":
 			invalid.Store = "invalid/private-sentinel"
-		case "pool-zero":
-			invalid.Pool = 0
 		}
 		cases = append(cases, invalid)
 	}
@@ -132,16 +129,16 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 
 func TestMongoDriverAuthenticationOptions(t *testing.T) {
 	cfg := Config{
-		URI:      "mongodb://unresolved.invalid:27028/?AUTHMechanism=SCRAM-SHA-256&AuthSource=admin&tls=true&directConnection=true",
-		Store:    "mongo",
-		Pool:     1,
+		URI:   "mongodb://unresolved.invalid:27028/?AUTHMechanism=SCRAM-SHA-256&AuthSource=admin&tls=true&directConnection=true",
+		Store: "mongo",
+
 		Username: " user:@/%?#用户 ",
 		Password: " pass:@/%?#🔐 ",
 	}
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	dialer := newBoundedDialer(1, 1)
+	dialer := newConnectionOwner()
 	defer dialer.close()
 	opts, err := connectionOptions(cfg, dialer)
 	if err != nil {
@@ -167,11 +164,11 @@ func TestMongoDriverAuthenticationOptions(t *testing.T) {
 }
 
 func TestMongoDriverUnauthenticatedOptions(t *testing.T) {
-	cfg := Config{URI: "mongodb://127.0.0.1:27028/", Store: "mongo", Pool: 1}
+	cfg := Config{URI: "mongodb://127.0.0.1:27028/", Store: "mongo"}
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	dialer := newBoundedDialer(1, 1)
+	dialer := newConnectionOwner()
 	defer dialer.close()
 	opts, err := connectionOptions(cfg, dialer)
 	if err != nil || opts.Auth != nil || opts.TLSConfig != nil || dialer.tlsConfig != nil {

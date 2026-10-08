@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	weirclient "github.com/batchstream/weir-go"
 	"io"
 	"net/http"
 	"os/exec"
@@ -19,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
@@ -373,7 +373,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	mongoLocal := &Local{MongoDB: mongo}
 	backend := &Search{URL: search.URL}
 	// Match the Search fixture's single write thread for deterministic smoke operations.
-	searchLocal := &Local{Search: backend, MaxConcurrency: 1}
+	searchLocal := &Local{Search: backend}
 	mongoStore := StoreConfig{Name: "mongo", Local: mongoLocal}
 	searchStore := StoreConfig{Name: "search", Local: searchLocal}
 	cfg := emptyConfig(t)

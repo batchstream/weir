@@ -78,103 +78,26 @@ func ownerWait(t *testing.T, predicate func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
-func ownerZero(t *testing.T, d *boundedDialer) {
+func ownerZero(t *testing.T, d *connectionOwner) {
 	t.Helper()
 	s := d.snapshot()
-	if s.Owned != 0 || s.Closing != 0 || s.Dialing != 0 || s.Acquired != s.Released || s.Peak > s.Limit {
+	if s.Owned != 0 || s.Closing != 0 || s.Dialing != 0 || s.Acquired != s.Released {
 		t.Fatal("ownership not closed", s)
 	}
 }
 
-func TestMongoOwnerRetiredRawOverlap(t *testing.T) {
-	for _, pool := range []int{1, 2, 4} {
-		t.Run(fmt.Sprint(pool), func(t *testing.T) {
-			listener, _ := ownerListener(t)
-			d := newBoundedDialer(pool+1, 3)
-			t.Cleanup(d.close)
-			conns := make([]net.Conn, pool+1)
-			for i := range conns {
-				conn, err := d.DialContext(context.Background(), "tcp", listener.Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-				conns[i] = conn
-			}
-			// External net.Conn seam forces a driver-retired raw Close to remain in progress.
-			first := conns[0].(*boundedConn).Conn.(*mongoConn)
-			release := make(chan struct{})
-			var once sync.Once
-			t.Cleanup(func() { once.Do(func() { close(release) }) })
-			slow := &slowCloseConn{Conn: first.raw, entered: make(chan struct{}), release: release}
-			first.raw = slow
-			closed := make(chan struct{})
-			go func() { _ = conns[0].Close(); close(closed) }()
-			<-slow.entered
-			t.Logf("%s synthetic pool removal followed by raw Close entered: %+v", time.Now().UTC().Format(time.RFC3339Nano), d.snapshot())
-			// Cancellation while full must neither release somebody else's credit nor spin/replay.
-			for range 8 {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-				conn, err := d.DialContext(ctx, "tcp", listener.Addr().String())
-				cancel()
-				if err == nil || conn != nil {
-					t.Fatal("full owner admitted dial")
-				}
-			}
-			next := make(chan net.Conn, 1)
-			go func() {
-				conn, err := d.DialContext(context.Background(), "tcp", listener.Addr().String())
-				if err != nil {
-					t.Error(err)
-				}
-				next <- conn
-			}()
-			ownerWait(t, func() bool { return d.snapshot().Dialing == 1 })
-			select {
-			case conn := <-next:
-				if conn != nil {
-					conn.Close()
-				}
-				t.Fatal("dial bypassed retiring raw")
-			case <-time.After(10 * time.Millisecond):
-			}
-			s := d.snapshot()
-			if s.Owned != pool+1 || s.Peak != pool+1 || s.Closing != 1 || s.Acquired != uint64(pool+1) {
-				t.Fatal(s)
-			}
-			t.Logf("%s replacement waits with old raw still charged: %+v", time.Now().UTC().Format(time.RFC3339Nano), s)
-			once.Do(func() { close(release) })
-			<-closed
-			replacement := <-next
-			if replacement == nil {
-				t.Fatal("replacement failed")
-			}
-			var closers sync.WaitGroup
-			for range 8 {
-				closers.Go(func() { _ = conns[0].Close() })
-			}
-			closers.Wait()
-			if slow.calls.Load() != 1 {
-				t.Fatal("raw closed more than once", slow.calls.Load())
-			}
-			for _, conn := range conns[1:] {
-				_ = conn.Close()
-			}
-			_ = replacement.Close()
-			d.close()
-			ownerZero(t, d)
-			t.Logf("%s raw closed before replacement acquired; final %+v", time.Now().UTC().Format(time.RFC3339Nano), d.snapshot())
-		})
-	}
-}
+// External net.Conn seam forces a driver-retired raw Close to remain in progress.
+
+// Cancellation while full must neither release somebody else's credit nor spin/replay.
 
 func TestMongoOwnerCloseDuringTLSAndDial(t *testing.T) {
 	for _, pool := range []int{1, 2, 4} {
 		t.Run(fmt.Sprint(pool), func(t *testing.T) {
 			listener, _ := ownerListener(t)
-			d := newBoundedDialer(pool+1, 3)
+			d := newConnectionOwner()
 			d.tlsConfig = &tls.Config{}
 			var workers sync.WaitGroup
-			for range d.maxDials {
+			for range 8 {
 				workers.Go(func() {
 					conn, err := d.DialContext(context.Background(), "tcp", listener.Addr().String())
 					if conn != nil {
@@ -186,7 +109,7 @@ func TestMongoOwnerCloseDuringTLSAndDial(t *testing.T) {
 				})
 			}
 			ownerWait(t, func() bool {
-				return d.snapshot().Owned == min(d.limit, d.maxDials) && d.snapshot().Dialing == d.maxDials
+				return d.snapshot().Owned == 8 && d.snapshot().Dialing == 8
 			})
 			workers.Go(d.close)
 			workers.Go(d.close)
@@ -200,7 +123,7 @@ func TestMongoOwnerCloseDuringTLSAndDial(t *testing.T) {
 }
 
 func TestMongoOwnerJoinsSlowResolverClose(t *testing.T) {
-	d := newBoundedDialer(2, 3)
+	d := newConnectionOwner()
 	release := make(chan struct{})
 	var once sync.Once
 	t.Cleanup(func() { once.Do(func() { close(release) }); d.close() })
@@ -256,7 +179,7 @@ func TestMongoOwnerOpenFailure(t *testing.T) {
 	listener, active := ownerListener(t)
 	for range 4 {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-		cfg := Config{URI: "mongodb://" + listener.Addr().String() + "/?directConnection=true", Store: "records", Pool: 1}
+		cfg := Config{URI: "mongodb://" + listener.Addr().String() + "/?directConnection=true", Store: "records"}
 		a, err := Open(ctx, cfg)
 		cancel()
 		if a != nil || err == nil {
@@ -264,39 +187,4 @@ func TestMongoOwnerOpenFailure(t *testing.T) {
 		}
 		ownerWait(t, func() bool { return active.Load() == 0 })
 	}
-}
-
-func TestMongoOwnerBoundedWaiters(t *testing.T) {
-	listener, _ := ownerListener(t)
-	d := newBoundedDialer(2, 3)
-	defer d.close()
-	for range d.limit {
-		conn, err := d.DialContext(context.Background(), "tcp", listener.Addr().String())
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var workers sync.WaitGroup
-	for range d.maxDials {
-		workers.Go(func() {
-			conn, err := d.DialContext(ctx, "tcp", listener.Addr().String())
-			if conn != nil {
-				conn.Close()
-			}
-			if err == nil {
-				t.Error("full owner admitted waiter")
-			}
-		})
-	}
-	ownerWait(t, func() bool { return d.snapshot().Dialing == d.maxDials })
-	if conn, err := d.DialContext(context.Background(), "tcp", listener.Addr().String()); err != errConnections || conn != nil {
-		t.Fatal("unbounded dial waiters", err)
-	}
-	cancel()
-	workers.Wait()
-	d.close()
-	ownerZero(t, d)
 }

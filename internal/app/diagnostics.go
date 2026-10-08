@@ -6,24 +6,23 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const diagnosticConnections = 4
-const diagnosticHandlers = 2
 const diagnosticTimeout = time.Second
 
-// HTTP/1 only, one request per connection. A stalled connection never retains a
-// handler slot beyond the read/write deadline. No timeout-handler goroutine or
-// detached gather is used: the bounded handler owns its gather until it returns.
+// HTTP/1 only, one request per connection, with read/write progress deadlines.
+// Each handler owns its gather until it returns; there is no detached gather or
+// handler concurrency gate.
 type diagnostics struct {
 	listener    net.Listener
 	http        *http.Server
-	slots       chan struct{}
-	connections chan struct{}
+	handlers    atomic.Int64
+	connections atomic.Int64
 	rejections  *prometheus.CounterVec
 	done        chan struct{}
 }
@@ -35,17 +34,15 @@ func (n *Node) openDiagnostics(address string) error {
 	}
 	opts := prometheus.CounterOpts{
 		Name: "weir_diagnostic_rejections_total",
-		Help: "Diagnostics-only connection, concurrency or request rejection.",
+		Help: "Invalid diagnostic requests.",
 	}
 	d := &diagnostics{
-		listener:    listener,
-		slots:       make(chan struct{}, diagnosticHandlers),
-		connections: make(chan struct{}, diagnosticConnections),
-		rejections:  prometheus.NewCounterVec(opts, []string{"reason"}),
-		done:        make(chan struct{}),
+		listener:   listener,
+		rejections: prometheus.NewCounterVec(opts, []string{"reason"}),
+		done:       make(chan struct{}),
 	}
 	n.diagnostics = d
-	for _, reason := range []string{"connections", "handlers", "request"} {
+	for _, reason := range []string{"request"} {
 		d.rejections.WithLabelValues(reason)
 	}
 	if err := n.registry.Register(d); err != nil {
@@ -56,14 +53,8 @@ func (n *Node) openDiagnostics(address string) error {
 	metrics := promhttp.HandlerFor(n.registry, options)
 	handler := func(w http.ResponseWriter, request *http.Request) {
 		w.Header().Set("Connection", "close")
-		select {
-		case d.slots <- struct{}{}:
-			defer func() { <-d.slots }()
-		default:
-			d.rejections.WithLabelValues("handlers").Inc()
-			http.Error(w, "diagnostics busy", http.StatusServiceUnavailable)
-			return
-		}
+		d.handlers.Add(1)
+		defer d.handlers.Add(-1)
 		if request.Method != http.MethodGet || request.ContentLength != 0 ||
 			len(request.TransferEncoding) != 0 || request.URL.RawQuery != "" {
 			d.rejections.WithLabelValues("request").Inc()
@@ -126,13 +117,11 @@ func (d *diagnostics) Describe(ch chan<- *prometheus.Desc) {
 
 func (d *diagnostics) Collect(ch chan<- prometheus.Metric) {
 	values := map[string]int{
-		"connections":       len(d.connections),
-		"connections_limit": cap(d.connections),
-		"handlers":          len(d.slots),
-		"handlers_limit":    cap(d.slots),
+		"connections": int(d.connections.Load()),
+		"handlers":    int(d.handlers.Load()),
 	}
 	for name, value := range values {
-		desc := prometheus.NewDesc("weir_diagnostic_"+name, "Independent diagnostic occupancy or limit.", nil, nil)
+		desc := prometheus.NewDesc("weir_diagnostic_"+name, "Independent diagnostic connection and handler occupancy.", nil, nil)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
 	}
 	d.rejections.Collect(ch)
@@ -151,26 +140,19 @@ type diagnosticConn struct {
 }
 
 func (l *diagnosticListener) Accept() (net.Conn, error) {
-	for {
-		conn, err := l.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-		select {
-		case l.owner.connections <- struct{}{}:
-			bounded := &diagnosticConn{Conn: conn, owner: l.owner}
-			return bounded, nil
-		default:
-			l.owner.rejections.WithLabelValues("connections").Inc()
-			_ = conn.Close()
-		}
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
 	}
+	l.owner.connections.Add(1)
+	connection := &diagnosticConn{Conn: conn, owner: l.owner}
+	return connection, nil
 }
 
 func (c *diagnosticConn) Close() error {
 	c.once.Do(func() {
 		c.err = c.Conn.Close()
-		<-c.owner.connections
+		c.owner.connections.Add(-1)
 	})
 	return c.err
 }

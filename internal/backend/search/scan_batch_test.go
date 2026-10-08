@@ -49,7 +49,7 @@ func scanBatchAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	transport := newTransport(1)
+	transport := newTransport()
 	t.Cleanup(transport.CloseIdleConnections)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	adapter := &Adapter{
@@ -439,8 +439,12 @@ func TestScanOpenAndFetchShareDeadlineAndCleanup(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			work.BackendTimeout = 200 * time.Millisecond
-			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+
+			deadline := time.Second
+			if phase == "cumulative_deadline" {
+				deadline = 180 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), deadline)
 			defer cancel()
 			var end *pb.ScanEnd
 			documents := 0

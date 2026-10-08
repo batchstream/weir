@@ -1,13 +1,11 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir/internal/server"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -153,73 +151,6 @@ func TestByteSizeYAML(t *testing.T) {
 		err := value.UnmarshalYAML(document.Content[0])
 		if err == nil || strings.Contains(err.Error(), "sentinel") || value != 512<<20 {
 			t.Fatal("invalid YAML byte size accepted, changed state or leaked input", err)
-		}
-	}
-}
-
-func TestGroupedConfigurationDefaultsAndConversion(t *testing.T) {
-	input := `listeners:
-  application: 127.0.0.1:0
-memory: 1GiB
-transport:
-  max_sessions: 1
-  timeouts:
-    request: 1.5s
-`
-	basic, err := DecodeBasic(strings.NewReader(input))
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := server.DefaultLimits()
-	expected.Sessions = 1
-	expected.RequestLifetime = 1500 * time.Millisecond
-	if basic.Transport.serverLimits() != expected || basic.Memory != 1<<30 {
-		t.Fatal("partial nested settings discarded defaults or changed units")
-	}
-	cfg := emptyConfig(t)
-	cfg.Basic = basic
-	node, err := Open(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer node.Close(context.Background())
-	if budget := node.guard.Snapshot().Budget; budget != 1<<30 {
-		t.Fatal("assembly converted the byte budget a second time", budget)
-	}
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sections map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &sections); err != nil || len(sections) != 2 || sections["basic"] == nil || sections["routing"] == nil {
-		t.Fatal("assembled configuration should have explicit diagnostic JSON sections", err)
-	}
-}
-
-func TestGroupedConfigurationBounds(t *testing.T) {
-	prefix := "listeners:\n  application: 127.0.0.1:0\n"
-	for _, fragment := range []string{
-		"memory: 64MiB\n", "memory: 64GiB\n",
-		`transport:
-  max_connections: 1
-  max_sessions: 64
-  timeouts:
-    request: 1ns
-    stall: 30s
-`,
-	} {
-		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err != nil {
-			t.Fatal("valid inclusive bound rejected", fragment, err)
-		}
-	}
-	for _, fragment := range []string{
-		"memory: 67108863B\n", "memory: 68719476737B\n",
-		"transport:\n  max_connections: 0\n", "transport:\n  max_connections: 9223372036854775807\n",
-		"transport:\n  max_sessions: 0\n", "transport:\n  max_sessions: 9223372036854775807\n",
-		"transport:\n  timeouts:\n    request: 0s\n", "transport:\n  timeouts:\n    request: -1s\n",
-	} {
-		if _, err := DecodeBasic(strings.NewReader(prefix + fragment)); err == nil {
-			t.Fatal("out-of-range grouped configuration accepted", fragment)
 		}
 	}
 }

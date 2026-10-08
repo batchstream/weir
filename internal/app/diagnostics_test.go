@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/batchstream/weir/internal/testutil"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -27,7 +27,7 @@ func diagnosticNode(t *testing.T) *Node {
 	t.Helper()
 	cfg := emptyConfig(t)
 	cfg.Basic.Diagnostics.Address = "127.0.0.1:0"
-	cfg.Basic.Transport.MaxSessions = 1
+
 	cfg.Basic.Transport.Timeouts.Stall = Duration(500 * time.Millisecond)
 	node, err := Open(context.Background(), cfg)
 	if err != nil {
@@ -104,7 +104,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	}
 	n.admission.SetOverloaded(false)
 	// Hold one real decoded-input slot while drain starts; diagnostics retain
-	// their own slots and must remain available after data readiness falls.
+	// independent request lifetimes and must remain available after data readiness falls.
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
 	blocked, err := conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
@@ -209,7 +209,7 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 			_ = conn.Close()
 		}
 	}()
-	for range diagnosticConnections {
+	for range 16 {
 		conn, err := net.Dial("tcp", n.DiagnosticAddress())
 		if err != nil {
 			t.Fatal(err)
@@ -218,26 +218,17 @@ func TestDiagnosticsConnectionLimitsDeadlinesAndStartupFailure(t *testing.T) {
 		_, _ = io.WriteString(conn, "GET /metrics HTTP/1.1\r\nHost: local\r\nX-Slow:")
 	}
 	until := time.Now().Add(time.Second)
-	for len(n.diagnostics.connections) != diagnosticConnections {
+	for int(n.diagnostics.connections.Load()) != 16 {
 		if time.Now().After(until) {
 			t.Fatal("connections not occupied")
 		}
 		time.Sleep(time.Millisecond)
 	}
-	extra, err := net.Dial("tcp", n.DiagnosticAddress())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer extra.Close()
-	_ = extra.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	var b [1]byte
-	if _, err := extra.Read(b[:]); err == nil {
-		t.Fatal("connection limit")
-	} else if e, ok := err.(net.Error); ok && e.Timeout() {
-		t.Fatal("queued instead of rejecting")
+	if health(t, n, "/livez") != http.StatusOK {
+		t.Fatal("slow connections blocked an independent diagnostic request")
 	}
 	time.Sleep(diagnosticTimeout + 100*time.Millisecond)
-	if len(n.diagnostics.connections) != 0 || health(t, n, "/livez") != 200 {
+	if int(n.diagnostics.connections.Load()) != 0 || health(t, n, "/livez") != 200 {
 		t.Fatal("slow headers retained connections")
 	}
 	// Oversized headers and body-bearing requests are bounded by the same path.
@@ -312,8 +303,8 @@ func TestIntranetDiagnosticsRequireExplicitOptIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	metrics := testmetrics.Scrape(t, "127.0.0.1:"+port)
-	if metrics["weir_diagnostic_connections_limit"] == nil {
-		t.Fatal("wildcard diagnostic listener did not serve bounded metrics")
+	if metrics["weir_diagnostic_connections"] == nil {
+		t.Fatal("wildcard diagnostic listener did not serve metrics")
 	}
 }
 
@@ -376,7 +367,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 	n.Start(context.Background())
 	for round := 0; round < 3; round++ {
 		var sockets []net.Conn
-		for range diagnosticHandlers {
+		for range 8 {
 			conn, err := net.Dial("tcp", n.DiagnosticAddress())
 			if err != nil {
 				t.Fatal(err)
@@ -389,22 +380,22 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 			sockets = append(sockets, conn)
 		}
 		until := time.Now().Add(500 * time.Millisecond)
-		for len(n.diagnostics.slots) != diagnosticHandlers {
+		for int(n.diagnostics.handlers.Load()) != 8 {
 			if time.Now().After(until) {
 				t.Fatal("scrapes did not block at output")
 			}
 			time.Sleep(time.Millisecond)
 		}
 		time.Sleep(80 * time.Millisecond)
-		if len(n.diagnostics.slots) != diagnosticHandlers {
+		if int(n.diagnostics.handlers.Load()) != 8 {
 			t.Fatal("scrapes were not held by stopped reader")
 		}
 		started := time.Now()
-		if health(t, n, "/livez") != 503 || time.Since(started) > 200*time.Millisecond {
-			t.Fatal("handler capacity queued")
+		if health(t, n, "/livez") != 200 || time.Since(started) > 200*time.Millisecond {
+			t.Fatal("blocked scrapes prevented health requests")
 		}
 		until = time.Now().Add(2 * time.Second)
-		for len(n.diagnostics.slots) != 0 || len(n.diagnostics.connections) != 0 {
+		for int(n.diagnostics.handlers.Load()) != 0 || int(n.diagnostics.connections.Load()) != 0 {
 			if time.Now().After(until) {
 				t.Fatal("stopped reader retained response/handler")
 			}
@@ -417,10 +408,7 @@ func TestDiagnosticsStoppedScrapesAndConcurrentHandlersBounded(t *testing.T) {
 			t.Fatal("diagnostics failed to recover")
 		}
 	}
-	families := testmetrics.Scrape(t, n.DiagnosticAddress())
-	if testmetrics.Sample(families, "weir_diagnostic_rejections_total", map[string]string{"reason": "handlers"}).GetCounter().GetValue() != 3 {
-		t.Fatal("handler rejection count")
-	}
+
 }
 
 func TestDiagnosticsDisabledAndFatalListenerReadiness(t *testing.T) {

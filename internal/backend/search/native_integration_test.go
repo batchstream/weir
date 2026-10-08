@@ -56,7 +56,7 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			defer proxy.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			cfg := Config{Store: "search", URL: proxy.URL, Pool: 1}
+			cfg := Config{Store: "search", URL: proxy.URL}
 			a, err := Open(ctx, cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -169,7 +169,7 @@ func TestSearchNativeLaterInvalidNeverEscapesOrReplays(t *testing.T) {
 	defer proxy.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	cfg := Config{Store: "search", URL: proxy.URL, Pool: 1}
+	cfg := Config{Store: "search", URL: proxy.URL}
 	a, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)

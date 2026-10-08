@@ -1,8 +1,9 @@
 package search
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
 	"log/slog"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func (a *Adapter) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCollect(a, ch) }
@@ -11,9 +12,8 @@ func (a *Adapter) Collect(ch chan<- prometheus.Metric) {
 	d := a.dialer
 	d.mu.Lock()
 	values := map[string]float64{
-		"owned":    float64(len(d.slots)),
+		"owned":    float64(d.owned),
 		"peak":     float64(d.peak),
-		"limit":    float64(cap(d.slots)),
 		"acquired": float64(d.acquired),
 		"released": float64(d.released),
 	}
@@ -40,11 +40,9 @@ func (a *Adapter) logConnections() {
 		"store",
 		a.config.Store,
 		"owned",
-		len(d.slots),
+		d.owned,
 		"peak",
 		d.peak,
-		"limit",
-		cap(d.slots),
 		"acquired",
 		d.acquired,
 		"released",

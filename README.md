@@ -9,8 +9,8 @@ exchanges. Business requests execute only local Stores.
 `Execute` is a finite bidirectional stream of typed requests and results. SDK
 Read and Mutate calls send one record per request for one Store. The server
 receives through a bounded ticket queue, combines compatible queued records into
-database batches and publishes results in input order. Store byte budgets and
-slow consumption stop further admission. Same-resource mutations within a stream
+database batches and publishes results in input order. Waiting queue capacity and
+slow consumption apply backpressure. Same-resource mutations within a stream
 execute in input order.
 Lua runs inside the single Weir process. Unconfirmed writes remain indeterminate
 after transport failure and are never automatically replayed.
@@ -55,12 +55,8 @@ discovery:
   advertise: ["127.0.0.1:7447"]
 diagnostics:
   address: "127.0.0.1:7449"
-memory: "2GiB"
 transport:
-  max_connections: 16
-  max_sessions: 4
   timeouts:
-    request: "15m"
     stall: "30s"
 ```
 
@@ -71,10 +67,7 @@ stores:
   - name: "mongo"
     mongodb:
       uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-    max_concurrency: 2
     max_batch_operations: 32
-    max_read_size: "16KiB"
-    backend_timeout: "2s"
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -96,19 +89,25 @@ unknown/duplicate fields, anchors, aliases, explicit tags and documents over
 128 KiB are rejected. `weir check` validates configuration without connecting to
 peers or backends. Configuration changes take effect after a restart.
 
-Store defaults are two concurrent backend executions, 32 operations per batch,
-a `16KiB` ordinary-read limit and a `384MiB` backend working budget. There is no
+Store defaults are 32 operations and 8MiB of input per batch. There is no
 collection delay; queued RPCs combine by namespace, actual input bytes and
 `max_batch_operations`. Large client batches split into sequential bounded groups.
 Lua transforms also combine compatible queued requests: MongoDB batches reads and
 writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.
 Adapters issue their native read and write
-commands for each group. Each Read reserves its configured maximum output plus framing before admission;
-that reservation remains held through publication. Tune against completed
-throughput, backend CPU and tail latency. Memory is admission accounting; use an OS
-or container limit for a hard memory boundary. Execution concurrency and backend
-working budgets remain independent of peer discovery.
+commands for each group. `max_batch_bytes` bounds the retained input per batch.
+`batch_queue.max_operations` (default 1024) and `batch_queue.max_bytes` (default
+32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
+backpressure until capacity is available or the caller cancels. Active execution,
+backend pools, RPCs and connections have no Weir concurrency cap. Ordinary Read
+uses the protocol's 2MiB document bound.
+
+Memory capacity is detected from physical host memory, a finite process
+address-space limit, and visible container memory limits. Actual process and
+container memory pressure controls overload admission; no configured budget or
+startup working-set reservation can reject otherwise valid configuration.
+Use container/OS memory limits for the hard boundary.
 
 A MongoDB Lua transaction can contain records from several RPCs. A database write
 failure rolls back that transaction; a confirmed abort can be retried within the
@@ -118,18 +117,13 @@ writes. Search retries only items with a confirmed version conflict. Physical
 groups can split further to bound retained read sources and generated writes;
 clients cannot treat Mutate or several RPCs as one application transaction.
 
-`backend_timeout` is a positive duration and defaults to `2s` when omitted.
-Record execution gets one absolute deadline from dispatch through qualification,
-reads and writes. A shared group uses the latest participating caller deadline,
-capped by `backend_timeout`; an earlier caller stops waiting independently, and
-canceling every caller stops the backend work. Queueing consumes the original RPC
-lifetime. Set an explicit longer budget, such as `10s`, for that service's SLO.
-Connected Search requests inherit this deadline for both headers and body;
-connection setup has a separate `2s` bound. A sent write whose acknowledgement
-times out remains `UNKNOWN`, with `DEADLINE_EXCEEDED` and a sanitized cause; it is
-never replayed. Scan pages use the same backend budget. Search Native retains its
-cumulative backend I/O budget, paused while publishing to the caller, so this
-setting is not the entire streaming RPC's wall-clock lifetime.
+Business RPCs and backend execution inherit caller cancellation and deadlines.
+A shared batch uses the latest caller deadline; an unbounded caller keeps that
+batch unbounded, while individual plans retain their own contexts. Canceling
+all callers stops shared backend work. Scan and Native use the same caller
+lifetime. Connection setup, stream stalls and cleanup retain their lifecycle
+timeouts. A sent write whose acknowledgement is lost remains `UNKNOWN` and is
+never replayed automatically.
 
 MongoDB and Search authentication can use explicit `username`/`password` fields
 or `username_file`/`password_file`; each credential has exactly one source. Search
@@ -140,7 +134,7 @@ backend configuration stay local and are never distributed in the Store director
 
 Application and peer listeners use plaintext gRPC on an isolated network. Peer
 metadata is not authentication. Lua programs must be trusted: a fresh restricted
-VM, execution/source/value/stack limits and bounded concurrency do not impose a
+VM and source/value/stack/instruction limits do not impose a
 hard allocation limit on arbitrary Lua objects.
 Transforms use `function(current, incoming)` with ordinary Lua tables, precise
 64-bit integers and a fixed operation timestamp; see the [Lua guide](docs/lua.md)
@@ -220,7 +214,7 @@ MongoDB scans paginate by ascending `_id` without a retained cursor; Search
 continuations carry the backend PIT snapshot. Consumers must tolerate repeated
 documents when restarting an interrupted page. Scan fetches up to 128 documents
 per backend call and retains at most 4 MiB for publication. It releases the
-backend execution permit before sending that batch, so a slow consumer does not
+backend execution workspace before sending that batch, so a slow consumer does not
 block other database work. Both backends learn a smaller fetch capacity from
 large documents and retain it in the opaque continuation token. Search also
 reduces an excessive native response before retrying the same read.
@@ -243,7 +237,7 @@ group's Ready Pods. S1 need not be headless. Scaling changes the DNS instance se
 Store reassignment changes the directory mapping.
 
 See [Kubernetes scaling](deploy/kubernetes/scaling.md) for aggregate backend
-connection budgets. Adding Weir replicas does not increase the database's capacity.
+connection demand. Adding Weir replicas does not increase the database's capacity.
 
 ## Development
 
@@ -263,10 +257,9 @@ failpoint, so concurrent packages can overwrite each other's faults and cleanup.
 Matched direct/Weir benchmarks and current blackbox integration live in the
 independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
 
-Monitoring migrations: `weir_store_feedback` is removed. Use per-record outcome
-counters for backend evidence and `weir_store_backend_timeouts_total` for
-Runtime-owned backend deadlines reached while callers remain interested. Neither
-caller cancellation nor Native's separate I/O timeout is counted as such a deadline.
+Monitor active executions, queue occupancy and per-record backend outcomes.
+The queue exposes count and byte capacity metrics; removed concurrency and
+backend-timeout limits no longer publish limit or owned-timeout metrics.
 
 Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
