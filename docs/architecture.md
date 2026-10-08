@@ -50,12 +50,11 @@ server nor SDK automatically replays possible writes.
 
 ## Native gRPC ingress
 
-The server uses grpc.Server.Serve on a bounded listener. Application listeners
-serve only the public StoreService; peer listeners serve only SyncDirectory.
-Control calls have separate finite admission and short deadlines. InTapHandle
-reserves an RPC slot before DATA decoding. Request deadlines, cancellation and
-input-stall watchdogs apply to discovery and streaming requests. An expired request
-that never reaches a handler still releases its slot.
+The server uses grpc.Server.Serve with connection lifecycle tracking. Application
+listeners serve only the public StoreService; peer listeners serve only SyncDirectory.
+InTapHandle checks ingress before DATA decoding without a concurrency gate.
+Caller deadlines, cancellation and input-stall watchdogs apply to discovery and
+streaming requests. RPC occupancy is measured through transport completion.
 
 Deadlines and idle input cancel only their owning RPC, so other calls on the same
 HTTP/2 connection continue. Native keepalive bounds a connection that cannot
@@ -69,67 +68,43 @@ contains only public ownership/address advertisements, never backend credentials
 
 ## Memory and admission
 
-| Budget | Default or bound |
+| Capacity | Default or bound |
 | --- | --- |
-| Read/Mutate input | One bounded record per request; no whole-call size limit |
-| Record document | 2 MiB; ordinary Read additionally obeys max_read_size |
-| Ordinary Read source | Default 16 KiB; configurable 1 KiB–2 MiB |
-| Native input | Generic 8 MiB; MongoDB command 4 MiB; Search HTTP message 8 MiB including headers |
-| Execute Event | 2 MiB plus bounded framing/metadata allowance |
-| Store pending requests | 32 MiB of prepared input and request metadata |
-| Store retained results | 32 MiB of terminal metadata and actual read data |
-| Store backend workspace | 384 MiB; configurable with working_memory |
-| Physical batch input | 8 MiB / 32 operations, configurable |
-| Application admission | 4 business RPCs / 16 accepted connections |
-| Encoded native output queue | bounded independently of total stream length |
-| Directory controls | 2 concurrent controls per listener; bounded exchanges |
-| Process admission threshold | 2 GiB |
+| Record document / ordinary Read source | Protocol document bound: 2 MiB |
+| Read/Mutate stream | No total record limit; 32 tickets in the publication window |
+| Native input | Protocol 8 MiB; backend encoding boundaries also apply |
+| Store waiting queue | 1024 operations / 32 MiB, configurable via batch_queue |
+| Physical batch input | 32 operations / 8 MiB, configurable |
+| Business connections, RPCs and active executions | No Weir concurrency limit |
+| Process memory capacity | Automatically detected from host/process/container limits |
 
-There is no whole-call item-count limit. Individual message bounds, finite ticket
-credits, Store byte budgets and physical grouping bounds determine concurrent
-capacity. A wire pre-scan rejects duplicate routing fields and multiple Command
-variants before protobuf construction.
+The waiting queue counts prepared input and scheduler metadata. Dispatch releases
+its capacity immediately; active executions and completed results do not hold queue
+credits. Full queues wait for capacity or caller cancellation. A stream retains a
+finite publication window, so a stopped reader cannot accumulate unlimited results
+inside that stream. Protocol frame boundaries are checked before protobuf construction.
 
-A stream holds at most 32 admitted or publishing tickets and one currently
-received request awaiting Store admission. Admitted input and prepared metadata
-are charged to the Store pending budget. Read tickets reserve their configured
-maximum result size before execution. Shared capacity exhaustion waits for
-admission or cancellation. Every result remains charged until publication ends;
-slow consumers therefore stop further admission. Terminal events and database
-workspace remain bounded independently of total call length.
-Store shutdown cancels backend work while preserving record results until their
-consumer acknowledges them or the owning RPC ends.
+Process and container memory observations drive overload admission. Memory capacity
+uses the smallest known physical host, finite process address-space, and visible
+container limit. Container pressure is checked at every finite visible ancestor;
+each current/limit pair keeps its own accounting. Unknown observations do not
+manufacture overload. Container/OS limits remain the hard memory boundary.
 
-Backend working charges cover bounded native replies and decoding scratch.
-MongoDB uses its native bounded cursor reply; Search caps multi-get response bytes.
-Physical grouping does not multiply the maximum document size by the item count.
-`working_memory` is a byte budget, and `max_concurrency` is an independent upper
-bound. The smaller capacity applies. At `max_read_size: 2MiB`, a MongoDB read batch
-reserves 40.125MiB and a Search batch reserves 96MiB; the default workspace permits
-9 and 4 such batches respectively. Size the workspace for the required concurrency
-and increase process `memory` to cover it. Configuration rejects an insufficient
-process envelope before opening backends.
-Encoded response bytes remain charged until the native transport frees its final
-buffer reference, including after handler completion. Exhausted output capacity
-fails boundedly. A record's application result charges remain held until its response's encoded
-buffer ownership ends, then its ticket is acknowledged.
-Cancellation releases application data; any independent encoded copy remains
-charged until the transport drops its final reference.
+Encoded output ownership is tracked until the transport frees the last buffer
+reference, including after handler completion. There is no aggregate response
+quota derived from a fixed RPC count. Cancellation releases application data;
+independent encoded copies remain measured until transport ownership ends.
 
-Configuration validates a conservative sum of connection, RPC, Store and control
-envelopes. This is admission accounting, not an allocator or RSS limit: GC slack,
-runtime stacks and native allocations remain observable separately. Deployments
-must set their OS/container limit and observe overload shedding. Lua is a trusted
-program facility with source/value/stack/concurrency/deadline limits, without a
-hard VM allocation sandbox.
+Lua runs in the main Weir process with caller context and source/value/stack/work
+bounds. There is no evaluation semaphore, fixed evaluation deadline, or hard VM
+allocation sandbox. Programs must be trusted.
 
 ## Scheduling and backend work
 
 Each prepared record enters one Store scheduler directly; there is no timed
-collection window or polling. When an execution permit becomes available, the
+collection window or polling. The
 scheduler combines compatible queued records by target, actual input bytes and
-max_batch_operations. One selected execution holds one working envelope sized
-for its largest operation. A session/resource key serializes same-resource work
+max_batch_operations and max_batch_bytes. A session/resource key serializes same-resource work
 within a stream; distinct resources and streams can share a physical batch.
 Scan and Native use the same scheduler with their required singleton lifecycle.
 Execution mode and cleanup follow the command type. A Scan adapter returns whether
@@ -138,10 +113,10 @@ mutable continuation flag on the plan.
 
 Every record keeps its owning RPC context, result reservation and ordinal. Backend
 results are assigned by dispatched plan identity, because different RPCs can use
-the same ordinal. The shared backend context uses the latest caller deadline,
-capped by the configured backend timeout. Canceling one caller does not interrupt
+the same ordinal. The shared backend context uses the latest caller deadline;
+an unbounded caller keeps that context unbounded. Canceling one caller does not interrupt
 its peers; when all callers stop waiting, the shared execution is canceled.
-Admission and working charges remain held until execution finishes. A confirmed
+Queue capacity is released at dispatch; memory estimates remain observable until execution finishes. A confirmed
 write retains its actual outcome after cancellation; a missing acknowledgement
 for a dispatched write remains UNKNOWN. Different RPCs gain no additional
 transaction or ordering guarantee.
@@ -152,27 +127,23 @@ one check; failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 
-The active batch set is the source of truth for execution concurrency. Each Store
-dispatches while configured max_concurrency and backend working bytes
-permit. Transport failures do not replay mutations; the bounded Lua conflict and confirmed-abort
-retries described below retain the original execution deadline. Pending work
-remains bounded by queue bytes and deadlines.
+The active batch set measures execution concurrency without capping it. There is
+no Store workspace ceiling or backend connection-pool maximum. Transport failures
+do not replay mutations; confirmed conflicts and aborts can retry within the
+participating caller contexts. Waiting work is bounded by queue count and bytes.
 
 Metrics observe execution rather than control scheduling. The former
 `weir_store_feedback` last-result gauge is removed.
-`weir_store_backend_timeouts_total` counts Runtime-owned backend deadlines reached
-while a caller remains interested; caller cancellation and Native's separately
-managed backend I/O allowance are outside this counter. Per-record outcome
-counters retain the actual backend evidence, including unknown writes.
+Queue occupancy and capacity metrics describe waiting operations. Active execution
+and per-record outcome counters retain actual backend evidence, including unknown writes.
 
 Scan fetches up to 128 documents per backend call, bounded by the remaining
 logical page size. It validates the complete native response and retains an
-ordered prefix of at most 4 MiB, then releases the working reservation and
-execution permit before publication. The result reservation remains held through
-publication and request completion. A blocked scan at concurrency one allows
-independent record work. MongoDB reserves 48 MiB and Search 64 MiB of working
-bytes for their native buffers and validation; this bounds admitted work and is
-not a measurement of process RSS. Only a validated empty response establishes
+ordered prefix of at most 4 MiB, then finishes backend execution before publication.
+The result remains owned through publication and request completion. A blocked
+Scan reader does not stop independent work. MongoDB estimates 48 MiB and Search
+64 MiB of working bytes for native buffers and validation; these metrics do not
+limit execution or measure process RSS. Only a validated empty response establishes
 exhaustion. An unretained tail is fetched again from the last accepted record.
 
 Both backends learn a smaller fetch capacity from the retained prefix size.

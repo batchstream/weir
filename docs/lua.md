@@ -113,8 +113,9 @@ while retaining the original business rules.
 
 The source is at most 16 KiB. Each input/current/result document has at most
 32 levels, 4096 nodes and 256 KiB of value data. Compilation, top-level execution
-and the callback share a 500ms deadline and bounded call/stack/work budgets.
-At most four evaluations run simultaneously, each inside the main Weir process.
+and the callback inherit the caller context and retain bounded call/stack/instruction
+work. Evaluations run concurrently inside the main Weir process without a fixed
+concurrency cap or evaluation timeout.
 Programs must be trusted: these bounds do not impose a hard heap quota on
 arbitrary temporary Lua objects. Deployment memory limits still apply.
 
