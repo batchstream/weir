@@ -122,8 +122,9 @@ for a dispatched write remains UNKNOWN. Different RPCs gain no additional
 transaction or ordering guarantee.
 
 MongoDB collections and Search indices receive a structural metadata check on
-first use, cached per Store for up to 64 targets. Concurrent cold requests share
-one check; failed checks are not cached. The oldest completed target is evicted
+first use, cached per Store according to `backend.metadata_cache_entries` (default
+64 targets). Zero disables completed caching; concurrent cold requests still share
+one check. Failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 

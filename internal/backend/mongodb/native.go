@@ -122,7 +122,7 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	if len(reply) == 0 {
 		return protocol.NativeFailure(true, failure)
 	}
-	nodes := len(raw)
+	nodes := len(reply)
 	fields, framingErr := scanFields(reply)
 	envelopeOK := false
 	switch fields["ok"].Type {
