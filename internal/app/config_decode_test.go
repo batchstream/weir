@@ -275,7 +275,8 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	connection := &SearchConnection{Username: "user", Password: "secret-sentinel", CAFile: "/missing/ca-secret-sentinel.pem"}
+	credentials := Credentials{Username: "user", Password: "secret-sentinel"}
+	connection := &SearchConnection{Credentials: credentials, CAFile: "/missing/ca-secret-sentinel.pem"}
 	backend := &Search{
 		URL:        "https://unresolved.invalid:443",
 		Connection: connection,
@@ -395,7 +396,7 @@ func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
 	if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
 		t.Fatal("valid secret-bearing fields should pass pure validation", err)
 	}
-	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
+	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls", "credentials"} {
 		unknown := strings.Replace(input, "      connection:\n", "      connection:\n        "+field+": field-secret-sentinel\n", 1)
 		_, err := DecodeRouting(strings.NewReader(unknown))
 		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {

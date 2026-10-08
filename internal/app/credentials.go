@@ -17,25 +17,26 @@ const (
 	maxCredentialPathBytes = 2048
 )
 
+func (l *Local) credentials() *Credentials {
+	if l.MongoDB != nil {
+		return &l.MongoDB.Credentials
+	}
+	if l.Search != nil && l.Search.Connection != nil {
+		return &l.Search.Connection.Credentials
+	}
+	return nil
+}
+
 func (cfg RoutingConfig) validateCredentialSources() error {
 	for _, service := range cfg.Stores {
-		if service.Local == nil {
-			continue
-		}
 		if m := service.Local.MongoDB; m != nil {
 			parsed, err := url.Parse(m.URI)
 			if err != nil || parsed.User != nil {
 				return errors.New("MongoDB URI must not contain credentials")
 			}
-			err = validateCredentialPair(m.Username, m.Password, m.UsernameFile, m.PasswordFile)
-			if err != nil {
-				return err
-			}
 		}
-		if s := service.Local.Search; s != nil && s.Connection != nil {
-			c := s.Connection
-			err := validateCredentialPair(c.Username, c.Password, c.UsernameFile, c.PasswordFile)
-			if err != nil {
+		if credentials := service.Local.credentials(); credentials != nil {
+			if err := credentials.validateSources(); err != nil {
 				return err
 			}
 		}
@@ -43,20 +44,20 @@ func (cfg RoutingConfig) validateCredentialSources() error {
 	return nil
 }
 
-func validateCredentialPair(username, password, usernameFile, passwordFile string) error {
-	if username != "" && usernameFile != "" || password != "" && passwordFile != "" {
+func (c Credentials) validateSources() error {
+	if c.Username != "" && c.UsernameFile != "" || c.Password != "" && c.PasswordFile != "" {
 		return errors.New("credential value and file are mutually exclusive")
 	}
-	usernameSet := username != "" || usernameFile != ""
-	passwordSet := password != "" || passwordFile != ""
+	usernameSet := c.Username != "" || c.UsernameFile != ""
+	passwordSet := c.Password != "" || c.PasswordFile != ""
 	if usernameSet != passwordSet {
 		return errors.New("credentials require both username and password sources")
 	}
-	if username != "" && !validCredentialText(username, maxUsernameBytes) ||
-		password != "" && !validCredentialText(password, maxPasswordBytes) {
+	if c.Username != "" && !validCredentialText(c.Username, maxUsernameBytes) ||
+		c.Password != "" && !validCredentialText(c.Password, maxPasswordBytes) {
 		return errors.New("invalid credential value")
 	}
-	for _, filename := range []string{usernameFile, passwordFile} {
+	for _, filename := range []string{c.UsernameFile, c.PasswordFile} {
 		if filename != "" && (strings.TrimSpace(filename) == "" || !validCredentialText(filename, maxCredentialPathBytes)) {
 			return errors.New("invalid credential file configuration")
 		}
@@ -85,35 +86,26 @@ func (cfg RoutingConfig) resolveCredentials(directory string) error {
 		return err
 	}
 	for _, service := range cfg.Stores {
-		if service.Local == nil {
-			continue
-		}
-		if m := service.Local.MongoDB; m != nil {
-			username, err := resolveCredentialValue(m.Username, m.UsernameFile, directory, maxUsernameBytes)
-			if err != nil {
+		if credentials := service.Local.credentials(); credentials != nil {
+			if err := credentials.resolve(directory); err != nil {
 				return err
 			}
-			password, err := resolveCredentialValue(m.Password, m.PasswordFile, directory, maxPasswordBytes)
-			if err != nil {
-				return err
-			}
-			m.Username, m.Password = username, password
-			m.UsernameFile, m.PasswordFile = "", ""
-		}
-		if s := service.Local.Search; s != nil && s.Connection != nil {
-			c := s.Connection
-			username, err := resolveCredentialValue(c.Username, c.UsernameFile, directory, maxUsernameBytes)
-			if err != nil {
-				return err
-			}
-			password, err := resolveCredentialValue(c.Password, c.PasswordFile, directory, maxPasswordBytes)
-			if err != nil {
-				return err
-			}
-			c.Username, c.Password = username, password
-			c.UsernameFile, c.PasswordFile = "", ""
 		}
 	}
+	return nil
+}
+
+func (c *Credentials) resolve(directory string) error {
+	username, err := resolveCredentialValue(c.Username, c.UsernameFile, directory, maxUsernameBytes)
+	if err != nil {
+		return err
+	}
+	password, err := resolveCredentialValue(c.Password, c.PasswordFile, directory, maxPasswordBytes)
+	if err != nil {
+		return err
+	}
+	c.Username, c.Password = username, password
+	c.UsernameFile, c.PasswordFile = "", ""
 	return nil
 }
 

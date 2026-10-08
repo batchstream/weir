@@ -24,7 +24,8 @@ import (
 func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	fixture := testsearch.OpenSecure(t)
 	b := fixture.Backend
-	connection := &SearchConnection{Username: b.Username, Password: b.Password, CAFile: b.CAFile}
+	credentials := Credentials{Username: b.Username, Password: b.Password}
+	connection := &SearchConnection{Credentials: credentials, CAFile: b.CAFile}
 	backend := &Search{URL: b.URL, Connection: connection}
 	t.Run("partial-startup-cleanup", func(t *testing.T) {
 		base := secureHTTPOpenCount(t, fixture.Admin)

@@ -41,8 +41,8 @@ func TestLoadWithoutRoutingDoesNotDiscoverFiles(t *testing.T) {
 				}
 			} else if mode == "missing-credential" {
 				withBackend := credentialTestConfig(t, "search")
-				fields := credentialFields(&withBackend)
-				*fields.username, *fields.usernameFile = "", "missing-secret-sentinel.txt"
+				fields := withBackend.Routing.Stores[0].Local.credentials()
+				fields.Username, fields.UsernameFile = "", "missing-secret-sentinel.txt"
 				routing, err := yaml.Marshal(withBackend.Routing)
 				if err != nil {
 					t.Fatal(err)

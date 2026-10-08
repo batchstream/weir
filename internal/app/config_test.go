@@ -51,11 +51,11 @@ func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
 	uri := "mongodb://unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
-	mongo := &Mongo{
-		URI:      uri,
+	credentials := Credentials{
 		Username: "user",
 		Password: "password-sentinel",
 	}
+	mongo := &Mongo{URI: uri, Credentials: credentials}
 	local := &Local{MongoDB: mongo}
 	service := StoreConfig{Name: "records", Local: local}
 
@@ -83,11 +83,11 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 	address := listener.Addr().String()
 	_ = listener.Close()
 	uri := "mongodb://" + address + "/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true"
-	mongo := &Mongo{
-		URI:      uri,
+	credentials := Credentials{
 		Username: "user-sentinel",
 		Password: "password-sentinel",
 	}
+	mongo := &Mongo{URI: uri, Credentials: credentials}
 	local := &Local{MongoDB: mongo}
 	service := StoreConfig{Name: "records", Local: local}
 
