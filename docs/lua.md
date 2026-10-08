@@ -111,9 +111,9 @@ demonstrates history deduplication by nested values, tail limits and incoming-fi
 offer priority. It explicitly constructs empty arrays and recognizes typed leaves
 while retaining the original business rules.
 
-The source is at most 16 KiB. `lua.values` configures input/current/result
+The source is at most 16 KiB. Process `lua.values` configures input/current/result
 conversion, defaulting to 32 levels, 4096 nodes and the protocol 2 MiB document
-bound. `lua.vm` exposes optional instruction, call-depth and stack-slot budgets.
+bound. Process `lua.vm` exposes optional instruction, call-depth and stack-slot budgets.
 The default instruction budget is unlimited; zero call/stack settings use the
 VM native defaults. Compilation, top-level execution and the callback inherit
 the caller context. Evaluations run concurrently inside the main Weir process without a fixed

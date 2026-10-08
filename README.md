@@ -99,17 +99,19 @@ writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.
 Adapters issue their native read and write
 commands for each group. `batching.max_bytes` bounds the retained input per batch.
-`batching.queue.max_operations` (default 1024) and `batching.queue.max_bytes` (default
+`queue.max_operations` (default 1024) and `queue.max_bytes` (default
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. Active execution,
 backend pools, RPCs and connections have no Weir concurrency cap. Ordinary Read
 uses the protocol's 2MiB document bound.
 
 Store settings are grouped by responsibility: `backend` holds connection establishment
-and completed target caching (MongoDB connection workers are under
-`backend.mongodb.pool`), `batching` holds aggregation/exchange/queue sizes,
-`streaming` holds pending results and Scan batches, and `lua` holds optional VM
-and value conversion budgets. The former flat keys are rejected. Business work
+and completed target caching, native exchange chunk sizes, and the shared
+`authentication`/`tls` layout. MongoDB connection workers are under
+`backend.mongodb.pool`. Store `queue`, `batching` and `scan` hold waiting
+work, request aggregation and Scan publication batches. Process `transport` owns
+Execute flow control and independent keepalive/progress settings; process `lua`
+sets VM and conversion policy for every Store. The former flat keys are rejected. Business work
 has no default instruction budget or server-selection deadline; native exchanges
 split large batches rather than rejecting their combined input.
 
@@ -124,7 +126,8 @@ failure rolls back that transaction; a confirmed abort can be retried within the
 original deadline. An uncertain commit cannot start another write attempt. Lua
 keep, reject and evaluation failures have individual results and do not enqueue
 writes. Search retries only items with a confirmed version conflict. Physical
-groups can split further to bound retained read sources and generated writes;
+groups split generated write commands at the configured exchange or native BSON
+boundary, after a confirmed transaction abort; the IO setting is not a Lua workspace cap;
 clients cannot treat Mutate or several RPCs as one application transaction.
 
 Business RPCs and backend execution inherit caller cancellation and deadlines.
@@ -137,7 +140,7 @@ never replayed automatically.
 
 MongoDB and Search authentication can use explicit `username`/`password` fields
 or `username_file`/`password_file`; each credential has exactly one source. Search
-credentials belong under `search.connection`. Files resolve relative to the Store
+credentials belong under `backend.authentication`. Files resolve relative to the Store
 document, contain UTF-8 text and permit one final LF/CRLF. Usernames are limited to
 128 bytes and passwords to 256 bytes. URI userinfo is rejected. Authentication and
 backend configuration stay local and are never distributed in the Store directory.

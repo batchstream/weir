@@ -152,6 +152,8 @@ func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
 	limits := DefaultLimits()
 	limits.Stall = 75 * time.Millisecond
+	limits.KeepaliveInterval = time.Second
+	limits.KeepaliveTimeout = 75 * time.Millisecond
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: limits}
 	server, address := startPeerServer(t, opts)
 	conn, err := net.DialTimeout("tcp", address, time.Second)

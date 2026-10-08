@@ -29,7 +29,7 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 Records are at most 2 MiB. Ordinary BSON follows MongoDB native nesting rules;
 ordinary JSON follows its syntax rules without an additional Weir node quota. Scan filters and backend expressions are at most 16 KiB.
 Lua source is at most 16 KiB; its input/current/result typed trees are at most
-2 MiB by default, with configurable `lua.values` byte/depth/node budgets. Lua remains an in-process trusted-program
+2 MiB by default, with process-wide `lua.values` byte/depth/node budgets. Lua remains an in-process trusted-program
 facility with the transaction/CAS and allocation limitations in the architecture.
 
 Projection has one mode and distinct dot-separated paths. INCLUDE publishes only

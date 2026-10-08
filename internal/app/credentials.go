@@ -18,13 +18,7 @@ const (
 )
 
 func (l *Local) credentials() *Credentials {
-	if l.Backend.MongoDB != nil {
-		return &l.Backend.MongoDB.Credentials
-	}
-	if l.Backend.Search != nil && l.Backend.Search.Connection != nil {
-		return &l.Backend.Search.Connection.Credentials
-	}
-	return nil
+	return l.Backend.Authentication
 }
 
 func (cfg RoutingConfig) validateCredentialSources() error {

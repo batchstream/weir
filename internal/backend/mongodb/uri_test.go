@@ -19,7 +19,8 @@ func TestValidateMongoConfigProfiles(t *testing.T) {
 		}
 	}
 
-	cfg.URI = "mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
+	cfg.URI = "mongodb://unresolved.invalid:27028/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true"
+	cfg.CAFile = "/missing/ca.pem"
 	for _, pair := range []struct{ username, password string }{
 		{" user:@/%?#用户 ", " pass:@/%?#🔐 "},
 		{strings.Repeat("u", 128), strings.Repeat("p", 256)},

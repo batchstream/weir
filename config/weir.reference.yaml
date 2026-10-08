@@ -76,7 +76,7 @@ transport:
     # Maximum wait for transport/stream progress.
     # Required: no. Default: "30s". Allowed: positive duration.
     # Slow or stalled stream publication is canceled when progress stops for
-    # this duration. The value also controls transport keepalive timing.
+    # this duration. Connection keepalive has independent settings below.
     stall: "30s"
 
     # New gRPC connection handshake. Default: 5s; positive duration.
@@ -85,6 +85,19 @@ transport:
     # Idle gRPC connection expiry. Default: 1m; 0s disables expiry.
     # Neither handshake nor idle applies a whole-request business deadline.
     idle: 1m
+
+  # Per Execute stream, admitted plus publishing records. Default: 32; 0 selects 32.
+  # Positive integer. Pauses only a slow stream; does not cap RPCs or backend work.
+  # Applies equally to every Store hosted by this process.
+  max_pending_records: 32
+
+  # Connection health checks; independent of RPC progress and caller deadlines.
+  keepalive:
+    # Send a gRPC ping after this interval without connection activity.
+    # Default: 30s; duration >=1s (gRPC native minimum). Applies to both listeners.
+    interval: 30s
+    # Wait for that ping's acknowledgement. Default: 5s; positive duration.
+    timeout: 5s
 
 # Optional peer directory configuration. Uncomment this block when needed.
 # The defaults below keep a standalone node without explicit advertisements.
@@ -149,3 +162,24 @@ overload:
     low_watermark: 70
     # Process/container sampling cadence. Default: 100ms; positive duration.
     sample_interval: 100ms
+
+# Lua policy belongs to this process and is shared by every local Store.
+# Execution runs in the main Weir process and follows each caller's context.
+lua:
+  vm:
+    # Default: 0 (no instruction budget), or a positive instruction count.
+    # Set a measured budget only when workload evidence calls for one.
+    max_instructions: 0
+    # Default: 0 (VM native default 10000), or a positive call depth.
+    max_call_depth: 0
+    # Default: 0 (VM native default 1000000), or positive stack slots.
+    max_stack_slots: 0
+  values:
+    # Input/current/output conversion bytes. Default: 2MiB; positive byte size.
+    # Encoded documents still have the protocol's independent 2MiB boundary.
+    max_bytes: 2MiB
+    # Conversion nesting depth. Default: 32; 0 selects 32; positive integer.
+    max_depth: 32
+    # Conversion field/value nodes. Default: 4096; 0 selects 4096; positive integer.
+    # Shared by JSON/BSON conversion, the Lua bridge and Lua libraries.
+    max_nodes: 4096

@@ -370,7 +370,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	search := testsearch.Open(t)
 	binary := buildEndpointProcess(t)
 	mongo := mongoFixtureConfig(t, mongoFixture.URI)
-	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongo}}
+	mongoLocal := &Local{Backend: mongo}
 	backend := &Search{URL: search.URL}
 	// Match the Search fixture's single write thread for deterministic smoke operations.
 	searchLocal := &Local{Backend: BackendConfig{Search: backend}}

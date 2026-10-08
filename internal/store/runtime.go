@@ -14,17 +14,14 @@ import (
 )
 
 // Limits controls batching and waiting work, not backend execution concurrency.
-const DefaultRecordWindow = 32
-
 type Limits struct {
-	RecordWindow                int
 	Scan                        execution.ScanLimits
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, RecordWindow: DefaultRecordWindow, Scan: execution.DefaultScanLimits()}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, Scan: execution.DefaultScanLimits()}
 	return limits
 }
 
@@ -32,9 +29,6 @@ func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < execution.EntryOverheadBytes ||
 		limits.BatchOperations < 1 || limits.BatchBytes < execution.EntryOverheadBytes {
 		return fmt.Errorf("invalid batch or queue bounds")
-	}
-	if limits.RecordWindow < 0 {
-		return fmt.Errorf("invalid stream result window")
 	}
 	if limits.Scan.Documents != 0 {
 		return limits.Scan.Validate()
@@ -59,10 +53,9 @@ type Runtime struct {
 	metrics                                 runtimeMetrics
 }
 type Session struct {
-	runtime      *Runtime
-	Events       chan *Emission
-	RecordWindow int
-	closed       bool
+	runtime *Runtime
+	Events  chan *Emission
+	closed  bool
 }
 type Emission struct {
 	Event *pb.Event
@@ -122,9 +115,6 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 	return runtime, nil
 }
 func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
-	if limits.RecordWindow == 0 {
-		limits.RecordWindow = DefaultRecordWindow
-	}
 	if limits.Scan.Documents == 0 {
 		limits.Scan = execution.DefaultScanLimits()
 	}
@@ -133,7 +123,7 @@ func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
 	return runtime
 }
 func (r *Runtime) NewSession() *Session {
-	session := &Session{runtime: r, RecordWindow: r.limits.RecordWindow}
+	session := &Session{runtime: r}
 	return session
 }
 

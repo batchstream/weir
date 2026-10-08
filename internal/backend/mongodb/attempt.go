@@ -4,7 +4,8 @@ import "context"
 
 // Driver v2.9.1 changes required commit retry-once into unlimited retries when
 // Deadline is present (CSOT). Bridge the parent's cancellation into a deadline-free
-// context, retaining session values and native retry-once. The driver's socket
+// context, retaining session values and native retry-once. This also prevents
+// RunCommand from attaching maxTimeMS to non-awaitData getMore commands. The driver's socket
 // listener only closes on Canceled, not DeadlineExceeded without a socket deadline.
 // The enclosing operation retains the original deadline/error. No client-level
 // Timeout is configured. Tests qualify both actual reply loss and blocked commits.

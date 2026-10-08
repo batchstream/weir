@@ -22,11 +22,10 @@ import (
 const programAttempts = 5
 const programCleanup = 200 * time.Millisecond
 
-// Source BSON and encoded writes share the configured exchange envelope.
 // Lua evaluates one document at a time; workspace bytes below are accounting only.
 const programWorkingBytes = 64 << 20
 
-var errProgramBatchBound = errors.New("program batch retained byte bound")
+var errProgramBatchBound = errors.New("program batch requires another native exchange")
 var errProgramReadEvidence = errors.New("program read acknowledgement incomplete")
 
 type programBatch struct {
@@ -124,21 +123,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
 			return
 		}
-		writes, writePositions, transformErr := a.transformPrograms(txctx, batch, active, documents)
-		if transformErr != nil {
-			aborted := a.abortProgramTransaction(session)
-			if !aborted {
-				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
-				return
-			}
-			if errors.Is(transformErr, errProgramBatchBound) && len(batch.active()) > 1 {
-				a.splitPrograms(ctx, batch, batch.active())
-				return
-			}
-			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Lua batch exceeds retained document bound")
-			batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
-			return
-		}
+		writes, writePositions := a.transformPrograms(txctx, batch, active, documents)
 		// A cancellation during another member's Lua evaluation only excludes
 		// this caller's not-yet-sent write. Nothing is retracted after W starts.
 		keptWrites := writes[:0]
@@ -299,7 +284,22 @@ func (a *Adapter) splitPrograms(ctx context.Context, batch *programBatch, positi
 	return
 }
 
+// MongoDB applies its native response boundary. Only an explicitly smaller
+// exchange target adds a conservative document-count hint to cursor pages.
+func (a *Adapter) programBatchSize(items int) int32 {
+	nativeBytes := a.maxDocumentBytes
+	if nativeBytes <= 0 {
+		nativeBytes = 16 << 20
+	}
+	if a.options().ExchangeBytes >= nativeBytes {
+		return int32(items)
+	}
+	return int32(min(items, a.options().ExchangeBytes/protocol.MaxDocument))
+}
+
 func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]bson.Raw, error) {
+	ctx, release := nativeAttemptContext(ctx)
+	defer release()
 	target := plans[0].Backend.(*plan).target
 	ids := make(bson.A, len(plans))
 	positions := make(map[any]int, len(plans))
@@ -309,7 +309,7 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	}
 	selector := bson.D{{Key: "$in", Value: ids}}
 	filter := bson.D{{Key: "_id", Value: selector}}
-	var command any = bson.D{{Key: "find", Value: target.collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: int32(len(ids))}, {Key: "allowPartialResults", Value: false}}
+	var command any = bson.D{{Key: "find", Value: target.collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: a.programBatchSize(len(ids))}, {Key: "allowPartialResults", Value: false}}
 	encoded, err := bson.Marshal(command)
 	if err != nil {
 		return nil, err
@@ -320,8 +320,8 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	command = bson.Raw(encoded)
 	state := &recordCursor{target: target, items: len(ids)}
 	documents := make([]bson.Raw, len(plans))
-	held, received := 0, 0
-	for page := 0; page < len(plans); page++ {
+	received := 0
+	for page := 0; page <= len(plans); page++ {
 		raw, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
 		if err != nil {
 			return nil, err
@@ -353,37 +353,25 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 				received++
 				continue
 			}
-			if len(raw) > a.options().ExchangeBytes-held {
-				return nil, errProgramBatchBound
-			}
 			documents[position] = append(bson.Raw(nil), raw...)
-			held += len(raw)
 			received++
 		}
 		if state.cursor == 0 {
 			return documents, nil
 		}
-		if received == len(plans) {
-			return nil, errProgramReadEvidence
-		}
-		command = bson.D{{Key: "getMore", Value: state.cursor}, {Key: "collection", Value: target.collection}, {Key: "batchSize", Value: int32(len(plans) - received)}}
+		command = bson.D{{Key: "getMore", Value: state.cursor}, {Key: "collection", Value: target.collection}, {Key: "batchSize", Value: a.programBatchSize(max(1, len(plans)-received))}}
 	}
 	return nil, errProgramReadEvidence
 }
 
-func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, positions []int, documents []bson.Raw) ([]*execution.Plan, []int, error) {
+func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, positions []int, documents []bson.Raw) ([]*execution.Plan, []int) {
 	writes := make([]*execution.Plan, 0, len(positions))
 	writePositions := make([]int, 0, len(positions))
-	held := 0
-	for _, raw := range documents {
-		held += len(raw)
-	}
 	for i, position := range positions {
 		work := batch.plans[position]
 		native := work.Backend.(*plan)
 		raw := documents[i]
 		documents[i] = nil
-		held -= len(raw)
 		if failure := programCallerFailure(ctx, work); failure != nil {
 			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 			continue
@@ -463,10 +451,6 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 				continue
 			}
-			if len(encoded) > a.options().ExchangeBytes-held {
-				return nil, nil, errProgramBatchBound
-			}
-			held += len(encoded)
 			prepared.document = encoded
 			prepared.action = "replace"
 			if missing {
@@ -481,10 +465,12 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 		writes = append(writes, write)
 		writePositions = append(writePositions, position)
 	}
-	return writes, writePositions, nil
+	return writes, writePositions
 }
 
 func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.MutationResult, error) {
+	ctx, release := nativeAttemptContext(ctx)
+	defer release()
 	target := plans[0].Backend.(*plan).target
 	ops := make(bson.A, len(plans))
 	for i, work := range plans {

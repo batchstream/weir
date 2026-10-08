@@ -16,27 +16,16 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
         url: http://127.0.0.1:9200
       connect_timeout: 17ms
       metadata_cache_entries: 0
+      max_exchange_bytes: 16MiB
     batching:
       max_operations: 256
       max_bytes: 64MiB
-      max_exchange_bytes: 16MiB
-      queue:
-        max_operations: 8192
-        max_bytes: 256MiB
-    streaming:
-      max_pending_records: 96
-      scan:
-        max_batch_documents: 17
-        max_batch_bytes: 8MiB
-    lua:
-      vm:
-        max_instructions: 9000000
-        max_call_depth: 512
-        max_stack_slots: 65536
-      values:
-        max_bytes: 1MiB
-        max_depth: 64
-        max_nodes: 32768
+    queue:
+      max_operations: 8192
+      max_bytes: 256MiB
+    scan:
+      max_batch_documents: 17
+      max_batch_bytes: 8MiB
 `
 	cfg, err := DecodeRouting(strings.NewReader(input))
 	if err != nil {
@@ -45,11 +34,11 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 	local := cfg.Stores[0].Local
 	native := local.searchConfig("search")
 	settings := *native.Options
-	if settings.ConnectTimeout != 17*time.Millisecond || settings.MetadataCacheEntries != 0 || settings.ExchangeBytes != 16<<20 || settings.Scan.Documents != 17 || settings.Scan.Bytes != 8<<20 || settings.Lua.MaxInstructions != 9_000_000 || settings.Lua.MaxCallDepth != 512 || settings.Lua.MaxStackSlots != 65536 || settings.Lua.Values.MaxDepth != 64 || settings.Lua.Values.MaxNodes != 32768 || settings.Lua.Values.MaxBytes != 1<<20 {
+	if settings.ConnectTimeout != 17*time.Millisecond || settings.MetadataCacheEntries != 0 || settings.ExchangeBytes != 16<<20 || settings.Scan.Documents != 17 || settings.Scan.Bytes != 8<<20 {
 		t.Fatal(settings)
 	}
 	limits := local.runtimeLimits()
-	if limits.BatchOperations != 256 || limits.BatchBytes != 64<<20 || limits.QueueOperations != 8192 || limits.QueueBytes != 256<<20 || limits.RecordWindow != 96 || limits.Scan != settings.Scan {
+	if limits.BatchOperations != 256 || limits.BatchBytes != 64<<20 || limits.QueueOperations != 8192 || limits.QueueBytes != 256<<20 || limits.Scan != settings.Scan {
 		t.Fatal(limits)
 	}
 	encoded, err := json.Marshal(cfg)
@@ -60,7 +49,7 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 	if err != nil || !reflect.DeepEqual(decoded, cfg) {
 		t.Fatal("structured runtime configuration did not round trip", err)
 	}
-	for _, old := range []string{"max_batch_operations: 4", "max_batch_bytes: 4MiB", "batch_queue: {}", "mongodb: {}", "search: {}"} {
+	for _, old := range []string{"max_batch_operations: 4", "max_batch_bytes: 4MiB", "batch_queue: {}", "mongodb: {}", "search: {}", "streaming: {}", "lua: {}", "batching: {queue: {}}", "batching: {max_exchange_bytes: 4MiB}"} {
 		if _, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + "    " + old + "\n")); err == nil {
 			t.Fatal("old field accepted", old)
 		}
@@ -71,6 +60,10 @@ func TestProcessTimeoutAndMemoryPolicyConfiguration(t *testing.T) {
 	input := `listeners:
   application: 127.0.0.1:0
 transport:
+  max_pending_records: 96
+  keepalive:
+    interval: 1m
+    timeout: 7s
   timeouts:
     handshake: 3s
     idle: 0s
@@ -80,6 +73,15 @@ lifecycle:
   shutdown_timeout: 20s
 diagnostics:
   timeout: 5s
+lua:
+  vm:
+    max_instructions: 9000000
+    max_call_depth: 512
+    max_stack_slots: 65536
+  values:
+    max_bytes: 1MiB
+    max_depth: 64
+    max_nodes: 32768
 overload:
   memory:
     high_watermark: 95
@@ -92,7 +94,11 @@ overload:
 	}
 	transport := cfg.Transport.serverLimits()
 	memory := cfg.Overload.Memory.limits()
-	if transport.Handshake != 3*time.Second || transport.Idle != 0 || transport.Stall != 2*time.Minute || cfg.Lifecycle.ShutdownTimeout != Duration(20*time.Second) || cfg.Diagnostics.Timeout != Duration(5*time.Second) || memory.HighWatermark != 95 || memory.LowWatermark != 90 || memory.SampleInterval != 7*time.Millisecond {
+	lua := cfg.Lua.limits()
+	if lua.MaxInstructions != 9000000 || lua.MaxCallDepth != 512 || lua.MaxStackSlots != 65536 || lua.Values.MaxBytes != 1<<20 || lua.Values.MaxDepth != 64 || lua.Values.MaxNodes != 32768 {
+		t.Fatal("process Lua configuration was not decoded", lua)
+	}
+	if transport.MaxPendingRecords != 96 || transport.KeepaliveInterval != time.Minute || transport.KeepaliveTimeout != 7*time.Second || transport.Handshake != 3*time.Second || transport.Idle != 0 || transport.Stall != 2*time.Minute || cfg.Lifecycle.ShutdownTimeout != Duration(20*time.Second) || cfg.Diagnostics.Timeout != Duration(5*time.Second) || memory.HighWatermark != 95 || memory.LowWatermark != 90 || memory.SampleInterval != 7*time.Millisecond {
 		t.Fatal(cfg)
 	}
 	for _, fragment := range []string{
@@ -101,6 +107,7 @@ overload:
 		"overload:\n  memory:\n    sample_interval: 0s\n",
 		"lifecycle:\n  shutdown_timeout: 0s\n",
 		"transport:\n  timeouts:\n    handshake: 0s\n",
+		"transport:\n  keepalive:\n    interval: 500ms\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader("listeners:\n  application: 127.0.0.1:0\n" + fragment)); err == nil {
 			t.Fatal("invalid runtime policy accepted", fragment)

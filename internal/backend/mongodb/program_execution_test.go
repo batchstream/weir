@@ -218,9 +218,9 @@ func TestMongoLuaEvaluationCancellationWithCallerDeadlineKeepsPeer(t *testing.T)
 	defer timer.Stop()
 	positions := []int{0, 1}
 	started := time.Now()
-	writes, writePositions, err := adapter.transformPrograms(t.Context(), batch, positions, documents)
-	if err != nil || len(writes) != 1 || len(writePositions) != 1 || writePositions[0] != 1 {
-		t.Fatal("caller cancellation stopped its peer's evaluation", writes, writePositions, err)
+	writes, writePositions := adapter.transformPrograms(t.Context(), batch, positions, documents)
+	if len(writes) != 1 || len(writePositions) != 1 || writePositions[0] != 1 {
+		t.Fatal("caller cancellation stopped its peer's evaluation", writes, writePositions)
 	}
 	result := batch.results[0]
 	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CANCELLED || batch.results[1] != nil {
@@ -427,6 +427,68 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 			}
 			if finds != 1 || writes != 1 || aborts != 1 || commits != 0 {
 				t.Fatal("unconfirmed abort retried/rebuilt the transaction or sent duplicate aborts", finds, writes, aborts, commits)
+			}
+		})
+	}
+}
+
+func TestMongoLuaReadCursorRequiresTerminalEvidenceAfterExactPage(t *testing.T) {
+	document := bson.D{{Key: "_id", Value: "item"}, {Key: "n", Value: int32(1)}}
+	encoded, err := bson.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCursor := bson.D{{Key: "id", Value: int64(123)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
+	first := bson.D{{Key: "ok", Value: 1}, {Key: "cursor", Value: firstCursor}}
+	cases := []struct {
+		name   string
+		cursor int64
+		extra  bool
+		valid  bool
+	}{
+		{name: "empty terminal page", valid: true},
+		{name: "unexpected extra document", extra: true},
+		{name: "empty live cursor", cursor: 123},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			documents := bson.A{}
+			if tc.extra {
+				documents = append(documents, document)
+			}
+			nextCursor := bson.D{{Key: "id", Value: tc.cursor}, {Key: "ns", Value: "db.records"}, {Key: "nextBatch", Value: documents}}
+			next := bson.D{{Key: "ok", Value: 1}, {Key: "cursor", Value: nextCursor}}
+			responses := []bson.D{first, next}
+			deployment := drivertest.NewMockDeployment(responses...)
+			calls := 0
+			monitor := &event.CommandMonitor{Started: func(_ context.Context, event *event.CommandStartedEvent) {
+				calls++
+				if event.CommandName == "getMore" && (event.Command.Lookup("batchSize").Int32() != 1 || event.Command.Lookup("maxTimeMS").Type != 0) {
+					t.Error("terminal read changed its page bound or added unsupported server deadline", event.Command)
+				}
+			}}
+			opts := options.Client().SetRetryReads(false).SetMonitor(monitor)
+			opts.Deployment = deployment
+			client, err := mongo.Connect(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Disconnect(context.Background())
+			adapter := &Adapter{client: client}
+			native := &plan{target: namespace{database: "db", collection: "records"}, id: "item"}
+			work := &execution.Plan{Backend: native}
+			plans := []*execution.Plan{work}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			received, err := adapter.readPrograms(ctx, plans)
+			if tc.valid && (err != nil || len(received) != 1 || !bytes.Equal(received[0], encoded)) {
+				t.Fatal("missing terminal cursor evidence", received, err)
+			}
+			if !tc.valid && err != errProgramReadEvidence {
+				t.Fatal("invalid terminal evidence accepted", received, err)
+			}
+			if calls != 2 {
+				t.Fatal("unbounded or missing terminal read", calls)
 			}
 		})
 	}

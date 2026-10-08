@@ -52,17 +52,17 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 	fixture := testmongo.OpenSecure(t)
 	mongo := mongoFixtureConfig(t, fixture.URI)
 	valueDirectory := t.TempDir()
-	mongo.UsernameFile = filepath.Join(valueDirectory, "username")
-	mongo.PasswordFile = filepath.Join(valueDirectory, "password")
-	if err := os.WriteFile(mongo.UsernameFile, []byte(mongo.Username+"\n"), 0600); err != nil {
+	mongo.Authentication.UsernameFile = filepath.Join(valueDirectory, "username")
+	mongo.Authentication.PasswordFile = filepath.Join(valueDirectory, "password")
+	if err := os.WriteFile(mongo.Authentication.UsernameFile, []byte(mongo.Authentication.Username+"\n"), 0600); err != nil {
 		t.Fatal("cannot write owned username value")
 	}
-	if err := os.WriteFile(mongo.PasswordFile, []byte(mongo.Password+"\r\n"), 0600); err != nil {
+	if err := os.WriteFile(mongo.Authentication.PasswordFile, []byte(mongo.Authentication.Password+"\r\n"), 0600); err != nil {
 		t.Fatal("cannot write owned password value")
 	}
-	mongo.Username, mongo.Password = "", ""
+	mongo.Authentication.Username, mongo.Authentication.Password = "", ""
 
-	local := &Local{Backend: BackendConfig{MongoDB: mongo}}
+	local := &Local{Backend: mongo}
 	service := StoreConfig{Name: "mongo", Local: local}
 
 	cfg := DefaultConfig()

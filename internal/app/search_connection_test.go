@@ -20,12 +20,12 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
 	credentials := Credentials{Username: "app", Password: "password-sentinel"}
-	c := &SearchConnection{Credentials: credentials, CAFile: "/missing/ca-sentinel.pem"}
+	c := &credentials
+	trust := &BackendTLS{CAFile: "/missing/ca-sentinel.pem"}
 	backend := &Search{
-		URL:        "https://unresolved.invalid:443",
-		Connection: c,
+		URL: "https://unresolved.invalid:443",
 	}
-	local := &Local{Backend: BackendConfig{Search: backend}}
+	local := &Local{Backend: BackendConfig{Search: backend, Authentication: c, TLS: trust}}
 	definition := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -41,7 +41,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	}
 	// Even an invalid later service must be rejected before the first connection.
 	backend.URL = endpoint.URL
-	backend.Connection = nil
+	local.Backend.Authentication, local.Backend.TLS = nil, nil
 	invalid := StoreConfig{Name: "bad"}
 	cfg.Routing.Stores = append(cfg.Routing.Stores, invalid)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -63,7 +63,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 	_ = listener.Close()
 	cfg.Routing.Stores = cfg.Routing.Stores[:1]
 	backend.URL = "http://host:80"
-	backend.Connection = c
+	local.Backend.Authentication, local.Backend.TLS = c, trust
 	node, err = Open(context.Background(), cfg)
 	if node != nil || err == nil || strings.Contains(err.Error(), "sentinel") {
 		t.Fatal("HTTP credentials accepted/leaked")
@@ -74,7 +74,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls"} {
-		input := strings.Replace(string(raw), "connection:\n", "connection:\n                    "+field+": unknown\n", 1)
+		input := strings.Replace(string(raw), "authentication:\n", "authentication:\n                    "+field+": unknown\n", 1)
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {
 			t.Fatal("unknown connection/identity option accepted", field)
 		}
@@ -86,12 +86,12 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 		Username: "user-sentinel",
 		Password: "password-sentinel",
 	}
-	connection := &SearchConnection{Credentials: credentials, CAFile: "/missing/ca-sentinel.pem"}
+	connection := &credentials
+	trust := &BackendTLS{CAFile: "/missing/ca-sentinel.pem"}
 	backend := &Search{
-		URL:        "https://unresolved.invalid:9200",
-		Connection: connection,
+		URL: "https://unresolved.invalid:9200",
 	}
-	local := &Local{Backend: BackendConfig{Search: backend}}
+	local := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -116,7 +116,7 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
 	backend.URL = endpoint.URL
-	backend.Connection = nil
+	local.Backend.Authentication, local.Backend.TLS = nil, nil
 	node, err = Open(context.Background(), cfg)
 	if node != nil ||
 		err == nil ||
