@@ -9,8 +9,9 @@ import (
 const DefaultCapacity = 64
 
 type entry[V any] struct {
-	value V
-	ready chan struct{}
+	value   V
+	success bool
+	ready   chan struct{}
 }
 
 type Lookup[V any] struct {
@@ -69,6 +70,10 @@ func (c *Cache[K, V]) Acquire(ctx context.Context, key K) (Lookup[V], error) {
 			select {
 			case <-ctx.Done():
 			case <-ready:
+				if existing.success {
+					lookup := Lookup[V]{Value: existing.value, Cached: true}
+					return lookup, ctx.Err()
+				}
 			}
 			continue
 		}
@@ -87,8 +92,9 @@ func (c *Cache[K, V]) Complete(key K, lookup Lookup[V], value V, success bool) {
 	if pending == nil || c.entries[key] != pending || pending.ready == nil {
 		return
 	}
+	pending.value = value
+	pending.success = success
 	if success && c.capacity > 0 {
-		pending.value = value
 		c.order = append(c.order, key)
 		if len(c.order) > c.capacity {
 			delete(c.entries, c.order[0])
