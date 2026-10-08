@@ -21,20 +21,12 @@ func credentialTestConfig(t *testing.T, backend string) Config {
 		Username: "user-secret-sentinel",
 		Password: " password-secret-sentinel:@/%?汉 ",
 	}
+	local.Backend.Authentication = &credentials
 	if backend == "mongodb" {
-		local.Backend.MongoDB = &Mongo{
-			URI:         "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true",
-			Credentials: credentials,
-		}
+		local.Backend.MongoDB = &Mongo{URI: "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"}
 	} else {
-		connection := &SearchConnection{
-			Credentials: credentials,
-			CAFile:      "/missing/ca-secret-sentinel.pem",
-		}
-		local.Backend.Search = &Search{
-			URL:        "https://unresolved.invalid:9200",
-			Connection: connection,
-		}
+		local.Backend.TLS = &BackendTLS{CAFile: "/missing/ca-secret-sentinel.pem"}
+		local.Backend.Search = &Search{URL: "https://unresolved.invalid:9200"}
 	}
 	service := StoreConfig{Name: backend, Local: local}
 
@@ -74,25 +66,17 @@ func writeCredentialTestDocuments(t *testing.T, cfg Config) (string, string) {
 	return basicFilename, routingFilename
 }
 
-func TestCredentialConfigurationFieldsRemainInline(t *testing.T) {
+func TestCredentialConfigurationUsesSharedAuthentication(t *testing.T) {
 	for _, backend := range []string{"mongodb", "search"} {
 		t.Run(backend, func(t *testing.T) {
 			cfg := credentialTestConfig(t, backend)
 			local := cfg.Routing.Stores[0].Local
-			var source any = local.Backend.MongoDB
+			var source any = local.Backend.Authentication
 			expected := map[string]any{
 				"username":      "user-secret-sentinel",
 				"password":      " password-secret-sentinel:@/%?汉 ",
 				"username_file": "",
 				"password_file": "",
-			}
-			if backend == "mongodb" {
-				expected["uri"] = local.Backend.MongoDB.URI
-				pool := map[string]any{"max_connecting": 0}
-				expected["pool"] = pool
-			} else {
-				source = local.Backend.Search.Connection
-				expected["ca_file"] = local.Backend.Search.Connection.CAFile
 			}
 			jsonRaw, err := json.Marshal(source)
 			if err != nil {
@@ -386,14 +370,14 @@ func TestUnresolvedCredentialFilesCannotOpen(t *testing.T) {
 func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	cfg := credentialTestConfig(t, "mongodb")
 	m := cfg.Routing.Stores[0].Local.Backend.MongoDB
-	m.Username = "user:name@/%?#+ 汉"
-	m.Password = " password:/@%#?+[]汉 "
+	cfg.Routing.Stores[0].Local.Backend.Authentication.Username = "user:name@/%?#+ 汉"
+	cfg.Routing.Stores[0].Local.Backend.Authentication.Password = " password:/@%#?+[]汉 "
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("special credential characters must be accepted without URI encoding", err)
 	}
 	backend := cfg.Routing.Stores[0].Local.mongoConfig("mongodb")
 	parsed, err := url.Parse(backend.URI)
-	if err != nil || parsed.User != nil || backend.URI != m.URI || backend.Username != m.Username || backend.Password != m.Password {
+	if err != nil || parsed.User != nil || backend.URI != m.URI || backend.Username != cfg.Routing.Stores[0].Local.Backend.Authentication.Username || backend.Password != cfg.Routing.Stores[0].Local.Backend.Authentication.Password {
 		t.Fatal("MongoDB credentials must remain separate and unchanged in backend configuration", err)
 	}
 	m.URI = "mongodb://user:password-secret-sentinel@unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true"

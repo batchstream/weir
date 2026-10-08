@@ -46,13 +46,15 @@ func TestConfigurationValidation(t *testing.T) {
 func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"
-	uri := "mongodb://unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true&tlsCAFile=%2Fmissing%2Fca.pem"
+	uri := "mongodb://unresolved.invalid:27017/?authMechanism=SCRAM-SHA-256&authSource=admin&tls=true"
 	credentials := Credentials{
 		Username: "user",
 		Password: "password-sentinel",
 	}
-	mongo := &Mongo{URI: uri, Credentials: credentials}
-	local := &Local{Backend: BackendConfig{MongoDB: mongo}}
+	mongo := &Mongo{URI: uri}
+	local := &Local{Backend: BackendConfig{MongoDB: mongo, Authentication: &credentials}}
+	trust := &BackendTLS{CAFile: "/missing/ca.pem"}
+	local.Backend.TLS = trust
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg.Routing.Stores = []StoreConfig{service}
@@ -83,8 +85,8 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 		Username: "user-sentinel",
 		Password: "password-sentinel",
 	}
-	mongo := &Mongo{URI: uri, Credentials: credentials}
-	local := &Local{Backend: BackendConfig{MongoDB: mongo}}
+	mongo := &Mongo{URI: uri}
+	local := &Local{Backend: BackendConfig{MongoDB: mongo, Authentication: &credentials}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()

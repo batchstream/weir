@@ -426,7 +426,7 @@ func TestMongoLuaBatchLostAbortAcknowledgementNeverRebuilds(t *testing.T) {
 	t.Log("actual abort reply dropped: one read, one attempted bulkWrite, one same-transaction abort, zero commits, zero replays, all documents unchanged")
 }
 
-func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
+func TestMongoLuaExchangeChunksDoNotLimitRetainedWorkspace(t *testing.T) {
 	fixture := testmongo.Open(t)
 	collection := fixture.Admin.Database(fixture.DB).Collection("records")
 	padding := make([]byte, 220<<10)
@@ -440,13 +440,20 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var finds, writes, commits atomic.Int32
+	var finds, writes, commits, getMores atomic.Int32
+	var largestWrite atomic.Int64
 	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
 		switch e.CommandName {
 		case "find":
 			finds.Add(1)
+		case "getMore":
+			getMores.Add(1)
+			if e.Command.Lookup("maxTimeMS").Type != 0 {
+				t.Error("getMore received unsupported driver server timeout")
+			}
 		case "bulkWrite":
 			writes.Add(1)
+			largestWrite.Store(max(largestWrite.Load(), int64(len(e.Command))))
 		case "commitTransaction":
 			commits.Add(1)
 		}
@@ -454,7 +461,7 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 	adapterOpts := adapterTestOptions{fixture: fixture, monitor: monitor}
 	adapter := testAdapter(t, adapterOpts)
 	settings := backend.DefaultOptions()
-	settings.ExchangeBytes = 8 << 20
+	settings.ExchangeBytes = 4 << 20
 	adapter.config.Options = &settings
 	var plans []*execution.Plan
 	for _, id := range ids {
@@ -474,8 +481,28 @@ func TestMongoLuaBatchRetainedBoundSplitsWithoutChangingEffects(t *testing.T) {
 			t.Fatal("split changed the requested effect", i, raw.Lookup("n"), err)
 		}
 	}
-	if finds.Load() != 3 || writes.Load() != 2 || commits.Load() != 2 {
-		t.Fatal("retained source bound did not split the uncommitted batch", finds.Load(), writes.Load(), commits.Load())
+	if finds.Load() != 7 || writes.Load() != 4 || commits.Load() != 4 || largestWrite.Load() > int64(settings.ExchangeBytes) {
+		t.Fatal("native chunks did not respect exchange target", finds.Load(), writes.Load(), commits.Load(), largestWrite.Load())
+	}
+	// Keeping all >8MiB of sources needs one snapshot read and no write/commit,
+	// even though the explicitly configured IO chunk target is only 4MiB.
+	getMores.Store(0)
+	finds.Store(0)
+	writes.Store(0)
+	commits.Store(0)
+	plans = nil
+	for _, id := range ids {
+		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, program: `return function() return weir.keep() end`}
+		plans = append(plans, prepareBatchProgram(t, adapter, opts))
+	}
+	results = adapter.executePrograms(ctx, plans)
+	for _, result := range results {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+			t.Fatal(result)
+		}
+	}
+	if finds.Load() != 1 || writes.Load() != 0 || commits.Load() != 0 || getMores.Load() < 19 {
+		t.Fatal("exchange target still limits retained Lua sources", finds.Load(), writes.Load(), commits.Load())
 	}
 }
 

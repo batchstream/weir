@@ -56,7 +56,7 @@ func TestRoutingConfigurationFile(t *testing.T) {
 				t.Fatal("invalid documented Search Store")
 			}
 			backend := definition.Backend.Search
-			if !strings.HasPrefix(backend.URL, "https://") || backend.Connection == nil || backend.Connection.Username != "weir" || backend.Connection.Password != "change-me" || backend.Connection.CAFile != "/etc/weir/ca.pem" {
+			if !strings.HasPrefix(backend.URL, "https://") || definition.Backend.Authentication == nil || definition.Backend.Authentication.Username != "weir" || definition.Backend.Authentication.Password != "change-me" || definition.Backend.TLS.CAFile != "/etc/weir/ca.pem" {
 				t.Fatal("documented Search HTTPS fields differ")
 			}
 		} else {

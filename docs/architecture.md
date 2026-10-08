@@ -73,7 +73,7 @@ contains only public ownership/address advertisements, never backend credentials
 | Record document / ordinary Read source | Protocol document bound: 2 MiB |
 | Read/Mutate stream | No total record limit; configurable publication window (default 32 tickets) |
 | Native input | Protocol 8 MiB; backend encoding boundaries also apply |
-| Store waiting queue | 1024 operations / 32 MiB, configurable via batching.queue |
+| Store waiting queue | 1024 operations / 32 MiB, configurable via queue |
 | Physical batch input | 32 operations / 8 MiB, configurable |
 | Business connections, RPCs and active executions | No Weir concurrency limit |
 | Process memory capacity | Automatically detected from host/process/container limits |
@@ -138,9 +138,9 @@ Metrics observe execution rather than control scheduling. The former
 Queue occupancy and capacity metrics describe waiting operations. Active execution
 and per-record outcome counters retain actual backend evidence, including unknown writes.
 
-Scan fetches up to `streaming.scan.max_batch_documents` (default 128) per backend
+Scan fetches up to `scan.max_batch_documents` (default 128) per backend
 call, bounded by the remaining logical page size. It validates the complete native response and retains an
-ordered prefix bounded by `streaming.scan.max_batch_bytes` (default 4 MiB), then
+ordered prefix bounded by `scan.max_batch_bytes` (default 4 MiB), then
 finishes backend execution before publication.
 The result remains owned through publication and request completion. A blocked
 Scan reader does not stop independent work. MongoDB estimates 48 MiB and Search

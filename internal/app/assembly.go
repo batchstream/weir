@@ -13,6 +13,7 @@ import (
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
@@ -67,7 +68,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		runtime, err := openLocal(ctx, definition.Name, definition.Local)
+		runtime, err := openLocal(ctx, definition, cfg.Basic.Lua.limits())
 		if err != nil {
 			return nil, err
 		}
@@ -149,15 +150,18 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	return node, nil
 }
 
-func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, error) {
+func openLocal(ctx context.Context, definition StoreConfig, lua luaengine.Limits) (*store.Runtime, error) {
+	name, cfg := definition.Name, definition.Local
 	limits := cfg.runtimeLimits()
 	var adapter execution.Adapter
 	var err error
 	if cfg.Backend.MongoDB != nil {
 		config := cfg.mongoConfig(name)
+		config.Options.Lua = lua
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
 		config := cfg.searchConfig(name)
+		config.Options.Lua = lua
 		adapter, err = search.Open(ctx, config)
 	}
 	if err != nil {

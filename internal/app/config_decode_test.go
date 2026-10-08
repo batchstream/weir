@@ -276,12 +276,12 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 	}
 	defer listener.Close()
 	credentials := Credentials{Username: "user", Password: "secret-sentinel"}
-	connection := &SearchConnection{Credentials: credentials, CAFile: "/missing/ca-secret-sentinel.pem"}
+	connection := &credentials
+	trust := &BackendTLS{CAFile: "/missing/ca-secret-sentinel.pem"}
 	backend := &Search{
-		URL:        "https://unresolved.invalid:443",
-		Connection: connection,
+		URL: "https://unresolved.invalid:443",
 	}
-	local := &Local{Backend: BackendConfig{Search: backend}}
+	local := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -380,13 +380,13 @@ func TestRoutingNullFields(t *testing.T) {
 }
 
 func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
-	input := "stores:\n  - name: search\n    backend:\n      search:\n        url: https://127.0.0.1:9200\n        connection:\n          username: user-secret-sentinel\n          password: password-secret-sentinel\n          ca_file: /missing/ca-secret-sentinel.pem\n"
+	input := "stores:\n  - name: search\n    backend:\n      search:\n        url: https://127.0.0.1:9200\n      authentication:\n        username: user-secret-sentinel\n        password: password-secret-sentinel\n      tls:\n        ca_file: /missing/ca-secret-sentinel.pem\n"
 
 	if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
 		t.Fatal("valid secret-bearing fields should pass pure validation", err)
 	}
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls", "credentials"} {
-		unknown := strings.Replace(input, "        connection:\n", "        connection:\n          "+field+": field-secret-sentinel\n", 1)
+		unknown := strings.Replace(input, "      authentication:\n", "      authentication:\n        "+field+": field-secret-sentinel\n", 1)
 		_, err := DecodeRouting(strings.NewReader(unknown))
 		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
 			t.Fatal("unknown nested option must be rejected without exposing credentials or parser details", field, err)

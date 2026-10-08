@@ -30,6 +30,7 @@ type Config struct {
 	URI           string
 	Store         string
 	Username      string
+	CAFile        string
 	Password      string
 }
 
@@ -143,12 +144,13 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	return nil
 }
 
-// The BSON command boundary is advertised by MongoDB, not an operator budget.
+// Encoded commands respect the exchange chunk target and MongoDB's advertised
+// BSON boundary. Neither size is a cumulative Lua workspace budget.
 func (a *Adapter) commandBytes() int {
 	if a.maxDocumentBytes > 0 {
-		return a.maxDocumentBytes
+		return min(a.maxDocumentBytes, a.options().ExchangeBytes)
 	}
-	return 16 << 20
+	return min(16<<20, a.options().ExchangeBytes)
 }
 
 func mongoQualificationFailure(message string, err error) error {

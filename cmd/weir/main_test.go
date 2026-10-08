@@ -46,7 +46,7 @@ func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
 	basic := `listeners:
   application: 192.0.2.1:7447
 `
-	routing := "stores:\n  - name: search\n    backend:\n      search:\n        url: https://unresolved.invalid:443\n        connection:\n          username_file: values/username\n          password_file: values/password\n          ca_file: /missing/ca-sentinel.pem\n"
+	routing := "stores:\n  - name: search\n    backend:\n      search:\n        url: https://unresolved.invalid:443\n      authentication:\n        username_file: values/username\n        password_file: values/password\n      tls:\n        ca_file: /missing/ca-sentinel.pem\n"
 
 	if err := os.WriteFile(file, []byte(basic), 0600); err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestCheckConfigWithCredentialFilesWithoutBackendOrCAAccess(t *testing.T) {
 		reason   string
 	}{
 		{
-			strings.Replace(routing, "          username_file:", "          username: user-sentinel\n          username_file:", 1),
+			strings.Replace(routing, "        username_file:", "        username: user-sentinel\n        username_file:", 1),
 			"credential value and file are mutually exclusive",
 		},
 		{

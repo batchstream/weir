@@ -137,7 +137,7 @@ func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string
 	if node.Tag == "!!null" {
 		if allowNull {
 			switch field {
-			case "mongodb", "search", "connection", "stores", "seeds", "advertise":
+			case "mongodb", "search", "authentication", "tls", "stores", "seeds", "advertise":
 				return nil
 			}
 		}

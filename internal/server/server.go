@@ -17,13 +17,16 @@ import (
 )
 
 type Limits struct {
-	Stall     time.Duration
-	Handshake time.Duration
-	Idle      time.Duration
+	MaxPendingRecords int
+	KeepaliveInterval time.Duration
+	KeepaliveTimeout  time.Duration
+	Stall             time.Duration
+	Handshake         time.Duration
+	Idle              time.Duration
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute}
+	limits := Limits{MaxPendingRecords: RecordStreamItems, KeepaliveInterval: 30 * time.Second, KeepaliveTimeout: 5 * time.Second, Stall: 30 * time.Second, Handshake: 5 * time.Second, Idle: time.Minute}
 	return limits
 }
 
@@ -51,8 +54,8 @@ type Server struct {
 }
 
 func (l Limits) Validate() error {
-	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 {
-		return status.Error(codes.InvalidArgument, "invalid transport stall timeout")
+	if l.Stall <= 0 || l.Handshake < 0 || l.Idle < 0 || l.MaxPendingRecords < 0 || l.KeepaliveInterval < 0 || l.KeepaliveInterval > 0 && l.KeepaliveInterval < time.Second || l.KeepaliveTimeout < 0 {
+		return status.Error(codes.InvalidArgument, "invalid transport configuration")
 	}
 	return nil
 }
@@ -60,7 +63,17 @@ func (l Limits) Validate() error {
 func New(cfg Config) (*Server, error) {
 	l := cfg.Limits
 	if l.Handshake == 0 {
-		l.Handshake = min(5*time.Second, l.Stall)
+		l.Handshake = 5 * time.Second
+	}
+	defaults := DefaultLimits()
+	if l.MaxPendingRecords == 0 {
+		l.MaxPendingRecords = defaults.MaxPendingRecords
+	}
+	if l.KeepaliveInterval == 0 {
+		l.KeepaliveInterval = defaults.KeepaliveInterval
+	}
+	if l.KeepaliveTimeout == 0 {
+		l.KeepaliveTimeout = defaults.KeepaliveTimeout
 	}
 	if err := l.Validate(); err != nil {
 		return nil, err
@@ -88,7 +101,7 @@ func New(cfg Config) (*Server, error) {
 	s.serving = make(chan struct{})
 	statistics := transportStats{}
 	codec := &responseCodec{admission: s.admission}
-	keepaliveParameters := keepalive.ServerParameters{Time: l.Stall, Timeout: min(5*time.Second, l.Stall), MaxConnectionIdle: l.Idle}
+	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle}
 	receiveBytes, sendBytes := protocol.MaxExecuteRequestBytes, protocol.MaxExecuteResponseBytes
 	if cfg.Peer {
 		receiveBytes, sendBytes = directory.MaxSyncBytes, directory.MaxSyncBytes

@@ -530,13 +530,14 @@ func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 		t.Run(fmt.Sprint(window), func(t *testing.T) {
 			adapter := newPeerAdapter("records")
 			limits := store.DefaultLimits()
-			limits.RecordWindow = window
 			local, err := store.New(adapter, limits)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = local.Close(t.Context()) })
-			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+			transport := DefaultLimits()
+			transport.MaxPendingRecords = window
+			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}, limits: transport}
 			server, _ := startPeerServer(t, opts)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()

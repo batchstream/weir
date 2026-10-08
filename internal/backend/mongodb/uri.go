@@ -66,7 +66,7 @@ func ValidateConfig(cfg Config) error {
 	}
 	for name := range options {
 		switch name {
-		case "directconnection", "servermonitoringmode", "authsource", "authmechanism", "tls", "tlscafile":
+		case "directconnection", "servermonitoringmode", "authsource", "authmechanism", "tls":
 		default:
 			return errors.New("unsupported MongoDB URI option")
 		}
@@ -82,17 +82,17 @@ func ValidateConfig(cfg Config) error {
 		_, hasAuthSource := options["authsource"]
 		_, hasAuthMechanism := options["authmechanism"]
 		_, hasTLS := options["tls"]
-		_, hasTLSCAFile := options["tlscafile"]
-		if hasAuthSource || hasAuthMechanism || hasTLS || hasTLSCAFile {
+		if hasAuthSource || hasAuthMechanism || hasTLS || cfg.CAFile != "" {
 			return errors.New("MongoDB authentication and TLS options require SCRAM credentials")
 		}
-		return nil
-	}
-	if options["authmechanism"] != "SCRAM-SHA-256" || !validDatabaseName(options["authsource"]) || options["tls"] != "true" {
+	} else if options["authmechanism"] != "SCRAM-SHA-256" || !validDatabaseName(options["authsource"]) || options["tls"] != "true" {
 		return errors.New("authenticated MongoDB connections require explicit SCRAM-SHA-256, authSource, and TLS")
 	}
-	if caFile, ok := options["tlscafile"]; ok && (caFile == "" || strings.ContainsAny(caFile, "\x00\r\n")) {
-		return errors.New("invalid MongoDB CA file option")
+	if tls, ok := options["tls"]; ok && tls != "true" {
+		return errors.New("MongoDB TLS option must be true")
+	}
+	if len(cfg.CAFile) > 2048 || !validCredential(cfg.CAFile, 2048) || cfg.CAFile != "" && options["tls"] != "true" {
+		return errors.New("MongoDB CA file requires TLS and a valid path")
 	}
 	return nil
 }

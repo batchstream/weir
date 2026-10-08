@@ -25,16 +25,16 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	fixture := testsearch.OpenSecure(t)
 	b := fixture.Backend
 	credentials := Credentials{Username: b.Username, Password: b.Password}
-	connection := &SearchConnection{Credentials: credentials, CAFile: b.CAFile}
-	backend := &Search{URL: b.URL, Connection: connection}
+	connection := &credentials
+	trust := &BackendTLS{CAFile: b.CAFile}
+	backend := &Search{URL: b.URL}
 	t.Run("partial-startup-cleanup", func(t *testing.T) {
 		base := secureHTTPOpenCount(t, fixture.Admin)
-		first := &Local{Backend: BackendConfig{Search: backend}}
+		first := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
 		otherBackend := *backend
 		otherConnection := *connection
 		otherConnection.Password = "wrong-owned-pair"
-		otherBackend.Connection = &otherConnection
-		other := &Local{Backend: BackendConfig{Search: &otherBackend}}
+		other := &Local{Backend: BackendConfig{Search: &otherBackend, Authentication: &otherConnection, TLS: trust}}
 		firstService := StoreConfig{Name: "first", Local: first}
 		otherService := StoreConfig{Name: "second", Local: other}
 
@@ -60,7 +60,7 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		}
 		t.Log("three partial startup failures: native DB HTTP socket count returned to baseline")
 	})
-	local := &Local{Backend: BackendConfig{Search: backend}}
+	local := &Local{Backend: BackendConfig{Search: backend, Authentication: connection, TLS: trust}}
 	service := StoreConfig{Name: "search", Local: local}
 
 	cfg := DefaultConfig()

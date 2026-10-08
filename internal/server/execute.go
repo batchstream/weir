@@ -59,7 +59,7 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 	}
 	ctx, cancel := context.WithCancel(stream.Context())
 	session := runtime.NewSession()
-	window := session.RecordWindow
+	window := s.limits.MaxPendingRecords
 	tickets := make(chan *store.Ticket, window)
 	credits := make(chan struct{}, window)
 	for range window {

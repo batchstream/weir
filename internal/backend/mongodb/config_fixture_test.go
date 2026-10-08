@@ -34,6 +34,10 @@ func mongoFixtureConfig(t *testing.T, cfg Config) Config {
 		cfg.Password, _ = parsed.User.Password()
 		parsed.User = nil
 	}
+	query := parsed.Query()
+	cfg.CAFile = query.Get("tlsCAFile")
+	query.Del("tlsCAFile")
+	parsed.RawQuery = query.Encode()
 	cfg.URI = parsed.String()
 	return cfg
 }
