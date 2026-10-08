@@ -9,10 +9,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const queueRoutingPrefix = "stores:\n  - name: records\n    mongodb:\n      uri: mongodb://127.0.0.1:27017/?directConnection=true\n"
+const queueRoutingPrefix = "stores:\n  - name: records\n    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017/?directConnection=true\n"
 
 func TestBatchAndQueueConfigurationRoundTrip(t *testing.T) {
-	input := queueRoutingPrefix + "    max_batch_operations: 128\n    max_batch_bytes: 16MiB\n    batch_queue:\n      max_operations: 4096\n      max_bytes: 256MiB\n"
+	input := queueRoutingPrefix + "    batching:\n      max_operations: 128\n      max_bytes: 16MiB\n      queue:\n        max_operations: 4096\n        max_bytes: 256MiB\n"
 	routing, err := DecodeRouting(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
@@ -39,12 +39,12 @@ func TestBatchAndQueueConfigurationRoundTrip(t *testing.T) {
 
 func TestBatchQueueBoundsRejectInvalidConfiguration(t *testing.T) {
 	for _, fragment := range []string{
-		"    batch_queue:\n      max_operations: -1\n",
-		"    batch_queue:\n      max_operations: '16'\n",
-		"    batch_queue:\n      max_bytes: 0B\n",
-		"    batch_queue:\n      max_bytes: 9223372036854775808B\n",
-		"    max_batch_bytes: 0B\n",
-		"    max_batch_operations: -1\n",
+		"    batching:\n      queue:\n        max_operations: -1\n",
+		"    batching:\n      queue:\n        max_operations: '16'\n",
+		"    batching:\n      queue:\n        max_bytes: 0B\n",
+		"    batching:\n      queue:\n        max_bytes: 9223372036854775808B\n",
+		"    batching:\n      max_bytes: 0B\n",
+		"    batching:\n      max_operations: -1\n",
 	} {
 		if _, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + fragment)); err == nil {
 			t.Fatal("invalid capacity accepted", fragment)

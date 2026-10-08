@@ -33,7 +33,7 @@ func TestDarwinMemoryNative(t *testing.T) {
 	}
 	target := &guardTarget{}
 	targets := []Target{target}
-	guard := New(targets)
+	guard := New(targets, DefaultLimits())
 	// Bound fixture allocations while exercising the actual memory sampler.
 	guard.processBudget = testmemory.Budget
 	if s := guard.Snapshot(); s.Unknown || s.Latched {
@@ -101,7 +101,7 @@ func TestDarwinMemoryNative(t *testing.T) {
 		t.Fatal("canceled Run failed to join")
 	}
 	for range 32 {
-		next := New(nil)
+		next := New(nil, DefaultLimits())
 		canceled, stop := context.WithCancel(context.Background())
 		stop()
 		next.Run(canceled)

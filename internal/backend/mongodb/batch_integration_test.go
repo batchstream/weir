@@ -5,10 +5,14 @@ package mongodb
 import (
 	"bytes"
 	"context"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -250,4 +254,57 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			}
 		})
 	}
+}
+
+func TestMongoLargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers(t *testing.T) {
+	fixture := testmongo.Open(t)
+	var calls, largest atomic.Int32
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+		if e.CommandName == "bulkWrite" {
+			calls.Add(1)
+			largest.Store(max(largest.Load(), int32(len(e.Command))))
+		}
+	}}
+	proxy := testmongo.StartProxy(t, fixture)
+	proxy.Monitor = monitor
+	settings := backend.DefaultOptions()
+	cfg := Config{URI: proxy.URI(), Store: "mongo", Options: &settings, MaxConnecting: 32}
+	adapter, err := Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := adapter.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	payload := strings.Repeat("x", 1<<20)
+	var plans []*execution.Plan
+	for i := range 40 {
+		id := strconv.Itoa(i)
+		document := bson.D{{Key: "_id", Value: id}, {Key: "payload", Value: payload}}
+		opts := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, action: "create", index: uint64(i + 1), document: document}
+		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		plans = append(plans, work)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	results := adapter.executeRecords(ctx, plans)
+	for _, result := range results {
+		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+			t.Fatal("legal large batch failed", result)
+		}
+	}
+	if calls.Load() < 3 || int(largest.Load()) > adapter.commandBytes() {
+		t.Fatal("large batch exceeded native boundary", calls.Load(), largest.Load())
+	}
+	filter := bson.D{}
+	count, err := fixture.Admin.Database(fixture.DB).Collection("records").CountDocuments(ctx, filter)
+	if err != nil || count != 40 {
+		t.Fatal("large batch effects lost", count, err)
+	}
+	t.Logf("40 MiB legal input: %d bulk commands, maximum native command %d bytes, all 40 records persisted", calls.Load(), largest.Load())
 }

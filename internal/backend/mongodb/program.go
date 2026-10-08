@@ -22,9 +22,8 @@ import (
 const programAttempts = 5
 const programCleanup = 200 * time.Millisecond
 
-// The shared envelope holds at most 8 MiB of source BSON plus encoded writes.
-// Lua evaluates one document at a time within the 64 MiB workspace reservation.
-const programRetainedBytes = 8 << 20
+// Source BSON and encoded writes share the configured exchange envelope.
+// Lua evaluates one document at a time; workspace bytes below are accounting only.
 const programWorkingBytes = 64 << 20
 
 var errProgramBatchBound = errors.New("program batch retained byte bound")
@@ -163,6 +162,10 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			aborted := a.abortProgramTransaction(session)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
+				return
+			}
+			if errors.Is(writeErr, errProgramBatchBound) && len(batch.active()) > 1 {
+				a.splitPrograms(ctx, batch, batch.active())
 				return
 			}
 			if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx) {
@@ -306,7 +309,15 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	}
 	selector := bson.D{{Key: "$in", Value: ids}}
 	filter := bson.D{{Key: "_id", Value: selector}}
-	command := bson.D{{Key: "find", Value: target.collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: int32(len(ids))}, {Key: "allowPartialResults", Value: false}}
+	var command any = bson.D{{Key: "find", Value: target.collection}, {Key: "filter", Value: filter}, {Key: "limit", Value: int64(len(ids))}, {Key: "batchSize", Value: int32(len(ids))}, {Key: "allowPartialResults", Value: false}}
+	encoded, err := bson.Marshal(command)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > a.commandBytes()-(64<<10) {
+		return nil, errProgramBatchBound
+	}
+	command = bson.Raw(encoded)
 	state := &recordCursor{target: target, items: len(ids)}
 	documents := make([]bson.Raw, len(plans))
 	held, received := 0, 0
@@ -342,7 +353,7 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 				received++
 				continue
 			}
-			if len(raw) > programRetainedBytes-held {
+			if len(raw) > a.options().ExchangeBytes-held {
 				return nil, errProgramBatchBound
 			}
 			documents[position] = append(bson.Raw(nil), raw...)
@@ -381,7 +392,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 		current := value.Value{Kind: value.Missing}
 		if !missing {
 			var err error
-			current, err = Decode(raw)
+			current, err = Decode(raw, a.options().Lua.Values)
 			if err != nil {
 				failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored document contains unsupported BSON values")
 				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
@@ -440,19 +451,19 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 					identity.Value = storedID
 				}
 			}
-			replacement, valid := withMongoIdentity(transformed.Value, identity, native.id)
+			replacement, valid := withMongoIdentity(transformed.Value, identity, native.id, a.options().Lua.Values)
 			if identityErr != nil || !valid {
 				failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
 				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 				continue
 			}
-			encoded, encodeErr := Encode(replacement)
+			encoded, encodeErr := Encode(replacement, a.options().Lua.Values)
 			if encodeErr != nil {
 				failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Lua replacement exceeds BSON limits")
 				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 				continue
 			}
-			if len(encoded) > programRetainedBytes-held {
+			if len(encoded) > a.options().ExchangeBytes-held {
 				return nil, nil, errProgramBatchBound
 			}
 			held += len(encoded)
@@ -492,7 +503,15 @@ func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([
 	}
 	namespaceInfo := bson.D{{Key: "ns", Value: target.String()}}
 	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(plans))}}
-	command := bson.D{{Key: "bulkWrite", Value: int32(1)}, {Key: "ops", Value: ops}, {Key: "nsInfo", Value: bson.A{namespaceInfo}}, {Key: "ordered", Value: true}, {Key: "errorsOnly", Value: false}, {Key: "cursor", Value: cursorOpts}}
+	var command any = bson.D{{Key: "bulkWrite", Value: int32(1)}, {Key: "ops", Value: ops}, {Key: "nsInfo", Value: bson.A{namespaceInfo}}, {Key: "ordered", Value: true}, {Key: "errorsOnly", Value: false}, {Key: "cursor", Value: cursorOpts}}
+	encoded, err := bson.Marshal(command)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > a.commandBytes()-(64<<10) {
+		return nil, errProgramBatchBound
+	}
+	command = bson.Raw(encoded)
 	state := &writeBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
 	state.cursor.items = len(plans)
 	state.cursor.target = namespace{database: "admin", collection: "$cmd.bulkWrite"}
@@ -520,7 +539,7 @@ func mongoIdentity(id any) (value.Field, error) {
 		var zero value.Field
 		return zero, err
 	}
-	identity, err := Decode(raw)
+	identity, err := Decode(raw, value.DefaultLimits())
 	if err != nil || len(identity.Fields) != 1 {
 		var zero value.Field
 		return zero, fmt.Errorf("invalid encoded identity")
@@ -528,8 +547,8 @@ func mongoIdentity(id any) (value.Field, error) {
 	return identity.Fields[0], nil
 }
 
-func withMongoIdentity(document value.Value, identity value.Field, id any) (value.Value, bool) {
-	if document.Kind != value.Object || value.Validate(document) != nil {
+func withMongoIdentity(document value.Value, identity value.Field, id any, limits value.Limits) (value.Value, bool) {
+	if document.Kind != value.Object || value.Validate(document, limits) != nil {
 		var zero value.Value
 		return zero, false
 	}
@@ -545,7 +564,7 @@ func withMongoIdentity(document value.Value, identity value.Field, id any) (valu
 			result.Fields = append(result.Fields, field)
 		}
 	}
-	if err := value.Validate(result); err != nil {
+	if err := value.Validate(result, limits); err != nil {
 		var zero value.Value
 		return zero, false
 	}

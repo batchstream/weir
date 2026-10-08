@@ -89,7 +89,7 @@ func TestScanFilterControlsAndBounds(t *testing.T) {
 	if failure != nil || string(work.Backend.(*scanPlan).query) != string(filter.Data) || work.Backend.(*scanPlan).projection != projection {
 		t.Fatal("native query or projection changed", failure)
 	}
-	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 34) + `{}` + strings.Repeat(`}`, 34) + `}`, `{"query":{"x":[` + strings.Repeat(`0,`, 4096) + `0]}}`, strings.Repeat(" ", protocol.MaxScanFilterBytes+1) + "{}"} {
+	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 10001) + `{}` + strings.Repeat(`}`, 10001) + `}`, `{"query":{"x":[` + strings.Repeat(`0,`, protocol.MaxScanFilterBytes) + `0]}}`, strings.Repeat(" ", protocol.MaxScanFilterBytes+1) + "{}"} {
 		selector := &pb.Document{ContentType: "application/json", Data: []byte(raw)}
 		req := &pb.ScanRequest{Resource: "records", Filter: selector}
 		if _, f := a.prepareScan(req); f == nil {
@@ -121,7 +121,7 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport()
+			transport := newTransport(connectionTimeout)
 			defer transport.CloseIdleConnections()
 			a := &Adapter{dialect: ElasticsearchProduct, config: Config{URL: server.URL}, ctx: context.Background(), client: &http.Client{Transport: transport, CheckRedirect: noRedirect}}
 			call := exchange{path: "/_search", body: []byte("{}"), limit: responseLimit}

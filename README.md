@@ -65,9 +65,11 @@ The local Store file:
 ```yaml
 stores:
   - name: "mongo"
-    mongodb:
-      uri: "mongodb://127.0.0.1:27028/?directConnection=true"
-    max_batch_operations: 32
+    backend:
+      mongodb:
+        uri: "mongodb://127.0.0.1:27028/?directConnection=true"
+    batching:
+      max_operations: 32
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -91,17 +93,25 @@ peers or backends. Configuration changes take effect after a restart.
 
 Store defaults are 32 operations and 8MiB of input per batch. There is no
 collection delay; queued RPCs combine by namespace, actual input bytes and
-`max_batch_operations`. Large client batches split into sequential bounded groups.
+`batching.max_operations`. Large client batches split into sequential bounded groups.
 Lua transforms also combine compatible queued requests: MongoDB batches reads and
 writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.
 Adapters issue their native read and write
-commands for each group. `max_batch_bytes` bounds the retained input per batch.
-`batch_queue.max_operations` (default 1024) and `batch_queue.max_bytes` (default
+commands for each group. `batching.max_bytes` bounds the retained input per batch.
+`batching.queue.max_operations` (default 1024) and `batching.queue.max_bytes` (default
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. Active execution,
 backend pools, RPCs and connections have no Weir concurrency cap. Ordinary Read
 uses the protocol's 2MiB document bound.
+
+Store settings are grouped by responsibility: `backend` holds connection establishment
+and completed target caching (MongoDB connection workers are under
+`backend.mongodb.pool`), `batching` holds aggregation/exchange/queue sizes,
+`streaming` holds pending results and Scan batches, and `lua` holds optional VM
+and value conversion budgets. The former flat keys are rejected. Business work
+has no default instruction budget or server-selection deadline; native exchanges
+split large batches rather than rejecting their combined input.
 
 Memory capacity is detected from physical host memory, a finite process
 address-space limit, and visible container memory limits. Actual process and

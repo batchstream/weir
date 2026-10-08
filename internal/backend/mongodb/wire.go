@@ -96,7 +96,7 @@ func boundedReply(message []byte) bool {
 			return false
 		}
 		if value.Type == bson.TypeArray || value.Type == bson.TypeEmbeddedDocument {
-			nodes := 4096
+			nodes := len(value.Value)
 			if !validScanBSON(value.Value, 0, &nodes) {
 				return false
 			}

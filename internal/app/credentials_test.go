@@ -22,7 +22,7 @@ func credentialTestConfig(t *testing.T, backend string) Config {
 		Password: " password-secret-sentinel:@/%?汉 ",
 	}
 	if backend == "mongodb" {
-		local.MongoDB = &Mongo{
+		local.Backend.MongoDB = &Mongo{
 			URI:         "mongodb://unresolved.invalid:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true",
 			Credentials: credentials,
 		}
@@ -31,7 +31,7 @@ func credentialTestConfig(t *testing.T, backend string) Config {
 			Credentials: credentials,
 			CAFile:      "/missing/ca-secret-sentinel.pem",
 		}
-		local.Search = &Search{
+		local.Backend.Search = &Search{
 			URL:        "https://unresolved.invalid:9200",
 			Connection: connection,
 		}
@@ -79,18 +79,20 @@ func TestCredentialConfigurationFieldsRemainInline(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			cfg := credentialTestConfig(t, backend)
 			local := cfg.Routing.Stores[0].Local
-			var source any = local.MongoDB
-			expected := map[string]string{
+			var source any = local.Backend.MongoDB
+			expected := map[string]any{
 				"username":      "user-secret-sentinel",
 				"password":      " password-secret-sentinel:@/%?汉 ",
 				"username_file": "",
 				"password_file": "",
 			}
 			if backend == "mongodb" {
-				expected["uri"] = local.MongoDB.URI
+				expected["uri"] = local.Backend.MongoDB.URI
+				pool := map[string]any{"max_connecting": 0}
+				expected["pool"] = pool
 			} else {
-				source = local.Search.Connection
-				expected["ca_file"] = local.Search.Connection.CAFile
+				source = local.Backend.Search.Connection
+				expected["ca_file"] = local.Backend.Search.Connection.CAFile
 			}
 			jsonRaw, err := json.Marshal(source)
 			if err != nil {
@@ -101,7 +103,7 @@ func TestCredentialConfigurationFieldsRemainInline(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, raw := range [][]byte{jsonRaw, yamlRaw} {
-				var fields map[string]string
+				var fields map[string]any
 				if err := yaml.Unmarshal(raw, &fields); err != nil || !reflect.DeepEqual(fields, expected) {
 					t.Fatal("serialized backend changed its credential field layout", err)
 				}
@@ -383,7 +385,7 @@ func TestUnresolvedCredentialFilesCannotOpen(t *testing.T) {
 
 func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	cfg := credentialTestConfig(t, "mongodb")
-	m := cfg.Routing.Stores[0].Local.MongoDB
+	m := cfg.Routing.Stores[0].Local.Backend.MongoDB
 	m.Username = "user:name@/%?#+ 汉"
 	m.Password = " password:/@%#?+[]汉 "
 	if err := cfg.Validate(); err != nil {

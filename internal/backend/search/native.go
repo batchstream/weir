@@ -234,7 +234,7 @@ func (r *nativeBulkReader) item() ([]byte, error) {
 		return nil, err
 	}
 	r.items++
-	if r.items > 4096 || validateJSON(metadata, 64) != nil {
+	if r.items > 4096 || validateJSON(metadata, len(metadata)) != nil {
 		return nil, errNativeInput
 	}
 	var action map[string]map[string]json.RawMessage
@@ -268,7 +268,7 @@ func (r *nativeBulkReader) item() ([]byte, error) {
 	if err != nil {
 		return nil, errNativeInput
 	}
-	if !object(source) || validateJSON(source, 4096) != nil {
+	if !object(source) || validateJSON(source, len(source)) != nil {
 		return nil, errNativeInput
 	}
 	return append(metadata, source...), nil

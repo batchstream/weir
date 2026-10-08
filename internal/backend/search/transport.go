@@ -33,7 +33,6 @@ type exchange struct {
 	limit       int
 	method      string
 	contentType string
-	jsonNodes   int
 	native      bool
 	mutation    bool
 }
@@ -140,11 +139,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	if err != nil {
 		return response.StatusCode, nil, errResponse
 	}
-	nodes := call.jsonNodes
-	if nodes == 0 {
-		nodes = 16384
-	}
-	if err := validateJSON(raw, nodes); err != nil {
+	if err := validateJSON(raw, len(raw)); err != nil {
 		return response.StatusCode, nil, errResponse
 	}
 	return response.StatusCode, raw, nil
@@ -163,8 +158,8 @@ func (a *Adapter) configureRequest(request *http.Request) {
 		request.SetBasicAuth(connection.Username, connection.Password)
 	}
 }
-func newTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: connectionTimeout, KeepAlive: 30 * time.Second}
+func newTransport(timeout time.Duration) *http.Transport {
+	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	transport := &http.Transport{
@@ -172,7 +167,7 @@ func newTransport() *http.Transport {
 		DisableCompression: true, MaxConnsPerHost: 0,
 		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: 30 * time.Second,
 		MaxResponseHeaderBytes: 32 << 10,
-		TLSHandshakeTimeout:    connectionTimeout,
+		TLSHandshakeTimeout:    timeout,
 	}
 	return transport
 }

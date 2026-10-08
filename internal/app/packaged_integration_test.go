@@ -229,7 +229,7 @@ func TestPackagedArtifacts(t *testing.T) {
 
 func packagedConfig(t *testing.T, uri string) Config {
 	backend := mongoFixtureConfig(t, uri)
-	local := &Local{MongoDB: backend, MaxBatchOperations: 1}
+	local := &Local{Backend: BackendConfig{MongoDB: backend}, Batching: BatchingConfig{MaxOperations: 1}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	config := DefaultConfig()

@@ -15,7 +15,7 @@ func prepareExpression(d *pb.Document) *pb.Failure {
 		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Search expression profile")
 	}
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "expression requires exactly one bounded doc object")
-	if len(d.Data) > protocol.MaxExpression || !object(d.Data) || validateJSON(d.Data, 4096) != nil {
+	if len(d.Data) > protocol.MaxExpression || !object(d.Data) || validateJSON(d.Data, len(d.Data)) != nil {
 		return invalid
 	}
 	var body map[string]json.RawMessage

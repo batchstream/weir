@@ -18,6 +18,9 @@ const maxMongoURIBytes = 4096
 // Credentials are supplied separately; the URI never carries user information.
 func ValidateConfig(cfg Config) error {
 
+	if cfg.MaxConnecting > uint64(^uint(0)>>1) {
+		return errors.New("MongoDB connection worker count exceeds platform capacity")
+	}
 	if !protocol.ValidStoreName(cfg.Store) {
 		return errors.New("invalid MongoDB Store")
 	}

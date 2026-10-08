@@ -20,13 +20,13 @@ func TestProfileUnrelatedRecordsAndOrder(t *testing.T) {
 	for _, raw := range []string{mount, unrelated + alternate + mount + narrower, narrower + mount + alternate + unrelated, mount} {
 		f.write(t, filepath.Join(f.proc, "mountinfo"), raw)
 		f.write(t, filepath.Join(f.proc, "cgroup"), "7:cpu:/unrelated\n0::/a/leaf\n")
-		g.sample(f.profile.observe())
+		g.sample(f.profile.observe(DefaultLimits()))
 		if s := g.Snapshot(); s.Unknown || s.Latched || s.Cgroup.State != "v2" {
 			t.Fatal("unrelated records changed profile", s)
 		}
 	}
 	f.write(t, filepath.Join(f.proc, "cgroup"), "0::/a/leaf\n")
-	g.sample(f.profile.observe())
+	g.sample(f.profile.observe(DefaultLimits()))
 	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
@@ -46,7 +46,7 @@ func TestProfileTransientTopologyRecovery(t *testing.T) {
 				g := &Guard{state: state, processBudget: state.Budget}
 				for _, current := range []string{"100", "850", "750"} {
 					f.level(t, "a", "1000", current)
-					g.sample(f.profile.observe())
+					g.sample(f.profile.observe(DefaultLimits()))
 				}
 				switch failure {
 				case "missing":
@@ -60,31 +60,31 @@ func TestProfileTransientTopologyRecovery(t *testing.T) {
 				case "overflow":
 					f.write(t, file, strings.Replace(string(original), "0:", "18446744073709551616:", 1))
 				}
-				g.sample(f.profile.observe())
+				g.sample(f.profile.observe(DefaultLimits()))
 				if s := g.Snapshot(); !s.Unknown || !s.Latched || s.Cgroup.State != "unknown" {
 					t.Fatal("invalid observation must be transient unknown", s)
 				}
 				f.write(t, file, string(original))
-				g.sample(f.profile.observe())
+				g.sample(f.profile.observe(DefaultLimits()))
 				if s := g.Snapshot(); s.Unknown || !s.Latched {
 					t.Fatal("middle must remain latched", s)
 				}
 				f.level(t, "a", "1000", "700")
 				// Low cgroup alone cannot release an invalid or middle RSS.
 				f.write(t, filepath.Join(f.proc, "statm"), "bad")
-				g.sample(f.profile.observe())
+				g.sample(f.profile.observe(DefaultLimits()))
 				if s := g.Snapshot(); !s.Unknown || !s.Latched {
 					t.Fatal(s)
 				}
 				pages := (uint64(1<<20) * 75 / 100) / uint64(os.Getpagesize())
 				f.write(t, filepath.Join(f.proc, "statm"), fmt.Sprintf("100 %d 0 0 0 0 0", pages))
-				g.sample(f.profile.observe())
+				g.sample(f.profile.observe(DefaultLimits()))
 				if s := g.Snapshot(); s.Unknown || !s.Latched {
 					t.Fatal(s)
 				}
 				f.write(t, filepath.Join(f.proc, "statm"), "100 2 0 0 0 0 0")
 				for range 3 {
-					g.sample(f.profile.observe())
+					g.sample(f.profile.observe(DefaultLimits()))
 				}
 				if s := g.Snapshot(); s.Unknown || s.Latched {
 					t.Fatal("trusted original profile did not recover", s)
@@ -99,7 +99,7 @@ func TestProfileValidatedIdentityChange(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			f := fixture(t)
 			original := fmt.Sprintf("1 0 0:1 / %s rw - cgroup2 cgroup rw\n", f.mount)
-			if o := f.profile.observe(); !o.cgroup.Valid {
+			if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid {
 				t.Fatal(o)
 			}
 			switch change {
@@ -117,17 +117,17 @@ func TestProfileValidatedIdentityChange(t *testing.T) {
 			// Incomplete observations must not replace the validated profile.
 			current := filepath.Join(f.mount, "a", "memory.current")
 			f.write(t, current, "bad")
-			if o := f.profile.observe(); o.cgroup.State != "unknown" {
+			if o := f.profile.observe(DefaultLimits()); o.cgroup.State != "unknown" {
 				t.Fatal(o)
 			}
 			f.write(t, current, "100")
-			if o := f.profile.observe(); !o.cgroup.Valid {
+			if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid {
 				t.Fatal(o)
 			}
 			f.write(t, filepath.Join(f.proc, "mountinfo"), original)
 			f.write(t, filepath.Join(f.proc, "cgroup"), "0::/a/leaf\n")
 			f.level(t, "a", "1000", "100")
-			if o := f.profile.observe(); !o.cgroup.Valid || !o.low {
+			if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid || !o.low {
 				t.Fatal("restored hierarchy must be rediscovered", o)
 			}
 		})
@@ -140,18 +140,18 @@ func TestProfileStartupTopologyUnknown(t *testing.T) {
 	f.write(t, filepath.Join(f.proc, "mountinfo"), "bad")
 	state := Snapshot{Budget: 1 << 20}
 	g := &Guard{state: state, processBudget: state.Budget}
-	g.sample(f.profile.observe())
+	g.sample(f.profile.observe(DefaultLimits()))
 	if s := g.Snapshot(); !s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.write(t, filepath.Join(f.proc, "mountinfo"), mount)
 	f.level(t, "a", "1000", "750")
-	g.sample(f.profile.observe())
+	g.sample(f.profile.observe(DefaultLimits()))
 	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.level(t, "a", "1000", "700")
-	g.sample(f.profile.observe())
+	g.sample(f.profile.observe(DefaultLimits()))
 	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
@@ -165,18 +165,18 @@ func TestProfileLowMalformedRestored(t *testing.T) {
 	}
 	state := Snapshot{Budget: 1 << 20}
 	g := &Guard{state: state, processBudget: state.Budget}
-	g.sample(f.profile.observe())
+	g.sample(f.profile.observe(DefaultLimits()))
 	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.write(t, filepath.Join(f.proc, "mountinfo"), "temporarily invalid topology")
-	g.sample(f.profile.observe())
+	g.sample(f.profile.observe(DefaultLimits()))
 	if s := g.Snapshot(); !s.Unknown || s.Latched {
 		t.Fatal(s)
 	}
 	f.write(t, filepath.Join(f.proc, "mountinfo"), string(original))
 	for range 3 {
-		g.sample(f.profile.observe())
+		g.sample(f.profile.observe(DefaultLimits()))
 	}
 	if s := g.Snapshot(); s.Unknown || s.Latched {
 		t.Fatal("original low profile must recover", s)
@@ -223,7 +223,7 @@ func TestProfileParserBounds(t *testing.T) {
 func TestProfileMissingTopPairRecovers(t *testing.T) {
 	f := fixture(t)
 	f.level(t, ".", "2000", "100")
-	if o := f.profile.observe(); !o.cgroup.Valid {
+	if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid {
 		t.Fatal(o)
 	}
 	for _, name := range []string{"memory.current", "memory.max"} {
@@ -231,11 +231,11 @@ func TestProfileMissingTopPairRecovers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if o := f.profile.observe(); o.cgroup.State != "unknown" {
+	if o := f.profile.observe(DefaultLimits()); o.cgroup.State != "unknown" {
 		t.Fatal("missing pair must be transient", o)
 	}
 	f.level(t, ".", "2000", "100")
-	if o := f.profile.observe(); !o.cgroup.Valid || !o.low {
+	if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid || !o.low {
 		t.Fatal(o)
 	}
 }

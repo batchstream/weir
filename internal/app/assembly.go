@@ -33,11 +33,12 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 	node := &Node{
-		admission: admission,
-		stores:    make(map[string]*store.Runtime, len(cfg.Routing.Stores)),
-		Errors:    make(chan error, 3),
-		state:     "constructed",
-		registry:  prometheus.NewRegistry(),
+		shutdownTimeout: time.Duration(cfg.Basic.Lifecycle.ShutdownTimeout),
+		admission:       admission,
+		stores:          make(map[string]*store.Runtime, len(cfg.Routing.Stores)),
+		Errors:          make(chan error, 3),
+		state:           "constructed",
+		registry:        prometheus.NewRegistry(),
 	}
 	overloadTargets := []overload.Target{admission}
 
@@ -131,12 +132,12 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		node.endpoints[i].server = listenerServer
 	}
 
-	node.guard = overload.New(overloadTargets)
+	node.guard = overload.New(overloadTargets, cfg.Basic.Overload.Memory.limits())
 	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}
 	if cfg.Basic.Diagnostics.Address != "" {
-		if err := node.openDiagnostics(cfg.Basic.Diagnostics.Address); err != nil {
+		if err := node.openDiagnostics(cfg.Basic.Diagnostics.Address, time.Duration(cfg.Basic.Diagnostics.Timeout)); err != nil {
 			return nil, err
 		}
 	}
@@ -152,7 +153,7 @@ func openLocal(ctx context.Context, name string, cfg *Local) (*store.Runtime, er
 	limits := cfg.runtimeLimits()
 	var adapter execution.Adapter
 	var err error
-	if cfg.MongoDB != nil {
+	if cfg.Backend.MongoDB != nil {
 		config := cfg.mongoConfig(name)
 		adapter, err = mongodb.Open(ctx, config)
 	} else {

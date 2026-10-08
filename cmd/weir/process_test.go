@@ -122,11 +122,7 @@ func (b *startupBackend) config() app.Config {
 	backend := &app.Search{
 		URL: b.server.URL,
 	}
-	local := &app.Local{
-		Search: backend,
-
-		MaxBatchOperations: 1,
-	}
+	local := &app.Local{Backend: app.BackendConfig{Search: backend}, Batching: app.BatchingConfig{MaxOperations: 1}}
 	service := app.StoreConfig{Name: "records", Local: local}
 
 	cfg := app.DefaultConfig()
@@ -393,7 +389,7 @@ func TestCLISignalDuringHandshake(t *testing.T) {
 				backend := &app.Search{
 					URL: held.server.URL,
 				}
-				local := &app.Local{Search: backend}
+				local := &app.Local{Backend: app.BackendConfig{Search: backend}}
 				second := app.StoreConfig{Name: "second", Local: local}
 
 				cfg.Routing.Stores = append(cfg.Routing.Stores, second)
@@ -636,7 +632,7 @@ func TestStartupCancellationReleasesOwners(t *testing.T) {
 	backend := &app.Search{
 		URL: held.server.URL,
 	}
-	local := &app.Local{Search: backend}
+	local := &app.Local{Backend: app.BackendConfig{Search: backend}}
 	service := app.StoreConfig{Name: "second", Local: local}
 
 	cfg.Routing.Stores = append(cfg.Routing.Stores, service)

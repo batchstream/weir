@@ -55,7 +55,7 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 				raw = string(routing)
 				duplicate = "STORES: []\n"
 				crossField = "listeners: {}\n"
-				nestedDuplicate = strings.Replace(raw, "max_batch_operations: 0", "max_batch_operations: 0\n      MAX_BATCH_OPERATIONS: 0", 1)
+				nestedDuplicate = strings.Replace(raw, "max_operations: 0", "max_operations: 0\n      MAX_OPERATIONS: 0", 1)
 			}
 			var decodeErr error
 			if document == "basic" {
@@ -281,7 +281,7 @@ func TestLoadDoesNotPerformStartupIO(t *testing.T) {
 		URL:        "https://unresolved.invalid:443",
 		Connection: connection,
 	}
-	local := &Local{Search: backend}
+	local := &Local{Backend: BackendConfig{Search: backend}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -300,7 +300,7 @@ func TestLoadValidatesWholeGraphBeforeStartup(t *testing.T) {
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
 	backend := &Search{URL: endpoint.URL}
-	local := &Local{Search: backend}
+	local := &Local{Backend: BackendConfig{Search: backend}}
 	service := StoreConfig{Name: "records", Local: local}
 	invalidService := StoreConfig{Name: "invalid"}
 
@@ -321,10 +321,10 @@ func TestDecodeRoutingAllowsOptionalNullAdapters(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded, err := DecodeRouting(strings.NewReader(string(raw)))
-	if err != nil || len(decoded.Stores) != 1 || decoded.Stores[0].Search == nil || decoded.Stores[0].MongoDB != nil {
+	if err != nil || len(decoded.Stores) != 1 || decoded.Stores[0].Backend.Search == nil || decoded.Stores[0].Backend.MongoDB != nil {
 		t.Fatal("optional null backend rejected", err)
 	}
-	if _, err := DecodeRouting(io.LimitReader(strings.NewReader(string(raw)), int64(len(raw)/2))); err == nil {
+	if _, err := DecodeRouting(io.LimitReader(strings.NewReader(string(raw)), int64(strings.Index(string(raw), "url:")+3))); err == nil {
 		t.Fatal("truncated Store document accepted")
 	}
 }
@@ -339,8 +339,8 @@ func TestConfigurationScalarTypes(t *testing.T) {
 			t.Fatal("basic field accepted implicit type coercion", err)
 		}
 	}
-	input := "stores:\n  - name: records\n    search:\n      url: http://127.0.0.1:9200\n    max_batch_operations: 2\n"
-	for _, replacement := range [][2]string{{"name: records", "name: true"}, {"url: http://127.0.0.1:9200", "url: 123"}, {"max_batch_operations: 2", "max_batch_operations: '2'"}} {
+	input := "stores:\n  - name: records\n    backend:\n      search:\n        url: http://127.0.0.1:9200\n    batching:\n      max_operations: 2\n"
+	for _, replacement := range [][2]string{{"name: records", "name: true"}, {"url: http://127.0.0.1:9200", "url: 123"}, {"max_operations: 2", "max_operations: '2'"}} {
 		invalid := strings.Replace(input, replacement[0], replacement[1], 1)
 		_, err := DecodeRouting(strings.NewReader(invalid))
 		if err == nil || !strings.Contains(err.Error(), "invalid configuration scalar type") {
@@ -350,20 +350,16 @@ func TestConfigurationScalarTypes(t *testing.T) {
 }
 
 func TestRoutingNullFields(t *testing.T) {
-	input := `stores:
-  - name: database
-    search: null
-    mongodb:
-      uri: mongodb://127.0.0.1:27017
-`
+	input := "stores:\n  - name: database\n    backend:\n      search: null\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n"
+
 	cfg, err := DecodeRouting(strings.NewReader(input))
-	if err != nil || cfg.Stores[0].Local.Search != nil {
+	if err != nil || cfg.Stores[0].Local.Backend.Search != nil {
 		t.Fatal("unused adapter blocks may be explicitly null", err)
 	}
 	for _, field := range []string{"uri"} {
 		lines := strings.Split(input, "\n")
 		for i, line := range lines {
-			prefix := "      " + field + ":"
+			prefix := "        " + field + ":"
 			if strings.HasPrefix(line, prefix) {
 				lines[i] = prefix + " null"
 			}
@@ -375,7 +371,7 @@ func TestRoutingNullFields(t *testing.T) {
 	}
 	for _, document := range []string{
 		"stores: [null]\n",
-		"stores:\n  - name: database\n    mongodb:\n      uri: mongodb://127.0.0.1:27017\n    max_batch_operations: null\n",
+		"stores:\n  - name: database\n    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n    batching:\n      max_operations: null\n",
 	} {
 		if _, err := DecodeRouting(strings.NewReader(document)); err == nil {
 			t.Fatal("null Store or required scalar accepted")
@@ -384,20 +380,13 @@ func TestRoutingNullFields(t *testing.T) {
 }
 
 func TestNestedUnknownRoutingFieldsAreRedacted(t *testing.T) {
-	input := `stores:
-  - name: search
-    search:
-      url: https://127.0.0.1:9200
-      connection:
-        username: user-secret-sentinel
-        password: password-secret-sentinel
-        ca_file: /missing/ca-secret-sentinel.pem
-`
+	input := "stores:\n  - name: search\n    backend:\n      search:\n        url: https://127.0.0.1:9200\n        connection:\n          username: user-secret-sentinel\n          password: password-secret-sentinel\n          ca_file: /missing/ca-secret-sentinel.pem\n"
+
 	if _, err := DecodeRouting(strings.NewReader(input)); err != nil {
 		t.Fatal("valid secret-bearing fields should pass pure validation", err)
 	}
 	for _, field := range []string{"server_name", "insecure_skip_verify", "auth_provider", "token", "resolver", "tls", "credentials"} {
-		unknown := strings.Replace(input, "      connection:\n", "      connection:\n        "+field+": field-secret-sentinel\n", 1)
+		unknown := strings.Replace(input, "        connection:\n", "        connection:\n          "+field+": field-secret-sentinel\n", 1)
 		_, err := DecodeRouting(strings.NewReader(unknown))
 		if err == nil || err.Error() != "routing invalid configuration YAML or unknown field" {
 			t.Fatal("unknown nested option must be rejected without exposing credentials or parser details", field, err)

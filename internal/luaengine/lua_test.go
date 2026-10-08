@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -217,14 +218,18 @@ func TestEvaluateBoundsExecutionWorkAndCompilation(t *testing.T) {
 		"return function() local function recurse() return 1 + recurse() end; return recurse() end",
 		"return function() local t = {}; for i = 1, 5000 do t[i] = 1 end; table.sort(t); return {} end",
 	}
-	locals := make([]string, 129)
+	locals := make([]string, 201)
 	for index := range locals {
-		locals[index] = "var" + strings.Repeat("x", index)
+		locals[index] = "var" + strconv.Itoa(index)
 	}
 	sources = append(sources, "local "+strings.Join(locals, ",")+"; return function() return {} end")
 	for _, source := range sources {
 		started := time.Now()
-		_, err := luaengine.Evaluate(context.Background(), testProgram(source))
+		program := testProgram(source)
+		limits := luaengine.DefaultLimits()
+		limits.MaxInstructions = 1_000_000
+		program.Limits = &limits
+		_, err := luaengine.Evaluate(context.Background(), program)
 		if err == nil || time.Since(started) > 2*time.Second {
 			t.Fatalf("execution bound not enforced: elapsed=%s err=%v", time.Since(started), err)
 		}
@@ -234,6 +239,9 @@ func TestEvaluateBoundsExecutionWorkAndCompilation(t *testing.T) {
 func TestEvaluateCannotHideWorkExhaustionBehindAction(t *testing.T) {
 	for _, action := range []string{"keep", "delete"} {
 		program := testProgram("return function() local result = weir." + action + "(); pcall(function() while true do end end); return result end")
+		limits := luaengine.DefaultLimits()
+		limits.MaxInstructions = 1_000_000
+		program.Limits = &limits
 		if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
 			t.Fatalf("pcall hid work exhaustion behind %s", action)
 		}
@@ -258,7 +266,8 @@ func TestEvaluateSortComparatorObservesInPlaceArray(t *testing.T) {
 
 func TestEvaluateSourceValueAndLibraryResultBounds(t *testing.T) {
 	for _, source := range []string{"", strings.Repeat(" ", luaengine.MaxSourceBytes+1), "return\x00", "\x1bLua", string([]byte{255})} {
-		if _, err := luaengine.Evaluate(context.Background(), testProgram(source)); err == nil {
+		program := testProgram(source)
+		if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
 			t.Fatal("accepted invalid or oversized source")
 		}
 	}

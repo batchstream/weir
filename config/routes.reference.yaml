@@ -19,154 +19,246 @@
 #
 # Required: no. Default: no local Stores. Allowed: 0..16 Store definitions.
 # Empty/missing stores (or stores: []) supports a node that only serves discovery.
-# Each Store requires one backend: mongodb or search. Remote Stores are learned
+# Each Store requires one backend: backend.mongodb or backend.search. Remote Stores are learned
 # through peer discovery. Database/collection/index targets come from request URIs.
 # Hosting a local Store also requires listeners.application in the process file.
 stores:
-  # MongoDB Store example. Backend names are local identities visible to clients.
-  - # Required: yes. No default. Allowed: 1..63 lowercase ASCII letters/digits
-    # and single internal hyphens; start with a letter, end with a letter/digit.
-    # Names must be unique in this file. Example: mongo or product-search.
+  - # Required: unique Store name, 1..63 lowercase letters/digits/internal hyphens.
     name: mongo
 
-    # MongoDB connection settings. Required when this Store has no search block.
-    # Omit the unused search block; a Store cannot enable both adapters.
-    mongodb:
-      # Required: yes. No default. Allowed: mongodb:// with exactly one IP/DNS
-      # host and explicit port 1..65535, at most 4096 bytes, without userinfo.
-      # No database path, mongodb+srv, multi-host or topology discovery options.
-      # Accepted options: directConnection=true, serverMonitoringMode=poll,
-      # authSource, authMechanism=SCRAM-SHA-256, tls=true and tlsCAFile.
-      # Authentication requires both credentials below plus explicit authSource,
-      # authMechanism=SCRAM-SHA-256 and tls=true. Without credentials, auth/TLS
-      # options are rejected. No tlsInsecure or certificate-verification bypass.
-      # Authenticated example (keep username/password outside the URI):
-      # mongodb://mongo.example:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
-      # tlsCAFile is optional, URL-encoded and read at startup; relative CA paths
-      # use the process working directory. Prefer an absolute path.
-      uri: mongodb://127.0.0.1:27017/?directConnection=true
+    # Exactly one adapter; omit the unused adapter block.
+    backend:
+      # TCP/DNS/TLS establishment deadline. Default: 2s; positive duration.
+      # Applies only while creating a connection. Business IO follows the caller
+      # context; there is no server-selection or whole-request timeout added by Weir.
+      connect_timeout: 2s
 
-      # Optional inline SCRAM username. Default: "" (no username value).
-      # Allowed: valid UTF-8 text, 1..128 bytes, without control characters.
-      # Mutually exclusive with username_file. Username and password must each
-      # have a value or file source together; both may be absent for no auth.
-      username: ""
+      # Completed target qualification cache. Default: 64; integer >= 0.
+      # 0 disables completed caching. Pending checks are independent of this
+      # capacity; different targets can always check concurrently.
+      metadata_cache_entries: 64
 
-      # Optional inline SCRAM password. Default: "" (no password value).
-      # Allowed: valid UTF-8 text, 1..256 bytes, without control characters.
-      # Mutually exclusive with password_file. Spaces and punctuation are kept.
-      password: ""
+      mongodb:
+        # Required: yes. No default. Allowed: mongodb:// with exactly one IP/DNS
+        # host and explicit port 1..65535, at most 4096 bytes, without userinfo.
+        # No database path, mongodb+srv, multi-host or topology discovery options.
+        # Accepted options: directConnection=true, serverMonitoringMode=poll,
+        # authSource, authMechanism=SCRAM-SHA-256, tls=true and tlsCAFile.
+        # Authentication requires both credentials below plus explicit authSource,
+        # authMechanism=SCRAM-SHA-256 and tls=true. Without credentials, auth/TLS
+        # options are rejected. No tlsInsecure or certificate-verification bypass.
+        # Authenticated example (keep username/password outside the URI):
+        # mongodb://mongo.example:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
+        # tlsCAFile is optional, URL-encoded and read at startup; relative CA paths
+        # use the process working directory. Prefer an absolute path.
+        uri: mongodb://127.0.0.1:27017/?directConnection=true
 
-      # Optional username file. Default: "" (no file source).
-      # Path: 1..2048 UTF-8 bytes, nonblank, without control characters.
-      # Relative paths resolve from this routes document's directory; symlinks
-      # may point to regular files. File content follows username's text limit.
-      # Load/check reads it once and removes one final LF or CRLF only.
-      # To use this source, keep username empty. Example: secrets/mongo-username.
-      username_file: ""
+        # Connection creation workers per MongoDB endpoint. Default: 2; 0 selects 2.
+        # The native driver creates this many goroutines; it cannot represent an
+        # unlimited worker count. Increase this for connection-establishment bursts.
+        # This does not cap active connections or operations: the pool is unlimited.
+        pool:
+          max_connecting: 2
 
-      # Optional password file. Default: "" (no file source).
-      # Same path/read rules as username_file; content follows password's limit.
-      # To use this source, keep password empty. Example: secrets/mongo-password.
-      password_file: ""
+        # Optional inline SCRAM username. Default: "" (no username value).
+        # Allowed: valid UTF-8 text, 1..128 bytes, without control characters.
+        # Mutually exclusive with username_file. Username and password must each
+        # have a value or file source together; both may be absent for no auth.
+        username: ""
 
-    # Maximum operations combined into one compatible backend batch.
-    # Required: no. Default: 32; explicit 0 also selects 32.
-    # Allowed: positive integer. Batches are dispatched without a collection delay.
-    # Backend encoding boundaries may split the physical exchange further.
-    max_batch_operations: 32
+        # Optional inline SCRAM password. Default: "" (no password value).
+        # Allowed: valid UTF-8 text, 1..256 bytes, without control characters.
+        # Mutually exclusive with password_file. Spaces and punctuation are kept.
+        password: ""
 
-    # Maximum retained input bytes combined into one ordinary backend batch.
-    # Required: no. Default: "8MiB". Allowed: positive integer byte size fitting
-    # the platform integer and at least the per-operation metadata overhead.
-    # Includes scheduler metadata. An operation must fit on its own.
-    # Scan and Native are singleton streaming operations with protocol bounds.
-    max_batch_bytes: 8MiB
-
-    # Capacity for operations waiting to be dispatched by this Store.
-    # Required: no. Default: the child defaults below.
-    # Running operations and completed results do not retain this queue capacity.
-    # When full, business streams wait for space or their caller context to end.
-    batch_queue:
-      # Maximum waiting operations. Default: 1024; explicit 0 selects 1024.
-      # Allowed: positive integer. Count and byte limits apply together.
-      max_operations: 1024
-
-      # Maximum waiting input bytes, including per-operation scheduler metadata.
-      # Default: "32MiB". Allowed: positive platform integer byte size, at least
-      # the metadata overhead. Syntax: integer + B | KiB | MiB | GiB.
-      # A single operation exceeding the queue/batch capacity fails validation.
-      max_bytes: 32MiB
-
-  # Search Store example; uses the same Store naming and scheduler bounds above.
-  - # Required: yes. Unique Store name, with the same format as the Mongo example.
-    name: search
-
-    # Search connection settings. Required when this Store has no mongodb block.
-    search:
-      # Required: yes. No default. Allowed: one http:// or https:// IP/DNS origin
-      # with an explicit port 1..65535, at most 1024 bytes.
-      # No userinfo, path (including a trailing slash), query or fragment.
-      # The request URI selects the index. Auth and custom CA settings need HTTPS.
-      url: https://127.0.0.1:9200
-
-      # Optional authentication/trust settings. Default: omitted (system HTTPS
-      # roots and no credentials). If present, URL must be HTTPS and this block
-      # must contain credentials or a CA file; an empty connection is invalid.
-      connection:
-        # Optional HTTP Basic username. Default: "". Allowed: valid UTF-8 text,
-        # 1..128 bytes, without control characters or colons.
-        # Mutually exclusive with username_file. Both username and password
-        # need value/file sources together. This value is an example placeholder.
-        username: weir
-
-        # Optional HTTP Basic password. Default: "". Allowed: valid UTF-8 text,
-        # 1..256 bytes, without control characters. Spaces/punctuation are kept.
-        # Mutually exclusive with password_file. Replace this example value.
-        password: change-me
-
-        # Optional username file. Default: "". Same path/content/read rules as
-        # mongodb.username_file, plus Search's username restriction on colons.
-        # Clear username before setting this path; keep a paired password source.
+        # Optional username file. Default: "" (no file source).
+        # Path: 1..2048 UTF-8 bytes, nonblank, without control characters.
+        # Relative paths resolve from this routes document's directory; symlinks
+        # may point to regular files. File content follows username's text limit.
+        # Load/check reads it once and removes one final LF or CRLF only.
+        # To use this source, keep username empty. Example: secrets/mongo-username.
         username_file: ""
 
-        # Optional password file. Default: "". Same path/content/read rules as
-        # mongodb.password_file. Clear password before setting this path.
+        # Optional password file. Default: "" (no file source).
+        # Same path/read rules as username_file; content follows password's limit.
+        # To use this source, keep password empty. Example: secrets/mongo-password.
         password_file: ""
 
-        # Optional PEM CA bundle for this connection. Default: "" (system roots).
-        # Path: at most 2048 UTF-8 bytes, without control characters. The regular
-        # file must contain a valid PEM certificate bundle and be at most 256KiB.
-        # A supplied bundle replaces system roots; hostname verification remains
-        # enabled. Relative paths use the process working directory, unlike
-        # credential files. Read only at serve/startup, not by Load/check.
-        # Replace this example with your trust bundle, or "" for system roots.
-        ca_file: /etc/weir/ca.pem
+    # These are aggregation and buffering bounds, not active concurrency limits.
+    batching:
+      # Compatible operations per scheduled batch. Default: 32; 0 selects 32.
+      # Positive integer. There is no collection delay or global execution cap.
+      max_operations: 32
 
-    # Maximum operations combined into one compatible backend batch.
-    # Required: no. Default: 32; explicit 0 also selects 32.
-    # Allowed: positive integer. Batches are dispatched without a collection delay.
-    # Backend encoding boundaries may split the physical exchange further.
-    max_batch_operations: 32
+      # Retained input plus scheduler metadata per scheduled batch. Default: 8MiB.
+      # Positive platform integer byte size. One input must fit; Scan/Native
+      # use singleton plans. The protocol separately bounds individual documents.
+      max_bytes: 8MiB
 
-    # Maximum retained input bytes combined into one ordinary backend batch.
-    # Required: no. Default: "8MiB". Allowed: positive integer byte size fitting
-    # the platform integer and at least the per-operation metadata overhead.
-    # Includes scheduler metadata. An operation must fit on its own.
-    # Scan and Native are singleton streaming operations with protocol bounds.
-    max_batch_bytes: 8MiB
+      # Encoded exchange/workspace size. Default: 32MiB; at least 4MiB.
+      # Larger scheduled batches split into exchanges instead of being rejected.
+      # MongoDB also splits transaction workspaces; native driver wire bounds remain.
+      max_exchange_bytes: 32MiB
 
-    # Capacity for operations waiting to be dispatched by this Store.
-    # Required: no. Default: the child defaults below.
-    # Running operations and completed results do not retain this queue capacity.
-    # When full, business streams wait for space or their caller context to end.
-    batch_queue:
-      # Maximum waiting operations. Default: 1024; explicit 0 selects 1024.
-      # Allowed: positive integer. Count and byte limits apply together.
-      max_operations: 1024
+      # Only waiting inputs occupy this queue. Dispatch releases its capacity.
+      # Full queues wait for capacity or caller cancellation.
+      queue:
+        # Waiting operations. Default: 1024; 0 selects 1024; positive integer.
+        max_operations: 1024
+        # Waiting input plus scheduler metadata. Default: 32MiB.
+        # Positive platform integer byte size, at least the metadata overhead.
+        max_bytes: 32MiB
 
-      # Maximum waiting input bytes, including per-operation scheduler metadata.
-      # Default: "32MiB". Allowed: positive platform integer byte size, at least
-      # the metadata overhead. Syntax: integer + B | KiB | MiB | GiB.
-      # A single operation exceeding the queue/batch capacity fails validation.
-      max_bytes: 32MiB
+    streaming:
+      # Admitted/publishing records per Execute stream. Default: 32; 0 selects 32.
+      # Positive integer. A slow client pauses that stream instead of retaining
+      # unlimited results. This does not cap RPCs or global backend concurrency.
+      max_pending_records: 32
+      scan:
+        # Documents retained in one fetch/publication batch. Default: 128.
+        # Integer 1..256; 0 selects 128. Logical pages still follow the protocol.
+        max_batch_documents: 128
+        # Document bytes retained per Scan batch. Default: 4MiB; at least 2MiB.
+        # Must fit the platform integer plus result framing. Smaller native
+        # batches are learned automatically; total Scan output is not limited.
+        max_batch_bytes: 4MiB
+
+    lua:
+      # Execution runs in the main Weir process and follows the caller context.
+      vm:
+        # Default: 0 (no instruction budget). Optional positive instruction count.
+        # Use a measured budget only when workload evidence calls for one.
+        max_instructions: 0
+        # Default: 0 (VM native default 10000), or a positive call depth.
+        # Weir no longer adds the former 128-call restriction.
+        max_call_depth: 0
+        # Default: 0 (VM native default 1000000), or positive stack slots.
+        # Weir no longer adds the former 4096-slot restriction.
+        max_stack_slots: 0
+      values:
+        # Input/current/output conversion bytes. Default: 2MiB; positive byte size.
+        # The former 256KiB cap is removed; encoded documents must still fit
+        # the protocol's 2MiB document boundary. Larger values do not relax it.
+        max_bytes: 2MiB
+        # Conversion nesting depth. Default: 32; 0 selects 32; positive integer.
+        max_depth: 32
+        # Conversion value/field nodes. Default: 4096; 0 selects 4096; positive integer.
+        # Applies consistently to JSON/BSON decoding, bridge and Lua libraries.
+        max_nodes: 4096
+
+  - # Required: unique Store name, 1..63 lowercase letters/digits/internal hyphens.
+    name: search
+
+    # Exactly one adapter; omit the unused adapter block.
+    backend:
+      # TCP/DNS/TLS establishment deadline. Default: 2s; positive duration.
+      # Applies only while creating a connection. Business IO follows the caller
+      # context; there is no server-selection or whole-request timeout added by Weir.
+      connect_timeout: 2s
+
+      # Completed target qualification cache. Default: 64; integer >= 0.
+      # 0 disables completed caching. Pending checks are independent of this
+      # capacity; different targets can always check concurrently.
+      metadata_cache_entries: 64
+
+      search:
+        # Required: yes. No default. Allowed: one http:// or https:// IP/DNS origin
+        # with an explicit port 1..65535, at most 1024 bytes.
+        # No userinfo, path (including a trailing slash), query or fragment.
+        # The request URI selects the index. Auth and custom CA settings need HTTPS.
+        url: https://127.0.0.1:9200
+
+        # Optional authentication/trust settings. Default: omitted (system HTTPS
+        # roots and no credentials). If present, URL must be HTTPS and this block
+        # must contain credentials or a CA file; an empty connection is invalid.
+        connection:
+          # Optional HTTP Basic username. Default: "". Allowed: valid UTF-8 text,
+          # 1..128 bytes, without control characters or colons.
+          # Mutually exclusive with username_file. Both username and password
+          # need value/file sources together. This value is an example placeholder.
+          username: weir
+
+          # Optional HTTP Basic password. Default: "". Allowed: valid UTF-8 text,
+          # 1..256 bytes, without control characters. Spaces/punctuation are kept.
+          # Mutually exclusive with password_file. Replace this example value.
+          password: change-me
+
+          # Optional username file. Default: "". Same path/content/read rules as
+          # mongodb.username_file, plus Search's username restriction on colons.
+          # Clear username before setting this path; keep a paired password source.
+          username_file: ""
+
+          # Optional password file. Default: "". Same path/content/read rules as
+          # mongodb.password_file. Clear password before setting this path.
+          password_file: ""
+
+          # Optional PEM CA bundle for this connection. Default: "" (system roots).
+          # Path: at most 2048 UTF-8 bytes, without control characters. The regular
+          # file must contain a valid PEM certificate bundle and be at most 256KiB.
+          # A supplied bundle replaces system roots; hostname verification remains
+          # enabled. Relative paths use the process working directory, unlike
+          # credential files. Read only at serve/startup, not by Load/check.
+          # Replace this example with your trust bundle, or "" for system roots.
+          ca_file: /etc/weir/ca.pem
+
+    # These are aggregation and buffering bounds, not active concurrency limits.
+    batching:
+      # Compatible operations per scheduled batch. Default: 32; 0 selects 32.
+      # Positive integer. There is no collection delay or global execution cap.
+      max_operations: 32
+
+      # Retained input plus scheduler metadata per scheduled batch. Default: 8MiB.
+      # Positive platform integer byte size. One input must fit; Scan/Native
+      # use singleton plans. The protocol separately bounds individual documents.
+      max_bytes: 8MiB
+
+      # Encoded exchange/workspace size. Default: 32MiB; at least 4MiB.
+      # Larger scheduled batches split into exchanges instead of being rejected.
+      # MongoDB also splits transaction workspaces; native driver wire bounds remain.
+      max_exchange_bytes: 32MiB
+
+      # Only waiting inputs occupy this queue. Dispatch releases its capacity.
+      # Full queues wait for capacity or caller cancellation.
+      queue:
+        # Waiting operations. Default: 1024; 0 selects 1024; positive integer.
+        max_operations: 1024
+        # Waiting input plus scheduler metadata. Default: 32MiB.
+        # Positive platform integer byte size, at least the metadata overhead.
+        max_bytes: 32MiB
+
+    streaming:
+      # Admitted/publishing records per Execute stream. Default: 32; 0 selects 32.
+      # Positive integer. A slow client pauses that stream instead of retaining
+      # unlimited results. This does not cap RPCs or global backend concurrency.
+      max_pending_records: 32
+      scan:
+        # Documents retained in one fetch/publication batch. Default: 128.
+        # Integer 1..256; 0 selects 128. Logical pages still follow the protocol.
+        max_batch_documents: 128
+        # Document bytes retained per Scan batch. Default: 4MiB; at least 2MiB.
+        # Must fit the platform integer plus result framing. Smaller native
+        # batches are learned automatically; total Scan output is not limited.
+        max_batch_bytes: 4MiB
+
+    lua:
+      # Execution runs in the main Weir process and follows the caller context.
+      vm:
+        # Default: 0 (no instruction budget). Optional positive instruction count.
+        # Use a measured budget only when workload evidence calls for one.
+        max_instructions: 0
+        # Default: 0 (VM native default 10000), or a positive call depth.
+        # Weir no longer adds the former 128-call restriction.
+        max_call_depth: 0
+        # Default: 0 (VM native default 1000000), or positive stack slots.
+        # Weir no longer adds the former 4096-slot restriction.
+        max_stack_slots: 0
+      values:
+        # Input/current/output conversion bytes. Default: 2MiB; positive byte size.
+        # The former 256KiB cap is removed; encoded documents must still fit
+        # the protocol's 2MiB document boundary. Larger values do not relax it.
+        max_bytes: 2MiB
+        # Conversion nesting depth. Default: 32; 0 selects 32; positive integer.
+        max_depth: 32
+        # Conversion value/field nodes. Default: 4096; 0 selects 4096; positive integer.
+        # Applies consistently to JSON/BSON decoding, bridge and Lua libraries.
+        max_nodes: 4096

@@ -21,9 +21,9 @@ func (a *Adapter) prepareExpression(d *pb.Document) *pb.Failure {
 	if len(d.Data) > protocol.MaxExpression {
 		return invalid
 	}
-	// Decode enforces byte, depth and node budgets incrementally, before each
-	// allocation. The bounded value tree is discarded; original BSON is sent.
-	doc, err := Decode(d.Data)
+	// Decode validates native BSON incrementally. The protocol bounds the input;
+	// the value tree is discarded and original BSON is sent.
+	doc, err := Decode(d.Data, nativeValueLimits(d.Data))
 	if err != nil || len(doc.Fields) == 0 || !expressionValues(doc) {
 		return invalid
 	}
@@ -33,7 +33,7 @@ func (a *Adapter) prepareExpression(d *pb.Document) *pb.Failure {
 			return invalid
 		}
 		for _, field := range operator.Value.Fields {
-			if !expressionPath(field.Name) || len(paths) >= 128 {
+			if !expressionPath(field.Name) {
 				return invalid
 			}
 			if paths[field.Name] {
@@ -57,11 +57,11 @@ func (a *Adapter) prepareExpression(d *pb.Document) *pb.Failure {
 }
 
 func expressionPath(path string) bool {
-	if len(path) == 0 || len(path) > 1024 {
+	if len(path) == 0 {
 		return false
 	}
 	parts := strings.Split(path, ".")
-	if len(parts) > 32 || parts[0] == "_id" {
+	if parts[0] == "_id" {
 		return false
 	}
 	for _, part := range parts {

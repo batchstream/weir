@@ -125,7 +125,7 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored Scan document exceeds output bound")
 			return page
 		}
-		nodes := 65536
+		nodes := len(value.Data)
 		if !validScanBSON(value.Data, 0, &nodes) {
 			return page
 		}

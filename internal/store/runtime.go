@@ -14,13 +14,17 @@ import (
 )
 
 // Limits controls batching and waiting work, not backend execution concurrency.
+const DefaultRecordWindow = 32
+
 type Limits struct {
+	RecordWindow                int
+	Scan                        execution.ScanLimits
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, RecordWindow: DefaultRecordWindow, Scan: execution.DefaultScanLimits()}
 	return limits
 }
 
@@ -28,6 +32,12 @@ func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < execution.EntryOverheadBytes ||
 		limits.BatchOperations < 1 || limits.BatchBytes < execution.EntryOverheadBytes {
 		return fmt.Errorf("invalid batch or queue bounds")
+	}
+	if limits.RecordWindow < 0 {
+		return fmt.Errorf("invalid stream result window")
+	}
+	if limits.Scan.Documents != 0 {
+		return limits.Scan.Validate()
 	}
 	return nil
 }
@@ -49,9 +59,10 @@ type Runtime struct {
 	metrics                                 runtimeMetrics
 }
 type Session struct {
-	runtime *Runtime
-	Events  chan *Emission
-	closed  bool
+	runtime      *Runtime
+	Events       chan *Emission
+	RecordWindow int
+	closed       bool
 }
 type Emission struct {
 	Event *pb.Event
@@ -111,12 +122,18 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 	return runtime, nil
 }
 func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
+	if limits.RecordWindow == 0 {
+		limits.RecordWindow = DefaultRecordWindow
+	}
+	if limits.Scan.Documents == 0 {
+		limits.Scan = execution.DefaultScanLimits()
+	}
 	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[resourceKey]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
 	runtime.metrics = newRuntimeMetrics()
 	return runtime
 }
 func (r *Runtime) NewSession() *Session {
-	session := &Session{runtime: r}
+	session := &Session{runtime: r, RecordWindow: r.limits.RecordWindow}
 	return session
 }
 
@@ -579,11 +596,11 @@ func (r *Runtime) execute(b *batch) {
 			if len(events) != 0 && events[len(events)-1].GetScanEnd() != nil {
 				return fmt.Errorf("adapter emitted after Scan terminal result")
 			}
-			if len(events) >= execution.ScanBatchDocuments+1 {
+			if len(events) >= r.limits.Scan.Documents+1 {
 				return fmt.Errorf("Scan batch exceeds document bound")
 			}
 			if document := event.GetDocument(); document != nil {
-				if len(events) >= execution.ScanBatchDocuments || len(document.Data) > execution.ScanBatchBytes-documentBytes {
+				if len(events) >= r.limits.Scan.Documents || len(document.Data) > r.limits.Scan.Bytes-documentBytes {
 					return fmt.Errorf("Scan batch exceeds retained output bound")
 				}
 				documentBytes += len(document.Data)

@@ -142,7 +142,7 @@ func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr err
 	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancelSignal()
 
-	startup, stop := context.WithTimeout(signals, 5*time.Second)
+	startup, stop := context.WithTimeout(signals, time.Duration(cfg.Basic.Lifecycle.StartupTimeout))
 	defer stop()
 
 	node, err := app.Open(startup, cfg)
@@ -152,7 +152,7 @@ func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr err
 
 	defer func() {
 		// A startup cancellation must not cancel the drain budget too.
-		drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		drain, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Basic.Lifecycle.ShutdownTimeout))
 		defer cancel()
 
 		resultErr = errors.Join(resultErr, node.Close(drain))

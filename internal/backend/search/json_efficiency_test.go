@@ -63,7 +63,7 @@ func validateJSONTokens(raw []byte, nodes int) error {
 
 func walkJSONTokens(decoder *json.Decoder, depth int, remaining *int) error {
 	*remaining--
-	if depth > 32 || *remaining < 0 {
+	if *remaining < 0 {
 		return errJSON
 	}
 	token, err := decoder.Token()

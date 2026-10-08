@@ -71,9 +71,9 @@ contains only public ownership/address advertisements, never backend credentials
 | Capacity | Default or bound |
 | --- | --- |
 | Record document / ordinary Read source | Protocol document bound: 2 MiB |
-| Read/Mutate stream | No total record limit; 32 tickets in the publication window |
+| Read/Mutate stream | No total record limit; configurable publication window (default 32 tickets) |
 | Native input | Protocol 8 MiB; backend encoding boundaries also apply |
-| Store waiting queue | 1024 operations / 32 MiB, configurable via batch_queue |
+| Store waiting queue | 1024 operations / 32 MiB, configurable via batching.queue |
 | Physical batch input | 32 operations / 8 MiB, configurable |
 | Business connections, RPCs and active executions | No Weir concurrency limit |
 | Process memory capacity | Automatically detected from host/process/container limits |
@@ -104,7 +104,7 @@ allocation sandbox. Programs must be trusted.
 Each prepared record enters one Store scheduler directly; there is no timed
 collection window or polling. The
 scheduler combines compatible queued records by target, actual input bytes and
-max_batch_operations and max_batch_bytes. A session/resource key serializes same-resource work
+batching.max_operations and batching.max_bytes. A session/resource key serializes same-resource work
 within a stream; distinct resources and streams can share a physical batch.
 Scan and Native use the same scheduler with their required singleton lifecycle.
 Execution mode and cleanup follow the command type. A Scan adapter returns whether
@@ -122,8 +122,9 @@ for a dispatched write remains UNKNOWN. Different RPCs gain no additional
 transaction or ordering guarantee.
 
 MongoDB collections and Search indices receive a structural metadata check on
-first use, cached per Store for up to 64 targets. Concurrent cold requests share
-one check; failed checks are not cached. The oldest completed target is evicted
+first use, cached per Store according to `backend.metadata_cache_entries` (default
+64 targets). Zero disables completed caching; concurrent cold requests still share
+one check. Failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
 
@@ -137,9 +138,10 @@ Metrics observe execution rather than control scheduling. The former
 Queue occupancy and capacity metrics describe waiting operations. Active execution
 and per-record outcome counters retain actual backend evidence, including unknown writes.
 
-Scan fetches up to 128 documents per backend call, bounded by the remaining
-logical page size. It validates the complete native response and retains an
-ordered prefix of at most 4 MiB, then finishes backend execution before publication.
+Scan fetches up to `streaming.scan.max_batch_documents` (default 128) per backend
+call, bounded by the remaining logical page size. It validates the complete native response and retains an
+ordered prefix bounded by `streaming.scan.max_batch_bytes` (default 4 MiB), then
+finishes backend execution before publication.
 The result remains owned through publication and request completion. A blocked
 Scan reader does not stop independent work. MongoDB estimates 48 MiB and Search
 64 MiB of working bytes for native buffers and validation; these metrics do not
@@ -161,9 +163,9 @@ failed/exhausted page until expiry.
 Checkpoint tokens are bounded, opaque and tied to the target/filter/projection;
 the checksum detects corruption and is not authentication.
 
-Native execution is a singleton with bounded streaming and backend time. MongoDB
-qualification and native command share a deadline; Search counts actual backend
-I/O time and pauses that allowance during publication. Lua record transforms
+Native execution is a singleton with bounded streaming. Qualification, native
+commands and publication inherit the caller context, without an added backend
+execution deadline. Lua record transforms
 participate in compatible request grouping. MongoDB uses a short snapshot
 transaction for a bounded group: point read, individual Lua evaluation, bulk
 write and commit. No metadata fields are inserted into business documents, and

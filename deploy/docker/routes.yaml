@@ -1,4 +1,5 @@
 stores:
   - name: records
-    mongodb:
-      uri: mongodb://db.example.invalid:27017/?directConnection=true
+    backend:
+      mongodb:
+        uri: mongodb://db.example.invalid:27017/?directConnection=true

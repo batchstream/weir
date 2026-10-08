@@ -144,17 +144,19 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 		}
 	}
 	dialer := newConnectionOwner()
+	if deadline, ok := ctx.Deadline(); ok {
+		dialer.timeout = time.Until(deadline)
+	}
 	defer dialer.close()
 	transport := &http.Transport{
 		DialContext:            dialer.dialConnection,
 		DisableKeepAlives:      true,
 		MaxConnsPerHost:        1,
 		MaxResponseHeaderBytes: 16 << 10,
-		ResponseHeaderTimeout:  mongoConnectTimeout,
 	}
 	defer transport.CloseIdleConnections()
 	bounded := &ocspTransport{transport: transport}
-	httpClient := &http.Client{Transport: bounded, Timeout: mongoConnectTimeout, CheckRedirect: rejectOCSPRedirect}
+	httpClient := &http.Client{Transport: bounded, CheckRedirect: rejectOCSPRedirect}
 	// A fresh cache is used for exactly one leaf verification: at most one entry,
 	// released after this handshake. There is no process-wide certificate map.
 	verify := &ocsp.VerifyOptions{Cache: ocsp.NewCache(), HTTPClient: httpClient}

@@ -1,5 +1,7 @@
 stores:
   - name: records
-    search:
-      url: http://elasticsearch:9200
-    max_batch_operations: 32
+    backend:
+      search:
+        url: http://elasticsearch:9200
+    batching:
+      max_operations: 32

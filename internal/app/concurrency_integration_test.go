@@ -47,7 +47,7 @@ func TestSearchConcurrentRPCsUseAvailableBackendConnections(t *testing.T) {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	backend := &Search{URL: server.URL}
-	local := &Local{Search: backend, MaxBatchOperations: 1}
+	local := &Local{Backend: BackendConfig{Search: backend}, Batching: BatchingConfig{MaxOperations: 1}}
 	definition := StoreConfig{Name: "records", Local: local}
 	cfg := DefaultConfig()
 	cfg.Basic.Listeners.Application = "127.0.0.1:0"

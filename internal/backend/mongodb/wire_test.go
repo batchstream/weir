@@ -65,7 +65,7 @@ func TestMongoWireBoundsBeforeDriverHeader(t *testing.T) {
 			guard := &boundedConn{Conn: client}
 			header := make([]byte, 4)
 			n, err := guard.Read(header)
-			if mode == "good" {
+			if mode == "good" || mode == "metadata_nodes" || mode == "envelope_nodes" {
 				if err != nil || n != 4 {
 					t.Fatal(n, err)
 				}

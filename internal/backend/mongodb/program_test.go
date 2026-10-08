@@ -49,7 +49,7 @@ func TestMongoProgramReplacementPreservesResourceIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 		document := value.Value{Kind: value.Object, Fields: []value.Field{{Name: "count", Value: value.Value{Kind: value.Int32, Integer: 1}}}}
-		replacement, valid := withMongoIdentity(document, identity, testCase.id)
+		replacement, valid := withMongoIdentity(document, identity, testCase.id, value.DefaultLimits())
 		if !valid || len(replacement.Fields) != 2 || replacement.Fields[0].Name != "_id" {
 			t.Fatalf("identity was not preserved for %T: %#v", testCase.id, replacement)
 		}
@@ -64,7 +64,8 @@ func TestMongoProgramReplacementPreservesResourceIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrongIdentity := value.Value{Kind: value.Object, Fields: []value.Field{{Name: "_id", Value: value.Value{Kind: value.String, Text: "other"}}}}
-	if _, valid := withMongoIdentity(wrongIdentity, identity, "item"); valid {
+	_, valid := withMongoIdentity(wrongIdentity, identity, "item", value.DefaultLimits())
+	if valid {
 		t.Fatal("Lua replacement changed the resource identity")
 	}
 }

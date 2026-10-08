@@ -7,6 +7,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -282,5 +283,22 @@ func TestMongoScanRejectsInvalidIdentityTokens(t *testing.T) {
 		if _, failure := adapter.prepareScan(request); failure == nil {
 			t.Fatal("invalid continuation identity accepted", identity)
 		}
+	}
+}
+
+func TestConfiguredMongoScanBatchReachesNativeFind(t *testing.T) {
+	settings := backend.DefaultOptions()
+	settings.Scan.Documents, settings.Scan.Bytes = 17, 8<<20
+	cfg := Config{Store: "mongo", Options: &settings}
+	adapter := &Adapter{config: cfg}
+	request := &pb.ScanRequest{Resource: "db/records", PageSize: 256}
+	work, failure := adapter.prepareScan(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	state := work.Backend.(*scanPlan)
+	raw, err := bson.Marshal(scanFindCommand(state))
+	if err != nil || bson.Raw(raw).Lookup("limit").Int64() != 17 || work.ResultBytes != settings.Scan.ResultBytes() {
+		t.Fatal("custom Scan batch ignored", err)
 	}
 }

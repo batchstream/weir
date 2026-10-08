@@ -3,10 +3,28 @@ package overload
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
 )
+
+type Limits struct {
+	HighWatermark, LowWatermark uint64
+	SampleInterval              time.Duration
+}
+
+func DefaultLimits() Limits {
+	limits := Limits{HighWatermark: 80, LowWatermark: 70, SampleInterval: 100 * time.Millisecond}
+	return limits
+}
+
+func (limits Limits) Validate() error {
+	if limits.HighWatermark > 100 || limits.HighWatermark < 1 || limits.LowWatermark >= limits.HighWatermark || limits.SampleInterval <= 0 {
+		return fmt.Errorf("invalid memory pressure watermarks or sampling interval")
+	}
+	return nil
+}
 
 type Target interface {
 	SetOverloaded(bool)
@@ -15,6 +33,7 @@ type Target interface {
 // Guard owns the existing memory sampler and exposes its last observation.
 // There is no second diagnostics sampling loop.
 type Guard struct {
+	limits        Limits
 	mu            sync.Mutex
 	targets       []Target
 	state         Snapshot
@@ -51,12 +70,12 @@ type observation struct {
 	high, low    bool
 }
 
-func New(targets []Target) *Guard {
+func New(targets []Target, limits Limits) *Guard {
 	budget := processMemoryBudget()
 	state := Snapshot{Budget: budget}
-	guard := &Guard{targets: targets, state: state, profile: newMemoryProfile(), processBudget: budget}
+	guard := &Guard{limits: limits, targets: targets, state: state, profile: newMemoryProfile(), processBudget: budget}
 	// Publish the first observation before listeners can admit any work.
-	guard.sample(guard.profile.observe())
+	guard.sample(guard.profile.observe(limits))
 	return guard
 }
 
@@ -67,14 +86,14 @@ func (g *Guard) Snapshot() Snapshot {
 }
 
 func (g *Guard) Run(ctx context.Context) {
-	tick := time.NewTicker(100 * time.Millisecond)
+	tick := time.NewTicker(g.limits.SampleInterval)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			g.sample(g.profile.observe())
+			g.sample(g.profile.observe(g.limits))
 		}
 	}
 }
@@ -82,6 +101,10 @@ func (g *Guard) Run(ctx context.Context) {
 func (g *Guard) sample(o observation) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	limits := g.limits
+	if limits.HighWatermark == 0 {
+		limits = DefaultLimits()
+	}
 	g.state.Bytes, g.state.Source, g.state.Observed = o.bytes, o.source, true
 	g.state.ProcessValid, g.state.Cgroup = o.processValid, o.cgroup
 	g.state.Unknown = !o.processValid || o.cgroup.State == "unknown"
@@ -95,9 +118,9 @@ func (g *Guard) sample(o observation) {
 	}
 	// Missing observations do not manufacture overload. Actual process or
 	// container pressure controls admission once a trustworthy sample exists.
-	if o.high || o.processValid && g.processBudget != 0 && o.bytes >= watermark(g.processBudget, 80, true) {
+	if o.high || o.processValid && g.processBudget != 0 && o.bytes >= watermark(g.processBudget, limits.HighWatermark, true) {
 		g.state.Latched = true
-	} else if !g.state.Unknown && o.processValid && !o.high && (!o.cgroup.Valid || o.low) && (g.processBudget == 0 || o.bytes <= watermark(g.processBudget, 70, false)) {
+	} else if !g.state.Unknown && o.processValid && !o.high && (!o.cgroup.Valid || o.low) && (g.processBudget == 0 || o.bytes <= watermark(g.processBudget, limits.LowWatermark, false)) {
 		g.state.Latched = false
 	}
 	for _, target := range g.targets {

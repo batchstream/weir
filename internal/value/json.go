@@ -20,14 +20,14 @@ func IsJSONNumber(v Value) bool {
 	return first == '-' || first >= '0' && first <= '9'
 }
 
-func DecodeJSON(raw []byte) (Value, error) {
+func DecodeJSON(raw []byte, limits Limits) (Value, error) {
 	var zero Value
-	if len(raw) == 0 || len(raw) > MaxBytes {
+	if len(raw) == 0 || len(raw) > limits.MaxBytes {
 		return zero, fmt.Errorf("JSON size limit")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-	var used budget
+	used := budget{limits: limits}
 	result, err := decodeJSONValue(decoder, 0, &used)
 	if err != nil {
 		return zero, err
@@ -43,11 +43,11 @@ func DecodeJSON(raw []byte) (Value, error) {
 
 func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, error) {
 	var zero Value
-	if depth > MaxDepth {
+	if depth > used.limits.MaxDepth {
 		return zero, fmt.Errorf("JSON depth limit")
 	}
 	used.nodes++
-	if used.nodes > MaxNodes {
+	if used.nodes > used.limits.MaxNodes {
 		return zero, fmt.Errorf("JSON node limit")
 	}
 	token, err := decoder.Token()
@@ -74,7 +74,7 @@ func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, err
 				}
 				seen[key] = struct{}{}
 				used.bytes += len(key)
-				if used.bytes > MaxBytes {
+				if used.bytes > used.limits.MaxBytes {
 					return zero, fmt.Errorf("JSON size limit")
 				}
 				child, err := decodeJSONValue(decoder, depth+1, used)
@@ -113,15 +113,18 @@ func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, err
 			return zero, fmt.Errorf("invalid JSON delimiter")
 		}
 	case nil:
-		return Value{Kind: Null}, nil
+		decoded := Value{Kind: Null}
+		return decoded, nil
 	case bool:
-		return Value{Kind: Bool, Boolean: item}, nil
+		decoded := Value{Kind: Bool, Boolean: item}
+		return decoded, nil
 	case string:
 		used.bytes += len(item)
-		if used.bytes > MaxBytes {
+		if used.bytes > used.limits.MaxBytes {
 			return zero, fmt.Errorf("JSON size limit")
 		}
-		return Value{Kind: String, Text: item}, nil
+		decoded := Value{Kind: String, Text: item}
+		return decoded, nil
 	case json.Number:
 		text := item.String()
 		if !strings.ContainsAny(text, ".eE") && text != "-0" {
@@ -135,27 +138,28 @@ func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, err
 			}
 		}
 		used.bytes += len(text)
-		if used.bytes > MaxBytes {
+		if used.bytes > used.limits.MaxBytes {
 			return zero, fmt.Errorf("JSON size limit")
 		}
-		return Value{Kind: Extended, Type: JSONNumberType, Data: []byte(text)}, nil
+		decoded := Value{Kind: Extended, Type: JSONNumberType, Data: []byte(text)}
+		return decoded, nil
 	default:
 		return zero, fmt.Errorf("invalid JSON value")
 	}
 }
 
-func EncodeJSON(v Value) ([]byte, error) {
+func EncodeJSON(v Value, limits Limits) ([]byte, error) {
 	if v.Kind != Object {
 		return nil, fmt.Errorf("JSON document must be an object")
 	}
-	if err := Validate(v); err != nil {
+	if err := Validate(v, limits); err != nil {
 		return nil, err
 	}
 	var output bytes.Buffer
 	if err := appendJSON(&output, v); err != nil {
 		return nil, err
 	}
-	if output.Len() > MaxBytes {
+	if output.Len() > limits.MaxBytes {
 		return nil, fmt.Errorf("JSON size limit")
 	}
 	return output.Bytes(), nil

@@ -224,3 +224,35 @@ func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
 		t.Fatal("invalid BSON reached backend", end)
 	}
 }
+
+func TestMongoNativeSmallRequestPublishesLargeReply(t *testing.T) {
+	items := make(bson.A, 1000)
+	for i := range items {
+		items[i] = int32(i)
+	}
+	document := bson.D{{Key: "_id", Value: "item"}, {Key: "items", Value: items}}
+	response := bson.D{{Key: "ok", Value: 1}, {Key: "value", Value: document}}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), response}
+	adapter := batchMockAdapter(t, responses, nil)
+	command := bson.D{{Key: "findAndModify", Value: "records"}, {Key: "remove", Value: true}}
+	raw, err := bson.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := &pb.Document{ContentType: "application/bson", Data: raw}
+	request := &pb.NativeRequest{Resource: "db/records", Request: body}
+	work, failure := adapter.prepareNative(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work.Command = testutil.NativeCommand(request)
+	capture := &nativeCapture{}
+	end := adapter.executeNative(t.Context(), work, capture.Emit)
+	expected, err := bson.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || !bytes.Equal(expected, capture.body.Bytes()) {
+		t.Fatal("small request constrained native response", end, capture.body.Len())
+	}
+}

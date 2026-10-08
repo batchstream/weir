@@ -40,7 +40,7 @@ type cgroupIdentity struct {
 	id, major, minor  uint64
 }
 
-func (p *memoryProfile) observe() observation {
+func (p *memoryProfile) observe(limits Limits) observation {
 	if p.proc == "" {
 		return processObservation()
 	}
@@ -56,11 +56,11 @@ func (p *memoryProfile) observe() observation {
 	if !o.processValid {
 		o.bytes = goBytes()
 	}
-	o.cgroup, o.high, o.low = p.cgroupObservation()
+	o.cgroup, o.high, o.low = p.cgroupObservation(limits)
 	return o
 }
 
-func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
+func (p *memoryProfile) cgroupObservation(limits Limits) (CgroupSnapshot, bool, bool) {
 	snapshot := CgroupSnapshot{State: "unknown", Scope: "none", Levels: len(p.levels)}
 	membership, err := readFile(filepath.Join(p.proc, "cgroup"), maxCgroupBytes)
 	if err != nil {
@@ -101,8 +101,8 @@ func (p *memoryProfile) cgroupObservation() (CgroupSnapshot, bool, bool) {
 			continue
 		}
 		snapshot.Capacity = smallerBudget(snapshot.Capacity, level.limit)
-		high = high || level.limit == 0 || current >= watermark(level.limit, 80, true)
-		low = low && level.limit != 0 && current <= watermark(level.limit, 70, false)
+		high = high || level.limit == 0 || current >= watermark(level.limit, limits.HighWatermark, true)
+		low = low && level.limit != 0 && current <= watermark(level.limit, limits.LowWatermark, false)
 		if !snapshot.Finite || pressureGreater(current, level.limit, snapshot) {
 			snapshot.Current, snapshot.Limit, snapshot.Finite = current, level.limit, true
 			snapshot.Scope = "leaf"

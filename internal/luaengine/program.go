@@ -24,7 +24,26 @@ const (
 	Reject  Action = "reject"
 )
 
+type Limits struct {
+	MaxInstructions             int64
+	MaxCallDepth, MaxStackSlots int
+	Values                      value.Limits
+}
+
+func DefaultLimits() Limits {
+	limits := Limits{Values: value.DefaultLimits()}
+	return limits
+}
+
+func (limits Limits) Validate() error {
+	if limits.MaxInstructions < 0 || limits.MaxCallDepth < 0 || limits.MaxStackSlots < 0 {
+		return fmt.Errorf("invalid Lua VM limits")
+	}
+	return limits.Values.Validate()
+}
+
 type Program struct {
+	Limits     *Limits
 	Source     string
 	Current    value.Value
 	Input      value.Value
@@ -38,6 +57,13 @@ type Result struct {
 }
 
 func ValidateProgram(program Program) error {
+	limits := DefaultLimits()
+	if program.Limits != nil {
+		limits = *program.Limits
+	}
+	if err := limits.Validate(); err != nil {
+		return err
+	}
 	if len(program.Source) == 0 ||
 		len(program.Source) > MaxSourceBytes ||
 		!utf8.ValidString(program.Source) ||
@@ -45,16 +71,16 @@ func ValidateProgram(program Program) error {
 		strings.HasPrefix(program.Source, "\x1bLua") {
 		return fmt.Errorf("invalid or oversized Lua source")
 	}
-	if err := value.Validate(program.Current); err != nil {
+	if err := value.Validate(program.Current, limits.Values); err != nil {
 		return fmt.Errorf("invalid current value: %w", err)
 	}
-	if err := value.Validate(program.Input); err != nil {
+	if err := value.Validate(program.Input, limits.Values); err != nil {
 		return fmt.Errorf("invalid input value: %w", err)
 	}
 	return nil
 }
 
-func ValidateResult(result Result) error {
+func ValidateResult(result Result, limits Limits) error {
 	switch result.Action {
 	case Keep, Delete:
 		if result.Value.Kind != value.Missing || result.Message != "" {
@@ -71,26 +97,26 @@ func ValidateResult(result Result) error {
 	default:
 		return fmt.Errorf("invalid action")
 	}
-	if err := value.Validate(result.Value); err != nil {
+	if err := value.Validate(result.Value, limits.Values); err != nil {
 		return err
 	}
 	if result.Action == Replace {
-		return validateDocumentValue(result.Value, 0)
+		return validateDocumentValue(result.Value, 0, limits.Values)
 	}
 	return nil
 }
 
-func validateDocumentValue(v value.Value, depth int) error {
-	if depth > value.MaxDepth || v.Kind == value.Missing {
+func validateDocumentValue(v value.Value, depth int, limits value.Limits) error {
+	if depth > limits.MaxDepth || v.Kind == value.Missing {
 		return fmt.Errorf("replacement contains missing value or exceeds depth")
 	}
 	for _, field := range v.Fields {
-		if err := validateDocumentValue(field.Value, depth+1); err != nil {
+		if err := validateDocumentValue(field.Value, depth+1, limits); err != nil {
 			return err
 		}
 	}
 	for _, item := range v.Items {
-		if err := validateDocumentValue(item, depth+1); err != nil {
+		if err := validateDocumentValue(item, depth+1, limits); err != nil {
 			return err
 		}
 	}

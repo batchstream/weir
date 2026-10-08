@@ -62,7 +62,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 	}
 	mongo.Username, mongo.Password = "", ""
 
-	local := &Local{MongoDB: mongo}
+	local := &Local{Backend: BackendConfig{MongoDB: mongo}}
 	service := StoreConfig{Name: "mongo", Local: local}
 
 	cfg := DefaultConfig()

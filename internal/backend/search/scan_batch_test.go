@@ -16,6 +16,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 )
 
@@ -49,7 +50,7 @@ func scanBatchAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	transport := newTransport()
+	transport := newTransport(connectionTimeout)
 	t.Cleanup(transport.CloseIdleConnections)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	adapter := &Adapter{
@@ -190,7 +191,7 @@ func TestScanDownsizesExcessiveResponsesWithoutAdvancing(t *testing.T) {
 		sizes = append(sizes, request.Size)
 		positions = append(positions, request.After[0])
 		if request.Size > 2 {
-			w.Header().Set("Content-Length", fmt.Sprint(responseLimit+1))
+			w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -228,7 +229,7 @@ func TestScanSingleExcessiveResponseFailsWithoutReplay(t *testing.T) {
 	calls := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		w.Header().Set("Content-Length", fmt.Sprint(responseLimit+1))
+		w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
 		w.WriteHeader(http.StatusOK)
 	})
 	adapter := scanBatchAdapter(t, handler)
@@ -250,7 +251,7 @@ func TestScanDownsizingRetainsOriginalDeadline(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		if calls.Add(1) == 1 {
-			w.Header().Set("Content-Length", fmt.Sprint(responseLimit+1))
+			w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -304,8 +305,8 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	state.hasAfter = false
 	rows := []json.RawMessage{hit}
 	page = adapter.scanReply(scanBatchReply(rows), state)
-	if page.Failure == nil || len(page.Documents) != 0 {
-		t.Fatal("per-hit JSON complexity bound disappeared", page)
+	if page.Failure != nil || len(page.Documents) != 1 {
+		t.Fatal("valid source rejected by a hidden node cap", page.Failure)
 	}
 }
 
@@ -494,5 +495,59 @@ func TestScanOpenAndFetchShareDeadlineAndCleanup(t *testing.T) {
 				t.Fatal("allocated PIT was not cleaned up", failure, cleanups.Load())
 			}
 		})
+	}
+}
+
+func TestConfiguredSearchScanBatchAndNoShardTimeout(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		if string(request["size"]) != "17" || request["timeout"] != nil {
+			t.Error("custom batch or caller deadline was overridden", request)
+		}
+		rows := []json.RawMessage{scanBatchHit(0, 0)}
+		_, _ = w.Write(scanBatchReply(rows))
+	})
+	adapter := scanBatchAdapter(t, handler)
+	settings := backend.DefaultOptions()
+	settings.Scan.Documents, settings.Scan.Bytes = 17, 8<<20
+	adapter.config.Options = &settings
+	request := &pb.ScanRequest{Resource: "records", PageSize: 256}
+	work, failure := adapter.prepareScan(request)
+	if failure != nil || work.ResultBytes != settings.Scan.ResultBytes() {
+		t.Fatal(failure, work)
+	}
+	state := work.Backend.(*scanPlan)
+	state.opened, state.pit = true, "previous"
+	page := adapter.fetchScan(t.Context(), work)
+	if page.Failure != nil || len(page.Documents) != 1 {
+		t.Fatal(page.Failure)
+	}
+}
+
+func TestScanFetchAcceptsConfiguredExchangeAboveEightMiB(t *testing.T) {
+	var rows []json.RawMessage
+	for i := range 10 {
+		rows = append(rows, scanBatchHit(i, 1<<20))
+	}
+	reply := scanBatchReply(rows)
+	settings := backend.DefaultOptions()
+	settings.Scan.Bytes = 16 << 20
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(reply) })
+	adapter := scanBatchAdapter(t, handler)
+	adapter.config.Options = &settings
+	request := &pb.ScanRequest{Resource: "records", PageSize: 10}
+	work, failure := adapter.prepareScan(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	state := work.Backend.(*scanPlan)
+	state.opened, state.pit = true, "previous"
+	page := adapter.fetchScan(t.Context(), work)
+	if page.Failure != nil || len(page.Documents) != 10 {
+		t.Fatal("configured large Scan fetch failed", page.Failure, len(page.Documents))
 	}
 }

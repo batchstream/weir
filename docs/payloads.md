@@ -26,10 +26,10 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Native target | `db/collection` | one concrete `index` |
 | Native request limit | one complete BSON command, at most 4 MiB | 8 MiB for the complete HTTP message; headers consume part of that budget |
 
-Records are at most 2 MiB. The Mongo codec and Search JSON validator also bound
-nesting and node counts. Scan filters and backend expressions are at most 16 KiB.
+Records are at most 2 MiB. Ordinary BSON follows MongoDB native nesting rules;
+ordinary JSON follows its syntax rules without an additional Weir node quota. Scan filters and backend expressions are at most 16 KiB.
 Lua source is at most 16 KiB; its input/current/result typed trees are at most
-256 KiB with separate depth/node bounds. Lua remains an in-process trusted-program
+2 MiB by default, with configurable `lua.values` byte/depth/node budgets. Lua remains an in-process trusted-program
 facility with the transaction/CAS and allocation limitations in the architecture.
 
 Projection has one mode and distinct dot-separated paths. INCLUDE publishes only

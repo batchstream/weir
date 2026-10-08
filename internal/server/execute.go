@@ -59,9 +59,10 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 	}
 	ctx, cancel := context.WithCancel(stream.Context())
 	session := runtime.NewSession()
-	tickets := make(chan *store.Ticket, RecordStreamItems)
-	credits := make(chan struct{}, RecordStreamItems)
-	for range RecordStreamItems {
+	window := session.RecordWindow
+	tickets := make(chan *store.Ticket, window)
+	credits := make(chan struct{}, window)
+	for range window {
 		credits <- struct{}{}
 	}
 	received := make(chan error, 1)
@@ -109,13 +110,13 @@ type recordInput struct {
 // Only idle input has a stall deadline: a caller may wait for the first
 // response before producing its next request, including slow database work.
 func (input *recordInput) armIdleLocked(server *Server) {
-	if !input.waiting || len(input.credits) != RecordStreamItems-1 {
+	if !input.waiting || len(input.credits) != cap(input.credits)-1 {
 		return
 	}
 	input.idleDeadline = time.Now().Add(server.limits.Stall)
 	input.timer = time.AfterFunc(server.limits.Stall, func() {
 		input.mu.Lock()
-		stalled := input.waiting && len(input.credits) == RecordStreamItems-1 && !time.Now().Before(input.idleDeadline)
+		stalled := input.waiting && len(input.credits) == cap(input.credits)-1 && !time.Now().Before(input.idleDeadline)
 		input.mu.Unlock()
 		if stalled {
 			if state, ok := input.stream.Context().Value(rpcKey).(*rpcState); ok && input.stream.Context().Err() == nil {

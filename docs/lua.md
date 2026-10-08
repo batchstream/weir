@@ -111,10 +111,12 @@ demonstrates history deduplication by nested values, tail limits and incoming-fi
 offer priority. It explicitly constructs empty arrays and recognizes typed leaves
 while retaining the original business rules.
 
-The source is at most 16 KiB. Each input/current/result document has at most
-32 levels, 4096 nodes and 256 KiB of value data. Compilation, top-level execution
-and the callback inherit the caller context and retain bounded call/stack/instruction
-work. Evaluations run concurrently inside the main Weir process without a fixed
+The source is at most 16 KiB. `lua.values` configures input/current/result
+conversion, defaulting to 32 levels, 4096 nodes and the protocol 2 MiB document
+bound. `lua.vm` exposes optional instruction, call-depth and stack-slot budgets.
+The default instruction budget is unlimited; zero call/stack settings use the
+VM native defaults. Compilation, top-level execution and the callback inherit
+the caller context. Evaluations run concurrently inside the main Weir process without a fixed
 concurrency cap or evaluation timeout.
 Programs must be trusted: these bounds do not impose a hard heap quota on
 arbitrary temporary Lua objects. Deployment memory limits still apply.

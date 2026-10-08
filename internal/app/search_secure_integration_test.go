@@ -29,12 +29,12 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 	backend := &Search{URL: b.URL, Connection: connection}
 	t.Run("partial-startup-cleanup", func(t *testing.T) {
 		base := secureHTTPOpenCount(t, fixture.Admin)
-		first := &Local{Search: backend}
+		first := &Local{Backend: BackendConfig{Search: backend}}
 		otherBackend := *backend
 		otherConnection := *connection
 		otherConnection.Password = "wrong-owned-pair"
 		otherBackend.Connection = &otherConnection
-		other := &Local{Search: &otherBackend}
+		other := &Local{Backend: BackendConfig{Search: &otherBackend}}
 		firstService := StoreConfig{Name: "first", Local: first}
 		otherService := StoreConfig{Name: "second", Local: other}
 
@@ -60,7 +60,7 @@ func TestSearchTLSApplicationAssemblyAllOperations(t *testing.T) {
 		}
 		t.Log("three partial startup failures: native DB HTTP socket count returned to baseline")
 	})
-	local := &Local{Search: backend}
+	local := &Local{Backend: BackendConfig{Search: backend}}
 	service := StoreConfig{Name: "search", Local: local}
 
 	cfg := DefaultConfig()

@@ -47,7 +47,7 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 		<-r.Context().Done()
 	})
 	server := httptest.NewServer(handler)
-	transport := newTransport()
+	transport := newTransport(connectionTimeout)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, client: client, ctx: context.Background()}
@@ -137,7 +137,7 @@ func TestBulkCustomTransportCannotProveAnUnsentWrite(t *testing.T) {
 }
 
 func TestBulkConnectionAcquiredBeforeWriteFailureRemainsUnknown(t *testing.T) {
-	transport := newTransport()
+	transport := newTransport(connectionTimeout)
 	defer transport.CloseIdleConnections()
 	var dials atomic.Int32
 	transport.DialContext = func(context.Context, string, string) (net.Conn, error) {
@@ -165,7 +165,7 @@ func TestBulkConnectionAcquiredBeforeWriteFailureRemainsUnknown(t *testing.T) {
 func TestBulkBeforeConnectionFailureWasNotApplied(t *testing.T) {
 	for _, mode := range []string{"cancel_before_do", "dial_failure"} {
 		t.Run(mode, func(t *testing.T) {
-			transport := newTransport()
+			transport := newTransport(connectionTimeout)
 			defer transport.CloseIdleConnections()
 			var dials atomic.Int32
 			transport.DialContext = func(context.Context, string, string) (net.Conn, error) {
@@ -217,7 +217,7 @@ func TestBulkCommittedReplyLossRemainsUnknownWithoutReplay(t *testing.T) {
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	transport := newTransport()
+	transport := newTransport(connectionTimeout)
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	config := Config{URL: server.URL}

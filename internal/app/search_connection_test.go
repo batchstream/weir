@@ -25,7 +25,7 @@ func TestSearchConnectionFullGraphPreflight(t *testing.T) {
 		URL:        "https://unresolved.invalid:443",
 		Connection: c,
 	}
-	local := &Local{Search: backend}
+	local := &Local{Backend: BackendConfig{Search: backend}}
 	definition := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -91,7 +91,7 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 		URL:        "https://unresolved.invalid:9200",
 		Connection: connection,
 	}
-	local := &Local{Search: backend}
+	local := &Local{Backend: BackendConfig{Search: backend}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()
@@ -160,7 +160,7 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 			defer endpoint.Close()
 
 			backend := &Search{URL: endpoint.URL}
-			local := &Local{Search: backend}
+			local := &Local{Backend: BackendConfig{Search: backend}}
 			service := StoreConfig{Name: "records", Local: local}
 
 			cfg := DefaultConfig()

@@ -54,7 +54,7 @@ func TestGuardHysteresisAndUnknown(t *testing.T) {
 func TestGuardStartupRunCancelAndSnapshots(t *testing.T) {
 	target := &guardTarget{}
 	targets := []Target{target}
-	guard := New(targets)
+	guard := New(targets, DefaultLimits())
 	if s := guard.Snapshot(); !s.Observed || s.Budget == 0 || s.Latched != target.latched.Load() {
 		t.Fatal("startup must sample synchronously", s)
 	}
