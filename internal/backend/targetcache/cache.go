@@ -1,17 +1,16 @@
-// Package targetcache retains successful metadata checks for a bounded set of targets.
+// Package targetcache retains completed metadata checks without limiting cold checks.
 package targetcache
 
 import (
 	"context"
-	"slices"
 	"sync"
 )
 
-const Capacity = 64
+const DefaultCapacity = 64
 
 type entry[V any] struct {
 	value V
-	ready chan struct{} // nil after completion
+	ready chan struct{}
 }
 
 type Lookup[V any] struct {
@@ -20,14 +19,32 @@ type Lookup[V any] struct {
 	entry  *entry[V]
 }
 
-// Cache owns no I/O. A cold caller acquires a reservation, checks its target,
-// then completes that reservation. Other callers on the target wait with their
-// own contexts. Completed targets are evicted in insertion order when full.
+// Capacity applies only to successful completed checks. Pending checks for
+// distinct targets never wait for cache space; callers for one target share I/O.
 type Cache[K comparable, V any] struct {
-	mu      sync.Mutex
-	entries map[K]*entry[V]
-	order   []K
-	changed chan struct{}
+	mu       sync.Mutex
+	entries  map[K]*entry[V]
+	order    []K
+	capacity int
+}
+
+func New[K comparable, V any](capacity int) *Cache[K, V] {
+	cache := &Cache[K, V]{entries: make(map[K]*entry[V]), capacity: capacity}
+	return cache
+}
+
+// SetCapacity configures completed entries, independently of pending checks.
+func (c *Cache[K, V]) SetCapacity(capacity int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[K]*entry[V])
+	}
+	c.capacity = capacity
+	for len(c.order) > capacity {
+		delete(c.entries, c.order[0])
+		c.order = c.order[1:]
+	}
 }
 
 func (c *Cache[K, V]) Acquire(ctx context.Context, key K) (Lookup[V], error) {
@@ -39,7 +56,7 @@ func (c *Cache[K, V]) Acquire(ctx context.Context, key K) (Lookup[V], error) {
 		c.mu.Lock()
 		if c.entries == nil {
 			c.entries = make(map[K]*entry[V])
-			c.changed = make(chan struct{})
+			c.capacity = DefaultCapacity
 		}
 		if existing := c.entries[key]; existing != nil {
 			if existing.ready == nil {
@@ -49,41 +66,20 @@ func (c *Cache[K, V]) Acquire(ctx context.Context, key K) (Lookup[V], error) {
 			}
 			ready := existing.ready
 			c.mu.Unlock()
-			if err := wait(ctx, ready); err != nil {
-				empty := Lookup[V]{}
-				return empty, err
+			select {
+			case <-ctx.Done():
+			case <-ready:
 			}
 			continue
 		}
-		if len(c.entries) == Capacity {
-			for i, oldest := range c.order {
-				if c.entries[oldest].ready == nil {
-					delete(c.entries, oldest)
-					c.order = slices.Delete(c.order, i, i+1)
-					break
-				}
-			}
-			if len(c.entries) == Capacity {
-				changed := c.changed
-				c.mu.Unlock()
-				if err := wait(ctx, changed); err != nil {
-					empty := Lookup[V]{}
-					return empty, err
-				}
-				continue
-			}
-		}
 		pending := &entry[V]{ready: make(chan struct{})}
 		c.entries[key] = pending
-		c.order = append(c.order, key)
 		lookup := Lookup[V]{entry: pending}
 		c.mu.Unlock()
 		return lookup, nil
 	}
 }
 
-// Complete releases a cold reservation. Only successful checks are retained;
-// failures wake waiting callers so they can perform their own check.
 func (c *Cache[K, V]) Complete(key K, lookup Lookup[V], value V, success bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -91,23 +87,16 @@ func (c *Cache[K, V]) Complete(key K, lookup Lookup[V], value V, success bool) {
 	if pending == nil || c.entries[key] != pending || pending.ready == nil {
 		return
 	}
-	if success {
+	if success && c.capacity > 0 {
 		pending.value = value
+		c.order = append(c.order, key)
+		if len(c.order) > c.capacity {
+			delete(c.entries, c.order[0])
+			c.order = c.order[1:]
+		}
 	} else {
 		delete(c.entries, key)
-		position := slices.Index(c.order, key)
-		c.order = slices.Delete(c.order, position, position+1)
 	}
 	close(pending.ready)
 	pending.ready = nil
-	close(c.changed)
-	c.changed = make(chan struct{})
-}
-
-func wait(ctx context.Context, ready <-chan struct{}) error {
-	select {
-	case <-ctx.Done():
-	case <-ready:
-	}
-	return ctx.Err()
 }

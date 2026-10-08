@@ -52,7 +52,7 @@ func TestDirectoryWithdrawalDoesNotDelayAdmittedWriteDrain(t *testing.T) {
 		connections.Wait()
 	})
 	backend := mongoFixtureConfig(t, proxy.URI())
-	local := &Local{MongoDB: backend, MaxBatchOperations: 1}
+	local := &Local{Backend: BackendConfig{MongoDB: backend}, Batching: BatchingConfig{MaxOperations: 1}}
 	definition := StoreConfig{Name: "records", Local: local}
 	cfg := emptyConfig(t)
 	cfg.Basic.Listeners.Peer = "127.0.0.1:0"

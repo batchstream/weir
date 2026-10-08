@@ -102,7 +102,7 @@ func TestVisibleAncestorPressureAndRecovery(t *testing.T) {
 		latched bool
 	}{{"100", false}, {"800", true}, {"750", true}, {"700", false}} {
 		f.level(t, "a", "1000", step.current)
-		guard.sample(f.profile.observe())
+		guard.sample(f.profile.observe(DefaultLimits()))
 		s := guard.Snapshot()
 		if s.Unknown || s.Latched != step.latched || s.Cgroup.Limit != 1000 || s.Cgroup.Scope != "ancestor" || s.Cgroup.Levels != 3 {
 			t.Fatal(s)
@@ -111,13 +111,13 @@ func TestVisibleAncestorPressureAndRecovery(t *testing.T) {
 	// Finite leaf and ancestor must both be low, even if process RSS is tiny.
 	f = fixture(t)
 	f.level(t, "a/leaf", "500", "400")
-	first := f.profile.observe()
+	first := f.profile.observe(DefaultLimits())
 	if !first.high || first.cgroup.Scope != "leaf" {
 		t.Fatal(first)
 	}
 	f.level(t, "a/leaf", "500", "100")
 	f.level(t, "a", "1000", "750")
-	second := f.profile.observe()
+	second := f.profile.observe(DefaultLimits())
 	if second.high || second.low || second.cgroup.Current != 750 {
 		t.Fatal(second)
 	}
@@ -130,7 +130,7 @@ func TestProfileFailureAndDynamicChanges(t *testing.T) {
 			f.level(t, "a", "1000", "850")
 			state := Snapshot{Budget: 1 << 20}
 			guard := &Guard{state: state, processBudget: state.Budget}
-			guard.sample(f.profile.observe())
+			guard.sample(f.profile.observe(DefaultLimits()))
 			if !guard.Snapshot().Latched {
 				t.Fatal("initial pressure")
 			}
@@ -173,7 +173,7 @@ func TestProfileFailureAndDynamicChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			guard.sample(f.profile.observe())
+			guard.sample(f.profile.observe(DefaultLimits()))
 			if s := guard.Snapshot(); !s.Latched || !s.Unknown {
 				t.Fatal(s)
 			}
@@ -189,7 +189,7 @@ func TestProfileFailureAndDynamicChanges(t *testing.T) {
 			}
 			f.level(t, "a", "1000", "100")
 			f.write(t, filepath.Join(f.proc, "statm"), "100 2 1 0 0 0 0")
-			guard.sample(f.profile.observe())
+			guard.sample(f.profile.observe(DefaultLimits()))
 			if s := guard.Snapshot(); s.Latched || s.Unknown {
 				t.Fatal("trusted low observation must recover", s)
 			}
@@ -198,7 +198,7 @@ func TestProfileFailureAndDynamicChanges(t *testing.T) {
 	for _, change := range []string{"migration", "mount", "limit", "unlimited"} {
 		t.Run(change, func(t *testing.T) {
 			f := fixture(t)
-			before := f.profile.observe()
+			before := f.profile.observe(DefaultLimits())
 			if !before.cgroup.Valid {
 				t.Fatal(before)
 			}
@@ -213,7 +213,7 @@ func TestProfileFailureAndDynamicChanges(t *testing.T) {
 				f.level(t, "a", "max", "0")
 			}
 			for range 2 {
-				if o := f.profile.observe(); !o.cgroup.Valid || !o.low {
+				if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid || !o.low {
 					t.Fatal(o)
 				}
 			}
@@ -224,14 +224,14 @@ func TestProfileFailureAndDynamicChanges(t *testing.T) {
 func TestStartupUnknownUnlimitedAndZero(t *testing.T) {
 	f := fixture(t)
 	f.write(t, filepath.Join(f.proc, "statm"), "bad")
-	o := f.profile.observe()
+	o := f.profile.observe(DefaultLimits())
 	if o.processValid || o.source != "go_sys_minus_released" {
 		t.Fatal(o)
 	}
 	for _, limit := range []string{"max", "0"} {
 		f := fixture(t)
 		f.level(t, "a", limit, "0")
-		o := f.profile.observe()
+		o := f.profile.observe(DefaultLimits())
 		if !o.cgroup.Valid || o.high != (limit == "0") || o.low != (limit == "max") || o.cgroup.Finite != (limit == "0") {
 			t.Fatal(o)
 		}
@@ -240,11 +240,37 @@ func TestStartupUnknownUnlimitedAndZero(t *testing.T) {
 	if err := os.Remove(filepath.Join(f.mount, "a/leaf", "memory.max")); err != nil {
 		t.Fatal(err)
 	}
-	if o := f.profile.observe(); o.cgroup.State != "unknown" {
+	if o := f.profile.observe(DefaultLimits()); o.cgroup.State != "unknown" {
 		t.Fatal(o)
 	}
 	f.level(t, "a/leaf", "max", "0")
-	if o := f.profile.observe(); !o.cgroup.Valid {
+	if o := f.profile.observe(DefaultLimits()); !o.cgroup.Valid {
 		t.Fatal("initial transient failure did not recover", o)
+	}
+}
+
+func TestConfiguredMemoryWatermarksApplyToContainerAndProcess(t *testing.T) {
+	f := fixture(t)
+	limits := DefaultLimits()
+	limits.HighWatermark, limits.LowWatermark = 95, 90
+	guard := &Guard{limits: limits, processBudget: 1 << 20}
+	for _, step := range []struct {
+		current string
+		latched bool
+	}{{"800", false}, {"950", true}, {"925", true}, {"900", false}} {
+		f.level(t, "a", "1000", step.current)
+		guard.sample(f.profile.observe(limits))
+		if guard.Snapshot().Latched != step.latched {
+			t.Fatal(step, guard.Snapshot())
+		}
+	}
+	cg := CgroupSnapshot{State: "not_applicable"}
+	guard.sample(observation{bytes: watermark(1<<20, 95, true), processValid: true, cgroup: cg})
+	if !guard.Snapshot().Latched {
+		t.Fatal("process high watermark ignored")
+	}
+	guard.sample(observation{bytes: watermark(1<<20, 90, false), processValid: true, cgroup: cg})
+	if guard.Snapshot().Latched {
+		t.Fatal("process recovery watermark ignored")
 	}
 }

@@ -17,6 +17,7 @@ var errConnections = errors.New("MongoDB connection owner closed")
 
 // connectionOwner tracks raw sockets through shutdown without a capacity gate.
 type connectionOwner struct {
+	timeout   time.Duration
 	resolver  *net.Resolver
 	tlsConfig *tls.Config
 	ctx       context.Context
@@ -35,7 +36,7 @@ type connectionOwner struct {
 
 func newConnectionOwner() *connectionOwner {
 	ctx, cancel := context.WithCancel(context.Background())
-	d := &connectionOwner{ctx: ctx, cancel: cancel, conns: make(map[*mongoConn]struct{})}
+	d := &connectionOwner{ctx: ctx, cancel: cancel, timeout: mongoConnectTimeout, conns: make(map[*mongoConn]struct{})}
 	return d
 }
 
@@ -64,7 +65,7 @@ func (d *connectionOwner) dialConnection(ctx context.Context, network, address s
 		d.mu.Unlock()
 		d.workers.Done()
 	}()
-	ctx, cancel := context.WithTimeout(ctx, mongoConnectTimeout)
+	ctx, cancel := context.WithTimeout(ctx, d.timeout)
 	stop := context.AfterFunc(d.ctx, cancel)
 	defer func() { stop(); cancel() }()
 	if err := d.acquire(ctx); err != nil {
@@ -91,7 +92,7 @@ func (d *connectionOwner) dialConnection(ctx context.Context, network, address s
 	}
 	// DNS is joined first. Try its finite address list serially under the same
 	// deadline: no Happy Eyeballs overlap, discovery, or business replay.
-	dialer := net.Dialer{Timeout: mongoConnectTimeout, KeepAlive: 30 * time.Second}
+	dialer := net.Dialer{Timeout: d.timeout, KeepAlive: 30 * time.Second}
 	var raw net.Conn
 	for _, address := range ips {
 		ip, parseErr := netip.ParseAddr(address)

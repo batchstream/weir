@@ -20,7 +20,7 @@ func TestDeploymentConfiguration(t *testing.T) {
 		t.Fatal("Pod bind changed")
 	}
 	local := cfg.Routing.Stores[0].Local
-	if local.MaxBatchOperations != 32 {
+	if local.Batching.MaxOperations != 32 {
 		t.Fatal("Pod routing has unexpected batching defaults")
 	}
 

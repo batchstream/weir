@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/targetcache"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
@@ -24,6 +26,7 @@ import (
 )
 
 type Config struct {
+	Options  *backend.Options
 	URI      string
 	Store    string
 	Username string
@@ -31,12 +34,13 @@ type Config struct {
 }
 
 type Adapter struct {
-	dialer   *connectionOwner
-	client   *mongo.Client
-	config   Config
-	once     sync.Once
-	closeErr error
-	targets  targetcache.Cache[namespace, struct{}]
+	maxDocumentBytes int
+	dialer           *connectionOwner
+	client           *mongo.Client
+	config           Config
+	once             sync.Once
+	closeErr         error
+	targets          targetcache.Cache[namespace, struct{}]
 }
 
 type plan struct {
@@ -47,11 +51,28 @@ type plan struct {
 	program  *luaengine.Program
 }
 
+func (a *Adapter) options() backend.Options {
+	if a.config.Options != nil {
+		return *a.config.Options
+	}
+	return backend.DefaultOptions()
+}
+
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
+	settings := backend.DefaultOptions()
+	if cfg.Options != nil {
+		settings = *cfg.Options
+	}
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	cfg.Options = &settings
+
 	dialer := newConnectionOwner()
+	dialer.timeout = settings.ConnectTimeout
 	complete := false
 	defer func() {
 		if !complete {
@@ -65,6 +86,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	opts.SetDirect(true).
 		SetAppName("weir:" + cfg.Store).
 		SetMaxPoolSize(0).
+		SetMaxConnecting(math.MaxUint64).
 		SetMinPoolSize(0).
 		SetRetryWrites(false).
 		SetRetryReads(false).
@@ -72,8 +94,8 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		SetEnableOverloadRetargeting(false).
 		SetCompressors(nil).
 		SetServerMonitoringMode(options.ServerMonitoringModePoll).
-		SetServerSelectionTimeout(2 * time.Second).
-		SetConnectTimeout(2 * time.Second).
+		SetServerSelectionTimeout(0).
+		SetConnectTimeout(settings.ConnectTimeout).
 		SetReadPreference(readpref.Primary()).
 		SetWriteConcern(writeconcern.Majority())
 	if opts.Timeout != nil {
@@ -91,6 +113,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		client: client,
 		config: cfg,
 	}
+	a.targets.SetCapacity(settings.MetadataCacheEntries)
 	if err = a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
@@ -102,9 +125,10 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 func (a *Adapter) qualify(ctx context.Context) error {
 	cmd := bson.D{{Key: "hello", Value: 1}}
 	var hello struct {
-		SetName    string `bson:"setName"`
-		Msg        string `bson:"msg"`
-		MaxMessage int    `bson:"maxMessageSizeBytes"`
+		SetName     string `bson:"setName"`
+		Msg         string `bson:"msg"`
+		MaxMessage  int    `bson:"maxMessageSizeBytes"`
+		MaxDocument int    `bson:"maxBsonObjectSize"`
 	}
 	if err := a.client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil {
 		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
@@ -112,7 +136,16 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	if hello.SetName == "" || hello.Msg == "isdbgrid" || hello.MaxMessage > 48<<20 {
 		return fmt.Errorf("MongoDB requires a replica set, no mongos, and bounded native messages")
 	}
+	a.maxDocumentBytes = hello.MaxDocument
 	return nil
+}
+
+// The BSON command boundary is advertised by MongoDB, not an operator budget.
+func (a *Adapter) commandBytes() int {
+	if a.maxDocumentBytes > 0 {
+		return a.maxDocumentBytes
+	}
+	return 16 << 20
 }
 
 func mongoQualificationFailure(message string, err error) error {
@@ -177,13 +210,14 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				}
 				input := value.Value{Kind: value.Missing}
 				if program.Input != nil {
-					input, err = Decode(program.Input.Data)
+					input, err = Decode(program.Input.Data, a.options().Lua.Values)
 					if err != nil {
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input")
 					}
 				}
 				native.action = "program"
-				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input}
+				settings := a.options().Lua
+				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input, Limits: &settings}
 				native.program = luaProgram
 			} else {
 				expression := v.AtomicTransform.GetBackendExpression()
@@ -198,7 +232,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			if d.ContentType != "application/bson" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
 			}
-			doc, err := Decode(d.Data)
+			doc, err := Decode(d.Data, value.DefaultLimits())
 			if err != nil {
 				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "BSON validation/limits failed")
 			}

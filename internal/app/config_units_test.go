@@ -172,14 +172,9 @@ func TestGroupedConfigurationRejectsUnknownFieldsAndInvalidUnits(t *testing.T) {
 	for _, local := range []string{
 		`    unexpected: {}
 `,
-		`    mongodb:
-      uri: mongodb://127.0.0.1:27017
-      unexpected: true
-`,
-		`    mongodb:
-      uri: mongodb://127.0.0.1:27017
-    unexpected: 4
-`,
+		"    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n        unexpected: true\n",
+
+		"    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017\n    unexpected: 4\n",
 	} {
 		input := "stores:\n  - name: records\n" + local
 		if _, err := DecodeRouting(strings.NewReader(input)); err == nil {

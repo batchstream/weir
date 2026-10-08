@@ -42,9 +42,9 @@ func endpointProcessConfig(t *testing.T) (Config, map[string]string) {
 	database := mongoFixture.DB
 	search := testsearch.Open(t)
 	mongo := mongoFixtureConfig(t, mongoFixture.URI)
-	mongoLocal := &Local{MongoDB: mongo}
+	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongo}}
 	backend := &Search{URL: search.URL}
-	searchLocal := &Local{Search: backend}
+	searchLocal := &Local{Backend: BackendConfig{Search: backend}}
 	m := StoreConfig{Name: "mongo", Local: mongoLocal}
 	s := StoreConfig{Name: "search", Local: searchLocal}
 

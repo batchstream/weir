@@ -31,7 +31,7 @@ func TestSearchExpressionValidation(t *testing.T) {
 			t.Fatal(p, f)
 		}
 	}
-	denied := []string{"", `{}`, `[]`, `{"doc":null}`, `{"doc":[]}`, `{"doc":{},"doc":{}}`, `{"doc":{"x":1,"x":2}}`, `{"doc":{"x":{"a":1,"a":2}}}`, `{"doc":{"_id":"other"}}`, `{"doc":{"a":{},"a.b":1}}`, `{"doc":{"bad":"\ud800"}}`, `{"doc":{"x":` + strings.Repeat("[", 34) + `0` + strings.Repeat("]", 34) + `}}`, `{"doc":{"x":"` + strings.Repeat("x", protocol.MaxExpression) + `"}}`, `{"doc":{"x":[` + strings.Repeat("0,", 4096) + `0]}}`}
+	denied := []string{"", `{}`, `[]`, `{"doc":null}`, `{"doc":[]}`, `{"doc":{},"doc":{}}`, `{"doc":{"x":1,"x":2}}`, `{"doc":{"x":{"a":1,"a":2}}}`, `{"doc":{"_id":"other"}}`, `{"doc":{"a":{},"a.b":1}}`, `{"doc":{"bad":"\ud800"}}`, `{"doc":{"x":` + strings.Repeat("[", 10001) + `0` + strings.Repeat("]", 10001) + `}}`, `{"doc":{"x":"` + strings.Repeat("x", protocol.MaxExpression) + `"}}`, `{"doc":{"x":[` + strings.Repeat("0,", protocol.MaxExpression) + `0]}}`}
 	for _, option := range []string{"script", "upsert", "doc_as_upsert", "scripted_upsert", "routing", "_index", "retry_on_conflict", "pipeline", "query", "detect_noop", "timestamp", "_source"} {
 		denied = append(denied, fmt.Sprintf(`{"doc":{},%q:{}}`, option))
 	}

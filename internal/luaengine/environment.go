@@ -10,7 +10,7 @@ import (
 	"github.com/iceisfun/golua/vm"
 )
 
-func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
+func installEnvironment(state *vm.VM, observedAt time.Time, limits value.Limits) *vm.Table {
 	stdlib.Open(state)
 	globals := state.Globals().(*vm.Table)
 	baseNames := []string{
@@ -33,19 +33,19 @@ func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
 			}
 			for index := 1; index <= state.ArgCount(); index++ {
 				argument := state.Get(index)
-				if argument.IsString() && len(argument.AsString()) > value.MaxBytes {
+				if argument.IsString() && len(argument.AsString()) > limits.MaxBytes {
 					panic("string argument exceeds the value byte limit")
 				}
 			}
 			count := function(state)
-			if state.Get(0).IsString() && len(state.Get(0).AsString()) > value.MaxBytes {
+			if state.Get(0).IsString() && len(state.Get(0).AsString()) > limits.MaxBytes {
 				panic("string result exceeds the value byte limit")
 			}
 			return count
 		}))
 	}
 	stringLibrary.SetString("format", vm.NewNativeFunc(func(state *vm.VM) int {
-		return luaFormat(state, format)
+		return luaFormat(state, format, limits)
 	}))
 	tableLibrary := state.GetGlobal("table").AsTable().(*vm.Table)
 	tableNames := []string{"insert", "remove", "sort", "concat"}
@@ -56,14 +56,14 @@ func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
 			if err := state.CheckInterrupt(); err != nil {
 				panic(err)
 			}
-			if !state.Get(1).IsTable() || state.Get(1).AsTable().Len() > value.MaxNodes {
+			if !state.Get(1).IsTable() || state.Get(1).AsTable().Len() > limits.MaxNodes {
 				panic("table operation requires an array within the value node limit")
 			}
 			return function(state)
 		}))
 	}
-	tableLibrary.SetString("sort", vm.NewNativeFunc(luaSort))
-	tableLibrary.SetString("concat", vm.NewNativeFunc(luaConcat))
+	tableLibrary.SetString("sort", vm.NewNativeFunc(func(state *vm.VM) int { return luaSort(state, limits) }))
+	tableLibrary.SetString("concat", vm.NewNativeFunc(func(state *vm.VM) int { return luaConcat(state, limits) }))
 	mathLibrary := state.GetGlobal("math").AsTable().(*vm.Table)
 	mathNames := []string{
 		"abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor",
@@ -109,12 +109,12 @@ func restrictLibrary(table *vm.Table, names []string) {
 
 // Format each directive separately so repeated arguments cannot build an
 // oversized result before the cumulative output bound is checked.
-func luaFormat(state *vm.VM, format vm.Value) int {
+func luaFormat(state *vm.VM, format vm.Value, limits value.Limits) int {
 	if !state.Get(1).IsString() {
 		panic("string.format requires a format string")
 	}
 	source := state.Get(1).AsString()
-	if len(source) > value.MaxBytes {
+	if len(source) > limits.MaxBytes {
 		panic("format string exceeds the value byte limit")
 	}
 	arguments := make([]vm.Value, state.ArgCount()-1)
@@ -134,12 +134,12 @@ func luaFormat(state *vm.VM, format vm.Value) int {
 				end = len(source) - position
 			}
 			position += end
-			appendLuaText(&output, source[start:position])
+			appendLuaText(&output, source[start:position], limits)
 			continue
 		}
 		position++
 		if position < len(source) && source[position] == '%' {
-			appendLuaText(&output, "%")
+			appendLuaText(&output, "%", limits)
 			position++
 			continue
 		}
@@ -154,7 +154,7 @@ func luaFormat(state *vm.VM, format vm.Value) int {
 		}
 		position++
 		input := arguments[argument]
-		if input.IsString() && len(input.AsString()) > value.MaxBytes {
+		if input.IsString() && len(input.AsString()) > limits.MaxBytes {
 			panic("format argument exceeds the value byte limit")
 		}
 		callArguments := []vm.Value{vm.NewString(source[start:position]), input}
@@ -162,21 +162,21 @@ func luaFormat(state *vm.VM, format vm.Value) int {
 		if err != nil {
 			panic(err)
 		}
-		appendLuaText(&output, parts[0].AsString())
+		appendLuaText(&output, parts[0].AsString(), limits)
 		argument++
 	}
 	state.Set(0, vm.NewString(output.String()))
 	return 1
 }
 
-func appendLuaText(output *strings.Builder, text string) {
-	if len(text) > value.MaxBytes-output.Len() {
+func appendLuaText(output *strings.Builder, text string, limits value.Limits) {
+	if len(text) > limits.MaxBytes-output.Len() {
 		panic("string result exceeds the value byte limit")
 	}
 	output.WriteString(text)
 }
 
-func luaConcat(state *vm.VM) int {
+func luaConcat(state *vm.VM, limits value.Limits) int {
 	if !state.Get(1).IsTable() {
 		panic("table.concat requires an array")
 	}
@@ -203,7 +203,7 @@ func luaConcat(state *vm.VM) int {
 			panic("table.concat end must be an integer")
 		}
 	}
-	if first <= last && uint64(last)-uint64(first) >= uint64(value.MaxNodes) {
+	if first <= last && uint64(last)-uint64(first) >= uint64(limits.MaxNodes) {
 		panic("table.concat range exceeds the value node limit")
 	}
 	var output strings.Builder
@@ -216,9 +216,9 @@ func luaConcat(state *vm.VM) int {
 			panic("table.concat items must be strings or numbers")
 		}
 		if index != first {
-			appendLuaText(&output, separator)
+			appendLuaText(&output, separator, limits)
 		}
-		appendLuaText(&output, item.String())
+		appendLuaText(&output, item.String(), limits)
 		if index == last {
 			break
 		}
@@ -227,13 +227,13 @@ func luaConcat(state *vm.VM) int {
 	return 1
 }
 
-func luaSort(state *vm.VM) int {
+func luaSort(state *vm.VM, limits value.Limits) int {
 	if !state.Get(1).IsTable() {
 		panic("table.sort requires an array")
 	}
 	items := state.Get(1).AsTable()
 	length := items.Len()
-	if length > value.MaxNodes {
+	if length > limits.MaxNodes {
 		panic("table.sort exceeds the value node limit")
 	}
 	compare := state.Get(2)

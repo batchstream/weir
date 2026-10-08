@@ -88,7 +88,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 			t.Error("owned PIT cleanup", failure)
 		}
 	}()
-	transport := newTransport()
+	transport := newTransport(connectionTimeout)
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	adapter := &Adapter{dialect: backend.Product, config: config, ctx: ctx, client: client}

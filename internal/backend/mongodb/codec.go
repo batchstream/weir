@@ -14,9 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
-const maxNodes = 4096
-const maxDepth = 32
-
 var extendedTypes = map[bson.Type]string{
 	bson.TypeObjectID: "mongodb.bson.objectid.v1", bson.TypeDecimal128: "mongodb.bson.decimal128.v1",
 	bson.TypeBinary: "mongodb.bson.binary.v1", bson.TypeDateTime: "mongodb.bson.datetime.v1",
@@ -24,21 +21,29 @@ var extendedTypes = map[bson.Type]string{
 }
 
 type codecBudget struct {
-	nodes int
-	bytes int
+	nodes  int
+	bytes  int
+	limits value.Limits
 }
 
-func Decode(raw bson.Raw) (value.Value, error) {
+func Decode(raw bson.Raw, limits value.Limits) (value.Value, error) {
 	var zero value.Value
 	if len(raw) > protocol.MaxDocument {
 		return zero, fmt.Errorf("document limit")
 	}
-	b := codecBudget{}
-	return decodeObject(raw, false, 0, &b)
+	b := codecBudget{limits: limits}
+	decoded, err := decodeObject(raw, false, 0, &b)
+	if err != nil {
+		return zero, err
+	}
+	if len(raw) > limits.MaxBytes {
+		return zero, fmt.Errorf("conversion byte limit")
+	}
+	return decoded, nil
 }
 func decodeObject(raw []byte, array bool, depth int, b *codecBudget) (value.Value, error) {
 	var zero value.Value
-	if depth > maxDepth || len(raw) < 5 || int(binary.LittleEndian.Uint32(raw)) != len(raw) || raw[len(raw)-1] != 0 {
+	if depth > b.limits.MaxDepth || len(raw) < 5 || int(binary.LittleEndian.Uint32(raw)) != len(raw) || raw[len(raw)-1] != 0 {
 		return zero, fmt.Errorf("invalid BSON or depth limit")
 	}
 	result := value.Value{Kind: value.Object}
@@ -48,7 +53,7 @@ func decodeObject(raw []byte, array bool, depth int, b *codecBudget) (value.Valu
 	rest := raw[4 : len(raw)-1]
 	for len(rest) > 0 {
 		b.nodes++
-		if b.nodes > maxNodes {
+		if b.nodes > b.limits.MaxNodes {
 			return zero, fmt.Errorf("node limit")
 		}
 		el, tail, ok := bsoncore.ReadElement(rest)
@@ -129,13 +134,16 @@ func decodeValue(rv bson.RawValue, depth int, b *codecBudget) (value.Value, erro
 	}
 	return v, nil
 }
-func Encode(v value.Value) (bson.Raw, error) {
-	b := codecBudget{}
+func Encode(v value.Value, limits value.Limits) (bson.Raw, error) {
+	b := codecBudget{limits: limits}
 	data, err := encodeObject(v, 0, &b)
+	if err == nil && len(data) > limits.MaxBytes {
+		return nil, fmt.Errorf("conversion byte limit")
+	}
 	return bson.Raw(data), err
 }
 func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
-	if depth > maxDepth || v.Kind != value.Object && v.Kind != value.Array {
+	if depth > b.limits.MaxDepth || v.Kind != value.Object && v.Kind != value.Array {
 		return nil, fmt.Errorf("invalid object or depth")
 	}
 	out := make([]byte, 4)
@@ -145,7 +153,7 @@ func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
 	}
 	for i := 0; i < n; i++ {
 		b.nodes++
-		if b.nodes > maxNodes {
+		if b.nodes > b.limits.MaxNodes {
 			return nil, fmt.Errorf("node limit")
 		}
 		var name string

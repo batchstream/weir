@@ -17,10 +17,14 @@ const programAttempts = 5
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
 func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {
+	settings := luaengine.DefaultLimits()
+	if native.program.Limits != nil {
+		settings = *native.program.Limits
+	}
 	currentValue := value.Value{Kind: value.Missing}
 	if *current.Found {
 		var err error
-		currentValue, err = value.DecodeJSON(current.Source)
+		currentValue, err = value.DecodeJSON(current.Source, settings.Values)
 		if err != nil {
 			failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored JSON source cannot be transformed losslessly")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
@@ -52,7 +56,7 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement contains unsupported Search fields")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
-		source, err := value.EncodeJSON(transformed.Value)
+		source, err := value.EncodeJSON(transformed.Value, settings.Values)
 		if err != nil || len(source) > protocol.MaxDocument {
 			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Lua replacement exceeds Search source limits")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)

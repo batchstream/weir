@@ -22,11 +22,11 @@ func TestCodecRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := Decode(raw)
+	decoded, err := Decode(raw, value.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := Encode(decoded)
+	encoded, err := Encode(decoded, value.DefaultLimits())
 	if err != nil || !bytes.Equal(encoded, raw) {
 		t.Fatalf("lossy round trip: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestCodecRoundTrip(t *testing.T) {
 	}
 	edited := value.Field{Name: "edited", Value: value.Value{Kind: value.Bool, Boolean: true}}
 	decoded.Fields = append(decoded.Fields, edited)
-	encoded, err = Encode(decoded)
+	encoded, err = Encode(decoded, value.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,14 +50,14 @@ func TestCodecRoundTrip(t *testing.T) {
 	}
 	duplicate := bson.D{{Key: "a", Value: 1}, {Key: "a", Value: 2}}
 	raw, _ = bson.Marshal(duplicate)
-	decoded, err = Decode(raw)
+	decoded, err = Decode(raw, value.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = decoded.Lookup("a"); err == nil {
 		t.Fatal("ambiguous lookup")
 	}
-	encoded, err = Encode(decoded)
+	encoded, err = Encode(decoded, value.DefaultLimits())
 	if err != nil || !bytes.Equal(encoded, raw) {
 		t.Fatal("duplicate round trip")
 	}
@@ -68,7 +68,7 @@ func TestCodecLimitsAndMalformed(t *testing.T) {
 		deep = bson.D{{Key: "v", Value: deep}}
 	}
 	raw, _ := bson.Marshal(deep)
-	if _, err := Decode(raw); err == nil {
+	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
 		t.Fatal("deep")
 	}
 	wide := bson.D{}
@@ -77,21 +77,21 @@ func TestCodecLimitsAndMalformed(t *testing.T) {
 		wide = append(wide, field)
 	}
 	raw, _ = bson.Marshal(wide)
-	if _, err := Decode(raw); err == nil {
+	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
 		t.Fatal("node count")
 	}
 	large := bson.D{{Key: "x", Value: strings.Repeat("x", 3<<20)}}
 	raw, _ = bson.Marshal(large)
-	if _, err := Decode(raw); err == nil {
+	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
 		t.Fatal("large")
 	}
 	code := bson.D{{Key: "x", Value: bson.JavaScript("return 1")}}
 	raw, _ = bson.Marshal(code)
-	if _, err := Decode(raw); err == nil {
+	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
 		t.Fatal("unsupported code")
 	}
 	for _, raw := range [][]byte{nil, {1, 0, 0, 0, 0}, {5, 0, 0, 0, 2}, {9, 0, 0, 0, 8, 'b', 0, 2, 0}, {12, 0, 0, 0, 2, 's', 0, 0, 0, 0, 0, 0}, {14, 0, 0, 0, 2, 's', 0, 2, 0, 0, 0, 'a', 255, 0}} {
-		if _, err := Decode(raw); err == nil {
+		if _, err := Decode(raw, value.DefaultLimits()); err == nil {
 			t.Fatalf("accepted %x", raw)
 		}
 	}
@@ -99,9 +99,9 @@ func TestCodecLimitsAndMalformed(t *testing.T) {
 func FuzzCodec(f *testing.F) {
 	f.Add([]byte{5, 0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		v, err := Decode(raw)
+		v, err := Decode(raw, value.DefaultLimits())
 		if err == nil {
-			encoded, e := Encode(v)
+			encoded, e := Encode(v, value.DefaultLimits())
 			if e != nil {
 				t.Fatal(e)
 			}

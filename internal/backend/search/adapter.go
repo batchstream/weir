@@ -15,6 +15,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/targetcache"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
@@ -25,8 +26,9 @@ const ElasticsearchProduct = "elasticsearch"
 const OpenSearchProduct = "opensearch"
 
 type Config struct {
-	Store string
-	URL   string
+	Options *backend.Options
+	Store   string
+	URL     string
 
 	Connection *Connection
 	// Resolver optionally supplies a standard DNS I/O dependency; app uses system configuration.
@@ -69,10 +71,26 @@ func validIndex(name string) bool {
 	return true
 }
 
+func (a *Adapter) options() backend.Options {
+	if a.config.Options != nil {
+		return *a.config.Options
+	}
+	return backend.DefaultOptions()
+}
+
 func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
 	}
+	settings := backend.DefaultOptions()
+	if cfg.Options != nil {
+		settings = *cfg.Options
+	}
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	cfg.Options = &settings
+
 	cfg.URL, _ = canonicalURL(cfg.URL)
 	if cfg.Connection != nil {
 		connection := *cfg.Connection
@@ -85,16 +103,17 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	lifetime, cancel := context.WithCancel(context.Background())
 	dialer := &connectionDialer{
 		ctx:       lifetime,
+		timeout:   settings.ConnectTimeout,
 		resolver:  cfg.Resolver,
 		tlsConfig: tlsConfig,
 		conns:     make(map[*searchConn]struct{}),
 	}
-	transport := newTransport()
+	transport := newTransport(settings.ConnectTimeout)
 	transport.DialContext = dialer.dial
 	transport.DialTLSContext = dialer.dial
 	transport.TLSClientConfig = tlsConfig
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-	nativeTransport := newTransport()
+	nativeTransport := newTransport(settings.ConnectTimeout)
 	nativeTransport.DialContext = dialer.dial
 	nativeTransport.DialTLSContext = dialer.dial
 	nativeTransport.TLSClientConfig = tlsConfig
@@ -110,6 +129,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		ctx:             lifetime,
 		cancel:          cancel,
 	}
+	a.targets.SetCapacity(settings.MetadataCacheEntries)
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
@@ -287,17 +307,18 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				}
 				input := value.Value{Kind: value.Missing}
 				if program.Input != nil {
-					if validateJSON(program.Input.Data, 4096) != nil {
+					if validateJSON(program.Input.Data, a.options().Lua.Values.MaxNodes) != nil {
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
 					}
 					var err error
-					input, err = value.DecodeJSON(program.Input.Data)
+					input, err = value.DecodeJSON(program.Input.Data, a.options().Lua.Values)
 					if err != nil {
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
 					}
 				}
 				native.action = "program"
-				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input}
+				settings := a.options().Lua
+				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input, Limits: &settings}
 				native.program = luaProgram
 			} else {
 				expression := action.AtomicTransform.GetBackendExpression()
@@ -314,7 +335,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			if document.ContentType != "application/json" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only JSON source is supported")
 			}
-			if !object(document.Data) || validateJSON(document.Data, 4096) != nil {
+			if !object(document.Data) || validateJSON(document.Data, len(document.Data)) != nil {
 				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "JSON source validation/limits failed")
 			}
 			native.source = document.Data

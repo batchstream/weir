@@ -16,25 +16,26 @@ import (
 )
 
 type Node struct {
-	mu            sync.Mutex
-	state         string
-	registry      *prometheus.Registry
-	diagnostics   *diagnostics
-	guard         *overload.Guard
-	drains        prometheus.Counter
-	drainDuration prometheus.Histogram
-	admission     *server.Admission
-	stores        map[string]*store.Runtime
-	directory     *directory.Directory
-	endpoints     []endpoint
-	stopGuard     context.CancelFunc
-	guardDone     chan struct{}
-	start         sync.Once
-	startErr      error
-	serving       sync.WaitGroup
-	once          sync.Once
-	closeErr      error
-	Errors        chan error
+	shutdownTimeout time.Duration
+	mu              sync.Mutex
+	state           string
+	registry        *prometheus.Registry
+	diagnostics     *diagnostics
+	guard           *overload.Guard
+	drains          prometheus.Counter
+	drainDuration   prometheus.Histogram
+	admission       *server.Admission
+	stores          map[string]*store.Runtime
+	directory       *directory.Directory
+	endpoints       []endpoint
+	stopGuard       context.CancelFunc
+	guardDone       chan struct{}
+	start           sync.Once
+	startErr        error
+	serving         sync.WaitGroup
+	once            sync.Once
+	closeErr        error
+	Errors          chan error
 }
 
 type endpoint struct {
@@ -93,7 +94,7 @@ func (n *Node) Addresses() []string {
 
 func (n *Node) Close(ctx context.Context) error {
 	n.once.Do(func() {
-		drain, cancel := context.WithTimeout(ctx, 5*time.Second)
+		drain, cancel := context.WithTimeout(ctx, n.shutdownTimeout)
 		defer cancel()
 
 		n.mu.Lock()

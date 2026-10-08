@@ -201,23 +201,23 @@ func TestSearchMetadataCacheRechecksEvictedTargets(t *testing.T) {
 	defer server.Close()
 	cfg := Config{URL: server.URL}
 	adapter := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-	for i := 0; i <= targetcache.Capacity; i++ {
+	for i := 0; i <= targetcache.DefaultCapacity; i++ {
 		index := fmt.Sprintf("target%d", i)
 		if _, failure := adapter.inspect(context.Background(), index, false); failure != nil {
 			t.Fatal(failure)
 		}
 	}
-	latest := fmt.Sprintf("target%d", targetcache.Capacity)
+	latest := fmt.Sprintf("target%d", targetcache.DefaultCapacity)
 	if _, failure := adapter.inspect(context.Background(), latest, false); failure != nil {
 		t.Fatal(failure)
 	}
-	if inspections.Load() != targetcache.Capacity+1 {
+	if inspections.Load() != targetcache.DefaultCapacity+1 {
 		t.Fatal("recent target was not retained", inspections.Load())
 	}
 	if _, failure := adapter.inspect(context.Background(), "target0", false); failure != nil {
 		t.Fatal(failure)
 	}
-	if inspections.Load() != targetcache.Capacity+2 {
+	if inspections.Load() != targetcache.DefaultCapacity+2 {
 		t.Fatal("evicted target did not repeat its metadata check", inspections.Load())
 	}
 }

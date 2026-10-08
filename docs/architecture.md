@@ -71,9 +71,9 @@ contains only public ownership/address advertisements, never backend credentials
 | Capacity | Default or bound |
 | --- | --- |
 | Record document / ordinary Read source | Protocol document bound: 2 MiB |
-| Read/Mutate stream | No total record limit; 32 tickets in the publication window |
+| Read/Mutate stream | No total record limit; configurable publication window (default 32 tickets) |
 | Native input | Protocol 8 MiB; backend encoding boundaries also apply |
-| Store waiting queue | 1024 operations / 32 MiB, configurable via batch_queue |
+| Store waiting queue | 1024 operations / 32 MiB, configurable via batching.queue |
 | Physical batch input | 32 operations / 8 MiB, configurable |
 | Business connections, RPCs and active executions | No Weir concurrency limit |
 | Process memory capacity | Automatically detected from host/process/container limits |
@@ -104,7 +104,7 @@ allocation sandbox. Programs must be trusted.
 Each prepared record enters one Store scheduler directly; there is no timed
 collection window or polling. The
 scheduler combines compatible queued records by target, actual input bytes and
-max_batch_operations and max_batch_bytes. A session/resource key serializes same-resource work
+batching.max_operations and batching.max_bytes. A session/resource key serializes same-resource work
 within a stream; distinct resources and streams can share a physical batch.
 Scan and Native use the same scheduler with their required singleton lifecycle.
 Execution mode and cleanup follow the command type. A Scan adapter returns whether

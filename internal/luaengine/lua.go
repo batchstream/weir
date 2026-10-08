@@ -30,31 +30,34 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	compileLimits := compiler.CompilerLimits{MaxVars: 128, MaxRegs: 128, MaxUpvals: 128}
-	block, err := parser.ParseWithMaxVars("transform.lua", program.Source, compileLimits.MaxVars)
+	block, err := parser.Parse("transform.lua", program.Source)
 	if contextErr := ctx.Err(); contextErr != nil {
 		return empty, contextErr
 	}
 	if err != nil {
 		return empty, err
 	}
-	prototype, err := compiler.Compile("transform.lua", block, compiler.WithLimits(compileLimits))
+	prototype, err := compiler.Compile("transform.lua", block)
 	if contextErr := ctx.Err(); contextErr != nil {
 		return empty, contextErr
 	}
 	if err != nil {
 		return empty, err
+	}
+	settings := DefaultLimits()
+	if program.Limits != nil {
+		settings = *program.Limits
 	}
 	limits := vm.Limits{
-		MaxCallDepth:    128,
-		MaxStackSlots:   4096,
-		MaxInstructions: 1_000_000,
+		MaxCallDepth:    settings.MaxCallDepth,
+		MaxStackSlots:   settings.MaxStackSlots,
+		MaxInstructions: settings.MaxInstructions,
 		MinGCInterval:   -1,
 	}
 	state := vm.New(vm.WithContext(ctx), vm.WithLimits(limits))
 	defer state.Close(context.Background())
-	module := installEnvironment(state, program.ObservedAt)
-	conversion := newBridge()
+	module := installEnvironment(state, program.ObservedAt, settings.Values)
+	conversion := newBridge(settings.Values)
 	conversion.install(state, module)
 	functions, err := state.Run(prototype)
 	if contextErr := ctx.Err(); contextErr != nil {
@@ -104,7 +107,7 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 			return empty, fmt.Errorf("invalid Lua result: %w", err)
 		}
 	}
-	if err := ValidateResult(result); err != nil {
+	if err := ValidateResult(result, settings); err != nil {
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -136,7 +139,7 @@ func luaReject(state *vm.VM) int {
 		panic("weir.reject requires one message string")
 	}
 	result := Result{Action: Reject, Message: state.Get(1).AsString()}
-	if err := ValidateResult(result); err != nil {
+	if err := ValidateResult(result, DefaultLimits()); err != nil {
 		panic(err)
 	}
 	state.Set(0, vm.NewUserdataValue(result, nil))

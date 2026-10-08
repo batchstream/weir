@@ -24,7 +24,7 @@ func TestLinuxMemoryNative(t *testing.T) {
 	t.Logf("native kernel=%s machine=%s Go=%s compiled=%s/%s PID=%d", uts(uname.Release[:]), uts(uname.Machine[:]), runtime.Version(), runtime.GOOS, runtime.GOARCH, os.Getpid())
 	targets := []Target{&guardTarget{}}
 	const budget = 128 << 20
-	guard := New(targets)
+	guard := New(targets, DefaultLimits())
 	// Bound fixture allocations while exercising the actual memory sampler.
 	guard.processBudget = budget
 	ctx, cancel := context.WithCancel(context.Background())

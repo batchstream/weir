@@ -15,24 +15,29 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// A large scheduled batch becomes multiple native exchanges. The exchange
+// budget controls retained framing, and does not reject the whole batch.
 func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
-	bytes := 0
-	for _, p := range plans {
-		charge := max(p.Bytes, proto.Size(p.Command)+16)
-		if p.Bytes < 0 || charge > execution.BackendBatchBytes || bytes > execution.BackendBatchBytes-charge {
-			bytes = execution.BackendBatchBytes + 1
-			break
+	limit := a.options().ExchangeBytes
+	for start := 0; start < len(plans); {
+		end, bytes := start, 0
+		for end < len(plans) {
+			charge := proto.Size(plans[end].Command) + execution.EntryOverheadBytes
+			if end > start && charge > limit-bytes {
+				break
+			}
+			bytes += charge
+			end++
 		}
-		bytes += charge
+		copy(results[start:end], a.executeRecordChunk(ctx, plans[start:end]))
+		start = end
 	}
-	if bytes > execution.BackendBatchBytes {
-		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "MongoDB batch exceeds encoded input byte bound")
-		for i, p := range plans {
-			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, failure)
-		}
-		return results
-	}
+	return results
+}
+
+func (a *Adapter) executeRecordChunk(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+	results := make([]*pb.Event, len(plans))
 	type targetBatch struct {
 		plans                         []*execution.Plan
 		positions                     []int
@@ -329,7 +334,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	namespaceInfo := bson.D{{Key: "ns", Value: target.String()}}
 	concern := bson.D{{Key: "w", Value: "majority"}}
 	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(active))}}
-	command := bson.D{
+	var command any = bson.D{
 		{Key: "bulkWrite", Value: int32(1)},
 		{Key: "ops", Value: ops},
 		{Key: "nsInfo", Value: bson.A{namespaceInfo}},
@@ -338,6 +343,21 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		{Key: "cursor", Value: cursorOpts},
 		{Key: "writeConcern", Value: concern},
 	}
+	encoded, marshalErr := bson.Marshal(command)
+	if marshalErr != nil || len(encoded) > a.commandBytes()-(64<<10) {
+		if marshalErr == nil && len(plans) > 1 {
+			middle := len(plans) / 2
+			copy(results[:middle], a.executeWrites(ctx, plans[:middle]))
+			copy(results[middle:], a.executeWrites(ctx, plans[middle:]))
+			return results
+		}
+		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "encoded write exceeds MongoDB native BSON command boundary")
+		for i, work := range active {
+			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
+		}
+		return results
+	}
+	command = bson.Raw(encoded)
 	state := &writeBatch{plans: active, results: make([]*pb.MutationResult, len(active))}
 	session, err := a.client.StartSession()
 	if err != nil {

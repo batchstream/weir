@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -12,6 +13,25 @@ import (
 const ScanBatchDocuments = 128
 const ScanBatchBytes = 4 << 20
 const ScanResultBytes = ScanBatchBytes + ScanBatchDocuments*ResultOverheadBytes + protocol.MaxScanToken + ResultOverheadBytes
+
+// ScanLimits bounds one retained output batch, independently of the logical page.
+type ScanLimits struct{ Documents, Bytes int }
+
+func DefaultScanLimits() ScanLimits {
+	limits := ScanLimits{Documents: ScanBatchDocuments, Bytes: ScanBatchBytes}
+	return limits
+}
+
+func (limits ScanLimits) Validate() error {
+	if limits.Documents < 1 || limits.Documents > protocol.MaxScanPageSize || limits.Bytes < protocol.MaxDocument || limits.Bytes > int(^uint(0)>>1)-limits.Documents*ResultOverheadBytes-protocol.MaxScanToken-ResultOverheadBytes {
+		return fmt.Errorf("invalid Scan batch bounds")
+	}
+	return nil
+}
+
+func (limits ScanLimits) ResultBytes() int {
+	return limits.Bytes + limits.Documents*ResultOverheadBytes + protocol.MaxScanToken + ResultOverheadBytes
+}
 
 // ScanProgress retains publication state across bounded backend fetches.
 type ScanProgress struct {

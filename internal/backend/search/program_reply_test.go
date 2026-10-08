@@ -151,6 +151,12 @@ func TestBulkTransformItemLimitsPreserveOtherAcknowledgements(t *testing.T) {
 					t.Fatal("bounded ordinary acknowledgement lost", results[0])
 				}
 				result := results[1].GetMutationResult()
+				if limit == "nodes" {
+					if result.GetOutcome() != pb.MutationOutcome_APPLIED {
+						t.Fatal("valid reply rejected by hidden node cap", result)
+					}
+					return
+				}
 				if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetMessage() != message {
 					t.Fatal("excessive transform evidence trusted", result)
 				}

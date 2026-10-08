@@ -60,8 +60,8 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		end := start
 		bound := getFramingLimit
 		for end < len(works) {
-			item := len(works[end].Backend.(*plan).id) + 16
-			if bound+item > batchBodyLimit {
+			item := protocol.MaxDocument + len(works[end].Backend.(*plan).id) + getFramingLimit
+			if bound+item > a.options().ExchangeBytes {
 				break
 			}
 			bound += item
@@ -93,7 +93,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		encoded, _ := json.Marshal(body)
 		call := exchange{
 			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
-			contentType: "application/json", limit: batchBodyLimit,
+			contentType: "application/json", limit: a.options().ExchangeBytes,
 			jsonNodes: len(group)*(16384+32) + 1,
 		}
 		status, raw, err := a.request(ctx, call)
@@ -221,7 +221,7 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 		}
 		entry.WriteByte('\n')
 	}
-	if b.request.Len()+entry.Len() > batchBodyLimit {
+	if b.request.Len()+entry.Len() > b.adapter.options().ExchangeBytes {
 		b.flush()
 	}
 	start := b.request.Len()
@@ -252,9 +252,9 @@ func (b *recordBatch) flush() {
 	}
 	if len(works) != 0 {
 		call := exchange{
-			path:     "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1&timeout=1s",
+			path:     "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1",
 			body:     body[:length],
-			limit:    responseLimit,
+			limit:    b.adapter.options().ExchangeBytes,
 			mutation: true,
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
@@ -288,17 +288,6 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		ctx:      ctx,
 		results:  make([]*pb.Event, len(works)),
 		attempts: make([]int, len(works)),
-	}
-	totalBytes := 0
-	for _, work := range works {
-		totalBytes += work.Bytes
-	}
-	if totalBytes > batchBodyLimit {
-		failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "batch exceeds execution bounds")
-		for i, work := range works {
-			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
-		}
-		return batch.results
 	}
 	positions := make([]int, 0, len(works))
 	for i, work := range works {
@@ -362,7 +351,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				native := work.Backend.(*plan)
 				if batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
 					bound := protocol.MaxDocument + getFramingLimit
-					if bound > batchBodyLimit-readBytes {
+					if bound > a.options().ExchangeBytes-readBytes {
 						break
 					}
 					readBytes += bound

@@ -30,6 +30,7 @@ const scanWorkingBytes = 48 << 20
 const scanProfile = "mongodb:v1"
 
 type scanPlan struct {
+	limits execution.ScanLimits
 	execution.ScanProgress
 	target            namespace
 	options           bson.D
@@ -51,7 +52,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Scan target")
 	}
 	target := namespace{database: parts[0], collection: parts[1]}
-	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: execution.ScanBatchDocuments, fingerprint: protocol.ScanFingerprint(req, a.config.Store, scanProfile), includeID: true}
+	native := &scanPlan{target: target, pageSize: protocol.ScanPageSize(req), batchSize: a.options().Scan.Documents, limits: a.options().Scan, fingerprint: protocol.ScanFingerprint(req, a.config.Store, scanProfile), includeID: true}
 	if d := req.Filter; d != nil {
 		if d.ContentType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan filter requires BSON")
@@ -105,7 +106,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	p := &execution.Plan{
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
-		ResultBytes:  execution.ScanResultBytes,
+		ResultBytes:  a.options().Scan.ResultBytes(),
 		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
 	}
@@ -113,7 +114,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 }
 
 func scanFindCommand(n *scanPlan) bson.D {
-	batchSize := min(n.pageSize-n.Count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
+	batchSize := min(n.pageSize-n.Count, uint64(n.limits.Documents), uint64(n.batchSize))
 	order := bson.D{{Key: "_id", Value: int32(1)}}
 	command := bson.D{
 		{Key: "find", Value: n.target.collection},
@@ -169,8 +170,8 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		page.Failure = backendFailure(ctx, err)
 		return page
 	}
-	batchSize := min(n.pageSize-n.Count, uint64(execution.ScanBatchDocuments), uint64(n.batchSize))
-	cursor := &recordCursor{target: n.target, items: int(batchSize), outputBytes: execution.ScanBatchBytes}
+	batchSize := min(n.pageSize-n.Count, uint64(a.options().Scan.Documents), uint64(n.batchSize))
+	cursor := &recordCursor{target: n.target, items: int(batchSize), outputBytes: a.options().Scan.Bytes}
 	page = a.recordCursorReply(raw, cursor, true)
 	if page.Failure != nil {
 		return page

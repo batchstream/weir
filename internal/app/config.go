@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/directory"
+	"github.com/batchstream/weir/internal/overload"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
 )
@@ -23,10 +25,12 @@ type Config struct {
 
 // BasicConfig groups settings by their process responsibility.
 type BasicConfig struct {
+	Lifecycle   LifecycleConfig   `json:"lifecycle" yaml:"lifecycle"`
 	Listeners   ListenerConfig    `json:"listeners" yaml:"listeners"`
 	Diagnostics DiagnosticsConfig `json:"diagnostics" yaml:"diagnostics"`
 	Transport   TransportConfig   `json:"transport" yaml:"transport"`
 	Discovery   DiscoveryConfig   `json:"discovery" yaml:"discovery"`
+	Overload    OverloadConfig    `json:"overload" yaml:"overload"`
 }
 
 type ListenerConfig struct {
@@ -35,8 +39,9 @@ type ListenerConfig struct {
 }
 
 type DiagnosticsConfig struct {
-	Address       string `json:"address" yaml:"address"`
-	AllowIntranet bool   `json:"allow_intranet" yaml:"allow_intranet"`
+	Timeout       Duration `json:"timeout" yaml:"timeout"`
+	Address       string   `json:"address" yaml:"address"`
+	AllowIntranet bool     `json:"allow_intranet" yaml:"allow_intranet"`
 }
 
 // DiscoveryConfig advertises the local Store group and seeds directory synchronization.
@@ -59,11 +64,66 @@ type StoreConfig struct {
 }
 
 type Local struct {
-	MongoDB            *Mongo           `json:"mongodb" yaml:"mongodb"`
-	Search             *Search          `json:"search" yaml:"search"`
-	MaxBatchOperations int              `json:"max_batch_operations" yaml:"max_batch_operations"`
-	MaxBatchBytes      *ByteSize        `json:"max_batch_bytes,omitempty" yaml:"max_batch_bytes,omitempty"`
-	BatchQueue         BatchQueueConfig `json:"batch_queue" yaml:"batch_queue"`
+	Backend   BackendConfig   `json:"backend" yaml:"backend"`
+	Batching  BatchingConfig  `json:"batching" yaml:"batching"`
+	Streaming StreamingConfig `json:"streaming" yaml:"streaming"`
+	Lua       LuaConfig       `json:"lua" yaml:"lua"`
+}
+
+type BackendConfig struct {
+	MongoDB              *Mongo    `json:"mongodb,omitempty" yaml:"mongodb,omitempty"`
+	Search               *Search   `json:"search,omitempty" yaml:"search,omitempty"`
+	ConnectTimeout       *Duration `json:"connect_timeout,omitempty" yaml:"connect_timeout,omitempty"`
+	MetadataCacheEntries *int      `json:"metadata_cache_entries,omitempty" yaml:"metadata_cache_entries,omitempty"`
+}
+
+type BatchingConfig struct {
+	MaxOperations    int              `json:"max_operations" yaml:"max_operations"`
+	MaxBytes         *ByteSize        `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
+	MaxExchangeBytes *ByteSize        `json:"max_exchange_bytes,omitempty" yaml:"max_exchange_bytes,omitempty"`
+	Queue            BatchQueueConfig `json:"queue" yaml:"queue"`
+}
+
+type StreamingConfig struct {
+	MaxPendingRecords int        `json:"max_pending_records" yaml:"max_pending_records"`
+	Scan              ScanConfig `json:"scan" yaml:"scan"`
+}
+
+type ScanConfig struct {
+	MaxBatchDocuments int       `json:"max_batch_documents" yaml:"max_batch_documents"`
+	MaxBatchBytes     *ByteSize `json:"max_batch_bytes,omitempty" yaml:"max_batch_bytes,omitempty"`
+}
+
+type LuaConfig struct {
+	VM     LuaVMConfig    `json:"vm" yaml:"vm"`
+	Values LuaValueConfig `json:"values" yaml:"values"`
+}
+
+type LuaVMConfig struct {
+	MaxInstructions int64 `json:"max_instructions" yaml:"max_instructions"`
+	MaxCallDepth    int   `json:"max_call_depth" yaml:"max_call_depth"`
+	MaxStackSlots   int   `json:"max_stack_slots" yaml:"max_stack_slots"`
+}
+
+type LuaValueConfig struct {
+	MaxBytes *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
+	MaxDepth int       `json:"max_depth" yaml:"max_depth"`
+	MaxNodes int       `json:"max_nodes" yaml:"max_nodes"`
+}
+
+type OverloadConfig struct {
+	Memory MemoryPressureConfig `json:"memory" yaml:"memory"`
+}
+
+type MemoryPressureConfig struct {
+	HighWatermark  int      `json:"high_watermark" yaml:"high_watermark"`
+	LowWatermark   int      `json:"low_watermark" yaml:"low_watermark"`
+	SampleInterval Duration `json:"sample_interval" yaml:"sample_interval"`
+}
+
+func (cfg MemoryPressureConfig) limits() overload.Limits {
+	limits := overload.Limits{HighWatermark: uint64(cfg.HighWatermark), LowWatermark: uint64(cfg.LowWatermark), SampleInterval: time.Duration(cfg.SampleInterval)}
+	return limits
 }
 
 // BatchQueueConfig bounds waiting work. Dispatch releases queue capacity;
@@ -99,21 +159,29 @@ type TransportConfig struct {
 	Timeouts TransportTimeouts `json:"timeouts" yaml:"timeouts"`
 }
 
+type LifecycleConfig struct {
+	StartupTimeout  Duration `json:"startup_timeout" yaml:"startup_timeout"`
+	ShutdownTimeout Duration `json:"shutdown_timeout" yaml:"shutdown_timeout"`
+}
+
 type TransportTimeouts struct {
-	Stall Duration `json:"stall" yaml:"stall"`
+	Handshake Duration `json:"handshake" yaml:"handshake"`
+	Idle      Duration `json:"idle" yaml:"idle"`
+	Stall     Duration `json:"stall" yaml:"stall"`
 }
 
 func DefaultConfig() Config {
 	defaults := server.DefaultLimits()
-	timeouts := TransportTimeouts{Stall: Duration(defaults.Stall)}
+	timeouts := TransportTimeouts{Stall: Duration(defaults.Stall), Handshake: Duration(defaults.Handshake), Idle: Duration(defaults.Idle)}
 	transport := TransportConfig{Timeouts: timeouts}
-	basic := BasicConfig{Transport: transport}
+	memory := MemoryPressureConfig{HighWatermark: 80, LowWatermark: 70, SampleInterval: Duration(100 * time.Millisecond)}
+	basic := BasicConfig{Lifecycle: LifecycleConfig{StartupTimeout: Duration(5 * time.Second), ShutdownTimeout: Duration(5 * time.Second)}, Transport: transport, Diagnostics: DiagnosticsConfig{Timeout: Duration(diagnosticTimeout)}, Overload: OverloadConfig{Memory: memory}}
 	cfg := Config{Basic: basic}
 	return cfg
 }
 
 func (cfg TransportConfig) serverLimits() server.Limits {
-	limits := server.Limits{Stall: time.Duration(cfg.Timeouts.Stall)}
+	limits := server.Limits{Stall: time.Duration(cfg.Timeouts.Stall), Handshake: time.Duration(cfg.Timeouts.Handshake), Idle: time.Duration(cfg.Timeouts.Idle)}
 	return limits
 }
 
@@ -178,6 +246,15 @@ func (cfg BasicConfig) Validate() error {
 		}
 	}
 
+	if cfg.Lifecycle.StartupTimeout <= 0 || cfg.Lifecycle.ShutdownTimeout <= 0 || cfg.Transport.Timeouts.Handshake <= 0 {
+		return errors.New("invalid lifecycle or handshake timeout")
+	}
+	if cfg.Diagnostics.Timeout <= 0 {
+		return errors.New("invalid diagnostics timeout")
+	}
+	if err := cfg.Overload.Memory.limits().Validate(); err != nil {
+		return err
+	}
 	return cfg.Transport.serverLimits().Validate()
 }
 
@@ -255,6 +332,10 @@ func (cfg RoutingConfig) Validate() error {
 	}
 	for _, service := range cfg.Stores {
 		l := service.Local
+		opts := l.backendOptions()
+		if err := opts.Validate(); err != nil {
+			return err
+		}
 		limits := l.runtimeLimits()
 		if err := limits.Validate(); err != nil {
 			return err
@@ -264,7 +345,7 @@ func (cfg RoutingConfig) Validate() error {
 		if credentials != nil && (credentials.UsernameFile != "" || credentials.PasswordFile != "") {
 			return errors.New("unresolved credential file")
 		}
-		if l.MongoDB != nil {
+		if l.Backend.MongoDB != nil {
 			config := l.mongoConfig(service.Name)
 			if err := mongodb.ValidateConfig(config); err != nil {
 				return err
@@ -288,7 +369,7 @@ func (cfg RoutingConfig) validateStores() error {
 		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] || definition.Local == nil {
 			return errors.New("invalid or duplicate Store")
 		}
-		if (definition.MongoDB == nil) == (definition.Search == nil) {
+		if (definition.Backend.MongoDB == nil) == (definition.Backend.Search == nil) {
 			return errors.New("LocalStore requires exactly one adapter")
 		}
 		names[definition.Name] = true
@@ -298,19 +379,55 @@ func (cfg RoutingConfig) validateStores() error {
 
 func (l *Local) runtimeLimits() store.Limits {
 	limits := store.DefaultLimits()
-	if l.MaxBatchOperations != 0 {
-		limits.BatchOperations = l.MaxBatchOperations
+	if l.Batching.MaxOperations != 0 {
+		limits.BatchOperations = l.Batching.MaxOperations
 	}
-	if l.MaxBatchBytes != nil {
-		limits.BatchBytes = boundedSize(*l.MaxBatchBytes)
+	if l.Batching.MaxBytes != nil {
+		limits.BatchBytes = boundedSize(*l.Batching.MaxBytes)
 	}
-	if l.BatchQueue.MaxOperations != 0 {
-		limits.QueueOperations = l.BatchQueue.MaxOperations
+	if l.Batching.Queue.MaxOperations != 0 {
+		limits.QueueOperations = l.Batching.Queue.MaxOperations
 	}
-	if l.BatchQueue.MaxBytes != nil {
-		limits.QueueBytes = boundedSize(*l.BatchQueue.MaxBytes)
+	if l.Batching.Queue.MaxBytes != nil {
+		limits.QueueBytes = boundedSize(*l.Batching.Queue.MaxBytes)
 	}
+	if l.Streaming.MaxPendingRecords != 0 {
+		limits.RecordWindow = l.Streaming.MaxPendingRecords
+	}
+	limits.Scan = l.backendOptions().Scan
 	return limits
+}
+
+func (l *Local) backendOptions() backend.Options {
+	opts := backend.DefaultOptions()
+	if l.Backend.ConnectTimeout != nil {
+		opts.ConnectTimeout = time.Duration(*l.Backend.ConnectTimeout)
+	}
+	if l.Backend.MetadataCacheEntries != nil {
+		opts.MetadataCacheEntries = *l.Backend.MetadataCacheEntries
+	}
+	if l.Batching.MaxExchangeBytes != nil {
+		opts.ExchangeBytes = boundedSize(*l.Batching.MaxExchangeBytes)
+	}
+	if l.Streaming.Scan.MaxBatchDocuments != 0 {
+		opts.Scan.Documents = l.Streaming.Scan.MaxBatchDocuments
+	}
+	if l.Streaming.Scan.MaxBatchBytes != nil {
+		opts.Scan.Bytes = boundedSize(*l.Streaming.Scan.MaxBatchBytes)
+	}
+	opts.Lua.MaxInstructions = l.Lua.VM.MaxInstructions
+	opts.Lua.MaxCallDepth = l.Lua.VM.MaxCallDepth
+	opts.Lua.MaxStackSlots = l.Lua.VM.MaxStackSlots
+	if l.Lua.Values.MaxBytes != nil {
+		opts.Lua.Values.MaxBytes = boundedSize(*l.Lua.Values.MaxBytes)
+	}
+	if l.Lua.Values.MaxDepth != 0 {
+		opts.Lua.Values.MaxDepth = l.Lua.Values.MaxDepth
+	}
+	if l.Lua.Values.MaxNodes != 0 {
+		opts.Lua.Values.MaxNodes = l.Lua.Values.MaxNodes
+	}
+	return opts
 }
 
 func boundedSize(size ByteSize) int {
@@ -322,24 +439,28 @@ func boundedSize(size ByteSize) int {
 
 func (l *Local) searchConfig(name string) search.Config {
 	var connection *search.Connection
-	if c := l.Search.Connection; c != nil {
+	if c := l.Backend.Search.Connection; c != nil {
 		connection = &search.Connection{
 			Username: c.Username,
 			Password: c.Password,
 			CAFile:   c.CAFile,
 		}
 	}
+	settings := l.backendOptions()
 	cfg := search.Config{
+		Options:    &settings,
 		Store:      name,
-		URL:        l.Search.URL,
+		URL:        l.Backend.Search.URL,
 		Connection: connection,
 	}
 	return cfg
 }
 
 func (l *Local) mongoConfig(name string) mongodb.Config {
-	m := l.MongoDB
+	m := l.Backend.MongoDB
+	settings := l.backendOptions()
 	cfg := mongodb.Config{
+		Options:  &settings,
 		URI:      m.URI,
 		Username: m.Username,
 		Password: m.Password,

@@ -13,8 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const diagnosticTimeout = time.Second
-
 // HTTP/1 only, one request per connection, with read/write progress deadlines.
 // Each handler owns its gather until it returns; there is no detached gather or
 // handler concurrency gate.
@@ -27,7 +25,9 @@ type diagnostics struct {
 	done        chan struct{}
 }
 
-func (n *Node) openDiagnostics(address string) error {
+const diagnosticTimeout = time.Second
+
+func (n *Node) openDiagnostics(address string, timeout time.Duration) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return errors.New("diagnostic listener startup failed")
@@ -84,10 +84,10 @@ func (n *Node) openDiagnostics(address string) error {
 	d.http = &http.Server{
 		Handler:           http.HandlerFunc(handler),
 		Protocols:         protocols,
-		ReadHeaderTimeout: diagnosticTimeout,
-		ReadTimeout:       diagnosticTimeout,
-		WriteTimeout:      diagnosticTimeout,
-		IdleTimeout:       diagnosticTimeout,
+		ReadHeaderTimeout: timeout,
+		ReadTimeout:       timeout,
+		WriteTimeout:      timeout,
+		IdleTimeout:       timeout,
 		MaxHeaderBytes:    4 << 10,
 	}
 	d.http.SetKeepAlivesEnabled(false)

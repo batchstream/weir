@@ -16,6 +16,7 @@ import (
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 )
 
@@ -49,7 +50,7 @@ func scanBatchAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	transport := newTransport()
+	transport := newTransport(connectionTimeout)
 	t.Cleanup(transport.CloseIdleConnections)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	adapter := &Adapter{
@@ -304,8 +305,8 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	state.hasAfter = false
 	rows := []json.RawMessage{hit}
 	page = adapter.scanReply(scanBatchReply(rows), state)
-	if page.Failure == nil || len(page.Documents) != 0 {
-		t.Fatal("per-hit JSON complexity bound disappeared", page)
+	if page.Failure != nil || len(page.Documents) != 1 {
+		t.Fatal("valid source rejected by a hidden node cap", page.Failure)
 	}
 }
 
@@ -331,7 +332,7 @@ func TestScanCheckpointContainsTraversalStateOnly(t *testing.T) {
 			case "duplicate":
 				state = []byte(`{"pit":"previous","after":7,"after":8}`)
 			case "wrong_profile":
-				profile = "search:" + adapter.dialect + ":v2"
+				profile = "backend:\n  search:" + adapter.dialect + ":v2"
 			}
 			token, err := protocol.EncodeScanToken(profile, fingerprint, state)
 			if err != nil {
@@ -494,5 +495,35 @@ func TestScanOpenAndFetchShareDeadlineAndCleanup(t *testing.T) {
 				t.Fatal("allocated PIT was not cleaned up", failure, cleanups.Load())
 			}
 		})
+	}
+}
+
+func TestConfiguredSearchScanBatchAndNoShardTimeout(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		if string(request["size"]) != "17" || request["timeout"] != nil {
+			t.Error("custom batch or caller deadline was overridden", request)
+		}
+		rows := []json.RawMessage{scanBatchHit(0, 0)}
+		_, _ = w.Write(scanBatchReply(rows))
+	})
+	adapter := scanBatchAdapter(t, handler)
+	settings := backend.DefaultOptions()
+	settings.Scan.Documents, settings.Scan.Bytes = 17, 8<<20
+	adapter.config.Options = &settings
+	request := &pb.ScanRequest{Resource: "records", PageSize: 256}
+	work, failure := adapter.prepareScan(request)
+	if failure != nil || work.ResultBytes != settings.Scan.ResultBytes() {
+		t.Fatal(failure, work)
+	}
+	state := work.Backend.(*scanPlan)
+	state.opened, state.pit = true, "previous"
+	page := adapter.fetchScan(t.Context(), work)
+	if page.Failure != nil || len(page.Documents) != 1 {
+		t.Fatal(page.Failure)
 	}
 }

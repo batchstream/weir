@@ -22,7 +22,9 @@ func TestEvaluateConcurrentFailuresDoNotBlockOtherCalls(t *testing.T) {
 	for range 8 {
 		for _, source := range sources {
 			workers.Go(func() {
-				program := Program{Source: source}
+				limits := DefaultLimits()
+				limits.MaxInstructions = 1_000_000
+				program := Program{Source: source, Limits: &limits}
 				if _, err := Evaluate(t.Context(), program); err == nil {
 					t.Error("invalid Lua accepted")
 				}

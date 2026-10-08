@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"runtime"
 	"sync/atomic"
@@ -525,35 +526,46 @@ func (stream *ownedRecordStream) Recv() (*pb.ExecuteRequest, error) {
 	return readFrame(index, testRequest()), nil
 }
 func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
-	_, local := peerLocal(t, "records")
-	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
-	server, _ := startPeerServer(t, opts)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	codec := &responseCodec{admission: server.admission}
-	output := ownedOutputStream{ctx: ctx, codec: codec, encoded: make(chan mem.BufferSlice, 1)}
-	stream := &ownedRecordStream{ownedOutputStream: output}
-	done := make(chan error, 1)
-	go func() { done <- server.Execute(stream) }()
-	encoded := <-stream.encoded
-	defer func() { encoded.Free() }()
-	deadline := time.Now().Add(time.Second)
-	for local.Snapshot().Retained < RecordStreamItems {
-		if time.Now().After(deadline) {
-			t.Fatal("pipeline did not fill its bounded count", local.Snapshot())
-		}
-		time.Sleep(time.Millisecond)
+	for _, window := range []int{3, RecordStreamItems, 96} {
+		t.Run(fmt.Sprint(window), func(t *testing.T) {
+			adapter := newPeerAdapter("records")
+			limits := store.DefaultLimits()
+			limits.RecordWindow = window
+			local, err := store.New(adapter, limits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = local.Close(t.Context()) })
+			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+			server, _ := startPeerServer(t, opts)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			codec := &responseCodec{admission: server.admission}
+			output := ownedOutputStream{ctx: ctx, codec: codec, encoded: make(chan mem.BufferSlice, 1)}
+			stream := &ownedRecordStream{ownedOutputStream: output}
+			done := make(chan error, 1)
+			go func() { done <- server.Execute(stream) }()
+			encoded := <-stream.encoded
+			defer func() { encoded.Free() }()
+			deadline := time.Now().Add(time.Second)
+			for local.Snapshot().Retained < window {
+				if time.Now().After(deadline) {
+					t.Fatal("pipeline did not fill its bounded count", local.Snapshot())
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if snapshot := local.Snapshot(); snapshot.Retained != window || snapshot.Publishers != 0 || stream.received.Load() != uint64(window) {
+				t.Fatal("slow output did not pause request input independently of Store bytes", snapshot, stream.received.Load())
+			}
+			cancel()
+			if err := <-done; status.Code(err) != codes.Canceled {
+				t.Fatal("canceled pipeline did not finish", err)
+			}
+			encoded.Free()
+			encoded = nil
+			waitPeerIdle(t, server)
+		})
 	}
-	if snapshot := local.Snapshot(); snapshot.Retained != RecordStreamItems || snapshot.Publishers != 0 || stream.received.Load() != RecordStreamItems {
-		t.Fatal("slow output did not pause request input independently of Store bytes", snapshot, stream.received.Load())
-	}
-	cancel()
-	if err := <-done; status.Code(err) != codes.Canceled {
-		t.Fatal("canceled pipeline did not finish", err)
-	}
-	encoded.Free()
-	encoded = nil
-	waitPeerIdle(t, server)
 }
 
 func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {

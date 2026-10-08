@@ -10,29 +10,46 @@ import (
 const (
 	MaxDepth = 32
 	MaxNodes = 4096
-	MaxBytes = 256 << 10
+	MaxBytes = 2 << 20
 )
 
-type budget struct {
-	nodes int
-	bytes int
+type Limits struct {
+	MaxDepth, MaxNodes, MaxBytes int
 }
 
-func Validate(v Value) error {
-	var used budget
+func DefaultLimits() Limits {
+	limits := Limits{MaxDepth: MaxDepth, MaxNodes: MaxNodes, MaxBytes: MaxBytes}
+	return limits
+}
+
+func (limits Limits) Validate() error {
+	if limits.MaxDepth < 1 || limits.MaxNodes < 1 || limits.MaxBytes < 1 {
+		return fmt.Errorf("invalid value limits")
+	}
+	return nil
+}
+
+type budget struct {
+	nodes  int
+	bytes  int
+	limits Limits
+}
+
+func Validate(v Value, limits Limits) error {
+	used := budget{limits: limits}
 	return validate(v, 0, &used)
 }
 
 func validate(v Value, depth int, used *budget) error {
-	if depth > MaxDepth {
+	if depth > used.limits.MaxDepth {
 		return fmt.Errorf("value depth limit")
 	}
 	used.nodes++
-	if used.nodes > MaxNodes {
+	if used.nodes > used.limits.MaxNodes {
 		return fmt.Errorf("value node limit")
 	}
 	used.bytes += len(v.Text) + len(v.Data) + len(v.Type)
-	if used.bytes > MaxBytes {
+	if used.bytes > used.limits.MaxBytes {
 		return fmt.Errorf("value byte limit")
 	}
 	if !utf8.ValidString(v.Text) || !utf8.ValidString(v.Type) {
@@ -71,7 +88,7 @@ func validate(v Value, depth int, used *budget) error {
 		if v.Integer != 0 || v.Float != 0 || v.Boolean || v.Text != "" || len(v.Data) != 0 || len(v.Fields) != 0 || v.Type != "" {
 			return fmt.Errorf("noncanonical array")
 		}
-		if len(v.Items) > MaxNodes-used.nodes {
+		if len(v.Items) > used.limits.MaxNodes-used.nodes {
 			return fmt.Errorf("value node limit")
 		}
 		for _, item := range v.Items {
@@ -83,7 +100,7 @@ func validate(v Value, depth int, used *budget) error {
 		if v.Integer != 0 || v.Float != 0 || v.Boolean || v.Text != "" || len(v.Data) != 0 || len(v.Items) != 0 || v.Type != "" {
 			return fmt.Errorf("noncanonical object")
 		}
-		if len(v.Fields) > MaxNodes-used.nodes {
+		if len(v.Fields) > used.limits.MaxNodes-used.nodes {
 			return fmt.Errorf("value node limit")
 		}
 		seen := make(map[string]struct{}, len(v.Fields))
@@ -96,7 +113,7 @@ func validate(v Value, depth int, used *budget) error {
 			}
 			seen[field.Name] = struct{}{}
 			used.bytes += len(field.Name)
-			if used.bytes > MaxBytes {
+			if used.bytes > used.limits.MaxBytes {
 				return fmt.Errorf("value byte limit")
 			}
 			if err := validate(field.Value, depth+1, used); err != nil {

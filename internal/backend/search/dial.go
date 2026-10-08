@@ -14,6 +14,7 @@ import (
 
 // One owner joins raw sockets and HTTP dial attempts during adapter shutdown.
 type connectionDialer struct {
+	timeout            time.Duration
 	ctx                context.Context
 	resolver           *net.Resolver
 	tlsConfig          *tls.Config
@@ -35,7 +36,11 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 	d.workers.Add(1)
 	d.mu.Unlock()
 	defer d.workers.Done()
-	ctx, cancel := context.WithTimeout(ctx, connectionTimeout)
+	timeout := d.timeout
+	if timeout == 0 {
+		timeout = connectionTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	stop := context.AfterFunc(d.ctx, cancel)
 	defer func() { stop(); cancel() }()
 	key := requestContextKey{}
@@ -77,7 +82,7 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 			return nil, errTransport
 		}
 	}
-	dialer := net.Dialer{Timeout: connectionTimeout, KeepAlive: 30 * time.Second}
+	dialer := net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	raw, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.Unmap().String(), port))
 	if err != nil {
 		return nil, err

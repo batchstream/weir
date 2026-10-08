@@ -92,39 +92,41 @@ func TestCanceledWaiterDoesNotCancelSharedCheck(t *testing.T) {
 	}
 }
 
-func TestFullPendingCacheWaitsAndEvictsCompletedTarget(t *testing.T) {
-	var cache Cache[int, int]
-	owners := make([]Lookup[int], Capacity)
+func TestPendingChecksDoNotConsumeCompletedCacheCapacity(t *testing.T) {
+	cache := New[int, int](2)
+	owners := make([]Lookup[int], DefaultCapacity+1)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
 	for i := range owners {
-		lookup, err := cache.Acquire(context.Background(), i)
+		lookup, err := cache.Acquire(ctx, i)
 		if err != nil || lookup.Cached {
 			t.Fatal(lookup, err)
 		}
 		owners[i] = lookup
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	_, err := cache.Acquire(ctx, Capacity)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("full pending cache exceeded its bound", err)
-	}
-	cache.Complete(0, owners[0], 0, true)
-	overflow, err := cache.Acquire(context.Background(), Capacity)
-	if err != nil || overflow.Cached {
-		t.Fatal(overflow, err)
-	}
-	cache.Complete(Capacity, overflow, Capacity, true)
-	for i := 1; i < Capacity; i++ {
+	for i := range owners {
 		cache.Complete(i, owners[i], i, true)
 	}
-	cache.mu.Lock()
-	if len(cache.entries) != Capacity || len(cache.order) != Capacity || cache.entries[0] != nil {
-		t.Error("completed target eviction did not preserve bound", len(cache.entries), len(cache.order))
+	if len(cache.entries) != 2 || len(cache.order) != 2 {
+		t.Fatal("completed cache exceeded configured capacity")
 	}
-	cache.mu.Unlock()
-	evicted, err := cache.Acquire(context.Background(), 0)
-	if err != nil || evicted.Cached {
-		t.Fatal("evicted target skipped a fresh check", evicted, err)
+	lookup, err := cache.Acquire(ctx, 0)
+	if err != nil || lookup.Cached {
+		t.Fatal("evicted target was reused", err)
 	}
-	cache.Complete(0, evicted, 99, true)
+	cache.Complete(0, lookup, 0, true)
+}
+
+func TestZeroCapacityDisablesCompletedCache(t *testing.T) {
+	cache := New[string, int](0)
+	owner, err := cache.Acquire(t.Context(), "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.Complete("target", owner, 42, true)
+	next, err := cache.Acquire(t.Context(), "target")
+	if err != nil || next.Cached {
+		t.Fatal("disabled cache retained a completed check", err)
+	}
+	cache.Complete("target", next, 43, true)
 }

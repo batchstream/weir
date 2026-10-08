@@ -72,7 +72,7 @@ type jsonWalk struct {
 // missing delimiter or unterminated string and never converts numeric values.
 func (w *jsonWalk) value(depth int) bool {
 	w.remaining--
-	if depth > 32 || w.remaining < 0 {
+	if w.remaining < 0 {
 		return false
 	}
 	w.space()

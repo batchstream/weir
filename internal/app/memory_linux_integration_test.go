@@ -275,7 +275,7 @@ func TestLinuxMemoryCLI(t *testing.T) {
 	monitor := &event.CommandMonitor{Started: observer.start, Succeeded: observer.finish}
 	proxy.Monitor = monitor
 	backend := mongoFixtureConfig(t, proxy.URI())
-	local := &Local{MongoDB: backend, MaxBatchOperations: 1}
+	local := &Local{Backend: BackendConfig{MongoDB: backend}, Batching: BatchingConfig{MaxOperations: 1}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()

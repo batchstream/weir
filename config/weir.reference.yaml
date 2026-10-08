@@ -55,6 +55,10 @@ diagnostics:
   # true requires a nonempty address. Exec probes still target a loopback address.
   allow_intranet: false
 
+  # HTTP header/read/write/idle deadline. Default: 1s; positive duration.
+  # Independent of business RPC contexts and backend IO.
+  timeout: 1s
+
 # Memory capacity is detected automatically from the visible container limits,
 # physical host memory and a finite process address-space limit. There is no
 # configurable process memory budget or startup reservation calculation.
@@ -74,6 +78,13 @@ transport:
     # Slow or stalled stream publication is canceled when progress stops for
     # this duration. The value also controls transport keepalive timing.
     stall: "30s"
+
+    # New gRPC connection handshake. Default: 5s; positive duration.
+    handshake: 5s
+
+    # Idle gRPC connection expiry. Default: 1m; 0s disables expiry.
+    # Neither handshake nor idle applies a whole-request business deadline.
+    idle: 1m
 
 # Optional peer directory configuration. Uncomment this block when needed.
 # The defaults below keep a standalone node without explicit advertisements.
@@ -118,3 +129,23 @@ transport:
 #   # Example: ["catalog.example:7447", "192.0.2.10:7447"]. Advertise addresses
 #   # reachable by clients; a shared DNS name can identify multiple replicas.
 #   advertise: []
+
+# Process lifecycle deadlines, independent of business request contexts.
+lifecycle:
+  # Startup assembly/qualification. Default: 5s; positive duration.
+  startup_timeout: 5s
+  # Graceful drain before cancellation. Default: 5s; positive duration.
+  # Align Kubernetes terminationGracePeriodSeconds with this and preStop time.
+  shutdown_timeout: 5s
+
+# Admission reacts to actual memory use against automatically discovered capacity.
+# There is no manually configured memory size, concurrency cap or reservation.
+overload:
+  memory:
+    # Latch overload at this percentage. Default: 80; integer 1..100.
+    high_watermark: 80
+    # Resume when every trustworthy scope is below this percentage. Default: 70.
+    # Integer 0..high_watermark-1. Hysteresis avoids toggling on each sample.
+    low_watermark: 70
+    # Process/container sampling cadence. Default: 100ms; positive duration.
+    sample_interval: 100ms

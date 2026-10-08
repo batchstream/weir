@@ -44,7 +44,7 @@ type scanCheckpoint struct {
 // The profile fixes the PIT checkpoint and dialect-specific ordering semantics.
 // Native batch capacity is learned within each page, never part of a token.
 func (a *Adapter) scanProfile() string {
-	return "search:" + a.dialect + ":v1"
+	return "backend:\n  search:" + a.dialect + ":v1"
 }
 
 func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
@@ -57,8 +57,8 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	}
 	native := &scanPlan{
 		index:       parts[0],
-		items:       execution.ScanBatchDocuments,
-		batchSize:   execution.ScanBatchDocuments,
+		items:       a.options().Scan.Documents,
+		batchSize:   a.options().Scan.Documents,
 		query:       json.RawMessage(`{"match_all":{}}`),
 		pageSize:    protocol.ScanPageSize(req),
 		fingerprint: protocol.ScanFingerprint(req, a.config.Store, a.scanProfile()),
@@ -67,7 +67,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		if d.ContentType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Scan filter requires JSON")
 		}
-		if !object(d.Data) || validateJSON(d.Data, 4096) != nil {
+		if !object(d.Data) || validateJSON(d.Data, len(d.Data)) != nil {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive JSON filter")
 		}
 		native.query = d.Data
@@ -93,7 +93,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	p := &execution.Plan{
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
-		ResultBytes:  execution.ScanResultBytes,
+		ResultBytes:  a.options().Scan.ResultBytes(),
 		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
 	}
@@ -136,7 +136,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		if page.Failure != nil {
 			return page
 		}
-		// Opening and fetching share the same bounded backend deadline.
+		// Opening and fetching share the caller context.
 	}
 	if n.pit == "" {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "PIT unavailable")
@@ -147,7 +147,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		return page
 	}
 	remaining := n.pageSize - n.Count
-	n.items = min(n.batchSize, execution.ScanBatchDocuments, int(remaining))
+	n.items = min(n.batchSize, a.options().Scan.Documents, int(remaining))
 	sort := "_shard_doc"
 	if a.dialect == OpenSearchProduct {
 		sort = "_doc"
@@ -159,7 +159,6 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		"size":             n.items,
 		"sort":             []string{sort},
 		"track_total_hits": false,
-		"timeout":          "1s",
 		"_source":          true,
 	}
 	if n.projection != nil {
@@ -376,7 +375,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			hit.ID == "" ||
 			len(hit.ID) > 512 ||
 			!object(hit.Source) ||
-			validateJSON(hit.Source, 16384) != nil ||
+			validateJSON(hit.Source, len(hit.Source)) != nil ||
 			!scanScore(hit.Score) ||
 			len(hit.Sort) != 1 {
 			return page
@@ -386,7 +385,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			return page
 		}
 		last, hasLast = position, true
-		if retaining && acceptedBytes+len(hit.Source) <= execution.ScanBatchBytes {
+		if retaining && acceptedBytes+len(hit.Source) <= a.options().Scan.Bytes {
 			doc := &pb.Document{ContentType: "application/json", Data: hit.Source}
 			docs = append(docs, doc)
 			acceptedBytes += len(hit.Source)

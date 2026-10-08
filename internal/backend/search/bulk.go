@@ -94,7 +94,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 	for i, work := range works {
 		results[i] = execution.FailedEvent(work.Command, outcome, failure)
 	}
-	if err != nil || len(raw) > responseLimit || validateJSON(raw, 16384) != nil {
+	if err != nil || len(raw) > responseLimit || validateJSON(raw, len(raw)) != nil {
 		return results
 	}
 	if status != 200 {
@@ -159,7 +159,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, acknowledgement+" acknowledgement unavailable or incomplete")
 			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_UNKNOWN, failure)
 			encoded := envelope.Items[i][native.bulkAction()]
-			if len(encoded) > metadataLimit || validateJSON(encoded, 4096) != nil {
+			if len(encoded) > metadataLimit || validateJSON(encoded, len(encoded)) != nil {
 				continue
 			}
 		}
@@ -219,7 +219,7 @@ func (a *Adapter) nativeResponseFailure(status int, raw []byte) *pb.Failure {
 		Error  *nativeError
 		Status int
 	}
-	if len(raw) <= metadataLimit && validateJSON(raw, 4096) == nil && json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
+	if len(raw) <= metadataLimit && validateJSON(raw, len(raw)) == nil && json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
 		if failure := a.reject(envelope.Error.Type, status); failure != nil {
 			return failure
 		}

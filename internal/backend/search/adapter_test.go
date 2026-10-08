@@ -19,7 +19,7 @@ func TestJSONBoundsAndExactNumbers(t *testing.T) {
 			t.Fatal(raw, err)
 		}
 	}
-	for _, raw := range []string{`{"a":1,"a":2}`, `{} {}`, `{"n":NaN}`, `{"unicode":"\ud800"}`, `{"unicode":"\udc00"}`, strings.Repeat("[", 34) + "0" + strings.Repeat("]", 34), `{"a":"` + string([]byte{255}) + `"}`} {
+	for _, raw := range []string{`{"a":1,"a":2}`, `{} {}`, `{"n":NaN}`, `{"unicode":"\ud800"}`, `{"unicode":"\udc00"}`, strings.Repeat("[", 10001) + "0" + strings.Repeat("]", 10001), `{"a":"` + string([]byte{255}) + `"}`} {
 		if validateJSON([]byte(raw), 4096) == nil {
 			t.Fatal("accepted invalid/excessive JSON", raw)
 		}
@@ -74,7 +74,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 				case "malformed":
 					_, _ = fmt.Fprint(w, `{"unfinished":`)
 				case "deep":
-					_, _ = fmt.Fprint(w, strings.Repeat("[", 40)+"0"+strings.Repeat("]", 40))
+					_, _ = fmt.Fprint(w, strings.Repeat("[", 10001)+"0"+strings.Repeat("]", 10001))
 				case "encoding":
 					w.Header().Set("Content-Encoding", "gzip")
 					_, _ = fmt.Fprint(w, `{}`)
@@ -82,7 +82,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport()
+			transport := newTransport(connectionTimeout)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}

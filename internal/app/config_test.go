@@ -52,7 +52,7 @@ func TestMongoTLSProfileStaticValidationBeforeSideEffects(t *testing.T) {
 		Password: "password-sentinel",
 	}
 	mongo := &Mongo{URI: uri, Credentials: credentials}
-	local := &Local{MongoDB: mongo}
+	local := &Local{Backend: BackendConfig{MongoDB: mongo}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg.Routing.Stores = []StoreConfig{service}
@@ -84,7 +84,7 @@ func TestMongoStartupRedactsDriverConnectionFailure(t *testing.T) {
 		Password: "password-sentinel",
 	}
 	mongo := &Mongo{URI: uri, Credentials: credentials}
-	local := &Local{MongoDB: mongo}
+	local := &Local{Backend: BackendConfig{MongoDB: mongo}}
 	service := StoreConfig{Name: "records", Local: local}
 
 	cfg := DefaultConfig()

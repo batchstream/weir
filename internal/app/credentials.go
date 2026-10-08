@@ -18,18 +18,18 @@ const (
 )
 
 func (l *Local) credentials() *Credentials {
-	if l.MongoDB != nil {
-		return &l.MongoDB.Credentials
+	if l.Backend.MongoDB != nil {
+		return &l.Backend.MongoDB.Credentials
 	}
-	if l.Search != nil && l.Search.Connection != nil {
-		return &l.Search.Connection.Credentials
+	if l.Backend.Search != nil && l.Backend.Search.Connection != nil {
+		return &l.Backend.Search.Connection.Credentials
 	}
 	return nil
 }
 
 func (cfg RoutingConfig) validateCredentialSources() error {
 	for _, service := range cfg.Stores {
-		if m := service.Local.MongoDB; m != nil {
+		if m := service.Local.Backend.MongoDB; m != nil {
 			parsed, err := url.Parse(m.URI)
 			if err != nil || parsed.User != nil {
 				return errors.New("MongoDB URI must not contain credentials")

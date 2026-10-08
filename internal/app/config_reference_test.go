@@ -48,14 +48,14 @@ func TestRoutingConfigurationFile(t *testing.T) {
 			t.Fatal("documented working memory or backend timeout differs")
 		}
 		if definition.Name == "mongo" {
-			if definition.MongoDB == nil || definition.Search != nil {
+			if definition.Backend.MongoDB == nil || definition.Backend.Search != nil {
 				t.Fatal("invalid documented Mongo Store")
 			}
 		} else if definition.Name == "search" {
-			if definition.Search == nil || definition.MongoDB != nil {
+			if definition.Backend.Search == nil || definition.Backend.MongoDB != nil {
 				t.Fatal("invalid documented Search Store")
 			}
-			backend := definition.Search
+			backend := definition.Backend.Search
 			if !strings.HasPrefix(backend.URL, "https://") || backend.Connection == nil || backend.Connection.Username != "weir" || backend.Connection.Password != "change-me" || backend.Connection.CAFile != "/etc/weir/ca.pem" {
 				t.Fatal("documented Search HTTPS fields differ")
 			}

@@ -22,14 +22,15 @@ type scalarLeaf struct {
 }
 
 type bridge struct {
+	limits   value.Limits
 	state    *vm.VM
 	tables   map[*vm.Table]tableInfo
 	leafMeta *vm.Table
 	null     vm.Value
 }
 
-func newBridge() *bridge {
-	b := &bridge{tables: make(map[*vm.Table]tableInfo)}
+func newBridge(limits value.Limits) *bridge {
+	b := &bridge{limits: limits, tables: make(map[*vm.Table]tableInfo)}
 	b.leafMeta = vm.NewEmptyTable()
 	b.leafMeta.SetString(vm.MetaMetatable, vm.NewString("weir scalar"))
 	b.leafMeta.SetString(vm.MetaTostring, vm.NewNativeFunc(func(state *vm.VM) int {
@@ -76,7 +77,7 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 			panic("weir.bytes expects a byte string")
 		}
 		text := state.Get(1).AsString()
-		if len(text) > value.MaxBytes {
+		if len(text) > b.limits.MaxBytes {
 			panic("value byte limit")
 		}
 		leaf := value.Value{Kind: value.Bytes, Data: []byte(text)}
@@ -88,11 +89,11 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 			panic("weir.extended expects a type and byte string")
 		}
 		typeName, data := state.Get(1).AsString(), state.Get(2).AsString()
-		if len(typeName) > value.MaxBytes-len(data) {
+		if len(typeName) > b.limits.MaxBytes-len(data) {
 			panic("value byte limit")
 		}
 		leaf := value.Value{Kind: value.Extended, Type: typeName, Data: []byte(data)}
-		if err := value.Validate(leaf); err != nil {
+		if err := value.Validate(leaf, b.limits); err != nil {
 			panic(err)
 		}
 		if typeName == value.JSONNumberType && !value.IsJSONNumber(leaf) {
@@ -293,7 +294,7 @@ func (b *bridge) decode(v vm.Value, depth int, hint value.Value, used *bridgeBud
 		}
 	}
 	used.nodes++
-	if depth > value.MaxDepth || used.nodes > value.MaxNodes {
+	if depth > b.limits.MaxDepth || used.nodes > b.limits.MaxNodes {
 		return empty, fmt.Errorf("value depth or node limit")
 	}
 	var result value.Value
@@ -337,7 +338,7 @@ func (b *bridge) decode(v vm.Value, depth int, hint value.Value, used *bridgeBud
 		return empty, fmt.Errorf("unsupported Lua value")
 	}
 	used.bytes += len(result.Text) + len(result.Type) + len(result.Data)
-	if used.bytes > value.MaxBytes {
+	if used.bytes > b.limits.MaxBytes {
 		return empty, fmt.Errorf("value byte limit")
 	}
 	result.Data = append([]byte(nil), result.Data...)
@@ -360,7 +361,7 @@ func (b *bridge) decodeTable(v vm.Value, depth int, used *bridgeBudget) (value.V
 	var err error
 	stringsOnly, integersOnly := true, true
 	table.ForEach(func(key, child vm.Value) bool {
-		if len(keys) >= value.MaxNodes-used.nodes {
+		if len(keys) >= b.limits.MaxNodes-used.nodes {
 			err = fmt.Errorf("value node limit")
 			return false
 		}
@@ -394,7 +395,7 @@ func (b *bridge) decodeTable(v vm.Value, depth int, used *bridgeBudget) (value.V
 				return empty, fmt.Errorf("invalid field name")
 			}
 			used.bytes += len(name)
-			if used.bytes > value.MaxBytes {
+			if used.bytes > b.limits.MaxBytes {
 				return empty, fmt.Errorf("value byte limit")
 			}
 			child, err := b.decode(table.Get(key), depth+1, info.hints[key], used)

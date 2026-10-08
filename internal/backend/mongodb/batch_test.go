@@ -348,18 +348,21 @@ func TestMongoBulkCursorRejectsDuplicateAndMissingIndexes(t *testing.T) {
 	}
 }
 
-func TestMongoBatchBoundsRejectBeforeBackendWork(t *testing.T) {
-	config := Config{Store: "mongo"}
-	a := &Adapter{config: config}
+func TestMongoBatchInputEstimateDoesNotRejectLegalRequest(t *testing.T) {
+	document := bson.D{{Key: "_id", Value: "a"}}
+	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
+	adapter := batchMockAdapter(t, responses, nil)
 	opts := batchOperationOptions{resource: "db/records/s:a", action: "read"}
-	p, failure := prepareTestRecord(a, batchOperation(t, opts))
+	work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	p.Bytes = execution.BackendBatchBytes + 1
-	results := a.executeRecords(context.Background(), []*execution.Plan{p})
-	if len(results) != 1 || results[0].GetReadResult().GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-		t.Fatal("oversized native input reached backend work", results)
+	work.Bytes = execution.BackendBatchBytes + 1
+	plans := []*execution.Plan{work}
+	results := adapter.executeRecords(t.Context(), plans)
+	if len(results) != 1 || results[0].GetReadResult().GetDocument() == nil {
+		t.Fatal("legal input rejected by a memory estimate", results)
 	}
 }
 

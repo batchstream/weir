@@ -23,7 +23,7 @@ func (a *Adapter) prepareExpression(d *pb.Document) *pb.Failure {
 	}
 	// Decode enforces byte, depth and node budgets incrementally, before each
 	// allocation. The bounded value tree is discarded; original BSON is sent.
-	doc, err := Decode(d.Data)
+	doc, err := Decode(d.Data, value.DefaultLimits())
 	if err != nil || len(doc.Fields) == 0 || !expressionValues(doc) {
 		return invalid
 	}
