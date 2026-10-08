@@ -71,7 +71,11 @@ type Local struct {
 }
 
 type Mongo struct {
-	URI          string `json:"uri" yaml:"uri"`
+	URI         string `json:"uri" yaml:"uri"`
+	Credentials `yaml:",inline"`
+}
+
+type Credentials struct {
 	Username     string `json:"username" yaml:"username"`
 	Password     string `json:"password" yaml:"password"`
 	UsernameFile string `json:"username_file" yaml:"username_file"`
@@ -84,11 +88,8 @@ type Search struct {
 }
 
 type SearchConnection struct {
-	Username     string `json:"username" yaml:"username"`
-	Password     string `json:"password" yaml:"password"`
-	UsernameFile string `json:"username_file" yaml:"username_file"`
-	PasswordFile string `json:"password_file" yaml:"password_file"`
-	CAFile       string `json:"ca_file" yaml:"ca_file"`
+	Credentials `yaml:",inline"`
+	CAFile      string `json:"ca_file" yaml:"ca_file"`
 }
 
 type TransportConfig struct {
@@ -233,11 +234,7 @@ func (cfg BasicConfig) Validate() error {
 	if cfg.Memory < 64<<20 || cfg.Memory > 64<<30 {
 		return errors.New("invalid process bounds")
 	}
-	if err := cfg.Transport.serverLimits().Validate(); err != nil {
-		return err
-	}
-
-	return nil
+	return cfg.Transport.serverLimits().Validate()
 }
 
 func (cfg DiscoveryConfig) validateSource() error {
@@ -325,18 +322,16 @@ func (cfg RoutingConfig) Validate() error {
 			return err
 		}
 
-		if m := l.MongoDB; m != nil {
-			if m.UsernameFile != "" || m.PasswordFile != "" {
-				return errors.New("unresolved credential file")
-			}
+		credentials := l.credentials()
+		if credentials != nil && (credentials.UsernameFile != "" || credentials.PasswordFile != "") {
+			return errors.New("unresolved credential file")
+		}
+		if l.MongoDB != nil {
 			config := l.mongoConfig(service.Name)
 			if err := mongodb.ValidateConfig(config); err != nil {
 				return err
 			}
 		} else {
-			if c := l.Search.Connection; c != nil && (c.UsernameFile != "" || c.PasswordFile != "") {
-				return errors.New("unresolved credential file")
-			}
 			config := l.searchConfig(service.Name)
 			if err := search.ValidateConfig(config); err != nil {
 				return err

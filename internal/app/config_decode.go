@@ -40,17 +40,12 @@ func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 // An empty routing path selects a node without local Stores.
 func Load(basicFilename, routingFilename string) (Config, error) {
 	cfg := Config{}
-	file, err := os.Open(basicFilename)
-	if err != nil {
-		return cfg, errors.New("basic configuration unavailable")
+	basic := DefaultConfig().Basic
+	if err := loadConfigYAML(basicFilename, &basic, false); err != nil {
+		return cfg, fmt.Errorf("basic %w", err)
 	}
-	basic, decodeErr := DecodeBasic(file)
-	closeErr := file.Close()
-	if decodeErr != nil {
-		return cfg, decodeErr
-	}
-	if closeErr != nil {
-		return cfg, errors.New("basic configuration unavailable")
+	if err := basic.Validate(); err != nil {
+		return cfg, err
 	}
 	if basic.Discovery.PeerAddressEnv != "" {
 		value, exists := os.LookupEnv(basic.Discovery.PeerAddressEnv)
@@ -63,28 +58,33 @@ func Load(basicFilename, routingFilename string) (Config, error) {
 		}
 		basic.Discovery.PeerAddress, basic.Discovery.PeerAddressEnv = canonical, ""
 	}
-	if routingFilename == "" {
-		cfg.Basic = basic
-		return cfg, cfg.Validate()
-	}
-	file, err = os.Open(routingFilename)
-	if err != nil {
-		return cfg, errors.New("routing configuration unavailable")
-	}
 	routing := RoutingConfig{}
-	decodeErr = decodeConfigYAML(file, &routing, true)
-	closeErr = file.Close()
-	if decodeErr != nil {
-		return cfg, fmt.Errorf("routing %w", decodeErr)
-	}
-	if closeErr != nil {
-		return cfg, errors.New("routing configuration unavailable")
-	}
-	if err := routing.resolveCredentials(filepath.Dir(routingFilename)); err != nil {
-		return cfg, err
+	if routingFilename != "" {
+		if err := loadConfigYAML(routingFilename, &routing, true); err != nil {
+			return cfg, fmt.Errorf("routing %w", err)
+		}
+		if err := routing.resolveCredentials(filepath.Dir(routingFilename)); err != nil {
+			return cfg, err
+		}
 	}
 	cfg.Basic, cfg.Routing = basic, routing
 	return cfg, cfg.Validate()
+}
+
+func loadConfigYAML(filename string, target any, allowNull bool) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return errors.New("configuration unavailable")
+	}
+	decodeErr := decodeConfigYAML(file, target, allowNull)
+	closeErr := file.Close()
+	if decodeErr != nil {
+		return decodeErr
+	}
+	if closeErr != nil {
+		return errors.New("configuration unavailable")
+	}
+	return nil
 }
 
 func decodeConfigYAML(input io.Reader, target any, allowNull bool) error {

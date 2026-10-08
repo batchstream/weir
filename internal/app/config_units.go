@@ -54,13 +54,12 @@ func (value ByteSize) text() string {
 		{"GiB", 1 << 30},
 		{"MiB", 1 << 20},
 		{"KiB", 1 << 10},
-		{"B", 1},
 	} {
-		if bytes != 0 && bytes%unit.size == 0 || unit.size == 1 {
+		if bytes != 0 && bytes%unit.size == 0 {
 			return strconv.FormatUint(bytes/unit.size, 10) + unit.name
 		}
 	}
-	return "0B"
+	return strconv.FormatUint(bytes, 10) + "B"
 }
 
 func (value *ByteSize) UnmarshalYAML(node *yaml.Node) error {
