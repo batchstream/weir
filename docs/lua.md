@@ -118,6 +118,10 @@ The default instruction budget is unlimited; zero call/stack settings use the
 VM native defaults. Compilation, top-level execution and the callback inherit
 the caller context. Evaluations run concurrently inside the main Weir process without a fixed
 concurrency cap or evaluation timeout.
+Each evaluation creates its own VM, globals, library tables and string metatable.
+The process loads the allowed standard-library functions and constants once;
+evaluations copy those immutable values into fresh tables, then bind their own
+conversion limits and observation time.
 Programs must be trusted: these bounds do not impose a hard heap quota on
 arbitrary temporary Lua objects. Deployment memory limits still apply.
 

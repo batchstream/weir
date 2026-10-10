@@ -6,27 +6,21 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/value"
-	"github.com/iceisfun/golua/stdlib"
 	"github.com/iceisfun/golua/vm"
 )
 
 func installEnvironment(state *vm.VM, observedAt time.Time, limits value.Limits) *vm.Table {
-	stdlib.Open(state)
-	globals := state.Globals().(*vm.Table)
-	baseNames := []string{
-		"assert", "error", "type", "tostring", "tonumber", "pairs", "ipairs", "next",
-		"pcall", "xpcall", "select", "rawequal", "rawlen", "string", "table", "math", "_VERSION",
+	for _, entry := range standardLibraries.globals {
+		state.SetGlobal(entry.name, entry.value)
 	}
-	restrictLibrary(globals, baseNames)
-	stringLibrary := state.GetGlobal("string").AsTable().(*vm.Table)
-	stringNames := []string{"len", "sub", "upper", "lower", "reverse", "byte", "char", "format"}
-	restrictLibrary(stringLibrary, stringNames)
+	stringLibrary := copyLibrary(standardLibraries.strings)
 	format := stringLibrary.GetString("format")
-	for _, name := range stringNames {
+	for _, entry := range standardLibraries.strings {
+		name := entry.name
 		if name == "format" {
 			continue
 		}
-		function := stringLibrary.GetString(name).AsNativeFunc()
+		function := entry.value.AsNativeFunc()
 		stringLibrary.SetString(name, vm.NewNativeFunc(func(state *vm.VM) int {
 			if err := state.CheckInterrupt(); err != nil {
 				panic(err)
@@ -47,9 +41,12 @@ func installEnvironment(state *vm.VM, observedAt time.Time, limits value.Limits)
 	stringLibrary.SetString("format", vm.NewNativeFunc(func(state *vm.VM) int {
 		return luaFormat(state, format, limits)
 	}))
-	tableLibrary := state.GetGlobal("table").AsTable().(*vm.Table)
-	tableNames := []string{"insert", "remove", "sort", "concat"}
-	restrictLibrary(tableLibrary, tableNames)
+	state.SetGlobal("string", vm.NewTable(stringLibrary))
+	stringMeta := copyLibrary(standardLibraries.stringMeta)
+	stringMeta.SetString(vm.MetaIndex, vm.NewTable(stringLibrary))
+	state.SetStringMeta(stringMeta)
+
+	tableLibrary := copyLibrary(standardLibraries.tables)
 	for _, name := range []string{"insert", "remove"} {
 		function := tableLibrary.GetString(name).AsNativeFunc()
 		tableLibrary.SetString(name, vm.NewNativeFunc(func(state *vm.VM) int {
@@ -64,14 +61,9 @@ func installEnvironment(state *vm.VM, observedAt time.Time, limits value.Limits)
 	}
 	tableLibrary.SetString("sort", vm.NewNativeFunc(func(state *vm.VM) int { return luaSort(state, limits) }))
 	tableLibrary.SetString("concat", vm.NewNativeFunc(func(state *vm.VM) int { return luaConcat(state, limits) }))
-	mathLibrary := state.GetGlobal("math").AsTable().(*vm.Table)
-	mathNames := []string{
-		"abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor",
-		"fmod", "frexp", "ldexp", "log", "log10", "max", "min", "modf", "pow", "rad",
-		"sin", "sinh", "sqrt", "tan", "tanh", "tointeger", "type", "ult",
-		"pi", "huge", "maxinteger", "mininteger",
-	}
-	restrictLibrary(mathLibrary, mathNames)
+	state.SetGlobal("table", vm.NewTable(tableLibrary))
+	mathLibrary := copyLibrary(standardLibraries.math)
+	state.SetGlobal("math", vm.NewTable(mathLibrary))
 	module := vm.NewEmptyTable()
 	module.SetString("keep", vm.NewNativeFunc(luaKeep))
 	module.SetString("delete", vm.NewNativeFunc(luaDelete))
@@ -88,23 +80,6 @@ func installEnvironment(state *vm.VM, observedAt time.Time, limits value.Limits)
 	module.SetString("time", vm.NewTable(timeLibrary))
 	state.SetGlobal("weir", vm.NewTable(module))
 	return module
-}
-
-func restrictLibrary(table *vm.Table, names []string) {
-	allowed := make(map[string]bool, len(names))
-	for _, name := range names {
-		allowed[name] = true
-	}
-	var blocked []string
-	table.ForEach(func(key, _ vm.Value) bool {
-		if !allowed[key.AsString()] {
-			blocked = append(blocked, key.AsString())
-		}
-		return true
-	})
-	for _, name := range blocked {
-		table.SetString(name, vm.Nil)
-	}
 }
 
 // Format each directive separately so repeated arguments cannot build an

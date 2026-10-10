@@ -83,6 +83,8 @@ its capacity immediately; active executions and completed results do not hold qu
 credits. Full queues wait for capacity or caller cancellation. A stream retains a
 finite publication window, so a stopped reader cannot accumulate unlimited results
 inside that stream. Protocol frame boundaries are checked before protobuf construction.
+The validator walks the transport's existing buffer fragments directly, including
+nested message spans, without copying payloads or changing buffer references.
 
 Process and container memory observations drive overload admission. Memory capacity
 uses the smallest known physical host, finite process address-space, and visible
@@ -98,6 +100,9 @@ independent encoded copies remain measured until transport ownership ends.
 Lua runs in the main Weir process with caller context and source/value/stack/work
 bounds. There is no evaluation semaphore, fixed evaluation deadline, or hard VM
 allocation sandbox. Programs must be trusted.
+Allowed standard-library functions and constants are loaded once per process.
+Every evaluation creates fresh mutable library tables and a string metatable,
+with its own conversion limits and clock; no VM or caller state is reused.
 
 ## Scheduling and backend work
 

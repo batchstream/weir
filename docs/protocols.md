@@ -30,9 +30,10 @@ backpressure in both directions.
 
 Request envelopes reject unknown fields, enum values and operation variants;
 ignoring a future write condition or command option could change its effects.
-The wire validator checks known field framing before allocation, and shared
-validation checks the decoded values. Response readers accept additive unknown
-fields and retain unknown positive failure codes as failures, while still checking
+The wire validator checks known field framing directly in the transport's buffer
+fragments before allocation, and shared validation checks the decoded values.
+Response readers accept additive unknown fields and retain unknown positive
+failure codes as failures, while still checking
 known result evidence, event kinds and completion rules. New execution behavior
 must have an explicit supported contract boundary. After this initial baseline,
 published field numbers and types are fixed; removed fields must be reserved.

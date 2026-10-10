@@ -15,6 +15,7 @@ func TestRepeatedMessageBudgetAcrossBuffers(t *testing.T) {
 		code codes.Code
 	}{
 		{name: "valid", raw: []byte{0x0a, 1, 's', 0x12, 0, 0x12, 0}, code: codes.OK},
+		{name: "empty", raw: nil, code: codes.OK},
 		{name: "capacity", raw: []byte{0x12, 0, 0x12, 0, 0x12, 0}, code: codes.ResourceExhausted},
 		{name: "tag", raw: []byte{0x80}, code: codes.InvalidArgument},
 		{name: "wire-type", raw: []byte{0x10, 0}, code: codes.InvalidArgument},
@@ -25,10 +26,11 @@ func TestRepeatedMessageBudgetAcrossBuffers(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			var input mem.BufferSlice
+			input := mem.BufferSlice{mem.SliceBuffer(nil)}
 			for index := range test.raw {
 				buffer := mem.SliceBuffer(test.raw[index : index+1])
 				input = append(input, buffer)
+				input = append(input, mem.SliceBuffer(nil))
 			}
 			defer input.Free()
 			err := ValidateRepeatedMessages(input, 2, 2)

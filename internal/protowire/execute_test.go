@@ -35,6 +35,7 @@ func TestExecuteDecodeEnvelopeAcrossBuffers(t *testing.T) {
 	duplicateCommand := append(append([]byte(nil), valid...), wireMessage(3, commandRaw)...)
 	duplicateRouting := append(append([]byte(nil), valid...), wireMessage(1, []byte("other"))...)
 	duplicateKind := append(append([]byte(nil), commandRaw...), wireMessage(2, nil)...)
+	nestedVarint := append(wireMessage(3, []byte{0x80}), 0x10, 1)
 	cases := []struct {
 		name string
 		raw  []byte
@@ -47,12 +48,14 @@ func TestExecuteDecodeEnvelopeAcrossBuffers(t *testing.T) {
 		{name: "unknown root", raw: []byte{0x22, 0}, code: codes.InvalidArgument},
 		{name: "index wire type", raw: []byte{0x12, 0}, code: codes.InvalidArgument},
 		{name: "truncated command", raw: []byte{0x1a, 3, 0x0a, 2}, code: codes.InvalidArgument},
+		{name: "varint exceeds nested span", raw: nestedVarint, code: codes.InvalidArgument},
 	}
 	for _, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
-			var data mem.BufferSlice
+			data := mem.BufferSlice{mem.SliceBuffer(nil)}
 			for i := range item.raw {
 				data = append(data, mem.SliceBuffer(item.raw[i:i+1]))
+				data = append(data, mem.SliceBuffer(nil))
 			}
 			defer data.Free()
 			err := ValidateExecuteFrame(data)
@@ -105,9 +108,10 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 	for _, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
 			raw := wireMessage(3, wireMessage(item.kind, item.payload))
-			var data mem.BufferSlice
+			data := mem.BufferSlice{mem.SliceBuffer(nil)}
 			for i := range raw {
 				data = append(data, mem.SliceBuffer(raw[i:i+1]))
+				data = append(data, mem.SliceBuffer(nil))
 			}
 			defer data.Free()
 			err := ValidateExecuteFrame(data)
