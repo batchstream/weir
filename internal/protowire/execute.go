@@ -1,8 +1,6 @@
 package protowire
 
 import (
-	"bufio"
-
 	"github.com/batchstream/weir-protocol/api/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/mem"
@@ -15,10 +13,8 @@ func ValidateExecuteFrame(data mem.BufferSlice) error {
 	if data.Len() > protocol.MaxExecuteRequestBytes {
 		return status.Error(codes.ResourceExhausted, "execution frame exceeds input byte budget")
 	}
-	source := data.Reader()
-	defer source.Close()
-	reader := bufio.NewReader(source)
-	return validateMessageFrame(reader, wireExecute, uint64(data.Len()))
+	reader := frameCursor{buffers: data, remaining: data.Len()}
+	return validateMessageFrame(&reader, wireExecute, uint64(reader.remaining))
 }
 
 // Requests fail closed on unknown fields: silently dropping a future condition or
@@ -82,9 +78,9 @@ var requestShapes = [...][]wireField{
 		{number: 2, repeated: true, maximum: 512}},
 }
 
-// Every recursion borrows the same buffered reader and owns an exact byte span.
+// Every recursion borrows the same cursor and owns an exact byte span.
 // Native payload bytes are opaque here; only their Document envelope is parsed.
-func validateMessageFrame(reader *bufio.Reader, kind wireKind, remaining uint64) error {
+func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) error {
 	seen := uint64(0)
 	oneof := false
 	repeated := 0
@@ -140,7 +136,7 @@ func validateMessageFrame(reader *bufio.Reader, kind wireKind, remaining uint64)
 			if err := validateMessageFrame(reader, shape.nested, length); err != nil {
 				return err
 			}
-		} else if _, err := reader.Discard(int(length)); err != nil {
+		} else if !reader.discard(int(length)) {
 			return invalidExecuteFraming()
 		}
 		remaining -= length
@@ -148,11 +144,11 @@ func validateMessageFrame(reader *bufio.Reader, kind wireKind, remaining uint64)
 	return nil
 }
 
-func frameVarint(reader *bufio.Reader, remaining uint64) (uint64, uint64, error) {
+func frameVarint(reader *frameCursor, remaining uint64) (uint64, uint64, error) {
 	var value uint64
 	for offset := uint64(0); offset < 10 && offset < remaining; offset++ {
-		next, err := reader.ReadByte()
-		if err != nil || offset == 9 && next > 1 {
+		next, ok := reader.readByte()
+		if !ok || offset == 9 && next > 1 {
 			return 0, 0, invalidExecuteFraming()
 		}
 		value |= uint64(next&0x7f) << (7 * offset)
