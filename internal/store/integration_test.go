@@ -506,11 +506,16 @@ func TestLuaCallerDeadlineKeepsCommitUncertainty(t *testing.T) {
 			result, err := ticket.Wait(ctx)
 			elapsed := time.Since(started)
 			expected := pb.MutationOutcome_NOT_APPLIED
+			expectedCode := pb.FailureCode_UNAVAILABLE
 			if command == "commitTransaction" {
 				expected = pb.MutationOutcome_UNKNOWN
+				expectedCode = pb.FailureCode_DEADLINE_EXCEEDED
 			}
-			if err != nil || result.GetMutationResult().GetOutcome() != expected || result.GetMutationResult().GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || elapsed > timeout+500*time.Millisecond {
+			if err != nil || result.GetMutationResult().GetOutcome() != expected || result.GetMutationResult().GetFailure().GetCode() != expectedCode || elapsed > timeout+500*time.Millisecond {
 				t.Fatal("Lua database I/O escaped deadline or lost uncertainty", err, result, elapsed)
+			}
+			if command == "find" && result.GetMutationResult().GetFailure().GetMessage() != "MongoDB transaction rollback unconfirmed" {
+				t.Fatal("cancelled read incorrectly proved rollback", result)
 			}
 			ticket.Ack()
 			waitReleased(t, f.runtime)
@@ -535,6 +540,12 @@ func TestLuaCallerDeadlineKeepsCommitUncertainty(t *testing.T) {
 					t.Fatal("uncertain commit was missing or Lua replayed", value)
 				}
 				time.Sleep(10 * time.Millisecond)
+			}
+			cleanup, stopCleanup := context.WithTimeout(context.Background(), time.Second)
+			err = f.native.Database(f.db).Drop(cleanup)
+			stopCleanup()
+			if err != nil {
+				t.Fatal("cancelled Lua transaction retained database locks", err)
 			}
 			t.Logf("blocked %s: caller deadline=%s elapsed=%s outcome=%s", command, timeout, elapsed, expected)
 		})

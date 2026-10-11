@@ -189,6 +189,14 @@ canceled before its write is omitted; a sent write keeps its actual confirmed or
 unknown outcome. Physical MongoDB transaction grouping is not an application
 transaction contract and can vary with traffic, bytes and scheduler capacity.
 
+Caller cancellation does not guarantee immediate release of remote transaction
+locks. A read can reach MongoDB after `abortTransaction` returns
+`NoSuchTransaction`; the bounded, best-effort `killSessions` cleanup is not a
+permanent session tombstone. Rollback stays unconfirmed and cannot rebuild the
+transaction. A late read may retain locks until MongoDB's transaction lifetime
+limit and periodic cleanup apply. A lost commit acknowledgement remains UNKNOWN
+and never replays the write.
+
 Shutdown refuses new admission and drains admitted work within a deadline.
 Cancellation stops owned work without claiming a write was not applied. Output
 stalls may close the affected transport; business writes are never replayed.
