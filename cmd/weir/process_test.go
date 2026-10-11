@@ -323,6 +323,13 @@ func (p *cliProcess) line(t *testing.T) string {
 	case line := <-p.stdout.lines:
 		return line
 	case <-p.done:
+		// Wait joins the output writer; a completed child can still have a
+		// buffered boundary line that must precede its exit notification.
+		select {
+		case line := <-p.stdout.lines:
+			return line
+		default:
+		}
 		t.Fatal("child exited before boundary", p.waitErr, p.stdout.text(), p.stderr.text())
 	case <-time.After(8 * time.Second):
 		t.Fatal("child output boundary timed out")
