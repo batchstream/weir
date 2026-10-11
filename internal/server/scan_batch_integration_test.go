@@ -360,6 +360,10 @@ func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
+	first, err := stream.Recv()
+	if err != nil || first.GetDocument() == nil {
+		t.Fatal("Scan did not reach publication before testing consumer backpressure", first, err)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	var stalledSince time.Time
 	for {

@@ -353,16 +353,26 @@ func (p *cliProcess) wait(t *testing.T, exit int) {
 	}
 }
 
-func closedAddresses(t *testing.T, addresses []string) {
+func reserveReleasedAddresses(t *testing.T, addresses []string) {
 	t.Helper()
+	// Rebind during shutdown and keep the reservations through Wait. Race
+	// instrumentation delays process exit, allowing other test packages to
+	// acquire an ephemeral port if it is checked only after the child exits.
+	deadline := time.Now().Add(8 * time.Second)
 	for _, address := range addresses {
-		listener, err := net.Listen("tcp", address)
-		if err != nil {
-			t.Fatal("owned listener not released", address, err)
+		for {
+			listener, err := net.Listen("tcp", address)
+			if err == nil {
+				t.Cleanup(func() { _ = listener.Close() })
+				break
+			}
+			if !errors.Is(err, syscall.EADDRINUSE) || time.Now().After(deadline) {
+				t.Fatal("owned listener not released within shutdown bound", address, err)
+			}
+			time.Sleep(time.Millisecond)
 		}
-		_ = listener.Close()
 	}
-	t.Logf("listeners released and rebound: %v", addresses)
+	t.Logf("listeners released, rebound and reserved through Wait: %v", addresses)
 }
 
 func listenerAddresses(t *testing.T, line string) []string {
@@ -426,12 +436,12 @@ func TestCLISignalAtFirstListener(t *testing.T) {
 	// probe, second output line, or scheduling delay precedes the signal.
 	p.terminate(t, "first listener output")
 	addresses := listenerAddresses(t, line)
+	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
+	reserveReleasedAddresses(t, append(addresses, diagnostic))
 	p.wait(t, 0)
 	if !strings.Contains(p.stdout.text(), "Diagnostics listening on ") || !strings.Contains(p.stderr.text(), "owned=0") {
 		t.Fatal("output contract", p.stdout.text(), p.stderr.text())
 	}
-	_, diagnostic, _ := strings.Cut(p.stdout.text(), "Diagnostics listening on ")
-	closedAddresses(t, append(addresses, strings.TrimSpace(diagnostic)))
 	b.idle(t)
 }
 
@@ -456,11 +466,11 @@ func TestCLIBasicOnlyServe(t *testing.T) {
 	}
 
 	p.terminate(t, "basic-only node reached readiness without reading default routes.yaml")
+	reserveReleasedAddresses(t, append(addresses, diagnostic))
 	p.wait(t, 0)
 	if p.stderr.text() != "" {
 		t.Fatal("basic-only shutdown output", p.stderr.text())
 	}
-	closedAddresses(t, append(addresses, diagnostic))
 }
 
 func TestCLISignalBeforeStart(t *testing.T) {
@@ -471,11 +481,11 @@ func TestCLISignalBeforeStart(t *testing.T) {
 		t.Fatal(line)
 	}
 	p.terminate(t, "Open returned with both listeners, diagnostics and local runtime; Start not called")
+	reserveReleasedAddresses(t, strings.Fields(strings.TrimPrefix(line, "opened ")))
 	p.wait(t, 1)
 	if !strings.HasSuffix(p.stderr.text(), "context canceled\n") || strings.Contains(p.stdout.text(), "listening") {
 		t.Fatal("canceled Start classified incorrectly", p.stderr.text())
 	}
-	closedAddresses(t, strings.Fields(strings.TrimPrefix(line, "opened ")))
 	b.idle(t)
 }
 
@@ -571,13 +581,13 @@ func TestCLISignalWithOutputFailure(t *testing.T) {
 	if _, err := io.WriteString(p.input, "x"); err != nil {
 		t.Fatal(err)
 	}
+	reserveReleasedAddresses(t, listenerAddresses(t, line))
 	p.wait(t, 1)
 	if !strings.HasSuffix(p.stderr.text(), "listener output failed\n") ||
 		strings.Contains(p.stderr.text(), "sentinel") ||
 		strings.Contains(p.stdout.text(), "Diagnostics listening") {
 		t.Fatal("signal swallowed independent output error or writer bypassed", p.stdout.text(), p.stderr.text())
 	}
-	closedAddresses(t, listenerAddresses(t, line))
 	b.idle(t)
 }
 
@@ -612,6 +622,7 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 		}
 	}
 	p.terminate(t, "metrics confirmed real input slot; no request body; default stall=30s")
+	reserveReleasedAddresses(t, append(addresses, diagnostic))
 	p.wait(t, 0)
 	var result pb.ReadResult
 	if err := stream.RecvMsg(&result); err == nil {
@@ -620,7 +631,6 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 	if time.Since(p.sent) < 5*time.Second {
 		t.Fatal("independent five-second drain was prematurely canceled")
 	}
-	closedAddresses(t, append(addresses, diagnostic))
 	b.idle(t)
 	t.Log("forced bounded drain; incomplete input, no admitted mutation, UNKNOWN mutations=0")
 }
@@ -744,6 +754,7 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 		t.Fatal("forced shutdown must preserve uncertainty", result, callErr)
 	}
 	event(t, b.canceled)
+	reserveReleasedAddresses(t, append(addresses, diagnostic))
 	p.wait(t, 0)
 	b.idle(t)
 	b.mu.Lock()
@@ -757,6 +768,5 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	if mutations != 1 {
 		t.Fatal("mutation replay", mutations)
 	}
-	closedAddresses(t, append(addresses, diagnostic))
 	t.Log("ready -> draining (readyz=503, livez=200) -> closed; UNKNOWN=1, backend sends=1, replay=0")
 }
