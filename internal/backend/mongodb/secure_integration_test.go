@@ -54,6 +54,8 @@ func TestMongoSCRAMTLSProductionOpen(t *testing.T) {
 	}
 	for name, uri := range map[string]string{"password": fixture.BadPassURI, "missing": fixture.MissingPassURI, "CA": fixture.BadCAURI, "SAN": fixture.WrongHostURI, "privilege": fixture.DeniedURI} {
 		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
 			invalid := cfg
 			invalid.URI = uri
 			invalid = mongoFixtureConfig(t, invalid)

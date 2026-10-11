@@ -270,6 +270,12 @@ failpoint, so concurrent packages can overwrite each other's faults and cleanup.
 Matched direct/Weir benchmarks and current blackbox integration live in the
 independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
 
+The local Search fixture defaults to small write queues for overload tests.
+Positive application and SDK batch tests require normal backend capacity: start
+it with `scripts/search-local.sh start elasticsearch normal` (or `opensearch`).
+Run backend congestion tests separately with the default `overload` profile;
+stop the owned fixture before changing its capacity profile.
+
 Monitor active executions, queue occupancy and per-record backend outcomes.
 The queue exposes count and byte capacity metrics; removed concurrency and
 backend-timeout limits no longer publish limit or owned-timeout metrics.

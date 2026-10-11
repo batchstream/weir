@@ -372,7 +372,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 	mongo := mongoFixtureConfig(t, mongoFixture.URI)
 	mongoLocal := &Local{Backend: mongo}
 	backend := &Search{URL: search.URL}
-	// Match the Search fixture's single write thread for deterministic smoke operations.
+	// Positive batch smoke requires a normally sized native write queue.
 	searchLocal := &Local{Backend: BackendConfig{Search: backend}}
 	mongoStore := StoreConfig{Name: "mongo", Local: mongoLocal}
 	searchStore := StoreConfig{Name: "search", Local: searchLocal}

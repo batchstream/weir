@@ -4,6 +4,12 @@ set -eu
 cd "$(dirname "$0")/.."
 action=${1:-start}
 product=${2:-elasticsearch}
+capacity=${3:-overload}
+case "$capacity" in
+ normal) set -- ;;
+ overload) set -- -e thread_pool.write.size=1 -e thread_pool.write.queue_size=1 ;;
+ *) echo 'capacity must be normal or overload' >&2; exit 1;;
+esac
 case "$product" in
  elasticsearch)
   name=weir-local-elasticsearch
@@ -35,16 +41,16 @@ case "$action" in
    docker run --pull=never --platform=linux/arm64 -d --name "$name" --label weir.owner=weir-search-local --memory=1536m --cpus=2 \
     -p "127.0.0.1:$port:9200" -e "cluster.name=$name" -e discovery.type=single-node \
     -e xpack.security.enabled=false -e action.auto_create_index=false \
-    -e thread_pool.write.size=1 -e thread_pool.write.queue_size=1 \
+    "$@" \
     -e 'ES_JAVA_OPTS=-Xms512m -Xmx512m' "$image"
   else
    docker run --pull=never --platform=linux/arm64 -d --name "$name" --label weir.owner=weir-search-local --memory=1536m --cpus=2 \
     -p "127.0.0.1:$port:9200" -e "cluster.name=$name" -e discovery.type=single-node \
     -e DISABLE_SECURITY_PLUGIN=true -e DISABLE_INSTALL_DEMO_CONFIG=true -e action.auto_create_index=false \
-    -e thread_pool.write.size=1 -e thread_pool.write.queue_size=1 \
+    "$@" \
     -e 'OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m' "$image"
   fi
-  # Small native write queues make real overload rejection reproducible, not production sizing.
+  # Overload tests use small native queues; positive batch smoke uses normal capacity.
   for attempt in $(seq 1 90); do
    if curl -fsS --max-time 2 "http://127.0.0.1:$port/" > /dev/null 2>&1; then
     curl -fsS --max-time 2 "http://127.0.0.1:$port/" | python3 -c 'import json,sys; x=json.load(sys.stdin); v=x["version"]; assert x["cluster_name"]==sys.argv[1] and v["number"]==sys.argv[2]; assert (v.get("distribution")=="opensearch") if sys.argv[3]=="opensearch" else (v.get("distribution", "")=="" and v.get("build_flavor")=="default"); print(json.dumps(x,sort_keys=True))' "$name" "$version" "$product"
@@ -63,5 +69,5 @@ case "$action" in
   docker logs "$name" > ".testdata/$name-$id.log" 2>&1
   docker rm "$name"
   ;;
- *) echo 'usage: scripts/search-local.sh start|stop elasticsearch|opensearch' >&2;exit 1;;
+ *) echo 'usage: scripts/search-local.sh start|stop elasticsearch|opensearch [normal|overload]' >&2;exit 1;;
 esac
