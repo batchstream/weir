@@ -52,10 +52,10 @@ def verify_assets(directory, delivery):
     receipt = json.loads((product / 'receipt.json').read_text())
     if receipt['source'] != source or receipt['binaries'] != delivery['images']['weir']['binaries']:
         raise ValueError('release source or binary identity mismatch')
-    expected = {'weir-' + target + ('.zip' if target.startswith('windows') else '.tar.gz')
-                for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64', 'windows-amd64', 'windows-arm64')}
+    expected = {'weir-' + target + '.tar.gz'
+                for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64')}
     if set(receipt['archives']) != expected:
-        raise ValueError('release must contain exactly six platform archives')
+        raise ValueError('release must contain exactly four platform archives')
     for name, digest in receipt['archives'].items():
         if hashlib.sha256((product / name).read_bytes()).hexdigest() != digest:
             raise ValueError('release archive checksum mismatch: ' + name)
@@ -132,7 +132,8 @@ def publish(version, directory):
         f'Source: `{source}` (merged main).\n\n'
         f'Image: `{reference}@{digest}`. Native Linux amd64 tests, race tests, '
         'reproducible builds and anonymous amd64 image smoke completed before this release. '
-        'Archives are provided for six targets; build availability does not imply native production qualification.\n\n'
+        'Archives are provided for Linux and macOS amd64/arm64; build availability does not imply native production qualification. '
+        'Windows server builds are unavailable with the current Lua dependency.\n\n'
         'Verify downloaded assets with `sha256sum -c SHA256SUMS`. The binary reports its immutable source identity.\n\n'
         'Use the [Go SDK](https://github.com/batchstream/weir-go) and '
         '[Helm chart](https://github.com/batchstream/weir-charts). '

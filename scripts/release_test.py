@@ -106,8 +106,8 @@ class ReleaseTests(unittest.TestCase):
             product.mkdir()
             source = 'a' * 40
             archives, binaries = {}, {}
-            for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64', 'windows-amd64', 'windows-arm64'):
-                name = 'weir-' + target + ('.zip' if target.startswith('windows') else '.tar.gz')
+            for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'):
+                name = 'weir-' + target + '.tar.gz'
                 raw = ('test-archive-' + target).encode()
                 (product / name).write_bytes(raw)
                 archives[name] = hashlib.sha256(raw).hexdigest()
@@ -119,8 +119,8 @@ class ReleaseTests(unittest.TestCase):
             (root / 'delivery.json').write_text(json.dumps(delivery))
             (product / 'receipt.json').write_text(json.dumps(receipt))
             assets = release.verify_assets(root, delivery)
-            self.assertEqual(len(assets), 16)
-            self.assertEqual(len((root / 'SHA256SUMS').read_text().splitlines()), 15)
+            self.assertEqual(len(assets), 12)
+            self.assertEqual(len((root / 'SHA256SUMS').read_text().splitlines()), 11)
             (product / 'weir-linux-amd64.tar.gz').write_bytes(b'corrupt')
             with self.assertRaisesRegex(ValueError, 'archive checksum'):
                 release.verify_assets(root, delivery)
@@ -129,9 +129,9 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'source or binary identity'):
                 release.verify_assets(root, delivery)
             receipt['source'] = source
-            del receipt['archives']['weir-windows-arm64.zip']
+            del receipt['archives']['weir-darwin-arm64.tar.gz']
             (product / 'receipt.json').write_text(json.dumps(receipt))
-            with self.assertRaisesRegex(ValueError, 'exactly six'):
+            with self.assertRaisesRegex(ValueError, 'exactly four'):
                 release.verify_assets(root, delivery)
 
 

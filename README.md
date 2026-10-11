@@ -281,10 +281,13 @@ Build reproducible archives from a clean commit with
 
 Publish stable versions through **Verified Weir images** on `main`, supplying a
 canonical `vMAJOR.MINOR.PATCH` release version. The workflow runs default and race
-tests, reproduces the Linux amd64/arm64 image and six platform archives, publishes
+tests, reproduces the Linux amd64/arm64 image and four platform archives, publishes
 the verified image to GHCR, and confirms an anonymous pull before creating the
 version image tag and GitHub release. Existing version tags and assets cannot be
 replaced with different content.
+
+Server archives support Linux and macOS on amd64 and arm64. Windows server builds
+are unavailable because the current Lua dependency uses Unix process primitives.
 
 Publishing a GitHub release directly also triggers this workflow automatically.
 Its tag must point to a commit already merged into `main`; the workflow builds
