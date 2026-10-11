@@ -582,9 +582,19 @@ func (a *Adapter) abortProgramTransaction(session *mongo.Session) bool {
 		return parseErr == nil && scanOK(fields["ok"]) && fields["writeConcernError"].Type == 0
 	}
 	var commandError mongo.CommandError
-	// This helper is only used before any commit is dispatched, so an explicit
-	// NoSuchTransaction reply proves the uncommitted transaction is absent.
-	return errors.As(err, &commandError) && commandError.Code == 251
+	if !errors.As(err, &commandError) || commandError.Code != 251 {
+		return false
+	}
+	// A lost read reply may still be in flight and start the transaction after
+	// abort returned NoSuchTransaction. Retire this exclusively owned session
+	// before treating that reply as a confirmed rollback.
+	retire := bson.D{{Key: "killSessions", Value: bson.A{session.ID()}}}
+	raw, err = a.client.Database("admin").RunCommand(bounded, retire).Raw()
+	if err != nil {
+		return false
+	}
+	fields, parseErr := scanFields(raw)
+	return parseErr == nil && scanOK(fields["ok"])
 }
 
 func pauseProgram(ctx context.Context) bool {

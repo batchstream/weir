@@ -536,6 +536,12 @@ func TestLuaCallerDeadlineKeepsCommitUncertainty(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
+			cleanup, stopCleanup := context.WithTimeout(context.Background(), time.Second)
+			err = f.native.Database(f.db).Drop(cleanup)
+			stopCleanup()
+			if err != nil {
+				t.Fatal("cancelled Lua transaction retained database locks", err)
+			}
 			t.Logf("blocked %s: caller deadline=%s elapsed=%s outcome=%s", command, timeout, elapsed, expected)
 		})
 	}

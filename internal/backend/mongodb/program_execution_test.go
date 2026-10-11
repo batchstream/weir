@@ -370,7 +370,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 }
 
 func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
-	for _, mode := range []string{"lost reply", "rejected abort"} {
+	for _, mode := range []string{"lost reply", "rejected abort", "absent transaction with lost session cleanup", "absent transaction with rejected session cleanup"} {
 		t.Run(mode, func(t *testing.T) {
 			documents := bson.A{
 				bson.D{{Key: "_id", Value: "a"}, {Key: "n", Value: int32(0)}},
@@ -385,7 +385,16 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 				rejection := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 11600}, {Key: "errmsg", Value: "abort unavailable"}}
 				responses = append(responses, rejection)
 			}
-			finds, writes, aborts, commits := 0, 0, 0, 0
+			retirement := strings.HasPrefix(mode, "absent transaction")
+			if retirement {
+				absent := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 251}, {Key: "errmsg", Value: "transaction absent"}}
+				responses = append(responses, absent)
+				if mode == "absent transaction with rejected session cleanup" {
+					rejection := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 11600}, {Key: "errmsg", Value: "session cleanup unavailable"}}
+					responses = append(responses, rejection)
+				}
+			}
+			finds, writes, aborts, commits, retirements := 0, 0, 0, 0, 0
 			var session bson.Raw
 			var transaction int64
 			monitor := &event.CommandMonitor{Started: func(ctx context.Context, e *event.CommandStartedEvent) {
@@ -406,6 +415,12 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 					}
 				case "commitTransaction":
 					commits++
+				case "killSessions":
+					retirements++
+					identities, err := e.Command.Lookup("killSessions").Array().Values()
+					if err != nil || len(identities) != 1 || !bytes.Equal(session, identities[0].Document()) {
+						t.Error("cleanup did not target only the exclusively owned transaction session")
+					}
 				}
 			}}
 			adapter := batchMockAdapter(t, responses, monitor)
@@ -427,6 +442,9 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 			}
 			if finds != 1 || writes != 1 || aborts != 1 || commits != 0 {
 				t.Fatal("unconfirmed abort retried/rebuilt the transaction or sent duplicate aborts", finds, writes, aborts, commits)
+			}
+			if retirement && retirements != 1 || !retirement && retirements != 0 {
+				t.Fatal("session cleanup absent or duplicated", retirements)
 			}
 		})
 	}
