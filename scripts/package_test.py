@@ -15,21 +15,24 @@ spec.loader.exec_module(package)
 
 
 class PackageTests(unittest.TestCase):
+    def test_supported_server_targets(self):
+        self.assertEqual(package.TARGETS, (('linux', 'amd64'), ('linux', 'arm64'),
+                                          ('darwin', 'amd64'), ('darwin', 'arm64')))
+
     def test_archives_reproducible_and_strict(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             members = {'weir': (b'binary', 0o755), 'README.md': (b'docs', 0o644)}
             epoch = 1700000001
-            for suffix in ('.tar.gz', '.zip'):
-                a, b = root / ('a' + suffix), root / ('b' + suffix)
-                package.archive(a, members, epoch)
-                package.archive(b, members, epoch)
-                self.assertEqual(a.read_bytes(), b.read_bytes())
-                for wrong in ({'weir': members['weir']}, dict(members, weir=(b'changed', 0o755)), dict(members, weir=(b'binary', 0o644))):
-                    with self.assertRaises(ValueError):
-                        package.verify_archive(a, wrong, epoch)
+            a, b = root / 'a.tar.gz', root / 'b.tar.gz'
+            package.archive(a, members, epoch)
+            package.archive(b, members, epoch)
+            self.assertEqual(a.read_bytes(), b.read_bytes())
+            for wrong in ({'weir': members['weir']}, dict(members, weir=(b'changed', 0o755)), dict(members, weir=(b'binary', 0o644))):
                 with self.assertRaises(ValueError):
-                    package.verify_archive(a, members, epoch + 4)
+                    package.verify_archive(a, wrong, epoch)
+            with self.assertRaises(ValueError):
+                package.verify_archive(a, members, epoch + 4)
 
     def test_inputs_exclude_tests_local_and_secrets(self):
         for name in ('secret/.env.production', '.ssh/config', 'keys/server.pem', 'server.key', 'credentials', 'keyfile'):
