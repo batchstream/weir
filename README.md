@@ -277,6 +277,24 @@ backend-timeout limits no longer publish limit or owned-timeout metrics.
 Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
 
+## Releases
+
+Publish stable versions through **Verified Weir images** on `main`, supplying a
+canonical `vMAJOR.MINOR.PATCH` release version. The workflow runs default and race
+tests, reproduces the Linux amd64/arm64 image and six platform archives, publishes
+the verified image to GHCR, and confirms an anonymous pull before creating the
+version image tag and GitHub release. Existing version tags and assets cannot be
+replaced with different content.
+
+Publishing a GitHub release directly also triggers this workflow automatically.
+Its tag must point to a commit already merged into `main`; the workflow builds
+that exact source and fills in verified release assets and the version image.
+Use `ghcr.io/batchstream/weir:vMAJOR.MINOR.PATCH` or pin the image digest from
+`delivery.json`. A release created by another workflow using `GITHUB_TOKEN`
+must invoke this workflow explicitly, because GitHub suppresses subsequent
+release events from that token. The supported manual workflow builds the image
+before it creates the release.
+
 ## CLI
 
 | Command | Purpose |

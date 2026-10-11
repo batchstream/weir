@@ -1,6 +1,7 @@
 """Offline release-input integrity tests; these never contact a registry or GitHub."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +12,53 @@ import release
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_release_source_requires_merged_main_and_matching_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            remote, checkout = root / 'remote.git', root / 'checkout'
+            subprocess.check_output(['git', 'init', '--bare', str(remote)], stderr=subprocess.STDOUT)
+            subprocess.check_output(['git', 'init', '-b', 'main', str(checkout)], stderr=subprocess.STDOUT)
+            subprocess.check_output(['git', '-c', 'user.name=Release Test', '-c', 'user.email=test@example.invalid',
+                                     'commit', '--allow-empty', '-m', 'merged'], cwd=checkout, stderr=subprocess.STDOUT)
+            subprocess.check_output(['git', 'remote', 'add', 'origin', str(remote)], cwd=checkout)
+            subprocess.check_output(['git', 'push', 'origin', 'main'], cwd=checkout, stderr=subprocess.STDOUT)
+            merged = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=checkout, text=True).strip()
+            environment = dict(GITHUB_REPOSITORY='batchstream/weir', GITHUB_EVENT_NAME='release',
+                               GITHUB_REF='refs/tags/v0.2.0', GITHUB_SHA=merged)
+            previous = Path.cwd()
+            try:
+                os.chdir(checkout)
+                with patch.dict(os.environ, environment):
+                    release.check_source('v0.2.0')
+                    with patch.dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main'):
+                        release.check_source('')
+                    with patch.dict(os.environ, GITHUB_SHA='f' * 40):
+                        with self.assertRaisesRegex(ValueError, 'workflow checkout'):
+                            release.check_source('v0.2.0')
+                subprocess.check_output(['git', 'switch', '-c', 'unmerged'], stderr=subprocess.STDOUT)
+                subprocess.check_output(['git', '-c', 'user.name=Release Test', '-c', 'user.email=test@example.invalid',
+                                         'commit', '--allow-empty', '-m', 'unmerged'], stderr=subprocess.STDOUT)
+                unmerged = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+                with patch.dict(os.environ, environment), patch.dict(os.environ, GITHUB_SHA=unmerged):
+                    with self.assertRaisesRegex(ValueError, 'merged into main'):
+                        release.check_source('v0.2.0')
+            finally:
+                os.chdir(previous)
+
+    def test_release_event_cannot_publish_another_ref_or_repository(self):
+        environment = dict(GITHUB_REPOSITORY='batchstream/weir', GITHUB_EVENT_NAME='release',
+                           GITHUB_REF='refs/tags/v0.2.0', GITHUB_SHA='a' * 40)
+        for change in (dict(GITHUB_REPOSITORY='fork/weir'), dict(GITHUB_EVENT_NAME='push'),
+                       dict(GITHUB_REF='refs/heads/main'), dict(GITHUB_REF='refs/tags/v0.3.0')):
+            with self.subTest(change=change), patch.dict(os.environ, environment), patch.dict(os.environ, change):
+                with patch.object(release.subprocess, 'check_output') as invoke:
+                    with self.assertRaises(ValueError):
+                        release.check_source('v0.2.0')
+                    invoke.assert_not_called()
+        with patch.dict(os.environ, environment), patch.dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch'):
+            with self.assertRaisesRegex(ValueError, 'requires main'):
+                release.check_source('v0.2.0')
+
     def test_resume_preserves_existing_assets_and_only_adds_missing(self):
         with tempfile.TemporaryDirectory() as temporary:
             first = Path(temporary) / 'first'
