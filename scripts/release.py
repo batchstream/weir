@@ -18,6 +18,30 @@ def run(args):
     return subprocess.check_output(args, text=True, timeout=180).strip()
 
 
+def check_source(version):
+    if version and not version_valid(version):
+        raise ValueError('release version must be vMAJOR.MINOR.PATCH')
+    if os.environ.get('GITHUB_REPOSITORY') != 'batchstream/weir':
+        raise ValueError('release requires batchstream/weir')
+    event, ref = os.environ.get('GITHUB_EVENT_NAME'), os.environ.get('GITHUB_REF')
+    if event == 'workflow_dispatch':
+        if ref != 'refs/heads/main':
+            raise ValueError('manual release requires main')
+    elif event == 'release':
+        if not version or ref != 'refs/tags/' + version:
+            raise ValueError('published release requires its version tag')
+    else:
+        raise ValueError('unsupported release event')
+    source = os.environ.get('GITHUB_SHA', '')
+    if re.fullmatch('[0-9a-f]{40}', source) is None or run(['git', 'rev-parse', 'HEAD']) != source:
+        raise ValueError('release source differs from workflow checkout')
+    run(['git', 'fetch', '--no-tags', 'origin', 'main'])
+    result = subprocess.run(['git', 'merge-base', '--is-ancestor', source, 'origin/main'],
+                            capture_output=True, text=True, timeout=60)
+    if result.returncode:
+        raise ValueError('release source must be merged into main')
+
+
 def verify_assets(directory, delivery):
     source = delivery['source']
     if re.fullmatch('[0-9a-f]{40}', source) is None:
@@ -28,10 +52,10 @@ def verify_assets(directory, delivery):
     receipt = json.loads((product / 'receipt.json').read_text())
     if receipt['source'] != source or receipt['binaries'] != delivery['images']['weir']['binaries']:
         raise ValueError('release source or binary identity mismatch')
-    expected = {'weir-' + target + ('.zip' if target.startswith('windows') else '.tar.gz')
-                for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64', 'windows-amd64', 'windows-arm64')}
+    expected = {'weir-' + target + '.tar.gz'
+                for target in ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64')}
     if set(receipt['archives']) != expected:
-        raise ValueError('release must contain exactly six platform archives')
+        raise ValueError('release must contain exactly four platform archives')
     for name, digest in receipt['archives'].items():
         if hashlib.sha256((product / name).read_bytes()).hexdigest() != digest:
             raise ValueError('release archive checksum mismatch: ' + name)
@@ -73,8 +97,7 @@ def resume_release(version, assets):
 def publish(version, directory):
     if not version_valid(version):
         raise ValueError('release version must be vMAJOR.MINOR.PATCH')
-    if os.environ.get('GITHUB_REPOSITORY') != 'batchstream/weir' or os.environ.get('GITHUB_REF') != 'refs/heads/main':
-        raise ValueError('release requires batchstream/weir main')
+    check_source(version)
     delivery = json.loads(os.environ['WEIR_DELIVERY'])
     source = delivery['source']
     if source != os.environ['GITHUB_SHA'] or run(['git', 'rev-parse', 'HEAD']) != source:
@@ -109,7 +132,8 @@ def publish(version, directory):
         f'Source: `{source}` (merged main).\n\n'
         f'Image: `{reference}@{digest}`. Native Linux amd64 tests, race tests, '
         'reproducible builds and anonymous amd64 image smoke completed before this release. '
-        'Archives are provided for six targets; build availability does not imply native production qualification.\n\n'
+        'Archives are provided for Linux and macOS amd64/arm64; build availability does not imply native production qualification. '
+        'Windows server builds are unavailable with the current Lua dependency.\n\n'
         'Verify downloaded assets with `sha256sum -c SHA256SUMS`. The binary reports its immutable source identity.\n\n'
         'Use the [Go SDK](https://github.com/batchstream/weir-go) and '
         '[Helm chart](https://github.com/batchstream/weir-charts). '
@@ -122,9 +146,13 @@ def publish(version, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check-version', action='store_true')
+    parser.add_argument('--check-source', action='store_true')
     parser.add_argument('version')
     parser.add_argument('directory', nargs='?', type=Path)
     args = parser.parse_args()
+    if args.check_source:
+        check_source(args.version)
+        return
     if args.check_version:
         if args.version and not version_valid(args.version):
             raise ValueError('release version must be vMAJOR.MINOR.PATCH')

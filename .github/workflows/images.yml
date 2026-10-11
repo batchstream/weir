@@ -1,6 +1,8 @@
 name: Verified Weir images
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       release_version:
@@ -14,12 +16,14 @@ permissions:
 concurrency:
   group: weir-main-images
   cancel-in-progress: false
+  queue: max
 
 defaults:
   run:
     shell: bash
 
 env:
+  RELEASE_VERSION: ${{ github.event.release.tag_name || inputs.release_version || '' }}
   GOENV: 'off'
   GOWORK: 'off'
   GOTOOLCHAIN: local
@@ -30,7 +34,7 @@ env:
 
 jobs:
   test:
-    if: github.repository == 'batchstream/weir' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    if: github.repository == 'batchstream/weir' && !github.event.repository.private
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -38,13 +42,12 @@ jobs:
         with:
           repository: batchstream/weir
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+      - name: Validate release version and merged source
+        run: python3 scripts/release.py --check-source "$RELEASE_VERSION"
       - name: Prepare fixed native SDK and public modules
         run: python3 scripts/ci-tools.py test
-      - name: Validate optional release version
-        env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-        run: python3 scripts/release.py --check-version "$RELEASE_VERSION"
       - name: Native CGO0 default tests
         run: CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
       - name: Native CGO1 race tests
@@ -89,7 +92,7 @@ jobs:
       - name: Anonymous full pull and native amd64 smoke
         run: python3 scripts/ci-images.py anonymous
       - name: Preserve verified release assets
-        if: inputs.release_version != ''
+        if: github.event_name == 'release' || inputs.release_version != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: verified-release
@@ -99,7 +102,6 @@ jobs:
           path: |
             .testdata/images/delivery.json
             .testdata/images/weir-first/weir-*.tar.gz
-            .testdata/images/weir-first/weir-*.zip
             .testdata/images/weir-first/*-linked.json
             .testdata/images/weir-first/module-graph.json
             .testdata/images/weir-first/receipt.json
@@ -111,7 +113,7 @@ jobs:
           fi
 
   release:
-    if: inputs.release_version != ''
+    if: github.event_name == 'release' || inputs.release_version != ''
     needs: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -122,6 +124,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -139,7 +142,6 @@ jobs:
       - name: Publish immutable version and release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
           WEIR_DELIVERY: ${{ needs.publish.outputs.delivery }}
           DOCKER_CONFIG: ${{ runner.temp }}/weir-release-docker
           REGCTL_CONFIG: ${{ runner.temp }}/weir-release-regctl.json
