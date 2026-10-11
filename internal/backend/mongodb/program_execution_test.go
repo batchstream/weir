@@ -370,7 +370,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 }
 
 func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
-	for _, mode := range []string{"lost reply", "rejected abort", "absent transaction with lost session cleanup", "absent transaction with rejected session cleanup"} {
+	for _, mode := range []string{"lost reply", "rejected abort", "absent transaction with acknowledged session cleanup", "absent transaction with lost session cleanup", "absent transaction with rejected session cleanup"} {
 		t.Run(mode, func(t *testing.T) {
 			documents := bson.A{
 				bson.D{{Key: "_id", Value: "a"}, {Key: "n", Value: int32(0)}},
@@ -392,6 +392,10 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 				if mode == "absent transaction with rejected session cleanup" {
 					rejection := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 11600}, {Key: "errmsg", Value: "session cleanup unavailable"}}
 					responses = append(responses, rejection)
+				}
+				if mode == "absent transaction with acknowledged session cleanup" {
+					acknowledgement := bson.D{{Key: "ok", Value: 1}}
+					responses = append(responses, acknowledgement)
 				}
 			}
 			finds, writes, aborts, commits, retirements := 0, 0, 0, 0, 0
