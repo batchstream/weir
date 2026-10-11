@@ -13,10 +13,9 @@ import subprocess
 import tarfile
 import tempfile
 import time
-import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGETS = tuple((system, arch) for system in ('linux', 'darwin', 'windows') for arch in ('amd64', 'arm64'))
+TARGETS = tuple((system, arch) for system in ('linux', 'darwin') for arch in ('amd64', 'arm64'))
 GO = 'go1.27.1'
 
 
@@ -128,46 +127,27 @@ def build_info(binary, target, env):
 
 
 def archive(path, members, epoch):
-    if path.suffix == '.zip':
-        with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_STORED) as output:
-            for name, (data, mode) in sorted(members.items()):
-                entry = zipfile.ZipInfo(name, time.gmtime(epoch)[:6])
-                entry.create_system = 3
-                entry.external_attr = (0o100000 | mode) << 16
-                output.writestr(entry, data)
-    else:
-        with path.open('wb') as output:
-            with gzip.GzipFile(filename='', mode='wb', fileobj=output, mtime=0, compresslevel=9) as compressed:
-                with tarfile.open(fileobj=compressed, mode='w', format=tarfile.USTAR_FORMAT) as bundle:
-                    for name, (data, mode) in sorted(members.items()):
-                        entry = tarfile.TarInfo(name)
-                        entry.size, entry.mode, entry.mtime = len(data), mode, epoch
-                        entry.uid = entry.gid = 0
-                        entry.uname = entry.gname = ''
-                        bundle.addfile(entry, io.BytesIO(data))
+    with path.open('wb') as output:
+        with gzip.GzipFile(filename='', mode='wb', fileobj=output, mtime=0, compresslevel=9) as compressed:
+            with tarfile.open(fileobj=compressed, mode='w', format=tarfile.USTAR_FORMAT) as bundle:
+                for name, (data, mode) in sorted(members.items()):
+                    entry = tarfile.TarInfo(name)
+                    entry.size, entry.mode, entry.mtime = len(data), mode, epoch
+                    entry.uid = entry.gid = 0
+                    entry.uname = entry.gname = ''
+                    bundle.addfile(entry, io.BytesIO(data))
     verify_archive(path, members, epoch)
 
 
 def verify_archive(path, members, epoch):
-    if path.suffix == '.zip':
-        with zipfile.ZipFile(path) as bundle:
-            entries = bundle.infolist()
-            if [e.filename for e in entries] != sorted(members):
-                raise ValueError('archive file set/order mismatch')
-            for entry in entries:
-                data, mode = members[entry.filename]
-                stamp = time.gmtime(epoch)[:5] + (time.gmtime(epoch)[5] // 2 * 2,)
-                if bundle.read(entry) != data or entry.date_time != stamp or entry.external_attr >> 16 != 0o100000 | mode:
-                    raise ValueError('archive content/metadata mismatch')
-    else:
-        with tarfile.open(path) as bundle:
-            entries = bundle.getmembers()
-            if [e.name for e in entries] != sorted(members):
-                raise ValueError('archive file set/order mismatch')
-            for entry in entries:
-                data, mode = members[entry.name]
-                if not entry.isfile() or bundle.extractfile(entry).read() != data or (entry.mode, entry.mtime, entry.uid, entry.gid, entry.uname, entry.gname) != (mode, epoch, 0, 0, '', ''):
-                    raise ValueError('archive content/metadata mismatch')
+    with tarfile.open(path) as bundle:
+        entries = bundle.getmembers()
+        if [e.name for e in entries] != sorted(members):
+            raise ValueError('archive file set/order mismatch')
+        for entry in entries:
+            data, mode = members[entry.name]
+            if not entry.isfile() or bundle.extractfile(entry).read() != data or (entry.mode, entry.mtime, entry.uid, entry.gid, entry.uname, entry.gname) != (mode, epoch, 0, 0, '', ''):
+                raise ValueError('archive content/metadata mismatch')
 
 
 def oci_receipt(archive_path, binaries, options=None):
@@ -254,7 +234,7 @@ def build_once(opts):
         print('build', output.name, target, flush=True)
         dest = output / 'binaries' / target
         dest.mkdir(parents=True)
-        binary = dest / (binary_name + ('.exe' if system == 'windows' else ''))
+        binary = dest / binary_name
         target_env = dict(env, GOOS=system, GOARCH=arch)
         entry = './cmd/weir'
         run(['go', 'build', *flags, '-o', str(binary), entry], cwd=source, env=target_env)
@@ -273,7 +253,7 @@ def build_once(opts):
         if system == 'darwin':
             for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
                 members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)
-        dest = output / ('weir-' + target + ('.zip' if system == 'windows' else '.tar.gz'))
+        dest = output / ('weir-' + target + '.tar.gz')
         archive(dest, members, opts['epoch'])
         artifact_hashes[dest.name] = sha(dest.read_bytes())
     if original != {name: sha((source / name).read_bytes()) for name, _ in opts['files']}:
@@ -357,7 +337,7 @@ def main():
                 receipts.append(build_once(opts))
         if receipts[0] != receipts[1]:
             raise ValueError('reproducibility mismatch; preserve both receipts and artifacts')
-        evidence.update(completed=True, identical_binaries=6, identical_archives=6,
+        evidence.update(completed=True, identical_binaries=len(TARGETS), identical_archives=len(TARGETS),
                         oci_identical=bool(args.oci), receipt_sha256=sha((output / 'first/receipt.json').read_bytes()))
         print('Reproducible artifacts:', output, flush=True)
     except BaseException as error:
