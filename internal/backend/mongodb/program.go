@@ -108,7 +108,9 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		}
 		documents, readErr := a.readPrograms(txctx, readPlans)
 		if readErr != nil {
-			aborted := a.abortProgramTransaction(session)
+			var commandError mongo.CommandError
+			settled := errors.As(readErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(readErr, errProgramBatchBound)
+			aborted := a.abortProgramTransaction(session, settled)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
 				return
@@ -139,12 +141,14 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		}
 		writes, writePositions = keptWrites, keptPositions
 		if len(writes) == 0 {
-			a.abortProgramTransaction(session)
+			a.abortProgramTransaction(session, true)
 			return
 		}
-		replies, writeErr := a.writePrograms(txctx, writes)
+		replies, settled, writeErr := a.writePrograms(txctx, writes)
 		if writeErr != nil {
-			aborted := a.abortProgramTransaction(session)
+			var commandError mongo.CommandError
+			settled := errors.As(writeErr, &commandError) && len(commandError.Raw) != 0 || errors.Is(writeErr, errProgramBatchBound)
+			aborted := a.abortProgramTransaction(session, settled)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
 				return
@@ -175,7 +179,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			}
 		}
 		if rejected {
-			aborted := a.abortProgramTransaction(session)
+			aborted := a.abortProgramTransaction(session, settled)
 			if !aborted {
 				batch.fail(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_UNAVAILABLE, "MongoDB transaction rollback unconfirmed"))
 				return
@@ -468,7 +472,7 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	return writes, writePositions
 }
 
-func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.MutationResult, error) {
+func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.MutationResult, bool, error) {
 	ctx, release := nativeAttemptContext(ctx)
 	defer release()
 	target := plans[0].Backend.(*plan).target
@@ -492,10 +496,10 @@ func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([
 	var command any = bson.D{{Key: "bulkWrite", Value: int32(1)}, {Key: "ops", Value: ops}, {Key: "nsInfo", Value: bson.A{namespaceInfo}}, {Key: "ordered", Value: true}, {Key: "errorsOnly", Value: false}, {Key: "cursor", Value: cursorOpts}}
 	encoded, err := bson.Marshal(command)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(encoded) > a.commandBytes()-(64<<10) {
-		return nil, errProgramBatchBound
+		return nil, false, errProgramBatchBound
 	}
 	command = bson.Raw(encoded)
 	state := &writeBatch{plans: plans, results: make([]*pb.MutationResult, len(plans))}
@@ -504,18 +508,28 @@ func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([
 	for page := 0; page < len(plans); page++ {
 		raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		valid := state.reply(raw, page == 0)
 		if !valid {
-			return nil, errProgramReadEvidence
+			return nil, false, errProgramReadEvidence
 		}
 		if state.cursor.cursor == 0 {
-			return state.results, nil
+			settled := !state.concern && !state.uncertainCounts && state.counts == state.observed
+			for i, reply := range state.results {
+				// Ordered writes stop at the first native error. A verified
+				// error and matching totals prove the nil tail was not sent.
+				if reply == nil {
+					settled = settled && state.observed[0] == 1 && i >= state.received
+				} else if reply.Outcome == pb.MutationOutcome_UNKNOWN {
+					settled = false
+				}
+			}
+			return state.results, settled, nil
 		}
 		command = bson.D{{Key: "getMore", Value: state.cursor.cursor}, {Key: "collection", Value: "$cmd.bulkWrite"}, {Key: "batchSize", Value: int32(len(plans) - state.received)}}
 	}
-	return nil, errProgramReadEvidence
+	return nil, false, errProgramReadEvidence
 }
 
 func mongoIdentity(id any) (value.Field, error) {
@@ -562,7 +576,7 @@ func programHasLabel(err error, label string) bool {
 	return errors.As(err, &serverError) && serverError.HasErrorLabel(label)
 }
 
-func (a *Adapter) abortProgramTransaction(session *mongo.Session) bool {
+func (a *Adapter) abortProgramTransaction(session *mongo.Session, settled bool) bool {
 	cleanup, cancel := context.WithTimeout(context.Background(), programCleanup)
 	defer cancel()
 	bounded, release := nativeAttemptContext(cleanup)
@@ -584,6 +598,11 @@ func (a *Adapter) abortProgramTransaction(session *mongo.Session) bool {
 	var commandError mongo.CommandError
 	if !errors.As(err, &commandError) || commandError.Code != 251 {
 		return false
+	}
+	// A complete response settles the last command on this exclusively owned
+	// session. NoSuchTransaction then confirms the server already aborted it.
+	if settled {
+		return true
 	}
 	// Kill any work still in flight on this exclusively owned session. Future
 	// operations can reuse a killed session, so neither NoSuchTransaction nor
