@@ -370,7 +370,7 @@ func TestMongoLuaBatchMissingWriteItemAcknowledgementAborts(t *testing.T) {
 }
 
 func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
-	for _, mode := range []string{"lost reply", "rejected abort", "absent transaction with acknowledged session cleanup", "absent transaction with lost session cleanup", "absent transaction with rejected session cleanup"} {
+	for _, mode := range []string{"lost reply", "rejected abort", "absent transaction with acknowledged session cleanup", "absent transaction with lost session cleanup", "absent transaction with rejected session cleanup", "absent transaction after uncertain write"} {
 		t.Run(mode, func(t *testing.T) {
 			documents := bson.A{
 				bson.D{{Key: "_id", Value: "a"}, {Key: "n", Value: int32(0)}},
@@ -386,7 +386,20 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 				responses = append(responses, rejection)
 			}
 			retirement := strings.HasPrefix(mode, "absent transaction")
+			uncertainWrite := mode == "absent transaction after uncertain write"
 			if retirement {
+				// An incomplete read reply does not settle the native operation.
+				incomplete := bson.D{{Key: "ok", Value: 1}}
+				responses = []bson.D{collectionQualificationResponse("db", "records"), incomplete}
+				if uncertainWrite {
+					first := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+					second := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 1}, {Key: "n", Value: 1}, {Key: "nModified", Value: 1}}
+					write = programBulkResponse(bson.A{first, second}, 2)
+					concern := bson.D{{Key: "code", Value: 91}, {Key: "errmsg", Value: "write acknowledgement unavailable"}}
+					field := bson.E{Key: "writeConcernError", Value: concern}
+					write = append(write, field)
+					responses = []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor), write}
+				}
 				absent := bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: 251}, {Key: "errmsg", Value: "transaction absent"}}
 				responses = append(responses, absent)
 				if mode == "absent transaction with rejected session cleanup" {
@@ -444,7 +457,11 @@ func TestMongoLuaBatchUnconfirmedAbortNeverRebuilds(t *testing.T) {
 					t.Fatal("unobserved rollback became a confirmed abort", mode, mutation)
 				}
 			}
-			if finds != 1 || writes != 1 || aborts != 1 || commits != 0 {
+			wantWrites := 1
+			if retirement && !uncertainWrite {
+				wantWrites = 0
+			}
+			if finds != 1 || writes != wantWrites || aborts != 1 || commits != 0 {
 				t.Fatal("unconfirmed abort retried/rebuilt the transaction or sent duplicate aborts", finds, writes, aborts, commits)
 			}
 			if retirement && retirements != 1 || !retirement && retirements != 0 {
