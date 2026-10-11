@@ -101,7 +101,6 @@ jobs:
           path: |
             .testdata/images/delivery.json
             .testdata/images/weir-first/weir-*.tar.gz
-            .testdata/images/weir-first/weir-*.zip
             .testdata/images/weir-first/*-linked.json
             .testdata/images/weir-first/module-graph.json
             .testdata/images/weir-first/receipt.json
