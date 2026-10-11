@@ -251,6 +251,18 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 	if fault == "stale" {
 		proxy.CloseClientConnections()
 	}
+	wantOutcome := pb.MutationOutcome_UNKNOWN
+	wantCode := pb.FailureCode_UNAVAILABLE
+	switch fault {
+	case "stale":
+		wantOutcome, wantCode = pb.MutationOutcome_APPLIED, 0
+	case "401":
+		wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNAUTHENTICATED
+	case "403":
+		wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PERMISSION_DENIED
+	case "drain":
+		wantCode = pb.FailureCode_CANCELLED
+	}
 	switch operation {
 	case "ordinary", "bulk":
 		works := []*execution.Plan{searchPlan(t, a, "put", searchResource(b.Index, id))}
@@ -296,11 +308,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			replies = a.executeRecords(context.Background(), works)
 		}
 		for _, reply := range replies {
-			if fault == "stale" {
-				assertOutcome(t, reply, pb.MutationOutcome_APPLIED, 0)
-			} else {
-				assertOutcome(t, reply, pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE)
-			}
+			assertOutcome(t, reply, wantOutcome, wantCode)
 		}
 	case "expression":
 		op := expressionOperation(b.Index+"/s:"+id, `{"doc":{"n":2}}`)
@@ -309,11 +317,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			t.Fatal(f)
 		}
 		reply := runSearch(t, a, p)
-		if fault == "stale" {
-			assertOutcome(t, reply, pb.MutationOutcome_APPLIED, 0)
-		} else {
-			assertOutcome(t, reply, pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE)
-		}
+		assertOutcome(t, reply, wantOutcome, wantCode)
 	case "native":
 		open := nativeRequest(t, b.Index, "POST", "/_bulk")
 		body := "{\"index\":{\"_id\":\"" + id + "\"}}\n{\"n\":2}\n"
