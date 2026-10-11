@@ -212,6 +212,15 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 			if response.StatusCode != expected {
 				t.Error("unexpected native business status", response.StatusCode, expected)
 			}
+			if fault == "401" {
+				var rejected struct {
+					Error struct {
+						Type string `json:"type"`
+					} `json:"error"`
+				}
+				_ = json.Unmarshal(raw, &rejected)
+				t.Logf("native %s rejection status=%d content-type=%q bytes=%d valid-json=%t error-type=%q", b.Profile, response.StatusCode, response.Header.Get("Content-Type"), len(raw), json.Valid(raw), rejected.Error.Type)
+			}
 			if response.StatusCode == 200 {
 				completed.Add(1)
 			}
@@ -257,7 +266,15 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 	case "stale":
 		wantOutcome, wantCode = pb.MutationOutcome_APPLIED, 0
 	case "401":
-		wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNAUTHENTICATED
+		switch b.Profile {
+		case "elasticsearch-8.19.22":
+			wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNAUTHENTICATED
+		case "opensearch-2.19.6":
+			// This fixture returns an unstructured 401, so the adapter cannot prove non-application.
+			wantOutcome, wantCode = pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE
+		default:
+			t.Fatal("unqualified native authentication response profile", b.Profile)
+		}
 	case "403":
 		wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_PERMISSION_DENIED
 	case "drain":
