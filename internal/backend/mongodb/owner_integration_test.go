@@ -229,19 +229,16 @@ func TestMongoDriverRetirementOwnership(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("raw Close not entered")
 	}
-	ownerWait(t, func() bool { return d.snapshot().Dialing == 1 })
-	s := d.snapshot()
-	if s.Owned != 2 || s.Closing != 1 || s.Acquired != 2 || s.Peak != 2 || closing.Before(removed.at) {
-		t.Fatal("driver retirement order/bound", s)
-	}
-	t.Logf("pool removed ID=%d at=%s; raw Close entered=%s; replacement dial waiting, owner=%+v", removed.id, removed.at.UTC().Format(time.RFC3339Nano), closing.UTC().Format(time.RFC3339Nano), s)
-	release.Do(func() { close(gate) })
 	if err := <-result; err != nil {
-		t.Fatal("replacement failed after raw Close", err)
+		t.Fatal("replacement waited for raw Close", err)
 	}
-	if d.snapshot().Peak != 2 || d.snapshot().Acquired != 3 {
-		t.Fatal("replacement ownership", d.snapshot())
+	s := d.snapshot()
+	if s.Owned != 3 || s.Closing != 1 || s.Acquired != 3 || s.Peak != 3 || closing.Before(removed.at) {
+		t.Fatal("driver retirement ownership/order", s)
 	}
+	t.Logf("pool removed ID=%d at=%s; raw Close entered=%s; replacement completed while raw Close pending, owner=%+v", removed.id, removed.at.UTC().Format(time.RFC3339Nano), closing.UTC().Format(time.RFC3339Nano), s)
+	release.Do(func() { close(gate) })
+	ownerWait(t, func() bool { return d.snapshot().Closing == 0 })
 	d.stop()
 	if err := client.Disconnect(ctx); err != nil {
 		t.Fatal(err)

@@ -72,6 +72,9 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	defer proxy.Close()
 	config := base.config
 	config.URL = proxy.URL
+	settings := base.options()
+	settings.ExchangeBytes = 8 << 20
+	config.Options = &settings
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// Trace every native fetch, including the first one sharing PIT allocation.
