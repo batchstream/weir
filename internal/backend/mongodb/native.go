@@ -22,22 +22,19 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 		return nil, f
 	}
 	parts, _ := protocol.ParseRelativeResource(request.Resource)
-	if len(parts) > 2 {
+	if len(parts) > 1 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
 	if request.Request.ContentType != "application/bson" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires application/bson")
 	}
 
-	target := namespace{}
-	if len(parts) > 0 {
-		target.database = parts[0]
-	}
-	if len(parts) == 2 {
-		target.collection = parts[1]
+	database := ""
+	if len(parts) == 1 {
+		database = parts[0]
 	}
 	p := &execution.Plan{
-		Backend:      target,
+		Backend:      database,
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
@@ -62,14 +59,13 @@ func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 
 func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) *pb.NativeEnd {
 	raw := work.Command.GetNative().Request.Data
-	target := work.Backend.(namespace)
+	database := work.Backend.(string)
 	if f := a.nativeCommand(raw); f != nil {
 		return protocol.NativeFailure(false, f)
 	}
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
-	database := target.database
 	commandElements := raw[4 : len(raw)-1]
 	prefix, suffix := commandElements, []byte(nil)
 	foundDatabase := false

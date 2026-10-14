@@ -106,7 +106,7 @@ func TestDiagnosticsLifecycleIsolationAndNoSyntheticExecutions(t *testing.T) {
 	// Hold one real decoded-input slot while drain starts; diagnostics retain
 	// independent request lifetimes and must remain available after data readiness falls.
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	blocked, err := conn.NewStream(ctx, desc, pb.StoreService_ExecuteV2_FullMethodName)
+	blocked, err := conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}

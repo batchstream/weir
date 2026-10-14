@@ -39,7 +39,6 @@ type record struct {
 }
 
 type Directory struct {
-	peerpb.UnimplementedPeerDiscoveryServiceServer
 	mu      sync.Mutex
 	self    string
 	records map[string]record

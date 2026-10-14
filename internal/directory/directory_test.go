@@ -307,7 +307,6 @@ func TestReplayWatermarksAreBoundedAndEventuallyCollected(t *testing.T) {
 }
 
 type seedSelector struct {
-	peerpb.UnimplementedPeerDiscoveryServiceServer
 	self, other        *Directory
 	calls, connections atomic.Int32
 }
@@ -364,7 +363,6 @@ func TestSeedSelfSelectionRetriesWithFreshConnection(t *testing.T) {
 }
 
 type malformedDirectoryResponse struct {
-	peerpb.UnimplementedPeerDiscoveryServiceServer
 }
 
 func (*malformedDirectoryResponse) SyncDirectory(context.Context, *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {

@@ -30,6 +30,7 @@ func TestExecutionFrameShapesMatchPublicSchema(t *testing.T) {
 		{kind: wireTransform, message: &pb.Transform{}},
 		{kind: wireLua, message: &pb.LuaTransform{}},
 		{kind: wireProjection, message: &pb.Projection{}},
+		{kind: wireMutationOptions, message: &pb.MutationOptions{}},
 	}
 	for _, item := range cases {
 		descriptor := item.message.ProtoReflect().Descriptor()
@@ -134,9 +135,16 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 		{name: "typed scan", kind: 3, payload: scan, valid: true},
 		{name: "opaque native document", kind: 4, payload: native, valid: true},
 		{name: "typed Lua", kind: 2, payload: mutation, valid: true},
-		{name: "visible Lua", kind: 2, payload: append(append([]byte(nil), mutation...), 0x38, 1), valid: true},
-		{name: "duplicate visibility", kind: 2, payload: append(append([]byte(nil), mutation...), 0x38, 1, 0x38, 0)},
-		{name: "visibility wire type", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, nil)...)},
+		{name: "visible Lua", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 1})...), valid: true},
+		{name: "empty options", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, nil)...), valid: true},
+		{name: "explicit application acknowledgement", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 0})...), valid: true},
+		{name: "duplicate options", kind: 2, payload: append(append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 1})...), wireMessage(7, nil)...)},
+		{name: "duplicate visibility", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 1, 8, 0})...)},
+		{name: "options wire type", kind: 2, payload: append(append([]byte(nil), mutation...), 0x38, 1)},
+		{name: "visibility wire type", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, wireMessage(1, nil))...)},
+		{name: "unknown option", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{16, 1})...)},
+		{name: "invalid visibility enum", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 2})...)},
+		{name: "negative visibility enum", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, binary.AppendUvarint([]byte{8}, ^uint64(0)))...)},
 		{name: "unknown mutation option", kind: 2, payload: append(append([]byte(nil), mutation...), 0x40, 1)},
 		{name: "duplicate scan filter", kind: 3, payload: append(append([]byte(nil), scan...), wireMessage(2, condition)...)},
 		{name: "duplicate projection mode", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(3, append(projection, 8, 2))...)},

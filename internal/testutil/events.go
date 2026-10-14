@@ -14,7 +14,7 @@ type Events struct {
 
 func ExecuteEvents(ctx context.Context, client pb.StoreServiceClient, store string, command *pb.Command) (*Events, error) {
 	request := &pb.ExecuteRequest{StoreName: store, Index: 1, Command: command}
-	stream, err := client.ExecuteV2(ctx)
+	stream, err := client.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
