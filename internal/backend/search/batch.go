@@ -172,11 +172,13 @@ type recordWrite struct {
 type recordBatch struct {
 	adapter  *Adapter
 	ctx      context.Context
+	works    []*execution.Plan
 	results  []*pb.Event
 	attempts []int
 	request  bytes.Buffer
 	pending  []recordWrite
 	retry    []int
+	barriers map[string][]int
 }
 
 func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
@@ -193,6 +195,9 @@ func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
 // after framing; the batch retains at most one bounded NDJSON request.
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
 	native := work.Backend.(*plan)
+	if len(b.pending) != 0 && b.pending[0].work.Backend.(*plan).waitUntilVisible != native.waitUntilVisible {
+		b.flush()
+	}
 	metadata := map[string]any{"_index": native.index, "_id": native.id}
 	action := native.bulkAction()
 	switch native.action {
@@ -250,14 +255,19 @@ func (b *recordBatch) flush() {
 		positions = append(positions, item.position)
 	}
 	if len(works) != 0 {
+		refresh := "false"
+		if works[0].Backend.(*plan).waitUntilVisible {
+			refresh = "wait_for"
+		}
 		call := exchange{
-			path:     "/_bulk?pipeline=_none&refresh=false&wait_for_active_shards=1",
+			path:     "/_bulk?pipeline=_none&refresh=" + refresh + "&wait_for_active_shards=1",
 			body:     body[:length],
 			limit:    b.adapter.options().ExchangeBytes,
 			mutation: true,
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
 		replies := b.adapter.bulkResults(works, status, raw, err)
+		b.queueBulkVisibilityBarriers(works, positions, replies, raw)
 		for i, position := range positions {
 			b.results[position] = replies[i]
 			program := works[i].Backend.(*plan).program
@@ -285,6 +295,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 	batch := recordBatch{
 		adapter:  a,
 		ctx:      ctx,
+		works:    works,
 		results:  make([]*pb.Event, len(works)),
 		attempts: make([]int, len(works)),
 	}
@@ -421,6 +432,9 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 					}
 					if mutation != nil {
 						batch.results[i] = execution.FailedEvent(work.Command, mutation.Outcome, mutation.Failure)
+						if native.waitUntilVisible && mutation.Outcome == pb.MutationOutcome_APPLIED && mutation.Failure == nil {
+							batch.queueVisibilityBarrier(native.index, i)
+						}
 						continue
 					}
 					copy := *work
@@ -433,6 +447,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		}
 
 		batch.flush()
+		batch.flushVisibilityBarriers()
 		positions = batch.retry
 		batch.retry = nil
 		for _, i := range positions {

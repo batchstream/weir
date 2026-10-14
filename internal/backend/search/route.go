@@ -51,6 +51,9 @@ func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	work.WorkingBytes = 3 * a.options().ExchangeBytes
 	native := work.Backend.(*plan)
 	work.BatchKey = native.index
+	if native.waitUntilVisible {
+		work.BatchKey += "|visible"
+	}
 	return work, nil
 }
 

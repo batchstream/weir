@@ -131,7 +131,7 @@ func TestProcessLuaAndStreamPolicyReachEveryStore(t *testing.T) {
 	blocking.Store(true)
 	streams := make([]grpc.BidiStreamingClient[pb.ExecuteRequest, pb.ExecuteResponse], 0, 2)
 	for _, name := range []string{"first", "second"} {
-		stream, err := client.Execute(ctx)
+		stream, err := client.ExecuteV2(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

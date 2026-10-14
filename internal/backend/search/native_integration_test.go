@@ -3,7 +3,12 @@
 package search
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/url"
+
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,15 +17,17 @@ import (
 	"testing"
 	"time"
 
+	weirclient "github.com/batchstream/weir-go"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
 func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
-	for _, mode := range []string{"mixed", "multichunk", "drop", "later_invalid", "pipeline"} {
+	for _, mode := range []string{"mixed", "multichunk", "drop", "cross_index", "pipeline"} {
 		t.Run(mode, func(t *testing.T) {
 			backend := testsearch.Open(t)
+			otherIndex := backend.Index + "_other"
+			backend.Create(t, otherIndex, `{"settings":{"number_of_shards":1,"number_of_replicas":0}}`)
 			var calls atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				request, err := http.NewRequestWithContext(r.Context(), r.Method, backend.URL+r.URL.RequestURI(), r.Body)
@@ -67,10 +74,10 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 				body += body + "{\"index\":{\"_id\":\"bad\"}}\n{\"n\":{\"bad\":1}}\n"
 			}
 			if mode == "multichunk" {
-				body = "{\"index\":{\"_id\":\"x\"}}\n{\"pad\":\"" + strings.Repeat("x", 150<<10) + "\"}\n"
+				body = "{\"index\":{\"_id\":\"x\"}}\n{\"pad\":\"" + strings.Repeat("x", 512<<10) + "\"}\n"
 			}
-			if mode == "later_invalid" {
-				body = strings.Repeat("{\"index\":{\"_id\":\"x\"}}\n{\"n\":1}\n", 100) + "{\"delete\":{\"_id\":\"x\",\"_index\":\"other\"}}\n"
+			if mode == "cross_index" {
+				body = strings.Repeat("{\"index\":{\"_id\":\"x\"}}\n{\"n\":1}\n", 100) + fmt.Sprintf("{\"delete\":{\"_id\":\"x\",\"_index\":%q}}\n", otherIndex)
 			}
 			if mode == "pipeline" {
 				status, _ := backend.Do(t, "PUT", "/"+backend.Index+"/_settings", `{"index.default_pipeline":"missing"}`)
@@ -81,11 +88,8 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			open := nativeRequest(t, backend.Index, "POST", "/_bulk")
 			end, capture := runNative(t, a, open, []byte(body))
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
-			if mode == "drop" || mode == "later_invalid" {
+			if mode == "drop" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE
-			}
-			if mode == "pipeline" {
-				expected = pb.NativeCompletion_NATIVE_NOT_STARTED
 			}
 			if end.Completion != expected {
 				t.Fatal(end, capture.body.String())
@@ -96,9 +100,9 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 			if mode == "mixed" && (!strings.Contains(capture.body.String(), `"errors":true`) || !strings.Contains(capture.body.String(), `version_conflict_engine_exception`)) {
 				t.Fatal(capture.body.String())
 			}
-			if mode == "drop" || mode == "multichunk" || mode == "later_invalid" {
+			if mode == "drop" || mode == "multichunk" || mode == "cross_index" {
 				status, raw := backend.Do(t, "GET", "/"+backend.Index+"/_doc/x", "")
-				if mode != "later_invalid" && status != 200 {
+				if status != 200 {
 					t.Fatal(status, string(raw))
 				}
 				t.Logf("%s native bulk calls=%d independent GET status=%d", mode, calls.Load(), status)
@@ -114,101 +118,69 @@ func TestSearchNativeRealMixedAndReplyLoss(t *testing.T) {
 	}
 }
 
-// A request can lose its reply after a validated prefix reaches the backend.
-// A later invalid target must never escape the Store and must not trigger replay.
-func TestSearchNativeLaterInvalidNeverEscapesOrReplays(t *testing.T) {
+func TestSearchNativeCreatesIndexesSearchesUpdatesAndUsesRootPaths(t *testing.T) {
 	backend := testsearch.Open(t)
-	first := "{\"create\":{\"_id\":\"prefix\"}}\n{\"n\":1,\"pad\":\"" + strings.Repeat("x", 70<<10) + "\"}\n"
-	var calls atomic.Int32
-	var applied atomic.Bool
-	finished := make(chan struct{})
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/_bulk") {
-			request, _ := http.NewRequestWithContext(r.Context(), r.Method, backend.URL+r.URL.RequestURI(), nil)
-			response, err := backend.Client.Do(request)
-			if err != nil {
-				w.WriteHeader(502)
-				return
-			}
-			defer response.Body.Close()
-			w.WriteHeader(response.StatusCode)
-			io.Copy(w, response.Body)
-			return
-		}
-		calls.Add(1)
-		defer close(finished)
-		prefix := make([]byte, len(first))
-		if _, err := io.ReadFull(r.Body, prefix); err != nil {
-			return
-		}
-		// Model a backend that commits a received prefix despite a disconnected
-		// caller; forwarding uses its own bounded context rather than replay.
-		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-		defer cancel()
-		request, _ := http.NewRequestWithContext(ctx, "POST", backend.URL+r.URL.Path, strings.NewReader(string(prefix)))
-		request.GetBody = nil
-		request.Header.Set("Content-Type", "application/x-ndjson")
-		response, err := backend.Client.Do(request)
-		if err != nil {
-			return
-		}
-		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-		response.Body.Close()
-		applied.Store(response.StatusCode == 200 && strings.Contains(string(raw), `"errors":false`))
-		// The scoped reader must reject the foreign target before sending it.
-		remaining, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
-		if len(remaining) != 0 {
-			t.Error("invalid item escaped scope validation", string(remaining))
-		}
-		conn, _, err := w.(http.Hijacker).Hijack()
-		if err == nil {
-			conn.Close()
-		}
-	})
-	proxy := httptest.NewServer(handler)
-	defer proxy.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	cfg := Config{Store: "search", URL: proxy.URL}
-	a, err := Open(ctx, cfg)
+	config := Config{Store: "search", URL: backend.URL}
+	adapter, err := Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
-	open := nativeRequest(t, backend.Index, "POST", "/_bulk")
-	body := first + "{\"delete\":{\"_id\":\"prefix\",\"_index\":\"outside\"}}\n"
-	setNativeBody(t, open, []byte(body))
-	p, f := a.prepareNative(open)
-	if f != nil {
-		t.Fatal(f)
-	}
-	p.Command = testutil.NativeCommand(open)
-	capture := &nativeCapture{}
-	end := a.executeNative(ctx, p, capture.Emit)
-	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE {
-		t.Fatal(end)
-	}
-	// Transport cancellation can prevent even the validated prefix from
-	// reaching the proxy. If it arrived, wait for the independently committed
-	// write and verify the result without claiming cancellation undoes effects.
-	proxy.Close()
-	if calls.Load() > 1 {
-		t.Fatal("Native upload replayed", calls.Load())
-	}
-	if calls.Load() == 1 {
-		select {
-		case <-finished:
-		case <-ctx.Done():
-			t.Fatal("Native proxy did not join")
+	defer adapter.Close()
+	index := backend.Index + "_native"
+	t.Cleanup(func() {
+		status, raw := backend.Do(t, http.MethodDelete, "/"+index, "")
+		if status != 200 && status != 404 {
+			t.Error("Native test index cleanup failed", status, string(raw))
 		}
+	})
+	tests := []struct {
+		resource string
+		method   string
+		path     string
+		body     string
+		status   int
+		contains string
+	}{
+		{resource: index, method: "PUT", path: "/", body: `{"settings":{"number_of_shards":1,"number_of_replicas":0}}`, status: 200, contains: `"acknowledged":true`},
+		{resource: index, method: "PUT", path: "/_doc/" + url.PathEscape("part/id ?中文") + "?refresh=wait_for", body: `{"n":1}`, status: 201, contains: `"result":"created"`},
+		{resource: index, method: "POST", path: "/_update/" + url.PathEscape("part/id ?中文") + "?refresh=wait_for", body: `{"doc":{"n":2}}`, status: 200, contains: `"result":"updated"`},
+		{method: "POST", path: "/_refresh", status: 200, contains: `"failed":0`},
+		{resource: index, method: "GET", path: "/_search?size=1&from=0&track_total_hits=true&preference=tenant%2Fone", body: `{"query":{"term":{"n":2}}}`, status: 200, contains: `"n":2`},
+		{method: "POST", path: "/_msearch", body: fmt.Sprintf("{\"index\":%q}\n{\"query\":{\"match_all\":{}}}\n", index), status: 200, contains: `"responses"`},
+		{resource: index, method: "POST", path: "/_search", body: `{"query":{"unknown_native_query":{}}}`, status: 400, contains: `"error"`},
 	}
-	status, raw := backend.Do(t, "GET", "/"+backend.Index+"/_doc/prefix", "")
-	if applied.Load() && (status != 200 || !strings.Contains(string(raw), `"n":1`)) {
-		t.Fatal("confirmed prefix did not persist", status, string(raw))
+	for _, test := range tests {
+		t.Run(test.method+test.path, func(t *testing.T) {
+			httpRequest, err := http.NewRequest(test.method, "http://ignored.invalid"+test.path, bytes.NewBufferString(test.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			contentType := "application/json"
+			if test.path == "/_msearch" {
+				contentType = "application/x-ndjson"
+			}
+			httpRequest.Header.Set("Content-Type", contentType)
+			httpRequest.Header.Set("X-Opaque-Id", "native-open-integration")
+			request, err := weirclient.NewHTTPNativeRequest(test.resource, httpRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			end, capture := runNative(t, adapter, request, []byte(test.body))
+			metadata := nativeMetadata(t, capture.head)
+			if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || metadata.StatusCode != test.status || metadata.Headers.Get("X-Opaque-Id") != "native-open-integration" || !strings.Contains(capture.body.String(), test.contains) {
+				t.Fatal("Native request or response changed", end, metadata, capture.body.String())
+			}
+			if test.resource == index && strings.HasPrefix(test.path, "/_search?") {
+				var result struct {
+					Hits struct {
+						Total struct{ Value int }
+						Hits  []json.RawMessage
+					}
+				}
+				if err := json.Unmarshal(capture.body.Bytes(), &result); err != nil || result.Hits.Total.Value != 1 || len(result.Hits.Hits) != 1 {
+					t.Fatal("Native search query or pagination changed", err, capture.body.String())
+				}
+			}
+		})
 	}
-	status, raw = backend.Do(t, "GET", "/outside/_doc/prefix", "")
-	if status != 404 {
-		t.Fatal("foreign Native target escaped", status, string(raw))
-	}
-	t.Logf("Native calls=%d committed prefix=%t; foreign target rejected, no replay", calls.Load(), applied.Load())
 }

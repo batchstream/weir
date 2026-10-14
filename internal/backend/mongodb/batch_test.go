@@ -75,7 +75,7 @@ func batchMockAdapter(t *testing.T, responses []bson.D, monitor *event.CommandMo
 		t.Fatal(err)
 	}
 	config := Config{Store: "mongo"}
-	a := &Adapter{client: client, config: config}
+	a := &Adapter{client: client, deployment: deployment, commandMonitor: monitor, config: config}
 	t.Cleanup(func() {
 		if err := a.Close(); err != nil {
 			t.Error(err)

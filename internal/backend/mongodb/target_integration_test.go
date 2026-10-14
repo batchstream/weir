@@ -289,7 +289,7 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		for _, action := range []string{"read", "put", "program", "scan", "native"} {
+		for _, action := range []string{"read", "put", "program", "scan"} {
 			t.Run(kind+"/"+action, func(t *testing.T) {
 				resource := targetResource(target)
 				switch action {
@@ -305,24 +305,6 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 					}
 					if failure = fixture.adapter.closeScan(ctx, work); failure != nil {
 						t.Fatal(failure)
-					}
-				case "native":
-					nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-					open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
-					work, failure := fixture.adapter.prepareNative(open)
-					if failure != nil {
-						t.Fatal(failure)
-					}
-					query := bson.D{{Key: "_id", Value: "new"}}
-					update := bson.D{{Key: "$set", Value: bson.D{{Key: "n", Value: 1}}}}
-					command := bson.D{{Key: "findAndModify", Value: target.collection}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "upsert", Value: true}}
-					raw := expressionBSON(t, command)
-					capture := &nativeCapture{}
-					open.Request.Data = raw
-					work.Command = testutil.NativeCommand(open)
-					end := fixture.adapter.executeNative(ctx, work, capture.Emit)
-					if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || capture.head != nil {
-						t.Fatal("unqualified Native target accepted", end)
 					}
 				default:
 					document := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: 1}}

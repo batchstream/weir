@@ -107,59 +107,70 @@ func runNative(t *testing.T, a *Adapter, request *pb.NativeRequest, body []byte)
 	return end, capture
 }
 
-func TestNativeHTTPRequestScope(t *testing.T) {
-	for _, path := range []string{"http://evil/_bulk", "//evil/_bulk", "/../_bulk", "/%2e%2e/_bulk", "/_doc/%2Fetc", "/_doc/%252fetc", "/_doc/..", "/_reindex", "/_search", "/_doc/x?x=y"} {
-		raw := []byte("GET " + path + " HTTP/1.1\r\n\r\n")
-		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
-			t.Fatal(path)
+func TestNativeHTTPRequestPreservesNativeOperations(t *testing.T) {
+	for _, path := range []string{"/../_bulk", "/%2e%2e/_bulk", "/_doc/%2Fetc", "/_doc/%252fetc", "/_doc/..", "/_reindex", "/_search", "/_doc/x?x=y", "/_bulk?pipeline=p&refresh=true&refresh=false", "/_search?q=a+b&q=a%20b&filter_path=hits", "/_search?"} {
+		raw := []byte("PATCH " + path + " HTTP/1.1\r\n\r\n")
+		request, _, failure := parseNativeHTTPRequest(raw)
+		if failure != nil || request.URL.RequestURI() != path {
+			t.Fatal(path, request, failure)
 		}
 	}
-	for _, query := range []string{"pipeline=p", "refresh=true&refresh=false", "refresh=%74rue", "routing=x", "filter_path=items", "realtime=true%0D%0Ax:y"} {
-		raw := []byte("POST /_bulk?" + query + " HTTP/1.1\r\nContent-Type: application/x-ndjson\r\n\r\n")
-		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
-			t.Fatal(query)
-		}
-	}
-	for _, name := range []string{"authorization", "proxy-authorization", "connection", "transfer-encoding", "idempotency-key", "x-idempotency-key"} {
-		raw := []byte("GET /_doc/x HTTP/1.1\r\n" + name + ": x\r\n\r\n")
-		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
-			t.Fatal(name)
+	for _, name := range []string{"authorization", "proxy-authorization", "connection", "idempotency-key", "x-idempotency-key", "content-encoding", "expect", "future-header"} {
+		raw := []byte("GET /_search HTTP/1.1\r\n" + name + ": x\r\n\r\n")
+		request, _, failure := parseNativeHTTPRequest(raw)
+		if failure != nil || request.Header.Get(name) != "x" {
+			t.Fatal(name, failure)
 		}
 	}
 }
-func TestNativeBulkItemAndBodyBounds(t *testing.T) {
-	valid := "{\"create\":{\"_id\":\"x\",\"_index\":\"records\"}}\n{\"n\":1}\n"
-	for _, suffix := range []string{"{\"delete\":{\"_id\":\"x\",\"_index\":\"other\"}}\n", "{\"index\":{\"_id\":\"x\",\"pipeline\":\"p\"}}\n{}\n", "{\"update\":{\"_id\":\"x\"}}\n{}\n", "{\"delete\":{\"_id\":\"x\",\"routing\":\"a\"}}\n", "{\"delete\":{\"_id\":\"x\"}}", "\n"} {
-		reader := &nativeBulkReader{reader: bufio.NewReaderSize(strings.NewReader(valid+suffix), 4096), index: "records"}
-		first, err := reader.item()
-		if err != nil || string(first) != valid {
-			t.Fatal(err)
+
+func TestNativeHTTPForwardsOpaqueBodiesAndHeaders(t *testing.T) {
+	body := []byte("{\"update\":{\"_index\":\"other\",\"_id\":\"x\",\"routing\":\"tenant\"}}\n{\"doc\":{\"pad\":\"" + strings.Repeat("x", 512<<10) + "\"}}\n")
+	var calls atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		actual, err := io.ReadAll(request.Body)
+		if err != nil || !bytes.Equal(actual, body) || request.ContentLength != int64(len(body)) || request.URL.EscapedPath() != "/records/_bulk" || request.URL.RawQuery != "pipeline=p&refresh=%74rue&refresh=false" {
+			t.Error("Native request changed", request.URL, request.ContentLength, len(actual), err)
 		}
-		if _, err := reader.item(); err == nil || err == io.EOF {
-			t.Fatal("invalid suffix forwarded", suffix)
+		if request.Header.Get("Content-Type") != "application/vnd.elasticsearch+x-ndjson; compatible-with=8" || request.Header.Get("Authorization") != "Bearer native" || len(request.Header.Values("X-Future")) != 12 {
+			t.Error("Native headers changed", request.Header)
 		}
+		w.Header().Set("Content-Type", "application/vnd.backend+json; version=9")
+		w.Header().Set("X-Future-Response", "preserved")
+		w.Header().Add("Set-Cookie", "one=1")
+		w.Header().Add("Set-Cookie", "two=2")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, "opaque backend error")
+	})
+	backend := httptest.NewServer(handler)
+	defer backend.Close()
+	cfg := Config{Store: "search", URL: backend.URL}
+	adapter := &Adapter{config: cfg, nativeClient: backend.Client(), ctx: context.Background()}
+	request := nativeRequest(t, "records", "POST", "/_bulk?pipeline=p&refresh=%74rue&refresh=false")
+	parsed, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(request.Request.Data)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	prefix := "{\"index\":{\"_id\":\"x\"}}\n{\"pad\":\""
-	suffix := "\"}\n"
-	for _, extra := range []int{0, 1} {
-		body := prefix + strings.Repeat("x", NativeItemLimit-len(prefix)-len(suffix)+extra) + suffix
-		reader := &nativeBulkReader{reader: bufio.NewReaderSize(strings.NewReader(body), 4096), index: "records"}
-		raw, err := reader.item()
-		if extra == 0 && (err != nil || len(raw) != NativeItemLimit) || extra == 1 && err == nil {
-			t.Fatal(extra, err, len(raw))
-		}
+	parsed.Header.Set("Content-Type", "application/vnd.elasticsearch+x-ndjson; compatible-with=8")
+	parsed.Header.Set("Authorization", "Bearer native")
+	for range 12 {
+		parsed.Header.Add("X-Future", "value")
 	}
-	repeated := strings.Repeat(prefix+strings.Repeat("x", NativeItemLimit-len(prefix)-len(suffix))+suffix, 33)
-	reader := &nativeBulkReader{reader: bufio.NewReaderSize(strings.NewReader(repeated), 4096), index: "records"}
-	for range 32 {
-		if _, err := reader.item(); err != nil {
-			t.Fatal(err)
-		}
+	updated, err := weirclient.NewHTTPNativeRequest("records", parsed)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := reader.item(); err == nil {
-		t.Fatal("cumulative body limit")
+	end, capture := runNative(t, adapter, updated, body)
+	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || calls.Load() != 1 || capture.body.String() != "opaque backend error" {
+		t.Fatal(end, calls.Load(), capture.body.String())
+	}
+	metadata := nativeMetadata(t, capture.head)
+	if metadata.StatusCode != 400 || metadata.Headers.Get("X-Future-Response") != "preserved" || len(metadata.Headers.Values("Set-Cookie")) != 2 || metadata.Headers.Get("Content-Type") != "application/vnd.backend+json; version=9" {
+		t.Fatal("Native response changed", metadata)
 	}
 }
+
 func TestNativeHTTPSyntheticFraming(t *testing.T) {
 	for _, mode := range []string{"empty", "headers", "redirect", "multichunk", "large", "truncated", "length", "drop", "trailers", "upgrade", "boundary", "large_chunked", "000", "099", "600", "999"} {
 		t.Run(mode, func(t *testing.T) {
@@ -356,14 +367,14 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 	}
 }
 
-func TestNativeHTTPQualificationCongestion(t *testing.T) {
+func TestNativeHTTPDoesNotQualifyTarget(t *testing.T) {
 	for _, status := range []int{429, 503} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			var calls atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
-				if r.URL.Path != "/records" || r.Method != http.MethodGet {
-					t.Error("Native command dispatched after qualification rejection", r.Method, r.URL.Path)
+				if r.URL.Path != "/records/_bulk" || r.Method != http.MethodPost {
+					t.Error("Native contacted qualification endpoint", r.Method, r.URL.Path)
 				}
 				w.WriteHeader(status)
 				_, _ = io.WriteString(w, `{"error":{"type":"capacity"}}`)
@@ -386,7 +397,7 @@ func TestNativeHTTPQualificationCongestion(t *testing.T) {
 			capture := &nativeCapture{}
 			plan.Command = testutil.NativeCommand(open)
 			end := a.executeNative(ctx, plan, capture.Emit)
-			if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || calls.Load() != 1 || capture.head != nil || capture.body.Len() != 0 {
+			if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || calls.Load() != 1 || capture.head == nil || nativeMetadata(t, capture.head).StatusCode != status || capture.body.String() != `{"error":{"type":"capacity"}}` {
 				t.Fatal(end, calls.Load(), capture)
 			}
 		})

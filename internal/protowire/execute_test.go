@@ -11,7 +11,45 @@ import (
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
+
+func TestExecutionFrameShapesMatchPublicSchema(t *testing.T) {
+	cases := []struct {
+		kind    wireKind
+		message proto.Message
+	}{
+		{kind: wireExecute, message: &pb.ExecuteRequest{}},
+		{kind: wireCommand, message: &pb.Command{}},
+		{kind: wireRead, message: &pb.ReadRequest{}},
+		{kind: wireMutate, message: &pb.MutateRequest{}},
+		{kind: wireScan, message: &pb.ScanRequest{}},
+		{kind: wireNative, message: &pb.NativeRequest{}},
+		{kind: wireDocument, message: &pb.Document{}},
+		{kind: wireEmpty, message: &pb.Empty{}},
+		{kind: wireTransform, message: &pb.Transform{}},
+		{kind: wireLua, message: &pb.LuaTransform{}},
+		{kind: wireProjection, message: &pb.Projection{}},
+	}
+	for _, item := range cases {
+		descriptor := item.message.ProtoReflect().Descriptor()
+		fields := descriptor.Fields()
+		shapes := requestShapes[item.kind]
+		if fields.Len() != len(shapes) {
+			t.Fatalf("%s framing field count differs from public schema", descriptor.FullName())
+		}
+		for _, shape := range shapes {
+			field := fields.ByNumber(protoreflect.FieldNumber(shape.number))
+			if field == nil {
+				t.Fatalf("%s framing accepts undeclared field %d", descriptor.FullName(), shape.number)
+			}
+			scalar := field.Kind() == protoreflect.BoolKind || field.Kind() == protoreflect.EnumKind || field.Kind() == protoreflect.Uint32Kind || field.Kind() == protoreflect.Uint64Kind
+			if shape.scalar != scalar || shape.repeated != field.IsList() || (shape.nested != 0) != (field.Message() != nil) || shape.oneof != (field.ContainingOneof() != nil) {
+				t.Fatalf("%s framing type differs from public schema", field.FullName())
+			}
+		}
+	}
+}
 
 func wireMessage(field byte, data []byte) []byte {
 	raw := []byte{field<<3 | 2}
@@ -96,6 +134,10 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 		{name: "typed scan", kind: 3, payload: scan, valid: true},
 		{name: "opaque native document", kind: 4, payload: native, valid: true},
 		{name: "typed Lua", kind: 2, payload: mutation, valid: true},
+		{name: "visible Lua", kind: 2, payload: append(append([]byte(nil), mutation...), 0x38, 1), valid: true},
+		{name: "duplicate visibility", kind: 2, payload: append(append([]byte(nil), mutation...), 0x38, 1, 0x38, 0)},
+		{name: "visibility wire type", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, nil)...)},
+		{name: "unknown mutation option", kind: 2, payload: append(append([]byte(nil), mutation...), 0x40, 1)},
 		{name: "duplicate scan filter", kind: 3, payload: append(append([]byte(nil), scan...), wireMessage(2, condition)...)},
 		{name: "duplicate projection mode", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(3, append(projection, 8, 2))...)},
 		{name: "duplicate native document", kind: 4, payload: append(append([]byte(nil), native...), wireMessage(2, opaque)...)},

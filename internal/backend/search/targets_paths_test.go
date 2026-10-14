@@ -114,8 +114,8 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				case "_bulk":
 					decoder := json.NewDecoder(r.Body)
 					var metadata map[string]map[string]string
-					if err := decoder.Decode(&metadata); err != nil || metadata["index"]["_index"] != index || metadata["index"]["_id"] != "same" {
-						t.Error("Native bulk crossed target", metadata, err)
+					if err := decoder.Decode(&metadata); err != nil || metadata["index"]["_id"] != "same" {
+						t.Error("Native bulk metadata changed", metadata, err)
 						return
 					}
 					var source map[string]json.RawMessage
@@ -190,12 +190,12 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 				}
 				wrong := "{\"index\":{\"_index\":\"other\",\"_id\":\"same\"}}\n{}\n"
 				end, _ = runNative(t, a, bulk, []byte(wrong))
-				if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT {
-					t.Fatal("Native item escaped request target", end)
+				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+					t.Fatal("Native bulk target was restricted", end)
 				}
 			}
 			scans.Wait()
-			if nativeWrites.Load() != 2 || cleanups.Load() != 2 {
+			if nativeWrites.Load() != 4 || cleanups.Load() != 2 {
 				t.Fatal("request target operation/cleanup counts", nativeWrites.Load(), cleanups.Load())
 			}
 		})

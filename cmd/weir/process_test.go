@@ -618,7 +618,7 @@ func TestCLISignalDrainDeadline(t *testing.T) {
 	defer cancel()
 
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	stream, err := conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
+	stream, err := conn.NewStream(ctx, desc, pb.StoreService_ExecuteV2_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}

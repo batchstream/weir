@@ -168,9 +168,11 @@ failed/exhausted page until expiry.
 Checkpoint tokens are bounded, opaque and tied to the target/filter/projection;
 the checksum detects corruption and is not authentication.
 
-Native execution is a singleton with bounded streaming. Qualification, native
-commands and publication inherit the caller context, without an added backend
-execution deadline. Lua record transforms
+Native execution is a singleton with bounded streaming. Opaque commands and
+publication inherit the caller context, without an added backend execution
+deadline. Native bypasses typed target qualification and operation allowlists;
+backend permissions, cursor/session lifetimes and command responses keep their
+native meaning. Possible writes are never replayed automatically. Lua record transforms
 participate in compatible request grouping. MongoDB uses a short snapshot
 transaction for a bounded group: point read, individual Lua evaluation, bulk
 write and commit. No metadata fields are inserted into business documents, and
@@ -179,6 +181,11 @@ error can roll back the entire physical transaction. Only a confirmed abort
 allows another read/evaluate/write attempt; an ambiguous commit can retry the
 same commit but cannot replay the mutations. Lua keep, reject and evaluation
 failures are resolved independently before the write phase.
+
+Search visibility waits are explicit per mutation, including Lua and backend
+expressions. Opted-in writes use refresh=wait_for; successful no-op results use a
+confirmed refresh barrier. Application evidence survives a later visibility
+failure, so APPLIED with Failure is not successful visible completion.
 
 Search uses real-time multi-get and bulk writes with the observed sequence number
 and primary term on each item. Confirmed version conflicts reread and reevaluate

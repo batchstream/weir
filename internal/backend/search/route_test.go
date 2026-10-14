@@ -89,18 +89,10 @@ func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 }
 
 func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
-	for _, phase := range []string{"qualification", "headers", "body", "cumulative_body", "slow_output"} {
+	for _, phase := range []string{"headers", "body", "cumulative_body", "slow_output"} {
 		t.Run(phase, func(t *testing.T) {
 			var calls atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/records" {
-					if phase == "qualification" {
-						<-r.Context().Done()
-						return
-					}
-					_, _ = io.WriteString(w, testIndexReply)
-					return
-				}
 				calls.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				switch phase {
@@ -176,10 +168,6 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			}
 			completion := pb.NativeCompletion_RESPONSE_INCOMPLETE
 			expectedCalls := int32(1)
-			if phase == "qualification" {
-				completion = pb.NativeCompletion_NATIVE_NOT_STARTED
-				expectedCalls = 0
-			}
 			if end.Completion != completion || end.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || calls.Load() != expectedCalls || elapsed > 2*callerTimeout {
 				t.Fatal("backend phase escaped cumulative I/O deadline", phase, end, calls.Load(), elapsed)
 			}

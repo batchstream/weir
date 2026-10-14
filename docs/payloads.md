@@ -23,7 +23,7 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Expression structure | bounded `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
 | Lua input | optional BSON document | optional JSON document |
 | Native request Document | `application/bson`: complete raw BSON command | `application/http`: complete HTTP/1.1 request, including headers and body |
-| Native target | `db/collection` | one concrete `index` |
+| Native target | `db`, historical `db/collection`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
 | Native request limit | one complete BSON command, at most 4 MiB | 8 MiB for the complete HTTP message; headers consume part of that budget |
 
 Records are at most 2 MiB. Ordinary BSON follows MongoDB native nesting rules;
@@ -48,8 +48,9 @@ prefixes and Unicode; system collections and `$` are unsupported, and the full
 `database.collection` namespace is at most 255 bytes. Search indices are lowercase,
 nonempty and at most 255 bytes, with the native forbidden characters and no
 wildcard, index list or traversal syntax. Each concrete index is escaped as one
-HTTP path segment. Collection/index structure must stay stable while the Store is
-open; adapters do not create targets or modify backend settings.
+HTTP path segment. Typed Read, Mutate and Scan require existing collections/indices with stable
+structure. Native forwards administrative commands, including target creation,
+using the configured backend identity.
 
 A missing record is successful `ReadResult.missing`. A missing collection/index
 is `TARGET_NOT_FOUND`; an unsupported view or structure is `UNSUPPORTED`.
@@ -89,38 +90,45 @@ Search uses the resource ID. Concurrent first creation retries only a confirmed
 transaction/CAS conflict from a fresh read. Uncertain writes never replay the
 business callback. Programs run in the main Weir process.
 
-MongoDB Native supports `count` and `findAndModify`, with the command's collection
-matching the target. Its bounded allowlist validates query/sort/fields/update,
-booleans and count limit/skip/hint types. Caller session, lifecycle, unacknowledged
-write and JavaScript options are rejected. Native replies are raw BSON, at most
-4 MiB, emitted as ordered chunks with a NativeEnd completion result.
+Native forwards backend operations without command, method, path, query, header
+or option allowlists. Backend permissions and native errors remain authoritative.
+The Store selects the configured backend endpoint; requests cannot select another
+server through HTTP Host or an absolute request target. Native never automatically
+replays requests, including reads, because Weir does not classify opaque commands.
 
-Native uses a Store-neutral `request` Document, with at most 8 MiB of opaque
-payload, and an optional response `metadata` Document, with at most 64 KiB.
-The shared protocol checks content-type syntax and byte bounds. Each adapter
-interprets its own format and rejects unsupported types or operations. Empty
-payloads are allowed by the envelope but need not be valid for a particular Store.
-MongoDB Native responses omit metadata and publish BSON body chunks.
+MongoDB accepts `application/bson` containing any valid ordered BSON command.
+The resource supplies a fallback database; historical `db/collection` resources
+are also accepted. An explicit string `$db` selects the database on the same
+configured backend and is transmitted exactly once; it also permits an empty
+resource. Missing, duplicate or nonstring database routing metadata is invalid
+framing. The command owns collection names, session/transaction parameters and
+aggregation stages. Native uses the shared backend pool without adding implicit
+sessions, inferred read preferences or deadline-derived `maxTimeMS`; cancellation
+still follows the original caller lifetime.
+Native does not require an existing collection or insert revision metadata.
+Requests and raw BSON responses remain bounded at 4 MiB. Driver-expanded
+diagnostic arrays/documents have a combined 64 KiB capacity before driver
+materialization; ordinary reply data remains opaque within the complete bound. Native command errors
+retain the backend BSON reply rather than becoming normalized mutation results.
 
-Search Native accepts `application/http`: an HTTP/1.1 origin-form request-line,
-headers terminated by CRLFCRLF, and its body. Headers are limited to 64 KiB before
-HTTP parsing; the entire message is limited to 8 MiB, so the body must fit after
-subtracting the headers. A nonempty body requires exactly one Content-Length
-matching its byte length. An empty body may omit Content-Length. Chunked encoding,
-compression, trailers, Expect, absolute request targets and trailing bytes are
-rejected. Host is syntactic metadata and never selects the backend: Weir rebuilds
-the request using the configured Store and resource index.
+Search accepts `application/http` with an HTTP/1.1 origin-form request line,
+headers and body. An optional canonical resource prefix is prepended to the native
+request path; an empty resource addresses the backend root. Escaped paths, query
+strings, arbitrary methods and end-to-end headers retain their native meaning.
+Requests and entity responses remain bounded at 8 MiB, with 64 KiB metadata.
+Fixed Content-Length framing is required for nonempty request bodies; chunked
+framing, upgrades and trailers are outside this finite request envelope. Response
+status, headers, native error bodies and arbitrary entity bytes are preserved.
 
-Supported operations are POST `/_bulk` with `application/x-ndjson` and GET
-`/_doc/<unreserved-id>` with an empty body. Canonical query options are `refresh`
-for bulk or `realtime` for GET. Option headers are restricted to `accept`,
-`content-type` and `x-opaque-id`, with bounded values. Each bulk item is validated
-before sending, scoped to the resource index and bounded to 256 KiB. Response
-metadata is `application/http` containing only a status-line and headers followed
-by CRLFCRLF. Raw entity body bytes follow as chunks, at most 8 MiB, then NativeEnd.
-HTTP/backend errors remain native data rather than normalized mutation outcomes.
-The SDK provides optional standard HTTP encoding/parsing helpers without adding
-backend-specific fields to the public wire contract.
+`MutateRequest.wait_until_visible` applies to ordinary mutations, backend
+expressions and Lua transforms. Its default is acknowledged application. When
+true, successful completion additionally confirms visibility to subsequent
+search queries. Search uses `refresh=wait_for` for physical writes and a refresh
+barrier for successful no-op results. A visibility failure preserves any known
+APPLIED evidence and reports a Failure; it is not permission to replay the write.
+MongoDB's existing majority-acknowledged writes and primary read path satisfy
+the option without adding a refresh operation. Compatible record batches keep
+visibility waits separate from default application-only work.
 
 A record stream returns one indexed result per input record. A scan emits one finite page of zero or more
 Document Events and exactly one ScanEnd containing that page's matching document

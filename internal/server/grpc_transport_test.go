@@ -19,7 +19,7 @@ func TestTapRejectsExpiredAndReclaimsUndispatchedRPC(t *testing.T) {
 	_, local := peerLocal(t, "records")
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, _ := startPeerServer(t, opts)
-	info := &tap.Info{FullMethodName: pb.StoreService_Execute_FullMethodName}
+	info := &tap.Info{FullMethodName: pb.StoreService_ExecuteV2_FullMethodName}
 	for range 50 {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
@@ -44,7 +44,7 @@ func TestDispatchedRPCAdmissionRemainsWhileHandlerWorks(t *testing.T) {
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, _ := startPeerServer(t, opts)
 	ctx, cancel := context.WithCancel(t.Context())
-	info := &tap.Info{FullMethodName: pb.StoreService_Execute_FullMethodName}
+	info := &tap.Info{FullMethodName: pb.StoreService_ExecuteV2_FullMethodName}
 	accepted, err := server.admitRPC(ctx, info)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestRecordFrameDecodeLimitFailsBeforeBackendWork(t *testing.T) {
 	request.ProtoReflect().SetUnknown([]byte{0x1a, 0})
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := client.ExecuteV2(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

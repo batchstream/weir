@@ -50,11 +50,12 @@ type Adapter struct {
 }
 
 type plan struct {
-	index   string
-	id      string
-	action  string
-	source  []byte
-	program *luaengine.Program
+	index            string
+	id               string
+	action           string
+	source           []byte
+	program          *luaengine.Program
+	waitUntilVisible bool
 }
 
 type capabilities struct{ source, write, nativeWrite bool }
@@ -118,6 +119,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	nativeTransport.DialTLSContext = dialer.dial
 	nativeTransport.TLSClientConfig = tlsConfig
 	nativeTransport.DisableKeepAlives = true
+	nativeTransport.MaxResponseHeaderBytes = int64(protocol.MaxNativeMetadataBytes)
 	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
 	a := &Adapter{
 		dialer:          dialer,
@@ -287,6 +289,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		work.ResultBytes += protocol.MaxDocument
 	} else {
 		mutation := op.GetMutate()
+		native.waitUntilVisible = mutation.GetWaitUntilVisible()
 		var document *pb.Document
 		switch action := mutation.Action.(type) {
 		case *pb.MutateRequest_Put:
