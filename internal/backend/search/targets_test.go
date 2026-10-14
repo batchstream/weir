@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
@@ -175,8 +176,10 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		}
 		native := nativeRequest(t, "records", "GET", "/_doc/same")
 		native.Resource = resource
-		if _, failure := a.prepareNative(native); failure == nil {
-			t.Error("Native target accepted", resource)
+		_, resourceErr := protocol.ParseRelativeResource(resource)
+		_, failure := a.prepareNative(native)
+		if (resourceErr == nil) != (failure == nil) {
+			t.Error("Native resource must obey only canonical framing", resource, failure)
 		}
 	}
 }
@@ -204,7 +207,7 @@ func TestSearchPlansRetainRequestTargets(t *testing.T) {
 		t.Fatal(failure)
 	}
 	open.Resource = "right"
-	if native.Backend.(*nativePlan).index != "left" {
+	if native.Backend.(*nativePlan).resource != "left" {
 		t.Fatal("Native target follows mutable request")
 	}
 }

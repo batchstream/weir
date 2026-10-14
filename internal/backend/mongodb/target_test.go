@@ -62,8 +62,9 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			}
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
-			if _, failure := adapter.prepareNative(open); failure == nil {
-				t.Fatal("invalid Native target accepted")
+			_, failure := adapter.prepareNative(open)
+			if (failure != nil) != (resource == "db/records/extra") {
+				t.Fatal("Native applied collection constraints instead of resource framing", resource, failure)
 			}
 		})
 	}
@@ -101,9 +102,20 @@ func TestMongoPointReadsIsolateTargetsAndDuplicateIDs(t *testing.T) {
 
 }
 
-func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
-	config := Config{Store: "mongo"}
-	adapter := &Adapter{config: config}
+func TestMongoNativeCommandOwnsCollectionTarget(t *testing.T) {
+	var calls int
+	monitor := &event.CommandMonitor{Started: func(_ context.Context, call *event.CommandStartedEvent) {
+		if call.CommandName == "endSessions" {
+			return
+		}
+		calls++
+		if call.CommandName != "count" || call.DatabaseName != "db" || call.Command.Lookup("count").StringValue() != "other" {
+			t.Error("Native target or command was changed", call)
+		}
+	}}
+	response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 7}}
+	responses := []bson.D{response}
+	adapter := batchMockAdapter(t, responses, monitor)
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
@@ -116,8 +128,8 @@ func TestMongoNativeTargetMismatchDoesNotAccessClient(t *testing.T) {
 	open.Request.Data = raw
 	work.Command = testutil.NativeCommand(open)
 	end := adapter.executeNative(context.Background(), work, capture.Emit)
-	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil {
-		t.Fatal(end)
+	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || calls != 1 || bson.Raw(capture.body.Bytes()).Lookup("n").Int32() != 7 {
+		t.Fatal(end, calls)
 	}
 }
 

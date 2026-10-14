@@ -49,7 +49,7 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 					}
 					var block, encoded bytes.Buffer
 					encoder := hpack.NewEncoder(&block)
-					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
+					fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_ExecuteV2_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
 					if peer {
 						fields[3].Value = peerpb.PeerDiscoveryService_SyncDirectory_FullMethodName
 					}
@@ -171,7 +171,7 @@ func TestPartialHTTP2DataFrameCannotRetainConnection(t *testing.T) {
 	}
 	var block bytes.Buffer
 	encoder := hpack.NewEncoder(&block)
-	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
+	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_ExecuteV2_FullMethodName}, {Name: "content-type", Value: "application/grpc"}}
 	for _, field := range fields {
 		if err := encoder.WriteField(field); err != nil {
 			t.Fatal(err)

@@ -2,14 +2,14 @@ package mongodb
 
 import (
 	"context"
-	"errors"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/description"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -22,14 +22,20 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 		return nil, f
 	}
 	parts, _ := protocol.ParseRelativeResource(request.Resource)
-	if len(parts) != 2 || !validNamespace(parts) {
+	if len(parts) > 2 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid MongoDB Native target")
 	}
 	if request.Request.ContentType != "application/bson" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Native requires application/bson")
 	}
 
-	target := namespace{database: parts[0], collection: parts[1]}
+	target := namespace{}
+	if len(parts) > 0 {
+		target.database = parts[0]
+	}
+	if len(parts) == 2 {
+		target.collection = parts[1]
+	}
 	p := &execution.Plan{
 		Backend:      target,
 		Key:          request.Resource,
@@ -40,103 +46,80 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	return p, nil
 }
 
-func (a *Adapter) nativeCommand(raw []byte, namespace namespace) *pb.Failure {
-	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive ordered BSON command")
-	nodes := len(raw)
+func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 	if len(raw) > NativeCommandLimit {
 		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native BSON command limit")
 	}
-	if !validScanBSON(raw, 0, &nodes) {
-		return invalid
+	command := bson.Raw(raw)
+	if !scanFraming(raw) || command.Validate() != nil {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ordered BSON command")
 	}
-	if !nativeNoCode(raw) {
-		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native JavaScript expressions unsupported")
+	if len(raw) == 5 {
+		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "empty BSON command")
 	}
-	fields, err := scanFields(raw)
-	if err != nil || len(fields) == 0 {
-		return invalid
-	}
-	elements, err := bson.Raw(raw).Elements()
-	if err != nil {
-		return invalid
-	}
-	command := elements[0].Key()
-	if command != "count" && command != "findAndModify" {
-		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native Mongo command")
-	}
-	target, ok := elements[0].Value().StringValueOK()
-	if !ok || target != namespace.collection {
-		return protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native command target differs from resource")
-	}
-	for key, value := range fields {
-		if key == command {
-			continue
-		}
-		allowed := false
-		switch key {
-		case "query":
-			allowed = value.Type == bson.TypeEmbeddedDocument
-		case "sort", "fields", "update":
-			allowed = command == "findAndModify" && value.Type == bson.TypeEmbeddedDocument
-		case "new", "upsert", "remove":
-			allowed = command == "findAndModify" && value.Type == bson.TypeBoolean
-		case "limit", "skip":
-			allowed = command == "count" && (value.Type == bson.TypeInt32 || value.Type == bson.TypeInt64)
-		case "hint":
-			allowed = value.Type == bson.TypeString || value.Type == bson.TypeEmbeddedDocument
-		}
-		if !allowed {
-			return protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native Mongo option")
-		}
-	}
-	// No aggregation pipeline, namespace-bearing stage, session or unacknowledged
-	// write options exist in this profile. Query semantics remain MongoDB's.
 	return nil
 }
 
 func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) *pb.NativeEnd {
 	raw := work.Command.GetNative().Request.Data
 	target := work.Backend.(namespace)
-	if f := a.nativeCommand(raw, target); f != nil {
+	if f := a.nativeCommand(raw); f != nil {
 		return protocol.NativeFailure(false, f)
 	}
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
-	if failure := a.qualifyTarget(ctx, target); failure != nil {
-		return protocol.NativeFailure(false, failure)
-	}
-	command := bson.Raw(raw)
-	reply, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
-	failure := backendFailure(ctx, err)
-	// MongoDB retains one bounded raw reply. Once it is available, delivery uses
-	// the caller's lifetime rather than charging output stalls to backend I/O.
-	if err != nil && len(reply) == 0 {
-		var native mongo.CommandError
-		if errors.As(err, &native) {
-			reply = native.Raw
+	database := target.database
+	commandElements := raw[4 : len(raw)-1]
+	prefix, suffix := commandElements, []byte(nil)
+	foundDatabase := false
+	for remaining := commandElements; len(remaining) != 0; {
+		element, rest, _ := bsoncore.ReadElement(remaining)
+		if element.Key() == "$db" {
+			value, valid := element.Value().StringValueOK()
+			if foundDatabase || !valid || value == "" {
+				return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one nonempty string $db"))
+			}
+			foundDatabase = true
+			database = value
+			prefix = commandElements[:len(commandElements)-len(remaining)]
+			suffix = rest
 		}
+		remaining = rest
 	}
+	if database == "" {
+		return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires a resource database or $db"))
+	}
+	var reply bsoncore.Document
+	retry := driver.RetryNone
+	operation := driver.Operation{
+		Database:       database,
+		Deployment:     a.deployment,
+		CommandMonitor: a.commandMonitor,
+		// Opaque commands must not acquire driver session state, inferred
+		// deadlines, cluster times, read preferences or automatic replays.
+		Type:          driver.Write,
+		RetryMode:     &retry,
+		OmitMaxTimeMS: true,
+		CommandFn: func(dst []byte, _ description.SelectedServer) ([]byte, error) {
+			dst = append(dst, prefix...)
+			return append(dst, suffix...), nil
+		},
+		ProcessResponseFn: func(_ context.Context, response bsoncore.Document, _ driver.ResponseInfo) error {
+			reply = response
+			return nil
+		},
+	}
+	attempt, release := nativeAttemptContext(ctx)
+	defer release()
+	err := operation.Execute(attempt)
+	failure := backendFailure(ctx, err)
 	// Raw is the actual driver-retained wire response, including ok:0 and write
 	// errors. Never reconstruct BSON from the Go error or normalize write effects.
 	if len(reply) == 0 {
 		return protocol.NativeFailure(true, failure)
 	}
-	nodes := len(reply)
-	fields, framingErr := scanFields(reply)
-	envelopeOK := false
-	switch fields["ok"].Type {
-	case bson.TypeDouble:
-		n := fields["ok"].Double()
-		envelopeOK = n == 0 || n == 1
-	case bson.TypeInt32:
-		n := fields["ok"].Int32()
-		envelopeOK = n == 0 || n == 1
-	case bson.TypeInt64:
-		n := fields["ok"].Int64()
-		envelopeOK = n == 0 || n == 1
-	}
-	if len(reply) > NativeResponseLimit || framingErr != nil || !envelopeOK || !validScanBSON(reply, 0, &nodes) {
+	if len(reply) > NativeResponseLimit || !scanFraming(reply) || bson.Raw(reply).Validate() != nil {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "invalid or excessive Native BSON reply"))
 	}
 	head := &pb.NativeHead{BodyContentType: "application/bson"}
@@ -156,28 +139,4 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	}
 	end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
 	return end
-}
-
-// Walk already validated bounded bytes, without materializing a query tree.
-// This profile excludes server-side JavaScript rather than supplying a runtime.
-func nativeNoCode(raw []byte) bool {
-	rest := raw[4 : len(raw)-1]
-	for len(rest) > 0 {
-		element, tail, _ := bsoncore.ReadElement(rest)
-		rest = tail
-		key := element.Key()
-		if key == "$where" || key == "$function" || key == "$accumulator" {
-			return false
-		}
-		value := element.Value()
-		switch value.Type {
-		case bsoncore.TypeJavaScript, bsoncore.TypeCodeWithScope:
-			return false
-		case bsoncore.TypeEmbeddedDocument, bsoncore.TypeArray:
-			if !nativeNoCode(value.Data) {
-				return false
-			}
-		}
-	}
-	return true
 }

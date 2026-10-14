@@ -174,16 +174,7 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 	if !a.nativeTransport.DisableKeepAlives || a.nativeTransport.MaxConnsPerHost != 0 || a.transport.MaxConnsPerHost != 0 {
 		t.Fatal("pool policy")
 	}
-	for _, name := range []string{"authorization", "proxy-authorization", "idempotency-key", "x-idempotency-key"} {
-		d, err := http.NewRequest(http.MethodGet, "http://ignored.invalid/_doc/x", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d.Header.Set(name, "forbidden")
-		if validateNativeHTTPRequest(d) == nil {
-			t.Fatal("caller overrode connection/replay headers")
-		}
-	}
+
 }
 func TestSearchTLSValidationAndCAErrors(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { qualification(w, r) })

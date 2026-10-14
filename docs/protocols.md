@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.8.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.9.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -8,7 +8,11 @@ or peer membership appear in this schema.
 | Public RPC | Meaning |
 | --- | --- |
 | StoreService.ResolveStore | Discover IP/DNS endpoints and cache TTL for one named Store |
-| StoreService.Execute | Exchange bounded typed requests and indexed results on a finite bidirectional stream |
+| StoreService.ExecuteV2 | Exchange bounded typed requests and indexed results on a finite bidirectional stream |
+
+ExecuteV2 is the explicit contract boundary for open Native forwarding and
+wait-until-visible mutations. The former Execute RPC is not served; clients
+and owners must upgrade together. SDK public method names remain unchanged.
 
 ExecuteRequest contains store_name, a consecutive one-based index and Command.
 Commands select one ReadRequest, MutateRequest, ScanRequest or NativeRequest; a
@@ -94,7 +98,7 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.8.0 and Go SDK v0.10.0.
+safe typed completion. The current dependencies are protocol v0.9.0 and Go SDK v0.11.0.
 
 Internal execution plans retain scheduling budgets and backend state. They borrow
 the public Command and publish the public Event directly; no second request or

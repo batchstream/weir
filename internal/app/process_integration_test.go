@@ -473,7 +473,7 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	_, err = conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
+	_, err = conn.NewStream(ctx, desc, pb.StoreService_ExecuteV2_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}

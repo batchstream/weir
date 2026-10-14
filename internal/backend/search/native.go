@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -14,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -22,27 +19,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeBodyLimit = 8 << 20
-
 const NativeResponseLimit = 8 << 20
-const NativeItemLimit = 256 << 10
-
-const nativeMetadataLine = 4 << 10
 const nativeBudget = 4 << 20
 
 type nativePlan struct {
-	index   string
-	request *http.Request
-	body    []byte
+	resource string
+	request  *http.Request
+	body     []byte
 }
 
 func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(request); f != nil {
 		return nil, f
-	}
-	parts, _ := protocol.ParseRelativeResource(request.Resource)
-	if len(parts) != 1 || !validIndex(parts[0]) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native requires one concrete Search index")
 	}
 	if request.Request.ContentType != "application/http" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Native requires application/http")
@@ -52,7 +40,7 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 		return nil, failure
 	}
 
-	native := &nativePlan{index: parts[0], request: httpRequest, body: body}
+	native := &nativePlan{resource: request.Resource, request: httpRequest, body: body}
 	p := &execution.Plan{
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
@@ -81,8 +69,7 @@ func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 		line, rest, _ := bytes.Cut(remaining, []byte("\r\n"))
 		remaining = rest
 		lines++
-		// Three option headers with up to eight values each, plus Host and length.
-		if lines > 27 || bytes.ContainsAny(line, "\r\n") || lines > 1 && len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+		if bytes.ContainsAny(line, "\r\n") || lines > 1 && len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
 			return nil, nil, invalid
 		}
 		if lines == 1 || len(line) == 0 {
@@ -93,7 +80,7 @@ func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 			return nil, nil, invalid
 		}
 		name := string(line[:colon])
-		if strings.EqualFold(name, "Transfer-Encoding") || strings.EqualFold(name, "Trailer") || strings.EqualFold(name, "Expect") {
+		if strings.EqualFold(name, "Transfer-Encoding") || strings.EqualFold(name, "Trailer") {
 			return nil, nil, invalid
 		}
 		if strings.EqualFold(name, "Content-Length") {
@@ -116,178 +103,7 @@ func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 		lengths == 0 && len(body) != 0 {
 		return nil, nil, invalid
 	}
-	if failure := validateNativeHTTPRequest(request); failure != nil {
-		return nil, nil, failure
-	}
 	return request, body, nil
-}
-
-func validateNativeHTTPRequest(d *http.Request) *pb.Failure {
-	unsupported := protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native HTTP operation or option")
-	if d.URL == nil || d.URL.EscapedPath() != d.URL.Path {
-		return unsupported
-	}
-	path := d.URL.Path
-	switch {
-	case d.Method == "POST" && path == "/_bulk":
-		if d.Header.Get("Content-Type") != "application/x-ndjson" {
-			return unsupported
-		}
-	case d.Method == "GET" && strings.HasPrefix(path, "/_doc/"):
-		id := strings.TrimPrefix(path, "/_doc/")
-		if len(id) == 0 || len(id) > 512 || id == "." || id == ".." || d.Header.Get("Content-Type") != "" || d.ContentLength != 0 {
-			return unsupported
-		}
-		for _, b := range []byte(id) {
-			if !(b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || strings.ContainsRune("-._~", rune(b))) {
-				return unsupported
-			}
-		}
-	default:
-		return unsupported
-	}
-	query, err := url.ParseQuery(d.URL.RawQuery)
-	if err != nil || query.Encode() != d.URL.RawQuery {
-		return unsupported
-	}
-	for key, values := range query {
-		if len(values) != 1 {
-			return unsupported
-		}
-		switch key {
-		case "refresh":
-			if path != "/_bulk" || values[0] != "true" && values[0] != "false" && values[0] != "wait_for" {
-				return unsupported
-			}
-		case "realtime":
-			if d.Method != "GET" || values[0] != "true" && values[0] != "false" {
-				return unsupported
-			}
-		default:
-			return unsupported
-		}
-	}
-	for name, values := range d.Header {
-		if len(values) == 0 || len(values) > 8 {
-			return unsupported
-		}
-		switch strings.ToLower(name) {
-		case "content-length":
-			continue
-		case "accept", "content-type", "x-opaque-id":
-		default:
-			return unsupported
-		}
-		for _, value := range values {
-			if len(value) > 128 || !utf8.ValidString(value) {
-				return unsupported
-			}
-			for _, c := range value {
-				if c < 32 || c == 127 {
-					return unsupported
-				}
-			}
-			if strings.EqualFold(name, "accept") && value != "application/json" || strings.EqualFold(name, "content-type") && value != "application/x-ndjson" {
-				return unsupported
-			}
-		}
-	}
-	return nil
-}
-
-// Materialize only one bounded item. Validation happens before any byte of that
-// item can reach the backend; the original metadata/source bytes are unchanged.
-type nativeBulkReader struct {
-	reader       *bufio.Reader
-	index        string
-	current      []byte
-	total, items int
-}
-
-var errNativeInput = errors.New("invalid or excessive Native bulk input")
-
-func (r *nativeBulkReader) line(limit int) ([]byte, error) {
-	line := make([]byte, 0, min(limit, 4096))
-	for {
-		fragment, err := r.reader.ReadSlice('\n')
-		if len(line)+len(fragment) > limit || r.total+len(fragment) > NativeBodyLimit {
-			return nil, errNativeInput
-		}
-		r.total += len(fragment)
-		line = append(line, fragment...)
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if err != nil {
-			if err == io.EOF && len(line) > 0 {
-				return nil, errNativeInput
-			}
-			return nil, err
-		}
-		return line, nil
-	}
-}
-
-func (r *nativeBulkReader) item() ([]byte, error) {
-	metadata, err := r.line(nativeMetadataLine)
-	if err != nil {
-		return nil, err
-	}
-	r.items++
-	if r.items > 4096 || validateJSON(metadata, len(metadata)) != nil {
-		return nil, errNativeInput
-	}
-	var action map[string]map[string]json.RawMessage
-	if json.Unmarshal(metadata, &action) != nil || len(action) != 1 {
-		return nil, errNativeInput
-	}
-	var operation string
-	for key, fields := range action {
-		operation = key
-		if key != "index" && key != "create" && key != "delete" {
-			return nil, errNativeInput
-		}
-		var id string
-		if json.Unmarshal(fields["_id"], &id) != nil || len(id) == 0 || len(id) > 512 {
-			return nil, errNativeInput
-		}
-		for key, raw := range fields {
-			if key == "_id" {
-				continue
-			}
-			var index string
-			if key != "_index" || json.Unmarshal(raw, &index) != nil || index != r.index {
-				return nil, errNativeInput
-			}
-		}
-	}
-	if operation == "delete" {
-		return metadata, nil
-	}
-	source, err := r.line(NativeItemLimit - len(metadata))
-	if err != nil {
-		return nil, errNativeInput
-	}
-	if !object(source) || validateJSON(source, len(source)) != nil {
-		return nil, errNativeInput
-	}
-	return append(metadata, source...), nil
-}
-
-func (r *nativeBulkReader) Read(dst []byte) (int, error) {
-	if len(dst) == 0 {
-		return 0, nil
-	}
-	if len(r.current) == 0 {
-		item, err := r.item()
-		if err != nil {
-			return 0, err
-		}
-		r.current = item
-	}
-	n := copy(dst, r.current)
-	r.current = r.current[n:]
-	return n, nil
 }
 
 func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) *pb.NativeEnd {
@@ -302,33 +118,24 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	}
 	native := p.Backend.(*nativePlan)
 	d := native.request
-	input := native.body
-	var body io.Reader
-	caps, failure := a.inspect(ctx, native.index, true)
-	if failure != nil {
-		if ctx.Err() != nil {
-			failure = protocol.ContextFailure(ctx)
-		}
-		return protocol.NativeFailure(false, failure)
-	}
-	if d.Method != "GET" {
-		if !caps.nativeWrite {
-			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Native bulk requires no default/final ingest pipeline"))
-		}
-		reader := &nativeBulkReader{reader: bufio.NewReaderSize(bytes.NewReader(input), 4096), index: native.index}
-		first, err := reader.item()
-		if err != nil {
-			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid first Native bulk item"))
-		}
-		reader.current = first
-		body = reader
-	}
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
-	endpoint := a.config.URL + "/" + url.PathEscape(native.index) + d.URL.Path
-	if d.URL.RawQuery != "" {
+	path := d.URL.EscapedPath()
+	if native.resource != "" {
+		parts, _ := protocol.ParseRelativeResource(native.resource)
+		for i := range parts {
+			parts[i] = url.PathEscape(parts[i])
+		}
+		path = "/" + strings.Join(parts, "/") + path
+	}
+	endpoint := a.config.URL + path
+	if d.URL.RawQuery != "" || d.URL.ForceQuery {
 		endpoint += "?" + d.URL.RawQuery
+	}
+	var body io.Reader
+	if len(native.body) != 0 {
+		body = bytes.NewReader(native.body)
 	}
 	request, err := http.NewRequestWithContext(ctx, d.Method, endpoint, body)
 	if err != nil {
@@ -340,13 +147,9 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		if strings.EqualFold(name, "content-length") {
 			continue
 		}
-		for _, value := range values {
-			request.Header.Add(name, value)
-		}
+		request.Header[name] = append([]string(nil), values...)
 	}
-	if body != nil && request.Header.Get("Content-Type") == "" {
-		request.Header.Set("Content-Type", "application/x-ndjson")
-	}
+	request.ContentLength = int64(len(native.body))
 	// Closing the body terminates this bounded exchange on cancellation. net/http
 	// has at most one writer/read loop for this one non-reused HTTP/1 connection.
 	if body != nil {
@@ -362,27 +165,23 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "invalid Native HTTP response status"))
 	}
 	if response.ContentLength > NativeResponseLimit ||
-		response.Header.Get("Content-Encoding") != "" ||
 		len(response.Trailer) != 0 ||
 		response.StatusCode == http.StatusSwitchingProtocols {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP response bounds"))
 	}
 	var metadata bytes.Buffer
-	fmt.Fprintf(&metadata, "HTTP/1.1 %d %s\r\n", response.StatusCode, http.StatusText(response.StatusCode))
+	fmt.Fprintf(&metadata, "%s %s\r\n", response.Proto, response.Status)
 	names := make([]string, 0, len(response.Header))
 	for name := range response.Header {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		switch strings.ToLower(name) {
-		case "content-type", "content-length", "warning", "x-opaque-id", "x-elastic-product", "location", "retry-after", "etag":
-			for _, value := range response.Header.Values(name) {
-				if metadata.Len()+len(name)+len(value)+6 > protocol.MaxNativeMetadataBytes {
-					return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound"))
-				}
-				fmt.Fprintf(&metadata, "%s: %s\r\n", name, value)
+		for _, value := range response.Header.Values(name) {
+			if metadata.Len()+len(name)+len(value)+8 > protocol.MaxNativeMetadataBytes {
+				return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound"))
 			}
+			fmt.Fprintf(&metadata, "%s: %s\r\n", name, value)
 		}
 	}
 	metadata.WriteString("\r\n")
@@ -426,7 +225,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	return end
 }
 
-// nativeHTTPBody joins finite in-memory validation reads when the HTTP transport
+// nativeHTTPBody joins finite in-memory reads when the HTTP transport
 // closes its upload. Its input already belongs to the bounded Native request.
 type nativeHTTPBody struct {
 	io.Reader

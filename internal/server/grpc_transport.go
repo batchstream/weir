@@ -44,7 +44,7 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 	}
 	allowed := false
 	switch info.FullMethodName {
-	case pb.StoreService_Execute_FullMethodName:
+	case pb.StoreService_ExecuteV2_FullMethodName:
 		allowed = !s.peer
 	case pb.StoreService_ResolveStore_FullMethodName:
 		allowed = !s.peer

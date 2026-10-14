@@ -35,7 +35,7 @@ func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
 	_, client := peerClient(t, address)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := client.ExecuteV2(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestRecordStreamInvalidLaterFramePreservesPublishedResults(t *testing.T) {
 			opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 			server, address := startPeerServer(t, opts)
 			_, client := peerClient(t, address)
-			stream, err := client.Execute(t.Context())
+			stream, err := client.ExecuteV2(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -184,7 +184,7 @@ func TestRecordStreamIndexedOperationFailureDoesNotStopLaterResults(t *testing.T
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	stream, err := client.Execute(t.Context())
+	stream, err := client.ExecuteV2(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T)
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := client.ExecuteV2(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestRecordStreamSingleRequestDoesNotExpireWhileBackendWorks(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := client.ExecuteV2(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestRecordStreamInvalidQueuedTailPublishesAdmittedPrefix(t *testing.T) {
 	client := routeAcceptanceClient(t, node.address)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	stream, err := client.Execute(ctx)
+	stream, err := client.ExecuteV2(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +545,7 @@ func TestRecordInputStopsAtCountBoundBehindSlowOutput(t *testing.T) {
 			output := ownedOutputStream{ctx: ctx, codec: codec, encoded: make(chan mem.BufferSlice, 1)}
 			stream := &ownedRecordStream{ownedOutputStream: output}
 			done := make(chan error, 1)
-			go func() { done <- server.Execute(stream) }()
+			go func() { done <- server.ExecuteV2(stream) }()
 			encoded := <-stream.encoded
 			defer func() { encoded.Free() }()
 			deadline := time.Now().Add(time.Second)
@@ -587,7 +587,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	defer cancel()
 	firstCtx, stopFirst := context.WithCancel(ctx)
 	defer stopFirst()
-	first, err := client.Execute(firstCtx)
+	first, err := client.ExecuteV2(firstCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,7 +600,7 @@ func TestRecordStreamCancellationKeepsOtherRPCOnSharedConnection(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("first RPC did not start")
 	}
-	second, err := client.Execute(ctx)
+	second, err := client.ExecuteV2(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

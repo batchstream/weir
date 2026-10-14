@@ -2,6 +2,7 @@ package search
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ func TestNativeHTTPFramingRejectsAmbiguousRequests(t *testing.T) {
 		"empty":                      "",
 		"header terminator":          "GET /_doc/x HTTP/1.1\r\n",
 		"old HTTP":                   "GET /_doc/x HTTP/1.0\r\n\r\n",
+		"absolute URL":               "GET http://evil/_bulk HTTP/1.1\r\n\r\n",
+		"network path":               "GET //evil/_bulk HTTP/1.1\r\n\r\n",
 		"HTTP2":                      "GET /_doc/x HTTP/2.0\r\n\r\n",
 		"bare newline":               "GET /_doc/x HTTP/1.1\nX-Opaque-Id: x\r\n\r\n",
 		"folded header":              "GET /_doc/x HTTP/1.1\r\nX-Opaque-Id: x\r\n y\r\n\r\n",
@@ -32,11 +35,8 @@ func TestNativeHTTPFramingRejectsAmbiguousRequests(t *testing.T) {
 		"chunked deletes length":     "GET /_doc/x HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 0\r\n\r\n0\r\n\r\n",
 		"identity encoding":          "GET /_doc/x HTTP/1.1\r\nTransfer-Encoding: identity\r\n\r\n",
 		"trailer":                    "GET /_doc/x HTTP/1.1\r\nTrailer: X-End\r\n\r\n",
-		"expect":                     "GET /_doc/x HTTP/1.1\r\nExpect: 100-continue\r\n\r\n",
-		"compression":                "GET /_doc/x HTTP/1.1\r\nContent-Encoding: gzip\r\n\r\n",
 		"second request":             "GET /_doc/x HTTP/1.1\r\nContent-Length: 0\r\n\r\nGET /_doc/y HTTP/1.1\r\n\r\n",
 		"negative length":            "GET /_doc/x HTTP/1.1\r\nContent-Length: -1\r\n\r\n",
-		"GET body":                   "GET /_doc/x HTTP/1.1\r\nContent-Length: 1\r\n\r\nx",
 	}
 	for name, raw := range requests {
 		t.Run(name, func(t *testing.T) {
@@ -78,14 +78,10 @@ func TestNativeHTTPHeaderBoundPrecedesParserAllocation(t *testing.T) {
 	if allocations > 8 {
 		t.Fatal("oversized HTTP header allocated before rejection", allocations)
 	}
-	many := []byte("GET /_doc/x HTTP/1.1\r\n" + strings.Repeat("Accept: application/json\r\n", 1000) + "\r\n")
-	allocations = testing.AllocsPerRun(3, func() {
-		if _, _, failure := parseNativeHTTPRequest(many); failure == nil {
-			t.Fatal("excessive header entries parsed")
-		}
-	})
-	if allocations > 8 {
-		t.Fatal("header expansion allocated before rejection", allocations)
+	many := []byte("GET /_doc/x HTTP/1.1\r\n" + strings.Repeat("X-Native: arbitrary\r\n", 1000) + "\r\n")
+	request, _, failure := parseNativeHTTPRequest(many)
+	if failure != nil || len(request.Header.Values("X-Native")) != 1000 {
+		t.Fatal("header count constrained independently of byte budget", failure)
 	}
 }
 
@@ -136,5 +132,138 @@ func TestSearchNativeAdapterOwnsRequestFormat(t *testing.T) {
 		if _, failure := adapter.prepareNative(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
 			t.Fatal("shared envelope interpreted adapter payload", contentType, failure)
 		}
+	}
+}
+
+func TestNativeHTTPPreservesEscapedPathsAndRootRequests(t *testing.T) {
+	tests := []struct {
+		resource string
+		path     string
+		want     string
+	}{
+		{path: "/_msearch?preference=a%2Fb&preference=a+b", want: "/_msearch?preference=a%2Fb&preference=a+b"},
+		{path: "/_refresh", want: "/_refresh"},
+		{resource: "records", path: "/_update/id%2Fpart%20%3F%252F?refresh=wait_for", want: "/records/_update/id%2Fpart%20%3F%252F?refresh=wait_for"},
+		{resource: "records/_doc", path: "/id%2Fpart?", want: "/records/_doc/id%2Fpart?"},
+		{resource: "a%2Cb", path: "/_search", want: "/a%2Cb/_search"},
+	}
+	for _, test := range tests {
+		t.Run(test.want, func(t *testing.T) {
+			var calls atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				calls.Add(1)
+				if request.Method != "PATCH" || request.RequestURI != test.want {
+					t.Error("Native URI changed", request.Method, request.RequestURI)
+				}
+				actual, err := io.ReadAll(request.Body)
+				if err != nil || string(actual) != `{"doc":{"n":2}}` || request.Header.Get("Content-Type") != "application/json" {
+					t.Error("JSON native body changed", err, string(actual), request.Header)
+				}
+				_, _ = io.WriteString(w, "ok")
+			})
+			backend := httptest.NewServer(handler)
+			defer backend.Close()
+			config := Config{Store: "search", URL: backend.URL}
+			adapter := &Adapter{config: config, nativeClient: backend.Client(), ctx: context.Background()}
+			body := []byte(`{"doc":{"n":2}}`)
+			header := fmt.Sprintf("PATCH %s HTTP/1.1\r\nHost: ignored.invalid\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n", test.path, len(body))
+			document := &pb.Document{ContentType: "application/http", Data: append([]byte(header), body...)}
+			request := &pb.NativeRequest{Resource: test.resource, Request: document}
+			end, capture := runNative(t, adapter, request, body)
+			if calls.Load() != 1 || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || capture.body.String() != "ok" {
+				t.Fatal(calls.Load(), end, capture.body.String())
+			}
+		})
+	}
+}
+
+func TestNativeHTTPPreservesCompressedResponse(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte("native compressed response")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Accept-Encoding") != "gzip" {
+			t.Error("Native request encoding header changed")
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(compressed.Bytes())
+	})
+	backend := httptest.NewServer(handler)
+	defer backend.Close()
+	transport := newTransport(connectionTimeout)
+	transport.DisableKeepAlives = true
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
+	config := Config{Store: "search", URL: backend.URL}
+	adapter := &Adapter{config: config, nativeClient: client, ctx: context.Background()}
+	document := &pb.Document{ContentType: "application/http", Data: []byte("GET /_search HTTP/1.1\r\nAccept-Encoding: gzip\r\n\r\n")}
+	request := &pb.NativeRequest{Request: document}
+	end, capture := runNative(t, adapter, request, nil)
+	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !bytes.Equal(capture.body.Bytes(), compressed.Bytes()) || nativeMetadata(t, capture.head).Headers.Get("Content-Encoding") != "gzip" {
+		t.Fatal("compressed Native response changed", end)
+	}
+}
+
+func TestNativeHTTPRedirectCannotSelectAnotherBackend(t *testing.T) {
+	var foreignCalls atomic.Int32
+	foreignHandler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		foreignCalls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+	foreign := httptest.NewServer(foreignHandler)
+	defer foreign.Close()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Location", foreign.URL+"/foreign")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+		_, _ = io.WriteString(w, "redirect response")
+	})
+	backend := httptest.NewServer(handler)
+	defer backend.Close()
+	transport := newTransport(connectionTimeout)
+	transport.DisableKeepAlives = true
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
+	config := Config{Store: "search", URL: backend.URL}
+	adapter := &Adapter{config: config, nativeClient: client, ctx: context.Background()}
+	request := nativeRequest(t, "", "GET", "/_search")
+	end, capture := runNative(t, adapter, request, nil)
+	metadata := nativeMetadata(t, capture.head)
+	if foreignCalls.Load() != 0 || end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || metadata.StatusCode != 307 || metadata.Headers.Get("Location") != foreign.URL+"/foreign" || capture.body.String() != "redirect response" {
+		t.Fatal("Native redirect changed backend or response", foreignCalls.Load(), end, metadata)
+	}
+}
+
+func TestNativeHTTPConfiguredTransportAcceptsFullMetadataBudget(t *testing.T) {
+	value := strings.Repeat("x", 48<<10)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if qualification(w, request) {
+			return
+		}
+		w.Header().Set("X-Native-Large", value)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"native":"response"}`)
+	})
+	backend := httptest.NewServer(handler)
+	defer backend.Close()
+	config := Config{Store: "search", URL: backend.URL}
+	adapter, err := Open(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adapter.Close()
+	request := nativeRequest(t, "records", "GET", "/_search")
+	end, capture := runNative(t, adapter, request, nil)
+	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || capture.head == nil || len(capture.head.Metadata.GetData()) <= 32<<10 || len(capture.head.Metadata.GetData()) > protocol.MaxNativeMetadataBytes || capture.body.String() != `{"native":"response"}` {
+		t.Fatal("Native transport imposed a smaller header bound", end)
+	}
+	metadata := nativeMetadata(t, capture.head)
+	if metadata.Headers.Get("X-Native-Large") != value {
+		t.Fatal("Native transport truncated a valid response header")
 	}
 }

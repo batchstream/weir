@@ -11,8 +11,8 @@ import (
 
 var errWireBound = errors.New("MongoDB reply exceeds qualified wire/envelope bounds")
 
-// The driver expands top-level error arrays before RunCommand.Raw can inspect
-// them. This fixed uncompressed OP_REPLY/OP_MSG profile checks that envelope
+// The driver expands diagnostic arrays and documents before callers can inspect
+// the raw reply. This fixed uncompressed OP_REPLY/OP_MSG profile checks them
 // before exposing any header to the driver. It does not decode result documents,
 // interpret selectors, issue commands or retry. One buffer, at most 16 MiB plus envelope space, per
 // socket; the driver may concurrently allocate its own equally bounded copy.
@@ -86,9 +86,16 @@ func boundedReply(message []byte) bool {
 	}
 	metadataBytes := 0
 	for key, value := range fields {
-		// ExtractErrorFromServerResponse only enumerates this outer cursor value;
-		// RunCommand.Raw does not expand its documents or batch array.
-		if key == "cursor" || key == "value" && value.Type == bson.TypeEmbeddedDocument && len(value.Value) <= NativeResponseLimit {
+		// Match only values materialized by the pinned driver's error parser.
+		// Ordinary backend data remains opaque within the complete reply bound.
+		expanded := false
+		switch key {
+		case "writeErrors", "errorLabels":
+			expanded = value.Type == bson.TypeArray
+		case "writeConcernError", "topologyVersion":
+			expanded = value.Type == bson.TypeEmbeddedDocument
+		}
+		if !expanded {
 			continue
 		}
 		metadataBytes += len(key) + len(value.Value) + 2

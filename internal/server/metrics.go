@@ -16,7 +16,7 @@ var metricStatuses = []string{"ok", "canceled", "deadline", "non_ok"}
 
 func methodLabel(method string) string {
 	switch method {
-	case pb.StoreService_Execute_FullMethodName:
+	case pb.StoreService_ExecuteV2_FullMethodName:
 		return "execute"
 	case pb.StoreService_ResolveStore_FullMethodName:
 		return "resolve_store"

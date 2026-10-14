@@ -18,10 +18,13 @@ import (
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 )
 
 type Config struct {
@@ -38,6 +41,8 @@ type Adapter struct {
 	maxDocumentBytes int
 	dialer           *connectionOwner
 	client           *mongo.Client
+	deployment       driver.Deployment
+	commandMonitor   *event.CommandMonitor
 	config           Config
 	once             sync.Once
 	closeErr         error
@@ -108,14 +113,28 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid MongoDB connection profile")
 	}
+	// Typed operations and Native share the same configured topology and pool.
+	// Native uses the pinned driver's Operation API to avoid implicit sessions
+	// and command options added by Database.RunCommand.
+	topologyConfig, err := topology.NewConfig(opts, nil)
+	if err != nil {
+		return nil, fmt.Errorf("MongoDB topology configuration rejected")
+	}
+	deployment, err := topology.New(topologyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("MongoDB topology configuration rejected")
+	}
+	opts.Deployment = deployment
 	client, err := mongo.Connect(opts)
 	if err != nil {
 		return nil, fmt.Errorf("MongoDB client configuration rejected")
 	}
 	a := &Adapter{
-		dialer: dialer,
-		client: client,
-		config: cfg,
+		dialer:         dialer,
+		client:         client,
+		deployment:     deployment,
+		commandMonitor: opts.Monitor,
+		config:         cfg,
 	}
 	a.targets.SetCapacity(settings.MetadataCacheEntries)
 	if err = a.qualify(ctx); err != nil {
@@ -194,6 +213,8 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		native.action = "read"
 		p.ResultBytes += protocol.MaxDocument
 	} else {
+		// Both visibility choices use primary reads and majority-acknowledged
+		// writes. MongoDB has no separate search refresh stage to wait for.
 		m := op.GetMutate()
 		var d *pb.Document
 		switch v := m.Action.(type) {
