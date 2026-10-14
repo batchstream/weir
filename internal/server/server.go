@@ -101,14 +101,11 @@ func New(cfg Config) (*Server, error) {
 	statistics := transportStats{}
 	codec := &responseCodec{admission: s.admission}
 	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle}
-	receiveBytes, sendBytes := protocol.MaxExecuteRequestBytes, protocol.MaxExecuteResponseBytes
-	if cfg.Peer {
-		receiveBytes, sendBytes = directory.MaxSyncBytes, directory.MaxSyncBytes
-	}
+	receiveBytes, sendBytes := protocol.MaxTransportMessageBytes, protocol.MaxTransportMessageBytes
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(receiveBytes),
 		grpc.MaxSendMsgSize(sendBytes),
-		grpc.MaxHeaderListSize(16 << 10),
+		grpc.MaxHeaderListSize(^uint32(0)),
 		grpc.InitialWindowSize(64 << 10),
 		grpc.InitialConnWindowSize(64 << 10),
 		grpc.InTapHandle(s.admitRPC),

@@ -28,7 +28,7 @@ func readFrame(index uint64, read *pb.ReadRequest) *pb.ExecuteRequest {
 }
 func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
 	adapter, local := peerLocal(t, "records")
-	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), protocol.MaxDocument)}
+	document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("x"), (2 << 20))}
 	adapter.documents[testRequest().Resource] = document
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	server, address := startPeerServer(t, opts)
@@ -46,11 +46,11 @@ func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
 	}
 	for index := uint64(1); index <= count; index++ {
 		response, err := stream.Recv()
-		if err != nil || response.Index != index || len(response.Event.GetReadResult().GetDocument().GetData()) != protocol.MaxDocument {
+		if err != nil || response.Index != index || len(response.Event.GetReadResult().GetDocument().GetData()) != (2 << 20) {
 			t.Fatal("lost indexed large result", index, response, err)
 		}
 		snapshot := local.Snapshot()
-		if snapshot.ResultBytes > 2*protocol.MaxDocument+1024 || snapshot.Retained > 2 || snapshot.Publishers != 0 {
+		if snapshot.ResultBytes > 2*(2 << 20)+1024 || snapshot.Retained > 2 || snapshot.Publishers != 0 {
 			t.Fatal("logical stream accumulated result owners", snapshot)
 		}
 		if index < count {
@@ -144,7 +144,7 @@ func TestRecordPublicationWaitsForFinalEncodedOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, failure := local.PrepareRecord(record)
+	prepared, failure := local.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -225,7 +225,7 @@ func TestRecordPublicationCancellationReleasesSourceButKeepsEncodedCredits(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, failure := local.PrepareRecord(record)
+	prepared, failure := local.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}

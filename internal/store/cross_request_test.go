@@ -22,7 +22,7 @@ type crossRequestAdapter struct {
 	maxReadBytes int
 }
 
-func (a *crossRequestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *crossRequestAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	if record.Segments()[len(record.Segments())-1] == "invalid" {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "backend rejected resource")
 	}
@@ -72,7 +72,7 @@ func prepareCrossRecord(t testing.TB, runtime *Runtime, index uint64, resource s
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := runtime.PrepareRecord(record)
+	work, failure := runtime.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -193,16 +193,30 @@ func TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation(t *testing.T) {
 	}
 }
 
-func TestPreparedRecordMetadataFloorAndOversizedBudget(t *testing.T) {
+func TestPreparedRecordBeyondBatchAndQueueWindows(t *testing.T) {
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 1)}
-	runtime := newRuntime(adapter, DefaultLimits())
+	limits := DefaultLimits()
+	limits.QueueBytes, limits.BatchBytes = 1, 1
+	if err := limits.Validate(); err != nil {
+		t.Fatal("positive soft windows were rejected", err)
+	}
+	runtime := newRuntime(adapter, limits)
 	work := prepareCrossRecord(t, runtime, 1, "records/s:a")
 	if work.Bytes <= execution.EntryOverheadBytes {
 		t.Fatal("record metadata floor was discounted", work.Bytes)
 	}
-	work.Bytes = runtime.limits.QueueBytes + 1
-	_, failure, _ := runtime.Submit(t.Context(), work, nil)
-	if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT || runtime.Snapshot().Retained != 0 {
-		t.Fatal("oversized single record entered admission", failure)
+	ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
+	if failure != nil || ticket == nil {
+		t.Fatal("single large record rejected by batching windows", failure)
+	}
+	batch := runtime.selectLocked(time.Now())
+	if batch == nil || len(batch.items) != 1 {
+		t.Fatal("large record was not dispatched alone")
+	}
+	runtime.execute(batch)
+	recordEvent(t, ticket)
+	ticket.Ack()
+	if runtime.Snapshot().Retained != 0 {
+		t.Fatal("large record accounting was not released")
 	}
 }

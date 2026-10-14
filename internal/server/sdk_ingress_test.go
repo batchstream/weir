@@ -20,11 +20,11 @@ import (
 
 type sdkIngressReadAdapter struct{}
 
-func (a *sdkIngressReadAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+func (a *sdkIngressReadAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "read fixture")
 }
 
-func (a *sdkIngressReadAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *sdkIngressReadAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	command := record.Command()
 	request := command.GetRead()
 	if request == nil {

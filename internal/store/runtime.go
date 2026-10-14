@@ -26,8 +26,8 @@ func DefaultLimits() Limits {
 }
 
 func (limits Limits) Validate() error {
-	if limits.QueueOperations < 1 || limits.QueueBytes < execution.EntryOverheadBytes ||
-		limits.BatchOperations < 1 || limits.BatchBytes < execution.EntryOverheadBytes {
+	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 {
 		return fmt.Errorf("invalid batch or queue bounds")
 	}
 	if limits.Scan.Documents != 0 {
@@ -127,8 +127,8 @@ func (r *Runtime) NewSession() *Session {
 	return session
 }
 
-func (r *Runtime) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
-	plan, failure := r.adapter.PrepareRecord(record)
+func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	plan, failure := r.adapter.PrepareRecord(ctx, record)
 	if failure != nil {
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
 		return nil, failure
@@ -141,8 +141,8 @@ func (r *Runtime) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	return plan, nil
 }
 
-func (r *Runtime) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
-	plan, failure := r.adapter.PrepareCommand(id, call)
+func (r *Runtime) PrepareCommand(ctx context.Context, id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
+	plan, failure := r.adapter.PrepareCommand(ctx, id, call)
 	if failure != nil {
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
 	}
@@ -168,10 +168,10 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if singleton && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
-	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 || plan.Bytes > r.limits.QueueBytes || (!singleton && plan.Bytes > r.limits.BatchBytes) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "operation cannot fit bounded execution"), changed
+	if plan == nil || plan.Bytes < execution.EntryOverheadBytes || plan.ResultBytes < execution.ResultOverheadBytes || plan.WorkingBytes < 0 {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid execution accounting"), changed
 	}
-	if len(r.queue) >= r.limits.QueueOperations || plan.Bytes > r.limits.QueueBytes-r.pendingBytes {
+	if !r.queueCapacityLocked(plan) {
 		if session == nil {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
 		}
@@ -189,6 +189,22 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	ticket.stopWatch = context.AfterFunc(ticketContext, r.signal)
 	r.signal()
 	return ticket, nil, changed
+}
+
+// A single large operation proceeds alone instead of being rejected by the
+// batching window. Further waiting work resumes after dispatch releases credit.
+func (r *Runtime) queueCapacityLocked(plan *execution.Plan) bool {
+	return len(r.queue) < r.limits.QueueOperations && (len(r.queue) == 0 || plan.Bytes <= r.limits.QueueBytes-r.pendingBytes)
+}
+
+func (r *Runtime) retainResultLocked(ticket *Ticket, bytes int) {
+	if _, live := r.live[ticket]; !live {
+		return
+	}
+	if bytes > ticket.plan.ResultBytes {
+		r.resultBytes += bytes - ticket.plan.ResultBytes
+		ticket.plan.ResultBytes = bytes
+	}
 }
 func (r *Runtime) signal() {
 	select {
@@ -374,7 +390,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 		seedSingleton := seed.plan.Command.GetScan() != nil || seed.plan.Command.GetNative() != nil
 		singleton := t.plan.Command.GetScan() != nil || t.plan.Command.GetNative() != nil
 		previousWrite, duplicateResource := records[t.plan.Key]
-		if len(items) > 0 && (seedSingleton || singleton || seed.plan.BatchKey != t.plan.BatchKey || (duplicateResource && (previousWrite || t.plan.Command.GetMutate() != nil)) || bytes+t.plan.Bytes > r.limits.BatchBytes) {
+		if len(items) > 0 && (seedSingleton || singleton || seed.plan.BatchKey != t.plan.BatchKey || (duplicateResource && (previousWrite || t.plan.Command.GetMutate() != nil)) || t.plan.Bytes > r.limits.BatchBytes-bytes) {
 			continue
 		}
 		items = append(items, t)
@@ -489,7 +505,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 		if continuation && delivered && t.ctx.Err() == nil {
 			r.mu.Lock()
 			for !t.abandoned && !r.closed && !t.session.closed && t.ctx.Err() == nil &&
-				(len(r.queue) >= r.limits.QueueOperations || t.plan.Bytes > r.limits.QueueBytes-r.pendingBytes) {
+				!r.queueCapacityLocked(t.plan) {
 				changed := r.changed
 				r.mu.Unlock()
 				select {
@@ -570,13 +586,16 @@ func (r *Runtime) execute(b *batch) {
 			if plan.Command.GetRead() != nil && event.GetReadResult() == nil || plan.Command.GetMutate() != nil && event.GetMutationResult() == nil {
 				return fmt.Errorf("adapter emitted wrong record result")
 			}
-			if proto.Size(event) > plan.ResultBytes {
-				return fmt.Errorf("record result exceeds reservation")
-			}
+			r.mu.Lock()
+			r.retainResultLocked(ticket, proto.Size(event))
+			r.mu.Unlock()
 			ticket.event = event
 			return nil
 		}
 		if plan.Command.GetNative() != nil {
+			r.mu.Lock()
+			r.retainResultLocked(ticket, proto.Size(event)+execution.ResultOverheadBytes)
+			r.mu.Unlock()
 			return ticket.emit(event)
 		}
 		if plan.Command.GetScan() != nil {
@@ -590,16 +609,16 @@ func (r *Runtime) execute(b *batch) {
 				return fmt.Errorf("Scan batch exceeds document bound")
 			}
 			if document := event.GetDocument(); document != nil {
-				if len(events) >= r.limits.Scan.Documents || len(document.Data) > r.limits.Scan.Bytes-documentBytes {
+				if len(events) >= r.limits.Scan.Documents || len(events) > 0 && len(document.Data) > r.limits.Scan.Bytes-documentBytes {
 					return fmt.Errorf("Scan batch exceeds retained output bound")
 				}
 				documentBytes += len(document.Data)
 			}
 			size := proto.Size(event)
-			if size > plan.ResultBytes-eventBytes {
-				return fmt.Errorf("Scan output exceeds result reservation")
-			}
 			eventBytes += size
+			r.mu.Lock()
+			r.retainResultLocked(ticket, eventBytes+execution.ResultOverheadBytes)
+			r.mu.Unlock()
 		} else if len(events) >= 2 {
 			return fmt.Errorf("adapter step exceeds two bounded events")
 		}

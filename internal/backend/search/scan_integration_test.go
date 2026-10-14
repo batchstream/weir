@@ -22,7 +22,7 @@ import (
 func scanWork(t *testing.T, a *Adapter, index string) *execution.Plan {
 	t.Helper()
 	req := &pb.ScanRequest{Resource: index}
-	p, f := a.prepareScan(req)
+	p, f := a.prepareScan(context.Background(), req)
 	if f != nil {
 		t.Fatal(f)
 	}
@@ -114,7 +114,7 @@ func scanFaultProxy(t *testing.T, b *testsearch.Backend, fault scanProxyFault) (
 			return
 		}
 		defer response.Body.Close()
-		raw, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
+		raw, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
 		if err != nil {
 			w.WriteHeader(502)
 			return
@@ -296,7 +296,7 @@ func TestSearchScanNativeQueryWithFinalPipeline(t *testing.T) {
 	b.Do(t, "POST", "/"+b.Index+"/_refresh", "")
 	selector := &pb.Document{ContentType: "application/json", Data: []byte(`{"range":{"n":{"gte":1}}}`)}
 	req := &pb.ScanRequest{Resource: b.Index, Filter: selector}
-	p, f := a.prepareScan(req)
+	p, f := a.prepareScan(context.Background(), req)
 	if f != nil {
 		t.Fatal(f)
 	}

@@ -15,7 +15,7 @@ import (
 
 type lifecycleAdapter struct{ closes atomic.Int32 }
 
-func (a *lifecycleAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+func (a *lifecycleAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, nil
 }
 func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) bool {
@@ -58,7 +58,7 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 
 func (*lifecycleAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
 
-func (a *lifecycleAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *lifecycleAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	command := record.Command()
 	prepared := &execution.Plan{ID: record.Index(), Command: command, Key: record.Key(), BatchKey: "records", Bytes: 1024, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	return prepared, nil

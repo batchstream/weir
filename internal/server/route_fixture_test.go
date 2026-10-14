@@ -35,17 +35,17 @@ func newPeerAdapter(name string) *peerAdapter {
 	return adapter
 }
 
-func (*peerAdapter) PrepareCommand(uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
+func (*peerAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "record fixture")
 }
 
-func (a *peerAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *peerAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	command := record.Command()
 	key := record.Key()
 	plan := &execution.Plan{ID: record.Index(), Command: command, Key: key, BatchKey: "records", Bytes: record.Bytes() + execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	if command.GetRead() != nil {
 		a.mu.Lock()
-		readBytes := protocol.MaxDocument
+		readBytes := (2 << 20)
 		for _, document := range a.documents {
 			readBytes = max(readBytes, len(document.Data))
 		}
@@ -185,7 +185,7 @@ func startPeerServer(t *testing.T, opts peerServerOptions) (*Server, string) {
 
 func peerClient(t *testing.T, address string) (*grpc.ClientConn, pb.StoreServiceClient) {
 	t.Helper()
-	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxExecuteResponseBytes), grpc.MaxCallSendMsgSize(protocol.MaxExecuteRequestBytes))}
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes), grpc.MaxCallSendMsgSize(protocol.MaxTransportMessageBytes))}
 	conn, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {
 		t.Fatal(err)

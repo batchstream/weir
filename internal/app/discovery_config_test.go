@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,5 +75,32 @@ func TestDiscoveryRequiresReachableAdvertisements(t *testing.T) {
 	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("local Store without business listener accepted")
+	}
+}
+
+func TestLargeDiscoverySourcesAndRoutingConfiguration(t *testing.T) {
+	cfg := credentialTestConfig(t, "search")
+	base := cfg.Routing.Stores[0]
+	cfg.Routing.Stores = nil
+	for i := range 32 {
+		service := base
+		service.Name = fmt.Sprintf("store-%03d", i)
+		cfg.Routing.Stores = append(cfg.Routing.Stores, service)
+		cfg.Basic.Discovery.Advertise = append(cfg.Basic.Discovery.Advertise, fmt.Sprintf("127.0.0.1:%d", 7400+i))
+		cfg.Basic.Discovery.Seeds = append(cfg.Basic.Discovery.Seeds, fmt.Sprintf("127.0.0.1:%d", 8400+i))
+	}
+	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
+	key := "WEIR_TEST_PEER_" + strings.Repeat("X", 512)
+	cfg.Basic.Discovery.PeerAddressEnv = key
+	t.Setenv(key, "peer.example:7448")
+	base.Local.Backend.Authentication.Username = strings.Repeat("u", 8192)
+	base.Local.Backend.Authentication.Password = strings.Repeat("p", 16384)
+	basicFile, routingFile := writeCredentialTestDocuments(t, cfg)
+	loaded, err := Load(basicFile, routingFile)
+	if err != nil {
+		t.Fatal("valid configuration retained an artificial scale threshold", err)
+	}
+	if len(loaded.Routing.Stores) != 32 || len(loaded.Basic.Discovery.Advertise) != 32 || len(loaded.Basic.Discovery.Seeds) != 32 || loaded.Basic.Discovery.PeerAddress != "peer.example:7448" || loaded.Basic.Discovery.PeerAddressEnv != "" {
+		t.Fatal("large configuration was truncated")
 	}
 }

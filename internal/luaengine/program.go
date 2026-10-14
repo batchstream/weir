@@ -1,18 +1,14 @@
-// Package luaengine evaluates bounded Lua transforms in the Weir process.
+// Package luaengine evaluates cancellable Lua transforms in the Weir process.
 package luaengine
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/batchstream/weir/internal/value"
-)
-
-const (
-	MaxSourceBytes  = 16 << 10
-	MaxMessageBytes = 1024
 )
 
 type Action string
@@ -27,11 +23,10 @@ const (
 type Limits struct {
 	MaxInstructions             int64
 	MaxCallDepth, MaxStackSlots int
-	Values                      value.Limits
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{Values: value.DefaultLimits()}
+	limits := Limits{}
 	return limits
 }
 
@@ -39,7 +34,7 @@ func (limits Limits) Validate() error {
 	if limits.MaxInstructions < 0 || limits.MaxCallDepth < 0 || limits.MaxStackSlots < 0 {
 		return fmt.Errorf("invalid Lua VM limits")
 	}
-	return limits.Values.Validate()
+	return nil
 }
 
 type Program struct {
@@ -56,7 +51,7 @@ type Result struct {
 	Message string
 }
 
-func ValidateProgram(program Program) error {
+func ValidateProgram(ctx context.Context, program Program) error {
 	limits := DefaultLimits()
 	if program.Limits != nil {
 		limits = *program.Limits
@@ -65,22 +60,21 @@ func ValidateProgram(program Program) error {
 		return err
 	}
 	if len(program.Source) == 0 ||
-		len(program.Source) > MaxSourceBytes ||
 		!utf8.ValidString(program.Source) ||
 		strings.IndexByte(program.Source, 0) >= 0 ||
 		strings.HasPrefix(program.Source, "\x1bLua") {
-		return fmt.Errorf("invalid or oversized Lua source")
+		return fmt.Errorf("invalid Lua source")
 	}
-	if err := value.Validate(program.Current, limits.Values); err != nil {
+	if err := value.Validate(ctx, program.Current); err != nil {
 		return fmt.Errorf("invalid current value: %w", err)
 	}
-	if err := value.Validate(program.Input, limits.Values); err != nil {
+	if err := value.Validate(ctx, program.Input); err != nil {
 		return fmt.Errorf("invalid input value: %w", err)
 	}
 	return nil
 }
 
-func ValidateResult(result Result, limits Limits) error {
+func ValidateResult(ctx context.Context, result Result) error {
 	switch result.Action {
 	case Keep, Delete:
 		if result.Value.Kind != value.Missing || result.Message != "" {
@@ -91,34 +85,49 @@ func ValidateResult(result Result, limits Limits) error {
 			return fmt.Errorf("replacement must be an object")
 		}
 	case Reject:
-		if result.Value.Kind != value.Missing || len(result.Message) > MaxMessageBytes || !utf8.ValidString(result.Message) {
+		if result.Value.Kind != value.Missing || !utf8.ValidString(result.Message) {
 			return fmt.Errorf("invalid rejection")
 		}
 	default:
 		return fmt.Errorf("invalid action")
 	}
-	if err := value.Validate(result.Value, limits.Values); err != nil {
+	if err := value.Validate(ctx, result.Value); err != nil {
 		return err
 	}
 	if result.Action == Replace {
-		return validateDocumentValue(result.Value, 0, limits.Values)
+		return validateDocumentValue(ctx, result.Value)
 	}
 	return nil
 }
 
-func validateDocumentValue(v value.Value, depth int, limits value.Limits) error {
-	if depth > limits.MaxDepth || v.Kind == value.Missing {
-		return fmt.Errorf("replacement contains missing value or exceeds depth")
+func validateDocumentValue(ctx context.Context, v value.Value) error {
+	type documentFrame struct {
+		node  *value.Value
+		index int
 	}
-	for _, field := range v.Fields {
-		if err := validateDocumentValue(field.Value, depth+1, limits); err != nil {
+	first := documentFrame{node: &v}
+	stack := []documentFrame{first}
+	for len(stack) != 0 {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-	}
-	for _, item := range v.Items {
-		if err := validateDocumentValue(item, depth+1, limits); err != nil {
-			return err
+		frame := &stack[len(stack)-1]
+		if frame.node.Kind == value.Missing {
+			return fmt.Errorf("document contains missing value")
 		}
+		if frame.index == len(frame.node.Fields)+len(frame.node.Items) {
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		var child *value.Value
+		if frame.node.Kind == value.Object {
+			child = &frame.node.Fields[frame.index].Value
+		} else {
+			child = &frame.node.Items[frame.index]
+		}
+		frame.index++
+		next := documentFrame{node: child}
+		stack = append(stack, next)
 	}
 	return nil
 }

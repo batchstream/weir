@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/mem"
@@ -105,13 +104,15 @@ func TestExecuteDecodeEnvelopeAcrossBuffers(t *testing.T) {
 	}
 }
 
-func TestExecuteDecodeRejectsOversizedInputBeforeUnmarshal(t *testing.T) {
-	raw := make([]byte, protocol.MaxExecuteRequestBytes+1)
+func TestExecuteDecodeLargeNativeBeforeUnmarshal(t *testing.T) {
+	payload := bytes.Repeat([]byte{0xff}, (10<<20)+1)
+	document := append(wireMessage(1, []byte("application/bson")), wireMessage(2, payload)...)
+	native := wireMessage(2, document)
+	raw := wireMessage(3, wireMessage(4, native))
 	data := mem.BufferSlice{mem.SliceBuffer(raw)}
-	err := ValidateExecuteFrame(data)
-	data.Free()
-	if status.Code(err) != codes.ResourceExhausted {
-		t.Fatal("oversized source reached protobuf decoding", err)
+	defer data.Free()
+	if err := ValidateExecuteFrame(data); err != nil {
+		t.Fatal("large valid frame rejected", err)
 	}
 }
 
@@ -174,7 +175,7 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 
 func TestExecuteDecodeOpaqueNativeUsesBoundedAllocation(t *testing.T) {
 	// Opaque bytes resembling malformed protobuf are never recursively decoded.
-	payload := bytes.Repeat([]byte{0xff, 0x12, 0x80}, (protocol.MaxNativeRequestBytes-2)/3)
+	payload := bytes.Repeat([]byte{0xff, 0x12, 0x80}, ((8<<20)-2)/3)
 	document := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, payload)...)
 	native := append(wireMessage(1, []byte("records")), wireMessage(2, document)...)
 	frame := wireMessage(3, wireMessage(4, native))
@@ -188,12 +189,12 @@ func TestExecuteDecodeOpaqueNativeUsesBoundedAllocation(t *testing.T) {
 	if allocations > 32 {
 		t.Fatal("opaque payload allocated per-message buffers", allocations)
 	}
-	oversizedDocument := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, make([]byte, protocol.MaxNativeRequestBytes+256))...)
+	oversizedDocument := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, make([]byte, (8<<20)+256))...)
 	native = append(wireMessage(1, []byte("records")), wireMessage(2, oversizedDocument)...)
 	frame = wireMessage(3, wireMessage(4, native))
 	oversized := mem.BufferSlice{mem.SliceBuffer(frame)}
 	defer oversized.Free()
-	if status.Code(ValidateExecuteFrame(oversized)) != codes.InvalidArgument {
-		t.Fatal("Native document bound disappeared")
+	if err := ValidateExecuteFrame(oversized); err != nil {
+		t.Fatal("large Native document rejected", err)
 	}
 }

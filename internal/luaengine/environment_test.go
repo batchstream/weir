@@ -39,7 +39,7 @@ func TestEnvironmentIsolatesGlobalsLibrariesAndStringMetatable(t *testing.T) {
 	calls.Wait()
 }
 
-func TestEnvironmentLimitsAndObservationTimeArePerCall(t *testing.T) {
+func TestEnvironmentExecutionAndObservationTimeArePerCall(t *testing.T) {
 	for _, operation := range []string{
 		`string.format("%080d", 1)`,
 		`table.sort({5,4,3,2,1})`,
@@ -56,8 +56,7 @@ func TestEnvironmentLimitsAndObservationTimeArePerCall(t *testing.T) {
 					limits := DefaultLimits()
 					restricted := index%2 == 0
 					if restricted {
-						limits.Values.MaxBytes = 64
-						limits.Values.MaxNodes = 4
+						limits.MaxInstructions = 5
 					}
 					observedAt := time.Unix(int64(index), int64(index)).UTC()
 					stamp := value.Value{Kind: value.String, Text: observedAt.Format(time.RFC3339Nano)}
@@ -79,9 +78,8 @@ func TestEnvironmentStringMetatablesAreIndependent(t *testing.T) {
 	first, second := vm.New(), vm.New()
 	defer first.Close(context.Background())
 	defer second.Close(context.Background())
-	limits := value.DefaultLimits()
-	installEnvironment(first, time.Unix(1, 0), limits)
-	installEnvironment(second, time.Unix(2, 0), limits)
+	installEnvironment(first, time.Unix(1, 0))
+	installEnvironment(second, time.Unix(2, 0))
 	firstMeta := first.StringMeta().(*vm.Table)
 	secondMeta := second.StringMeta().(*vm.Table)
 	if firstMeta == secondMeta || firstMeta.GetString(vm.MetaIndex).AsTable() == secondMeta.GetString(vm.MetaIndex).AsTable() {

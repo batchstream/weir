@@ -105,17 +105,6 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 			_ = conn.Close()
 			return nil, errors.New("Search TLS verification or handshake failed")
 		}
-		state := secured.ConnectionState()
-		if len(state.PeerCertificates) > 8 {
-			_ = conn.Close()
-			return nil, errResponse
-		}
-		for _, cert := range state.PeerCertificates {
-			if len(cert.Raw) > 64<<10 {
-				_ = conn.Close()
-				return nil, errResponse
-			}
-		}
 		conn.Conn = secured
 	}
 	if ctx.Err() != nil {

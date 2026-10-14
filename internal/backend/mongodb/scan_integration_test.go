@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
@@ -449,7 +448,7 @@ func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
 			defer cancel()
 			document := bson.D{{Key: "_id", Value: int32(0)}, {Key: "pad", Value: ""}}
 			raw, _ := bson.Marshal(document)
-			pad, count := protocol.MaxDocument-len(raw), 1
+			pad, count := (2<<20)-len(raw), 1
 			if mode == "large_total_scan" {
 				pad = 300 << 10
 				count = 32
@@ -513,10 +512,10 @@ func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
 					break
 				}
 			}
-			if len(seen) != count || largest.Load() <= 0 || largest.Load() > scanNativeLimit {
+			if len(seen) != count || largest.Load() <= 0 {
 				t.Fatal("scan omitted data or exceeded native response bound", len(seen), count, largest.Load())
 			}
-			if mode == "boundary" && totalBytes != protocol.MaxDocument {
+			if mode == "boundary" && totalBytes != (2<<20) {
 				t.Fatal("exact legal record boundary was not read", totalBytes)
 			}
 			if mode == "large_total_scan" && (totalBytes <= 8<<20 || largest.Load() <= execution.ScanBatchBytes || finds.Load() != 4) {
@@ -525,7 +524,7 @@ func TestMongoScanNativeBatchBudgetAndOutputBoundary(t *testing.T) {
 			if failure := adapter.closeScan(ctx, work); failure != nil {
 				t.Fatal("cursor cleanup failed", failure)
 			}
-			t.Logf("complete scan records=%d outputBytes=%d largestOutput=%d finds=%d largestNativeReply=%d wireLimit=%d reservedWorking=%d", len(seen), totalBytes, largestOutput, finds.Load(), largest.Load(), scanNativeLimit, work.WorkingBytes)
+			t.Logf("complete scan records=%d outputBytes=%d largestOutput=%d finds=%d largestNativeReply=%d reservedWorking=%d", len(seen), totalBytes, largestOutput, finds.Load(), largest.Load(), work.WorkingBytes)
 		})
 	}
 }

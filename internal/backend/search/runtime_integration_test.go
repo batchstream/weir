@@ -47,7 +47,7 @@ func testSearchCancellationAndDrain(t *testing.T, expression bool) {
 					return
 				}
 				defer response.Body.Close()
-				body, err := io.ReadAll(io.LimitReader(response.Body, responseLimit))
+				body, err := io.ReadAll(io.LimitReader(response.Body, (8 << 20)))
 				if err != nil {
 					t.Error(err)
 					return

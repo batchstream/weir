@@ -30,8 +30,7 @@ func unsentWritePlan() *execution.Plan {
 
 func unsentBulkCall() exchange {
 	call := exchange{
-		path: "/_bulk", body: []byte("{\"index\":{\"_index\":\"records\",\"_id\":\"write\"}}\n{\"n\":1}\n"),
-		limit: responseLimit, mutation: true,
+		path: "/_bulk", body: []byte("{\"index\":{\"_index\":\"records\",\"_id\":\"write\"}}\n{\"n\":1}\n"), mutation: true,
 	}
 	return call
 }
@@ -96,7 +95,8 @@ func TestBulkCanceledWhileWaitingForConnectionWasNotApplied(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	results := adapter.bulkResults(works, 0, nil, err)
+	replyInput98 := bulkResponse{works: works, status: 0, raw: nil, err: err}
+	results := adapter.bulkResults(context.Background(), replyInput98)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 		t.Fatal("connection queue cancellation became a committed write or congestion", results)
 	}
@@ -129,7 +129,8 @@ func TestBulkCustomTransportCannotProveAnUnsentWrite(t *testing.T) {
 		}
 		work := unsentWritePlan()
 		works := []*execution.Plan{work}
-		results := adapter.bulkResults(works, 0, nil, err)
+		replyInput132 := bulkResponse{works: works, status: 0, raw: nil, err: err}
+		results := adapter.bulkResults(context.Background(), replyInput132)
 		if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("custom transport uncertainty became successful or unapplied", results)
 		}
@@ -156,7 +157,8 @@ func TestBulkConnectionAcquiredBeforeWriteFailureRemainsUnknown(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	results := adapter.bulkResults(works, 0, nil, err)
+	replyInput160 := bulkResponse{works: works, status: 0, raw: nil, err: err}
+	results := adapter.bulkResults(context.Background(), replyInput160)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("uncertain connected failure became unapplied", results)
 	}
@@ -187,7 +189,8 @@ func TestBulkBeforeConnectionFailureWasNotApplied(t *testing.T) {
 			}
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
-			results := adapter.bulkResults(works, 0, nil, err)
+			replyInput192 := bulkResponse{works: works, status: 0, raw: nil, err: err}
+			results := adapter.bulkResults(context.Background(), replyInput192)
 			if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_APPLIED {
 				t.Fatal("unsent write changed evidence or capacity", results)
 			}
@@ -222,7 +225,7 @@ func TestBulkCommittedReplyLossRemainsUnknownWithoutReplay(t *testing.T) {
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	config := Config{URL: server.URL}
 	adapter := &Adapter{config: config, client: client, ctx: context.Background()}
-	warm := exchange{path: "/warm", limit: 1024}
+	warm := exchange{path: "/warm"}
 	_, _, err := adapter.request(context.Background(), warm)
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +237,8 @@ func TestBulkCommittedReplyLossRemainsUnknownWithoutReplay(t *testing.T) {
 	}
 	work := unsentWritePlan()
 	works := []*execution.Plan{work}
-	results := adapter.bulkResults(works, 0, nil, err)
+	replyInput240 := bulkResponse{works: works, status: 0, raw: nil, err: err}
+	results := adapter.bulkResults(context.Background(), replyInput240)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 		t.Fatal("lost acknowledgement changed mutation certainty", results)
 	}

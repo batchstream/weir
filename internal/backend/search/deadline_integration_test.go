@@ -48,8 +48,8 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 					return
 				}
 				defer response.Body.Close()
-				raw, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
-				if err != nil || len(raw) > responseLimit {
+				raw, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
+				if err != nil || len(raw) > (8<<20) {
 					t.Error("real backend acknowledgement unavailable", err)
 					return
 				}
@@ -105,7 +105,7 @@ func TestRealSearchCallerDeadlineAcknowledgements(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareRecord(record)
+			prepared, failure := runtime.PrepareRecord(context.Background(), record)
 			if failure != nil {
 				t.Fatal(failure)
 			}

@@ -1,11 +1,11 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
@@ -24,14 +24,14 @@ func expressionOperation(resource, raw string) *pb.ExecuteRequest {
 func TestSearchExpressionValidation(t *testing.T) {
 	cfg := Config{Store: "search"}
 	a := &Adapter{dialect: ElasticsearchProduct, config: cfg}
-	allowed := []string{`{"doc":{}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
+	allowed := []string{`{"doc":{"x":"` + strings.Repeat("x", (16<<10)) + `"}}`, `{"doc":{"x":[` + strings.Repeat("0,", (16<<10)) + `0]}}`, `{"doc":{}}`, `{"doc":{"_id":"other"}}`, `{"doc":{"a":{},"a.b":1}}`, `{"doc":{"nested":{"_id":"business","a.b":1,"":2,"a\u0000b":3}}}`, `{"doc":{"n":9223372036854775807,"null":null,"array":[1,{"x":true}],"data":{"$set":"literal"}}}`}
 	for _, raw := range allowed {
 		p, f := prepareTestRecord(a, expressionOperation("records/s:a", raw))
 		if f != nil || string(p.Backend.(*plan).source) != raw {
 			t.Fatal(p, f)
 		}
 	}
-	denied := []string{"", `{}`, `[]`, `{"doc":null}`, `{"doc":[]}`, `{"doc":{},"doc":{}}`, `{"doc":{"x":1,"x":2}}`, `{"doc":{"x":{"a":1,"a":2}}}`, `{"doc":{"_id":"other"}}`, `{"doc":{"a":{},"a.b":1}}`, `{"doc":{"bad":"\ud800"}}`, `{"doc":{"x":` + strings.Repeat("[", 10001) + `0` + strings.Repeat("]", 10001) + `}}`, `{"doc":{"x":"` + strings.Repeat("x", protocol.MaxExpression) + `"}}`, `{"doc":{"x":[` + strings.Repeat("0,", protocol.MaxExpression) + `0]}}`}
+	denied := []string{"", `{}`, `[]`, `{"doc":null}`, `{"doc":[]}`, `{"doc":{},"doc":{}}`, `{"doc":{"x":1,"x":2}}`, `{"doc":{"x":{"a":1,"a":2}}}`, `{"doc":{"bad":"\ud800"}}`, `{"doc":{"x":` + strings.Repeat("[", 10001) + `0` + strings.Repeat("]", 10001) + `}}`}
 	for _, option := range []string{"script", "upsert", "doc_as_upsert", "scripted_upsert", "routing", "_index", "retry_on_conflict", "pipeline", "query", "detect_noop", "timestamp", "_source"} {
 		denied = append(denied, fmt.Sprintf(`{"doc":{},%q:{}}`, option))
 	}
@@ -91,10 +91,10 @@ func TestSearchExpressionEvidence(t *testing.T) {
 func FuzzSearchExpression(f *testing.F) {
 	f.Add([]byte(`{"doc":{"n":9007199254740993}}`))
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		if len(raw) > protocol.MaxExpression {
+		if len(raw) > (16 << 10) {
 			return
 		}
 		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
-		_ = prepareExpression(d)
+		_ = prepareExpression(context.Background(), d)
 	})
 }

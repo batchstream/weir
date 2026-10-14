@@ -82,13 +82,17 @@ changes to the resource `_id`.
 ## Libraries and time
 
 The environment provides iteration, type inspection, assertions, errors,
-protected calls, deterministic math, and bounded string/table operations.
+protected calls, deterministic math, and string/table operations.
 The base functions are `assert`, `error`, `type`, `tostring`, `tonumber`, `pairs`,
 `ipairs`, `next`, `pcall`, `xpcall`, `select`, `rawequal` and `rawlen`; `_VERSION`
 is `Lua 5.4`.
 String functions are `len`, `sub`, `upper`, `lower`, `reverse`, `byte`, `char` and
 `format`; table functions are `insert`, `remove`, `sort` and `concat`.
 `string.upper/lower` use Lua's ASCII case rules and preserve other UTF-8 bytes.
+`utf8.upper/lower` apply Unicode simple casing to valid UTF-8 strings, matching
+Go's `strings.ToUpper/ToLower`. For example, `utf8.upper("café straße")` returns
+`"CAFÉ STRAßE"`; simple casing does not expand `ß` to `SS`. These functions check
+execution cancellation while walking the input and reject invalid UTF-8.
 Files, processes,
 network access, dynamic loading, debug access, random state and
 coroutines are unavailable. Library tables and globals are fresh for every
@@ -111,9 +115,23 @@ demonstrates history deduplication by nested values, tail limits and incoming-fi
 offer priority. It explicitly constructs empty arrays and recognizes typed leaves
 while retaining the original business rules.
 
-The source is at most 16 KiB. Process `lua.values` configures input/current/result
-conversion, defaulting to 32 levels, 4096 nodes and the protocol 2 MiB document
-bound. Process `lua.vm` exposes optional instruction, call-depth and stack-slot budgets.
+The [PSE product](../internal/luaengine/testdata/pse_product.lua) and
+[Offer](../internal/luaengine/testdata/pse_offer.lua) acceptance fixtures preserve
+the actual two-pass merge rules from PSE main
+`283940ef442b479440e45b39c86988351b92d7b5`. Their
+[local helpers](../internal/luaengine/testdata/pse_common.lua) implement the
+business policy with public Weir primitives. Tests cover Unicode brand casing,
+typed structural deduplication, date normalization, history tails, incoming seller
+priority, classifier patches, seller reconciliation and base placeholders.
+The finite date and URL authority rules use byte/sub operations and Lua loops;
+general pattern matching is not required by these rules.
+
+Weir does not impose source, input, current or result byte, node or nesting-depth
+admission limits. Value validation, JSON encoding and value/table conversion use
+explicit stacks and check the caller context; cyclic values and invalid types
+remain errors. JSON decoding uses Go's standard library and retains that
+library's parsing boundaries. Backend document-format limits still apply.
+Process `lua.vm` exposes optional instruction, call-depth and stack-slot budgets.
 The default instruction budget is unlimited; zero call/stack settings use the
 VM native defaults. Compilation, top-level execution and the callback inherit
 the caller context. Evaluations run concurrently inside the main Weir process without a fixed
@@ -121,8 +139,8 @@ concurrency cap or evaluation timeout.
 Each evaluation creates its own VM, globals, library tables and string metatable.
 The process loads the allowed standard-library functions and constants once;
 evaluations copy those immutable values into fresh tables, then bind their own
-conversion limits and observation time.
-Programs must be trusted: these bounds do not impose a hard heap quota on
+context and observation time.
+Programs must be trusted: execution controls do not impose a hard heap quota on
 arbitrary temporary Lua objects. Deployment memory limits still apply.
 
 Confirmed MongoDB transaction and Search compare-and-swap conflicts can trigger

@@ -83,7 +83,7 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 	})
 	adapter := scanBatchAdapter(t, handler)
 	request := &pb.ScanRequest{Resource: "records", PageSize: 250}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil || work.ResultBytes != execution.ScanResultBytes || work.WorkingBytes != scanWorkingBytes {
 		t.Fatal("Scan reservation", failure, work)
 	}
@@ -113,7 +113,7 @@ func TestScanFetchUsesBatchesAndRemainingPage(t *testing.T) {
 		t.Fatal("batch efficiency/page checkpoint", sizes, state.Count, state.after)
 	}
 	request.ContinuationToken = token
-	resumed, failure := adapter.prepareScan(request)
+	resumed, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -143,18 +143,18 @@ func TestScanRetainsValidatedPrefixAndAdvancesAcceptedCheckpoint(t *testing.T) {
 			adapter := &Adapter{dialect: ElasticsearchProduct}
 			state := &scanPlan{index: "records", items: 3, batchSize: 3, pit: "previous", after: 7, hasAfter: true}
 			rows := []json.RawMessage{
-				scanBatchHit(8, protocol.MaxDocument),
-				scanBatchHit(9, protocol.MaxDocument),
-				scanBatchHit(10, protocol.MaxDocument),
+				scanBatchHit(8, (2 << 20)),
+				scanBatchHit(9, (2 << 20)),
+				scanBatchHit(10, (2 << 20)),
 			}
 			switch mode {
 			case "invalid_tail":
 				rows[2] = json.RawMessage(strings.Replace(string(rows[2]), `"_index":"records"`, `"_index":"other"`, 1))
 			case "oversized_tail":
-				rows[2] = scanBatchHit(10, protocol.MaxDocument+1)
+				rows[2] = scanBatchHit(10, (2<<20)+1)
 			}
-			page := adapter.scanReply(scanBatchReply(rows), state)
-			if mode != "valid_tail" {
+			page := adapter.scanReply(context.Background(), scanBatchReply(rows), state)
+			if mode == "invalid_tail" {
 				if page.Failure == nil || len(page.Documents) != 0 || state.after != 7 || page.Exhausted {
 					t.Fatal("invalid discarded tail changed checkpoint", page, state.after)
 				}
@@ -171,7 +171,7 @@ func TestScanRetainsValidatedPrefixAndAdvancesAcceptedCheckpoint(t *testing.T) {
 				t.Fatal("retained output byte bound", retainedBytes)
 			}
 			nextRows := []json.RawMessage{scanBatchHit(10, 0)}
-			next := adapter.scanReply(scanBatchReply(nextRows), state)
+			next := adapter.scanReply(context.Background(), scanBatchReply(nextRows), state)
 			if next.Failure != nil || len(next.Documents) != 1 || state.after != 10 {
 				t.Fatal("discarded tail skipped on resume", next)
 			}
@@ -179,53 +179,7 @@ func TestScanRetainsValidatedPrefixAndAdvancesAcceptedCheckpoint(t *testing.T) {
 	}
 }
 
-func TestScanDownsizesExcessiveResponsesWithoutAdvancing(t *testing.T) {
-	var sizes []int
-	var positions []int64
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request scanSearchRequest
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Error(err)
-			return
-		}
-		sizes = append(sizes, request.Size)
-		positions = append(positions, request.After[0])
-		if request.Size > 2 {
-			w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		rows := []json.RawMessage{
-			scanBatchHit(int(request.After[0])+1, 0),
-			scanBatchHit(int(request.After[0])+2, 0),
-		}
-		_, _ = w.Write(scanBatchReply(rows))
-	})
-	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "records", PageSize: 8}
-	work, failure := adapter.prepareScan(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	state := work.Backend.(*scanPlan)
-	state.opened, state.pit, state.after, state.hasAfter = true, "previous", 7, true
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	for step := 0; step < 2; step++ {
-		page := adapter.fetchScan(ctx, work)
-		if page.Failure != nil || len(page.Documents) != 2 || page.Exhausted {
-			t.Fatal("downsize lost bounded result", page)
-		}
-		state.Count += uint64(len(page.Documents))
-	}
-	wantSizes := []int{8, 4, 2, 2}
-	wantPositions := []int64{7, 7, 7, 9}
-	if !reflect.DeepEqual(sizes, wantSizes) || !reflect.DeepEqual(positions, wantPositions) || state.after != 11 || state.batchSize != 2 {
-		t.Fatal("read retry changed checkpoint or forgot size", sizes, positions, state)
-	}
-}
-
-func TestScanSingleExcessiveResponseFailsWithoutReplay(t *testing.T) {
+func TestScanTruncatedResponseFailsWithoutReplay(t *testing.T) {
 	calls := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -234,45 +188,15 @@ func TestScanSingleExcessiveResponseFailsWithoutReplay(t *testing.T) {
 	})
 	adapter := scanBatchAdapter(t, handler)
 	request := &pb.ScanRequest{Resource: "records", PageSize: 1}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	state := work.Backend.(*scanPlan)
 	state.opened, state.pit, state.after, state.hasAfter = true, "previous", 7, true
 	page := adapter.fetchScan(context.Background(), work)
-	if page.Failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || len(page.Documents) != 0 || state.after != 7 || calls != 1 {
+	if page.Failure.GetCode() != pb.FailureCode_INTERNAL || len(page.Documents) != 0 || state.after != 7 || calls != 1 {
 		t.Fatal("single excessive result was retried or advanced", page, calls, state.after)
-	}
-}
-
-func TestScanDownsizingRetainsOriginalDeadline(t *testing.T) {
-	var calls atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		if calls.Add(1) == 1 {
-			w.Header().Set("Content-Length", fmt.Sprint(backend.DefaultOptions().ExchangeBytes+1))
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		select {
-		case <-r.Context().Done():
-		case <-time.After(time.Second):
-		}
-	})
-	adapter := scanBatchAdapter(t, handler)
-	request := &pb.ScanRequest{Resource: "records", PageSize: 128}
-	work, failure := adapter.prepareScan(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	state := work.Backend.(*scanPlan)
-	state.opened, state.pit, state.after, state.hasAfter = true, "previous", 7, true
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	defer cancel()
-	page := adapter.fetchScan(ctx, work)
-	if page.Failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || len(page.Documents) != 0 || state.after != 7 || calls.Load() != 2 {
-		t.Fatal("retry refreshed the deadline or advanced", page, calls.Load(), state.after)
 	}
 }
 
@@ -289,7 +213,7 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	})
 	adapter := scanBatchAdapter(t, handler)
 	request := &pb.ScanRequest{Resource: "records"}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -304,7 +228,7 @@ func TestScanStructuredSourcesUsePerHitJSONBudget(t *testing.T) {
 	hit = json.RawMessage(strings.Replace(string(hit), `{"n":0,"pad":""}`, `{"values":[`+excessiveValues+`]}`, 1))
 	state.hasAfter = false
 	rows := []json.RawMessage{hit}
-	page = adapter.scanReply(scanBatchReply(rows), state)
+	page = adapter.scanReply(context.Background(), scanBatchReply(rows), state)
 	if page.Failure != nil || len(page.Documents) != 1 {
 		t.Fatal("valid source rejected by a hidden node cap", page.Failure)
 	}
@@ -318,7 +242,7 @@ func TestScanCheckpointContainsTraversalStateOnly(t *testing.T) {
 			request := &pb.ScanRequest{Resource: "records"}
 			profile := adapter.scanProfile()
 			fingerprint := protocol.ScanFingerprint(request, "search", profile)
-			checkpoint := scanCheckpoint{PIT: "previous", After: 7}
+			checkpoint := scanCheckpoint{PIT: "previous", Index: "records", After: 7}
 			state, _ := json.Marshal(checkpoint)
 			switch mode {
 			case "missing_pit":
@@ -332,14 +256,14 @@ func TestScanCheckpointContainsTraversalStateOnly(t *testing.T) {
 			case "duplicate":
 				state = []byte(`{"pit":"previous","after":7,"after":8}`)
 			case "wrong_profile":
-				profile = "search:" + adapter.dialect + ":v2"
+				profile = "search:" + adapter.dialect + ":v1"
 			}
 			token, err := protocol.EncodeScanToken(profile, fingerprint, state)
 			if err != nil {
 				t.Fatal(err)
 			}
 			request.ContinuationToken = token
-			work, failure := adapter.prepareScan(request)
+			work, failure := adapter.prepareScan(context.Background(), request)
 			if mode != "valid" {
 				if failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
 					t.Fatal("invalid checkpoint reached backend work", mode, failure)
@@ -364,7 +288,7 @@ func TestScanPublicationFailureEndsWithInternalFailure(t *testing.T) {
 	})
 	adapter := scanBatchAdapter(t, handler)
 	request := &pb.ScanRequest{Resource: "records"}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -436,7 +360,7 @@ func TestScanOpenAndFetchShareDeadlineAndCleanup(t *testing.T) {
 			request := &pb.ScanRequest{Resource: "records", PageSize: 2}
 			variant := &pb.Command_Scan{Scan: request}
 			command := &pb.Command{Operation: variant}
-			work, failure := adapter.PrepareCommand(1, command)
+			work, failure := adapter.PrepareCommand(context.Background(), 1, command)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -516,7 +440,7 @@ func TestConfiguredSearchScanBatchAndNoShardTimeout(t *testing.T) {
 	settings.Scan.Documents, settings.Scan.Bytes = 17, 8<<20
 	adapter.config.Options = &settings
 	request := &pb.ScanRequest{Resource: "records", PageSize: 256}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil || work.ResultBytes != settings.Scan.ResultBytes() {
 		t.Fatal(failure, work)
 	}
@@ -540,7 +464,7 @@ func TestScanFetchAcceptsConfiguredExchangeAboveEightMiB(t *testing.T) {
 	adapter := scanBatchAdapter(t, handler)
 	adapter.config.Options = &settings
 	request := &pb.ScanRequest{Resource: "records", PageSize: 10}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}

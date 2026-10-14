@@ -29,7 +29,7 @@ import (
 
 const secureOwner = "weir-mongo-local1"
 const elasticImage = "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237"
-const openSearchImage = "opensearchproject/opensearch@sha256:89a402aa9132286200b8d12aa37fd5b14daa65851193d009355900c0d1d9d59c"
+const openSearchImage = "opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146"
 
 // SecureFixture owns one native TLS database. Admin is used only for bootstrap
 // and independent observation. Backend contains the restricted application pair.
@@ -133,7 +133,7 @@ func OpenSecure(t *testing.T) *SecureFixture {
 	t.Cleanup(transport.CloseIdleConnections)
 	profile := "elasticsearch-8.19.22"
 	if product == "opensearch" {
-		profile = "opensearch-2.19.6"
+		profile = "opensearch-3.3.0"
 	}
 	index := "weir_search_secure_" + strings.ReplaceAll(suffix, "-", "_")
 	f.Admin = &Backend{

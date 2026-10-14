@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 
@@ -70,7 +71,16 @@ func (a *Adapter) reject(errorType string, status int) *pb.Failure {
 		return nil
 	}
 }
-func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, err error) []*pb.Event {
+
+type bulkResponse struct {
+	works  []*execution.Plan
+	status int
+	raw    []byte
+	err    error
+}
+
+func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.Event {
+	works, status, raw, err := response.works, response.status, response.raw, response.err
 	results := make([]*pb.Event, len(works))
 	outcome := pb.MutationOutcome_UNKNOWN
 	failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write acknowledgement invalid or incomplete")
@@ -86,15 +96,21 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 		failure = protocol.Fail(pb.FailureCode_CANCELLED, "backend write canceled; acknowledgement unavailable")
 	case errTransport:
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write transport failed; acknowledgement unavailable")
-	case errResponseLimit:
-		failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "backend write response exceeds byte limit; acknowledgement unavailable")
 	case errResponse:
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend write response invalid or incomplete; acknowledgement unavailable")
 	}
 	for i, work := range works {
 		results[i] = execution.FailedEvent(work.Command, outcome, failure)
 	}
-	if err != nil || len(raw) > a.options().ExchangeBytes || validateJSON(raw, len(raw)) != nil {
+	if err != nil {
+		return results
+	}
+	if validateJSON(ctx, raw) != nil {
+		if ctx.Err() != nil {
+			for i, work := range works {
+				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_UNKNOWN, protocol.ContextFailure(ctx))
+			}
+		}
 		return results
 	}
 	if status != 200 {
@@ -159,7 +175,7 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, acknowledgement+" acknowledgement unavailable or incomplete")
 			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_UNKNOWN, failure)
 			encoded := envelope.Items[i][native.bulkAction()]
-			if len(encoded) > metadataLimit || validateJSON(encoded, len(encoded)) != nil {
+			if validateJSON(ctx, encoded) != nil {
 				continue
 			}
 		}
@@ -214,15 +230,18 @@ func (a *Adapter) bulkResults(works []*execution.Plan, status int, raw []byte, e
 }
 
 // Metadata/read failures describe availability, without claiming a write outcome.
-func (a *Adapter) nativeResponseFailure(status int, raw []byte) *pb.Failure {
+func (a *Adapter) nativeResponseFailure(ctx context.Context, status int, raw []byte) *pb.Failure {
 	var envelope struct {
 		Error  *nativeError
 		Status int
 	}
-	if len(raw) <= metadataLimit && validateJSON(raw, len(raw)) == nil && json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
+	if validateJSON(ctx, raw) == nil && json.Unmarshal(raw, &envelope) == nil && envelope.Error != nil && envelope.Status == status {
 		if failure := a.reject(envelope.Error.Type, status); failure != nil {
 			return failure
 		}
+	}
+	if ctx.Err() != nil {
+		return protocol.ContextFailure(ctx)
 	}
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend request failed without reliable native error evidence")
 }

@@ -83,7 +83,7 @@ func TestMongoLuaBusinessFunctionCreatesMissingRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := adapter.PrepareRecord(record)
+	work, failure := adapter.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}

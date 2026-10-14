@@ -1,0 +1,93 @@
+package store
+
+import (
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
+	"google.golang.org/protobuf/proto"
+)
+
+type nativeAccountingAdapter struct {
+	lifecycleAdapter
+	events []*pb.Event
+}
+
+func (a *nativeAccountingAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+	for _, event := range a.events {
+		if err := emit(plans[0], event); err != nil {
+			return false
+		}
+	}
+	return false
+}
+
+func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
+	for _, kind := range []string{"metadata", "failure"} {
+		t.Run(kind, func(t *testing.T) {
+			metadata := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("m"), 3<<20)}
+			head := &pb.NativeHead{Metadata: metadata, BodyContentType: "application/octet-stream"}
+			headValue := &pb.Event_Head{Head: head}
+			headEvent := &pb.Event{Value: headValue}
+			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, strings.Repeat("f", 4<<20))
+			end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_INCOMPLETE, Failure: failure}
+			endValue := &pb.Event_NativeEnd{NativeEnd: end}
+			endEvent := &pb.Event{Value: endValue}
+			adapter := &nativeAccountingAdapter{events: []*pb.Event{headEvent, endEvent}}
+			runtime := newRuntime(adapter, DefaultLimits())
+			session := runtime.NewSession()
+			defer session.Close()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			work := plan(1, "native", false)
+			work.Command = nativeCall()
+			work.ResultBytes = protocol.NativeChunk + execution.ResultOverheadBytes
+			ticket, rejected, _ := runtime.Submit(ctx, work, session)
+			if rejected != nil {
+				t.Fatal(rejected)
+			}
+			batch := selectCrossBatch(runtime)
+			done := make(chan struct{})
+			go func() {
+				runtime.execute(batch)
+				close(done)
+			}()
+			deadline, stop := context.WithTimeout(t.Context(), 2*time.Second)
+			defer stop()
+			var paused *Emission
+			for {
+				select {
+				case paused = <-session.Events:
+					if kind == "failure" && paused.Event.GetHead() != nil {
+						paused.Release()
+						continue
+					}
+				case <-deadline.Done():
+					t.Fatal("Native publication did not start")
+				}
+				break
+			}
+			actual := proto.Size(paused.Event) + execution.ResultOverheadBytes
+			if snapshot := runtime.Snapshot(); snapshot.ResultBytes < actual {
+				t.Fatal("large paused Native event was discounted", snapshot.ResultBytes, actual)
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-deadline.Done():
+				t.Fatal("cancellation retained Native execution")
+			}
+			paused.Release()
+			ticket.Ack()
+			waitReleased(t, runtime)
+			if snapshot := runtime.Snapshot(); snapshot.ResultBytes != 0 || snapshot.PendingBytes != 0 || snapshot.WorkingBytes != 0 {
+				t.Fatal("Native accounting survived cancellation", snapshot)
+			}
+		})
+	}
+}

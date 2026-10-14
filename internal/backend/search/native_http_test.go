@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
@@ -47,7 +46,7 @@ func TestNativeHTTPFramingRejectsAmbiguousRequests(t *testing.T) {
 	}
 }
 
-func TestNativeHTTPBodyBorrowsInputWithinWholeMessageLimit(t *testing.T) {
+func TestNativeHTTPBodyBorrowsLargeInput(t *testing.T) {
 	body := []byte("{\"delete\":{\"_id\":\"x\"}}\n")
 	head := []byte(fmt.Sprintf("POST /_bulk?refresh=true HTTP/1.1\r\nHost: ignored.invalid\r\nContent-Type: application/x-ndjson\r\nContent-Length: %d\r\n\r\n", len(body)))
 	raw := append(head, body...)
@@ -55,33 +54,30 @@ func TestNativeHTTPBodyBorrowsInputWithinWholeMessageLimit(t *testing.T) {
 	if failure != nil || request.Method != http.MethodPost || !bytes.Equal(parsed, body) || &parsed[0] != &raw[len(head)] || request.Body != http.NoBody {
 		t.Fatal("native body copied or retained by HTTP parser", failure)
 	}
-	for _, length := range []int{protocol.MaxNativeRequestBytes, protocol.MaxNativeRequestBytes + 1} {
+	for _, length := range []int{(8 << 20), (8 << 20) + 1} {
 		// Use a fixed-width length so the whole input is exactly the tested bound.
 		header := "POST /_bulk HTTP/1.1\r\nContent-Type: application/x-ndjson\r\nContent-Length: 00000000\r\n\r\n"
 		bodyLength := length - len(header)
 		header = strings.Replace(header, "00000000", fmt.Sprintf("%08d", bodyLength), 1)
 		input := append([]byte(header), bytes.Repeat([]byte("x"), bodyLength)...)
 		_, body, failure := parseNativeHTTPRequest(input)
-		if length == protocol.MaxNativeRequestBytes && (failure != nil || len(body) != bodyLength) || length > protocol.MaxNativeRequestBytes && failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+		if failure != nil || len(body) != bodyLength {
 			t.Fatal("whole-message byte bound", length, failure)
 		}
 	}
 }
 
-func TestNativeHTTPHeaderBoundPrecedesParserAllocation(t *testing.T) {
-	raw := []byte("GET /_doc/x HTTP/1.1\r\nX-Opaque-Id: " + strings.Repeat("x", protocol.MaxNativeMetadataBytes) + "\r\n\r\n")
-	allocations := testing.AllocsPerRun(3, func() {
-		if _, _, failure := parseNativeHTTPRequest(raw); failure == nil {
-			t.Fatal("oversized header parsed")
-		}
-	})
-	if allocations > 8 {
-		t.Fatal("oversized HTTP header allocated before rejection", allocations)
+func TestNativeHTTPHeadersBeyondFormerLimit(t *testing.T) {
+	header := strings.Repeat("x", 128<<10)
+	raw := []byte("GET /_doc/x HTTP/1.1\r\nX-Opaque-Id: " + header + "\r\n\r\n")
+	request, _, failure := parseNativeHTTPRequest(raw)
+	if failure != nil || request.Header.Get("X-Opaque-Id") != header {
+		t.Fatal("large header changed", failure)
 	}
 	many := []byte("GET /_doc/x HTTP/1.1\r\n" + strings.Repeat("X-Native: arbitrary\r\n", 1000) + "\r\n")
-	request, _, failure := parseNativeHTTPRequest(many)
+	request, _, failure = parseNativeHTTPRequest(many)
 	if failure != nil || len(request.Header.Values("X-Native")) != 1000 {
-		t.Fatal("header count constrained independently of byte budget", failure)
+		t.Fatal("header count changed", failure)
 	}
 }
 
@@ -118,7 +114,7 @@ func TestSearchScanProjectionAcceptsLiteralDollarField(t *testing.T) {
 	request := &pb.ScanRequest{Resource: "records", Projection: projection}
 	config := Config{Store: "search"}
 	adapter := &Adapter{config: config}
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil || work == nil {
 		t.Fatal("adapter-independent business field rejected", failure)
 	}
@@ -240,7 +236,7 @@ func TestNativeHTTPRedirectCannotSelectAnotherBackend(t *testing.T) {
 }
 
 func TestNativeHTTPConfiguredTransportAcceptsFullMetadataBudget(t *testing.T) {
-	value := strings.Repeat("x", 48<<10)
+	value := strings.Repeat("x", 128<<10)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if qualification(w, request) {
 			return
@@ -259,7 +255,7 @@ func TestNativeHTTPConfiguredTransportAcceptsFullMetadataBudget(t *testing.T) {
 	defer adapter.Close()
 	request := nativeRequest(t, "records", "GET", "/_search")
 	end, capture := runNative(t, adapter, request, nil)
-	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || capture.head == nil || len(capture.head.Metadata.GetData()) <= 32<<10 || len(capture.head.Metadata.GetData()) > protocol.MaxNativeMetadataBytes || capture.body.String() != `{"native":"response"}` {
+	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || capture.head == nil || len(capture.head.Metadata.GetData()) <= 32<<10 || capture.body.String() != `{"native":"response"}` {
 		t.Fatal("Native transport imposed a smaller header bound", end)
 	}
 	metadata := nativeMetadata(t, capture.head)

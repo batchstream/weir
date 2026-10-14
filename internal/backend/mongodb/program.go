@@ -298,7 +298,7 @@ func (a *Adapter) programBatchSize(items int) int32 {
 	if a.options().ExchangeBytes >= nativeBytes {
 		return int32(items)
 	}
-	return int32(min(items, a.options().ExchangeBytes/protocol.MaxDocument))
+	return int32(min(items, max(1, a.options().ExchangeBytes/a.documentBytes())))
 }
 
 func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]bson.Raw, error) {
@@ -318,7 +318,7 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	if err != nil {
 		return nil, err
 	}
-	if len(encoded) > a.commandBytes()-(64<<10) {
+	if len(plans) > 1 && len(encoded) > a.commandBytes() {
 		return nil, errProgramBatchBound
 	}
 	command = bson.Raw(encoded)
@@ -331,7 +331,7 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 			return nil, err
 		}
 		fields, err := scanFields(raw)
-		valid := err == nil && len(raw) <= scanNativeLimit && scanOK(fields["ok"])
+		valid := err == nil && scanOK(fields["ok"])
 		for key := range fields {
 			if key != "ok" && key != "cursor" && key != "operationTime" && key != "$clusterTime" {
 				valid = false
@@ -350,13 +350,6 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 			if !validID || !found || documents[position] != nil {
 				return nil, errProgramReadEvidence
 			}
-			if len(raw) > protocol.MaxDocument {
-				// Mark only this item as undecodable without retaining an
-				// oversized backend document in the transaction workspace.
-				documents[position] = bson.Raw{}
-				received++
-				continue
-			}
 			documents[position] = append(bson.Raw(nil), raw...)
 			received++
 		}
@@ -373,103 +366,112 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 	writePositions := make([]int, 0, len(positions))
 	for i, position := range positions {
 		work := batch.plans[position]
-		native := work.Backend.(*plan)
 		raw := documents[i]
 		documents[i] = nil
-		if failure := programCallerFailure(ctx, work); failure != nil {
-			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-			continue
+		write, result := transformProgram(ctx, work, raw)
+		if result != nil {
+			batch.results[position] = result
+		} else {
+			writes = append(writes, write)
+			writePositions = append(writePositions, position)
 		}
-		missing := raw == nil
-		current := value.Value{Kind: value.Missing}
-		if !missing {
-			var err error
-			current, err = Decode(raw, a.options().Lua.Values)
-			if err != nil {
-				failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored document contains unsupported BSON values")
-				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-				continue
-			}
-		}
-		if native.program.ObservedAt.IsZero() {
-			native.program.ObservedAt = time.Now()
-		}
-		program := *native.program
-		program.Current = current
-		evaluateContext, cancel := context.WithCancel(ctx)
-		var stop func() bool
-		if work.Context != nil {
-			if deadline, exists := work.Context.Deadline(); exists {
-				cancel()
-				evaluateContext, cancel = context.WithDeadline(ctx, deadline)
-			}
-			stop = context.AfterFunc(work.Context, cancel)
-		}
-		transformed, transformErr := luaengine.Evaluate(evaluateContext, program)
-		if stop != nil {
-			stop()
-		}
-		cancel()
-		if failure := programCallerFailure(ctx, work); failure != nil {
-			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-			continue
-		}
-		if transformErr != nil {
-			batch.results[position] = execution.LuaFailure(ctx, transformErr)
-			continue
-		}
-		prepared := &plan{target: native.target, id: native.id}
-		switch transformed.Action {
-		case "keep":
-			batch.results[position] = protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
-			continue
-		case "reject":
-			failure := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, transformed.Message)
-			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-			continue
-		case "delete":
-			if missing {
-				batch.results[position] = protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
-				continue
-			}
-			prepared.action = "delete"
-		case "replace":
-			identity, identityErr := mongoIdentity(native.id)
-			if !missing && identityErr == nil {
-				storedID, lookupErr := current.Lookup("_id")
-				if lookupErr != nil || !equalID(storedID, native.id) {
-					identityErr = errProgramReadEvidence
-				} else {
-					identity.Value = storedID
-				}
-			}
-			replacement, valid := withMongoIdentity(transformed.Value, identity, native.id, a.options().Lua.Values)
-			if identityErr != nil || !valid {
-				failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
-				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-				continue
-			}
-			encoded, encodeErr := Encode(replacement, a.options().Lua.Values)
-			if encodeErr != nil {
-				failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Lua replacement exceeds BSON limits")
-				batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-				continue
-			}
-			prepared.document = encoded
-			prepared.action = "replace"
-			if missing {
-				prepared.action = "create"
-			}
-		default:
-			failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
-			batch.results[position] = protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
-			continue
-		}
-		write := &execution.Plan{Command: work.Command, Backend: prepared}
-		writes = append(writes, write)
-		writePositions = append(writePositions, position)
 	}
 	return writes, writePositions
+}
+
+func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (*execution.Plan, *pb.MutationResult) {
+	if failure := programCallerFailure(ctx, work); failure != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	}
+	if work.Context != nil {
+		programContext, cancel := context.WithCancel(ctx)
+		if deadline, exists := work.Context.Deadline(); exists {
+			cancel()
+			programContext, cancel = context.WithDeadline(ctx, deadline)
+		}
+		stop := context.AfterFunc(work.Context, cancel)
+		defer stop()
+		defer cancel()
+		ctx = programContext
+	}
+	native := work.Backend.(*plan)
+	missing := raw == nil
+	current := value.Value{Kind: value.Missing}
+	if !missing {
+		var err error
+		current, err = Decode(ctx, raw)
+		if err != nil {
+			if failure := programCallerFailure(ctx, work); failure != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			}
+			failure := protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored document contains unsupported BSON values")
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+		}
+	}
+	if native.program.ObservedAt.IsZero() {
+		native.program.ObservedAt = time.Now()
+	}
+	program := *native.program
+	program.Current = current
+	transformed, transformErr := luaengine.Evaluate(ctx, program)
+	if failure := programCallerFailure(ctx, work); failure != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	}
+	if transformErr != nil {
+		return nil, execution.LuaFailure(ctx, transformErr)
+	}
+	prepared := &plan{target: native.target, id: native.id}
+	switch transformed.Action {
+	case "keep":
+		return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
+	case "reject":
+		failure := protocol.Fail(pb.FailureCode_PRECONDITION_FAILED, transformed.Message)
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	case "delete":
+		if missing {
+			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
+		}
+		prepared.action = "delete"
+	case "replace":
+		identity, identityErr := mongoIdentity(ctx, native.id)
+		if !missing && identityErr == nil {
+			storedID, lookupErr := current.Lookup("_id")
+			if lookupErr != nil || !equalID(storedID, native.id) {
+				identityErr = errProgramReadEvidence
+			} else {
+				identity.Value = storedID
+			}
+		}
+		replacement, valid := withMongoIdentity(ctx, transformed.Value, identity, native.id)
+		if identityErr != nil || !valid {
+			if failure := programCallerFailure(ctx, work); failure != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			}
+			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+		}
+		encoded, encodeErr := Encode(ctx, replacement)
+		if encodeErr != nil {
+			if failure := programCallerFailure(ctx, work); failure != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+			}
+			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement contains invalid BSON values")
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+		}
+		prepared.document = encoded
+		prepared.action = "replace"
+		if missing {
+			prepared.action = "create"
+		}
+	default:
+		failure := protocol.Fail(pb.FailureCode_INTERNAL, "Lua evaluation returned an invalid action")
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	}
+	if failure := programCallerFailure(ctx, work); failure != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+	}
+	write := &execution.Plan{Command: work.Command, Backend: prepared}
+	return write, nil
 }
 
 func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.MutationResult, bool, error) {
@@ -498,7 +500,7 @@ func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([
 	if err != nil {
 		return nil, false, err
 	}
-	if len(encoded) > a.commandBytes()-(64<<10) {
+	if len(plans) > 1 && len(encoded) > a.commandBytes() {
 		return nil, false, errProgramBatchBound
 	}
 	command = bson.Raw(encoded)
@@ -532,14 +534,14 @@ func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([
 	return nil, false, errProgramReadEvidence
 }
 
-func mongoIdentity(id any) (value.Field, error) {
+func mongoIdentity(ctx context.Context, id any) (value.Field, error) {
 	identityDocument := bson.D{{Key: "_id", Value: id}}
 	raw, err := bson.Marshal(identityDocument)
 	if err != nil {
 		var zero value.Field
 		return zero, err
 	}
-	identity, err := Decode(raw, value.DefaultLimits())
+	identity, err := Decode(ctx, raw)
 	if err != nil || len(identity.Fields) != 1 {
 		var zero value.Field
 		return zero, fmt.Errorf("invalid encoded identity")
@@ -547,8 +549,8 @@ func mongoIdentity(id any) (value.Field, error) {
 	return identity.Fields[0], nil
 }
 
-func withMongoIdentity(document value.Value, identity value.Field, id any, limits value.Limits) (value.Value, bool) {
-	if document.Kind != value.Object || value.Validate(document, limits) != nil {
+func withMongoIdentity(ctx context.Context, document value.Value, identity value.Field, id any) (value.Value, bool) {
+	if document.Kind != value.Object || value.Validate(ctx, document) != nil {
 		var zero value.Value
 		return zero, false
 	}
@@ -564,7 +566,7 @@ func withMongoIdentity(document value.Value, identity value.Field, id any, limit
 			result.Fields = append(result.Fields, field)
 		}
 	}
-	if err := value.Validate(result, limits); err != nil {
+	if err := value.Validate(ctx, result); err != nil {
 		var zero value.Value
 		return zero, false
 	}

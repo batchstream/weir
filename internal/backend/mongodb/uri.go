@@ -12,8 +12,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 )
 
-const maxMongoURIBytes = 4096
-
 // ValidateConfig is pure and accepts only the audited single-endpoint profiles.
 // Credentials are supplied separately; the URI never carries user information.
 func ValidateConfig(cfg Config) error {
@@ -25,13 +23,13 @@ func ValidateConfig(cfg Config) error {
 		return errors.New("invalid MongoDB Store")
 	}
 	if (cfg.Username == "") != (cfg.Password == "") ||
-		!validCredential(cfg.Username, 128) || !validCredential(cfg.Password, 256) {
+		!validCredential(cfg.Username) || !validCredential(cfg.Password) {
 		return errors.New("invalid MongoDB credential pair")
 	}
 
 	raw := cfg.URI
-	if len(raw) == 0 || len(raw) > maxMongoURIBytes || strings.TrimSpace(raw) != raw {
-		return errors.New("invalid MongoDB URI length or whitespace")
+	if len(raw) == 0 || strings.TrimSpace(raw) != raw {
+		return errors.New("invalid MongoDB URI or whitespace")
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "mongodb" || parsed.Opaque != "" || parsed.Fragment != "" || parsed.RawFragment != "" {
@@ -58,9 +56,6 @@ func ValidateConfig(cfg Config) error {
 		_, exists := options[name]
 		if len(values) != 1 || exists {
 			return errors.New("duplicate MongoDB URI option")
-		}
-		if len(values[0]) > 2048 {
-			return errors.New("MongoDB URI option exceeds bound")
 		}
 		options[name] = values[0]
 	}
@@ -91,14 +86,14 @@ func ValidateConfig(cfg Config) error {
 	if tls, ok := options["tls"]; ok && tls != "true" {
 		return errors.New("MongoDB TLS option must be true")
 	}
-	if len(cfg.CAFile) > 2048 || !validCredential(cfg.CAFile, 2048) || cfg.CAFile != "" && options["tls"] != "true" {
+	if !validCredential(cfg.CAFile) || cfg.CAFile != "" && options["tls"] != "true" {
 		return errors.New("MongoDB CA file requires TLS and a valid path")
 	}
 	return nil
 }
 
-func validCredential(value string, limit int) bool {
-	if len(value) > limit || !utf8.ValidString(value) {
+func validCredential(value string) bool {
+	if !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {

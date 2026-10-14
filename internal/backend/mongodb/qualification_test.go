@@ -28,7 +28,7 @@ func TestMongoServerQualificationUsesTopologyOnly(t *testing.T) {
 				{Key: "ok", Value: 1},
 				{Key: "maxMessageSizeBytes", Value: 48 << 20},
 			},
-			wantErr: "MongoDB requires a replica set, no mongos, and bounded native messages",
+			wantErr: "MongoDB requires a replica set and no mongos",
 		},
 		{
 			name: "mongos",
@@ -38,16 +38,15 @@ func TestMongoServerQualificationUsesTopologyOnly(t *testing.T) {
 				{Key: "msg", Value: "isdbgrid"},
 				{Key: "maxMessageSizeBytes", Value: 48 << 20},
 			},
-			wantErr: "MongoDB requires a replica set, no mongos, and bounded native messages",
+			wantErr: "MongoDB requires a replica set and no mongos",
 		},
 		{
-			name: "oversized native messages",
+			name: "larger advertised native messages",
 			response: bson.D{
 				{Key: "ok", Value: 1},
 				{Key: "setName", Value: "weir_test"},
 				{Key: "maxMessageSizeBytes", Value: (48 << 20) + 1},
 			},
-			wantErr: "MongoDB requires a replica set, no mongos, and bounded native messages",
 		},
 		{
 			name: "hello rejected",

@@ -17,27 +17,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestPeerResponseDecodeBudgetBeforeObjectConstruction(t *testing.T) {
+func TestPeerResponseFramingHasNoAnnouncementQuota(t *testing.T) {
 	codec := peerCodec{}
-	for _, count := range []int{MaxAnnouncements, MaxAnnouncements + 1} {
+	for _, count := range []int{512, 1024, 8192} {
 		raw := bytes.Repeat([]byte{0x0a, 0}, count)
 		input := mem.BufferSlice{mem.SliceBuffer(raw)}
 		decoded := &peerpb.SyncDirectoryResponse{}
 		err := codec.Unmarshal(input, decoded)
 		input.Free()
-		if count == MaxAnnouncements && (err != nil || len(decoded.Announcements) != count) {
-			t.Fatal("legitimate response capacity rejected", err, len(decoded.Announcements))
+		if err != nil || len(decoded.Announcements) != count {
+			t.Fatal("legitimate large response rejected", err, len(decoded.Announcements))
 		}
-		if count > MaxAnnouncements && (status.Code(err) != codes.ResourceExhausted || len(decoded.Announcements) != 0) {
-			t.Fatal("over-budget response constructed announcements", err, len(decoded.Announcements))
-		}
-	}
-	input := mem.BufferSlice{mem.SliceBuffer(bytes.Repeat([]byte{0x0a, 0}, MaxSyncBytes/2+1))}
-	decoded := &peerpb.SyncDirectoryResponse{}
-	err := codec.Unmarshal(input, decoded)
-	input.Free()
-	if status.Code(err) != codes.ResourceExhausted || len(decoded.Announcements) != 0 {
-		t.Fatal("oversized peer response constructed objects", err, len(decoded.Announcements))
 	}
 }
 
@@ -87,18 +77,21 @@ func startRawDirectoryPeer(t *testing.T, raw []byte) string {
 	return listener.Addr().String()
 }
 
-func TestSyncPeerAcceptsFullWatermarksAndRejectsRawAmplification(t *testing.T) {
+func TestSyncPeerAcceptsLargeWatermarksAndRejectsMalformedAnnouncements(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	directory := newTestDirectory(t, cfg)
 	announcements := directory.snapshot(time.Now())
-	for i := 1; i < MaxAnnouncements; i++ {
-		node := announcement(i, "retired", "127.0.0.1:7447")
+	for i := 1; i < 640; i++ {
+		node := announcement(i, "retired-"+strings.Repeat("g", 4096), "127.0.0.1:7447")
 		node.Withdrawn = true
 		node.StoreNames = nil
 		node.StoreEndpoints = nil
 		announcements = append(announcements, node)
 	}
 	response := &peerpb.SyncDirectoryResponse{Announcements: announcements}
+	if proto.Size(response) <= 2<<20 {
+		t.Fatal("peer codec fixture did not cross the former byte limit")
+	}
 	raw, err := proto.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
@@ -107,10 +100,10 @@ func TestSyncPeerAcceptsFullWatermarksAndRejectsRawAmplification(t *testing.T) {
 	if err := directory.syncPeer(t.Context(), address); err != nil {
 		t.Fatal("full withdrawal watermark response rejected", err)
 	}
-	if len(directory.records) != MaxAnnouncements {
+	if len(directory.records) != 640 {
 		t.Fatal("legitimate watermarks lost", len(directory.records))
 	}
-	newNode := announcement(MaxAnnouncements, "unmerged", "127.0.0.1:7447")
+	newNode := announcement(640, "unmerged", "0.0.0.0:7447")
 	response.Announcements = append(response.Announcements, newNode)
 	raw, err = proto.Marshal(response)
 	if err != nil {
@@ -118,12 +111,10 @@ func TestSyncPeerAcceptsFullWatermarksAndRejectsRawAmplification(t *testing.T) {
 	}
 	address = startRawDirectoryPeer(t, raw)
 	err = directory.syncPeer(t.Context(), address)
-	// Native gRPC wraps codec errors as Internal. The decode budget must reject
-	// this reply before the application's directory merge sees its messages.
-	if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "metadata exceeds decode budget") {
-		t.Fatal("over-budget response escaped native client codec", err)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatal("malformed announcement escaped atomic validation", err)
 	}
-	if len(directory.records) != MaxAnnouncements {
+	if len(directory.records) != 640 {
 		t.Fatal("invalid response changed directory capacity", len(directory.records))
 	}
 	if _, exists := directory.records[newNode.IncarnationId]; exists {

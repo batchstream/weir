@@ -31,7 +31,7 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 }
 func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
-	limits.QueueBytes = protocol.MaxExecuteRequestBytes
+	limits.QueueBytes = (9 << 20)
 	limits.BatchOperations = 3
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)

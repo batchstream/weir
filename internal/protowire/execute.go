@@ -1,27 +1,22 @@
 package protowire
 
 import (
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 )
 
-// ValidateExecuteFrame rejects oversized frames and repeated routing/command
+// ValidateExecuteFrame rejects malformed frames and repeated routing/command
 // envelopes before protobuf allocates the single request object.
 func ValidateExecuteFrame(data mem.BufferSlice) error {
-	if data.Len() > protocol.MaxExecuteRequestBytes {
-		return status.Error(codes.ResourceExhausted, "execution frame exceeds input byte budget")
-	}
 	reader := frameCursor{buffers: data, remaining: data.Len()}
 	return validateMessageFrame(&reader, wireExecute, uint64(reader.remaining))
 }
 
 // Requests fail closed on unknown fields: silently dropping a future condition or
-// command option could change its effects. This is separate from response readers,
-// which may ignore additive metadata. Walking nested messages before decoding also
-// bounds allocations and prevents last-value-wins from hiding duplicate fields.
+// command option could change its effects. Walking nested messages before decoding
+// prevents last-value-wins from hiding duplicate fields without copying payloads.
 type wireKind uint8
 
 const (
@@ -44,41 +39,40 @@ type wireField struct {
 	scalar   bool
 	repeated bool
 	nested   wireKind
-	maximum  int
 	oneof    bool
 }
 
 var requestShapes = [...][]wireField{
-	wireExecute: {{number: 1, maximum: protocol.MaxExecuteRequestBytes},
-		{number: 2, scalar: true}, {number: 3, nested: wireCommand, maximum: protocol.MaxCommandBytes}},
-	wireCommand: {{number: 1, nested: wireRead, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 2, nested: wireMutate, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 3, nested: wireScan, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 4, nested: wireNative, maximum: protocol.MaxCommandBytes, oneof: true}},
-	wireRead: {{number: 1, maximum: protocol.MaxResourceBytes}},
-	wireMutate: {{number: 1, maximum: protocol.MaxResourceBytes},
-		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 3, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 4, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
+	wireExecute: {{number: 1},
+		{number: 2, scalar: true}, {number: 3, nested: wireCommand}},
+	wireCommand: {{number: 1, nested: wireRead, oneof: true},
+		{number: 2, nested: wireMutate, oneof: true},
+		{number: 3, nested: wireScan, oneof: true},
+		{number: 4, nested: wireNative, oneof: true}},
+	wireRead: {{number: 1}},
+	wireMutate: {{number: 1},
+		{number: 2, nested: wireDocument, oneof: true},
+		{number: 3, nested: wireDocument, oneof: true},
+		{number: 4, nested: wireDocument, oneof: true},
 		{number: 5, nested: wireEmpty, oneof: true},
-		{number: 6, nested: wireTransform, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 7, nested: wireMutationOptions, maximum: protocol.MaxCommandBytes}},
-	wireScan: {{number: 1, maximum: protocol.MaxResourceBytes},
-		{number: 2, nested: wireDocument, maximum: protocol.MaxScanFilterBytes + 256},
-		{number: 3, nested: wireProjection, maximum: 8 << 10},
+		{number: 6, nested: wireTransform, oneof: true},
+		{number: 7, nested: wireMutationOptions}},
+	wireScan: {{number: 1},
+		{number: 2, nested: wireDocument},
+		{number: 3, nested: wireProjection},
 		{number: 4, scalar: true},
-		{number: 5, maximum: protocol.MaxScanToken}},
-	wireNative: {{number: 1, maximum: protocol.MaxResourceBytes},
-		{number: 2, nested: wireDocument, maximum: protocol.MaxNativeRequestBytes + 256}},
-	wireDocument: {{number: 1, maximum: 128},
-		{number: 2, maximum: protocol.MaxCommandBytes}},
+		{number: 5}},
+	wireNative: {{number: 1},
+		{number: 2, nested: wireDocument}},
+	wireDocument: {{number: 1},
+		{number: 2}},
 	wireEmpty: {},
-	wireTransform: {{number: 1, nested: wireLua, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true}},
-	wireLua: {{number: 1, maximum: protocol.MaxCommandBytes},
-		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes}},
+	wireTransform: {{number: 1, nested: wireLua, oneof: true},
+		{number: 2, nested: wireDocument, oneof: true}},
+	wireLua: {{number: 1},
+		{number: 2, nested: wireDocument}},
 	wireProjection: {{number: 1, scalar: true},
-		{number: 2, repeated: true, maximum: 512}},
+		{number: 2, repeated: true}},
 	wireMutationOptions: {{number: 1, scalar: true}},
 }
 
@@ -87,7 +81,6 @@ var requestShapes = [...][]wireField{
 func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) error {
 	seen := uint64(0)
 	oneof := false
-	repeated := 0
 	for remaining > 0 {
 		tag, tagBytes, err := frameVarint(reader, remaining)
 		if err != nil {
@@ -108,12 +101,7 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 		}
 		seen |= 1 << number
 		oneof = oneof || shape.oneof
-		if shape.repeated {
-			repeated++
-			if kind == wireProjection && repeated > 128 {
-				return invalidExecuteFraming()
-			}
-		}
+
 		if shape.scalar {
 			if tag&7 != 0 {
 				return invalidExecuteFraming()
@@ -136,7 +124,7 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 			return err
 		}
 		remaining -= lengthBytes
-		if length > uint64(shape.maximum) || length > remaining {
+		if length > remaining {
 			return invalidExecuteFraming()
 		}
 		if shape.nested != 0 {

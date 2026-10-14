@@ -68,7 +68,7 @@ func (b *recordBatch) flushVisibilityBarriers() {
 }
 
 func (a *Adapter) refreshBarrier(ctx context.Context, index string) *pb.Failure {
-	call := exchange{path: "/" + url.PathEscape(index) + "/_refresh", method: http.MethodPost, limit: metadataLimit}
+	call := exchange{path: "/" + url.PathEscape(index) + "/_refresh", method: http.MethodPost}
 	status, raw, err := a.request(ctx, call)
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)
@@ -78,14 +78,12 @@ func (a *Adapter) refreshBarrier(ctx context.Context, index string) *pb.Failure 
 		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "query visibility deadline exceeded")
 	case errCanceled:
 		return protocol.Fail(pb.FailureCode_CANCELLED, "query visibility canceled")
-	case errResponseLimit:
-		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "query visibility response exceeds byte limit")
 	}
 	if err != nil {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "query visibility acknowledgement unavailable or incomplete")
 	}
 	if status != http.StatusOK {
-		return a.nativeResponseFailure(status, raw)
+		return a.nativeResponseFailure(ctx, status, raw)
 	}
 	var reply struct {
 		Shards *struct{ Total, Successful, Failed *int } `json:"_shards"`

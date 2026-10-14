@@ -94,7 +94,7 @@ func TestSearchProductDetection(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer a.Close()
-			if a.dialect != tc.product || requests.Load() != 2 {
+			if a.dialect != tc.product || requests.Load() != 1 {
 				t.Fatal("incorrect automatic product detection", a.dialect, requests.Load())
 			}
 		})

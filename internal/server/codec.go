@@ -7,15 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/protowire"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
 )
@@ -40,13 +36,7 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 		return nil, fmt.Errorf("response is not a protobuf message: %T", value)
 	}
 	size := proto.Size(wire)
-	maximum := protocol.MaxExecuteResponseBytes
-	if _, peer := value.(*peerpb.SyncDirectoryResponse); peer {
-		maximum = directory.MaxSyncBytes
-	}
-	if size > maximum {
-		return nil, status.Error(codes.ResourceExhausted, "response exceeds protobuf byte bound")
-	}
+
 	capacity := max(size, 1025)
 	codec.admission.wireBytes.Add(int64(capacity))
 	pool := &responseBufferOwner{admission: codec.admission, bytes: int64(capacity), message: value, done: make(chan struct{})}
@@ -74,15 +64,9 @@ func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 		}
 
 	case *peerpb.SyncDirectoryRequest:
-		if data.Len() > directory.MaxSyncBytes {
-			return status.Error(codes.ResourceExhausted, "directory sync exceeds input byte budget")
-		}
-		if err := protowire.ValidateRepeatedMessages(data, 1, directory.MaxAnnouncements); err != nil {
+
+		if err := protowire.ValidateRepeatedMessages(data, 1); err != nil {
 			return err
-		}
-	case *pb.ResolveStoreRequest:
-		if data.Len() > directory.MaxSyncBytes {
-			return status.Error(codes.ResourceExhausted, "discovery request exceeds input byte budget")
 		}
 	}
 	return encoding.GetCodecV2("proto").Unmarshal(data, value)

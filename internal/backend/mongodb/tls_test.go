@@ -9,7 +9,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
-	"encoding/binary"
 	"io"
 	"math/big"
 	"net"
@@ -21,7 +20,6 @@ import (
 	"time"
 
 	"github.com/batchstream/weir/internal/testutil/testdns"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -122,7 +120,7 @@ func tlsWireServer(t *testing.T, config *tls.Config, message []byte) string {
 }
 
 func TestMongoTLSVerificationAndOCSP(t *testing.T) {
-	for _, mode := range []string{"no_extension", "SNI", "expired", "bad_root", "staple_good", "staple_revoked", "staple_invalid", "staple_expired", "must_staple_missing", "staple_oversize", "responder_good", "responder_revoked", "responder_invalid_soft", "responder_oversize", "responder_redirect", "responder_headers", "responder_stall", "multiple_responders", "unsupported_responder"} {
+	for _, mode := range []string{"no_extension", "SNI", "expired", "bad_root", "staple_good", "staple_revoked", "staple_invalid", "staple_expired", "must_staple_missing", "staple_extension_overflow", "responder_good", "responder_revoked", "responder_invalid_soft", "responder_oversize", "responder_redirect", "responder_headers", "responder_stall", "multiple_responders", "unsupported_responder"} {
 		t.Run(mode, func(t *testing.T) {
 			opts := certificateOptions{expired: mode == "expired", mustStaple: mode == "must_staple_missing"}
 			var payload []byte
@@ -164,13 +162,15 @@ func TestMongoTLSVerificationAndOCSP(t *testing.T) {
 			if mode == "staple_expired" {
 				response.NextUpdate = time.Now().Add(-time.Second)
 			}
+			if strings.Contains(mode, "oversize") || mode == "staple_extension_overflow" {
+				extension := pkix.Extension{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 99999, 1}, Value: make([]byte, 96<<10)}
+				response.ExtraExtensions = []pkix.Extension{extension}
+			}
 			payload = testOCSP(t, cert, response)
 			if strings.Contains(mode, "invalid") {
 				payload = []byte("malformed")
 			}
-			if strings.Contains(mode, "oversize") {
-				payload = make([]byte, maxOCSPBytes+1)
-			}
+
 			if strings.HasPrefix(mode, "staple_") {
 				cert.config.Certificates[0].OCSPStaple = payload
 			}
@@ -193,62 +193,12 @@ func TestMongoTLSVerificationAndOCSP(t *testing.T) {
 			if conn != nil {
 				conn.Close()
 			}
-			good := mode == "no_extension" || mode == "SNI" || mode == "staple_good" || mode == "responder_good" || mode == "responder_invalid_soft"
+			good := mode == "no_extension" || mode == "SNI" || mode == "staple_good" || mode == "responder_good" || mode == "responder_invalid_soft" || mode == "responder_headers" || mode == "multiple_responders" || mode == "responder_oversize"
 			if mode == "SNI" && err == nil && <-sni != "localhost" {
 				t.Fatal("missing DNS SNI")
 			}
 			if (err == nil) != good {
 				t.Fatalf("accepted=%t expected=%t error=%v", err == nil, good, err)
-			}
-		})
-	}
-}
-
-func TestMongoTLSWireGuardBeforeDriverHeader(t *testing.T) {
-	opts := certificateOptions{}
-	cert := newTestCertificate(t, opts)
-	for _, mode := range []string{"good", "huge_length", "short_length", "errors", "bad_flags", "truncated"} {
-		t.Run(mode, func(t *testing.T) {
-			doc := bson.D{{Key: "ok", Value: 1.0}}
-			if mode == "errors" {
-				errors := make(bson.A, 4097)
-				for i := range errors {
-					errors[i] = "error"
-				}
-				field := bson.E{Key: "writeErrors", Value: errors}
-				doc = append(doc, field)
-			}
-			message := scanWireMessage(t, doc)
-			switch mode {
-			case "huge_length":
-				message = message[:16]
-				binary.LittleEndian.PutUint32(message, scanNativeLimit+1)
-			case "short_length":
-				binary.LittleEndian.PutUint32(message, 15)
-			case "bad_flags":
-				message[16] = 2
-			case "truncated":
-				message = message[:len(message)-1]
-			}
-			address := tlsWireServer(t, cert.config, message)
-			d := newConnectionOwner()
-			d.tlsConfig = &tls.Config{RootCAs: cert.roots}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			conn, err := d.DialContext(ctx, "tcp", address)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
-			conn.SetReadDeadline(time.Now().Add(time.Second))
-			header := make([]byte, 4)
-			n, err := conn.Read(header)
-			if mode == "good" || mode == "errors" {
-				if n != 4 || err != nil {
-					t.Fatal(n, err)
-				}
-			} else if n != 0 || err == nil {
-				t.Fatal("decrypted invalid header exposed to driver", n, err)
 			}
 		})
 	}

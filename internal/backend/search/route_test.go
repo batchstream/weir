@@ -11,13 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
 
 func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
-	source := `{"pad":"` + strings.Repeat("x", protocol.MaxDocument-len(`{"pad":""}`)) + `"}`
+	source := `{"pad":"` + strings.Repeat("x", (2<<20)-len(`{"pad":""}`)) + `"}`
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/records":
@@ -40,7 +39,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := adapter.PrepareRecord(record)
+	work, failure := adapter.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -60,7 +59,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events)
 	}
 	emptyRecord := &execution.Record{}
-	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
+	if _, failure := adapter.PrepareRecord(context.Background(), emptyRecord); failure == nil {
 		t.Fatal("accepted unconstructed record")
 	}
 }
@@ -79,7 +78,7 @@ func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := adapter.PrepareRecord(record)
+	work, failure := adapter.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -129,7 +128,7 @@ func TestRouteNativeBackendIOBudgetAndOutputBackpressure(t *testing.T) {
 			native := open
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
-			work, failure := adapter.PrepareCommand(1, call)
+			work, failure := adapter.PrepareCommand(context.Background(), 1, call)
 			if failure != nil {
 				t.Fatal(failure)
 			}

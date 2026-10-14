@@ -150,26 +150,29 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	var hello struct {
 		SetName     string `bson:"setName"`
 		Msg         string `bson:"msg"`
-		MaxMessage  int    `bson:"maxMessageSizeBytes"`
 		MaxDocument int    `bson:"maxBsonObjectSize"`
 	}
 	if err := a.client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil {
 		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
 	}
-	if hello.SetName == "" || hello.Msg == "isdbgrid" || hello.MaxMessage > 48<<20 {
-		return fmt.Errorf("MongoDB requires a replica set, no mongos, and bounded native messages")
+	if hello.SetName == "" || hello.Msg == "isdbgrid" {
+		return fmt.Errorf("MongoDB requires a replica set and no mongos")
 	}
 	a.maxDocumentBytes = hello.MaxDocument
 	return nil
 }
 
-// Encoded commands respect the exchange chunk target and MongoDB's advertised
-// BSON boundary. Neither size is a cumulative Lua workspace budget.
-func (a *Adapter) commandBytes() int {
+// The advertised BSON size estimates record output and chooses native command batches.
+// A single operation may exceed the exchange target and is sent without splitting.
+func (a *Adapter) documentBytes() int {
 	if a.maxDocumentBytes > 0 {
-		return min(a.maxDocumentBytes, a.options().ExchangeBytes)
+		return a.maxDocumentBytes
 	}
-	return min(16<<20, a.options().ExchangeBytes)
+	return 16 << 20
+}
+
+func (a *Adapter) commandBytes() int {
+	return min(a.documentBytes(), a.options().ExchangeBytes)
 }
 
 func mongoQualificationFailure(message string, err error) error {
@@ -196,7 +199,7 @@ func (a *Adapter) Close() error {
 	return a.closeErr
 }
 
-func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	op := record.Command()
 	s := record.Segments()
 	if len(s) != 3 || !validNamespace(s) {
@@ -211,7 +214,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
 	if r := op.GetRead(); r != nil {
 		native.action = "read"
-		p.ResultBytes += protocol.MaxDocument
+		p.ResultBytes += a.documentBytes()
 	} else {
 		// Both visibility choices use primary reads and majority-acknowledged
 		// writes. MongoDB has no separate search refresh stage to wait for.
@@ -236,8 +239,11 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				}
 				input := value.Value{Kind: value.Missing}
 				if program.Input != nil {
-					input, err = Decode(program.Input.Data, a.options().Lua.Values)
+					input, err = Decode(ctx, program.Input.Data)
 					if err != nil {
+						if ctx.Err() != nil {
+							return nil, protocol.ContextFailure(ctx)
+						}
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input")
 					}
 				}
@@ -247,7 +253,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				native.program = luaProgram
 			} else {
 				expression := v.AtomicTransform.GetBackendExpression()
-				if f := a.prepareExpression(expression); f != nil {
+				if f := a.prepareExpression(ctx, expression); f != nil {
 					return nil, f
 				}
 				native.action = "expression"
@@ -258,9 +264,12 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			if d.ContentType != "application/bson" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
 			}
-			doc, err := Decode(d.Data, nativeValueLimits(d.Data))
+			doc, err := Decode(ctx, d.Data)
 			if err != nil {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "BSON validation/limits failed")
+				if ctx.Err() != nil {
+					return nil, protocol.ContextFailure(ctx)
+				}
+				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON document")
 			}
 			got, err := doc.Lookup("_id")
 			if err != nil || len(doc.Fields) == 0 || doc.Fields[0].Name != "_id" || !equalID(got, id) {

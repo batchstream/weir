@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,13 +21,11 @@ import (
 )
 
 const mongoConnectTimeout = 2 * time.Second
-const maxOCSPBytes = 64 << 10
 
-var errTLSBound = errors.New("MongoDB TLS profile exceeds certificate or OCSP bounds")
+var errTLSProfile = errors.New("invalid MongoDB TLS or OCSP profile")
 
 // Keep authentication out of the driver's stored URI and supply it with SetAuth.
-// Supply the separately configured CA using a bounded regular-file read instead
-// of allowing ApplyURI to load an unbounded tlsCAFile option.
+// Load the separately configured CA from a regular file instead of URI userinfo.
 // ValidateConfig must precede this function (including all file and DNS access).
 func connectionOptions(cfg Config, dialer *connectionOwner) (*options.ClientOptions, error) {
 	parsed, err := url.Parse(cfg.URI)
@@ -83,8 +82,8 @@ func mongoRoots(name string) (*x509.CertPool, error) {
 	if err != nil {
 		return nil, errors.New("MongoDB CA file unavailable")
 	}
-	if !info.Mode().IsRegular() || info.Size() > 256<<10 {
-		return nil, errTLSBound
+	if !info.Mode().IsRegular() {
+		return nil, errTLSProfile
 	}
 	file, err := os.Open(name)
 	if err != nil {
@@ -92,12 +91,12 @@ func mongoRoots(name string) (*x509.CertPool, error) {
 	}
 	defer file.Close()
 	info, err = file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 256<<10 {
-		return nil, errTLSBound
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, errTLSProfile
 	}
-	data, err := io.ReadAll(io.LimitReader(file, (256<<10)+1))
-	if err != nil || len(data) > 256<<10 {
-		return nil, errTLSBound
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, errTLSProfile
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(data) {
@@ -110,7 +109,7 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 	config = config.Clone()
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, errTLSBound
+		return nil, errTLSProfile
 	}
 	if config.ServerName == "" {
 		config.ServerName = host
@@ -120,24 +119,16 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 		return nil, err
 	}
 	state := client.ConnectionState()
-	if len(state.PeerCertificates) > 8 || len(state.OCSPResponse) > maxOCSPBytes || len(state.VerifiedChains) == 0 {
-		return nil, errTLSBound
+	if len(state.VerifiedChains) == 0 {
+		return nil, errTLSProfile
 	}
-	for _, cert := range state.PeerCertificates {
-		if len(cert.Raw) > 64<<10 {
-			return nil, errTLSBound
-		}
-	}
-	// The fixed verifier fans out once per advertised responder. This finite
-	// profile accepts at most one HTTP responder and no redirects or proxies.
+	// The pinned verifier checks advertised HTTP responders with owned sockets,
+	// caller cancellation, and no redirects or proxies.
 	endpoints := state.VerifiedChains[0][0].OCSPServer
-	if len(endpoints) > 1 {
-		return nil, errTLSBound
-	}
 	for _, endpoint := range endpoints {
 		u, err := url.Parse(endpoint)
-		if err != nil || len(endpoint) > 2048 || u.Scheme != "http" || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
-			return nil, errTLSBound
+		if err != nil || u.Scheme != "http" || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+			return nil, errTLSProfile
 		}
 	}
 	dialer := newConnectionOwner()
@@ -149,17 +140,17 @@ func mongoTLS(ctx context.Context, conn net.Conn, config *tls.Config, address st
 		DialContext:            dialer.dialConnection,
 		DisableKeepAlives:      true,
 		MaxConnsPerHost:        1,
-		MaxResponseHeaderBytes: 16 << 10,
+		MaxResponseHeaderBytes: math.MaxInt64,
 	}
 	defer transport.CloseIdleConnections()
-	bounded := &ocspTransport{transport: transport}
-	httpClient := &http.Client{Transport: bounded, CheckRedirect: rejectOCSPRedirect}
+	observed := &ocspTransport{transport: transport}
+	httpClient := &http.Client{Transport: observed, CheckRedirect: rejectOCSPRedirect}
 	// A fresh cache is used for exactly one leaf verification: at most one entry,
 	// released after this handshake. There is no process-wide certificate map.
 	verify := &ocsp.VerifyOptions{Cache: ocsp.NewCache(), HTTPClient: httpClient}
 	err = ocsp.Verify(ctx, state, verify)
-	if bounded.rejected.Load() {
-		return nil, errTLSBound
+	if observed.rejected.Load() {
+		return nil, errTLSProfile
 	}
 	if err != nil {
 		return nil, err
@@ -174,10 +165,8 @@ func rejectOCSPRedirect(_ *http.Request, _ []*http.Request) error {
 	return errors.New("MongoDB OCSP redirects are outside the connection profile")
 }
 
-// This is the HTTP RoundTripper boundary required by the fixed OCSP verifier,
-// whose ReadAll otherwise has no bound. Oversize input is a hard profile failure,
-// not a soft failure. I/O errors (including header limits) are also rejected;
-// a bounded, complete but inconclusive OCSP response retains driver semantics.
+// Observe complete HTTP responses so transport and body I/O failures cannot be
+// treated as the verifier's soft, inconclusive OCSP result. No payload quota applies.
 type ocspTransport struct {
 	transport *http.Transport
 	rejected  atomic.Bool
@@ -186,17 +175,23 @@ type ocspTransport struct {
 func (t *ocspTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	response, err := t.transport.RoundTrip(request)
 	if err != nil {
-		t.rejected.Store(true)
+		// The verifier cancels other responders after one supplies valid evidence.
+		// Caller cancellation is checked by mongoTLS after verification.
+		if request.Context().Err() == nil {
+			t.rejected.Store(true)
+		}
 		return nil, err
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxOCSPBytes+1))
-	if len(data) > maxOCSPBytes || response.ContentLength > maxOCSPBytes || response.StatusCode >= 300 && response.StatusCode < 400 {
+	data, err := io.ReadAll(response.Body)
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
 		t.rejected.Store(true)
-		return nil, errTLSBound
+		return nil, errTLSProfile
 	}
 	if err != nil {
-		t.rejected.Store(true)
+		if request.Context().Err() == nil {
+			t.rejected.Store(true)
+		}
 		return nil, err
 	}
 	response.Body = io.NopCloser(bytes.NewReader(data))

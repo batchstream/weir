@@ -2,7 +2,7 @@
 
 Weir discovers logical Stores and executes database work in one process. Clients
 initialize with ResolveStore through any node, then connect directly to the
-returned business endpoints. Equal peers periodically synchronize a bounded
+returned business endpoints. Equal peers periodically synchronize an
 in-memory directory. Business payloads never travel through another Weir node.
 Lua evaluates inside the main process. Public and private peer schemas are
 independent; see [protocols](protocols.md) and [discovery design](discovery-design.md).
@@ -70,9 +70,9 @@ contains only public ownership/address advertisements, never backend credentials
 
 | Capacity | Default or bound |
 | --- | --- |
-| Record document / ordinary Read source | Protocol document bound: 2 MiB |
+| Record document / ordinary Read source | Native backend boundary; no Weir size quota |
 | Read/Mutate stream | No total record limit; configurable publication window (default 32 tickets) |
-| Native input | Protocol 8 MiB; backend encoding boundaries also apply |
+| Native input and output | Native backend boundary; no Weir size quota |
 | Store waiting queue | 1024 operations / 32 MiB, configurable via queue |
 | Physical batch input | 32 operations / 8 MiB, configurable |
 | Business connections, RPCs and active executions | No Weir concurrency limit |
@@ -85,6 +85,8 @@ finite publication window, so a stopped reader cannot accumulate unlimited resul
 inside that stream. Protocol frame boundaries are checked before protobuf construction.
 The validator walks the transport's existing buffer fragments directly, including
 nested message spans, without copying payloads or changing buffer references.
+Queue, batch and Scan byte settings are aggregation windows. A larger individual
+input or document proceeds alone; completed-result accounting grows to its actual size.
 
 Process and container memory observations drive overload admission. Memory capacity
 uses the smallest known physical host, finite process address-space, and visible
@@ -97,12 +99,12 @@ reference, including after handler completion. There is no aggregate response
 quota derived from a fixed RPC count. Cancellation releases application data;
 independent encoded copies remain measured until transport ownership ends.
 
-Lua runs in the main Weir process with caller context and source/value/stack/work
-bounds. There is no evaluation semaphore, fixed evaluation deadline, or hard VM
+Lua runs in the main Weir process with caller context and optional VM execution
+budgets. Source and value conversion have no Weir size/count quotas. There is no evaluation semaphore, fixed evaluation deadline, or hard VM
 allocation sandbox. Programs must be trusted.
 Allowed standard-library functions and constants are loaded once per process.
 Every evaluation creates fresh mutable library tables and a string metatable,
-with its own conversion limits and clock; no VM or caller state is reused.
+with its own caller context and clock; no VM or caller state is reused.
 
 ## Scheduling and backend work
 
@@ -126,12 +128,15 @@ write retains its actual outcome after cancellation; a missing acknowledgement
 for a dispatched write remains UNKNOWN. Different RPCs gain no additional
 transaction or ordering guarantee.
 
-MongoDB collections and Search indices receive a structural metadata check on
+MongoDB collections receive a structural metadata check on
 first use, cached per Store according to `backend.metadata_cache_entries` (default
 64 targets). Zero disables completed caching; concurrent cold requests still share
 one check. Failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
+Search resolves and qualifies targets per operation without retaining completed
+metadata. A single-index alias binds that operation to its physical index;
+later operations observe alias changes. Multiple primary shards are supported.
 
 The active batch set measures execution concurrency without capping it. There is
 no Store workspace ceiling or backend connection-pool maximum. Transport failures
@@ -144,7 +149,8 @@ and per-record outcome counters retain actual backend evidence, including unknow
 
 Scan fetches up to `scan.max_batch_documents` (default 128) per backend
 call, bounded by the remaining logical page size. It validates the complete native response and retains an
-ordered prefix bounded by `scan.max_batch_bytes` (default 4 MiB), then
+ordered prefix using `scan.max_batch_bytes` (default 4 MiB), with a larger
+individual document retained alone, then
 finishes backend execution before publication.
 The result remains owned through publication and request completion. A blocked
 Scan reader does not stop independent work. MongoDB estimates 48 MiB and Search
@@ -155,19 +161,19 @@ exhaustion. An unretained tail is fetched again from the last accepted record.
 Both backends learn a smaller fetch capacity from the retained prefix size.
 They share the Scan event publication and count state; native fetching and
 checkpoint cleanup remain backend responsibilities.
-Their opaque continuations carry that capacity, separate from the final
-request's remaining page size. Search also halves an excessive native response's
-fetch size without advancing the checkpoint, using the same PIT and absolute
-fetch deadline. Each new page is a new Execute RPC and can select another
+Fetch capacity belongs to the current page and is separate from the remaining
+logical page size. Continuations carry the native traversal checkpoint.
+Each new page is a new Execute RPC and can select another
 instance. MongoDB uses ascending original BSON _id keysets without a retained
 cursor or cross-page snapshot. Search carries the latest PIT and search_after
 values; the backend snapshot has a 60-second keep-alive. Expiration fails
 explicitly. A previously published PIT remains available after a later
 failed/exhausted page until expiry.
-Checkpoint tokens are bounded, opaque and tied to the target/filter/projection;
+Search uses `_shard_doc` PIT sorting for both Elasticsearch and OpenSearch;
+the backend must implement that native sort. Checkpoint tokens are opaque and tied to the target/filter/projection;
 the checksum detects corruption and is not authentication.
 
-Native execution is a singleton with bounded streaming. Opaque commands and
+Native execution is a singleton with incremental streaming. Opaque commands and
 publication inherit the caller context, without an added backend execution
 deadline. Native bypasses typed target qualification and operation allowlists;
 backend permissions, cursor/session lifetimes and command responses keep their

@@ -13,10 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeCommandLimit = 4 << 20
-
-const NativeResponseLimit = 4 << 20
-
 func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(request); f != nil {
 		return nil, f
@@ -44,9 +40,6 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 }
 
 func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
-	if len(raw) > NativeCommandLimit {
-		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native BSON command limit")
-	}
 	command := bson.Raw(raw)
 	if !scanFraming(raw) || command.Validate() != nil {
 		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ordered BSON command")
@@ -115,8 +108,8 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	if len(reply) == 0 {
 		return protocol.NativeFailure(true, failure)
 	}
-	if len(reply) > NativeResponseLimit || !scanFraming(reply) || bson.Raw(reply).Validate() != nil {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "invalid or excessive Native BSON reply"))
+	if !scanFraming(reply) || bson.Raw(reply).Validate() != nil {
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_INTERNAL, "invalid Native BSON reply"))
 	}
 	head := &pb.NativeHead{BodyContentType: "application/bson"}
 	value := &pb.Event_Head{Head: head}

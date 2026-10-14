@@ -217,13 +217,13 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 					io.WriteString(w, strings.Repeat("x", 150<<10))
 				case "boundary", "large_chunked":
 					w.(http.Flusher).Flush()
-					size := NativeResponseLimit
+					size := (8 << 20)
 					if mode == "large_chunked" {
 						size++
 					}
 					io.WriteString(w, strings.Repeat("x", size))
 				case "large":
-					w.Header().Set("Content-Length", fmt.Sprint(NativeResponseLimit+1))
+					w.Header().Set("Content-Length", fmt.Sprint((8<<20)+1))
 				case "length":
 					w.Header().Set("Content-Length", "100")
 					io.WriteString(w, "short")
@@ -244,7 +244,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, nativeClient: client, ctx: context.Background()}
 			open := nativeRequest(t, "records", "GET", "/_doc/x")
 			end, capture := runNative(t, a, open, nil)
-			complete := mode == "empty" || mode == "headers" || mode == "redirect" || mode == "multichunk" || mode == "boundary"
+			complete := mode == "empty" || mode == "headers" || mode == "redirect" || mode == "multichunk" || mode == "boundary" || mode == "large_chunked"
 			if (end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE) != complete || calls.Load() != 1 {
 				t.Fatal(end, calls.Load())
 			}
@@ -256,7 +256,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 					t.Fatal("invalid backend status published as complete", end, capture.head)
 				}
 			}
-			if mode == "boundary" && capture.body.Len() != NativeResponseLimit {
+			if (mode == "boundary" && capture.body.Len() != (8<<20)) || (mode == "large_chunked" && capture.body.Len() != (8<<20)+1) {
 				t.Fatal("response boundary", capture.body.Len())
 			}
 			if mode == "multichunk" && (capture.chunks < 2 || capture.body.Len() != 150<<10) {
@@ -316,7 +316,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 					w.Header().Set("Content-Length", "100")
 				}
 				if test.oversized {
-					w.Header().Set("Content-Length", fmt.Sprint(NativeResponseLimit+1))
+					w.Header().Set("Content-Length", fmt.Sprint((8<<20)+1))
 				}
 				w.WriteHeader(test.status)
 				_, _ = io.WriteString(w, test.body)

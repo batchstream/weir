@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
@@ -20,7 +19,7 @@ func scanTestReply() map[string]json.RawMessage {
 	return fields
 }
 func TestScanEnvelopeAndLatestPIT(t *testing.T) {
-	for _, mode := range []string{"valid", "skipped", "timeout", "early", "shard_failure", "missing_shards", "missing_timed_out", "missing_took", "missing_hits", "null_hits", "missing_pit", "error_tail", "failed_tail", "duplicate_sort", "bad_score", "bad_max_score", "wrong_index", "big_hit", "too_many"} {
+	for _, mode := range []string{"valid", "skipped", "timeout", "early", "shard_failure", "missing_shards", "missing_timed_out", "missing_took", "missing_hits", "null_hits", "missing_pit", "error_tail", "failed_tail", "duplicate_sort", "bad_score", "bad_max_score", "wrong_index", "too_many"} {
 		t.Run(mode, func(t *testing.T) {
 			a := &Adapter{dialect: ElasticsearchProduct, config: Config{Store: "search"}}
 			n := &scanPlan{index: "records", items: 1, pit: "previous"}
@@ -59,13 +58,11 @@ func TestScanEnvelopeAndLatestPIT(t *testing.T) {
 				fields["hits"] = json.RawMessage(strings.ReplaceAll(string(fields["hits"]), `"_score":null`, `"_score":"bad"`))
 			case "wrong_index":
 				fields["hits"] = json.RawMessage(strings.ReplaceAll(string(fields["hits"]), "records", "other"))
-			case "big_hit":
-				fields["hits"] = json.RawMessage(strings.ReplaceAll(string(fields["hits"]), "9223372036854775807", `"`+strings.Repeat("x", protocol.MaxDocument)+`"`))
 			case "too_many":
 				n.items = 0
 			}
 			raw, _ := json.Marshal(fields)
-			page := a.scanReply(raw, n)
+			page := a.scanReply(context.Background(), raw, n)
 			valid := mode == "valid" || mode == "skipped"
 			if valid {
 				if page.Failure != nil || len(page.Documents) != 1 || !strings.Contains(string(page.Documents[0].Data), "9223372036854775807") {
@@ -85,18 +82,30 @@ func TestScanFilterControlsAndBounds(t *testing.T) {
 	filter := &pb.Document{ContentType: "application/json", Data: []byte(`{"term":{"sort":1}}`)}
 	projection := &pb.Projection{Mode: pb.ProjectionMode_INCLUDE, Fields: []string{"nested.name"}}
 	request := &pb.ScanRequest{Resource: "records", Filter: filter, Projection: projection}
-	work, failure := a.prepareScan(request)
+	work, failure := a.prepareScan(context.Background(), request)
 	if failure != nil || string(work.Backend.(*scanPlan).query) != string(filter.Data) || work.Backend.(*scanPlan).projection != projection {
 		t.Fatal("native query or projection changed", failure)
 	}
-	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 10001) + `{}` + strings.Repeat(`}`, 10001) + `}`, `{"query":{"x":[` + strings.Repeat(`0,`, protocol.MaxScanFilterBytes) + `0]}}`, strings.Repeat(" ", protocol.MaxScanFilterBytes+1) + "{}"} {
+	for _, raw := range []string{`{"query":{},"query":{}}`, `{"query":` + strings.Repeat(`{"x":`, 10001) + `{}` + strings.Repeat(`}`, 10001) + `}`} {
 		selector := &pb.Document{ContentType: "application/json", Data: []byte(raw)}
 		req := &pb.ScanRequest{Resource: "records", Filter: selector}
-		if _, f := a.prepareScan(req); f == nil {
+		if _, f := a.prepareScan(context.Background(), req); f == nil {
 			t.Fatal("accepted excessive selector")
 		}
 	}
 }
+func TestScanLargeFiltersRetainTheirCompleteQuery(t *testing.T) {
+	adapter := &Adapter{dialect: ElasticsearchProduct}
+	for _, raw := range []string{`{"terms":{"x":[` + strings.Repeat(`0,`, 20000) + `0]}}`, strings.Repeat(" ", 20000) + "{}"} {
+		filter := &pb.Document{ContentType: "application/json", Data: []byte(raw)}
+		request := &pb.ScanRequest{Resource: "records", Filter: filter}
+		work, failure := adapter.prepareScan(context.Background(), request)
+		if failure != nil || string(work.Backend.(*scanPlan).query) != raw {
+			t.Fatal("large native filter rejected or shortened", failure)
+		}
+	}
+}
+
 func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 	for _, mode := range []string{"truncated", "duplicate", "tail", "oversized_chunked", "oversized_length"} {
 		t.Run(mode, func(t *testing.T) {
@@ -112,9 +121,9 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 					raw = append(raw, []byte(`{}`)...)
 				case "oversized_chunked":
 					w.(http.Flusher).Flush()
-					raw = []byte(strings.Repeat(" ", responseLimit+1))
+					raw = []byte(strings.Repeat(" ", (8<<20)+1))
 				case "oversized_length":
-					w.Header().Set("Content-Length", fmt.Sprint(responseLimit+100))
+					w.Header().Set("Content-Length", fmt.Sprint((8<<20)+100))
 					raw = nil
 				}
 				_, _ = w.Write(raw)
@@ -124,7 +133,7 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 			transport := newTransport(connectionTimeout)
 			defer transport.CloseIdleConnections()
 			a := &Adapter{dialect: ElasticsearchProduct, config: Config{URL: server.URL}, ctx: context.Background(), client: &http.Client{Transport: transport, CheckRedirect: noRedirect}}
-			call := exchange{path: "/_search", body: []byte("{}"), limit: responseLimit}
+			call := exchange{path: "/_search", body: []byte("{}")}
 			_, _, err := a.request(context.Background(), call)
 			if err == nil {
 				t.Fatal("accepted incomplete/oversized response")
@@ -133,22 +142,14 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 	}
 }
 
-func TestScanHitByteBoundary(t *testing.T) {
-	for _, extra := range []int{0, 1} {
-		a := &Adapter{dialect: ElasticsearchProduct}
-		n := &scanPlan{index: "records", items: 1, pit: "previous"}
-		hit := `{"_index":"records","_id":"a","_score":null,"_source":{"pad":""},"sort":[0]}`
-		hit = strings.Replace(hit, `"pad":""`, `"pad":"`+strings.Repeat("x", protocol.MaxDocument-len(`{"pad":""}`)+extra)+`"`, 1)
-		fields := scanTestReply()
-		fields["hits"] = json.RawMessage(`{"max_score":null,"hits":[` + hit + `]}`)
-		raw, _ := json.Marshal(fields)
-		page := a.scanReply(raw, n)
-		if extra == 0 {
-			if page.Failure != nil || len(page.Documents) != 1 || len(page.Documents[0].Data) != protocol.MaxDocument {
-				t.Fatal(page.Failure)
-			}
-		} else if page.Failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || len(page.Documents) != 0 {
-			t.Fatal("hit boundary", page)
+func TestScanLargeHitsCrossHistoricalAndBatchByteThresholds(t *testing.T) {
+	for _, size := range []int{2 << 20, (2 << 20) + 1, 6 << 20} {
+		adapter := &Adapter{dialect: ElasticsearchProduct}
+		state := &scanPlan{index: "records", items: 1, pit: "previous"}
+		rows := []json.RawMessage{scanBatchHit(0, size)}
+		page := adapter.scanReply(context.Background(), scanBatchReply(rows), state)
+		if page.Failure != nil || len(page.Documents) != 1 || len(page.Documents[0].Data) != size || !state.hasAfter {
+			t.Fatal("large single hit rejected or failed to advance", page, size)
 		}
 	}
 }

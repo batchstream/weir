@@ -1,13 +1,13 @@
 package mongodb
 
 import (
+	"context"
 	"bytes"
 	"fmt"
 	"math"
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -77,7 +77,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	for _, path := range []string{"_id", "a..b", ".a", "a.", "a.$", "a.$[]", "a.$[x]", "a.01"} {
 		doc := bson.D{{Key: "$set", Value: bson.D{{Key: path, Value: 1}}}}
-		if f := a.prepareExpression(expressionOperation("x", expressionBSON(t, doc)).Command.GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
+		if f := a.prepareExpression(context.Background(), expressionOperation("x", expressionBSON(t, doc)).Command.GetMutate().GetAtomicTransform().GetBackendExpression()); f == nil {
 			t.Fatal(path)
 		}
 	}
@@ -90,10 +90,10 @@ func TestMongoExpressionValidation(t *testing.T) {
 	if _, f := prepareTestRecord(a, op); f == nil {
 		t.Fatal("depth")
 	}
-	doc = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: strings.Repeat("x", protocol.MaxExpression)}}}}
+	doc = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: strings.Repeat("x", (16 << 10))}}}}
 	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
-	if _, f := prepareTestRecord(a, op); f == nil {
-		t.Fatal("bytes")
+	if _, f := prepareTestRecord(a, op); f != nil {
+		t.Fatal("expression retained former byte cap", f)
 	}
 	doc = bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: 1}}}}
 	op = expressionOperation("db/records/s:a", expressionBSON(t, doc))
@@ -116,7 +116,7 @@ func TestMongoExpressionValidation(t *testing.T) {
 	}
 	excessive = bson.D{{Key: "$set", Value: bson.D{{Key: "x", Value: nodes}}}}
 	d := &pb.Document{ContentType: ExpressionContentType, Data: expressionBSON(t, excessive)}
-	if f := a.prepareExpression(d); f != nil {
+	if f := a.prepareExpression(context.Background(), d); f != nil {
 		t.Fatal("valid nodes rejected", f)
 	}
 }
@@ -155,12 +155,9 @@ func TestMongoExpressionEvidence(t *testing.T) {
 func FuzzMongoExpression(f *testing.F) {
 	f.Add([]byte{5, 0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		if len(raw) > protocol.MaxExpression {
-			return
-		}
 		a := &Adapter{}
 		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
-		_ = a.prepareExpression(d)
+		_ = a.prepareExpression(context.Background(), d)
 		fields, err := scanFields(raw)
 		if err == nil {
 			item := &plan{action: "expression"}

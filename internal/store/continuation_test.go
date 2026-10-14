@@ -113,7 +113,7 @@ func TestScanTerminalEvidenceStopsContinuationAndRejectsDuplicate(t *testing.T) 
 	runtime := newRuntime(adapter, DefaultLimits())
 	session := runtime.NewSession()
 	defer session.Close()
-	work, failure := runtime.PrepareCommand(1, scanCall())
+	work, failure := runtime.PrepareCommand(context.Background(), 1, scanCall())
 	if failure != nil {
 		t.Fatal(failure)
 	}

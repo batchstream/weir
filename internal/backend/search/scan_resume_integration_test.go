@@ -18,7 +18,7 @@ func searchFinitePage(t *testing.T, adapter *Adapter, request *pb.ScanRequest) (
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	work, failure := adapter.prepareScan(request)
+	work, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -115,7 +115,7 @@ func TestSearchScanCheckpointSurvivesLostReplyAndTerminalReplay(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer stale.Close()
-			work, failure := stale.prepareScan(request)
+			work, failure := stale.prepareScan(context.Background(), request)
 			if failure != nil {
 				t.Fatal(failure)
 			}

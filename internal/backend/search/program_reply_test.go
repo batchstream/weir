@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -13,7 +14,8 @@ import (
 func testBulkMutationReply(a *Adapter, native *plan, raw string) *pb.MutationResult {
 	work := &execution.Plan{Backend: native}
 	body := []byte(fmt.Sprintf(`{"errors":%t,"took":1,"items":[{%q:%s}]}`, strings.Contains(raw, `"error":`), native.bulkAction(), raw))
-	results := a.bulkResults([]*execution.Plan{work}, 200, body, nil)
+	replyInput16 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: body, err: nil}
+	results := a.bulkResults(context.Background(), replyInput16)
 	return results[0].GetMutationResult()
 }
 
@@ -122,7 +124,7 @@ func TestProgramWriteReplyRejectsContradictoryErrorEvidence(t *testing.T) {
 	}
 }
 
-func TestBulkTransformItemLimitsPreserveOtherAcknowledgements(t *testing.T) {
+func TestBulkLargeTransformMetadataPreservesAcknowledgements(t *testing.T) {
 	success := `{"_index":"records","_id":"item","status":200,"_version":1,"_seq_no":0,"_primary_term":1,"result":"updated","_shards":{"total":1,"successful":1,"failed":0}}`
 	for _, action := range []string{"index", "expression"} {
 		for _, limit := range []string{"bytes", "nodes"} {
@@ -130,35 +132,28 @@ func TestBulkTransformItemLimitsPreserveOtherAcknowledgements(t *testing.T) {
 				a := &Adapter{dialect: ElasticsearchProduct}
 				ordinary := &plan{index: "records", id: "item", action: "index"}
 				native := &plan{index: "records", id: "item", action: action}
-				message := "update acknowledgement unavailable or incomplete"
 				if action == "index" {
 					native.program = &luaengine.Program{}
-					message = "conditional write acknowledgement unavailable or incomplete"
 				}
 				ordinaryWork := &execution.Plan{Backend: ordinary}
 				transformWork := &execution.Plan{Backend: native}
 				extra := `[` + strings.Repeat("0,", 4096) + `0]`
 				if limit == "bytes" {
-					extra = `"` + strings.Repeat("x", metadataLimit) + `"`
+					extra = `"` + strings.Repeat("x", (256<<10)) + `"`
 				}
 				item := success[:len(success)-1] + `,"extra":` + extra + `}`
 				body := []byte(fmt.Sprintf(`{"errors":false,"took":1,"items":[{"index":%s},{%q:%s}]}`, success, native.bulkAction(), item))
-				if len(body) > responseLimit || validateJSON(body, 16384) != nil {
+				if len(body) > (8<<20) || validateJSON(context.Background(), body) != nil {
 					t.Fatal("fixture exceeds whole-batch limits")
 				}
-				results := a.bulkResults([]*execution.Plan{ordinaryWork, transformWork}, 200, body, nil)
+				replyInput148 := bulkResponse{works: []*execution.Plan{ordinaryWork, transformWork}, status: 200, raw: body, err: nil}
+				results := a.bulkResults(context.Background(), replyInput148)
 				if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
 					t.Fatal("bounded ordinary acknowledgement lost", results[0])
 				}
 				result := results[1].GetMutationResult()
-				if limit == "nodes" {
-					if result.GetOutcome() != pb.MutationOutcome_APPLIED {
-						t.Fatal("valid reply rejected by hidden node cap", result)
-					}
-					return
-				}
-				if result.GetOutcome() != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetMessage() != message {
-					t.Fatal("excessive transform evidence trusted", result)
+				if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil {
+					t.Fatal("valid complete evidence rejected by data size", result)
 				}
 			})
 		}
@@ -181,7 +176,8 @@ func TestBulkValidatesAllItemsBeforeAcknowledgingAny(t *testing.T) {
 		`{"index":{"_index":"records","_id":"item","status":409,"error":{"type":"version_conflict_engine_exception"}}}`,
 	} {
 		body := []byte(`{"errors":false,"took":1,"items":[{"index":` + success + `},` + tail + `]}`)
-		results := a.bulkResults([]*execution.Plan{ordinaryWork, programWork}, 200, body, nil)
+		replyInput178 := bulkResponse{works: []*execution.Plan{ordinaryWork, programWork}, status: 200, raw: body, err: nil}
+		results := a.bulkResults(context.Background(), replyInput178)
 		for _, result := range results {
 			if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
 				t.Fatalf("acknowledgement escaped batch validation: %s: %v", tail, results)

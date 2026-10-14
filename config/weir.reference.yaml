@@ -12,7 +12,7 @@
 
 # Syntax: one YAML mapping per file; keys are exact lowercase names shown here.
 # Unknown/duplicate keys, multiple documents, anchors, aliases, merge keys and
-# explicit tags are rejected. Each file is limited to 128 KiB and 12 nested levels.
+# explicit tags are rejected.
 # Use true/false for booleans, integers for counts, and strings for text and units.
 # Omit optional fields to use defaults; an empty value is YAML null, not omission.
 # Basic fields must not be null. Optional routing adapter/connection blocks may
@@ -106,14 +106,14 @@ transport:
 # discovery:
 #   # Stable identity of replicas serving equivalent local Store definitions.
 #   # Required: no. Default: "" (a new random standalone group at startup).
-#   # Allowed: 1..128 printable ASCII bytes without spaces, or "" for default.
+#   # Allowed: nonempty printable ASCII without spaces, or "" for default.
 #   # Example: "catalog". Set the same explicit value on equivalent replicas.
 #   group: ""
 #
 #   # Reachable peer address advertised to other nodes, distinct from the bind.
 #   # Required: for a wildcard peer listener unless peer_address_env is set.
 #   # Default: "" (use the concrete bound peer address when peer is enabled).
-#   # Allowed: IPv4:port, [IPv6]:port or DNS:port, port 1..65535, up to 260 bytes.
+#   # Allowed: IPv4:port, [IPv6]:port or DNS:port, port 1..65535.
 #   # No URL/resolver prefixes, wildcard/multicast IPs or IPv6 zone identifiers.
 #   # Example: "node-a.example:7448". Requires listeners.peer to be enabled.
 #   # Mutually exclusive with peer_address_env.
@@ -121,7 +121,7 @@ transport:
 #
 #   # Environment variable supplying the complete advertised peer host:port.
 #   # Required: no. Default: "" (do not read an environment variable).
-#   # Allowed: 1..128 ASCII letters, digits or underscores, starting with a
+#   # Allowed: ASCII letters, digits or underscores, starting with a
 #   # letter or underscore. Example: "WEIR_PEER_ADDRESS".
 #   # Its value must satisfy peer_address and be present at Load/check time.
 #   # Mutually exclusive with peer_address; no other string is expanded.
@@ -129,7 +129,7 @@ transport:
 #
 #   # Initial peer endpoints used to learn and synchronize the Store directory.
 #   # Required: no. Default: [] (no bootstrap peers).
-#   # Allowed: at most 16 unique endpoints with the same format as peer_address.
+#   # Allowed: unique endpoints with the same format as peer_address.
 #   # DNS case, trailing dot and port spelling are normalized for duplicates.
 #   # Example: ["seed.example:7448"]. Requires listeners.peer to be enabled.
 #   # These are peer endpoints, not backend or application endpoints.
@@ -138,7 +138,7 @@ transport:
 #   # Application endpoints returned to SDK clients for locally hosted Stores.
 #   # Required: when hosting Stores on a wildcard application listener.
 #   # Default: [] (advertise the concrete bound application address for Stores).
-#   # Allowed: at most 16 unique endpoints with the same format as peer_address.
+#   # Allowed: unique endpoints with the same format as peer_address.
 #   # Example: ["catalog.example:7447", "192.0.2.10:7447"]. Advertise addresses
 #   # reachable by clients; a shared DNS name can identify multiple replicas.
 #   advertise: []
@@ -174,12 +174,3 @@ lua:
     max_call_depth: 0
     # Default: 0 (VM native default 1000000), or positive stack slots.
     max_stack_slots: 0
-  values:
-    # Input/current/output conversion bytes. Default: 2MiB; positive byte size.
-    # Encoded documents still have the protocol's independent 2MiB boundary.
-    max_bytes: 2MiB
-    # Conversion nesting depth. Default: 32; 0 selects 32; positive integer.
-    max_depth: 32
-    # Conversion field/value nodes. Default: 4096; 0 selects 4096; positive integer.
-    # Shared by JSON/BSON conversion, the Lua bridge and Lua libraries.
-    max_nodes: 4096

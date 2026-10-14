@@ -181,7 +181,7 @@ func (s *Server) receiveRecords(ctx context.Context, input *recordInput) error {
 		if err != nil {
 			return status.Error(codes.Internal, "validated resource could not be decoded")
 		}
-		plan, failure := input.runtime.PrepareRecord(record)
+		plan, failure := input.runtime.PrepareRecord(ctx, record)
 		if failure != nil {
 			return failureStatus(failure)
 		}
@@ -235,13 +235,13 @@ func (s *Server) receiveFrame(stream grpc.BidiStreamingServer[pb.ExecuteRequest,
 }
 
 func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], runtime *store.Runtime, command *pb.Command) error {
-	plan, failure := runtime.PrepareCommand(1, command)
+	ctx := stream.Context()
+	plan, failure := runtime.PrepareCommand(ctx, 1, command)
 	if failure != nil {
 		return s.sendEvent(stream, failedCommand(command, failure), 1)
 	}
 	session := runtime.NewSession()
 	defer session.Close()
-	ctx := stream.Context()
 	ticket, failure := s.submitPlan(ctx, runtime, plan, session)
 	if failure != nil {
 		return s.sendEvent(stream, failedCommand(command, failure), 1)

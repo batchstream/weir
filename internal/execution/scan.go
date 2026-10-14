@@ -12,7 +12,7 @@ import (
 // during publication. These bounds apply to retained output, not database pages.
 const ScanBatchDocuments = 128
 const ScanBatchBytes = 4 << 20
-const ScanResultBytes = ScanBatchBytes + ScanBatchDocuments*ResultOverheadBytes + protocol.MaxScanToken + ResultOverheadBytes
+const ScanResultBytes = ScanBatchBytes + (ScanBatchDocuments+1)*ResultOverheadBytes
 
 // ScanLimits bounds one retained output batch, independently of the logical page.
 type ScanLimits struct{ Documents, Bytes int }
@@ -23,14 +23,14 @@ func DefaultScanLimits() ScanLimits {
 }
 
 func (limits ScanLimits) Validate() error {
-	if limits.Documents < 1 || limits.Documents > protocol.MaxScanPageSize || limits.Bytes < protocol.MaxDocument || limits.Bytes > int(^uint(0)>>1)-limits.Documents*ResultOverheadBytes-protocol.MaxScanToken-ResultOverheadBytes {
+	if limits.Documents < 1 || limits.Bytes < 1 || limits.Documents > (int(^uint(0)>>1)-ResultOverheadBytes)/ResultOverheadBytes || limits.Bytes > int(^uint(0)>>1)-(limits.Documents+1)*ResultOverheadBytes {
 		return fmt.Errorf("invalid Scan batch bounds")
 	}
 	return nil
 }
 
 func (limits ScanLimits) ResultBytes() int {
-	return limits.Bytes + limits.Documents*ResultOverheadBytes + protocol.MaxScanToken + ResultOverheadBytes
+	return limits.Bytes + (limits.Documents+1)*ResultOverheadBytes
 }
 
 // ScanProgress retains publication state across bounded backend fetches.

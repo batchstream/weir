@@ -2,6 +2,7 @@ package search
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"strconv"
@@ -10,10 +11,10 @@ import (
 	"unicode/utf8"
 )
 
-// Keep the previous token decoder as an independent oracle for the bounded
+// Keep a token decoder as an independent oracle for the syntax
 // validator. It also measures parsing cost on the same response bodies.
-func validateJSONTokens(raw []byte, nodes int) error {
-	if !utf8.Valid(raw) {
+func validateJSONTokens(raw []byte) error {
+	if !utf8.Valid(raw) || !json.Valid(raw) {
 		return errJSON
 	}
 	for i := 0; i < len(raw); i++ {
@@ -51,8 +52,7 @@ func validateJSONTokens(raw []byte, nodes int) error {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-	remaining := nodes
-	if err := walkJSONTokens(decoder, 0, &remaining); err != nil {
+	if err := walkJSONTokens(decoder); err != nil {
 		return err
 	}
 	if _, err := decoder.Token(); err != io.EOF {
@@ -61,11 +61,7 @@ func validateJSONTokens(raw []byte, nodes int) error {
 	return nil
 }
 
-func walkJSONTokens(decoder *json.Decoder, depth int, remaining *int) error {
-	*remaining--
-	if *remaining < 0 {
-		return errJSON
-	}
+func walkJSONTokens(decoder *json.Decoder) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return errJSON
@@ -87,13 +83,13 @@ func walkJSONTokens(decoder *json.Decoder, depth int, remaining *int) error {
 				return errJSON
 			}
 			keys[name] = true
-			if err := walkJSONTokens(decoder, depth+1, remaining); err != nil {
+			if err := walkJSONTokens(decoder); err != nil {
 				return err
 			}
 		}
 	case '[':
 		for decoder.More() {
-			if err := walkJSONTokens(decoder, depth+1, remaining); err != nil {
+			if err := walkJSONTokens(decoder); err != nil {
 				return err
 			}
 		}
@@ -117,15 +113,13 @@ func FuzzJSONValidationMatchesTokenDecoder(f *testing.F) {
 		strings.Repeat("[", 33) + "0" + strings.Repeat("]", 33),
 		`{"bad":"` + string([]byte{255}) + `"}`, testIndexReply,
 	} {
-		for _, bound := range []uint16{0, 1, 5, 4096} {
-			f.Add([]byte(raw), bound)
-		}
+		f.Add([]byte(raw))
 	}
-	f.Fuzz(func(t *testing.T, raw []byte, nodes uint16) {
-		got := validateJSON(raw, int(nodes)) == nil
-		want := validateJSONTokens(raw, int(nodes)) == nil
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		got := validateJSON(context.Background(), raw) == nil
+		want := validateJSONTokens(raw) == nil
 		if got != want {
-			t.Fatalf("validation mismatch: got %v, want %v, nodes %d, body %q", got, want, nodes, raw)
+			t.Fatalf("validation mismatch: got %v, want %v, body %q", got, want, raw)
 		}
 	})
 }
@@ -142,20 +136,20 @@ func BenchmarkJSONValidation(b *testing.B) {
 	}
 	for name, raw := range bodies {
 		b.Run(name, func(b *testing.B) {
-			b.Run("bounded_scan", func(b *testing.B) {
+			b.Run("syntax_scan", func(b *testing.B) {
 				b.ReportAllocs()
 				b.SetBytes(int64(len(raw)))
 				for b.Loop() {
-					if validateJSON(raw, 32768) != nil {
+					if validateJSON(context.Background(), raw) != nil {
 						b.Fatal("invalid benchmark body")
 					}
 				}
 			})
-			b.Run("previous_tokens", func(b *testing.B) {
+			b.Run("token_oracle", func(b *testing.B) {
 				b.ReportAllocs()
 				b.SetBytes(int64(len(raw)))
 				for b.Loop() {
-					if validateJSONTokens(raw, 32768) != nil {
+					if validateJSONTokens(raw) != nil {
 						b.Fatal("invalid benchmark body")
 					}
 				}

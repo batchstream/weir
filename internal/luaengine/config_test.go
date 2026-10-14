@@ -32,16 +32,39 @@ func TestDefaultExecutionHasNoFormerInstructionAndValueCaps(t *testing.T) {
 	}
 }
 
-func TestConfiguredValueDepthAndNodesReachBridgeAndLibraries(t *testing.T) {
-	limits := DefaultLimits()
-	limits.Values.MaxDepth = 64
-	limits.Values.MaxNodes = 10000
-	program := Program{Limits: &limits, Source: `return function() local a={}; for i=1,5000 do a[i]=i end; table.sort(a); local nested={}; for i=1,40 do nested={x=nested} end; return {items=a,nested=nested} end`}
+func TestDeepValuesAndLargeArraysHaveNoAdmissionCaps(t *testing.T) {
+	program := Program{Source: `return function() local a={}; for i=1,10000 do a[i]=i end; table.sort(a); local nested={}; for i=1,5000 do nested={x=nested} end; return {items=a,nested=nested} end`}
 	if _, err := Evaluate(t.Context(), program); err != nil {
-		t.Fatal("custom tree budget was ignored", err)
+		t.Fatal("former data depth or node admission remained", err)
 	}
-	limits.Values.MaxDepth = 32
-	if _, err := Evaluate(t.Context(), program); err == nil {
-		t.Fatal("configured depth was ignored")
+}
+
+func TestDeepCurrentAndInputRoundTripWithoutRecursiveConversion(t *testing.T) {
+	current := value.Value{Kind: value.Int32, Integer: 7}
+	for depth := 0; depth < 5000; depth++ {
+		field := value.Field{Name: "nested", Value: current}
+		current = value.Value{Kind: value.Object, Fields: []value.Field{field}}
+	}
+	program := Program{Current: current, Input: current,
+		Source: `return function(current, incoming) return {current=current,incoming=incoming} end`,
+	}
+	result, err := Evaluate(t.Context(), program)
+	if err != nil {
+		t.Fatal("deep input conversion failed", err)
+	}
+	for _, name := range []string{"current", "incoming"} {
+		item, err := result.Value.Lookup(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for depth := 0; depth < 5000; depth++ {
+			if item.Kind != value.Object || len(item.Fields) != 1 || item.Fields[0].Name != "nested" {
+				t.Fatal("deep container changed", name, depth)
+			}
+			item = item.Fields[0].Value
+		}
+		if item.Kind != value.Int32 || item.Integer != 7 {
+			t.Fatal("deep scalar lost its integer width", name, item)
+		}
 	}
 }

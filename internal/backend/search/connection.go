@@ -40,12 +40,11 @@ func ValidateConfig(cfg Config) error {
 			return errors.New("Search connection options require HTTPS and explicit content")
 		}
 		if (c.Username == "") != (c.Password == "") ||
-			len(c.Username) > 128 || len(c.Password) > 256 ||
 			strings.Contains(c.Username, ":") ||
 			!safeText(c.Username) || !safeText(c.Password) {
 			return errors.New("invalid Search credential pair")
 		}
-		if len(c.CAFile) > 2048 || !safeText(c.CAFile) {
+		if !safeText(c.CAFile) {
 			return errors.New("invalid Search CA file configuration")
 		}
 	}
@@ -66,7 +65,7 @@ func safeText(value string) bool {
 
 func canonicalURL(raw string) (string, error) {
 	invalid := errors.New("Search requires one explicit HTTP or HTTPS host and port")
-	if len(raw) > 1024 || strings.ContainsAny(raw, "%?#\\") || strings.TrimSpace(raw) != raw {
+	if strings.ContainsAny(raw, "%?#\\") || strings.TrimSpace(raw) != raw {
 		return "", invalid
 	}
 	u, err := url.Parse(raw)
@@ -113,7 +112,7 @@ func connectionTLS(cfg Config) (*tls.Config, error) {
 	invalid := errors.New("Search CA file unavailable or invalid")
 	name := cfg.Connection.CAFile
 	info, err := os.Stat(name)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 256<<10 {
+	if err != nil || !info.Mode().IsRegular() {
 		return nil, invalid
 	}
 	file, err := os.Open(name)
@@ -122,11 +121,11 @@ func connectionTLS(cfg Config) (*tls.Config, error) {
 	}
 	defer file.Close()
 	info, err = file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 256<<10 {
+	if err != nil || !info.Mode().IsRegular() {
 		return nil, invalid
 	}
-	data, err := io.ReadAll(io.LimitReader(file, (256<<10)+1))
-	if err != nil || len(data) > 256<<10 {
+	data, err := io.ReadAll(file)
+	if err != nil {
 		return nil, invalid
 	}
 	roots := x509.NewCertPool()

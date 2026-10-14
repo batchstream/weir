@@ -38,7 +38,7 @@ func BenchmarkValidateFrames(b *testing.B) {
 			for range b.N {
 				var err error
 				if item.repeated {
-					err = ValidateRepeatedMessages(input, 2, 2)
+					err = ValidateRepeatedMessages(input, 2)
 				} else {
 					err = ValidateExecuteFrame(input)
 				}

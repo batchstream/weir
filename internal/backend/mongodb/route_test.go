@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -15,9 +14,9 @@ import (
 func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	document := bson.D{{Key: "_id", Value: "a"}, {Key: "pad", Value: ""}}
 	empty, _ := bson.Marshal(document)
-	document[1].Value = strings.Repeat("x", protocol.MaxDocument-len(empty))
+	document[1].Value = strings.Repeat("x", (2<<20)-len(empty))
 	raw, err := bson.Marshal(document)
-	if err != nil || len(raw) != protocol.MaxDocument {
+	if err != nil || len(raw) != (2<<20) {
 		t.Fatal("invalid large fixture", len(raw), err)
 	}
 	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
@@ -31,7 +30,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := adapter.PrepareRecord(record)
+	work, failure := adapter.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -41,7 +40,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 	events := 0
 	emit := func(plan *execution.Plan, event *pb.Event) error {
 		events++
-		if plan != work || len(event.GetReadResult().GetDocument().Data) != protocol.MaxDocument {
+		if plan != work || len(event.GetReadResult().GetDocument().Data) != (2<<20) {
 			t.Fatal("large read/result framing failed", event)
 		}
 		return nil
@@ -51,7 +50,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		t.Fatal("large legal record failed", events)
 	}
 	emptyRecord := &execution.Record{}
-	if _, failure := adapter.PrepareRecord(emptyRecord); failure == nil {
+	if _, failure := adapter.PrepareRecord(context.Background(), emptyRecord); failure == nil {
 		t.Fatal("accepted unconstructed record")
 	}
 }
@@ -69,7 +68,7 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := adapter.PrepareRecord(record)
+	work, failure := adapter.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -93,7 +92,7 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	native := open
 	variant := &pb.Command_Native{Native: native}
 	call := &pb.Command{Operation: variant}
-	work, failure := adapter.PrepareCommand(1, call)
+	work, failure := adapter.PrepareCommand(context.Background(), 1, call)
 	if failure != nil {
 		t.Fatal(failure)
 	}

@@ -197,8 +197,8 @@ func TestMongoMixedWriteLostReplyDoesNotReplayExpression(t *testing.T) {
 	}
 }
 
-func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testing.T) {
-	for _, mode := range []string{"first exhausted", "both retained", "first canceled"} {
+func TestMongoIndependentRPCDuplicateReadsKeepCallerIsolationAndSharedResults(t *testing.T) {
+	for _, mode := range []string{"first smaller estimate", "both retained", "first canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture := testmongo.Open(t)
 			document := bson.D{{Key: "_id", Value: "same"}, {Key: "value", Value: 123}}
@@ -225,7 +225,7 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 				work.Context = t.Context()
 				if i == 0 {
 					work.Context = caller
-					if mode == "first exhausted" {
+					if mode == "first smaller estimate" {
 						work.ResultBytes = 1
 					}
 				}
@@ -239,15 +239,12 @@ func TestMongoIndependentRPCDuplicateReadsKeepBudgetAndCallerIsolation(t *testin
 			if finds.Load() != 1 || len(replies) != 2 || !bytes.Equal(replies[1].GetReadResult().GetDocument().GetData(), raw) {
 				t.Fatal("independent RPC reads lost identity or quota isolation", finds.Load(), replies)
 			}
-			if mode == "both retained" {
+			if mode != "first canceled" {
 				if replies[0].GetReadResult().GetDocument() != replies[1].GetReadResult().GetDocument() {
 					t.Fatal("same-ID responses did not share immutable data with independent reservations", replies)
 				}
 			} else {
-				code := pb.FailureCode_RESOURCE_EXHAUSTED
-				if mode == "first canceled" {
-					code = pb.FailureCode_CANCELLED
-				}
+				code := pb.FailureCode_CANCELLED
 				if replies[0].GetReadResult().GetFailure().GetCode() != code {
 					t.Fatal("failed owner retained peer's data charge", replies)
 				}

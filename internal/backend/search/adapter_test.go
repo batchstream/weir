@@ -8,24 +8,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
 
 func TestJSONBoundsAndExactNumbers(t *testing.T) {
 	for _, raw := range []string{`{"n":9223372036854775807}`, `{"n":1e400}`, `{"unicode":"\ud83d\ude00"}`, `{"literal":"\\ud800"}`, `{"a":[true,null,{},[]]}`} {
-		if err := validateJSON([]byte(raw), 4096); err != nil {
+		if err := validateJSON(context.Background(), []byte(raw)); err != nil {
 			t.Fatal(raw, err)
 		}
 	}
 	for _, raw := range []string{`{"a":1,"a":2}`, `{} {}`, `{"n":NaN}`, `{"unicode":"\ud800"}`, `{"unicode":"\udc00"}`, strings.Repeat("[", 10001) + "0" + strings.Repeat("]", 10001), `{"a":"` + string([]byte{255}) + `"}`} {
-		if validateJSON([]byte(raw), 4096) == nil {
+		if validateJSON(context.Background(), []byte(raw)) == nil {
 			t.Fatal("accepted invalid/excessive JSON", raw)
 		}
 	}
-	if validateJSON([]byte(`[1,2,3,4]`), 4) == nil {
-		t.Fatal("node bound")
+	if err := validateJSON(context.Background(), []byte(`[1,2,3,4]`)); err != nil {
+		t.Fatal("valid array rejected", err)
 	}
 }
 func TestSearchPrepareRejectsUnsupportedInputs(t *testing.T) {
@@ -67,7 +66,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch mode {
 				case "large_body":
-					_, _ = fmt.Fprint(w, `{"x":"`+strings.Repeat("x", metadataLimit)+`"}`)
+					_, _ = fmt.Fprint(w, `{"x":"`+strings.Repeat("x", (256<<10))+`"}`)
 				case "large_header":
 					w.Header().Set("X-Large", strings.Repeat("x", 64<<10))
 					_, _ = fmt.Fprint(w, `{}`)
@@ -89,9 +88,11 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			cfg := Config{URL: server.URL}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, transport: transport, client: client, ctx: ctx, cancel: cancel}
 			defer a.Close()
-			call := exchange{path: "/", limit: metadataLimit}
-			if _, _, err := a.request(ctx, call); err == nil {
-				t.Fatal("invalid/excessive response accepted")
+			call := exchange{path: "/"}
+			_, _, err := a.request(ctx, call)
+			valid := mode == "large_body" || mode == "large_header"
+			if (err == nil) != valid {
+				t.Fatal("response framing or data size", mode, err)
 			}
 		})
 	}
@@ -110,13 +111,11 @@ func TestBulkEvidenceIsNotHTTPStatus(t *testing.T) {
 		t.Fatal(failure)
 	}
 	for _, raw := range []string{`{}`, `{"errors":false,"took":0,"items":[]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"a","status":404}}]}`, `{"errors":false,"took":0,"items":[{"delete":{"_index":"records","_id":"other","status":200}}]}`} {
-		results := a.bulkResults([]*execution.Plan{work}, 200, []byte(raw), nil)
+		replyInput114 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: []byte(raw), err: nil}
+		results := a.bulkResults(context.Background(), replyInput114)
 		if results[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 			t.Fatal("invented acknowledgement", raw)
 		}
-	}
-	if protocol.MaxDocument >= responseLimit {
-		t.Fatal("read/framing bound relationship")
 	}
 }
 
@@ -137,7 +136,8 @@ func TestNativeErrorStatusAndPositiveAcknowledgement(t *testing.T) {
 	native := &plan{index: "records", id: "a", action: "delete"}
 	work := &execution.Plan{ID: op.Index, Command: op.Command, Backend: native}
 	raw := []byte(`{"errors":false,"took":1,"items":[{"delete":{"_index":"records","_id":"a","status":200,"result":"deleted","_seq_no":1,"_primary_term":1,"_shards":{"total":2,"successful":1,"failed":1}}}]}`)
-	results := a.bulkResults([]*execution.Plan{work}, 200, raw, nil)
+	replyInput139 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
+	results := a.bulkResults(context.Background(), replyInput139)
 	if results[0].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[0].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("positive primary acknowledgement discarded", results)
 	}

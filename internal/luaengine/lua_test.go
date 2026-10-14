@@ -216,7 +216,6 @@ func TestEvaluateBoundsExecutionWorkAndCompilation(t *testing.T) {
 		"while true do end",
 		"return function() while true do end end",
 		"return function() local function recurse() return 1 + recurse() end; return recurse() end",
-		"return function() local t = {}; for i = 1, 5000 do t[i] = 1 end; table.sort(t); return {} end",
 	}
 	locals := make([]string, 201)
 	for index := range locals {
@@ -264,34 +263,35 @@ func TestEvaluateSortComparatorObservesInPlaceArray(t *testing.T) {
 	}
 }
 
-func TestEvaluateSourceValueAndLibraryResultBounds(t *testing.T) {
-	for _, source := range []string{"", strings.Repeat(" ", luaengine.MaxSourceBytes+1), "return\x00", "\x1bLua", string([]byte{255})} {
+func TestEvaluateValidatesSourceWithoutDataAdmissionCaps(t *testing.T) {
+	for _, source := range []string{"", "return\x00", "\x1bLua", string([]byte{255})} {
 		program := testProgram(source)
 		if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
-			t.Fatal("accepted invalid or oversized source")
+			t.Fatal("accepted invalid source")
 		}
 	}
-	program := testProgram("return function(current) return current end")
-	program.Current = ValueObject(Field("large", ValueString(strings.Repeat("x", value.MaxBytes))))
-	if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
-		t.Fatal("accepted oversized current value")
+	program := testProgram(strings.Repeat(" ", 32<<10) + "return function(current) return current end")
+	program.Current = ValueObject(Field("large", ValueString(strings.Repeat("x", 3<<20))))
+	if _, err := luaengine.Evaluate(t.Context(), program); err != nil {
+		t.Fatal("source or current retained a data cap", err)
 	}
 	program.Input, program.Current = program.Current, ValueObject()
-	if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
-		t.Fatal("accepted oversized input value")
+	program.Source = "return function(_, incoming) return incoming end"
+	if _, err := luaengine.Evaluate(t.Context(), program); err != nil {
+		t.Fatal("input retained a data cap", err)
 	}
 	program = testProgram("return function(_, incoming) return {v = string.format('%s%s', incoming.large, incoming.large)} end")
-	program.Input = ValueObject(Field("large", ValueString(strings.Repeat("x", value.MaxBytes/2+1))))
-	if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
-		t.Fatal("accepted oversized format result")
+	program.Input = ValueObject(Field("large", ValueString(strings.Repeat("x", 2<<20))))
+	if _, err := luaengine.Evaluate(t.Context(), program); err != nil {
+		t.Fatal("format result retained a data cap", err)
 	}
 	program.Source = "return function(_, incoming) return {v = table.concat({incoming.large, incoming.large})} end"
-	if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
-		t.Fatal("accepted oversized concat result")
+	if _, err := luaengine.Evaluate(t.Context(), program); err != nil {
+		t.Fatal("concat result retained a data cap", err)
 	}
 	program.Source = "return function(_, incoming) return weir.reject(incoming.large) end"
-	if _, err := luaengine.Evaluate(context.Background(), program); err == nil {
-		t.Fatal("accepted oversized rejection message")
+	if _, err := luaengine.Evaluate(t.Context(), program); err != nil {
+		t.Fatal("rejection message retained a data cap", err)
 	}
 }
 

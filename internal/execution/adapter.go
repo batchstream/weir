@@ -21,8 +21,8 @@ type Plan struct {
 type Emit func(*Plan, *pb.Event) error
 
 type Adapter interface {
-	PrepareCommand(uint64, *pb.Command) (*Plan, *pb.Failure)
-	PrepareRecord(*Record) (*Plan, *pb.Failure)
+	PrepareCommand(context.Context, uint64, *pb.Command) (*Plan, *pb.Failure)
+	PrepareRecord(context.Context, *Record) (*Plan, *pb.Failure)
 	// Execute returns true only for a nonterminal singleton Scan step.
 	Execute(context.Context, []*Plan, Emit) bool
 	ClosePlan(context.Context, *Plan) *pb.Failure

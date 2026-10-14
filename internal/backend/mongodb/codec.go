@@ -1,6 +1,7 @@
 package mongodb
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -8,7 +9,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
@@ -20,36 +20,16 @@ var extendedTypes = map[bson.Type]string{
 	bson.TypeTimestamp: "mongodb.bson.timestamp.v1", bson.TypeRegex: "mongodb.bson.regex.v1",
 }
 
-type codecBudget struct {
-	nodes  int
-	limits value.Limits
+// BSON uses MongoDB's native nesting boundary; document values have no Weir size or node quota.
+func Decode(ctx context.Context, raw bson.Raw) (value.Value, error) {
+	return decodeObject(ctx, raw, false, 0)
 }
-
-// Ordinary BSON follows the protocol size and MongoDB native nesting boundary.
-// Lua conversion limits apply only when constructing Lua values.
-func nativeValueLimits(raw []byte) value.Limits {
-	limits := value.Limits{MaxBytes: protocol.MaxDocument, MaxDepth: 100, MaxNodes: len(raw)}
-	return limits
-}
-
-func Decode(raw bson.Raw, limits value.Limits) (value.Value, error) {
+func decodeObject(ctx context.Context, raw []byte, array bool, depth int) (value.Value, error) {
 	var zero value.Value
-	if len(raw) > protocol.MaxDocument {
-		return zero, fmt.Errorf("document limit")
-	}
-	b := codecBudget{limits: limits}
-	decoded, err := decodeObject(raw, false, 0, &b)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
-	if len(raw) > limits.MaxBytes {
-		return zero, fmt.Errorf("conversion byte limit")
-	}
-	return decoded, nil
-}
-func decodeObject(raw []byte, array bool, depth int, b *codecBudget) (value.Value, error) {
-	var zero value.Value
-	if depth > b.limits.MaxDepth || len(raw) < 5 || int(binary.LittleEndian.Uint32(raw)) != len(raw) || raw[len(raw)-1] != 0 {
+	if depth > 100 || len(raw) < 5 || int(binary.LittleEndian.Uint32(raw)) != len(raw) || raw[len(raw)-1] != 0 {
 		return zero, fmt.Errorf("invalid BSON or depth limit")
 	}
 	result := value.Value{Kind: value.Object}
@@ -58,9 +38,8 @@ func decodeObject(raw []byte, array bool, depth int, b *codecBudget) (value.Valu
 	}
 	rest := raw[4 : len(raw)-1]
 	for len(rest) > 0 {
-		b.nodes++
-		if b.nodes > b.limits.MaxNodes {
-			return zero, fmt.Errorf("node limit")
+		if err := ctx.Err(); err != nil {
+			return zero, err
 		}
 		el, tail, ok := bsoncore.ReadElement(rest)
 		if !ok {
@@ -76,7 +55,7 @@ func decodeObject(raw []byte, array bool, depth int, b *codecBudget) (value.Valu
 			return zero, err
 		}
 		rv := bson.RawValue{Type: bson.Type(rawValue.Type), Value: rawValue.Data}
-		v, err := decodeValue(rv, depth, b)
+		v, err := decodeValue(ctx, rv, depth)
 		if err != nil {
 			return zero, err
 		}
@@ -92,14 +71,14 @@ func decodeObject(raw []byte, array bool, depth int, b *codecBudget) (value.Valu
 	}
 	return result, nil
 }
-func decodeValue(rv bson.RawValue, depth int, b *codecBudget) (value.Value, error) {
+func decodeValue(ctx context.Context, rv bson.RawValue, depth int) (value.Value, error) {
 	var zero value.Value
 	v := value.Value{}
 	switch rv.Type {
 	case bson.TypeEmbeddedDocument:
-		return decodeObject(rv.Value, false, depth+1, b)
+		return decodeObject(ctx, rv.Value, false, depth+1)
 	case bson.TypeArray:
-		return decodeObject(rv.Value, true, depth+1, b)
+		return decodeObject(ctx, rv.Value, true, depth+1)
 	case bson.TypeNull:
 		v.Kind = value.Null
 	case bson.TypeBoolean:
@@ -140,16 +119,15 @@ func decodeValue(rv bson.RawValue, depth int, b *codecBudget) (value.Value, erro
 	}
 	return v, nil
 }
-func Encode(v value.Value, limits value.Limits) (bson.Raw, error) {
-	b := codecBudget{limits: limits}
-	data, err := encodeObject(v, 0, &b)
-	if err == nil && len(data) > limits.MaxBytes {
-		return nil, fmt.Errorf("conversion byte limit")
-	}
+func Encode(ctx context.Context, v value.Value) (bson.Raw, error) {
+	data, err := encodeObject(ctx, v, 0)
 	return bson.Raw(data), err
 }
-func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
-	if depth > b.limits.MaxDepth || v.Kind != value.Object && v.Kind != value.Array {
+func encodeObject(ctx context.Context, v value.Value, depth int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if depth > 100 || v.Kind != value.Object && v.Kind != value.Array {
 		return nil, fmt.Errorf("invalid object or depth")
 	}
 	out := make([]byte, 4)
@@ -158,9 +136,8 @@ func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
 		n = len(v.Items)
 	}
 	for i := 0; i < n; i++ {
-		b.nodes++
-		if b.nodes > b.limits.MaxNodes {
-			return nil, fmt.Errorf("node limit")
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		var name string
 		var child value.Value
@@ -174,12 +151,9 @@ func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
 		if !utf8.ValidString(name) || strings.IndexByte(name, 0) >= 0 {
 			return nil, fmt.Errorf("invalid name")
 		}
-		rv, err := encodeValue(child, depth, b)
+		rv, err := encodeValue(ctx, child, depth)
 		if err != nil {
 			return nil, err
-		}
-		if len(out)+len(name)+len(rv.Data)+3 > protocol.MaxDocument {
-			return nil, fmt.Errorf("output limit")
 		}
 		out = bsoncore.AppendValueElement(out, name, rv)
 	}
@@ -187,7 +161,7 @@ func encodeObject(v value.Value, depth int, b *codecBudget) ([]byte, error) {
 	binary.LittleEndian.PutUint32(out, uint32(len(out)))
 	return out, nil
 }
-func encodeValue(v value.Value, depth int, b *codecBudget) (bsoncore.Value, error) {
+func encodeValue(ctx context.Context, v value.Value, depth int) (bsoncore.Value, error) {
 	var zero bsoncore.Value
 	rv := bsoncore.Value{}
 	switch v.Kind {
@@ -215,7 +189,7 @@ func encodeValue(v value.Value, depth int, b *codecBudget) (bsoncore.Value, erro
 		rv.Type = bsoncore.TypeString
 		rv.Data = bsoncore.AppendString(nil, v.Text)
 	case value.Array, value.Object:
-		data, err := encodeObject(v, depth+1, b)
+		data, err := encodeObject(ctx, v, depth+1)
 		if err != nil {
 			return zero, err
 		}

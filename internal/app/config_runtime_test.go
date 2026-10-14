@@ -78,10 +78,6 @@ lua:
     max_instructions: 9000000
     max_call_depth: 512
     max_stack_slots: 65536
-  values:
-    max_bytes: 1MiB
-    max_depth: 64
-    max_nodes: 32768
 overload:
   memory:
     high_watermark: 95
@@ -95,7 +91,7 @@ overload:
 	transport := cfg.Transport.serverLimits()
 	memory := cfg.Overload.Memory.limits()
 	lua := cfg.Lua.limits()
-	if lua.MaxInstructions != 9000000 || lua.MaxCallDepth != 512 || lua.MaxStackSlots != 65536 || lua.Values.MaxBytes != 1<<20 || lua.Values.MaxDepth != 64 || lua.Values.MaxNodes != 32768 {
+	if lua.MaxInstructions != 9000000 || lua.MaxCallDepth != 512 || lua.MaxStackSlots != 65536 {
 		t.Fatal("process Lua configuration was not decoded", lua)
 	}
 	if transport.MaxPendingRecords != 96 || transport.KeepaliveInterval != time.Minute || transport.KeepaliveTimeout != 7*time.Second || transport.Handshake != 3*time.Second || transport.Idle != 0 || transport.Stall != 2*time.Minute || cfg.Lifecycle.ShutdownTimeout != Duration(20*time.Second) || cfg.Diagnostics.Timeout != Duration(5*time.Second) || memory.HighWatermark != 95 || memory.LowWatermark != 90 || memory.SampleInterval != 7*time.Millisecond {

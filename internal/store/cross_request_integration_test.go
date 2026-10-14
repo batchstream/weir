@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/mongodb"
 	"github.com/batchstream/weir/internal/execution"
@@ -64,7 +63,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		work, failure := runtime.PrepareRecord(record)
+		work, failure := runtime.PrepareRecord(context.Background(), record)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -98,7 +97,7 @@ func TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners(t *testing.T) {
 	for _, ticket := range tickets[:31] {
 		ticket.Ack()
 	}
-	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != execution.ResultOverheadBytes+protocol.MaxDocument || snapshot.WorkingBytes != 0 {
+	if snapshot := runtime.Snapshot(); snapshot.Retained != 1 || snapshot.ResultBytes != tickets[31].plan.ResultBytes || snapshot.WorkingBytes != 0 {
 		t.Fatal("first caller did not release only its own response charges", snapshot)
 	}
 	if !bytes.Equal(peer.GetReadResult().GetDocument().GetData(), raw) {

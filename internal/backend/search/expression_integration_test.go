@@ -105,7 +105,7 @@ func TestSearchExpressionRealReplyFaultsAndNativeCompetition(t *testing.T) {
 					return
 				}
 				defer response.Body.Close()
-				raw, err := io.ReadAll(io.LimitReader(response.Body, metadataLimit+1))
+				raw, err := io.ReadAll(io.LimitReader(response.Body, (256<<10)+1))
 				if err != nil {
 					t.Error(err)
 					return
@@ -302,7 +302,8 @@ func TestSearchExpressionRealConflictEvidence(t *testing.T) {
 	}
 	n := &plan{index: b.Index, id: "counter", action: "expression"}
 	work := &execution.Plan{Backend: n}
-	results := a.bulkResults([]*execution.Plan{work}, code, raw, nil)
+	replyInput305 := bulkResponse{works: []*execution.Plan{work}, status: code, raw: raw, err: nil}
+	results := a.bulkResults(context.Background(), replyInput305)
 	result := results[0].GetMutationResult()
 	if result.Outcome != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 		t.Fatal(result)
