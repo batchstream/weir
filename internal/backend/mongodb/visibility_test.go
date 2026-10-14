@@ -36,7 +36,7 @@ func TestMongoVisibilityUsesMajorityAcknowledgementForEitherOption(t *testing.T)
 		opts := batchOperationOptions{resource: "db/records/s:item", action: "put", document: document}
 		request := batchOperation(t, opts)
 		if wait {
-			options := &pb.MutationOptions{Visibility: pb.MutationVisibility_SEARCH_VISIBLE}
+			options := &pb.MutationOptions{Visibility: pb.MutationVisibility_QUERY_VISIBLE}
 			request.Command.GetMutate().Options = options
 		}
 		work, failure := prepareTestRecord(adapter, request)

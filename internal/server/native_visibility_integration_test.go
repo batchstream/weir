@@ -90,7 +90,7 @@ func TestSDKExecuteSearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	nodes, client := routeBackendServer(t, adapter)
 	resource := backend.Index + "/" + weirclient.EncodeSegment("s:sdk")
 	document := &weirclient.Document{ContentType: "application/json", Data: []byte(`{"n":1,"business":"kept"}`)}
-	mutationOptions := &weirclient.MutationOptions{Visibility: weirclient.MutationSearchVisible}
+	mutationOptions := &weirclient.MutationOptions{Visibility: weirclient.MutationQueryVisible}
 	put := &weirclient.WriteRequest{Resource: resource, Document: document, Options: mutationOptions}
 	writeOptions := weirclient.WriteOptions{StoreName: "records", Request: put}
 	result, err := weirclient.Put(ctx, client, writeOptions)

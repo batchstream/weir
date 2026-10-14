@@ -131,7 +131,7 @@ func visibilityPlan(t *testing.T, adapter *Adapter, opts visibilityPlanOptions) 
 	}
 	work := batchTestPlan(t, adapter, opts.action, resource)
 	if opts.wait {
-		options := &pb.MutationOptions{Visibility: pb.MutationVisibility_SEARCH_VISIBLE}
+		options := &pb.MutationOptions{Visibility: pb.MutationVisibility_QUERY_VISIBLE}
 		work.Command.GetMutate().Options = options
 	}
 	if opts.program != "" {

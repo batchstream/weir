@@ -181,10 +181,10 @@ allows another read/evaluate/write attempt; an ambiguous commit can retry the
 same commit but cannot replay the mutations. Lua keep, reject and evaluation
 failures are resolved independently before the write phase.
 
-Search visibility waits are explicit per mutation, including Lua and backend
-expressions. Opted-in writes use refresh=wait_for; successful no-op results use a
-confirmed refresh barrier. Application evidence survives a later visibility
-failure, so APPLIED with Failure is not successful visible completion.
+Query visibility waits are explicit per mutation, including Lua and backend
+expressions. Search writes use refresh=wait_for when requested; successful no-op
+results use a confirmed refresh barrier. Application evidence survives a later
+visibility failure, so APPLIED with Failure is not successful visible completion.
 
 Search uses real-time multi-get and bulk writes with the observed sequence number
 and primary term on each item. Confirmed version conflicts reread and reevaluate

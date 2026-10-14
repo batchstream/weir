@@ -122,7 +122,7 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 			if err != nil {
 				return err
 			}
-			if kind == wireMutationOptions && number == 1 && value != uint64(pb.MutationVisibility_APPLICATION_ACKNOWLEDGED) && value != uint64(pb.MutationVisibility_SEARCH_VISIBLE) {
+			if kind == wireMutationOptions && number == 1 && value != uint64(pb.MutationVisibility_APPLICATION_ACKNOWLEDGED) && value != uint64(pb.MutationVisibility_QUERY_VISIBLE) {
 				return invalidExecuteFraming()
 			}
 			remaining -= consumed
