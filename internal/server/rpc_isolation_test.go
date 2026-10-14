@@ -47,7 +47,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 				firstContext, stopFirst = context.WithTimeout(ctx, 250*time.Millisecond)
 				defer stopFirst()
 			}
-			first, err := client.ExecuteV2(firstContext)
+			first, err := client.Execute(firstContext)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func TestRPCExpiryKeepsSharedConnectionAndMutation(t *testing.T) {
 					time.Sleep(time.Millisecond)
 				}
 			}
-			second, err := client.ExecuteV2(ctx)
+			second, err := client.Execute(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}

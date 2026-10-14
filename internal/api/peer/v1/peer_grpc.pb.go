@@ -9,8 +9,6 @@ package peerv1
 import (
 	context "context"
 	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -55,8 +53,6 @@ func (c *peerDiscoveryServiceClient) SyncDirectory(ctx context.Context, in *Sync
 }
 
 // PeerDiscoveryServiceServer is the server API for PeerDiscoveryService service.
-// All implementations must embed UnimplementedPeerDiscoveryServiceServer
-// for forward compatibility.
 //
 // PeerDiscoveryService synchronizes Store ownership between equal Weir nodes.
 // It carries public endpoint advertisements and never carries business payloads
@@ -65,37 +61,9 @@ type PeerDiscoveryServiceServer interface {
 	// SyncDirectory merges a bounded snapshot and returns the receiver's current
 	// snapshot. Every announcement retains its origin's revision and lease.
 	SyncDirectory(context.Context, *SyncDirectoryRequest) (*SyncDirectoryResponse, error)
-	mustEmbedUnimplementedPeerDiscoveryServiceServer()
-}
-
-// UnimplementedPeerDiscoveryServiceServer must be embedded to have
-// forward compatible implementations.
-//
-// NOTE: this should be embedded by value instead of pointer to avoid a nil
-// pointer dereference when methods are called.
-type UnimplementedPeerDiscoveryServiceServer struct{}
-
-func (UnimplementedPeerDiscoveryServiceServer) SyncDirectory(context.Context, *SyncDirectoryRequest) (*SyncDirectoryResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SyncDirectory not implemented")
-}
-func (UnimplementedPeerDiscoveryServiceServer) mustEmbedUnimplementedPeerDiscoveryServiceServer() {}
-func (UnimplementedPeerDiscoveryServiceServer) testEmbeddedByValue()                              {}
-
-// UnsafePeerDiscoveryServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to PeerDiscoveryServiceServer will
-// result in compilation errors.
-type UnsafePeerDiscoveryServiceServer interface {
-	mustEmbedUnimplementedPeerDiscoveryServiceServer()
 }
 
 func RegisterPeerDiscoveryServiceServer(s grpc.ServiceRegistrar, srv PeerDiscoveryServiceServer) {
-	// If the following call pancis, it indicates UnimplementedPeerDiscoveryServiceServer was
-	// embedded by pointer and is nil.  This will cause panics if an
-	// unimplemented method is ever invoked, so we test this at initialization
-	// time to prevent it from happening at runtime later due to I/O.
-	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
-		t.testEmbeddedByValue()
-	}
 	s.RegisterService(&PeerDiscoveryService_ServiceDesc, srv)
 }
 

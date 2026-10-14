@@ -106,7 +106,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			cfg := Config{Store: "mongo"}
 			a := &Adapter{client: client, deployment: deployment, commandMonitor: monitor, config: cfg}
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-			open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
+			open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
 			plan, failure := a.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -180,8 +180,12 @@ func TestMongoNativeCommandAndOptionsAreOpaque(t *testing.T) {
 }
 
 func TestMongoNativeResourceSelectsDatabaseWithoutCollectionQualification(t *testing.T) {
-	for _, resource := range []string{"db", "db/records", "db/system.views", "db/not-created"} {
+	for _, resource := range []string{"db", ""} {
 		command := bson.D{{Key: "create", Value: "new_collection"}}
+		if resource == "" {
+			database := bson.E{Key: "$db", Value: "db"}
+			command = append(command, database)
+		}
 		response := bson.D{{Key: "ok", Value: 1}}
 		raw, err := bson.Marshal(command)
 		if err != nil {
@@ -234,14 +238,14 @@ func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
 	adapter := &Adapter{}
 	for _, contentType := range []string{"application/http", "application/vnd.future.store"} {
 		document := &pb.Document{ContentType: contentType, Data: []byte("GET /_doc/x HTTP/1.1\r\n\r\n")}
-		request := &pb.NativeRequest{Resource: "db/records", Request: document}
+		request := &pb.NativeRequest{Resource: "db", Request: document}
 		if _, failure := adapter.prepareNative(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
 			t.Fatal("shared envelope interpreted adapter payload", contentType, failure)
 		}
 	}
 	// An empty opaque document is a valid envelope, but an invalid BSON command.
 	document := &pb.Document{ContentType: "application/bson"}
-	request := &pb.NativeRequest{Resource: "db/records", Request: document}
+	request := &pb.NativeRequest{Resource: "db", Request: document}
 	work, failure := adapter.prepareNative(request)
 	if failure != nil {
 		t.Fatal("generic envelope unexpectedly requires a body", failure)
@@ -269,7 +273,7 @@ func TestMongoNativeSmallRequestPublishesLargeReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := &pb.Document{ContentType: "application/bson", Data: raw}
-	request := &pb.NativeRequest{Resource: "db/records", Request: body}
+	request := &pb.NativeRequest{Resource: "db", Request: body}
 	work, failure := adapter.prepareNative(request)
 	if failure != nil {
 		t.Fatal(failure)
@@ -413,5 +417,22 @@ func TestMongoNativeLargeTopLevelDataArraysRemainOpaque(t *testing.T) {
 	}
 	if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || end.Failure != nil || !bytes.Equal(capture.body.Bytes(), want) || capture.chunks < 2 {
 		t.Fatal("large Native data array changed", end, capture.chunks)
+	}
+}
+
+func TestMongoNativeRejectsCollectionResourceShapes(t *testing.T) {
+	adapter := &Adapter{}
+	command := bson.D{{Key: "ping", Value: 1}, {Key: "$db", Value: "db"}}
+	raw, err := bson.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range []string{"db/records", "db/system.views", "db/records/s:id"} {
+		body := &pb.Document{ContentType: "application/bson", Data: raw}
+		request := &pb.NativeRequest{Resource: resource, Request: body}
+		work, failure := adapter.prepareNative(request)
+		if work != nil || failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			t.Fatal("Native accepted a collection resource even with explicit $db", resource, work, failure)
+		}
 	}
 }

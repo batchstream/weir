@@ -138,8 +138,7 @@ no Store workspace ceiling or backend connection-pool maximum. Transport failure
 do not replay mutations; confirmed conflicts and aborts can retry within the
 participating caller contexts. Waiting work is bounded by queue count and bytes.
 
-Metrics observe execution rather than control scheduling. The former
-`weir_store_feedback` last-result gauge is removed.
+Metrics observe execution rather than control scheduling.
 Queue occupancy and capacity metrics describe waiting operations. Active execution
 and per-record outcome counters retain actual backend evidence, including unknown writes.
 

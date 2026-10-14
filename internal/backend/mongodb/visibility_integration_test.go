@@ -47,7 +47,8 @@ func TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops(t *testing.T
 			}
 			options := batchOperationOptions{resource: fixture.DB + "/records/s:" + test.id, action: test.action, document: document, program: test.source}
 			request := batchOperation(t, options)
-			request.Command.GetMutate().WaitUntilVisible = true
+			mutationOptions := &pb.MutationOptions{Visibility: pb.MutationVisibility_SEARCH_VISIBLE}
+			request.Command.GetMutate().Options = mutationOptions
 			work, failure := prepareTestRecord(adapter, request)
 			if failure != nil {
 				t.Fatal(failure)

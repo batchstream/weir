@@ -183,7 +183,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			command := bson.D{{Key: "count", Value: "records"}}
 			body, _ := bson.Marshal(command)
 			nativeRequest := &pb.Document{ContentType: "application/bson", Data: body}
-			nativeCall := &pb.NativeRequest{Resource: root, Request: nativeRequest}
+			nativeCall := &pb.NativeRequest{Resource: fixture.DB, Request: nativeRequest}
 			nativeVariant := &pb.Command_Native{Native: nativeCall}
 			call := &pb.Command{Operation: nativeVariant}
 			stream, err := testutil.ExecuteEvents(ctx, client, "mongo", call)

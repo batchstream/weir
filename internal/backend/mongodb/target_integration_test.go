@@ -75,10 +75,10 @@ func targetResource(target namespace) string {
 	return target.database + "/" + target.collection
 }
 
-func targetNative(t *testing.T, adapter *Adapter, target namespace, command bson.D) bson.Raw {
+func targetNative(t *testing.T, adapter *Adapter, database string, command bson.D) bson.Raw {
 	t.Helper()
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-	open := &pb.NativeRequest{Resource: targetResource(target), Request: nativeBody}
+	open := &pb.NativeRequest{Resource: database, Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
@@ -208,14 +208,14 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			t.Fatal("Scan did not traverse target", target, failure, seen)
 		}
 		command := bson.D{{Key: "count", Value: target.collection}}
-		reply := targetNative(t, adapter, target, command)
+		reply := targetNative(t, adapter, target.database, command)
 		if reply.Lookup("n").AsInt64() != 3 {
 			t.Fatal("Native count used another target", target, reply)
 		}
 		query := bson.D{{Key: "_id", Value: "shared"}}
 		update := bson.D{{Key: "$inc", Value: bson.D{{Key: "n", Value: int32(100)}}}}
 		command = bson.D{{Key: "findAndModify", Value: target.collection}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "new", Value: true}}
-		reply = targetNative(t, adapter, target, command)
+		reply = targetNative(t, adapter, target.database, command)
 		if reply.Lookup("value").Document().Lookup("n").Int32() != int32(i+111) {
 			t.Fatal("Native write used another target", target, reply)
 		}

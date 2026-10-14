@@ -130,7 +130,10 @@ func visibilityPlan(t *testing.T, adapter *Adapter, opts visibilityPlanOptions) 
 		resource = "records/s:" + opts.id
 	}
 	work := batchTestPlan(t, adapter, opts.action, resource)
-	work.Command.GetMutate().WaitUntilVisible = opts.wait
+	if opts.wait {
+		options := &pb.MutationOptions{Visibility: pb.MutationVisibility_SEARCH_VISIBLE}
+		work.Command.GetMutate().Options = options
+	}
 	if opts.program != "" {
 		work.Command.GetMutate().GetAtomicTransform().GetLua().Source = []byte(opts.program)
 	}
@@ -173,6 +176,42 @@ func TestMutationVisibilityFlagsGroupWritesAndKeepDefaultBehavior(t *testing.T) 
 	defer fixture.mu.Unlock()
 	if strings.Join(fixture.refreshModes, ",") != "false,wait_for,false" || fixture.refreshes != 0 {
 		t.Fatal("default writes gained refresh waits or changing writes gained needless refresh barriers", fixture.refreshModes, fixture.refreshes)
+	}
+}
+
+func TestMutationOptionsDefaultVisibilityKeepsApplicationAcknowledgement(t *testing.T) {
+	empty := &pb.MutationOptions{}
+	explicit := &pb.MutationOptions{Visibility: pb.MutationVisibility_APPLICATION_ACKNOWLEDGED}
+	cases := []struct {
+		name    string
+		options *pb.MutationOptions
+	}{
+		{name: "omitted"},
+		{name: "empty", options: empty},
+		{name: "explicit", options: explicit},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := &visibilityFixture{}
+			adapter := visibilityAdapter(t, fixture)
+			work := batchTestPlan(t, adapter, "put", "records/s:"+test.name)
+			work.Command.GetMutate().Options = test.options
+			request := &pb.ExecuteRequest{Index: work.ID, Command: work.Command}
+			prepared, failure := prepareTestRecord(adapter, request)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			works := []*execution.Plan{prepared}
+			mutation := adapter.executeRecords(t.Context(), works)[0].GetMutationResult()
+			if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil || prepared.BatchKey != "records" {
+				t.Fatal("default visibility changed application acknowledgement", mutation, prepared.BatchKey)
+			}
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+			if strings.Join(fixture.refreshModes, ",") != "false" || fixture.refreshes != 0 {
+				t.Fatal("default mutation options introduced search refresh", fixture.refreshModes, fixture.refreshes)
+			}
+		})
 	}
 }
 

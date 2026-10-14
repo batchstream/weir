@@ -2,6 +2,7 @@ package protowire
 
 import (
 	"github.com/batchstream/weir-protocol/api/protocol"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
@@ -35,6 +36,7 @@ const (
 	wireTransform
 	wireLua
 	wireProjection
+	wireMutationOptions
 )
 
 type wireField struct {
@@ -60,7 +62,7 @@ var requestShapes = [...][]wireField{
 		{number: 4, nested: wireDocument, maximum: protocol.MaxCommandBytes, oneof: true},
 		{number: 5, nested: wireEmpty, oneof: true},
 		{number: 6, nested: wireTransform, maximum: protocol.MaxCommandBytes, oneof: true},
-		{number: 7, scalar: true}},
+		{number: 7, nested: wireMutationOptions, maximum: protocol.MaxCommandBytes}},
 	wireScan: {{number: 1, maximum: protocol.MaxResourceBytes},
 		{number: 2, nested: wireDocument, maximum: protocol.MaxScanFilterBytes + 256},
 		{number: 3, nested: wireProjection, maximum: 8 << 10},
@@ -77,6 +79,7 @@ var requestShapes = [...][]wireField{
 		{number: 2, nested: wireDocument, maximum: protocol.MaxCommandBytes}},
 	wireProjection: {{number: 1, scalar: true},
 		{number: 2, repeated: true, maximum: 512}},
+	wireMutationOptions: {{number: 1, scalar: true}},
 }
 
 // Every recursion borrows the same cursor and owns an exact byte span.
@@ -115,9 +118,12 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 			if tag&7 != 0 {
 				return invalidExecuteFraming()
 			}
-			_, consumed, err := frameVarint(reader, remaining)
+			value, consumed, err := frameVarint(reader, remaining)
 			if err != nil {
 				return err
+			}
+			if kind == wireMutationOptions && number == 1 && value != uint64(pb.MutationVisibility_APPLICATION_ACKNOWLEDGED) && value != uint64(pb.MutationVisibility_SEARCH_VISIBLE) {
+				return invalidExecuteFraming()
 			}
 			remaining -= consumed
 			continue

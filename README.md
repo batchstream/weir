@@ -6,14 +6,14 @@ through any Weir node with `ResolveStore`, then connect directly to the returned
 targets. Nodes synchronize their Store directory through bounded periodic peer
 exchanges. Business requests execute only local Stores.
 
-`ExecuteV2` is a finite bidirectional stream of typed requests and results. SDK
+`Execute` is a finite bidirectional stream of typed requests and results. SDK
 Read and Mutate calls send one record per request for one Store. The server
 receives through a bounded ticket queue, combines compatible queued records into
 database batches and publishes results in input order. Waiting queue capacity and
 slow consumption apply backpressure. Same-resource mutations within a stream
 execute in input order.
 Native forwards MongoDB commands and Search HTTP requests without operation
-allowlists. A mutation can request `wait_until_visible`; successful Search
+allowlists. A mutation can request `MutationOptions.visibility=SEARCH_VISIBLE`; successful Search
 completion then confirms search visibility, including Lua transforms.
 Lua runs inside the single Weir process. Unconfirmed writes remain indeterminate
 after transport failure and are never automatically replayed.
@@ -115,7 +115,7 @@ and completed target caching, native exchange chunk sizes, and the shared
 `backend.mongodb.pool`. Store `queue`, `batching` and `scan` hold waiting
 work, request aggregation and Scan publication batches. Process `transport` owns
 Execute flow control and independent keepalive/progress settings; process `lua`
-sets VM and conversion policy for every Store. The former flat keys are rejected. Business work
+sets VM and conversion policy for every Store. Business work
 has no default instruction budget or server-selection deadline; native exchanges
 split large batches rather than rejecting their combined input.
 
@@ -171,7 +171,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.11.0`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.13.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -202,9 +202,9 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.11.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.11.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.11.0/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.13.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.13.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.13.0/examples/scan) examples
 initialize through a seed. Read and Mutate accept batches for one Store and use
 one bidirectional Execute RPC, with indexed results in input order. There is no
 whole-call byte or item-count limit; each wire request carries one bounded record.
@@ -212,7 +212,7 @@ Resources are canonical relative paths. ReadStream and MutateStream accept an
 incremental producer and consumer so callers can avoid retaining the full input
 and output. The slice convenience methods accumulate results in client memory.
 The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan
-and Native methods. It pins public protocol v0.9.0. Advanced fixed-owner callers
+and Native methods. It pins public protocol v0.11.0. Advanced fixed-owner callers
 can use Dial and package-level business helpers.
 
 The SDK validates slice inputs before sending them. The server validates each

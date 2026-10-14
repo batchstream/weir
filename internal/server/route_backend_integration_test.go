@@ -182,7 +182,7 @@ func TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed(t *testing.T) {
 				nativeCommand := bson.D{{Key: "findAndModify", Value: "records"}, {Key: "query", Value: query}, {Key: "update", Value: update}, {Key: "new", Value: true}}
 				body, _ := bson.Marshal(nativeCommand)
 				nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-				open := &pb.NativeRequest{Resource: backend.DB + "/records", Request: nativeBody}
+				open := &pb.NativeRequest{Resource: backend.DB, Request: nativeBody}
 				open.Request.Data = body
 				native := open
 				value := &pb.Command_Native{Native: native}

@@ -71,7 +71,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			}
 			raw, _ := bson.Marshal(command)
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-			open := &pb.NativeRequest{Resource: db + "/records", Request: nativeBody}
+			open := &pb.NativeRequest{Resource: db, Request: nativeBody}
 			plan, f := a.prepareNative(open)
 			if f != nil {
 				t.Fatal(f)
@@ -187,7 +187,7 @@ func TestMongoNativeQueriesIndexesPipelinesAndCursors(t *testing.T) {
 		bson.D{{Key: "_id", Value: "b"}, {Key: "n", Value: 2}},
 	}
 	insert := bson.D{{Key: "insert", Value: collection}, {Key: "documents", Value: documents}, {Key: "ordered", Value: true}}
-	runMongoNativeCommand(t, adapter, database+"/unused", insert)
+	runMongoNativeCommand(t, adapter, database, insert)
 	filter := bson.D{{Key: "n", Value: bson.D{{Key: "$gte", Value: 1}}}}
 	sort := bson.D{{Key: "n", Value: 1}}
 	find := bson.D{{Key: "find", Value: collection}, {Key: "filter", Value: filter}, {Key: "sort", Value: sort}, {Key: "skip", Value: 1}, {Key: "limit", Value: 1}, {Key: "hint", Value: "n_1"}}
@@ -221,7 +221,7 @@ func TestMongoNativeQueriesIndexesPipelinesAndCursors(t *testing.T) {
 	seen := 1
 	for cursorID != 0 {
 		getMore := bson.D{{Key: "getMore", Value: cursorID}, {Key: "collection", Value: collection}, {Key: "batchSize", Value: 1}}
-		reply = runMongoNativeCommand(t, adapter, database+"/unused", getMore)
+		reply = runMongoNativeCommand(t, adapter, database, getMore)
 		batch, err = reply.Lookup("cursor", "nextBatch").Array().Values()
 		if err != nil {
 			t.Fatal(err)

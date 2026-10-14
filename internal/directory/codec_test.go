@@ -60,7 +60,6 @@ func (rawPeerResponseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 }
 
 type rawDirectoryPeer struct {
-	peerpb.UnimplementedPeerDiscoveryServiceServer
 }
 
 func (rawDirectoryPeer) SyncDirectory(context.Context, *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {

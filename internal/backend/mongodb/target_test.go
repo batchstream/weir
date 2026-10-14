@@ -30,7 +30,7 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 				t.Fatal(failure)
 			}
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
+			open := &pb.NativeRequest{Resource: database, Request: nativeBody}
 			native, failure := adapter.prepareNative(open)
 			if failure != nil {
 				t.Fatal(failure)
@@ -38,8 +38,8 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			want := namespace{database: database, collection: collection}
 			operation.Command.GetRead().Resource = "changed/changed/s:changed"
 			request.Resource = "changed/changed"
-			open.Resource = "changed/changed"
-			if work.Backend.(*plan).target != want || scan.Backend.(*scanPlan).target != want || native.Backend.(namespace) != want {
+			open.Resource = "changed"
+			if work.Backend.(*plan).target != want || scan.Backend.(*scanPlan).target != want || native.Backend.(string) != database {
 				t.Fatal("prepared target changed with request", work, scan, native)
 			}
 		}
@@ -63,7 +63,7 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
 			_, failure := adapter.prepareNative(open)
-			if (failure != nil) != (resource == "db/records/extra") {
+			if (failure != nil) != strings.ContainsRune(resource, '/') {
 				t.Fatal("Native applied collection constraints instead of resource framing", resource, failure)
 			}
 		})
@@ -117,7 +117,7 @@ func TestMongoNativeCommandOwnsCollectionTarget(t *testing.T) {
 	responses := []bson.D{response}
 	adapter := batchMockAdapter(t, responses, monitor)
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
+	open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
 	work, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)
@@ -231,7 +231,7 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 		t.Fatal(page)
 	}
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
+	open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
 	native, failure := adapter.prepareNative(open)
 	if failure != nil {
 		t.Fatal(failure)

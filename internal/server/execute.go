@@ -28,9 +28,9 @@ func (s *Server) Snapshot() ExecutionSnapshot {
 // queue capacity bounds waiting inputs; active results follow stream backpressure.
 const RecordStreamItems = 32
 
-// ExecuteV2 consumes single requests while the shared Store scheduler aggregates
+// Execute consumes single requests while the shared Store scheduler aggregates
 // database work. Results are published in input order without waiting for EOF.
-func (s *Server) ExecuteV2(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) error {
+func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse]) error {
 	request, err := s.receiveFrame(stream)
 	if err == io.EOF {
 		return status.Error(codes.InvalidArgument, "empty execution stream")

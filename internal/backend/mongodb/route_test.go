@@ -80,7 +80,7 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 
 func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}}
-	replies := []bson.D{collectionQualificationResponse("db", "records"), response}
+	replies := []bson.D{response}
 	adapter := batchMockAdapter(t, replies, nil)
 	command := bson.D{{Key: "count", Value: "records"}}
 	raw, err := bson.Marshal(command)
@@ -88,7 +88,7 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 		t.Fatal(err)
 	}
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
-	open := &pb.NativeRequest{Resource: "db/records", Request: nativeBody}
+	open := &pb.NativeRequest{Resource: "db", Request: nativeBody}
 	open.Request.Data = raw
 	native := open
 	variant := &pb.Command_Native{Native: native}

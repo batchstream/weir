@@ -40,7 +40,6 @@ type Config struct {
 }
 
 type Server struct {
-	pb.UnimplementedStoreServiceServer
 	stores      map[string]*store.Runtime
 	directory   *directory.Directory
 	admission   *Admission

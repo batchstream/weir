@@ -11,7 +11,7 @@ if [ ! -x .tools/bin/protoc-gen-go-grpc ] || [ "$(.tools/bin/protoc-gen-go-grpc 
 fi
 PATH="$PWD/.tools/bin:$PATH" .tools/protoc/bin/protoc \
  --go_out=. --go_opt=module=github.com/batchstream/weir \
- --go-grpc_out=. --go-grpc_opt=module=github.com/batchstream/weir \
+ --go-grpc_out=. --go-grpc_opt=module=github.com/batchstream/weir,require_unimplemented_servers=false \
  internal/api/peer/v1/peer.proto
 
 # Keep the named-struct-literal convention reproducible in generated Go code.
@@ -21,6 +21,22 @@ awk '
  }
  { print }
  END { if (count != 1) exit 1 }
+' internal/api/peer/v1/peer_grpc.pb.go > .tools/peer_grpc.pb.go
+mv .tools/peer_grpc.pb.go internal/api/peer/v1/peer_grpc.pb.go
+
+# Require each service implementation to implement the current contract directly.
+awk '
+ /^\/\/ All implementations should embed UnimplementedPeerDiscoveryServiceServer$/ { next }
+ /^\/\/ for forward compatibility\.$/ { next }
+ /^\/\/ UnimplementedPeerDiscoveryServiceServer / { compatibility = 1; count++; next }
+ compatibility && /^func RegisterPeerDiscoveryServiceServer\(/ { compatibility = 0; registration = 1; print; next }
+ compatibility { next }
+ registration && /^\ts.RegisterService/ { registration = 0 }
+ registration { next }
+ $0 == "\tcodes \"google.golang.org/grpc/codes\"" { next }
+ $0 == "\tstatus \"google.golang.org/grpc/status\"" { next }
+ { print }
+ END { if (count != 1 || compatibility || registration) exit 1 }
 ' internal/api/peer/v1/peer_grpc.pb.go > .tools/peer_grpc.pb.go
 mv .tools/peer_grpc.pb.go internal/api/peer/v1/peer_grpc.pb.go
 

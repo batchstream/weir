@@ -148,7 +148,7 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 	}
 	var block bytes.Buffer
 	encoder := hpack.NewEncoder(&block)
-	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_ExecuteV2_FullMethodName}, {Name: "content-type", Value: "application/grpc"}, {Name: "te", Value: "trailers"}}
+	fields := []hpack.HeaderField{{Name: ":method", Value: "POST"}, {Name: ":scheme", Value: "http"}, {Name: ":authority", Value: address}, {Name: ":path", Value: pb.StoreService_Execute_FullMethodName}, {Name: "content-type", Value: "application/grpc"}, {Name: "te", Value: "trailers"}}
 	for _, field := range fields {
 		if err := encoder.WriteField(field); err != nil {
 			t.Fatal(err)

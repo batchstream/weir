@@ -289,7 +289,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 		work.ResultBytes += protocol.MaxDocument
 	} else {
 		mutation := op.GetMutate()
-		native.waitUntilVisible = mutation.GetWaitUntilVisible()
+		native.waitUntilVisible = mutation.GetOptions().GetVisibility() == pb.MutationVisibility_SEARCH_VISIBLE
 		var document *pb.Document
 		switch action := mutation.Action.(type) {
 		case *pb.MutateRequest_Put:

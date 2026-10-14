@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.9.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.11.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -8,11 +8,10 @@ or peer membership appear in this schema.
 | Public RPC | Meaning |
 | --- | --- |
 | StoreService.ResolveStore | Discover IP/DNS endpoints and cache TTL for one named Store |
-| StoreService.ExecuteV2 | Exchange bounded typed requests and indexed results on a finite bidirectional stream |
+| StoreService.Execute | Exchange bounded typed requests and indexed results on a finite bidirectional stream |
 
-ExecuteV2 is the explicit contract boundary for open Native forwarding and
-wait-until-visible mutations. The former Execute RPC is not served; clients
-and owners must upgrade together. SDK public method names remain unchanged.
+Execute accepts typed records, open Native forwarding and wait-until-visible
+mutations on one finite stream.
 
 ExecuteRequest contains store_name, a consecutive one-based index and Command.
 Commands select one ReadRequest, MutateRequest, ScanRequest or NativeRequest; a
@@ -36,11 +35,8 @@ Request envelopes reject unknown fields, enum values and operation variants;
 ignoring a future write condition or command option could change its effects.
 The wire validator checks known field framing directly in the transport's buffer
 fragments before allocation, and shared validation checks the decoded values.
-Response readers accept additive unknown fields and retain unknown positive
-failure codes as failures, while still checking
-known result evidence, event kinds and completion rules. New execution behavior
-must have an explicit supported contract boundary. After this initial baseline,
-published field numbers and types are fixed; removed fields must be reserved.
+Response readers reject unknown fields and undeclared failure codes, and check
+result evidence, event kinds and completion rules against the current schema.
 
 Scan is read-only and returns documents without a separate record identity. A
 continuation fixes the Store, resource, exact filter representation, projection
@@ -58,10 +54,8 @@ inserts, deletes and updates can change later pages. Search uses a backend PIT w
 60s keep_alive renewed by successful PIT search requests. Expired or lost
 PITs fail continuation without automatically restarting traversal. Tokens are
 opaque bounded checkpoints and do not grant additional access to backend data.
-Rolling upgrades must retain readers for issued envelope/fingerprint/profile
-formats while their tokens can remain valid. Internal tuning can change without
-invalidating a token; changing traversal semantics requires a new profile and an
-explicit token retirement policy, especially for unexpired MongoDB tokens.
+Continuation tokens must match the current envelope, fingerprint and traversal
+profile. A mismatched token fails without restarting the traversal.
 
 Mutate is not an atomic transaction. Same-resource mutations execute in stream
 input order; an invalid later request does not undo earlier writes. Confirmed item
@@ -98,7 +92,7 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.9.0 and Go SDK v0.11.0.
+safe typed completion. The current dependencies are protocol v0.11.0 and Go SDK v0.13.0.
 
 Internal execution plans retain scheduling budgets and backend state. They borrow
 the public Command and publish the public Event directly; no second request or

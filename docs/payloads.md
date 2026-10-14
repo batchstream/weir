@@ -23,7 +23,7 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Expression structure | bounded `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
 | Lua input | optional BSON document | optional JSON document |
 | Native request Document | `application/bson`: complete raw BSON command | `application/http`: complete HTTP/1.1 request, including headers and body |
-| Native target | `db`, historical `db/collection`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
+| Native target | `db`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
 | Native request limit | one complete BSON command, at most 4 MiB | 8 MiB for the complete HTTP message; headers consume part of that budget |
 
 Records are at most 2 MiB. Ordinary BSON follows MongoDB native nesting rules;
@@ -68,7 +68,7 @@ deleted with nil; arrays support `#`, iteration, insertion, sorting and filterin
 The callback must return exactly one object to create/replace the record, or an
 explicit `weir.keep()`, `weir.delete()` or `weir.reject(message)` action. Nil,
 missing returns, multiple returns and scalar results are errors. Reject returns
-`NOT_APPLIED/PRECONDITION_FAILED`. The previous global-value/helper API is removed.
+`NOT_APPLIED/PRECONDITION_FAILED`.
 
 `weir.object()` and `weir.array()` construct explicitly typed empty containers;
 an unmarked empty `{}` is an object. Unmarked nonempty tables with dense integer
@@ -97,11 +97,10 @@ server through HTTP Host or an absolute request target. Native never automatical
 replays requests, including reads, because Weir does not classify opaque commands.
 
 MongoDB accepts `application/bson` containing any valid ordered BSON command.
-The resource supplies a fallback database; historical `db/collection` resources
-are also accepted. An explicit string `$db` selects the database on the same
-configured backend and is transmitted exactly once; it also permits an empty
-resource. Missing, duplicate or nonstring database routing metadata is invalid
-framing. The command owns collection names, session/transaction parameters and
+The resource contains one database segment or is empty. An explicit string `$db`
+selects the database on the configured backend and is transmitted exactly once.
+Without `$db`, the resource supplies the database. An empty resource requires
+`$db`. Missing, duplicate or nonstring database routing metadata is invalid framing. The command owns collection names, session/transaction parameters and
 aggregation stages. Native uses the shared backend pool without adding implicit
 sessions, inferred read preferences or deadline-derived `maxTimeMS`; cancellation
 still follows the original caller lifetime.
@@ -120,15 +119,20 @@ Fixed Content-Length framing is required for nonempty request bodies; chunked
 framing, upgrades and trailers are outside this finite request envelope. Response
 status, headers, native error bodies and arbitrary entity bytes are preserved.
 
-`MutateRequest.wait_until_visible` applies to ordinary mutations, backend
-expressions and Lua transforms. Its default is acknowledged application. When
-true, successful completion additionally confirms visibility to subsequent
+`MutateRequest.options` carries `MutationOptions` for ordinary mutations, backend
+expressions and Lua transforms. An absent or empty options message defaults to
+`visibility=APPLICATION_ACKNOWLEDGED`. With `visibility=SEARCH_VISIBLE`,
+successful completion additionally confirms visibility to subsequent
 search queries. Search uses `refresh=wait_for` for physical writes and a refresh
 barrier for successful no-op results. A visibility failure preserves any known
 APPLIED evidence and reports a Failure; it is not permission to replay the write.
 MongoDB's existing majority-acknowledged writes and primary read path satisfy
 the option without adding a refresh operation. Compatible record batches keep
 visibility waits separate from default application-only work.
+
+Mutation options are passed as one typed message by the protocol and SDK. New
+mutation settings belong in that message and are validated against the current
+contract.
 
 A record stream returns one indexed result per input record. A scan emits one finite page of zero or more
 Document Events and exactly one ScanEnd containing that page's matching document

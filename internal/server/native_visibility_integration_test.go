@@ -15,9 +15,6 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend/search"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type sdkVisibleSearchOptions struct {
@@ -77,7 +74,7 @@ func assertSDKVisibleSearch(t *testing.T, client pb.StoreServiceClient, opts sdk
 	}
 }
 
-func TestSDKExecuteV2SearchVisibilityAndNativeBackendRoot(t *testing.T) {
+func TestSDKExecuteSearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	backend := testsearch.Open(t)
 	statusCode, raw := backend.Do(t, http.MethodPut, "/"+backend.Index+"/_settings", `{"index":{"refresh_interval":"100ms"}}`)
 	if statusCode != http.StatusOK {
@@ -93,7 +90,8 @@ func TestSDKExecuteV2SearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	nodes, client := routeBackendServer(t, adapter)
 	resource := backend.Index + "/" + weirclient.EncodeSegment("s:sdk")
 	document := &weirclient.Document{ContentType: "application/json", Data: []byte(`{"n":1,"business":"kept"}`)}
-	put := &weirclient.WriteRequest{Resource: resource, Document: document, WaitUntilVisible: true}
+	mutationOptions := &weirclient.MutationOptions{Visibility: weirclient.MutationSearchVisible}
+	put := &weirclient.WriteRequest{Resource: resource, Document: document, Options: mutationOptions}
 	writeOptions := weirclient.WriteOptions{StoreName: "records", Request: put}
 	result, err := weirclient.Put(ctx, client, writeOptions)
 	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
@@ -102,7 +100,7 @@ func TestSDKExecuteV2SearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	searchOptions := sdkVisibleSearchOptions{backend: backend, wantN: 1}
 	assertSDKVisibleSearch(t, client, searchOptions)
 	program := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
-	transform := &weirclient.AtomicTransformRequest{Resource: resource, Lua: program, WaitUntilVisible: true}
+	transform := &weirclient.AtomicTransformRequest{Resource: resource, Lua: program, Options: mutationOptions}
 	transformOptions := weirclient.AtomicTransformOptions{StoreName: "records", Request: transform}
 	result, err = weirclient.AtomicTransform(ctx, client, transformOptions)
 	if err != nil || result == nil || result.Outcome != weirclient.MutationApplied || result.Failure != nil {
@@ -110,18 +108,5 @@ func TestSDKExecuteV2SearchVisibilityAndNativeBackendRoot(t *testing.T) {
 	}
 	searchOptions.wantN = 2
 	assertSDKVisibleSearch(t, client, searchOptions)
-	assertRouteAcceptanceIdle(t, nodes)
-
-	connection, _ := peerClient(t, nodes[0].address)
-	description := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	stream, err := connection.NewStream(ctx, description, "/weir.v1.StoreService/Execute")
-	if err == nil {
-		_ = stream.CloseSend()
-		response := &pb.ExecuteResponse{}
-		err = stream.RecvMsg(response)
-	}
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatal("old Execute RPC accepted visibility semantics it cannot guarantee", err)
-	}
 	assertRouteAcceptanceIdle(t, nodes)
 }

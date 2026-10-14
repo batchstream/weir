@@ -244,7 +244,8 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 			t.Fatal(err)
 		}
 		variant := &pb.Document{ContentType: "application/bson", Data: body}
-		request = &pb.NativeRequest{Resource: opts.root, Request: variant}
+		database, _, _ := strings.Cut(opts.root, "/")
+		request = &pb.NativeRequest{Resource: database, Request: variant}
 	} else {
 		httpRequest, err := http.NewRequest(http.MethodGet, "http://ignored.invalid/_doc/example?realtime=true", nil)
 		if err != nil {
@@ -473,7 +474,7 @@ func TestDiagnosticProcessSIGTERMReadinessBeforeExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	desc := &grpc.StreamDesc{ClientStreams: true, ServerStreams: true}
-	_, err = conn.NewStream(ctx, desc, pb.StoreService_ExecuteV2_FullMethodName)
+	_, err = conn.NewStream(ctx, desc, pb.StoreService_Execute_FullMethodName)
 	if err != nil {
 		t.Fatal(err)
 	}

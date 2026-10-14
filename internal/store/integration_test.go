@@ -430,12 +430,15 @@ func TestNativeCallerCancellationReleasesExecution(t *testing.T) {
 			data := bson.D{{Key: "failCommands", Value: bson.A{commandName}}, {Key: "appName", Value: "weir:mongo"}, {Key: "blockConnection", Value: true}, {Key: "blockTimeMS", Value: 500}}
 			testmongo.FailCommand(t, f.native, data, 1)
 			command := bson.D{{Key: "count", Value: "records"}}
+			if commandName == "listCollections" {
+				command = bson.D{{Key: "listCollections", Value: 1}}
+			}
 			raw, err := bson.Marshal(command)
 			if err != nil {
 				t.Fatal(err)
 			}
 			body := &pb.Document{ContentType: "application/bson", Data: raw}
-			native := &pb.NativeRequest{Resource: f.db + "/records", Request: body}
+			native := &pb.NativeRequest{Resource: f.db, Request: body}
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
 			work, failure := f.runtime.PrepareCommand(1, call)
