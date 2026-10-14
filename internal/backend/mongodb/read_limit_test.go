@@ -5,14 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestMongoReadUsesOnlyProtocolDocumentBound(t *testing.T) {
-	sizes := []int{1024, (16 << 10) + 1, 70 << 10, protocol.MaxDocument, protocol.MaxDocument + 1}
+func TestMongoReadRetainsLargeDocumentsAndIndependentWrites(t *testing.T) {
+	sizes := []int{1024, (16 << 10) + 1, 70 << 10, (2 << 20), (2 << 20) + 1}
 	for _, size := range sizes {
 		document := bson.D{{Key: "_id", Value: "read"}, {Key: "pad", Value: ""}}
 		empty := expressionBSON(t, document)
@@ -42,8 +41,8 @@ func TestMongoReadUsesOnlyProtocolDocumentBound(t *testing.T) {
 		}
 		results := adapter.executeRecords(context.Background(), plans)
 		read := results[0].GetReadResult()
-		if size <= protocol.MaxDocument && len(read.GetDocument().Data) != size || size > protocol.MaxDocument && read.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-			t.Fatal("read size boundary was not enforced", size, read)
+		if len(read.GetDocument().Data) != size {
+			t.Fatal("read size was changed", size, read)
 		}
 		if results[1].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutationResult().Failure != nil {
 			t.Fatal("acknowledged write was affected by a read limit", results[1])

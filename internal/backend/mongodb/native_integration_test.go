@@ -19,7 +19,7 @@ import (
 )
 
 func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
-	for _, mode := range []string{"query", "write", "native_error", "multiframe", "oversized", "drop", "reauth", "overload", "response_limit"} {
+	for _, mode := range []string{"query", "write", "native_error", "multiframe", "large_command", "drop", "reauth", "overload", "large_reply"} {
 		t.Run(mode, func(t *testing.T) {
 			backend := testmongo.Open(t)
 			native, db := backend.Admin, backend.DB
@@ -35,8 +35,8 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			}
 			defer a.Close()
 			padding := 150 << 10
-			if mode == "response_limit" {
-				padding = NativeResponseLimit
+			if mode == "large_reply" {
+				padding = 5 << 20
 			}
 			doc := bson.D{{Key: "_id", Value: "x"}, {Key: "n", Value: 1}, {Key: "pad", Value: strings.Repeat("x", padding)}}
 			if _, err := native.Database(db).Collection("records").InsertOne(ctx, doc); err != nil {
@@ -53,8 +53,8 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				update := bson.D{{Key: "$notAnOperator", Value: 1}}
 				command[2].Value = update
 			}
-			if mode == "oversized" {
-				query := bson.D{{Key: "pad", Value: strings.Repeat("x", NativeCommandLimit)}}
+			if mode == "large_command" {
+				query := bson.D{{Key: "pad", Value: strings.Repeat("x", 5<<20)}}
 				command[1].Value = query
 			}
 			if mode == "drop" {
@@ -81,11 +81,8 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 			plan.Command = testutil.NativeCommand(open)
 			end := a.executeNative(ctx, plan, capture.Emit)
 			expected := pb.NativeCompletion_RESPONSE_COMPLETE
-			if mode == "drop" || mode == "response_limit" {
+			if mode == "drop" {
 				expected = pb.NativeCompletion_RESPONSE_INCOMPLETE
-			}
-			if mode == "oversized" {
-				expected = pb.NativeCompletion_NATIVE_NOT_STARTED
 			}
 			if end.Completion != expected || (end.Failure == nil) != (expected == pb.NativeCompletion_RESPONSE_COMPLETE) {
 				t.Fatal(end)
@@ -100,9 +97,6 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				}
 			}
 			expectedCalls := 1
-			if mode == "oversized" {
-				expectedCalls = 0
-			}
 			if count != expectedCalls {
 				t.Fatal("replayed or sent invalid command", count)
 			}

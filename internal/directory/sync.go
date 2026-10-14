@@ -47,7 +47,7 @@ func (d *Directory) renew(now time.Time) {
 func (d *Directory) peers(now time.Time) []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	peers := make([]string, 0, MaxNodes)
+	peers := make([]string, 0, len(d.records))
 	for id, owned := range d.records {
 		ad := owned.announcement
 		if id != d.self && !ad.Withdrawn && ad.PeerEndpoint != "" && now.Before(owned.expires) {
@@ -96,7 +96,7 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 	defer cancel()
 	host, port, _ := net.SplitHostPort(address)
 	if _, err := netip.ParseAddr(host); err != nil {
-		ips, err := netlimit.LookupHostLimit(ctx, nil, host, protocol.MaxDiscoveryEndpoints)
+		ips, err := netlimit.LookupHost(ctx, nil, host)
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,8 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 			return dialer.DialContext(ctx, "tcp", address)
 		}),
 		grpc.WithReadBufferSize(16 << 10), grpc.WithWriteBufferSize(16 << 10), grpc.WithStaticStreamWindowSize(65535), grpc.WithStaticConnWindowSize(65535),
-		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallSendMsgSize(MaxSyncBytes), grpc.MaxCallRecvMsgSize(MaxSyncBytes)),
+		grpc.WithMaxHeaderListSize(^uint32(0)),
+		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxRetryRPCBufferSize(0), grpc.MaxCallSendMsgSize(protocol.MaxTransportMessageBytes), grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes)),
 	}
 	connection, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {

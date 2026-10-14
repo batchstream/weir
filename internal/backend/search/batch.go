@@ -52,16 +52,16 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 }
 
 // Each real-time pre-read verifies the entire positional ID and index
-// correspondence before publishing a document. Response and JSON bounds apply
-// to every document in each sequential request.
+// correspondence before publishing a document. Every response is validated in
+// full before its documents become observations.
 func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*execution.Plan) []observedRecord {
 	observed := make([]observedRecord, len(works))
 	for start := 0; start < len(works); {
 		end := start
 		bound := getFramingLimit
 		for end < len(works) {
-			item := protocol.MaxDocument + len(works[end].Backend.(*plan).id) + getFramingLimit
-			if bound+item > a.options().ExchangeBytes {
+			item := a.options().Scan.Bytes + len(works[end].Backend.(*plan).id) + getFramingLimit
+			if end > start && bound+item > a.options().ExchangeBytes {
 				break
 			}
 			bound += item
@@ -93,19 +93,16 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		encoded, _ := json.Marshal(body)
 		call := exchange{
 			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
-			contentType: "application/json", limit: a.options().ExchangeBytes,
-		}
+			contentType: "application/json"}
 		status, raw, err := a.request(ctx, call)
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
 		switch {
 		case ctx.Err() != nil:
 			failure = protocol.ContextFailure(ctx)
-		case err == errResponseLimit:
-			failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record response exceeds configured read bound")
 		case err == nil && (status == 429 || status == 503):
 			failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
 		case err == nil && status != 200:
-			failure = a.nativeResponseFailure(status, raw)
+			failure = a.nativeResponseFailure(ctx, status, raw)
 		}
 		for _, i := range indexes {
 			observation := observedRecord{failure: failure}
@@ -152,11 +149,11 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 				}
 			case reply.Seq == nil || reply.Term == nil || *reply.Seq < 0 || *reply.Term < 1 || !object(reply.Source):
 				observation.reply, observation.failure = nil, failure
-			case validateJSON(reply.Source, len(reply.Source)) != nil:
+			case validateJSON(ctx, reply.Source) != nil:
 				observation.reply, observation.failure = nil, failure
-			case len(reply.Source) > protocol.MaxDocument:
-				observation.reply = nil
-				observation.failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit")
+				if ctx.Err() != nil {
+					observation.failure = protocol.ContextFailure(ctx)
+				}
 			}
 			observed[indexes[i]] = observation
 		}
@@ -192,7 +189,7 @@ func (b *recordBatch) callerFailure(work *execution.Plan) *pb.Failure {
 }
 
 // appendWrite frames one document at a time. Generated Lua sources are released
-// after framing; the batch retains at most one bounded NDJSON request.
+// after framing; a single large entry can exceed the batch window.
 func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *getReply) {
 	native := work.Backend.(*plan)
 	if len(b.pending) != 0 && b.pending[0].work.Backend.(*plan).waitUntilVisible != native.waitUntilVisible {
@@ -260,13 +257,12 @@ func (b *recordBatch) flush() {
 			refresh = "wait_for"
 		}
 		call := exchange{
-			path:     "/_bulk?pipeline=_none&refresh=" + refresh + "&wait_for_active_shards=1",
-			body:     body[:length],
-			limit:    b.adapter.options().ExchangeBytes,
-			mutation: true,
+			path: "/_bulk?pipeline=_none&refresh=" + refresh + "&wait_for_active_shards=1",
+			body: body[:length], mutation: true,
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
-		replies := b.adapter.bulkResults(works, status, raw, err)
+		response := bulkResponse{works: works, status: status, raw: raw, err: err}
+		replies := b.adapter.bulkResults(b.ctx, response)
 		b.queueBulkVisibilityBarriers(works, positions, replies, raw)
 		for i, position := range positions {
 			b.results[position] = replies[i]
@@ -292,6 +288,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 	if len(works) == 0 {
 		return nil
 	}
+	works = append([]*execution.Plan(nil), works...)
 	batch := recordBatch{
 		adapter:  a,
 		ctx:      ctx,
@@ -314,8 +311,8 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		caps    capabilities
 		failure *pb.Failure
 	}
-	// Failed checks are shared only within this bounded Execute call. Successful
-	// target capabilities are retained by the Adapter's bounded metadata cache.
+	// Resolve each target once for this execution. In-flight reads and conditional
+	// writes retain that physical index even if an alias changes concurrently.
 	qualified := make(map[string]qualification)
 	for _, i := range positions {
 		work := works[i]
@@ -338,6 +335,8 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		denied := target.failure
 		if denied == nil {
 			switch {
+			case native.action != "read" && !caps.writable:
+				denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "alias is not a write target")
 			case native.action == "read" && !caps.source:
 				denied = protocol.Fail(pb.FailureCode_UNSUPPORTED, "stored full source required for this operation")
 			case (native.action == "program" || native.action == "expression") && (!caps.source || !caps.nativeWrite):
@@ -348,20 +347,26 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		}
 		if denied != nil {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, denied)
+			continue
 		}
+		resolved := *native
+		resolved.index = caps.index
+		resolvedWork := *work
+		resolvedWork.Backend = &resolved
+		works[i] = &resolvedWork
 	}
 	for len(positions) != 0 {
 		// Bound the retained pre-read sources before Lua runs. Only one chunk's
-		// sources and one framed write body coexist; small ordinary reads still
-		// collect up to the complete response bound in a single native request.
+		// sources and one framed write body coexist. The batch window estimates
+		// read capacity rather than rejecting individual large sources.
 		for start := 0; start < len(positions); {
 			end, readBytes := start, getFramingLimit
 			for end < len(positions) {
 				work := works[positions[end]]
 				native := work.Backend.(*plan)
 				if batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
-					bound := protocol.MaxDocument + getFramingLimit
-					if bound > a.options().ExchangeBytes-readBytes {
+					bound := a.options().Scan.Bytes + getFramingLimit
+					if end > start && bound > a.options().ExchangeBytes-readBytes {
 						break
 					}
 					readBytes += bound

@@ -30,10 +30,6 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 	page := &execution.ScanPage{}
 	invalid := protocol.Fail(pb.FailureCode_INTERNAL, "incomplete or malformed cursor response")
 	page.Failure = invalid
-	if len(raw) > scanNativeLimit {
-		page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "cursor response exceeds native bound")
-		return page
-	}
 	fields, err := scanFields(raw)
 	if err != nil {
 		return page
@@ -121,15 +117,11 @@ func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *
 			return page
 		}
 		items++
-		if len(value.Data) > protocol.MaxDocument {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored Scan document exceeds output bound")
+
+		if !validScanBSON(value.Data, 0) {
 			return page
 		}
-		nodes := len(value.Data)
-		if !validScanBSON(value.Data, 0, &nodes) {
-			return page
-		}
-		if n.outputBytes > 0 && outputBytes+len(value.Data) > n.outputBytes {
+		if len(docs) > 0 && n.outputBytes > 0 && outputBytes+len(value.Data) > n.outputBytes {
 			n.limited = true
 		}
 		if n.limited {

@@ -54,7 +54,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 		code             int32
 		failHead         bool
 		failChunk        bool
-		oversized        bool
+		largeReply       bool
 		cancelAfterReply bool
 		invalidOK        bool
 		completion       pb.NativeCompletion
@@ -70,7 +70,7 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 		{name: "success_chunk_failure", failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
 		{name: "head_failure", code: 16500, failHead: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
 		{name: "chunk_failure", code: 16500, failChunk: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
-		{name: "oversized", code: 16500, oversized: true, completion: pb.NativeCompletion_RESPONSE_INCOMPLETE},
+		{name: "large_reply", code: 16500, largeReply: true, completion: pb.NativeCompletion_RESPONSE_COMPLETE},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := bson.D{{Key: "ok", Value: 1}, {Key: "n", Value: 0}}
@@ -79,8 +79,8 @@ func TestMongoNativeExplicitCongestion(t *testing.T) {
 			}
 			if test.code != 0 {
 				message := "native error"
-				if test.oversized {
-					message = strings.Repeat("x", NativeResponseLimit)
+				if test.largeReply {
+					message = strings.Repeat("x", 5<<20)
 				}
 				response = bson.D{{Key: "ok", Value: 0}, {Key: "code", Value: test.code}, {Key: "errmsg", Value: message}}
 			}
@@ -218,18 +218,17 @@ func TestMongoNativeResourceSelectsDatabaseWithoutCollectionQualification(t *tes
 	}
 }
 
-func TestMongoNativeExactCommandBound(t *testing.T) {
-	cfg := Config{}
-	a := &Adapter{config: cfg}
-	query := bson.D{{Key: "pad", Value: ""}}
-	command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
-	base, _ := bson.Marshal(command)
-	for _, extra := range []int{0, 1} {
-		query[0].Value = strings.Repeat("x", NativeCommandLimit-len(base)+extra)
-		raw, _ := bson.Marshal(command)
-		f := a.nativeCommand(raw)
-		if extra == 0 && f != nil || extra == 1 && f == nil {
-			t.Fatal(extra, len(raw), f)
+func TestMongoNativeCommandsBeyondFormerCapacityAreOpaque(t *testing.T) {
+	adapter := &Adapter{}
+	for _, size := range []int{(4 << 20) + 1, (8 << 20) + 1} {
+		query := bson.D{{Key: "pad", Value: strings.Repeat("x", size)}}
+		command := bson.D{{Key: "count", Value: "records"}, {Key: "query", Value: query}}
+		raw, err := bson.Marshal(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if failure := adapter.nativeCommand(raw); failure != nil {
+			t.Fatal(size, failure)
 		}
 	}
 }
@@ -391,10 +390,6 @@ func TestMongoNativeLargeTopLevelDataArraysRemainOpaque(t *testing.T) {
 		databases[i] = database
 	}
 	response := bson.D{{Key: "ok", Value: 1}, {Key: "databases", Value: databases}}
-	message := scanWireMessage(t, response)
-	if !boundedReply(message) {
-		t.Fatal("ordinary Native array was classified as diagnostic metadata")
-	}
 	responses := []bson.D{response}
 	adapter := batchMockAdapter(t, responses, nil)
 	command := bson.D{{Key: "listDatabases", Value: 1}, {Key: "$db", Value: "admin"}}

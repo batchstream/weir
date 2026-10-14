@@ -2,6 +2,8 @@
 package testrecords
 
 import (
+	"context"
+
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
@@ -22,10 +24,10 @@ func New(store string, input *pb.ExecuteRequest) (*execution.Record, *pb.Failure
 	return record, nil
 }
 
-func Prepare(adapter execution.Adapter, store string, request *pb.ExecuteRequest) (*execution.Plan, *pb.Failure) {
+func Prepare(ctx context.Context, adapter execution.Adapter, store string, request *pb.ExecuteRequest) (*execution.Plan, *pb.Failure) {
 	record, failure := New(store, request)
 	if failure != nil {
 		return nil, failure
 	}
-	return adapter.PrepareRecord(record)
+	return adapter.PrepareRecord(ctx, record)
 }

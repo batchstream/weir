@@ -21,7 +21,7 @@ func TestMongoScanFindUsesRemainingBoundedBatch(t *testing.T) {
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		if work.ResultBytes != execution.ScanResultBytes || work.WorkingBytes != scanWorkingBytes {
+		if work.ResultBytes != max(execution.ScanResultBytes, adapter.documentBytes()+execution.ResultOverheadBytes) || work.WorkingBytes != scanWorkingBytes {
 			t.Fatal("Scan did not reserve its bounded batch", work.ResultBytes, work.WorkingBytes)
 		}
 		state := work.Backend.(*scanPlan)
@@ -119,7 +119,7 @@ func TestMongoScanPrefixValidatesDiscardedTail(t *testing.T) {
 				documents[2] = int32(3)
 			}
 			if mode == "oversized" {
-				document := bson.D{{Key: "_id", Value: int32(3)}, {Key: "pad", Value: strings.Repeat("x", protocol.MaxDocument)}}
+				document := bson.D{{Key: "_id", Value: int32(3)}, {Key: "pad", Value: strings.Repeat("x", (2 << 20))}}
 				documents[2] = document
 			}
 			cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: target.String()}, {Key: "firstBatch", Value: documents}}
@@ -142,7 +142,7 @@ func TestMongoScanPrefixValidatesDiscardedTail(t *testing.T) {
 			}
 			state := &recordCursor{target: target, items: items, outputBytes: len(firstRaw)}
 			page := adapter.recordCursorReply(raw, state, true)
-			if mode == "valid" {
+			if mode == "valid" || mode == "oversized" {
 				if page.Failure != nil || !state.limited || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, firstRaw) {
 					t.Fatal("Scan did not retain exactly the accepted prefix", page, state.limited)
 				}
@@ -188,7 +188,7 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 				case "wrong_ns":
 					cursor[1].Value = "other.records"
 				case "oversized":
-					field := bson.E{Key: "pad", Value: strings.Repeat("x", protocol.MaxDocument)}
+					field := bson.E{Key: "pad", Value: strings.Repeat("x", (2 << 20))}
 					doc = append(doc, field)
 					docs = bson.A{doc}
 				case "too_many":
@@ -221,7 +221,7 @@ func TestMongoScanEnvelopeIntegrity(t *testing.T) {
 					raw = raw[:len(raw)-1]
 				}
 				page := a.recordCursorReply(raw, n, first)
-				valid := mode == "valid" || mode == "exhausted" || mode == "empty_live"
+				valid := mode == "valid" || mode == "exhausted" || mode == "empty_live" || mode == "oversized"
 				if valid {
 					if page.Failure != nil || page.Exhausted != (mode == "exhausted") {
 						t.Fatal(page)
@@ -257,7 +257,7 @@ func TestMongoScanNativeFilterAndProjection(t *testing.T) {
 	if _, failure := adapter.prepareScan(request); failure.GetCode() != pb.FailureCode_UNSUPPORTED {
 		t.Fatal("partial identity projection", failure)
 	}
-	document.Data = make([]byte, protocol.MaxScanFilterBytes+1)
+	document.Data = []byte{0}
 	if _, failure := adapter.prepareScan(request); failure == nil {
 		t.Fatal("oversized filter accepted")
 	}
@@ -298,7 +298,7 @@ func TestConfiguredMongoScanBatchReachesNativeFind(t *testing.T) {
 	}
 	state := work.Backend.(*scanPlan)
 	raw, err := bson.Marshal(scanFindCommand(state))
-	if err != nil || bson.Raw(raw).Lookup("limit").Int64() != 17 || work.ResultBytes != settings.Scan.ResultBytes() {
+	if err != nil || bson.Raw(raw).Lookup("limit").Int64() != 17 || work.ResultBytes != max(settings.Scan.ResultBytes(), adapter.documentBytes()+execution.ResultOverheadBytes) {
 		t.Fatal("custom Scan batch ignored", err)
 	}
 }

@@ -39,7 +39,7 @@ func TestSearchTLSOrdinaryNativeSocketCloseBound(t *testing.T) {
 			var calls sync.WaitGroup
 			for i := 0; i < 3; i++ {
 				calls.Go(func() {
-					call := exchange{path: "/slow", limit: 256, native: i == 2}
+					call := exchange{path: "/slow", native: i == 2}
 					ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
 					_, _, err := a.request(ctx, call)
 					cancel()
@@ -156,7 +156,7 @@ func TestSearchTLSResponseUsesCallerDeadline(t *testing.T) {
 		})
 		endpoint, c := tlsEndpoint(t, handler, false)
 		a := openTestTLS(t, endpoint.URL, c)
-		call := exchange{path: "/hard-deadline", limit: 256}
+		call := exchange{path: "/hard-deadline"}
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(t.Context(), 80*time.Millisecond)
 		_, _, err := a.request(ctx, call)
@@ -188,7 +188,7 @@ func TestSearchDNSRequestCancellationEndsDetachedDial(t *testing.T) {
 	dns.Set("search.test", drop)
 	for i := 0; i < 16; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		call := exchange{path: "/", limit: metadataLimit}
+		call := exchange{path: "/"}
 		_, _, err := a.request(ctx, call)
 		cancel()
 		if err == nil {
@@ -251,7 +251,7 @@ func TestSearchDNSPinsActiveNativeStream(t *testing.T) {
 	dns.Set("search.test", bad)
 	a.transport.CloseIdleConnections()
 	requestCtx, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	call := exchange{path: "/", limit: metadataLimit}
+	call := exchange{path: "/"}
 	_, _, err = a.request(requestCtx, call)
 	stop()
 	if err == nil {

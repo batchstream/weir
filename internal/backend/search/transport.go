@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-const metadataLimit = 256 << 10
-const responseLimit = 8 << 20
-
 // Connection setup has its own bound; it does not limit a connected request's
 // headers or acknowledgement body.
 const connectionTimeout = 2 * time.Second
@@ -24,13 +21,11 @@ var errTransport = errors.New("backend transport failed")
 var errResponse = errors.New("invalid or excessive backend response")
 var errTimeout = errors.New("backend call deadline")
 var errCanceled = errors.New("backend call canceled")
-var errResponseLimit = errors.New("backend response byte limit")
 var errWriteNotSent = errors.New("backend write request not sent")
 
 type exchange struct {
 	path        string
 	body        []byte
-	limit       int
 	method      string
 	contentType string
 	native      bool
@@ -119,17 +114,10 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 		return 0, nil, errResponse
 	}
 	defer response.Body.Close()
-	if response.ContentLength > int64(call.limit) {
-		return response.StatusCode, nil, errResponseLimit
-	}
 	if response.Header.Get("Content-Encoding") != "" {
 		return response.StatusCode, nil, errResponse
 	}
-	// Limit before ReadAll/JSON parsing, not after an unbounded materialization.
-	raw, err := io.ReadAll(io.LimitReader(response.Body, int64(call.limit)+1))
-	if len(raw) > call.limit {
-		return response.StatusCode, nil, errResponseLimit
-	}
+	raw, err := io.ReadAll(response.Body)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return response.StatusCode, nil, errTimeout
 	}
@@ -139,7 +127,13 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	if err != nil {
 		return response.StatusCode, nil, errResponse
 	}
-	if err := validateJSON(raw, len(raw)); err != nil {
+	if err := validateJSON(ctx, raw); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return response.StatusCode, nil, errTimeout
+		}
+		if errors.Is(err, context.Canceled) {
+			return response.StatusCode, nil, errCanceled
+		}
 		return response.StatusCode, nil, errResponse
 	}
 	return response.StatusCode, raw, nil
@@ -166,7 +160,7 @@ func newTransport(timeout time.Duration) *http.Transport {
 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
 		DisableCompression: true, MaxConnsPerHost: 0,
 		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: 30 * time.Second,
-		MaxResponseHeaderBytes: 32 << 10,
+		MaxResponseHeaderBytes: math.MaxInt64,
 		TLSHandshakeTimeout:    timeout,
 	}
 	return transport

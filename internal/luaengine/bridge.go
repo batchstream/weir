@@ -1,12 +1,12 @@
 package luaengine
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/batchstream/weir/internal/value"
 	"github.com/iceisfun/golua/vm"
@@ -22,15 +22,15 @@ type scalarLeaf struct {
 }
 
 type bridge struct {
-	limits   value.Limits
+	ctx      context.Context
 	state    *vm.VM
 	tables   map[*vm.Table]tableInfo
 	leafMeta *vm.Table
 	null     vm.Value
 }
 
-func newBridge(limits value.Limits) *bridge {
-	b := &bridge{limits: limits, tables: make(map[*vm.Table]tableInfo)}
+func newBridge(ctx context.Context) *bridge {
+	b := &bridge{ctx: ctx, tables: make(map[*vm.Table]tableInfo)}
 	b.leafMeta = vm.NewEmptyTable()
 	b.leafMeta.SetString(vm.MetaMetatable, vm.NewString("weir scalar"))
 	b.leafMeta.SetString(vm.MetaTostring, vm.NewNativeFunc(func(state *vm.VM) int {
@@ -77,9 +77,6 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 			panic("weir.bytes expects a byte string")
 		}
 		text := state.Get(1).AsString()
-		if len(text) > b.limits.MaxBytes {
-			panic("value byte limit")
-		}
 		leaf := value.Value{Kind: value.Bytes, Data: []byte(text)}
 		state.Set(0, b.wrapLeaf(leaf))
 		return 1
@@ -89,11 +86,8 @@ func (b *bridge) install(state *vm.VM, module *vm.Table) {
 			panic("weir.extended expects a type and byte string")
 		}
 		typeName, data := state.Get(1).AsString(), state.Get(2).AsString()
-		if len(typeName) > b.limits.MaxBytes-len(data) {
-			panic("value byte limit")
-		}
 		leaf := value.Value{Kind: value.Extended, Type: typeName, Data: []byte(data)}
-		if err := value.Validate(leaf, b.limits); err != nil {
+		if err := value.Validate(b.ctx, leaf); err != nil {
 			panic(err)
 		}
 		if typeName == value.JSONNumberType && !value.IsJSONNumber(leaf) {
@@ -151,12 +145,85 @@ func (b *bridge) wrapLeaf(v value.Value) vm.Value {
 	return vm.NewUserdataValue(leaf, b.leafMeta)
 }
 
-// toLua converts values already checked by ValidateProgram.
-func (b *bridge) toLua(v value.Value) (vm.Value, error) {
+type encodeFrame struct {
+	source *value.Value
+	table  *vm.Table
+	info   tableInfo
+	index  int
+}
+
+func (b *bridge) checkpoint() error {
 	if b.state != nil {
-		if err := b.state.CheckInterrupt(); err != nil {
+		return b.state.CheckInterrupt()
+	}
+	return b.ctx.Err()
+}
+
+// Convert the validated tree with an explicit stack so document depth does not
+// consume the Go call stack. Hints stay attached to their original table slots.
+func (b *bridge) toLua(v value.Value) (vm.Value, error) {
+	if v.Kind != value.Object && v.Kind != value.Array {
+		converted, _, err := b.encodeChild(v)
+		return converted, err
+	}
+	table := vm.NewTableWithSize(len(v.Items), len(v.Fields))
+	info := tableInfo{kind: v.Kind}
+	first := encodeFrame{source: &v, table: table, info: info}
+	stack := []encodeFrame{first}
+	for len(stack) != 0 {
+		if err := b.checkpoint(); err != nil {
 			return vm.Nil, err
 		}
+		frame := &stack[len(stack)-1]
+		if frame.index == len(frame.source.Fields)+len(frame.source.Items) {
+			b.tables[frame.table] = frame.info
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		var source *value.Value
+		var key vm.Value
+		if frame.source.Kind == value.Object {
+			field := &frame.source.Fields[frame.index]
+			source = &field.Value
+			key = vm.NewString(field.Name)
+		} else {
+			source = &frame.source.Items[frame.index]
+			key = vm.NewInt(int64(frame.index + 1))
+			if source.Kind == value.Missing {
+				return vm.Nil, fmt.Errorf("array contains missing value")
+			}
+		}
+		frame.index++
+		if source.Kind == value.Object || source.Kind == value.Array {
+			child := vm.NewTableWithSize(len(source.Items), len(source.Fields))
+			if err := frame.table.Set(key, vm.NewTable(child)); err != nil {
+				return vm.Nil, err
+			}
+			info := tableInfo{kind: source.Kind}
+			next := encodeFrame{source: source, table: child, info: info}
+			stack = append(stack, next)
+			continue
+		}
+		converted, hint, err := b.encodeChild(*source)
+		if err != nil {
+			return vm.Nil, err
+		}
+		if err := frame.table.Set(key, converted); err != nil {
+			return vm.Nil, err
+		}
+		if hint.Kind != value.Missing {
+			if frame.info.hints == nil {
+				frame.info.hints = make(map[vm.Value]value.Value)
+			}
+			frame.info.hints[key] = hint
+		}
+	}
+	return vm.NewTable(table), nil
+}
+
+func (b *bridge) encodeScalar(v value.Value) (vm.Value, error) {
+	if err := b.checkpoint(); err != nil {
+		return vm.Nil, err
 	}
 	switch v.Kind {
 	case value.Missing:
@@ -174,40 +241,6 @@ func (b *bridge) toLua(v value.Value) (vm.Value, error) {
 	case value.Bytes, value.Extended:
 		v.Data = append([]byte(nil), v.Data...)
 		return b.wrapLeaf(v), nil
-	case value.Object, value.Array:
-		table := vm.NewTableWithSize(len(v.Items), len(v.Fields))
-		info := tableInfo{kind: v.Kind}
-		for _, field := range v.Fields {
-			child, hint, err := b.encodeChild(field.Value)
-			if err != nil {
-				return vm.Nil, err
-			}
-			table.SetString(field.Name, child)
-			if hint.Kind != value.Missing {
-				if info.hints == nil {
-					info.hints = make(map[vm.Value]value.Value)
-				}
-				info.hints[vm.NewString(field.Name)] = hint
-			}
-		}
-		for index, item := range v.Items {
-			if item.Kind == value.Missing {
-				return vm.Nil, fmt.Errorf("array contains missing value")
-			}
-			child, hint, err := b.encodeChild(item)
-			if err != nil {
-				return vm.Nil, err
-			}
-			table.SetInt(index+1, child)
-			if hint.Kind != value.Missing {
-				if info.hints == nil {
-					info.hints = make(map[vm.Value]value.Value)
-				}
-				info.hints[vm.NewInt(int64(index+1))] = hint
-			}
-		}
-		b.tables[table] = info
-		return vm.NewTable(table), nil
 	default:
 		return vm.Nil, fmt.Errorf("unsupported value kind")
 	}
@@ -230,7 +263,7 @@ func (b *bridge) encodeChild(v value.Value) (vm.Value, value.Value, error) {
 			return vm.NewFloat(number), hint, nil
 		}
 	}
-	converted, err := b.toLua(v)
+	converted, err := b.encodeScalar(v)
 	return converted, hint, err
 }
 
@@ -264,7 +297,7 @@ func decimalParts(text string) (string, int, bool, bool) {
 	if hasPower {
 		var err error
 		exponent, err = strconv.Atoi(power)
-		if err != nil || exponent < -value.MaxBytes || exponent > value.MaxBytes {
+		if err != nil {
 			return "", 0, false, false
 		}
 	}
@@ -272,158 +305,6 @@ func decimalParts(text string) (string, int, bool, bool) {
 	trimmed := strings.TrimRight(digits, "0")
 	exponent += len(digits) - len(trimmed)
 	return trimmed, exponent, negative, true
-}
-
-type bridgeBudget struct {
-	nodes  int
-	bytes  int
-	active map[*vm.Table]bool
-}
-
-func (b *bridge) fromLua(v vm.Value) (value.Value, error) {
-	used := bridgeBudget{active: make(map[*vm.Table]bool)}
-	var hint value.Value
-	return b.decode(v, 0, hint, &used)
-}
-
-func (b *bridge) decode(v vm.Value, depth int, hint value.Value, used *bridgeBudget) (value.Value, error) {
-	var empty value.Value
-	if b.state != nil {
-		if err := b.state.CheckInterrupt(); err != nil {
-			return empty, err
-		}
-	}
-	used.nodes++
-	if depth > b.limits.MaxDepth || used.nodes > b.limits.MaxNodes {
-		return empty, fmt.Errorf("value depth or node limit")
-	}
-	var result value.Value
-	switch {
-	case v.IsNil():
-		return empty, fmt.Errorf("document contains missing value")
-	case v.IsBool():
-		result = value.Value{Kind: value.Bool, Boolean: v.ToBool()}
-	case v.IsInt():
-		kind := value.Int64
-		if hint.Kind == value.Int32 && v.AsInt() >= math.MinInt32 && v.AsInt() <= math.MaxInt32 {
-			kind = value.Int32
-		}
-		result = value.Value{Kind: kind, Integer: v.AsInt()}
-	case v.IsFloat():
-		if math.IsNaN(v.AsFloat()) || math.IsInf(v.AsFloat(), 0) {
-			return empty, fmt.Errorf("invalid float64")
-		}
-		result = value.Value{Kind: value.Float64, Float: v.AsFloat()}
-		if hint.Kind == value.Extended {
-			original, err := strconv.ParseFloat(string(hint.Data), 64)
-			if err == nil && math.Float64bits(original) == math.Float64bits(v.AsFloat()) {
-				result = hint
-			}
-		}
-	case v.IsString():
-		text := v.AsString()
-		if !utf8.ValidString(text) {
-			return empty, fmt.Errorf("invalid UTF-8 string")
-		}
-		result = value.Value{Kind: value.String, Text: text}
-	case v.IsUserdata():
-		leaf, ok := v.AsUserdata().Data.(scalarLeaf)
-		if !ok || v.AsUserdata().Metatable() != b.leafMeta {
-			return empty, fmt.Errorf("unsupported userdata")
-		}
-		result = leaf.value
-	case v.IsTable():
-		return b.decodeTable(v, depth, used)
-	default:
-		return empty, fmt.Errorf("unsupported Lua value")
-	}
-	used.bytes += len(result.Text) + len(result.Type) + len(result.Data)
-	if used.bytes > b.limits.MaxBytes {
-		return empty, fmt.Errorf("value byte limit")
-	}
-	result.Data = append([]byte(nil), result.Data...)
-	return result, nil
-}
-
-func (b *bridge) decodeTable(v vm.Value, depth int, used *bridgeBudget) (value.Value, error) {
-	var empty value.Value
-	table, ok := v.AsTable().(*vm.Table)
-	if !ok || table.IsThread() {
-		return empty, fmt.Errorf("unsupported Lua table")
-	}
-	if used.active[table] {
-		return empty, fmt.Errorf("cyclic Lua table")
-	}
-	used.active[table] = true
-	defer delete(used.active, table)
-	info := b.tables[table]
-	var keys []vm.Value
-	var err error
-	stringsOnly, integersOnly := true, true
-	table.ForEach(func(key, child vm.Value) bool {
-		if len(keys) >= b.limits.MaxNodes-used.nodes {
-			err = fmt.Errorf("value node limit")
-			return false
-		}
-		stringsOnly = stringsOnly && key.IsString()
-		integersOnly = integersOnly && key.IsInt() && key.AsInt() > 0
-		keys = append(keys, key)
-		return true
-	})
-	if err != nil {
-		return empty, err
-	}
-	kind := info.kind
-	if kind == value.Missing {
-		switch {
-		case len(keys) == 0 || stringsOnly:
-			kind = value.Object
-		case integersOnly:
-			kind = value.Array
-		default:
-			return empty, fmt.Errorf("mixed or unsupported Lua table keys")
-		}
-	}
-	result := value.Value{Kind: kind}
-	if kind == value.Object {
-		if !stringsOnly {
-			return empty, fmt.Errorf("object keys must be strings")
-		}
-		for _, key := range keys {
-			name := key.AsString()
-			if !utf8.ValidString(name) || strings.IndexByte(name, 0) >= 0 {
-				return empty, fmt.Errorf("invalid field name")
-			}
-			used.bytes += len(name)
-			if used.bytes > b.limits.MaxBytes {
-				return empty, fmt.Errorf("value byte limit")
-			}
-			child, err := b.decode(table.Get(key), depth+1, info.hints[key], used)
-			if err != nil {
-				return empty, err
-			}
-			field := value.Field{Name: name, Value: child}
-			result.Fields = append(result.Fields, field)
-		}
-		return result, nil
-	}
-	if !integersOnly {
-		return empty, fmt.Errorf("array keys must be positive integers")
-	}
-	for _, key := range keys {
-		if key.AsInt() > int64(len(keys)) {
-			return empty, fmt.Errorf("sparse Lua array")
-		}
-	}
-	for index := 1; index <= len(keys); index++ {
-		key := vm.NewInt(int64(index))
-		child, err := b.decode(table.GetInt(index), depth+1, info.hints[key], used)
-		if err != nil {
-			return empty, err
-		}
-		result.Items = append(result.Items, child)
-	}
-	return result, nil
 }
 
 func (b *bridge) kind(v vm.Value) (string, error) {

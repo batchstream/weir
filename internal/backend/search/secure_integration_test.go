@@ -64,7 +64,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("native DB DNS/SAN connection", err)
 		}
 		defer a.Close()
-		call := exchange{path: "/", limit: metadataLimit}
+		call := exchange{path: "/"}
 		if status, _, err := a.request(context.Background(), call); err != nil || status != 200 {
 			t.Fatal("native DNS read")
 		}
@@ -269,7 +269,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		switch b.Profile {
 		case "elasticsearch-8.19.22":
 			wantOutcome, wantCode = pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNAUTHENTICATED
-		case "opensearch-2.19.6":
+		case "opensearch-3.3.0":
 			// This fixture returns an unstructured 401, so the adapter cannot prove non-application.
 			wantOutcome, wantCode = pb.MutationOutcome_UNKNOWN, pb.FailureCode_UNAVAILABLE
 		default:
@@ -380,7 +380,7 @@ func secureReplyFault(t *testing.T, fixture *testsearch.SecureFixture, operation
 		t.Fatal("independent version evidence disagrees", status, got.Version, want)
 	}
 	// Recovery is a new independent read; no old mutation is retried.
-	call := exchange{path: "/", limit: metadataLimit}
+	call := exchange{path: "/"}
 	if status, _, err := a.request(context.Background(), call); fault != "drain" && (err != nil || status != 200) {
 		t.Fatal("new independent read did not recover")
 	}

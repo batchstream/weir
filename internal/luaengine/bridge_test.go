@@ -127,7 +127,7 @@ func TestBridgeContainersAndOpaqueLeaves(t *testing.T) {
 	}
 }
 
-func TestBridgeRejectsInvalidTablesAndBudgets(t *testing.T) {
+func TestBridgeRejectsInvalidTables(t *testing.T) {
 	cases := []struct {
 		name   string
 		source string
@@ -144,10 +144,6 @@ func TestBridgeRejectsInvalidTablesAndBudgets(t *testing.T) {
 		{name: "function", source: "return { x = function() end }"},
 		{name: "NUL key", source: `return { ["\0"] = true }`},
 		{name: "invalid UTF8", source: `return { x = "\255" }`},
-		{name: "depth", source: "local t = {}; for i=1,33 do t={x=t} end; return t"},
-		{name: "nodes", source: "local t = {}; for i=1,4096 do t[i]=true end; return t"},
-		{name: "bytes", source: "return {x=string.rep('a',2097153)}"},
-		{name: "shared expansion", source: "local x={}; for i=1,2048 do x[i]=true end; return {a=x,b=x}"},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -170,6 +166,22 @@ func TestBridgeRejectsInvalidTablesAndBudgets(t *testing.T) {
 	}
 }
 
+func TestBridgeAllowsDeepLargeAndSharedValues(t *testing.T) {
+	sources := []string{
+		"local t = {}; for i=1,5000 do t={x=t} end; return t",
+		"local t = {}; for i=1,10000 do t[i]=true end; return t",
+		"return {x=string.rep('a',3145728)}",
+		"local x={}; for i=1,5000 do x[i]=true end; return {a=x,b=x}",
+	}
+	for _, source := range sources {
+		b, state := bridgeState(t)
+		result := bridgeExecute(t, state, source)
+		if _, err := b.fromLua(result); err != nil {
+			t.Fatal("valid data retained a former admission gate", err)
+		}
+	}
+}
+
 func TestBridgeSharedTablesProduceIndependentOutput(t *testing.T) {
 	input := value.Value{Kind: value.Object}
 	result := bridgeRun(t, "local x={a=weir.bytes('bytes')}; return {left=x,right=x}", input)
@@ -183,12 +195,12 @@ func TestBridgeSharedTablesProduceIndependentOutput(t *testing.T) {
 
 func TestBridgeExactJSONNumbersRoundTrip(t *testing.T) {
 	raw := `{"fraction":0.10000000000000000001,"negativeZero":-0,"exponent":1e100,"wide":9223372036854775808,"integer":9007199254740993,"price":4.800,"normal":0.1,"zeros":0.00e999999999,"underflow":1e-10000}`
-	input, err := value.DecodeJSON([]byte(raw), value.DefaultLimits())
+	input, err := value.DecodeJSON(t.Context(), []byte(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := bridgeRun(t, "return input", input)
-	encoded, err := value.EncodeJSON(result, value.DefaultLimits())
+	encoded, err := value.EncodeJSON(t.Context(), result)
 	if err != nil || string(encoded) != raw {
 		t.Fatalf("exact JSON round trip: %s, %v", encoded, err)
 	}
@@ -237,8 +249,8 @@ func TestBridgeSimpleProductBusinessScript(t *testing.T) {
 	observedAt := time.Date(2026, 10, 7, 1, 2, 3, 456, time.UTC)
 	current := bridgeDecodeJSON(t, `{"title":"keep","tags":["a","b","a"],"untouched":{"n":3}}`)
 	input := bridgeDecodeJSON(t, `{"title":"","tags":["b","c","","c"]}`)
-	beforeCurrent, _ := value.EncodeJSON(current, value.DefaultLimits())
-	beforeInput, _ := value.EncodeJSON(input, value.DefaultLimits())
+	beforeCurrent, _ := value.EncodeJSON(t.Context(), current)
+	beforeInput, _ := value.EncodeJSON(t.Context(), input)
 	program := Program{Source: string(source), Current: current, Input: input, ObservedAt: observedAt}
 	result, err := Evaluate(context.Background(), program)
 	if err != nil || result.Action != Replace {
@@ -250,8 +262,8 @@ func TestBridgeSimpleProductBusinessScript(t *testing.T) {
 	if title.Text != "keep" || len(tags.Items) != 3 || tags.Items[0].Text != "a" || tags.Items[1].Text != "b" || tags.Items[2].Text != "c" || updated.Text != observedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("product business result: %+v", result.Value)
 	}
-	afterCurrent, _ := value.EncodeJSON(current, value.DefaultLimits())
-	afterInput, _ := value.EncodeJSON(input, value.DefaultLimits())
+	afterCurrent, _ := value.EncodeJSON(t.Context(), current)
+	afterInput, _ := value.EncodeJSON(t.Context(), input)
 	if string(beforeCurrent) != string(afterCurrent) || string(beforeInput) != string(afterInput) {
 		t.Fatal("business script changed Go input values")
 	}
@@ -285,8 +297,8 @@ func TestBridgeComplexProductBusinessScript(t *testing.T) {
 	}
 	current := bridgeDecodeJSON(t, `{"uid":"old","uids":["old","shared"],"title":"keep","brand":"OLD","comment_count":3,"rating":4.800,"first_found_at":"first","offers":[{"uid":"shared","price":1}],"comments":[{"a":1,"nested":{"b":true,"c":null}}],"stocks":[{"stock":2,"variables":{"x":1,"y":2}}],"solds":[{"sold":2,"period_hours":3,"record_at":"2026-10-07T01:02:03Z"}],"allowed_countries":["US"]}`)
 	input := bridgeDecodeJSON(t, `{"uid":"new","uids":["shared","new",""],"title":"","brand":"new","comment_count":0,"rating":0.5,"first_found_at":"later","last_found_at":"last","offers":[{"uid":"shared","price":2},{"uid":"new","price":3}],"comments":[{"nested":{"c":null,"b":true},"a":1}],"stocks":[{"stock":2,"variables":{"y":2,"x":1}}],"solds":[{"sold":2,"period_hours":3,"record_at":"2026-10-07T09:08:07Z"}],"allowed_countries":["US","CA"],"available":true}`)
-	beforeCurrent, _ := value.EncodeJSON(current, value.DefaultLimits())
-	beforeInput, _ := value.EncodeJSON(input, value.DefaultLimits())
+	beforeCurrent, _ := value.EncodeJSON(t.Context(), current)
+	beforeInput, _ := value.EncodeJSON(t.Context(), input)
 	program := Program{Source: string(source), Current: current, Input: input}
 	result, err := Evaluate(context.Background(), program)
 	if err != nil {
@@ -310,8 +322,8 @@ func TestBridgeComplexProductBusinessScript(t *testing.T) {
 	if count.Integer != 3 || price.Integer != 2 {
 		t.Fatalf("nonzero count or incoming offer preference changed: %+v", result.Value)
 	}
-	afterCurrent, _ := value.EncodeJSON(current, value.DefaultLimits())
-	afterInput, _ := value.EncodeJSON(input, value.DefaultLimits())
+	afterCurrent, _ := value.EncodeJSON(t.Context(), current)
+	afterInput, _ := value.EncodeJSON(t.Context(), input)
 	if string(beforeCurrent) != string(afterCurrent) || string(beforeInput) != string(afterInput) {
 		t.Fatal("complex script changed Go inputs")
 	}
@@ -400,7 +412,7 @@ func bridgeState(t *testing.T) (*bridge, *vm.VM) {
 	t.Cleanup(func() { _ = state.Close(context.Background()) })
 	stdlib.Open(state)
 	module := vm.NewEmptyTable()
-	b := newBridge(value.DefaultLimits())
+	b := newBridge(t.Context())
 	b.install(state, module)
 	state.SetGlobal("weir", vm.NewTable(module))
 	return b, state
@@ -450,7 +462,7 @@ func bridgeObject(fields ...any) value.Value {
 
 func bridgeDecodeJSON(t *testing.T, raw string) value.Value {
 	t.Helper()
-	decoded, err := value.DecodeJSON([]byte(raw), value.DefaultLimits())
+	decoded, err := value.DecodeJSON(t.Context(), []byte(raw))
 	if err != nil {
 		t.Fatal(err)
 	}

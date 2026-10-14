@@ -23,7 +23,7 @@ func TestValidateMongoConfigProfiles(t *testing.T) {
 	cfg.CAFile = "/missing/ca.pem"
 	for _, pair := range []struct{ username, password string }{
 		{" user:@/%?#用户 ", " pass:@/%?#🔐 "},
-		{strings.Repeat("u", 128), strings.Repeat("p", 256)},
+		{strings.Repeat("u", 8192), strings.Repeat("p", 16384)},
 		{strings.Repeat("界", 42) + "uu", strings.Repeat("界", 85) + "p"},
 	} {
 		cfg.Username, cfg.Password = pair.username, pair.password
@@ -62,7 +62,6 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 		"mongodb://127.0.0.1:27028/?authMechanism=",
 		"mongodb://127.0.0.1:27028/?tls=",
 		"mongodb://127.0.0.1:27028/?tlsCAFile=",
-		strings.Repeat("a", maxMongoURIBytes+1),
 	} {
 		invalid := base
 		invalid.URI = uri
@@ -95,8 +94,6 @@ func TestValidateMongoConfigRejectsOutsideProfile(t *testing.T) {
 	for _, pair := range []struct{ username, password string }{
 		{"", "password-private-sentinel"},
 		{"user-private-sentinel", ""},
-		{strings.Repeat("u", 129), "password-private-sentinel"},
-		{"user-private-sentinel", strings.Repeat("p", 257)},
 		{"user\x00private-sentinel", "password"},
 		{"user", "password\nprivate-sentinel"},
 		{"user\x7fprivate-sentinel", "password"},

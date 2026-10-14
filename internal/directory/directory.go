@@ -19,11 +19,8 @@ import (
 )
 
 const (
-	MaxNodes          = 128
-	MaxSyncBytes      = 2 << 20
 	SyncTimeout       = 2 * time.Second
 	Lease             = 60 * time.Second
-	MaxAnnouncements  = 512
 	heartbeatInterval = 5 * time.Second
 	syncInterval      = time.Second
 )
@@ -49,9 +46,6 @@ type Directory struct {
 }
 
 func New(cfg Config) (*Directory, error) {
-	if len(cfg.Stores) > 16 || len(cfg.Targets) > 16 || len(cfg.Seeds) > 16 {
-		return nil, errors.New("local discovery bounds exceeded")
-	}
 	stores := slices.Clone(cfg.Stores)
 	slices.Sort(stores)
 	for i, name := range stores {
@@ -103,7 +97,7 @@ func New(cfg Config) (*Directory, error) {
 }
 
 func ValidReplicaGroup(value string) bool {
-	if len(value) < 1 || len(value) > 128 {
+	if len(value) < 1 {
 		return false
 	}
 	for _, c := range value {
@@ -147,9 +141,7 @@ func (d *Directory) ResolveStore(ctx context.Context, request *pb.ResolveStoreRe
 	if len(targetExpiry) == 0 {
 		return nil, status.Error(codes.Unavailable, "Store has no live announcement; retry discovery")
 	}
-	if len(targetExpiry) > protocol.MaxDiscoveryEndpoints {
-		return nil, status.Error(codes.ResourceExhausted, "Store target bound exceeded")
-	}
+
 	targets := make([]string, 0, len(targetExpiry))
 	ttl := protocol.MaxDiscoveryCacheTTL
 	for target, expires := range targetExpiry {
@@ -165,7 +157,7 @@ func (d *Directory) ResolveStore(ctx context.Context, request *pb.ResolveStoreRe
 }
 
 func validateAnnouncement(ad *peerpb.NodeAnnouncement) error {
-	if ad == nil || len(ad.ProtoReflect().GetUnknown()) > 0 || len(ad.IncarnationId) != 32 || strings.Trim(ad.IncarnationId, "0123456789abcdef") != "" || ad.Revision == 0 || !ValidReplicaGroup(ad.ReplicaGroup) || len(ad.StoreNames) > 16 || len(ad.StoreEndpoints) > 16 || ad.LeaseRemainingMs == 0 || ad.LeaseRemainingMs > uint64((Lease-SyncTimeout)/time.Millisecond) {
+	if ad == nil || len(ad.ProtoReflect().GetUnknown()) > 0 || len(ad.IncarnationId) != 32 || strings.Trim(ad.IncarnationId, "0123456789abcdef") != "" || ad.Revision == 0 || !ValidReplicaGroup(ad.ReplicaGroup) || ad.LeaseRemainingMs == 0 || ad.LeaseRemainingMs > uint64((Lease-SyncTimeout)/time.Millisecond) {
 		return status.Error(codes.InvalidArgument, "invalid node announcement")
 	}
 	if ad.PeerEndpoint != "" {
@@ -192,9 +184,6 @@ func validateAnnouncement(ad *peerpb.NodeAnnouncement) error {
 }
 
 func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error {
-	if len(nodes) > MaxAnnouncements {
-		return status.Error(codes.ResourceExhausted, "directory node bound exceeded")
-	}
 	seen := make(map[string]bool, len(nodes))
 	for _, ad := range nodes {
 		if err := validateAnnouncement(ad); err != nil {
@@ -214,34 +203,6 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 		if id != d.self && !now.Before(owned.expires.Add(2*Lease)) {
 			delete(d.records, id)
 		}
-	}
-	newRecords, live := 0, 0
-	for _, owned := range d.records {
-		if now.Before(owned.expires) && !owned.announcement.Withdrawn {
-			live++
-		}
-	}
-	for _, ad := range nodes {
-		if ad.IncarnationId == d.self {
-			continue
-		}
-		owned, known := d.records[ad.IncarnationId]
-		if !known {
-			newRecords++
-			if !ad.Withdrawn {
-				live++
-			}
-		} else if ad.Revision > owned.announcement.Revision {
-			if now.Before(owned.expires) && !owned.announcement.Withdrawn {
-				live--
-			}
-			if !ad.Withdrawn {
-				live++
-			}
-		}
-	}
-	if len(d.records)+newRecords > MaxAnnouncements || live > MaxNodes {
-		return status.Error(codes.ResourceExhausted, "directory capacity exhausted")
 	}
 	for _, ad := range nodes {
 		if ad.IncarnationId == d.self {
@@ -265,7 +226,7 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 func (d *Directory) snapshot(now time.Time) []*peerpb.NodeAnnouncement {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	nodes := make([]*peerpb.NodeAnnouncement, 0, MaxNodes)
+	nodes := make([]*peerpb.NodeAnnouncement, 0, len(d.records))
 	for _, owned := range d.records {
 		remaining := owned.expires.Sub(now) - SyncTimeout
 		if remaining < time.Millisecond {
@@ -283,15 +244,12 @@ func (d *Directory) SyncDirectory(ctx context.Context, request *peerpb.SyncDirec
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
-	if request == nil || len(request.ProtoReflect().GetUnknown()) > 0 || proto.Size(request) > MaxSyncBytes {
+	if request == nil || len(request.ProtoReflect().GetUnknown()) > 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid directory sync")
 	}
 	if err := d.merge(request.Announcements, time.Now()); err != nil {
 		return nil, err
 	}
 	response := &peerpb.SyncDirectoryResponse{Announcements: d.snapshot(time.Now())}
-	if proto.Size(response) > MaxSyncBytes {
-		return nil, status.Error(codes.ResourceExhausted, "directory sync byte bound exceeded")
-	}
 	return response, nil
 }

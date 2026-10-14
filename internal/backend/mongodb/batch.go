@@ -154,7 +154,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 		{Key: "allowPartialResults", Value: false},
 	}
 	encoded, marshalErr := bson.Marshal(command)
-	if marshalErr != nil || len(encoded) > a.commandBytes()-(64<<10) {
+	if marshalErr != nil || len(plans) > 1 && len(encoded) > a.commandBytes() {
 		if marshalErr == nil && len(plans) > 1 {
 			middle := len(plans) / 2
 			copy(results[:middle], a.executeReads(ctx, plans[:middle]))
@@ -195,7 +195,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				break
 			}
 			fields, parseErr := scanFields(raw)
-			valid = parseErr == nil && len(raw) <= scanNativeLimit && scanOK(fields["ok"])
+			valid = parseErr == nil && scanOK(fields["ok"])
 			for key := range fields {
 				if key != "ok" && key != "cursor" && key != "operationTime" && key != "$clusterTime" {
 					valid = false
@@ -216,31 +216,19 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 					valid = false
 					break
 				}
-				oversized := len(raw) > protocol.MaxDocument
-				if !oversized {
-					nodes := len(raw)
-					if !validScanBSON(raw, 0, &nodes) {
-						valid = false
-						break
-					}
+
+				if !validScanBSON(raw, 0) {
+					valid = false
+					break
 				}
 				var document *pb.ReadResult
 				for _, i := range matches {
-					var reply *pb.ReadResult
-					if oversized {
-						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored record exceeds read limit"))
-					} else if len(raw) > plans[i].ResultBytes-execution.ResultOverheadBytes {
-						reply = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record exceeds result reservation"))
-					} else {
-						// Duplicate reads can share immutable data, but every RPC
-						// pays its own response budget before retaining that data.
-						if document == nil {
-							d := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), raw...)}
-							document = protocol.ReadDocument(d)
-						}
-						reply = document
+					// Duplicate reads share immutable bytes; every RPC reserves its own output.
+					if document == nil {
+						d := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), raw...)}
+						document = protocol.ReadDocument(d)
 					}
-					value := &pb.Event_ReadResult{ReadResult: reply}
+					value := &pb.Event_ReadResult{ReadResult: document}
 					event := &pb.Event{Value: value}
 					results[i] = event
 				}
@@ -361,7 +349,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		{Key: "writeConcern", Value: concern},
 	}
 	encoded, marshalErr := bson.Marshal(command)
-	if marshalErr != nil || len(encoded) > a.commandBytes()-(64<<10) {
+	if marshalErr != nil || len(plans) > 1 && len(encoded) > a.commandBytes() {
 		if marshalErr == nil && len(plans) > 1 {
 			middle := len(plans) / 2
 			copy(results[:middle], a.executeWrites(ctx, plans[:middle]))
@@ -443,11 +431,8 @@ func (a *Adapter) closeRecordCursor(state *recordCursor) {
 }
 
 func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
-	if len(raw) > scanNativeLimit {
-		return false
-	}
-	nodes := len(raw)
-	if !validScanBSON(raw, 0, &nodes) {
+
+	if !validScanBSON(raw, 0) {
 		return false
 	}
 	fields, err := scanFields(raw)

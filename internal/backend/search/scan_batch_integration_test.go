@@ -37,7 +37,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	var mu sync.Mutex
 	var sizes []int
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(io.LimitReader(r.Body, metadataLimit))
+		raw, err := io.ReadAll(io.LimitReader(r.Body, (256 << 10)))
 		if err != nil {
 			t.Error(err)
 			return
@@ -79,7 +79,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 	defer cancel()
 	// Trace every native fetch, including the first one sharing PIT allocation.
 	request := &pb.ScanRequest{Resource: backend.Index, PageSize: 8}
-	work, failure := base.prepareScan(request)
+	work, failure := base.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -126,7 +126,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 		t.Fatal("large source checkpoint omitted hits or forgot safe size", len(seen), state.batchSize)
 	}
 	request.ContinuationToken = token
-	resumed, failure := adapter.prepareScan(request)
+	resumed, failure := adapter.prepareScan(context.Background(), request)
 	if failure != nil {
 		t.Fatal(failure)
 	}

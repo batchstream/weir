@@ -104,7 +104,7 @@ func deadlineMutation(t *testing.T, runtime *store.Runtime, action string) *exec
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, failure := runtime.PrepareRecord(record)
+	prepared, failure := runtime.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -216,7 +216,6 @@ func TestBulkUnknownRetainsSanitizedFailureCause(t *testing.T) {
 		{name: "deadline", err: errTimeout, code: pb.FailureCode_DEADLINE_EXCEEDED, message: "backend write deadline exceeded; acknowledgement unavailable"},
 		{name: "canceled", err: errCanceled, code: pb.FailureCode_CANCELLED, message: "backend write canceled; acknowledgement unavailable"},
 		{name: "transport", err: errTransport, code: pb.FailureCode_UNAVAILABLE, message: "backend write transport failed; acknowledgement unavailable"},
-		{name: "body_limit", err: errResponseLimit, code: pb.FailureCode_RESOURCE_EXHAUSTED, message: "backend write response exceeds byte limit; acknowledgement unavailable"},
 		{name: "invalid_response", err: errResponse, code: pb.FailureCode_UNAVAILABLE, message: "backend write response invalid or incomplete; acknowledgement unavailable"},
 		{name: "http_status", status: 502, raw: `{"error":{"type":"unknown-secret-sentinel"},"status":502}`, code: pb.FailureCode_UNAVAILABLE, message: "backend write HTTP status 502; acknowledgement unavailable"},
 		{name: "invalid_ack", status: 200, raw: `{"errors":false,"took":1,"items":[]}`, code: pb.FailureCode_UNAVAILABLE, message: "backend write acknowledgement invalid or incomplete"},
@@ -226,7 +225,8 @@ func TestBulkUnknownRetainsSanitizedFailureCause(t *testing.T) {
 			adapter := &Adapter{}
 			work := unsentWritePlan()
 			works := []*execution.Plan{work}
-			results := adapter.bulkResults(works, test.status, []byte(test.raw), test.err)
+			replyInput228 := bulkResponse{works: works, status: test.status, raw: []byte(test.raw), err: test.err}
+			results := adapter.bulkResults(context.Background(), replyInput228)
 			mutation := results[0].GetMutationResult()
 			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != test.code || mutation.GetFailure().GetMessage() != test.message {
 				t.Fatal("uncertainty or sanitized cause changed", mutation)

@@ -24,7 +24,7 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	if err := ValidateProgram(program); err != nil {
+	if err := ValidateProgram(ctx, program); err != nil {
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -56,8 +56,8 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 	}
 	state := vm.New(vm.WithContext(ctx), vm.WithLimits(limits))
 	defer state.Close(context.Background())
-	module := installEnvironment(state, program.ObservedAt, settings.Values)
-	conversion := newBridge(settings.Values)
+	module := installEnvironment(state, program.ObservedAt)
+	conversion := newBridge(ctx)
 	conversion.install(state, module)
 	functions, err := state.Run(prototype)
 	if contextErr := ctx.Err(); contextErr != nil {
@@ -107,7 +107,7 @@ func Evaluate(ctx context.Context, program Program) (Result, error) {
 			return empty, fmt.Errorf("invalid Lua result: %w", err)
 		}
 	}
-	if err := ValidateResult(result, settings); err != nil {
+	if err := ValidateResult(ctx, result); err != nil {
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -139,7 +139,7 @@ func luaReject(state *vm.VM) int {
 		panic("weir.reject requires one message string")
 	}
 	result := Result{Action: Reject, Message: state.Get(1).AsString()}
-	if err := ValidateResult(result, DefaultLimits()); err != nil {
+	if err := ValidateResult(context.Background(), result); err != nil {
 		panic(err)
 	}
 	state.Set(0, vm.NewUserdataValue(result, nil))

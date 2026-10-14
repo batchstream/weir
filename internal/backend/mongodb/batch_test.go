@@ -402,7 +402,7 @@ func TestMongoReadAggregationAccepts513DistinctDocuments(t *testing.T) {
 }
 
 func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
-	for _, mode := range []string{"first exhausted", "both retained", "first canceled"} {
+	for _, mode := range []string{"first smaller estimate", "both retained", "first canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			document := bson.D{{Key: "_id", Value: "same"}, {Key: "value", Value: 123}}
 			cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
@@ -419,7 +419,7 @@ func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
 				}
 				if i == 0 {
 					work.Context = firstContext
-					if mode == "first exhausted" {
+					if mode == "first smaller estimate" {
 						work.ResultBytes = 1
 					}
 				}
@@ -433,15 +433,12 @@ func TestMongoDuplicateReadSeparatesResultReservations(t *testing.T) {
 			if len(replies) != 2 || !bytes.Equal(replies[1].GetReadResult().GetDocument().GetData(), raw) {
 				t.Fatal("first RPC budget/cancellation poisoned same-ID peer", replies)
 			}
-			if mode == "both retained" {
+			if mode != "first canceled" {
 				if replies[0].GetReadResult().GetDocument() != replies[1].GetReadResult().GetDocument() {
 					t.Fatal("immutable data was not shared with independent reservations", replies)
 				}
 			} else {
-				code := pb.FailureCode_RESOURCE_EXHAUSTED
-				if mode == "first canceled" {
-					code = pb.FailureCode_CANCELLED
-				}
+				code := pb.FailureCode_CANCELLED
 				if replies[0].GetReadResult().GetFailure().GetCode() != code {
 					t.Fatal("failed first RPC retained another caller's bytes", replies)
 				}

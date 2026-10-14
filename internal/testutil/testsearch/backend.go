@@ -34,7 +34,9 @@ func Open(t *testing.T) *Backend {
 	case "elasticsearch":
 		endpoint, profile = "http://127.0.0.1:19200", "elasticsearch-8.19.22"
 	case "opensearch":
-		endpoint, profile = "http://127.0.0.1:19201", "opensearch-2.19.6"
+		endpoint, profile = "http://127.0.0.1:19202", "opensearch-3.3.0"
+	case "opensearch-2.19":
+		endpoint, profile, product = "http://127.0.0.1:19201", "opensearch-2.19.6", "opensearch"
 	case "":
 		t.Skip("Search real-backend suite requires explicit WEIR_SEARCH_INTEGRATION=elasticsearch|opensearch")
 	default:
@@ -58,7 +60,11 @@ func Open(t *testing.T) *Backend {
 	if status != 200 {
 		t.Fatal("wrong isolated backend", status)
 	}
-	verifyVersion(t, raw, profile, "weir-local-"+product)
+	cluster := "weir-local-" + product
+	if profile == "opensearch-3.3.0" {
+		cluster = "weir-local-opensearch-3.3"
+	}
+	verifyVersion(t, raw, profile, cluster)
 	t.Cleanup(transport.CloseIdleConnections)
 	b.Create(t, index, `{"settings":{"number_of_shards":1,"number_of_replicas":0},"mappings":{"properties":{"n":{"type":"long"}}}}`)
 	return b
@@ -80,6 +86,7 @@ func verifyVersion(t *testing.T, raw []byte, profile, cluster string) {
 	v := root.Version
 	valid := profile == "elasticsearch-8.19.22" && v.Number == "8.19.22" && v.Distribution == "" && v.BuildFlavor == "default"
 	valid = valid || profile == "opensearch-2.19.6" && v.Number == "2.19.6" && v.Distribution == "opensearch"
+	valid = valid || profile == "opensearch-3.3.0" && v.Number == "3.3.0" && v.Distribution == "opensearch"
 	if !valid {
 		t.Fatal("wrong isolated backend version/distribution")
 	}

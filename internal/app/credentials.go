@@ -11,12 +11,6 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	maxUsernameBytes       = 128
-	maxPasswordBytes       = 256
-	maxCredentialPathBytes = 2048
-)
-
 func (l *Local) credentials() *Credentials {
 	return l.Backend.Authentication
 }
@@ -47,20 +41,20 @@ func (c Credentials) validateSources() error {
 	if usernameSet != passwordSet {
 		return errors.New("credentials require both username and password sources")
 	}
-	if c.Username != "" && !validCredentialText(c.Username, maxUsernameBytes) ||
-		c.Password != "" && !validCredentialText(c.Password, maxPasswordBytes) {
+	if c.Username != "" && !validCredentialText(c.Username) ||
+		c.Password != "" && !validCredentialText(c.Password) {
 		return errors.New("invalid credential value")
 	}
 	for _, filename := range []string{c.UsernameFile, c.PasswordFile} {
-		if filename != "" && (strings.TrimSpace(filename) == "" || !validCredentialText(filename, maxCredentialPathBytes)) {
+		if filename != "" && (strings.TrimSpace(filename) == "" || !validCredentialText(filename)) {
 			return errors.New("invalid credential file configuration")
 		}
 	}
 	return nil
 }
 
-func validCredentialText(value string, maxBytes int) bool {
-	if value == "" || len(value) > maxBytes || !utf8.ValidString(value) {
+func validCredentialText(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
 		return false
 	}
 	for _, char := range value {
@@ -90,11 +84,11 @@ func (cfg RoutingConfig) resolveCredentials(directory string) error {
 }
 
 func (c *Credentials) resolve(directory string) error {
-	username, err := resolveCredentialValue(c.Username, c.UsernameFile, directory, maxUsernameBytes)
+	username, err := resolveCredentialValue(c.Username, c.UsernameFile, directory)
 	if err != nil {
 		return err
 	}
-	password, err := resolveCredentialValue(c.Password, c.PasswordFile, directory, maxPasswordBytes)
+	password, err := resolveCredentialValue(c.Password, c.PasswordFile, directory)
 	if err != nil {
 		return err
 	}
@@ -103,7 +97,7 @@ func (c *Credentials) resolve(directory string) error {
 	return nil
 }
 
-func resolveCredentialValue(value, filename, directory string, maxBytes int) (string, error) {
+func resolveCredentialValue(value, filename, directory string) (string, error) {
 	if filename == "" {
 		return value, nil
 	}
@@ -123,19 +117,16 @@ func resolveCredentialValue(value, filename, directory string, maxBytes int) (st
 		_ = file.Close()
 		return "", errors.New("credential file unavailable")
 	}
-	raw, readErr := io.ReadAll(io.LimitReader(file, int64(maxBytes+3)))
+	raw, readErr := io.ReadAll(file)
 	closeErr := file.Close()
 	if readErr != nil || closeErr != nil {
 		return "", errors.New("credential file unavailable")
-	}
-	if len(raw) > maxBytes+2 {
-		return "", errors.New("invalid credential file content")
 	}
 	text := strings.TrimSuffix(string(raw), "\n")
 	if len(text) != len(raw) {
 		text = strings.TrimSuffix(text, "\r")
 	}
-	if !validCredentialText(text, maxBytes) {
+	if !validCredentialText(text) {
 		return "", errors.New("invalid credential file content")
 	}
 	return text, nil

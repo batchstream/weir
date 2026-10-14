@@ -47,9 +47,6 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 						t.Error("PIT lost index identity", body.PIT.ID)
 					}
 					wantSort := "_shard_doc"
-					if dialect == OpenSearchProduct {
-						wantSort = "_doc"
-					}
 					if len(body.Sort) != 1 || body.Sort[0] != wantSort {
 						t.Error("detected product selected wrong PIT sort", body.Sort)
 					}
@@ -154,7 +151,7 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 			}()
 			for _, index := range []string{"left", "right"} {
 				request := &pb.ScanRequest{Resource: index}
-				work, failure := a.prepareScan(request)
+				work, failure := a.prepareScan(context.Background(), request)
 				if failure != nil {
 					t.Fatal(failure)
 				}

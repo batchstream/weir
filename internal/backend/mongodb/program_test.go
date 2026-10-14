@@ -44,12 +44,12 @@ func TestMongoProgramReplacementPreservesResourceIdentity(t *testing.T) {
 		{id: objectID},
 	}
 	for _, testCase := range cases {
-		identity, err := mongoIdentity(testCase.id)
+		identity, err := mongoIdentity(t.Context(), testCase.id)
 		if err != nil {
 			t.Fatal(err)
 		}
 		document := value.Value{Kind: value.Object, Fields: []value.Field{{Name: "count", Value: value.Value{Kind: value.Int32, Integer: 1}}}}
-		replacement, valid := withMongoIdentity(document, identity, testCase.id, value.DefaultLimits())
+		replacement, valid := withMongoIdentity(t.Context(), document, identity, testCase.id)
 		if !valid || len(replacement.Fields) != 2 || replacement.Fields[0].Name != "_id" {
 			t.Fatalf("identity was not preserved for %T: %#v", testCase.id, replacement)
 		}
@@ -59,12 +59,12 @@ func TestMongoProgramReplacementPreservesResourceIdentity(t *testing.T) {
 		}
 	}
 
-	identity, err := mongoIdentity("item")
+	identity, err := mongoIdentity(t.Context(), "item")
 	if err != nil {
 		t.Fatal(err)
 	}
 	wrongIdentity := value.Value{Kind: value.Object, Fields: []value.Field{{Name: "_id", Value: value.Value{Kind: value.String, Text: "other"}}}}
-	_, valid := withMongoIdentity(wrongIdentity, identity, "item", value.DefaultLimits())
+	_, valid := withMongoIdentity(t.Context(), wrongIdentity, identity, "item")
 	if valid {
 		t.Fatal("Lua replacement changed the resource identity")
 	}

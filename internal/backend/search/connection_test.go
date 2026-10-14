@@ -1,6 +1,7 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -157,7 +158,7 @@ func TestSearchTLSBothPathsAndTransportPolicy(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	a := openTestTLS(t, endpoint.URL, c)
-	call := exchange{path: "/probe", body: []byte(`{}`), limit: 256}
+	call := exchange{path: "/probe", body: []byte(`{}`)}
 	if _, _, err := a.request(context.Background(), call); err != nil {
 		t.Fatal(err)
 	}
@@ -237,12 +238,12 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if names.Load() != 2 {
+	if names.Load() != 1 {
 		t.Fatal("qualification SNI")
 	}
 	unreachable := testdns.Answer{Addresses: []netip.Addr{netip.MustParseAddr("127.0.0.2")}}
 	dns.Set("search.test", unreachable)
-	call := exchange{path: "/probe", limit: 128}
+	call := exchange{path: "/probe"}
 	if _, _, err := a.request(context.Background(), call); err != nil {
 		t.Fatal("existing connection migrated on DNS change")
 	}
@@ -264,6 +265,7 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 	}
 	for _, mode := range []string{"too-many", "excessive-message", "timeout", "nxdomain"} {
 		t.Run(mode, func(t *testing.T) {
+			a.transport.CloseIdleConnections()
 			bad := testdns.Answer{}
 			switch mode {
 			case "too-many", "excessive-message":
@@ -282,8 +284,10 @@ func TestSearchDNSNameSNIAddressChangeAndBounds(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 			defer cancel()
 			before := time.Now()
-			if _, _, err := a.request(ctx, call); err == nil {
-				t.Fatal("DNS bound accepted")
+			_, _, err := a.request(ctx, call)
+			valid := mode == "too-many" || mode == "excessive-message"
+			if (err == nil) != valid {
+				t.Fatal("DNS size, failure or cancellation semantics", mode, err)
 			}
 			if time.Since(before) > time.Second {
 				t.Fatal("DNS cancellation delayed")
@@ -401,7 +405,7 @@ func TestSearchTLSNoRedirectCredentialLeak(t *testing.T) {
 	})
 	endpoint, c := tlsEndpoint(t, handler, false)
 	a := openTestTLS(t, endpoint.URL, c)
-	call := exchange{path: "/redirect", body: []byte(`{}`), limit: 256}
+	call := exchange{path: "/redirect", body: []byte(`{}`)}
 	_, _, _ = a.request(context.Background(), call)
 	open := nativeRequest(t, "records", "GET", "/_doc/x")
 	end, capture := runNative(t, a, open, nil)
@@ -422,8 +426,7 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	c.Password = ""
 	a := openTestTLS(t, endpoint.URL, c)
 	_ = a.Close()
-	// The same valid trusted leaf repeated nine times verifies in Go, then must
-	// fail our retained-chain bound. Material stays inside this test process.
+	// Trust follows Go's TLS/x509 verification without a separate certificate count.
 	pair := endpoint.TLS.Certificates[0]
 	for len(pair.Certificate) < 9 {
 		pair.Certificate = append(pair.Certificate, pair.Certificate[0])
@@ -434,10 +437,34 @@ func TestSearchTLSWithoutCredentialsAndCertificateCount(t *testing.T) {
 	crowded.StartTLS()
 	defer crowded.Close()
 	cfg := Config{Store: "search", URL: crowded.URL, Connection: c}
-	rejected, err := Open(context.Background(), cfg)
-	if rejected != nil || err == nil {
-		t.Fatal("excessive certificate chain accepted")
+	accepted, err := Open(context.Background(), cfg)
+	if accepted == nil || err != nil {
+		t.Fatal("valid TLS chain rejected by certificate count", err)
 	}
+	defer accepted.Close()
+}
+
+func TestSearchLargeTrustStoreAndCredentials(t *testing.T) {
+	username, password := strings.Repeat("u", 512), strings.Repeat("p", 1024)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		user, pass, valid := request.BasicAuth()
+		if !valid || user != username || pass != password {
+			t.Error("long credentials changed")
+		}
+		qualification(w, request)
+	})
+	endpoint, connection := tlsEndpoint(t, handler, false)
+	der := endpoint.TLS.Certificates[0].Certificate[0]
+	block := &pem.Block{Type: "CERTIFICATE", Bytes: der}
+	certificate := pem.EncodeToMemory(block)
+	data := bytes.Repeat(certificate, (256<<10)/len(certificate)+1)
+	caFile := filepath.Join(t.TempDir(), "large-generated-trust-store")
+	if err := os.WriteFile(caFile, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	connection.CAFile, connection.Username, connection.Password = caFile, username, password
+	adapter := openTestTLS(t, endpoint.URL, connection)
+	defer adapter.Close()
 }
 
 func searchOwned(dialer *connectionDialer) int {

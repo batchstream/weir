@@ -108,7 +108,7 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/" {
-			_, _ = w.Write([]byte(`{"version":{"number":"8.19.22","build_flavor":"default"}}`))
+			_, _ = w.Write([]byte(`{"version":{"distribution":"unknown-product"},"secret":"response-sentinel"}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"persistent":{"action.auto_create_index":"true"},"secret":"response-sentinel"}`))
@@ -120,10 +120,10 @@ func TestStartupPreservesRedactedQualificationReason(t *testing.T) {
 	node, err = Open(context.Background(), cfg)
 	if node != nil ||
 		err == nil ||
-		!strings.Contains(err.Error(), "action.auto_create_index=false") ||
+		!strings.Contains(err.Error(), "unsupported Search server product") ||
 		strings.Contains(err.Error(), "sentinel") ||
 		strings.Contains(err.Error(), endpoint.URL) {
-		t.Fatal("startup must identify the rejected backend policy without its response", err)
+		t.Fatal("startup must identify the rejected backend product without its response", err)
 	}
 }
 
@@ -142,15 +142,12 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var roots, settings atomic.Int32
+			var roots atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				switch request.URL.Path {
 				case "/":
 					roots.Add(1)
 					_, _ = w.Write([]byte(tc.identity))
-				case "/_cluster/settings":
-					settings.Add(1)
-					_, _ = w.Write([]byte(`{"defaults":{"action.auto_create_index":"false"}}`))
 				default:
 					t.Error("startup must identify the server without requesting resource targets")
 					http.Error(w, "unexpected fixture request", http.StatusNotFound)
@@ -179,8 +176,8 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 					_ = node.Close(context.Background())
 					t.Fatal("unsupported product reached assembly")
 				}
-				if err == nil || err.Error() != `local Store "records" startup qualification failed: `+tc.rejection || roots.Load() != 1 || settings.Load() != 0 {
-					t.Fatal("product rejection must precede policy checks and listeners, preserving its safe reason", err, roots.Load(), settings.Load())
+				if err == nil || err.Error() != `local Store "records" startup qualification failed: `+tc.rejection || roots.Load() != 1 {
+					t.Fatal("product rejection must precede listeners, preserving its safe reason", err, roots.Load())
 				}
 				return
 			}
@@ -197,8 +194,8 @@ func TestSearchStartupIdentifiesProductsWithoutVersionRestrictions(t *testing.T)
 			if err := node.Start(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if roots.Load() != 1 || settings.Load() != 1 {
-				t.Fatal("startup must retain the server policy check", roots.Load(), settings.Load())
+			if roots.Load() != 1 {
+				t.Fatal("startup must identify the server once", roots.Load())
 			}
 		})
 	}

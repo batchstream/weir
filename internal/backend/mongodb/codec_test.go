@@ -2,6 +2,8 @@ package mongodb
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -22,11 +24,11 @@ func TestCodecRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := Decode(raw, value.DefaultLimits())
+	decoded, err := Decode(t.Context(), raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := Encode(decoded, value.DefaultLimits())
+	encoded, err := Encode(t.Context(), decoded)
 	if err != nil || !bytes.Equal(encoded, raw) {
 		t.Fatalf("lossy round trip: %v", err)
 	}
@@ -37,7 +39,7 @@ func TestCodecRoundTrip(t *testing.T) {
 	}
 	edited := value.Field{Name: "edited", Value: value.Value{Kind: value.Bool, Boolean: true}}
 	decoded.Fields = append(decoded.Fields, edited)
-	encoded, err = Encode(decoded, value.DefaultLimits())
+	encoded, err = Encode(t.Context(), decoded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,25 +52,25 @@ func TestCodecRoundTrip(t *testing.T) {
 	}
 	duplicate := bson.D{{Key: "a", Value: 1}, {Key: "a", Value: 2}}
 	raw, _ = bson.Marshal(duplicate)
-	decoded, err = Decode(raw, value.DefaultLimits())
+	decoded, err = Decode(t.Context(), raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = decoded.Lookup("a"); err == nil {
 		t.Fatal("ambiguous lookup")
 	}
-	encoded, err = Encode(decoded, value.DefaultLimits())
+	encoded, err = Encode(t.Context(), decoded)
 	if err != nil || !bytes.Equal(encoded, raw) {
 		t.Fatal("duplicate round trip")
 	}
 }
-func TestCodecLimitsAndMalformed(t *testing.T) {
+func TestCodecNativeDepthAndMalformed(t *testing.T) {
 	deep := bson.D{{Key: "v", Value: 1}}
-	for i := 0; i < 40; i++ {
+	for i := 0; i < 101; i++ {
 		deep = bson.D{{Key: "v", Value: deep}}
 	}
 	raw, _ := bson.Marshal(deep)
-	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
+	if _, err := Decode(t.Context(), raw); err == nil {
 		t.Fatal("deep")
 	}
 	wide := bson.D{}
@@ -77,21 +79,21 @@ func TestCodecLimitsAndMalformed(t *testing.T) {
 		wide = append(wide, field)
 	}
 	raw, _ = bson.Marshal(wide)
-	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
-		t.Fatal("node count")
+	if _, err := Decode(t.Context(), raw); err != nil {
+		t.Fatal("node quota remained", err)
 	}
 	large := bson.D{{Key: "x", Value: strings.Repeat("x", 3<<20)}}
 	raw, _ = bson.Marshal(large)
-	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
-		t.Fatal("large")
+	if _, err := Decode(t.Context(), raw); err != nil {
+		t.Fatal("document quota remained", err)
 	}
 	code := bson.D{{Key: "x", Value: bson.JavaScript("return 1")}}
 	raw, _ = bson.Marshal(code)
-	if _, err := Decode(raw, value.DefaultLimits()); err == nil {
+	if _, err := Decode(t.Context(), raw); err == nil {
 		t.Fatal("unsupported code")
 	}
 	for _, raw := range [][]byte{nil, {1, 0, 0, 0, 0}, {5, 0, 0, 0, 2}, {9, 0, 0, 0, 8, 'b', 0, 2, 0}, {12, 0, 0, 0, 2, 's', 0, 0, 0, 0, 0, 0}, {14, 0, 0, 0, 2, 's', 0, 2, 0, 0, 0, 'a', 255, 0}} {
-		if _, err := Decode(raw, value.DefaultLimits()); err == nil {
+		if _, err := Decode(t.Context(), raw); err == nil {
 			t.Fatalf("accepted %x", raw)
 		}
 	}
@@ -99,9 +101,9 @@ func TestCodecLimitsAndMalformed(t *testing.T) {
 func FuzzCodec(f *testing.F) {
 	f.Add([]byte{5, 0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, raw []byte) {
-		v, err := Decode(raw, value.DefaultLimits())
+		v, err := Decode(t.Context(), raw)
 		if err == nil {
-			encoded, e := Encode(v, value.DefaultLimits())
+			encoded, e := Encode(t.Context(), v)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -110,4 +112,28 @@ func FuzzCodec(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestCodecCancellationAndLargeRoundTrip(t *testing.T) {
+	document := bson.D{{Key: "text", Value: strings.Repeat("x", 5<<20)}}
+	raw, err := bson.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(t.Context(), raw)
+	if err != nil {
+		t.Fatal("large BSON retained a conversion quota", err)
+	}
+	encoded, err := Encode(t.Context(), decoded)
+	if err != nil || !bytes.Equal(encoded, raw) {
+		t.Fatal("large BSON did not round-trip", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := Decode(ctx, raw); !errors.Is(err, context.Canceled) {
+		t.Fatal("BSON decode ignored caller cancellation", err)
+	}
+	if _, err := Encode(ctx, decoded); !errors.Is(err, context.Canceled) {
+		t.Fatal("BSON encode ignored caller cancellation", err)
+	}
 }

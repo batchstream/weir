@@ -98,48 +98,49 @@ func TestStrictConfigurationDocuments(t *testing.T) {
 					t.Fatal("invalid document accepted or error leaked input", i, decodeErr)
 				}
 			}
-			bounded := raw + strings.Repeat(" ", maxConfigBytes-len(raw))
+			large := raw + strings.Repeat(" ", 256<<10)
 			if document == "basic" {
-				_, decodeErr = DecodeBasic(strings.NewReader(bounded))
+				_, decodeErr = DecodeBasic(strings.NewReader(large))
 			} else {
-				_, decodeErr = DecodeRouting(strings.NewReader(bounded))
+				_, decodeErr = DecodeRouting(strings.NewReader(large))
 			}
 			if decodeErr != nil {
-				t.Fatal("exact size bound rejected", decodeErr)
+				t.Fatal("large valid configuration rejected", decodeErr)
 			}
 			if document == "basic" {
-				_, decodeErr = DecodeBasic(strings.NewReader(bounded + " "))
+				_, decodeErr = DecodeBasic(strings.NewReader(large + " "))
 			} else {
-				_, decodeErr = DecodeRouting(strings.NewReader(bounded + " "))
+				_, decodeErr = DecodeRouting(strings.NewReader(large + " "))
 			}
-			if decodeErr == nil || !strings.Contains(decodeErr.Error(), "exceeds bound") {
-				t.Fatal("oversized configuration accepted", decodeErr)
+			if decodeErr != nil {
+				t.Fatal("configuration retained its former size quota", decodeErr)
 			}
 		})
 	}
 }
 
-func TestConfigurationNestingBound(t *testing.T) {
-	for _, depth := range []int{11, 12} {
+func TestConfigurationValidationHasNoDepthQuota(t *testing.T) {
+	for _, depth := range []int{12, 64, 1000} {
 		input := "unexpected: " + strings.Repeat("[", depth) + "value" + strings.Repeat("]", depth) + "\n"
 		var document yaml.Node
 		if err := yaml.Unmarshal([]byte(input), &document); err != nil {
 			t.Fatal(err)
 		}
-		err := validateConfigYAML(document.Content[0], 0, true, "")
-		if depth == 11 && err != nil {
-			t.Fatal("exact nesting bound rejected", err)
-		}
-		if depth == 12 && (err == nil || !strings.Contains(err.Error(), "nesting limit")) {
-			t.Fatal("excessive nesting accepted", err)
+		if err := validateConfigYAML(document.Content[0], true, ""); err != nil {
+			t.Fatal("valid YAML tree retained a depth quota", depth, err)
 		}
 		_, basicErr := DecodeBasic(strings.NewReader(input))
 		_, routingErr := DecodeRouting(strings.NewReader(input))
 		for _, err := range []error{basicErr, routingErr} {
-			if err == nil || depth == 11 && strings.Contains(err.Error(), "nesting limit") || depth == 12 && !strings.Contains(err.Error(), "nesting limit") {
-				t.Fatal("document nesting boundary mismatch", depth, err)
+			if err == nil || strings.Contains(err.Error(), "nesting limit") {
+				t.Fatal("unknown field must fail its schema, independently of depth", depth, err)
 			}
 		}
+	}
+	cyclic := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	cyclic.Content = []*yaml.Node{cyclic}
+	if err := validateConfigYAML(cyclic, true, ""); err == nil || !strings.Contains(err.Error(), "cyclic") {
+		t.Fatal("cyclic configuration structure escaped validation", err)
 	}
 }
 
@@ -164,11 +165,6 @@ func TestConfigurationUnicodeFieldDuplicates(t *testing.T) {
 }
 
 func TestBasicConfigurationRejectsNullFields(t *testing.T) {
-	cfg := credentialTestConfig(t, "search")
-	raw, err := yaml.Marshal(cfg.Basic)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, fragment := range []string{
 		"diagnostics: null\n",
 		"listeners: ~\n",
@@ -177,7 +173,7 @@ func TestBasicConfigurationRejectsNullFields(t *testing.T) {
 		"transport:\n  timeouts:\n    stall: null\n",
 		"transport:\n  timeouts:\n    request: null\n",
 	} {
-		input := fragment + string(raw)
+		input := fragment
 		if _, err := DecodeBasic(strings.NewReader(input)); err == nil || !strings.Contains(err.Error(), "cannot be null") {
 			t.Fatal("null basic field accepted", err)
 		}

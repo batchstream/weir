@@ -24,7 +24,7 @@ func (s *Server) ingress(ctx context.Context) (context.Context, error) {
 		}
 		headers.Set("weir-request-id", hex.EncodeToString(raw))
 	} else {
-		if len(ids) != 1 || len(ids[0]) < 1 || len(ids[0]) > 128 {
+		if len(ids) != 1 || len(ids[0]) < 1 {
 			return nil, status.Error(codes.InvalidArgument, "invalid request ID")
 		}
 		for _, c := range ids[0] {

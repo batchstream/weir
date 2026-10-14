@@ -86,7 +86,7 @@ func scanRPCPage(t *testing.T, client pb.StoreServiceClient, request *pb.ScanReq
 			t.Fatal("Scan RPC did not finish", err)
 		}
 		bytes += proto.Size(event)
-		if bytes > 32<<20 || len(documents) > int(protocol.MaxScanPageSize) {
+		if bytes > 32<<20 || len(documents) > int(256) {
 			t.Fatal("Scan test capture exceeded its bounds")
 		}
 		if end != nil {
@@ -418,7 +418,7 @@ func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions)
 		if status.Code(err) == codes.Canceled {
 			break
 		}
-		if err != nil || buffered >= int(protocol.MaxScanPageSize) {
+		if err != nil || buffered >= int(256) {
 			t.Fatal("canceled Scan did not return caller cancellation", err)
 		}
 	}

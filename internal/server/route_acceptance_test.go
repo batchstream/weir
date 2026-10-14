@@ -80,7 +80,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 
 func routeAcceptanceClient(t testing.TB, address string) pb.StoreServiceClient {
 	t.Helper()
-	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(protocol.MaxExecuteResponseBytes), grpc.MaxCallSendMsgSize(protocol.MaxExecuteRequestBytes))}
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes), grpc.MaxCallSendMsgSize(protocol.MaxTransportMessageBytes))}
 	connection, err := grpc.NewClient("passthrough:///"+address, options...)
 	if err != nil {
 		t.Fatal(err)

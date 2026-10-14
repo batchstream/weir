@@ -10,13 +10,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 )
 
-func TestSearchReadUsesOnlyProtocolDocumentBound(t *testing.T) {
-	sizes := []int{1024, (16 << 10) + 1, 70 << 10, protocol.MaxDocument, protocol.MaxDocument + 1}
+func TestSearchReadPreservesLargeDocumentsAndPeerWrites(t *testing.T) {
+	sizes := []int{1024, (16 << 10) + 1, 70 << 10, (2 << 20), (2 << 20) + 1}
 	for _, size := range sizes {
 		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
 			source := `{"pad":"` + strings.Repeat("x", size-len(`{"pad":""}`)) + `"}`
@@ -52,8 +51,8 @@ func TestSearchReadUsesOnlyProtocolDocumentBound(t *testing.T) {
 			works := []*execution.Plan{read, write}
 			results := adapter.executeRecords(context.Background(), works)
 			result := results[0].GetReadResult()
-			if size <= protocol.MaxDocument && len(result.GetDocument().Data) != size || size > protocol.MaxDocument && result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-				t.Fatal("read size boundary was not enforced", size, result)
+			if document := result.GetDocument(); document == nil || len(document.Data) != size {
+				t.Fatal("read document rejected or shortened", size, result.GetFailure())
 			}
 			if writes.Load() != 1 || results[1].GetMutationResult().Outcome != pb.MutationOutcome_APPLIED || results[1].GetMutationResult().Failure != nil {
 				t.Fatal("acknowledged write was affected by a read limit", results[1], writes.Load())

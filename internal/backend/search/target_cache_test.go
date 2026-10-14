@@ -7,17 +7,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/backend/targetcache"
 	"github.com/batchstream/weir/internal/execution"
 )
 
-func TestSearchHotRecordsDoNotRepeatMetadataIO(t *testing.T) {
+func TestSearchRecordsResolveMetadataOncePerExecution(t *testing.T) {
 	var metadata, reads, writes atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -49,64 +47,8 @@ func TestSearchHotRecordsDoNotRepeatMetadataIO(t *testing.T) {
 			t.Fatal("hot target lost business results", results)
 		}
 	}
-	if metadata.Load() != 1 || reads.Load() != 2 || writes.Load() != 2 {
-		t.Fatal("hot requests repeated metadata or lost business I/O", metadata.Load(), reads.Load(), writes.Load())
-	}
-}
-
-func TestSearchConcurrentTargetInspectionUsesOneRequest(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var inspections atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if inspections.Add(1) == 1 {
-			close(started)
-			<-release
-		}
-		_, _ = io.WriteString(w, testIndexReply)
-	})
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	defer func() {
-		select {
-		case <-release:
-		default:
-			close(release)
-		}
-	}()
-	cfg := Config{URL: server.URL}
-	adapter := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	var workers sync.WaitGroup
-	workers.Go(func() {
-		caps, failure := adapter.inspect(ctx, "records", false)
-		if failure != nil || !caps.source || !caps.write {
-			t.Error("first target check failed", caps, failure)
-		}
-	})
-	select {
-	case <-started:
-	case <-ctx.Done():
-		t.Fatal("first target inspection did not start")
-	}
-	for range 16 {
-		workers.Go(func() {
-			caps, failure := adapter.inspect(ctx, "records", false)
-			if failure != nil || !caps.source || !caps.write {
-				t.Error("shared target check failed", caps, failure)
-			}
-		})
-	}
-	waiter, stop := context.WithTimeout(ctx, 10*time.Millisecond)
-	defer stop()
-	if _, failure := adapter.inspect(waiter, "records", false); failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
-		t.Fatal("metadata waiter ignored cancellation", failure)
-	}
-	close(release)
-	workers.Wait()
-	if inspections.Load() != 1 {
-		t.Fatal("concurrent cold requests repeated inspection", inspections.Load())
+	if metadata.Load() != 2 || reads.Load() != 2 || writes.Load() != 2 {
+		t.Fatal("metadata was cached across executions or business I/O lost", metadata.Load(), reads.Load(), writes.Load())
 	}
 }
 
@@ -145,7 +87,7 @@ func TestSearchFailedInspectionIsRetriedAndCapabilitiesAreIsolated(t *testing.T)
 			t.Fatal("capabilities crossed index cache keys", caps, failure)
 		}
 	}
-	if left.Load() != 2 || right.Load() != 1 {
+	if left.Load() != 3 || right.Load() != 2 {
 		t.Fatal("failure cached or capabilities reloaded", left.Load(), right.Load())
 	}
 }
@@ -190,39 +132,7 @@ func TestSearchCanceledInspectionDoesNotPoisonRetry(t *testing.T) {
 	}
 }
 
-func TestSearchMetadataCacheRechecksEvictedTargets(t *testing.T) {
-	var inspections atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		inspections.Add(1)
-		index := strings.TrimPrefix(r.URL.Path, "/")
-		_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", index))
-	})
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	cfg := Config{URL: server.URL}
-	adapter := &Adapter{config: cfg, client: server.Client(), ctx: context.Background()}
-	for i := 0; i <= targetcache.DefaultCapacity; i++ {
-		index := fmt.Sprintf("target%d", i)
-		if _, failure := adapter.inspect(context.Background(), index, false); failure != nil {
-			t.Fatal(failure)
-		}
-	}
-	latest := fmt.Sprintf("target%d", targetcache.DefaultCapacity)
-	if _, failure := adapter.inspect(context.Background(), latest, false); failure != nil {
-		t.Fatal(failure)
-	}
-	if inspections.Load() != targetcache.DefaultCapacity+1 {
-		t.Fatal("recent target was not retained", inspections.Load())
-	}
-	if _, failure := adapter.inspect(context.Background(), "target0", false); failure != nil {
-		t.Fatal(failure)
-	}
-	if inspections.Load() != targetcache.DefaultCapacity+2 {
-		t.Fatal("evicted target did not repeat its metadata check", inspections.Load())
-	}
-}
-
-func TestSearchCachedTargetStillChecksBusinessPermissions(t *testing.T) {
+func TestSearchRecordPermissionsRemainPerExecution(t *testing.T) {
 	var metadata, reads atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/records" {
@@ -256,7 +166,7 @@ func TestSearchCachedTargetStillChecksBusinessPermissions(t *testing.T) {
 	if results[0].GetReadResult().GetFailure() == nil || results[0].GetReadResult().GetMissing() != nil || results[0].GetReadResult().GetDocument() != nil {
 		t.Fatal("cached metadata became a cached authorization", results)
 	}
-	if metadata.Load() != 1 || reads.Load() != 2 {
-		t.Fatal("cached target skipped business permission enforcement", metadata.Load(), reads.Load())
+	if metadata.Load() != 2 || reads.Load() != 2 {
+		t.Fatal("business permission enforcement lost", metadata.Load(), reads.Load())
 	}
 }

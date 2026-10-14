@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -16,7 +17,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/backend"
-	"github.com/batchstream/weir/internal/backend/targetcache"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
 	"github.com/batchstream/weir/internal/value"
@@ -46,7 +46,6 @@ type Adapter struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	once            sync.Once
-	targets         targetcache.Cache[string, capabilities]
 }
 
 type plan struct {
@@ -58,7 +57,10 @@ type plan struct {
 	waitUntilVisible bool
 }
 
-type capabilities struct{ source, write, nativeWrite bool }
+type capabilities struct {
+	index                                string
+	source, write, nativeWrite, writable bool
+}
 
 func validIndex(name string) bool {
 	if name == "" || len(name) > 255 || name == "." || name == ".." || strings.ToLower(name) != name || strings.ContainsAny(name, "\\/*?\"<>| ,#:+") || strings.ContainsRune("-_+", rune(name[0])) || !utf8.ValidString(name) {
@@ -119,7 +121,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	nativeTransport.DialTLSContext = dialer.dial
 	nativeTransport.TLSClientConfig = tlsConfig
 	nativeTransport.DisableKeepAlives = true
-	nativeTransport.MaxResponseHeaderBytes = int64(protocol.MaxNativeMetadataBytes)
 	nativeClient := &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}
 	a := &Adapter{
 		dialer:          dialer,
@@ -131,7 +132,6 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		ctx:             lifetime,
 		cancel:          cancel,
 	}
-	a.targets.SetCapacity(settings.MetadataCacheEntries)
 	if err := a.qualify(ctx); err != nil {
 		_ = a.Close()
 		return nil, err
@@ -155,7 +155,7 @@ func (a *Adapter) Close() error {
 }
 
 func (a *Adapter) qualify(ctx context.Context) error {
-	call := exchange{path: "/", limit: metadataLimit}
+	call := exchange{path: "/"}
 	status, raw, err := a.request(ctx, call)
 	var info struct {
 		Version struct {
@@ -174,45 +174,19 @@ func (a *Adapter) qualify(ctx context.Context) error {
 	default:
 		return errors.New("unsupported Search server product")
 	}
-	call.path = "/_cluster/settings?include_defaults=true&flat_settings=true"
-	status, raw, err = a.request(ctx, call)
-	var settings struct{ Defaults, Persistent, Transient map[string]json.RawMessage }
-	if err != nil || status != 200 || json.Unmarshal(raw, &settings) != nil {
-		return errors.New("cannot verify search automatic index creation policy")
-	}
-	auto := settings.Defaults["action.auto_create_index"]
-	if value, ok := settings.Persistent["action.auto_create_index"]; ok {
-		auto = value
-	}
-	if value, ok := settings.Transient["action.auto_create_index"]; ok {
-		auto = value
-	}
-	if string(auto) != `"false"` && string(auto) != "false" {
-		return errors.New("search requires action.auto_create_index=false; Weir never modifies settings")
-	}
 	return nil
 }
 
 func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capabilities, *pb.Failure) {
-	lookup, err := a.targets.Acquire(ctx, target)
-	if err != nil {
-		caps := capabilities{}
-		return caps, protocol.ContextFailure(ctx)
-	}
-	if lookup.Cached {
-		return lookup.Value, nil
-	}
-	caps, failure := a.inspectTarget(ctx, target, native)
-	a.targets.Complete(target, lookup, caps, failure == nil && ctx.Err() == nil)
+	caps := capabilities{}
 	if ctx.Err() != nil {
 		return caps, protocol.ContextFailure(ctx)
 	}
-	return caps, failure
-}
-func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool) (capabilities, *pb.Failure) {
-	caps := capabilities{}
-	call := exchange{path: "/" + url.PathEscape(target) + "?flat_settings=true", limit: metadataLimit, native: native}
+	call := exchange{path: "/" + url.PathEscape(target) + "?flat_settings=true", native: native}
 	status, raw, err := a.request(ctx, call)
+	if ctx.Err() != nil {
+		return caps, protocol.ContextFailure(ctx)
+	}
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed")
 	}
@@ -223,13 +197,20 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "backend capacity unavailable")
 	}
 	if status != 200 {
-		failure := a.nativeResponseFailure(status, raw)
+		failure := a.nativeResponseFailure(ctx, status, raw)
 		return caps, failure
 	}
 	type indexInfo struct {
 		DataStream string `json:"data_stream"`
-		Settings   map[string]string
-		Mappings   struct {
+		Aliases    map[string]struct {
+			Filter        json.RawMessage `json:"filter"`
+			Routing       string          `json:"routing"`
+			IndexRouting  string          `json:"index_routing"`
+			SearchRouting string          `json:"search_routing"`
+			IsWriteIndex  *bool           `json:"is_write_index"`
+		} `json:"aliases"`
+		Settings map[string]string
+		Mappings struct {
 			Source struct {
 				Enabled            *bool
 				Mode               string
@@ -242,15 +223,26 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 	if json.Unmarshal(raw, &indexes) != nil || len(indexes) != 1 {
 		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "index qualification invalid")
 	}
-	index, ok := indexes[target]
-	if !ok ||
+	var index indexInfo
+	for name, info := range indexes {
+		caps.index, index = name, info
+	}
+	caps.writable = true
+	if caps.index != target {
+		alias, ok := index.Aliases[target]
+		if !ok || len(alias.Filter) != 0 || alias.Routing != "" || alias.IndexRouting != "" || alias.SearchRouting != "" {
+			return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "single-index alias without filter or routing required")
+		}
+		caps.writable = alias.IsWriteIndex == nil || *alias.IsWriteIndex
+	}
+	shards, err := strconv.Atoi(index.Settings["index.number_of_shards"])
+	if !validIndex(caps.index) || shards < 1 || err != nil ||
 		index.DataStream != "" ||
 		index.Settings["index.uuid"] == "" ||
-		index.Settings["index.number_of_shards"] != "1" ||
 		index.Mappings.Routing.Required ||
 		index.Settings["index.routing_partition_size"] != "" && index.Settings["index.routing_partition_size"] != "1" ||
 		index.Settings["index.mode"] != "" && index.Settings["index.mode"] != "standard" {
-		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "single-primary concrete standard index with default routing required")
+		return caps, protocol.Fail(pb.FailureCode_UNSUPPORTED, "standard index with default routing required")
 	}
 	source := index.Mappings.Source
 	caps.source = (source.Enabled == nil || *source.Enabled) &&
@@ -265,11 +257,11 @@ func (a *Adapter) inspectTarget(ctx context.Context, target string, native bool)
 	return caps, nil
 }
 
-func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	op := record.Command()
 	segments := record.Segments()
 	if len(segments) != 2 || !validIndex(segments[0]) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "one concrete Search index and string ID required")
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "one Search index or single-index alias and string ID required")
 	}
 	key := segments[1]
 	if !strings.HasPrefix(key, "s:") || len(key) <= 2 || len(key[2:]) > 512 {
@@ -285,8 +277,8 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 	}
 	if read := op.GetRead(); read != nil {
 		native.action = "read"
-		// Reserve the exported Read document up to its configured source bound.
-		work.ResultBytes += protocol.MaxDocument
+		// Estimate publication from the batching window; larger replies grow it.
+		work.ResultBytes += a.options().Scan.Bytes
 	} else {
 		mutation := op.GetMutate()
 		native.waitUntilVisible = mutation.GetOptions().GetVisibility() == pb.MutationVisibility_QUERY_VISIBLE
@@ -310,12 +302,18 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				}
 				input := value.Value{Kind: value.Missing}
 				if program.Input != nil {
-					if validateJSON(program.Input.Data, a.options().Lua.Values.MaxNodes) != nil {
+					if validateJSON(ctx, program.Input.Data) != nil {
+						if ctx.Err() != nil {
+							return nil, protocol.ContextFailure(ctx)
+						}
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
 					}
 					var err error
-					input, err = value.DecodeJSON(program.Input.Data, a.options().Lua.Values)
+					input, err = value.DecodeJSON(ctx, program.Input.Data)
 					if err != nil {
+						if ctx.Err() != nil {
+							return nil, protocol.ContextFailure(ctx)
+						}
 						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
 					}
 				}
@@ -325,7 +323,7 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 				native.program = luaProgram
 			} else {
 				expression := action.AtomicTransform.GetBackendExpression()
-				if f := prepareExpression(expression); f != nil {
+				if f := prepareExpression(ctx, expression); f != nil {
 					return nil, f
 				}
 				native.action = "expression"
@@ -338,11 +336,17 @@ func (a *Adapter) prepareRecord(record *execution.Record) (*execution.Plan, *pb.
 			if document.ContentType != "application/json" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only JSON source is supported")
 			}
-			if !object(document.Data) || validateJSON(document.Data, len(document.Data)) != nil {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "JSON source validation/limits failed")
+			if !object(document.Data) || validateJSON(ctx, document.Data) != nil {
+				if ctx.Err() != nil {
+					return nil, protocol.ContextFailure(ctx)
+				}
+				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON source")
 			}
 			native.source = document.Data
 		}
+	}
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
 	}
 	return work, nil
 }
@@ -365,8 +369,6 @@ func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.
 		read = protocol.ReadFailure(failure)
 	case !*reply.Found:
 		read = protocol.Missing()
-	case len(reply.Source) > work.ResultBytes-execution.ResultOverheadBytes:
-		read = protocol.ReadFailure(protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "record exceeds result reservation"))
 	default:
 		document := &pb.Document{ContentType: "application/json", Data: reply.Source}
 		read = protocol.ReadDocument(document)

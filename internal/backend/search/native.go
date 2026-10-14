@@ -19,7 +19,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const NativeResponseLimit = 8 << 20
 const nativeBudget = 4 << 20
 
 type nativePlan struct {
@@ -44,22 +43,19 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	p := &execution.Plan{
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
-		ResultBytes:  protocol.NativeChunk + protocol.MaxNativeMetadataBytes + execution.ResultOverheadBytes,
+		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
 		WorkingBytes: nativeBudget,
 		Backend:      native,
 	}
 	return p, nil
 }
 
-// Inspect the bounded header span before net/http can allocate header entries.
+// Check header framing before net/http allocates header entries.
 // The body remains a borrowed slice of the admitted Native request.
 func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native HTTP framing")
-	if len(raw) > protocol.MaxNativeRequestBytes {
-		return nil, nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP request bound")
-	}
-	end := bytes.Index(raw[:min(len(raw), protocol.MaxNativeMetadataBytes)], []byte("\r\n\r\n"))
-	if end < 0 || end+4 > protocol.MaxNativeMetadataBytes {
+	end := bytes.Index(raw, []byte("\r\n\r\n"))
+	if end < 0 {
 		return nil, nil, invalid
 	}
 	head := raw[:end+4]
@@ -150,7 +146,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		request.Header[name] = append([]string(nil), values...)
 	}
 	request.ContentLength = int64(len(native.body))
-	// Closing the body terminates this bounded exchange on cancellation. net/http
+	// Closing the body terminates this exchange on cancellation. net/http
 	// has at most one writer/read loop for this one non-reused HTTP/1 connection.
 	if body != nil {
 		request.Body = &nativeHTTPBody{Reader: body}
@@ -164,10 +160,9 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	if response.StatusCode < 100 || response.StatusCode > 599 {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "invalid Native HTTP response status"))
 	}
-	if response.ContentLength > NativeResponseLimit ||
-		len(response.Trailer) != 0 ||
+	if len(response.Trailer) != 0 ||
 		response.StatusCode == http.StatusSwitchingProtocols {
-		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native HTTP response bounds"))
+		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Native HTTP response framing"))
 	}
 	var metadata bytes.Buffer
 	fmt.Fprintf(&metadata, "%s %s\r\n", response.Proto, response.Status)
@@ -178,9 +173,6 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	sort.Strings(names)
 	for _, name := range names {
 		for _, value := range response.Header.Values(name) {
-			if metadata.Len()+len(name)+len(value)+8 > protocol.MaxNativeMetadataBytes {
-				return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native metadata bound"))
-			}
 			fmt.Fprintf(&metadata, "%s: %s\r\n", name, value)
 		}
 	}
@@ -194,16 +186,11 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable"))
 	}
 	buffer := make([]byte, protocol.NativeChunk)
-	total := 0
 	for {
 		if ctx.Err() != nil {
 			return protocol.NativeFailure(true, protocol.ContextFailure(ctx))
 		}
 		n, err := response.Body.Read(buffer)
-		total += n
-		if total > NativeResponseLimit {
-			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Native response limit"))
-		}
 		if n > 0 {
 			value := &pb.Event_Chunk{Chunk: append([]byte(nil), buffer[:n]...)}
 			event := &pb.Event{Value: value}
@@ -226,7 +213,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 }
 
 // nativeHTTPBody joins finite in-memory reads when the HTTP transport
-// closes its upload. Its input already belongs to the bounded Native request.
+// closes its upload. Its input already belongs to the Native request.
 type nativeHTTPBody struct {
 	io.Reader
 	mu     sync.Mutex

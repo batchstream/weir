@@ -14,7 +14,6 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/value"
 )
 
 func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) {
@@ -161,8 +160,8 @@ func TestLuaBatchCallerCancellationAndDeadlineKeepPeers(t *testing.T) {
 }
 
 func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
-	const records = 130
-	source := `{"pad":"` + strings.Repeat("x", value.MaxBytes-len(`{"pad":""}`)) + `"}`
+	const records = 17
+	source := `{"pad":"` + strings.Repeat("x", (2<<20)-len(`{"pad":""}`)) + `"}`
 	var reads, writes, maxReadItems atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -215,8 +214,8 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 		works = append(works, work)
 	}
 	results := adapter.executeRecords(t.Context(), works)
-	if reads.Load() != 9 || maxReadItems.Load() != 15 || writes.Load() != 1 {
-		t.Fatal("large document pre-read escaped scratch bounds", reads.Load(), maxReadItems.Load(), writes.Load())
+	if reads.Load() < 2 || maxReadItems.Load() >= records || int(maxReadItems.Load())*len(source) > adapter.options().ExchangeBytes || writes.Load() != 1 {
+		t.Fatal("large document pre-read ignored its batch window or lost write batching", reads.Load(), maxReadItems.Load(), writes.Load())
 	}
 	for _, result := range results {
 		if result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED || result.GetMutationResult().GetFailure() != nil {

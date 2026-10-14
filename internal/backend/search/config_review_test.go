@@ -2,6 +2,7 @@ package search
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -19,7 +20,6 @@ func TestOrdinaryReadAcceptsLargeJSONArrays(t *testing.T) {
 	})
 	adapter := scanBatchAdapter(t, handler)
 	settings := backend.DefaultOptions()
-	settings.Lua.Values.MaxNodes = 32768
 	adapter.config.Options = &settings
 	document := &pb.Document{ContentType: "application/json", Data: []byte(source)}
 	mutationAction := &pb.MutateRequest_Put{Put: document}
@@ -38,8 +38,9 @@ func TestOrdinaryReadAcceptsLargeJSONArrays(t *testing.T) {
 	}
 }
 
-func TestBulkAcknowledgementUsesConfiguredExchangeCapacity(t *testing.T) {
+func TestBulkAcknowledgementExceedsExchangeWindowWithoutRejection(t *testing.T) {
 	settings := backend.DefaultOptions()
+	settings.ExchangeBytes = 4 << 20
 	config := Config{Store: "search", Options: &settings}
 	adapter := &Adapter{dialect: ElasticsearchProduct, config: config}
 	var output bytes.Buffer
@@ -62,11 +63,12 @@ func TestBulkAcknowledgementUsesConfiguredExchangeCapacity(t *testing.T) {
 		fmt.Fprintf(&output, `{"delete":{"_index":"records","_id":%s,"status":200,"result":"deleted","_version":1,"_seq_no":%d,"_primary_term":1,"_shards":{"total":1,"successful":1,"failed":0}}}`, encodedID, i)
 	}
 	output.WriteString(`]}`)
-	if output.Len() <= responseLimit || output.Len() > settings.ExchangeBytes {
+	if output.Len() <= (8<<20) || output.Len() <= settings.ExchangeBytes {
 		t.Fatal("bad fixture size", output.Len())
 	}
-	results := adapter.bulkResults(works, 200, output.Bytes(), nil)
+	replyInput68 := bulkResponse{works: works, status: 200, raw: output.Bytes(), err: nil}
+	results := adapter.bulkResults(context.Background(), replyInput68)
 	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatalf("valid %d-byte acknowledgement below configured %d cap returned %v", output.Len(), settings.ExchangeBytes, results[0].GetMutationResult())
+		t.Fatalf("valid %d-byte acknowledgement above %d-byte batch window returned %v", output.Len(), settings.ExchangeBytes, results[0].GetMutationResult())
 	}
 }

@@ -33,7 +33,6 @@ func performanceProgram(fields int) Program {
 
 func BenchmarkLuaPhases(b *testing.B) {
 	program := performanceProgram(1)
-	settings := DefaultLimits()
 	ctx := context.Background()
 	b.Run("ParseCompile", func(b *testing.B) {
 		b.ReportAllocs()
@@ -58,14 +57,14 @@ func BenchmarkLuaPhases(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			state := vm.New(vm.WithContext(ctx))
-			installEnvironment(state, program.ObservedAt, settings.Values)
+			installEnvironment(state, program.ObservedAt)
 			state.Close(ctx)
 		}
 	})
 	b.Run("ValidateProgram", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			if err := ValidateProgram(program); err != nil {
+			if err := ValidateProgram(ctx, program); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -73,7 +72,7 @@ func BenchmarkLuaPhases(b *testing.B) {
 	b.Run("BridgeRoundtrip", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			conversion := newBridge(settings.Values)
+			conversion := newBridge(ctx)
 			incoming, err := conversion.toLua(program.Current)
 			if err != nil {
 				b.Fatal(err)

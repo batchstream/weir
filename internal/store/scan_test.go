@@ -24,8 +24,8 @@ type scanTestAdapter struct {
 	cleanupFailure    *pb.Failure
 }
 
-func (a *scanTestAdapter) PrepareCommand(id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
-	work := &execution.Plan{ID: id, Command: call, Key: "scan", Bytes: 1024, ResultBytes: protocol.MaxDocument + 512, WorkingBytes: 24 << 20}
+func (a *scanTestAdapter) PrepareCommand(ctx context.Context, id uint64, call *pb.Command) (*execution.Plan, *pb.Failure) {
+	work := &execution.Plan{ID: id, Command: call, Key: "scan", Bytes: 1024, ResultBytes: (2 << 20) + 512, WorkingBytes: 24 << 20}
 	if a.documents > 1 {
 		work.ResultBytes = execution.ScanResultBytes
 	}
@@ -134,7 +134,7 @@ func TestScanPageCompletionAndCleanupFailureReleaseReservations(t *testing.T) {
 			defer runtime.Close(context.Background())
 			session := runtime.NewSession()
 			defer session.Close()
-			work, failure := runtime.PrepareCommand(1, scanCall())
+			work, failure := runtime.PrepareCommand(context.Background(), 1, scanCall())
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -199,7 +199,7 @@ func TestUnifiedStreamingBackpressureAndReservation(t *testing.T) {
 	defer runtime.Close(context.Background())
 	session := runtime.NewSession()
 	defer session.Close()
-	work, failure := runtime.PrepareCommand(1, scanCall())
+	work, failure := runtime.PrepareCommand(context.Background(), 1, scanCall())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -213,7 +213,7 @@ func TestUnifiedStreamingBackpressureAndReservation(t *testing.T) {
 		t.Fatalf("fetch progressed before application borrow release: %d", count)
 	}
 	snapshot := runtime.Snapshot()
-	if snapshot.Active != 0 || snapshot.Retained != 1 || snapshot.WorkingBytes != 0 || snapshot.ResultBytes != protocol.MaxDocument+512 {
+	if snapshot.Active != 0 || snapshot.Retained != 1 || snapshot.WorkingBytes != 0 || snapshot.ResultBytes != (2<<20)+512 {
 		t.Fatal("stream continuation lost reservation or execution permit", snapshot)
 	}
 	first.Release()
@@ -251,7 +251,7 @@ func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	defer runtime.Close(context.Background())
 	session := runtime.NewSession()
 	defer session.Close()
-	work, _ := runtime.PrepareCommand(1, scanCall())
+	work, _ := runtime.PrepareCommand(context.Background(), 1, scanCall())
 	_, failure, _ := runtime.Submit(context.Background(), work, session)
 	if failure != nil {
 		t.Fatal(failure)
@@ -291,7 +291,8 @@ func TestScanBatchPublicationBounds(t *testing.T) {
 		{name: "full batch", documents: 128, bytes: 32 << 10, accepted: 128},
 		{name: "document bound", documents: 129, accepted: 128, rejected: true},
 		{name: "byte bound", documents: 3, bytes: 2 << 20, accepted: 2, rejected: true},
-		{name: "reservation bound", documents: 2, bytes: 1024, reservation: execution.ResultOverheadBytes, rejected: true},
+		{name: "small estimate", documents: 2, bytes: 1024, reservation: execution.ResultOverheadBytes, accepted: 2},
+		{name: "large first document", documents: 1, bytes: 5 << 20, accepted: 1},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -304,7 +305,7 @@ func TestScanBatchPublicationBounds(t *testing.T) {
 			defer runtime.Close(context.Background())
 			session := runtime.NewSession()
 			defer session.Close()
-			work, failure := runtime.PrepareCommand(1, scanCall())
+			work, failure := runtime.PrepareCommand(context.Background(), 1, scanCall())
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -338,7 +339,7 @@ func TestScanBatchPublicationBounds(t *testing.T) {
 				}
 			}
 		finished:
-			if documents != test.accepted || retained > execution.ScanBatchBytes || end == nil || int(end.DocumentCount) != documents || adapter.rejected.Load() != test.rejected {
+			if documents != test.accepted || retained > execution.ScanBatchBytes && documents > 1 || end == nil || int(end.DocumentCount) != documents || adapter.rejected.Load() != test.rejected {
 				t.Fatal("Scan batch publication exceeded bounds", documents, retained, end, adapter.rejected.Load())
 			}
 			if test.rejected && end.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
@@ -363,7 +364,7 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 		}
 		session := runtime.NewSession()
 		ctx, cancel := context.WithCancel(context.Background())
-		work, _ := runtime.PrepareCommand(1, scanCall())
+		work, _ := runtime.PrepareCommand(context.Background(), 1, scanCall())
 		ticket, failure, _ := runtime.Submit(ctx, work, session)
 		if failure != nil {
 			t.Fatal(failure)
@@ -397,7 +398,7 @@ func TestUnifiedStreamCancellationAndShutdownJoin(t *testing.T) {
 	}
 }
 
-func (a *scanTestAdapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *scanTestAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	command := record.Command()
 	prepared := &execution.Plan{ID: record.Index(), Command: command, Key: record.Key(), BatchKey: "records", Bytes: 1024, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
 	return prepared, nil

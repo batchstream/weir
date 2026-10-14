@@ -41,12 +41,7 @@ func newConnectionOwner() *connectionOwner {
 }
 
 func (d *connectionOwner) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	conn, err := d.dialConnection(ctx, network, address)
-	if err != nil {
-		return nil, err
-	}
-	bounded := &boundedConn{Conn: conn}
-	return bounded, nil
+	return d.dialConnection(ctx, network, address)
 }
 
 // OCSP uses the same raw socket ownership without the Mongo wire guard.

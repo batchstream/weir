@@ -14,8 +14,6 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const maxConfigBytes = 128 << 10
-
 // DecodeBasic reads process settings without opening the routing document.
 func DecodeBasic(input io.Reader) (BasicConfig, error) {
 	cfg := DefaultConfig().Basic
@@ -88,12 +86,9 @@ func loadConfigYAML(filename string, target any, allowNull bool) error {
 }
 
 func decodeConfigYAML(input io.Reader, target any, allowNull bool) error {
-	raw, err := io.ReadAll(io.LimitReader(input, maxConfigBytes+1))
+	raw, err := io.ReadAll(input)
 	if err != nil {
 		return errors.New("configuration unavailable")
-	}
-	if len(raw) > maxConfigBytes {
-		return errors.New("configuration exceeds bound")
 	}
 
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
@@ -104,7 +99,7 @@ func decodeConfigYAML(input io.Reader, target any, allowNull bool) error {
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
 		return errors.New("configuration must be a mapping")
 	}
-	err = validateConfigYAML(document.Content[0], 0, allowNull, "")
+	err = validateConfigYAML(document.Content[0], allowNull, "")
 	if err != nil {
 		return err
 	}
@@ -124,79 +119,97 @@ func decodeConfigYAML(input io.Reader, target any, allowNull bool) error {
 	return nil
 }
 
-func validateConfigYAML(node *yaml.Node, depth int, allowNull bool, field string) error {
-	if depth > 12 {
-		return errors.New("configuration nesting limit")
-	}
-	if node.Anchor != "" || node.Kind == yaml.AliasNode {
-		return errors.New("configuration anchors and aliases are unsupported")
-	}
-	if node.Style&yaml.TaggedStyle != 0 {
-		return errors.New("configuration explicit tags are unsupported")
-	}
-	if node.Tag == "!!null" {
-		if allowNull {
-			switch field {
-			case "mongodb", "search", "authentication", "tls", "stores", "seeds", "advertise":
-				return nil
-			}
-		}
-		return errors.New("configuration field cannot be null")
-	}
+type configYAMLFrame struct {
+	node  *yaml.Node
+	field string
+	exit  bool
+}
 
-	switch node.Kind {
-	case yaml.MappingNode:
-		seen := make(map[string]bool)
-		for i := 0; i < len(node.Content); i += 2 {
-			key := node.Content[i]
-			if key.Kind != yaml.ScalarNode ||
-				key.Tag != "!!str" ||
-				key.Anchor != "" ||
-				key.Style&yaml.TaggedStyle != 0 ||
-				key.Value == "<<" {
-				return errors.New("configuration requires plain string fields without merge keys")
-			}
-			keyName := strings.Map(func(char rune) rune {
-				for {
-					next := unicode.SimpleFold(char)
-					if next <= char {
-						return next
-					}
-					char = next
+func validateConfigYAML(node *yaml.Node, allowNull bool, field string) error {
+	root := configYAMLFrame{node: node, field: field}
+	stack := []configYAMLFrame{root}
+	active := make(map[*yaml.Node]bool)
+	for len(stack) != 0 {
+		frame := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		node := frame.node
+		if frame.exit {
+			delete(active, node)
+			continue
+		}
+		if node == nil || active[node] {
+			return errors.New("invalid or cyclic configuration structure")
+		}
+		active[node] = true
+		exit := configYAMLFrame{node: node, exit: true}
+		stack = append(stack, exit)
+		if node.Anchor != "" || node.Kind == yaml.AliasNode {
+			return errors.New("configuration anchors and aliases are unsupported")
+		}
+		if node.Style&yaml.TaggedStyle != 0 {
+			return errors.New("configuration explicit tags are unsupported")
+		}
+		if node.Tag == "!!null" {
+			if allowNull {
+				switch frame.field {
+				case "mongodb", "search", "authentication", "tls", "stores", "seeds", "advertise":
+					continue
 				}
-			}, key.Value)
-			if seen[keyName] {
-				return errors.New("duplicate configuration field")
 			}
-			seen[keyName] = true
-			err := validateConfigYAML(node.Content[i+1], depth+1, allowNull, key.Value)
-			if err != nil {
-				return err
+			return errors.New("configuration field cannot be null")
+		}
+		switch node.Kind {
+		case yaml.MappingNode:
+			if len(node.Content)%2 != 0 {
+				return errors.New("invalid configuration structure")
 			}
-		}
-	case yaml.SequenceNode:
-		for _, child := range node.Content {
-			if child.Tag == "!!null" {
-				return errors.New("configuration sequence item cannot be null")
+			seen := make(map[string]bool)
+			for i := 0; i < len(node.Content); i += 2 {
+				key := node.Content[i]
+				if key == nil || key.Kind != yaml.ScalarNode || key.Tag != "!!str" || key.Anchor != "" || key.Style&yaml.TaggedStyle != 0 || key.Value == "<<" {
+					return errors.New("configuration requires plain string fields without merge keys")
+				}
+				keyName := strings.Map(func(char rune) rune {
+					for {
+						next := unicode.SimpleFold(char)
+						if next <= char {
+							return next
+						}
+						char = next
+					}
+				}, key.Value)
+				if seen[keyName] {
+					return errors.New("duplicate configuration field")
+				}
+				seen[keyName] = true
 			}
-			err := validateConfigYAML(child, depth+1, allowNull, field)
-			if err != nil {
-				return err
+			for i := len(node.Content) - 2; i >= 0; i -= 2 {
+				child := configYAMLFrame{node: node.Content[i+1], field: node.Content[i].Value}
+				stack = append(stack, child)
 			}
+		case yaml.SequenceNode:
+			for i := len(node.Content) - 1; i >= 0; i-- {
+				child := node.Content[i]
+				if child == nil || child.Tag == "!!null" {
+					return errors.New("configuration sequence item cannot be null")
+				}
+				item := configYAMLFrame{node: child, field: frame.field}
+				stack = append(stack, item)
+			}
+		case yaml.ScalarNode:
+			expectedTag := "!!str"
+			switch frame.field {
+			case "max_connecting", "max_operations", "max_pending_records", "max_batch_documents", "max_instructions", "max_call_depth", "max_stack_slots", "max_depth", "max_nodes", "metadata_cache_entries", "high_watermark", "low_watermark":
+				expectedTag = "!!int"
+			case "allow_intranet":
+				expectedTag = "!!bool"
+			}
+			if node.Tag != expectedTag {
+				return errors.New("invalid configuration scalar type")
+			}
+		default:
+			return errors.New("invalid configuration structure")
 		}
-	case yaml.ScalarNode:
-		expectedTag := "!!str"
-		switch field {
-		case "max_connecting", "max_operations", "max_pending_records", "max_batch_documents", "max_instructions", "max_call_depth", "max_stack_slots", "max_depth", "max_nodes", "metadata_cache_entries", "high_watermark", "low_watermark":
-			expectedTag = "!!int"
-		case "allow_intranet":
-			expectedTag = "!!bool"
-		}
-		if node.Tag != expectedTag {
-			return errors.New("invalid configuration scalar type")
-		}
-	default:
-		return errors.New("invalid configuration structure")
 	}
 	return nil
 }

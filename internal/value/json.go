@@ -2,6 +2,7 @@ package value
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,94 +21,114 @@ func IsJSONNumber(v Value) bool {
 	return first == '-' || first >= '0' && first <= '9'
 }
 
-func DecodeJSON(raw []byte, limits Limits) (Value, error) {
-	var zero Value
-	if len(raw) == 0 || len(raw) > limits.MaxBytes {
-		return zero, fmt.Errorf("JSON size limit")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	used := budget{limits: limits}
-	result, err := decodeJSONValue(decoder, 0, &used)
-	if err != nil {
-		return zero, err
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return zero, fmt.Errorf("trailing JSON data")
-	}
-	if result.Kind != Object {
-		return zero, fmt.Errorf("JSON document must be an object")
-	}
-	return result, nil
+type jsonDecodeFrame struct {
+	node *Value
+	seen map[string]bool
 }
 
-func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, error) {
+func DecodeJSON(ctx context.Context, raw []byte) (Value, error) {
 	var zero Value
-	if depth > used.limits.MaxDepth {
-		return zero, fmt.Errorf("JSON depth limit")
+	if ctx == nil {
+		return zero, fmt.Errorf("JSON decoding context is required")
 	}
-	used.nodes++
-	if used.nodes > used.limits.MaxNodes {
-		return zero, fmt.Errorf("JSON node limit")
+	if err := ctx.Err(); err != nil {
+		return zero, err
 	}
+	reader := jsonReader{ctx: ctx, reader: bytes.NewReader(raw)}
+	decoder := json.NewDecoder(reader)
+	decoder.UseNumber()
 	token, err := decoder.Token()
 	if err != nil {
 		return zero, err
 	}
+	result, err := jsonTokenValue(token)
+	if err != nil || result.Kind != Object {
+		return zero, fmt.Errorf("JSON document must be an object")
+	}
+	first := jsonDecodeFrame{node: &result, seen: make(map[string]bool)}
+	stack := []jsonDecodeFrame{first}
+	for len(stack) != 0 {
+		if err := ctx.Err(); err != nil {
+			return zero, err
+		}
+		frame := &stack[len(stack)-1]
+		if !decoder.More() {
+			close, err := decoder.Token()
+			if err != nil {
+				return zero, err
+			}
+			if frame.node.Kind == Object && close != json.Delim('}') || frame.node.Kind == Array && close != json.Delim(']') {
+				return zero, fmt.Errorf("invalid JSON container terminator")
+			}
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		name := ""
+		if frame.node.Kind == Object {
+			key, err := decoder.Token()
+			if err != nil {
+				return zero, err
+			}
+			var ok bool
+			name, ok = key.(string)
+			if !ok || frame.seen[name] {
+				return zero, fmt.Errorf("invalid or duplicate JSON object key")
+			}
+			frame.seen[name] = true
+		}
+		token, err := decoder.Token()
+		if err != nil {
+			return zero, err
+		}
+		child, err := jsonTokenValue(token)
+		if err != nil {
+			return zero, err
+		}
+		var destination *Value
+		if frame.node.Kind == Object {
+			field := Field{Name: name, Value: child}
+			frame.node.Fields = append(frame.node.Fields, field)
+			destination = &frame.node.Fields[len(frame.node.Fields)-1].Value
+		} else {
+			frame.node.Items = append(frame.node.Items, child)
+			destination = &frame.node.Items[len(frame.node.Items)-1]
+		}
+		if child.Kind == Object || child.Kind == Array {
+			frame := jsonDecodeFrame{node: destination}
+			if child.Kind == Object {
+				frame.seen = make(map[string]bool)
+			}
+			stack = append(stack, frame)
+		}
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return zero, fmt.Errorf("trailing JSON data")
+	}
+	return result, nil
+}
+
+type jsonReader struct {
+	ctx    context.Context
+	reader *bytes.Reader
+}
+
+func (r jsonReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(data)
+}
+
+func jsonTokenValue(token any) (Value, error) {
+	var zero Value
 	switch item := token.(type) {
 	case json.Delim:
 		switch item {
 		case '{':
 			result := Value{Kind: Object}
-			seen := make(map[string]struct{})
-			for decoder.More() {
-				keyToken, err := decoder.Token()
-				if err != nil {
-					return zero, err
-				}
-				key, ok := keyToken.(string)
-				if !ok {
-					return zero, fmt.Errorf("invalid JSON object key")
-				}
-				if _, exists := seen[key]; exists {
-					return zero, fmt.Errorf("duplicate JSON object key")
-				}
-				seen[key] = struct{}{}
-				used.bytes += len(key)
-				if used.bytes > used.limits.MaxBytes {
-					return zero, fmt.Errorf("JSON size limit")
-				}
-				child, err := decodeJSONValue(decoder, depth+1, used)
-				if err != nil {
-					return zero, err
-				}
-				field := Field{Name: key, Value: child}
-				result.Fields = append(result.Fields, field)
-			}
-			close, err := decoder.Token()
-			if err != nil {
-				return zero, err
-			}
-			if close != json.Delim('}') {
-				return zero, fmt.Errorf("invalid JSON object terminator")
-			}
 			return result, nil
 		case '[':
 			result := Value{Kind: Array}
-			for decoder.More() {
-				child, err := decodeJSONValue(decoder, depth+1, used)
-				if err != nil {
-					return zero, err
-				}
-				result.Items = append(result.Items, child)
-			}
-			close, err := decoder.Token()
-			if err != nil {
-				return zero, err
-			}
-			if close != json.Delim(']') {
-				return zero, fmt.Errorf("invalid JSON array terminator")
-			}
 			return result, nil
 		default:
 			return zero, fmt.Errorf("invalid JSON delimiter")
@@ -119,10 +140,6 @@ func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, err
 		decoded := Value{Kind: Bool, Boolean: item}
 		return decoded, nil
 	case string:
-		used.bytes += len(item)
-		if used.bytes > used.limits.MaxBytes {
-			return zero, fmt.Errorf("JSON size limit")
-		}
 		decoded := Value{Kind: String, Text: item}
 		return decoded, nil
 	case json.Number:
@@ -137,10 +154,6 @@ func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, err
 				return Integer(kind, integer)
 			}
 		}
-		used.bytes += len(text)
-		if used.bytes > used.limits.MaxBytes {
-			return zero, fmt.Errorf("JSON size limit")
-		}
 		decoded := Value{Kind: Extended, Type: JSONNumberType, Data: []byte(text)}
 		return decoded, nil
 	default:
@@ -148,74 +161,102 @@ func decodeJSONValue(decoder *json.Decoder, depth int, used *budget) (Value, err
 	}
 }
 
-func EncodeJSON(v Value, limits Limits) ([]byte, error) {
+func EncodeJSON(ctx context.Context, v Value) ([]byte, error) {
 	if v.Kind != Object {
 		return nil, fmt.Errorf("JSON document must be an object")
 	}
-	if err := Validate(v, limits); err != nil {
+	if err := Validate(ctx, v); err != nil {
 		return nil, err
 	}
 	var output bytes.Buffer
-	if err := appendJSON(&output, v); err != nil {
+	if err := appendJSON(ctx, &output, v); err != nil {
 		return nil, err
-	}
-	if output.Len() > limits.MaxBytes {
-		return nil, fmt.Errorf("JSON size limit")
 	}
 	return output.Bytes(), nil
 }
 
-func appendJSON(output *bytes.Buffer, v Value) error {
-	switch v.Kind {
-	case Null:
-		output.WriteString("null")
-	case Bool:
-		output.WriteString(strconv.FormatBool(v.Boolean))
-	case Int32, Int64:
-		output.WriteString(strconv.FormatInt(v.Integer, 10))
-	case Float64:
-		output.WriteString(strconv.FormatFloat(v.Float, 'g', -1, 64))
-	case String:
-		quoted, err := json.Marshal(v.Text)
-		if err != nil {
+type jsonEncodeFrame struct {
+	node  *Value
+	index int
+	open  bool
+}
+
+func appendJSON(ctx context.Context, output *bytes.Buffer, v Value) error {
+	first := jsonEncodeFrame{node: &v}
+	stack := []jsonEncodeFrame{first}
+	for len(stack) != 0 {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		output.Write(quoted)
-	case Extended:
-		if !IsJSONNumber(v) {
-			return fmt.Errorf("extended value is not a JSON number")
-		}
-		output.Write(v.Data)
-	case Array:
-		output.WriteByte('[')
-		for i, item := range v.Items {
-			if i > 0 {
+		frame := &stack[len(stack)-1]
+		v := frame.node
+		if v.Kind == Object || v.Kind == Array {
+			if !frame.open {
+				if v.Kind == Object {
+					output.WriteByte('{')
+				} else {
+					output.WriteByte('[')
+				}
+				frame.open = true
+			}
+			length := len(v.Fields)
+			if v.Kind == Array {
+				length = len(v.Items)
+			}
+			if frame.index == length {
+				if v.Kind == Object {
+					output.WriteByte('}')
+				} else {
+					output.WriteByte(']')
+				}
+				stack = stack[:len(stack)-1]
+				continue
+			}
+			if frame.index != 0 {
 				output.WriteByte(',')
 			}
-			if err := appendJSON(output, item); err != nil {
-				return err
+			var child *Value
+			if v.Kind == Object {
+				field := &v.Fields[frame.index]
+				quoted, err := json.Marshal(field.Name)
+				if err != nil {
+					return err
+				}
+				output.Write(quoted)
+				output.WriteByte(':')
+				child = &field.Value
+			} else {
+				child = &v.Items[frame.index]
 			}
+			frame.index++
+			next := jsonEncodeFrame{node: child}
+			stack = append(stack, next)
+			continue
 		}
-		output.WriteByte(']')
-	case Object:
-		output.WriteByte('{')
-		for i, field := range v.Fields {
-			if i > 0 {
-				output.WriteByte(',')
-			}
-			quoted, err := json.Marshal(field.Name)
+		switch v.Kind {
+		case Null:
+			output.WriteString("null")
+		case Bool:
+			output.WriteString(strconv.FormatBool(v.Boolean))
+		case Int32, Int64:
+			output.WriteString(strconv.FormatInt(v.Integer, 10))
+		case Float64:
+			output.WriteString(strconv.FormatFloat(v.Float, 'g', -1, 64))
+		case String:
+			quoted, err := json.Marshal(v.Text)
 			if err != nil {
 				return err
 			}
 			output.Write(quoted)
-			output.WriteByte(':')
-			if err := appendJSON(output, field.Value); err != nil {
-				return err
+		case Extended:
+			if !IsJSONNumber(*v) {
+				return fmt.Errorf("extended value is not a JSON number")
 			}
+			output.Write(v.Data)
+		default:
+			return fmt.Errorf("value kind is not representable in JSON")
 		}
-		output.WriteByte('}')
-	default:
-		return fmt.Errorf("value kind is not representable in JSON")
+		stack = stack[:len(stack)-1]
 	}
 	return nil
 }

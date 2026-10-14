@@ -45,7 +45,8 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				command := &pb.Command{Operation: variant}
 				work := &execution.Plan{Command: command, Backend: native}
 				raw := []byte(fmt.Sprintf(`{"errors":false,"took":1,"items":[{%q:{"_index":"records","_id":"item","status":%d,"_version":1,"_seq_no":0,"_primary_term":1,"result":%q,"_shards":{"total":%d,"successful":%d,"failed":%d}}}]}`, operation, status, action, total, successful, failed))
-				results := adapter.bulkResults([]*execution.Plan{work}, 200, raw, nil)
+				replyInput48 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: nil}
+				results := adapter.bulkResults(context.Background(), replyInput48)
 				result := results[0].GetMutationResult()
 				if evidence == "zero" {
 					if result.Outcome != pb.MutationOutcome_UNKNOWN || result.Failure == nil {
@@ -54,7 +55,8 @@ func TestSearchLuaBulkRequiresPositivePrimaryEvidence(t *testing.T) {
 				} else if result.Outcome != pb.MutationOutcome_APPLIED || (result.Failure != nil) != (evidence == "replica_failure") {
 					t.Fatal("confirmed application evidence lost", result)
 				}
-				lost := adapter.bulkResults([]*execution.Plan{work}, 200, raw, errTimeout)
+				replyInput58 := bulkResponse{works: []*execution.Plan{work}, status: 200, raw: raw, err: errTimeout}
+				lost := adapter.bulkResults(context.Background(), replyInput58)
 				if lost[0].GetMutationResult().Outcome != pb.MutationOutcome_UNKNOWN {
 					t.Fatal("transport failure trusted body", lost[0])
 				}
@@ -116,7 +118,7 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				work, failure := adapter.PrepareRecord(record)
+				work, failure := adapter.PrepareRecord(context.Background(), record)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -125,7 +127,7 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 					t.Fatal("decoded index/read mismatch", observations[0].failure)
 				}
 				request := &pb.ScanRequest{Resource: resource}
-				scan, failure := adapter.prepareScan(request)
+				scan, failure := adapter.prepareScan(context.Background(), request)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -171,7 +173,7 @@ func TestSearchScanProjectionPublishesSourceAndBindsCheckpoint(t *testing.T) {
 			filter := &pb.Document{ContentType: "application/json", Data: []byte(`{"match_all":{}}`)}
 			projection := &pb.Projection{Mode: mode, Fields: []string{"private"}}
 			request := &pb.ScanRequest{Resource: "records", Filter: filter, Projection: projection, PageSize: 1}
-			work, failure := adapter.prepareScan(request)
+			work, failure := adapter.prepareScan(context.Background(), request)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -183,7 +185,7 @@ func TestSearchScanProjectionPublishesSourceAndBindsCheckpoint(t *testing.T) {
 			}
 			request.ContinuationToken = page.NextContinuationToken
 			projection.Fields = []string{"changed"}
-			if _, failure := adapter.prepareScan(request); failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
+			if _, failure := adapter.prepareScan(context.Background(), request); failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
 				t.Fatal("projection changed without invalidating token", failure)
 			}
 		})
@@ -214,7 +216,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			work, failure := adapter.PrepareRecord(record)
+			work, failure := adapter.PrepareRecord(context.Background(), record)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -222,7 +224,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			if observations[0].failure.GetCode() != item.code {
 				t.Fatal("warm read classification", observations[0].failure)
 			}
-			_, failure = adapter.inspectTarget(context.Background(), "records", false)
+			_, failure = adapter.inspect(context.Background(), "records", false)
 			if failure.GetCode() != item.code {
 				t.Fatal("initial classification differed", failure)
 			}

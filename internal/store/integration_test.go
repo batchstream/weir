@@ -72,7 +72,7 @@ func readPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := f.runtime.PrepareRecord(record)
+	work, failure := f.runtime.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -101,7 +101,7 @@ func createPlan(t *testing.T, f fixture, key string) *execution.Plan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, failure := f.runtime.PrepareRecord(record)
+	work, failure := f.runtime.PrepareRecord(context.Background(), record)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -118,7 +118,7 @@ func submitNativeMutations(t *testing.T, ctx context.Context, f fixture, request
 		if err != nil {
 			t.Fatal(err)
 		}
-		work, failure := f.runtime.PrepareRecord(record)
+		work, failure := f.runtime.PrepareRecord(context.Background(), record)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -441,7 +441,7 @@ func TestNativeCallerCancellationReleasesExecution(t *testing.T) {
 			native := &pb.NativeRequest{Resource: f.db, Request: body}
 			variant := &pb.Command_Native{Native: native}
 			call := &pb.Command{Operation: variant}
-			work, failure := f.runtime.PrepareCommand(1, call)
+			work, failure := f.runtime.PrepareCommand(context.Background(), 1, call)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -495,7 +495,7 @@ func TestLuaCallerDeadlineKeepsCommitUncertainty(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			work, failure := f.runtime.PrepareRecord(record)
+			work, failure := f.runtime.PrepareRecord(context.Background(), record)
 			if failure != nil {
 				t.Fatal(failure)
 			}

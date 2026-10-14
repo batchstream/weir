@@ -15,11 +15,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const scanPageBudget = 24 << 20
 const scanWorkingBytes = 64 << 20
 const pitKeepAlive = "60s"
-
-const maxPITBytes = 16 << 10
 
 type scanPlan struct {
 	execution.ScanProgress
@@ -38,22 +35,26 @@ type scanPlan struct {
 
 type scanCheckpoint struct {
 	PIT   string `json:"pit"`
+	Index string `json:"index"`
 	After int64  `json:"after"`
 }
 
 // The profile fixes the PIT checkpoint and dialect-specific ordering semantics.
 // Native batch capacity is learned within each page, never part of a token.
 func (a *Adapter) scanProfile() string {
-	return "search:" + a.dialect + ":v1"
+	return "search:" + a.dialect + ":v2"
 }
 
-func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) prepareScan(ctx context.Context, req *pb.ScanRequest) (*execution.Plan, *pb.Failure) {
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
+	}
 	if f := protocol.ValidateScan(req); f != nil {
 		return nil, f
 	}
 	parts, _ := protocol.ParseRelativeResource(req.Resource)
 	if len(parts) != 1 || !validIndex(parts[0]) {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan requires one concrete Search index")
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Scan requires one Search index or single-index alias")
 	}
 	native := &scanPlan{
 		index:       parts[0],
@@ -67,8 +68,11 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		if d.ContentType != "application/json" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Scan filter requires JSON")
 		}
-		if !object(d.Data) || validateJSON(d.Data, len(d.Data)) != nil {
-			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive JSON filter")
+		if !object(d.Data) || validateJSON(ctx, d.Data) != nil {
+			if ctx.Err() != nil {
+				return nil, protocol.ContextFailure(ctx)
+			}
+			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON filter")
 		}
 		native.query = d.Data
 	}
@@ -81,10 +85,11 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		var checkpoint scanCheckpoint
 		decodeErr := json.Unmarshal(raw, &checkpoint)
 		canonical, _ := json.Marshal(checkpoint)
-		if decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || len(checkpoint.PIT) > maxPITBytes || checkpoint.After < 0 {
+		if decodeErr != nil || !bytes.Equal(raw, canonical) || checkpoint.PIT == "" || !validIndex(checkpoint.Index) || checkpoint.After < 0 {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or mismatched Search Scan continuation")
 		}
 		native.pit = checkpoint.PIT
+		native.index = checkpoint.Index
 		native.after = checkpoint.After
 		native.hasAfter = true
 		native.opened = true
@@ -96,6 +101,9 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		ResultBytes:  a.options().Scan.ResultBytes(),
 		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
+	}
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
 	}
 	return p, nil
 }
@@ -117,11 +125,10 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 			page.Failure = protocol.Fail(pb.FailureCode_UNSUPPORTED, "Scan requires stored full source")
 			return page
 		}
+		n.index = caps.index
 		call := exchange{
-			path:  "/" + url.PathEscape(n.index) + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
-			body:  []byte("{}"),
-			limit: metadataLimit,
-		}
+			path: "/" + url.PathEscape(n.index) + "/_pit?keep_alive=" + pitKeepAlive + "&allow_partial_search_results=false",
+			body: []byte("{}")}
 		if a.dialect == OpenSearchProduct {
 			call.path = "/" + url.PathEscape(n.index) + "/_search/point_in_time?keep_alive=" + pitKeepAlive + "&allow_partial_pit_creation=false"
 		}
@@ -147,17 +154,13 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		return page
 	}
 	remaining := n.pageSize - n.Count
-	n.items = min(n.batchSize, a.options().Scan.Documents, int(remaining))
-	sort := "_shard_doc"
-	if a.dialect == OpenSearchProduct {
-		sort = "_doc"
-	} // Unique in the qualified single-shard PIT reader.
+	n.items = int(min(uint64(n.batchSize), uint64(a.options().Scan.Documents), remaining))
 	pit := map[string]any{"id": n.pit, "keep_alive": pitKeepAlive}
 	body := map[string]any{
 		"pit":              pit,
 		"query":            n.query,
 		"size":             n.items,
-		"sort":             []string{sort},
+		"sort":             []string{"_shard_doc"},
 		"track_total_hits": false,
 		"_source":          true,
 	}
@@ -172,42 +175,25 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 	if n.hasAfter {
 		body["search_after"] = []int64{n.after}
 	}
-	var raw []byte
-	for {
-		body["size"] = n.items
-		encoded, _ := json.Marshal(body)
-		call := exchange{
-			path:  "/_search?allow_partial_search_results=false",
-			body:  encoded,
-			limit: a.options().ExchangeBytes,
-		}
-		status, reply, err := a.request(ctx, call)
-		// The read-only search has not advanced its checkpoint. Retry an excessive
-		// response at a smaller size within the same absolute fetch deadline.
-		if err == errResponseLimit && n.items > 1 && ctx.Err() == nil {
-			n.items = max(1, n.items/2)
-			n.batchSize = n.items
-			continue
-		}
-		f := a.scanExchangeFailure(ctx, status, reply, err)
-		if f != nil {
-			page.Failure = f
-			return page
-		}
-		raw = reply
-		break
+	encoded, _ := json.Marshal(body)
+	call := exchange{path: "/_search?allow_partial_search_results=false", body: encoded}
+	status, raw, err := a.request(ctx, call)
+	failure := a.scanExchangeFailure(ctx, status, raw, err)
+	if failure != nil {
+		page.Failure = failure
+		return page
 	}
-	page = a.scanReply(raw, n)
+	page = a.scanReply(ctx, raw, n)
 	if page.Failure != nil {
 		return page
 	}
 	if !page.Exhausted && n.Count+uint64(len(page.Documents)) >= n.pageSize {
-		checkpoint := scanCheckpoint{PIT: n.pit, After: n.after}
+		checkpoint := scanCheckpoint{PIT: n.pit, Index: n.index, After: n.after}
 		state, _ := json.Marshal(checkpoint)
 		token, err := protocol.EncodeScanToken(a.scanProfile(), n.fingerprint, state)
 		if err != nil {
 			page.Documents = nil
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")
+			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "Scan continuation encoding failed")
 			return page
 		}
 		page.Complete = true
@@ -222,9 +208,6 @@ func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, raw []byt
 	if err == errTimeout {
 		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "Scan backend call timed out")
 	}
-	if err == errResponseLimit {
-		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan native response exceeds byte bound")
-	}
 	if err == errTransport || status == 429 || status == 503 {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "Scan backend unavailable")
 	}
@@ -232,7 +215,7 @@ func (a *Adapter) scanExchangeFailure(ctx context.Context, status int, raw []byt
 		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid, truncated or excessive Scan response")
 	}
 	if status != 200 {
-		return a.nativeResponseFailure(status, raw)
+		return a.nativeResponseFailure(ctx, status, raw)
 	}
 	return nil
 }
@@ -247,7 +230,7 @@ func (a *Adapter) openPITReply(raw []byte, n *scanPlan) *pb.Failure {
 		key = "pit_id"
 	}
 	var id string
-	if json.Unmarshal(fields[key], &id) != nil || len(id) == 0 || len(id) > maxPITBytes {
+	if json.Unmarshal(fields[key], &id) != nil || len(id) == 0 {
 		return protocol.Fail(pb.FailureCode_INTERNAL, "missing or excessive PIT ID")
 	}
 	n.pit = id // Keep latest known state for cleanup even on a failed envelope.
@@ -278,7 +261,7 @@ func scanShards(raw []byte) *pb.Failure {
 	}
 	// Native successful includes normally skipped shards; do not add skipped a
 	// second time, or misclassify a healthy match_none query as partial results.
-	if *shards.Total != 1 || *shards.Successful != 1 || *shards.Failed != 0 || *shards.Skipped < 0 || *shards.Skipped > *shards.Successful {
+	if *shards.Total < 1 || *shards.Successful != *shards.Total || *shards.Failed != 0 || *shards.Skipped < 0 || *shards.Skipped > *shards.Successful {
 		return protocol.Fail(pb.FailureCode_INTERNAL, "inconsistent shard participation")
 	}
 	if shards.Failures != nil && string(shards.Failures) != "[]" {
@@ -287,15 +270,19 @@ func scanShards(raw []byte) *pb.Failure {
 	return nil
 }
 
-func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
+func (a *Adapter) scanReply(ctx context.Context, raw []byte, n *scanPlan) *execution.ScanPage {
 	page := &execution.ScanPage{Failure: protocol.Fail(pb.FailureCode_INTERNAL, "incomplete or malformed search envelope")}
+	if ctx.Err() != nil {
+		page.Failure = protocol.ContextFailure(ctx)
+		return page
+	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
 		return page
 	}
 	if idRaw, exists := fields["pit_id"]; exists {
 		var id string
-		if json.Unmarshal(idRaw, &id) != nil || id == "" || len(id) > maxPITBytes {
+		if json.Unmarshal(idRaw, &id) != nil || id == "" {
 			return page
 		}
 		n.pit = id
@@ -342,7 +329,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 		return page
 	}
 	if len(rows) > n.items {
-		page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "search page exceeds item bound")
+		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "search returned more hits than requested")
 		return page
 	}
 	docs := make([]*pb.Document, 0, len(rows))
@@ -352,8 +339,8 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 	acceptedBytes := 0
 	retaining := true
 	for _, row := range rows {
-		if len(row) > protocol.MaxDocument+(16<<10) {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native hit exceeds bounded source and metadata")
+		if ctx.Err() != nil {
+			page.Failure = protocol.ContextFailure(ctx)
 			return page
 		}
 		var hit struct {
@@ -366,17 +353,15 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 		if json.Unmarshal(row, &hit) != nil {
 			return page
 		}
-		if len(hit.Source) > protocol.MaxDocument {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "stored Scan document exceeds output bound")
-			return page
-		}
 		if hit.Index != n.index ||
 			hit.ID == "" ||
-			len(hit.ID) > 512 ||
 			!object(hit.Source) ||
-			validateJSON(hit.Source, len(hit.Source)) != nil ||
+			validateJSON(ctx, hit.Source) != nil ||
 			!scanScore(hit.Score) ||
 			len(hit.Sort) != 1 {
+			if ctx.Err() != nil {
+				page.Failure = protocol.ContextFailure(ctx)
+			}
 			return page
 		}
 		position, err := strconv.ParseInt(string(hit.Sort[0]), 10, 64)
@@ -384,7 +369,7 @@ func (a *Adapter) scanReply(raw []byte, n *scanPlan) *execution.ScanPage {
 			return page
 		}
 		last, hasLast = position, true
-		if retaining && acceptedBytes+len(hit.Source) <= a.options().Scan.Bytes {
+		if retaining && (len(docs) == 0 || acceptedBytes+len(hit.Source) <= a.options().Scan.Bytes) {
 			doc := &pb.Document{ContentType: "application/json", Data: hit.Source}
 			docs = append(docs, doc)
 			acceptedBytes += len(hit.Source)
@@ -450,7 +435,7 @@ func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 		endpoint = "/_search/point_in_time"
 	}
 	raw, _ := json.Marshal(body)
-	call := exchange{path: endpoint, body: raw, limit: metadataLimit, method: http.MethodDelete}
+	call := exchange{path: endpoint, body: raw, method: http.MethodDelete}
 	status, raw, err := a.request(ctx, call)
 	if err != nil || status != 200 {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote PIT cleanup unconfirmed")
@@ -470,7 +455,7 @@ func (a *Adapter) closeScan(ctx context.Context, p *execution.Plan) *pb.Failure 
 			Succeeded bool
 			Freed     *int `json:"num_freed"`
 		}
-		if json.Unmarshal(raw, &reply) == nil && reply.Succeeded && reply.Freed != nil && *reply.Freed >= 0 && *reply.Freed <= 1 {
+		if json.Unmarshal(raw, &reply) == nil && reply.Succeeded && reply.Freed != nil && *reply.Freed >= 0 {
 			return nil
 		}
 	}

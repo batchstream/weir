@@ -97,20 +97,13 @@ type ScanConfig struct {
 }
 
 type LuaConfig struct {
-	VM     LuaVMConfig    `json:"vm" yaml:"vm"`
-	Values LuaValueConfig `json:"values" yaml:"values"`
+	VM LuaVMConfig `json:"vm" yaml:"vm"`
 }
 
 type LuaVMConfig struct {
 	MaxInstructions int64 `json:"max_instructions" yaml:"max_instructions"`
 	MaxCallDepth    int   `json:"max_call_depth" yaml:"max_call_depth"`
 	MaxStackSlots   int   `json:"max_stack_slots" yaml:"max_stack_slots"`
-}
-
-type LuaValueConfig struct {
-	MaxBytes *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
-	MaxDepth int       `json:"max_depth" yaml:"max_depth"`
-	MaxNodes int       `json:"max_nodes" yaml:"max_nodes"`
 }
 
 type OverloadConfig struct {
@@ -183,10 +176,7 @@ func DefaultConfig() Config {
 	keepalive := KeepaliveConfig{Interval: Duration(defaults.KeepaliveInterval), Timeout: Duration(defaults.KeepaliveTimeout)}
 	transport := TransportConfig{Timeouts: timeouts, Keepalive: keepalive, MaxPendingRecords: defaults.MaxPendingRecords}
 	memory := MemoryPressureConfig{HighWatermark: 80, LowWatermark: 70, SampleInterval: Duration(100 * time.Millisecond)}
-	luaDefaults := luaengine.DefaultLimits()
-	valueBytes := ByteSize(luaDefaults.Values.MaxBytes)
-	values := LuaValueConfig{MaxBytes: &valueBytes, MaxDepth: luaDefaults.Values.MaxDepth, MaxNodes: luaDefaults.Values.MaxNodes}
-	lua := LuaConfig{Values: values}
+	lua := LuaConfig{}
 	basic := BasicConfig{Lua: lua, Lifecycle: LifecycleConfig{StartupTimeout: Duration(5 * time.Second), ShutdownTimeout: Duration(5 * time.Second)}, Transport: transport, Diagnostics: DiagnosticsConfig{Timeout: Duration(diagnosticTimeout)}, Overload: OverloadConfig{Memory: memory}}
 	cfg := Config{Basic: basic}
 	return cfg
@@ -286,9 +276,6 @@ func (cfg DiscoveryConfig) validateSource() error {
 	if cfg.PeerAddressEnv == "" {
 		return nil
 	}
-	if len(cfg.PeerAddressEnv) > 128 {
-		return errors.New("invalid peer address environment source")
-	}
 	for i, c := range cfg.PeerAddressEnv {
 		if !(c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || i > 0 && c >= '0' && c <= '9') {
 			return errors.New("invalid peer address environment source")
@@ -304,9 +291,6 @@ func (cfg Config) validateDiscovery() error {
 	}
 	if discovery.Group != "" && !directory.ValidReplicaGroup(discovery.Group) {
 		return errors.New("invalid discovery group")
-	}
-	if len(discovery.Advertise) > 16 || len(discovery.Seeds) > 16 {
-		return errors.New("discovery address bound exceeded")
 	}
 	for _, addresses := range [][]string{discovery.Advertise, discovery.Seeds} {
 		if len(addresses) != 0 {
@@ -382,9 +366,6 @@ func (cfg RoutingConfig) Validate() error {
 }
 
 func (cfg RoutingConfig) validateStores() error {
-	if len(cfg.Stores) > 16 {
-		return errors.New("invalid local Store bounds")
-	}
 	names := make(map[string]bool)
 	for _, definition := range cfg.Stores {
 		if !protocol.ValidStoreName(definition.Name) || names[definition.Name] || definition.Local == nil {
@@ -441,15 +422,7 @@ func (cfg LuaConfig) limits() luaengine.Limits {
 	limits.MaxInstructions = cfg.VM.MaxInstructions
 	limits.MaxCallDepth = cfg.VM.MaxCallDepth
 	limits.MaxStackSlots = cfg.VM.MaxStackSlots
-	if cfg.Values.MaxBytes != nil {
-		limits.Values.MaxBytes = boundedSize(*cfg.Values.MaxBytes)
-	}
-	if cfg.Values.MaxDepth != 0 {
-		limits.Values.MaxDepth = cfg.Values.MaxDepth
-	}
-	if cfg.Values.MaxNodes != 0 {
-		limits.Values.MaxNodes = cfg.Values.MaxNodes
-	}
+
 	return limits
 }
 

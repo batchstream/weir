@@ -1,57 +1,62 @@
 package value
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
 	"unicode/utf8"
 )
 
-const (
-	MaxDepth = 32
-	MaxNodes = 4096
-	MaxBytes = 2 << 20
-)
-
-type Limits struct {
-	MaxDepth, MaxNodes, MaxBytes int
+type validationFrame struct {
+	node    *Value
+	index   int
+	entered bool
 }
 
-func DefaultLimits() Limits {
-	limits := Limits{MaxDepth: MaxDepth, MaxNodes: MaxNodes, MaxBytes: MaxBytes}
-	return limits
-}
-
-func (limits Limits) Validate() error {
-	if limits.MaxDepth < 1 || limits.MaxNodes < 1 || limits.MaxBytes < 1 {
-		return fmt.Errorf("invalid value limits")
+// Validate walks the value without Go recursion or data-size admission limits.
+// Track the active path rather than all visited nodes so shared trees stay valid.
+func Validate(ctx context.Context, v Value) error {
+	if ctx == nil {
+		return fmt.Errorf("value validation context is required")
+	}
+	first := validationFrame{node: &v}
+	stack := []validationFrame{first}
+	active := make(map[*Value]bool)
+	for len(stack) != 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		frame := &stack[len(stack)-1]
+		if !frame.entered {
+			if active[frame.node] {
+				return fmt.Errorf("cyclic value")
+			}
+			if err := validateNode(ctx, *frame.node); err != nil {
+				return err
+			}
+			active[frame.node] = true
+			frame.entered = true
+		}
+		if frame.index == len(frame.node.Fields)+len(frame.node.Items) {
+			delete(active, frame.node)
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		var node *Value
+		if frame.node.Kind == Object {
+			node = &frame.node.Fields[frame.index].Value
+		} else {
+			node = &frame.node.Items[frame.index]
+		}
+		frame.index++
+		child := validationFrame{node: node}
+		stack = append(stack, child)
 	}
 	return nil
 }
 
-type budget struct {
-	nodes  int
-	bytes  int
-	limits Limits
-}
-
-func Validate(v Value, limits Limits) error {
-	used := budget{limits: limits}
-	return validate(v, 0, &used)
-}
-
-func validate(v Value, depth int, used *budget) error {
-	if depth > used.limits.MaxDepth {
-		return fmt.Errorf("value depth limit")
-	}
-	used.nodes++
-	if used.nodes > used.limits.MaxNodes {
-		return fmt.Errorf("value node limit")
-	}
-	used.bytes += len(v.Text) + len(v.Data) + len(v.Type)
-	if used.bytes > used.limits.MaxBytes {
-		return fmt.Errorf("value byte limit")
-	}
+func validateNode(ctx context.Context, v Value) error {
 	if !utf8.ValidString(v.Text) || !utf8.ValidString(v.Type) {
 		return fmt.Errorf("invalid UTF-8")
 	}
@@ -88,23 +93,15 @@ func validate(v Value, depth int, used *budget) error {
 		if v.Integer != 0 || v.Float != 0 || v.Boolean || v.Text != "" || len(v.Data) != 0 || len(v.Fields) != 0 || v.Type != "" {
 			return fmt.Errorf("noncanonical array")
 		}
-		if len(v.Items) > used.limits.MaxNodes-used.nodes {
-			return fmt.Errorf("value node limit")
-		}
-		for _, item := range v.Items {
-			if err := validate(item, depth+1, used); err != nil {
-				return err
-			}
-		}
 	case Object:
 		if v.Integer != 0 || v.Float != 0 || v.Boolean || v.Text != "" || len(v.Data) != 0 || len(v.Items) != 0 || v.Type != "" {
 			return fmt.Errorf("noncanonical object")
 		}
-		if len(v.Fields) > used.limits.MaxNodes-used.nodes {
-			return fmt.Errorf("value node limit")
-		}
 		seen := make(map[string]struct{}, len(v.Fields))
 		for _, field := range v.Fields {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if !utf8.ValidString(field.Name) || strings.IndexByte(field.Name, 0) >= 0 {
 				return fmt.Errorf("invalid field name")
 			}
@@ -112,13 +109,6 @@ func validate(v Value, depth int, used *budget) error {
 				return fmt.Errorf("duplicate field")
 			}
 			seen[field.Name] = struct{}{}
-			used.bytes += len(field.Name)
-			if used.bytes > used.limits.MaxBytes {
-				return fmt.Errorf("value byte limit")
-			}
-			if err := validate(field.Value, depth+1, used); err != nil {
-				return err
-			}
 		}
 	case Extended:
 		if v.Type == "" || v.Integer != 0 || v.Float != 0 || v.Boolean || v.Text != "" || len(v.Fields) != 0 || len(v.Items) != 0 {

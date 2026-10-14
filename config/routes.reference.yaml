@@ -9,38 +9,40 @@
 # DNS, listener or CA access. serve qualifies backends and reads CA files.
 # Changes require a restart. Example credentials and CA paths must be replaced.
 #
-# Syntax: one YAML mapping, exact lowercase keys, at most 128KiB/12 nested levels.
+# Syntax: one YAML mapping, exact lowercase keys.
 # Unknown/duplicate keys, multiple documents, anchors/aliases/merge keys and
 # explicit tags are rejected. Strings are literal, without expansion. Sizes and
 # durations are strings. Omit optional scalars for defaults; null is not omission.
 # Optional adapter/authentication/tls blocks may be null; Store entries may not.
 # Lua and Execute flow-control settings belong in the process document.
 #
-# Default: no Stores. At most 16 unique Stores; each requires exactly one adapter.
+# Default: no Stores. Store names are unique; each requires exactly one adapter.
 # Request URIs choose database/collection/index; peer discovery learns remote Stores.
 # Hosting Stores requires listeners.application in the process document.
 stores:
-  - # Unique name: 1..63 lowercase letters/digits/internal hyphens.
+  - # Unique name: lowercase letters/digits/internal hyphens, nonempty.
     name: mongo
 
     backend:
       # TCP/DNS/TLS connection establishment only. Default: 2s; positive duration.
       # Business IO and server selection follow the caller's context.
       connect_timeout: 2s
-      # Completed target qualification entries. Default: 64; integer >= 0.
+      # MongoDB completed target qualification entries. Default: 64; integer >= 0.
       # 0 disables caching; pending checks do not occupy this capacity.
+      # Search qualifies targets afresh for each operation.
       metadata_cache_entries: 64
-      # Encoded record command/exchange chunk target. Default: 32MiB; >= 4MiB.
+      # Encoded record command/exchange chunk target. Default: 32MiB; positive size.
       # Larger scheduled batches split instead of failing. MongoDB also observes
       # its advertised BSON command boundary (normally 16MiB). Its response pages
       # use a document-count hint only below that native boundary; MongoDB's own
       # response paging remains authoritative. This is not a Lua workspace budget.
       # Search record request/response groups use this target directly.
-      # Scan has its own fetch/publication budgets; Native keeps protocol bounds.
+      # One larger item proceeds alone. Scan has separate publication windows.
+      # Native uses the backend's own command/message boundaries.
       max_exchange_bytes: 32MiB
 
       mongodb:
-        # Standard mongodb://, one explicit IP/DNS host:port, at most 4096 bytes.
+        # Standard mongodb://, one explicit IP/DNS host:port.
         # No credentials, database path, SRV/multi-host or topology options.
         # Accepted URI options: directConnection=true, serverMonitoringMode=poll,
         # authSource, authMechanism=SCRAM-SHA-256 and tls=true.
@@ -59,23 +61,23 @@ stores:
       # Optional, shared layout for MongoDB SCRAM and Search HTTP Basic auth.
       # Omit for no authentication. Credentials require both paired sources.
       # authentication:
-      #   # Valid UTF-8, 1..128 bytes, no controls; Search also forbids colons.
+      #   # Nonempty valid UTF-8, no controls; Search also forbids colons.
       #   # Default: "". Mutually exclusive with username_file.
       #   username: ""
-      #   # Valid UTF-8, 1..256 bytes, no controls; spaces/punctuation preserved.
+      #   # Nonempty valid UTF-8, no controls; spaces/punctuation preserved.
       #   # Default: "". Mutually exclusive with password_file.
       #   password: ""
-      #   # Path at most 2048 UTF-8 bytes, nonblank, no control characters.
+      #   # UTF-8 path, nonblank, no control characters.
       #   # Relative paths resolve from this routes document's directory. Symlinks
       #   # may target regular files. Load/check reads once and removes one final
-      #   # LF/CRLF only. Content follows the corresponding credential byte bound.
+      #   # LF/CRLF only. Content follows the corresponding credential text rules.
       #   # Default: "". Example: secrets/mongo-username.
       #   username_file: ""
       #   # Same rules as username_file. Example: secrets/mongo-password.
       #   password_file: ""
       # Optional custom CA; omit for system trust roots. Requires native TLS.
       # tls:
-      #   # PEM bundle, regular file <=256KiB, UTF-8 path <=2048 bytes/no controls.
+      #   # PEM bundle, regular file, UTF-8 path without controls.
       #   # Replaces system roots; hostname verification remains enabled.
       #   # Relative paths use process cwd; prefer absolute paths.
       #   # Read only during serve/startup. No insecure-verification switch.
@@ -88,7 +90,7 @@ stores:
       # Waiting operations. Default: 1024; 0 selects 1024; positive integer.
       max_operations: 1024
       # Waiting input plus scheduler metadata. Default: 32MiB; positive size.
-      # Must fit the platform integer and at least one entry's metadata.
+      # Must fit the platform integer. A larger input occupies an empty queue alone.
       max_bytes: 32MiB
 
     # Aggregate compatible waiting work without collecting it for a timed delay.
@@ -96,15 +98,15 @@ stores:
       # Operations per scheduled batch. Default: 32; 0 selects 32; positive integer.
       max_operations: 32
       # Input plus scheduler metadata per batch. Default: 8MiB; positive size.
-      # One input must fit; Scan/Native use singleton plans. Does not cap RPCs.
+      # A larger input executes alone; Scan/Native use singleton plans.
       max_bytes: 8MiB
 
     # Retained fetch/publication batch size; total Scan output is not limited.
     scan:
-      # Default: 128; integer 1..256, or 0 selects 128.
+      # Default: 128; positive integer, or 0 selects 128.
       max_batch_documents: 128
-      # Default: 4MiB; >=2MiB, fits platform integer plus result framing.
-      # Smaller native pages are learned automatically.
+      # Default: 4MiB; positive size, fits platform integer plus result framing.
+      # A larger document is retained alone. Smaller pages are learned automatically.
       max_batch_bytes: 4MiB
 
   - name: search
@@ -114,7 +116,7 @@ stores:
       metadata_cache_entries: 64
       max_exchange_bytes: 32MiB
       search:
-        # One http:// or https:// IP/DNS origin and explicit port; <=1024 bytes.
+        # One http:// or https:// IP/DNS origin and explicit port.
         # No userinfo, path/trailing slash, query or fragment. Requests choose index.
         # Authentication or custom CA requires HTTPS. Omit auth/tls for system roots.
         url: https://127.0.0.1:9200

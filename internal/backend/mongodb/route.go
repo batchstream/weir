@@ -9,7 +9,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) PrepareCommand(ctx context.Context, id uint64, input *pb.Command) (*execution.Plan, *pb.Failure) {
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
+	}
 	if id == 0 {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid command index")
 	}
@@ -22,11 +25,10 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	case input.GetScan() != nil:
 		work, failure = a.prepareScan(input.GetScan())
 	case input.GetNative() != nil:
-		native := input.GetNative()
-		if len(native.GetRequest().GetData()) > NativeCommandLimit {
-			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "native input exceeds adapter bound")
-		}
-		work, failure = a.prepareNative(native)
+		work, failure = a.prepareNative(input.GetNative())
+	}
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
 	}
 	if failure != nil {
 		return nil, failure
@@ -41,18 +43,24 @@ func (a *Adapter) PrepareCommand(id uint64, input *pb.Command) (*execution.Plan,
 	return work, nil
 }
 
-func (a *Adapter) PrepareRecord(record *execution.Record) (*execution.Plan, *pb.Failure) {
+func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
+	}
 	if record == nil || record.Command() == nil || record.StoreName() != a.config.Store {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or wrong-Store record")
 	}
-	work, failure := a.prepareRecord(record)
+	work, failure := a.prepareRecord(ctx, record)
+	if ctx.Err() != nil {
+		return nil, protocol.ContextFailure(ctx)
+	}
 	if failure != nil {
 		return nil, failure
 	}
 	work.ID = record.Index()
 	operation := record.Command()
 	if operation.GetRead() != nil {
-		work.WorkingBytes = 2*scanNativeLimit + 4*protocol.MaxDocument
+		work.WorkingBytes = 6 * a.documentBytes()
 	} else {
 		work.WorkingBytes = 24 << 20
 	}

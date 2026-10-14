@@ -13,7 +13,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
-	"github.com/batchstream/weir/internal/directory"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/store"
 	"golang.org/x/net/http2"
@@ -188,7 +187,7 @@ func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {
 		}
 		if snapshot := local.Snapshot(); snapshot.ResultBytes > 0 {
 			bounded = true
-			if snapshot.Retained > RecordStreamItems || snapshot.ResultBytes > RecordStreamItems*(protocol.MaxDocument+execution.ResultOverheadBytes) || snapshot.Publishers != 0 {
+			if snapshot.Retained > RecordStreamItems || snapshot.ResultBytes > RecordStreamItems*((2<<20)+execution.ResultOverheadBytes) || snapshot.Publishers != 0 {
 				t.Fatal("slow reader accumulated result windows", snapshot)
 			}
 		}
@@ -259,9 +258,9 @@ func TestExecuteDecodeRejectsRepeatedEnvelopesBeforeAllocation(t *testing.T) {
 	}
 }
 
-func TestControlDecodeBudgetRejectsBeforeObjectConstruction(t *testing.T) {
+func TestControlDecodeBeyondFormerSizeAndCountLimits(t *testing.T) {
 	codec := &responseCodec{}
-	for _, count := range []int{directory.MaxAnnouncements, directory.MaxAnnouncements + 1} {
+	for _, count := range []int{512, 1025} {
 		announcements := make([]*peerpb.NodeAnnouncement, count)
 		node := &peerpb.NodeAnnouncement{}
 		for i := range announcements {
@@ -275,21 +274,19 @@ func TestControlDecodeBudgetRejectsBeforeObjectConstruction(t *testing.T) {
 		input := mem.BufferSlice{mem.SliceBuffer(raw)}
 		decoded := &peerpb.SyncDirectoryRequest{}
 		err = codec.Unmarshal(input, decoded)
-		if count == directory.MaxAnnouncements && (err != nil || len(decoded.Announcements) != count) {
+		if err != nil || len(decoded.Announcements) != count {
 			t.Fatal("legitimate watermark capacity rejected", err)
 		}
-		if count > directory.MaxAnnouncements && (err == nil || len(decoded.Announcements) != 0) {
-			t.Fatal("over-budget peer decode allocated nodes", err, len(decoded.Announcements))
-		}
+
 	}
-	request := &pb.ResolveStoreRequest{StoreName: string(bytes.Repeat([]byte("x"), directory.MaxSyncBytes))}
+	request := &pb.ResolveStoreRequest{StoreName: string(bytes.Repeat([]byte("x"), (3 << 20)))}
 	raw, err := proto.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	input := mem.BufferSlice{mem.SliceBuffer(raw)}
 	decoded := &pb.ResolveStoreRequest{}
-	if err := codec.Unmarshal(input, decoded); err == nil || decoded.StoreName != "" {
-		t.Fatal("over-budget discovery scalar decoded", err)
+	if err := codec.Unmarshal(input, decoded); err != nil || decoded.StoreName != request.StoreName {
+		t.Fatal("large discovery scalar rejected", err)
 	}
 }

@@ -1,4 +1,4 @@
-// Package value is the bounded, ordered transform value model. It has no codec or VM dependency.
+// Package value is the ordered transform value model. It has no codec or VM dependency.
 package value
 
 import (

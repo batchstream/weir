@@ -42,7 +42,7 @@ func TestValidatorsLeaveTransportOwnershipAndDataIntact(t *testing.T) {
 			input := mem.BufferSlice{buffer}
 			var err error
 			if item.repeated {
-				err = ValidateRepeatedMessages(input, 2, 2)
+				err = ValidateRepeatedMessages(input, 2)
 			} else {
 				err = ValidateExecuteFrame(input)
 			}
@@ -85,8 +85,8 @@ func FuzzFrameValidatorsAcrossFragments(f *testing.F) {
 		if flatExecute.Code() != fragmentExecute.Code() || flatExecute.Message() != fragmentExecute.Message() {
 			t.Fatal("execution framing depends on transport fragments", flatExecute, fragmentExecute)
 		}
-		flatRepeated := status.Convert(ValidateRepeatedMessages(flat, 2, 2))
-		fragmentRepeated := status.Convert(ValidateRepeatedMessages(fragments, 2, 2))
+		flatRepeated := status.Convert(ValidateRepeatedMessages(flat, 2))
+		fragmentRepeated := status.Convert(ValidateRepeatedMessages(fragments, 2))
 		if flatRepeated.Code() != fragmentRepeated.Code() || flatRepeated.Message() != fragmentRepeated.Message() {
 			t.Fatal("repeated-message framing depends on transport fragments", flatRepeated, fragmentRepeated)
 		}

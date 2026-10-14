@@ -14,15 +14,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// The connection guard caps wire bytes and metadata expansion before the driver
-// allocates/decodes its copy. RunCommand.Raw retains the driver buffer without
-// cursor batch decoding. Reserve both wire buffers plus bounded metadata/framing;
-// this is separate from the one output-frame credit, not a claim about RSS.
+// The driver enforces its advertised native message size before allocating.
+// Working-byte estimates are separate from output-frame ownership.
 const scanPageBudget = 24 << 20
-const scanNativeLimit = (16 << 20) + (64 << 10)
 
-// A Scan holds two bounded native wire buffers, the copied output prefix and
-// metadata/framing while validating the entire response.
+// A Scan retains the driver reply and a copied output prefix while validating.
 const scanWorkingBytes = 48 << 20
 
 // This profile fixes the checkpoint shape and ascending native BSON _id order.
@@ -57,8 +53,8 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 		if d.ContentType != "application/bson" {
 			return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Scan filter requires BSON")
 		}
-		nodes := len(d.Data)
-		if !validScanBSON(d.Data, 0, &nodes) {
+
+		if !validScanBSON(d.Data, 0) {
 			return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid or excessive BSON filter")
 		}
 		native.filter = bson.RawValue{Type: bson.TypeEmbeddedDocument, Value: d.Data}
@@ -106,7 +102,7 @@ func (a *Adapter) prepareScan(req *pb.ScanRequest) (*execution.Plan, *pb.Failure
 	p := &execution.Plan{
 		Key:          req.Resource,
 		Bytes:        proto.Size(req) + execution.EntryOverheadBytes + 4096,
-		ResultBytes:  a.options().Scan.ResultBytes(),
+		ResultBytes:  max(a.options().Scan.ResultBytes(), a.documentBytes()+execution.ResultOverheadBytes),
 		WorkingBytes: scanWorkingBytes,
 		Backend:      native,
 	}
@@ -192,7 +188,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		state, err := bson.Marshal(identity)
 		if err != nil || !validScanID(state) {
 			page.Documents = nil
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan _id is invalid or exceeds continuation bound")
+			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "invalid Scan _id")
 			return page
 		}
 		n.last = state
@@ -221,7 +217,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		token, err := protocol.EncodeScanToken(scanProfile, n.fingerprint, n.last)
 		if err != nil {
 			page.Documents = nil
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "Scan continuation exceeds bound")
+			page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "cannot encode Scan continuation")
 			return page
 		}
 		page.Complete = true
@@ -231,11 +227,8 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 }
 
 func validScanID(raw []byte) bool {
-	if len(raw) > protocol.MaxScanState {
-		return false
-	}
-	nodes := len(raw)
-	if !validScanBSON(raw, 0, &nodes) {
+
+	if !validScanBSON(raw, 0) {
 		return false
 	}
 	fields, err := scanFields(raw)
@@ -269,16 +262,12 @@ func scanOK(value bson.RawValue) bool {
 
 // Validation walks bounded raw bytes; it never builds a native document tree or
 // converts BSON types. MongoDB's native maximum nesting depth is 100.
-func validScanBSON(raw []byte, depth int, nodes *int) bool {
+func validScanBSON(raw []byte, depth int) bool {
 	if depth > 100 || !scanFraming(raw) {
 		return false
 	}
 	rest := raw[4 : len(raw)-1]
 	for len(rest) > 0 {
-		*nodes--
-		if *nodes < 0 {
-			return false
-		}
 		element, tail, ok := bsoncore.ReadElement(rest)
 		if !ok {
 			return false
@@ -290,12 +279,12 @@ func validScanBSON(raw []byte, depth int, nodes *int) bool {
 		}
 		switch value.Type {
 		case bsoncore.TypeEmbeddedDocument, bsoncore.TypeArray:
-			if !validScanBSON(value.Data, depth+1, nodes) {
+			if !validScanBSON(value.Data, depth+1) {
 				return false
 			}
 		case bsoncore.TypeCodeWithScope:
 			_, scope, ok := value.CodeWithScopeOK()
-			if !ok || !validScanBSON(scope, depth+1, nodes) {
+			if !ok || !validScanBSON(scope, depth+1) {
 				return false
 			}
 		default:

@@ -18,12 +18,18 @@ case "$product" in
   image=docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237
   ;;
  opensearch)
+  name=weir-local-opensearch-3.3
+  port=19202
+  version=3.3.0
+  image=opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146
+  ;;
+ opensearch-2.19)
   name=weir-local-opensearch
   port=19201
   version=2.19.6
   image=opensearchproject/opensearch@sha256:89a402aa9132286200b8d12aa37fd5b14daa65851193d009355900c0d1d9d59c
   ;;
- *) echo 'product must be elasticsearch or opensearch' >&2; exit 1;;
+ *) echo 'product must be elasticsearch, opensearch or opensearch-2.19' >&2; exit 1;;
 esac
 if docker container inspect "$name" >/dev/null 2>&1; then
  test "$(docker inspect -f '{{index .Config.Labels "weir.owner"}}' "$name")" = weir-search-local
@@ -53,7 +59,7 @@ case "$action" in
   # Overload tests use small native queues; positive batch smoke uses normal capacity.
   for attempt in $(seq 1 90); do
    if curl -fsS --max-time 2 "http://127.0.0.1:$port/" > /dev/null 2>&1; then
-    curl -fsS --max-time 2 "http://127.0.0.1:$port/" | python3 -c 'import json,sys; x=json.load(sys.stdin); v=x["version"]; assert x["cluster_name"]==sys.argv[1] and v["number"]==sys.argv[2]; assert (v.get("distribution")=="opensearch") if sys.argv[3]=="opensearch" else (v.get("distribution", "")=="" and v.get("build_flavor")=="default"); print(json.dumps(x,sort_keys=True))' "$name" "$version" "$product"
+    curl -fsS --max-time 2 "http://127.0.0.1:$port/" | python3 -c 'import json,sys; x=json.load(sys.stdin); v=x["version"]; assert x["cluster_name"]==sys.argv[1] and v["number"]==sys.argv[2]; assert (v.get("distribution")=="opensearch") if sys.argv[3].startswith("opensearch") else (v.get("distribution", "")=="" and v.get("build_flavor")=="default"); print(json.dumps(x,sort_keys=True))' "$name" "$version" "$product"
     exit 0
    fi
    sleep 1

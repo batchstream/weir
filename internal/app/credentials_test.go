@@ -164,8 +164,8 @@ func TestLoadCredentialSources(t *testing.T) {
 	}
 }
 
-func TestCredentialFileTextBoundaries(t *testing.T) {
-	for _, limit := range []int{maxUsernameBytes, maxPasswordBytes} {
+func TestCredentialFileTextPreservesValues(t *testing.T) {
+	for _, limit := range []int{128, 4096} {
 		cases := []struct {
 			name  string
 			input string
@@ -193,9 +193,9 @@ func TestCredentialFileTextBoundaries(t *testing.T) {
 			{"del", "val\x7fue", ""},
 			{"unicode-control", "val\u0085ue", ""},
 			{"invalid-utf8", "val\xffue", ""},
-			{"over-bound", strings.Repeat("a", limit+1), ""},
-			{"over-utf8-bound", strings.Repeat("é", limit/2) + "a\r\n", ""},
-			{"large-file", strings.Repeat("a", 1<<20), ""},
+			{"long-ascii", strings.Repeat("a", limit+1), strings.Repeat("a", limit+1)},
+			{"long-utf8", strings.Repeat("é", limit/2) + "a\r\n", strings.Repeat("é", limit/2) + "a"},
+			{"large-file", strings.Repeat("a", 1<<20), strings.Repeat("a", 1<<20)},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name+"/"+strconv.Itoa(limit), func(t *testing.T) {
@@ -203,7 +203,7 @@ func TestCredentialFileTextBoundaries(t *testing.T) {
 				if err := os.WriteFile(filename, []byte(tc.input), 0600); err != nil {
 					t.Fatal(err)
 				}
-				value, err := resolveCredentialValue("", filename, "", limit)
+				value, err := resolveCredentialValue("", filename, "")
 				if tc.want == "" {
 					if err == nil || err.Error() != "invalid credential file content" {
 						t.Fatal("invalid text must be rejected without exposing its value or path", err)
@@ -213,6 +213,38 @@ func TestCredentialFileTextBoundaries(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLoadLargeCredentialsFromTemporaryFiles(t *testing.T) {
+	cfg := credentialTestConfig(t, "search")
+	directory := t.TempDir()
+	for range 2 {
+		directory = filepath.Join(directory, strings.Repeat("d", 210))
+	}
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	username := strings.Repeat("u", 8192)
+	password := strings.Repeat("p", 1<<20)
+	fields := cfg.Routing.Stores[0].Local.credentials()
+	fields.Username, fields.Password = "", ""
+	fields.UsernameFile = filepath.Join(directory, "username.txt")
+	fields.PasswordFile = filepath.Join(directory, "password.txt")
+	if err := os.WriteFile(fields.UsernameFile, []byte(username+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fields.PasswordFile, []byte(password+"\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	basicFile, routingFile := writeCredentialTestDocuments(t, cfg)
+	loaded, err := Load(basicFile, routingFile)
+	if err != nil {
+		t.Fatal("large generated credentials retained an artificial path/text threshold", err)
+	}
+	resolved := loaded.Routing.Stores[0].Local.credentials()
+	if resolved.Username != username || resolved.Password != password || resolved.UsernameFile != "" || resolved.PasswordFile != "" {
+		t.Fatal("large credential values were changed or file sources not cleared")
 	}
 }
 
@@ -234,7 +266,7 @@ func TestCredentialFilesUnavailable(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			_, err := resolveCredentialValue("", filename, "", maxUsernameBytes)
+			_, err := resolveCredentialValue("", filename, "")
 			if err == nil || err.Error() != "credential file unavailable" {
 				t.Fatal("unavailable and non-regular files must fail without leaking paths", err)
 			}
@@ -255,15 +287,12 @@ func TestCredentialSourceValidation(t *testing.T) {
 		{"missing-username", "", "password", "", ""},
 		{"missing-password", "user", "", "", ""},
 		{"missing-password-source", "", "", "user.txt", ""},
-		{"username-over-bound", strings.Repeat("a", 129), "password", "", ""},
-		{"password-over-bound", "user", strings.Repeat("a", 257), "", ""},
 		{"username-control", "user\n", "password", "", ""},
 		{"password-control", "user", "password\x00", "", ""},
 		{"invalid-utf8", "user\xff", "password", "", ""},
 		{"blank-path", "", "password", " \t ", ""},
 		{"path-control", "", "password", "user\n.txt", ""},
 		{"path-utf8", "", "password", "user\xff.txt", ""},
-		{"path-over-bound", "", "password", strings.Repeat("a", 2049), ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -285,8 +314,8 @@ func TestCredentialSourceValidation(t *testing.T) {
 		{"user", "", "", "password.txt"},
 		{"", "password", "user.txt", ""},
 		{"", "", "user.txt", "password.txt"},
-		{strings.Repeat("a", 128), strings.Repeat("a", 256), "", ""},
-		{"", "password", strings.Repeat("a", 2048), ""},
+		{strings.Repeat("a", 8192), strings.Repeat("a", 16384), "", ""},
+		{"", "password", strings.Repeat("a", 8192), ""},
 	} {
 		credentials := Credentials{
 			Username:     values[0],
@@ -317,7 +346,7 @@ func TestLoadValidatesAllCredentialSourcesBeforeIO(t *testing.T) {
 }
 
 func TestLoadValidatesGraphBeforeCredentialIO(t *testing.T) {
-	for _, mode := range []string{"unknown-service", "local-alias", "overflow"} {
+	for _, mode := range []string{"unknown-service", "local-alias", "large-membership"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := credentialTestConfig(t, "search")
 			fields := cfg.Routing.Stores[0].Local.credentials()
@@ -329,11 +358,13 @@ func TestLoadValidatesGraphBeforeCredentialIO(t *testing.T) {
 			case "local-alias":
 
 				cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
-			case "overflow":
-				for len(cfg.Routing.Stores) <= 16 {
-					cfg.Routing.Stores = append(cfg.Routing.Stores, cfg.Routing.Stores[0])
+			case "large-membership":
+				for len(cfg.Routing.Stores) < 32 {
+					service := cfg.Routing.Stores[0]
+					service.Name = "store-" + strconv.Itoa(len(cfg.Routing.Stores))
+					cfg.Routing.Stores = append(cfg.Routing.Stores, service)
 				}
-				want = "invalid local Store bounds"
+				want = "credential file unavailable"
 			}
 			basicFilename, routingFilename := writeCredentialTestDocuments(t, cfg)
 			if _, err := Load(basicFilename, routingFilename); err == nil || err.Error() != want {

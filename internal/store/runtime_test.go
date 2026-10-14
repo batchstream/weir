@@ -17,7 +17,7 @@ func plan(index uint64, key string, read bool) *execution.Plan {
 	if read {
 		request := &pb.ReadRequest{Resource: key}
 		command.Operation = &pb.Command_Read{Read: request}
-		bytes += protocol.MaxDocument
+		bytes += (2 << 20)
 	} else {
 		empty := &pb.Empty{}
 		action := &pb.MutateRequest_Delete{Delete: empty}

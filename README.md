@@ -92,8 +92,8 @@ The [process reference](config/weir.reference.yaml) and [Store reference](config
 document each field's purpose, defaults, bounds and related settings. They are
 templates to copy and edit, and are also included under `config/` in release archives.
 Reference files are not automatically loaded. Both files use strict single-document YAML:
-unknown/duplicate fields, anchors, aliases, explicit tags and documents over
-128 KiB are rejected. `weir check` validates configuration without connecting to
+unknown/duplicate fields, anchors, aliases and explicit tags are rejected.
+`weir check` validates configuration without connecting to
 peers or backends. Configuration changes take effect after a restart.
 
 Store defaults are 32 operations and 8MiB of input per batch. There is no
@@ -103,20 +103,21 @@ Lua transforms also combine compatible queued requests: MongoDB batches reads an
 writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.
 Adapters issue their native read and write
-commands for each group. `batching.max_bytes` bounds the retained input per batch.
+commands for each group. `batching.max_bytes` sets the aggregation window;
+one larger input executes alone.
 `queue.max_operations` (default 1024) and `queue.max_bytes` (default
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
-backpressure until capacity is available or the caller cancels. Active execution,
-backend pools, RPCs and connections have no Weir concurrency cap. Ordinary Read
-uses the protocol's 2MiB document bound.
+backpressure until capacity is available or the caller cancels. A larger input
+can occupy an empty queue alone. Active execution, backend pools, RPCs and
+connections have no Weir concurrency cap. Backend protocols determine document sizes.
 
 Store settings are grouped by responsibility: `backend` holds connection establishment
-and completed target caching, native exchange chunk sizes, and the shared
+and MongoDB target caching, native exchange chunk sizes, and the shared
 `authentication`/`tls` layout. MongoDB connection workers are under
 `backend.mongodb.pool`. Store `queue`, `batching` and `scan` hold waiting
 work, request aggregation and Scan publication batches. Process `transport` owns
 Execute flow control and independent keepalive/progress settings; process `lua`
-sets VM and conversion policy for every Store. Business work
+sets VM execution policy for every Store. Business work
 has no default instruction budget or server-selection deadline; native exchanges
 split large batches rather than rejecting their combined input.
 
@@ -146,13 +147,12 @@ never replayed automatically.
 MongoDB and Search authentication can use explicit `username`/`password` fields
 or `username_file`/`password_file`; each credential has exactly one source. Search
 credentials belong under `backend.authentication`. Files resolve relative to the Store
-document, contain UTF-8 text and permit one final LF/CRLF. Usernames are limited to
-128 bytes and passwords to 256 bytes. URI userinfo is rejected. Authentication and
+document, contain UTF-8 text and permit one final LF/CRLF. URI userinfo is rejected. Authentication and
 backend configuration stay local and are never distributed in the Store directory.
 
 Application and peer listeners use plaintext gRPC on an isolated network. Peer
 metadata is not authentication. Lua programs must be trusted: a fresh restricted
-VM and source/value/stack/instruction limits do not impose a
+VM and optional stack/instruction limits do not impose a
 hard allocation limit on arbitrary Lua objects.
 Transforms use `function(current, incoming)` with ordinary Lua tables, precise
 64-bit integers and a fixed operation timestamp; see the [Lua guide](docs/lua.md)
@@ -172,7 +172,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.14.0`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.15.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -203,17 +203,17 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.14.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.14.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.14.0/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/basic),
+[native](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/native) and
+[scan](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/scan) examples
 initialize through a seed. Read and Mutate accept batches for one Store and use
 one bidirectional Execute RPC, with indexed results in input order. There is no
-whole-call byte or item-count limit; each wire request carries one bounded record.
+whole-call byte or item-count limit; each wire request carries one record.
 Resources are canonical relative paths. ReadStream and MutateStream accept an
 incremental producer and consumer so callers can avoid retaining the full input
 and output. The slice convenience methods accumulate results in client memory.
 The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan
-and Native methods. It pins public protocol v0.12.0. Advanced fixed-owner callers
+and Native methods. It pins public protocol v0.13.0. Advanced fixed-owner callers
 can use Dial and package-level business helpers.
 
 The SDK validates slice inputs before sending them. The server validates each
@@ -231,11 +231,11 @@ the matching delivered document count. A later page can use another instance.
 MongoDB scans paginate by ascending `_id` without a retained cursor; Search
 continuations carry the backend PIT snapshot. Consumers must tolerate repeated
 documents when restarting an interrupted page. Scan fetches up to 128 documents
-per backend call and retains at most 4 MiB for publication. It releases the
+per backend call by default and uses a 4 MiB publication window. A larger
+individual document is published alone. It releases the
 backend execution workspace before sending that batch, so a slow consumer does not
 block other database work. Both backends learn a smaller fetch capacity from
-large documents and retain it in the opaque continuation token. Search also
-reduces an excessive native response before retrying the same read.
+large documents within each page.
 Scan accepts a native filter and explicit INCLUDE/EXCLUDE Projection. Internal
 MongoDB `_id` and Search PIT/sort metadata need not appear in the result. Search
 publishes business `_source` documents, consistent with Read. See the
@@ -278,6 +278,7 @@ independent [weir-tests](https://github.com/batchstream/weir-tests) repository.
 The local Search fixture defaults to small write queues for overload tests.
 Positive application and SDK batch tests require normal backend capacity: start
 it with `scripts/search-local.sh start elasticsearch normal` (or `opensearch`).
+The OpenSearch fixture uses 3.3 for native PIT `_shard_doc` traversal across shards.
 Run backend congestion tests separately with the default `overload` profile;
 stop the owned fixture before changing its capacity profile.
 

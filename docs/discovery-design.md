@@ -41,17 +41,17 @@ withdrawn versions retain bounded high-water marks long enough to reject delayed
 state. Older gossip cannot renew a dead origin. New processes use new node IDs,
 so a restart does not reset another incarnation's sequence.
 
-## Bounded anti-entropy
+## Directory synchronization
 
 A worker periodically push/pulls snapshots with known direct peers and bootstrap
 seeds. Bootstrap seed connections are recreated to avoid forever selecting the
 same Pod behind an ordinary service. Learning peer addresses joins initially
 separate membership islands. The algorithm is periodic anti-entropy for this
-small bounded directory; it does not implement a new general-purpose SWIM stack.
+ownership directory; it does not implement a new general-purpose SWIM stack.
 
-Controls use short deadlines, finite message/node/Store/target limits and separate
-admission credits. Tables, high-water marks and outgoing work stay bounded. A
-malformed or oversized exchange is rejected before partial state mutation. No
+Synchronization uses short deadlines and lease-based expiry. There are no Weir
+message, node, Store or endpoint count quotas. A malformed exchange is rejected
+before partial state mutation. No
 peer control contains business payloads. Shutdown cancels synchronization, joins
 owned workers and makes a bounded best-effort withdrawal.
 
@@ -79,7 +79,7 @@ prevents slow or unavailable Stores from permanently starving other mappings.
 New RPCs round-robin across ready physical addresses. Store mappings have the
 owner lease-derived cache TTL; transient seed errors can retain only an unexpired
 last-good mapping. Ownership conflicts invalidate the cached mapping. Returned
-targets and DNS answer sets are validated and bounded before installation.
+targets and DNS answer sets are validated before installation, without count quotas.
 
 DNS updates add/remove physical channels without migrating or replaying an active
 business RPC. A drained/failed active connection leaves incomplete writes indeterminate.
@@ -91,7 +91,7 @@ cancels background work, closes owned channels and joins refresh/DNS work.
 Default offline tests must cover arbitrary seed ResolveStore, direct-only business RPCs,
 periodic peer convergence, same-group replicas, ownership conflicts, origin lease
 expiry without resurrection, withdrawal, malformed atomic exchange rejection,
-seed self-selection, bounded state and lifecycle cleanup. Client tests must prove
+seed self-selection, lease expiry and lifecycle cleanup. Client tests must prove
 business never reaches the seed, multiple targets receive independent RPCs, DNS
 changes are observed while old connections remain healthy, invalid/expired
 mappings fail, and writes are not replayed after an ambiguous transport failure.

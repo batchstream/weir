@@ -45,7 +45,7 @@ func TestSearchCommittedReplyLossAndIncompleteBulk(t *testing.T) {
 					return
 				}
 				defer response.Body.Close()
-				body, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
+				body, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
 				if err != nil {
 					t.Error(err)
 					w.WriteHeader(502)
@@ -158,7 +158,7 @@ func TestSearchReplaceNativeCompetition(t *testing.T) {
 					return
 				}
 				defer response.Body.Close()
-				raw, err := io.ReadAll(io.LimitReader(response.Body, responseLimit))
+				raw, err := io.ReadAll(io.LimitReader(response.Body, (8 << 20)))
 				if err != nil {
 					t.Error(err)
 					w.WriteHeader(502)

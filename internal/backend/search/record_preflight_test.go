@@ -50,7 +50,7 @@ func TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareRecord(record)
+			prepared, failure := runtime.PrepareRecord(context.Background(), record)
 			if commands.Load() != 0 {
 				t.Fatal("preparing a mutation performed backend I/O")
 			}
@@ -102,7 +102,7 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prepared, failure := runtime.PrepareRecord(record)
+			prepared, failure := runtime.PrepareRecord(context.Background(), record)
 			if failure == nil || prepared != nil || commands.Load() != 0 {
 				t.Fatal("invalid backend input produced a plan or effects", prepared, failure, commands.Load())
 			}

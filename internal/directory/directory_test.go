@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -159,19 +160,19 @@ func TestRestartAndExpiryRemoveOldEndpoint(t *testing.T) {
 	}
 }
 
-func TestDirectoryBoundsAndAtomicValidation(t *testing.T) {
+func TestDirectoryLargeMembershipAndAtomicValidation(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	d := newTestDirectory(t, cfg)
-	nodes := make([]*peerpb.NodeAnnouncement, 0, MaxNodes-1)
-	for i := 1; i < MaxNodes; i++ {
+	nodes := make([]*peerpb.NodeAnnouncement, 0, 640-1)
+	for i := 1; i < 640; i++ {
 		nodes = append(nodes, announcement(i, "same", "127.0.0.1:7447"))
 	}
 	if err := d.merge(nodes, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	extra := announcement(MaxNodes, "same", "127.0.0.1:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, time.Now()); status.Code(err) != codes.ResourceExhausted {
-		t.Fatal("live node capacity not bounded", err)
+	extra := announcement(640, "same", "127.0.0.1:7447")
+	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, time.Now()); err != nil {
+		t.Fatal("large live membership rejected", err)
 	}
 	withdraw := announcement(1, "same", "127.0.0.1:7447")
 	withdraw.Revision = 2
@@ -180,7 +181,7 @@ func TestDirectoryBoundsAndAtomicValidation(t *testing.T) {
 	if err := d.merge([]*peerpb.NodeAnnouncement{withdraw, extra}, time.Now()); err != nil {
 		t.Fatal("replacement after withdrawal blocked", err)
 	}
-	malformed := announcement(MaxNodes+1, "same", "0.0.0.0:7447")
+	malformed := announcement(640+1, "same", "0.0.0.0:7447")
 	newer := announcement(2, "same", "127.0.0.1:7447")
 	newer.Revision = 2
 	if err := d.merge([]*peerpb.NodeAnnouncement{newer, malformed}, time.Now()); status.Code(err) != codes.InvalidArgument {
@@ -189,7 +190,7 @@ func TestDirectoryBoundsAndAtomicValidation(t *testing.T) {
 	if d.records[newer.IncarnationId].announcement.Revision != 1 {
 		t.Fatal("invalid snapshot partially merged")
 	}
-	oversized := announcement(MaxNodes+2, "same", "127.0.0.1:7447")
+	oversized := announcement(640+2, "same", "127.0.0.1:7447")
 	oversized.LeaseRemainingMs = uint64(Lease / time.Millisecond)
 	if err := d.merge([]*peerpb.NodeAnnouncement{oversized}, time.Now()); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("uncapped lease accepted", err)
@@ -276,12 +277,12 @@ func TestPeriodicSyncConvergesAcrossPeersAndStops(t *testing.T) {
 	}
 }
 
-func TestReplayWatermarksAreBoundedAndEventuallyCollected(t *testing.T) {
+func TestLargeReplayWatermarksAreEventuallyCollected(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	d := newTestDirectory(t, cfg)
 	now := time.Now()
-	nodes := make([]*peerpb.NodeAnnouncement, 0, MaxAnnouncements-1)
-	for i := 1; i < MaxAnnouncements; i++ {
+	nodes := make([]*peerpb.NodeAnnouncement, 0, 768-1)
+	for i := 1; i < 768; i++ {
 		ad := announcement(i, "same", "127.0.0.1:7447")
 		ad.Withdrawn = true
 		ad.StoreNames = nil
@@ -291,12 +292,12 @@ func TestReplayWatermarksAreBoundedAndEventuallyCollected(t *testing.T) {
 	if err := d.merge(nodes, now); err != nil {
 		t.Fatal(err)
 	}
-	extra := announcement(MaxAnnouncements, "same", "127.0.0.1:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now); status.Code(err) != codes.ResourceExhausted {
-		t.Fatal("watermark capacity unbounded", err)
+	extra := announcement(768, "same", "127.0.0.1:7447")
+	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now); err != nil {
+		t.Fatal("large watermark snapshot rejected", err)
 	}
-	if len(d.records) != MaxAnnouncements {
-		t.Fatal("bounded watermark store changed", len(d.records))
+	if len(d.records) != 769 {
+		t.Fatal("large watermark store changed", len(d.records))
 	}
 	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now.Add(3*Lease)); err != nil {
 		t.Fatal("expired watermarks never collected", err)
@@ -394,10 +395,10 @@ func TestSyncDirectoryRejectsUnknownResponseBeforeMerge(t *testing.T) {
 	}
 }
 
-func TestSnapshotRetainsFullWithdrawalWatermarkCapacity(t *testing.T) {
+func TestSnapshotRetainsAllWithdrawalWatermarks(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	source := newTestDirectory(t, cfg)
-	nodes := make([]*peerpb.NodeAnnouncement, MaxAnnouncements-1)
+	nodes := make([]*peerpb.NodeAnnouncement, 768-1)
 	for i := range nodes {
 		node := announcement(i+1, "same", "127.0.0.1:7447")
 		node.Withdrawn = true
@@ -409,7 +410,7 @@ func TestSnapshotRetainsFullWithdrawalWatermarkCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := source.snapshot(now)
-	if len(snapshot) != MaxAnnouncements {
+	if len(snapshot) != 768 {
 		t.Fatal("withdrawal watermarks lost during sync", len(snapshot))
 	}
 	withdrawn := 0
@@ -418,7 +419,30 @@ func TestSnapshotRetainsFullWithdrawalWatermarkCapacity(t *testing.T) {
 			withdrawn++
 		}
 	}
-	if withdrawn != MaxAnnouncements-1 {
+	if withdrawn != 768-1 {
 		t.Fatal("withdrawals changed live node semantics", withdrawn)
+	}
+}
+
+func TestLocalDirectoryAcceptsLargeStoreTargetAndSeedSets(t *testing.T) {
+	stores, targets, seeds := make([]string, 32), make([]string, 32), make([]string, 32)
+	for i := range stores {
+		stores[i] = fmt.Sprintf("store-%03d", i)
+		targets[i] = fmt.Sprintf("127.0.0.1:%d", 7400+i)
+		seeds[i] = fmt.Sprintf("127.0.0.1:%d", 8400+i)
+	}
+	config := Config{Group: strings.Repeat("group", 1024), PeerAddress: "127.0.0.1:8447", Stores: stores, Targets: targets, Seeds: seeds}
+	directory, err := New(config)
+	if err != nil {
+		t.Fatal("valid local directory rejected by former scale limits", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_ = directory.Close(ctx)
+	}()
+	local := directory.records[directory.self].announcement
+	if len(local.StoreNames) != 32 || len(local.StoreEndpoints) != 32 || len(directory.seeds) != 32 || local.ReplicaGroup != config.Group {
+		t.Fatal("local directory metadata was truncated", local)
 	}
 }

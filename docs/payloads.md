@@ -15,28 +15,27 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Record target | `db/collection/s:string`, `db/collection/i:canonical-int64`, or `db/collection/oid:lowercase-hex` | `index/s:string`, string ID 1–512 bytes |
 | Read output content type | `application/bson` | `application/json` |
 | Put/create/replace document | raw BSON, explicit first `_id` matching the target | JSON object; target supplies the document ID |
-| Scan target | `db/collection` | one concrete `index` |
+| Scan target | `db/collection` | one concrete index or single-index alias |
 | Scan filter | native BSON filter object without an outer wrapper | native JSON query object without an outer wrapper |
 | Scan projection | typed INCLUDE or EXCLUDE field paths; complete `_id` supported, `_id.*` unsupported | typed INCLUDE or EXCLUDE field paths applied to `_source` |
 | Scan output | native BSON records, including types outside the Lua value model | business JSON `_source`, identical to Read |
 | Backend expression content type | `application/vnd.weir.mongodb-update.v1+bson` | `application/vnd.weir.search-update.v1+json` |
-| Expression structure | bounded `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
+| Expression structure | `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
 | Lua input | optional BSON document | optional JSON document |
 | Native request Document | `application/bson`: complete raw BSON command | `application/http`: complete HTTP/1.1 request, including headers and body |
 | Native target | `db`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
-| Native request limit | one complete BSON command, at most 4 MiB | 8 MiB for the complete HTTP message; headers consume part of that budget |
+| Native request size | native MongoDB command boundary | native backend HTTP boundary |
 
-Records are at most 2 MiB. Ordinary BSON follows MongoDB native nesting rules;
-ordinary JSON follows its syntax rules without an additional Weir node quota. Scan filters and backend expressions are at most 16 KiB.
-Lua source is at most 16 KiB; its input/current/result typed trees are at most
-2 MiB by default, with process-wide `lua.values` byte/depth/node budgets. Lua remains an in-process trusted-program
-facility with the transaction/CAS and allocation limitations in the architecture.
+Weir imposes no document, Native, filter, expression, Lua source or typed-value
+size/count quotas. BSON follows MongoDB native nesting rules and JSON follows
+its parser's syntax rules. Caller cancellation, schema validity and native
+backend limits still apply. Lua remains an in-process trusted-program facility
+with optional VM execution budgets and the allocation limitations in the architecture.
 
 Projection has one mode and distinct dot-separated paths. INCLUDE publishes only
 listed fields; EXCLUDE publishes all other fields. Paths cannot overlap, contain
 wildcards or empty segments. MongoDB additionally rejects dollar-prefixed path
-segments; Search can project a literal dollar-prefixed business field. A projection has at most 128 paths, each
-at most 512 UTF-8 bytes and 8 KiB in total. MongoDB always reads the original `_id`
+segments; Search can project a literal dollar-prefixed business field. MongoDB always reads the original `_id`
 for keyset pagination but removes it before publication when it is not selected.
 Search keeps PIT sort and hit identity internally. These pagination fields need
 not be present in business results. Changing filter or projection invalidates a
@@ -48,8 +47,11 @@ prefixes and Unicode; system collections and `$` are unsupported, and the full
 `database.collection` namespace is at most 255 bytes. Search indices are lowercase,
 nonempty and at most 255 bytes, with the native forbidden characters and no
 wildcard, index list or traversal syntax. Each concrete index is escaped as one
-HTTP path segment. Typed Read, Mutate and Scan require existing collections/indices with stable
-structure. Native forwards administrative commands, including target creation,
+HTTP path segment. Typed Read, Mutate and Scan require existing collections/indices.
+Search accepts single-index aliases without filters or routing overrides and
+binds each operation to its resolved physical index. CRUD and Lua support
+multiple primary shards. Scan uses PIT with `_shard_doc` sorting, which the
+backend must support. Native forwards administrative commands, including target creation,
 using the configured backend identity.
 
 A missing record is successful `ReadResult.missing`. A missing collection/index
@@ -105,16 +107,14 @@ aggregation stages. Native uses the shared backend pool without adding implicit
 sessions, inferred read preferences or deadline-derived `maxTimeMS`; cancellation
 still follows the original caller lifetime.
 Native does not require an existing collection or insert revision metadata.
-Requests and raw BSON responses remain bounded at 4 MiB. Driver-expanded
-diagnostic arrays/documents have a combined 64 KiB capacity before driver
-materialization; ordinary reply data remains opaque within the complete bound. Native command errors
+Requests, replies and driver diagnostics have no additional Weir size quota. Native command errors
 retain the backend BSON reply rather than becoming normalized mutation results.
 
 Search accepts `application/http` with an HTTP/1.1 origin-form request line,
 headers and body. An optional canonical resource prefix is prepended to the native
 request path; an empty resource addresses the backend root. Escaped paths, query
 strings, arbitrary methods and end-to-end headers retain their native meaning.
-Requests and entity responses remain bounded at 8 MiB, with 64 KiB metadata.
+Requests, response metadata and streamed entity bodies have no Weir size quota.
 Fixed Content-Length framing is required for nonempty request bodies; chunked
 framing, upgrades and trailers are outside this finite request envelope. Response
 status, headers, native error bodies and arbitrary entity bytes are preserved.
@@ -137,12 +137,12 @@ contract.
 
 A record stream returns one indexed result per input record. A scan emits one finite page of zero or more
 Document Events and exactly one ScanEnd containing that page's matching document
-count and optional failure. `ScanRequest.page_size` defaults to 128 when zero and
-cannot exceed 256. Successful ScanEnd has exactly one of a nonempty
+count and optional failure. `ScanRequest.page_size` defaults to 128 when zero.
+Successful ScanEnd has exactly one of a nonempty
 `next_continuation_token` or `exhausted=true`; failure carries neither. The next
 ScanRequest repeats the same resource, filter and projection, with the token
 in `continuation_token`. Start it in a new Execute RPC to allow another Weir instance
-to process the page. Tokens are opaque, bounded and validated before backend work;
+to process the page. Tokens are opaque and validated before backend work;
 they are not authentication credentials.
 
 Only accept a page checkpoint after the matching document count, ScanEnd and final gRPC OK. On an interrupted page, reuse the previous checkpoint and handle

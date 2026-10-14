@@ -1,6 +1,6 @@
 # Public and peer protocols
 
-The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.12.0/api/weir/v1/store.proto),
+The public contract is [store.proto](https://github.com/batchstream/weir-protocol/blob/v0.13.0/api/weir/v1/store.proto),
 package weir.v1. Clients initialize through any application endpoint and send
 business requests directly to the returned Store endpoints. No Kubernetes types
 or peer membership appear in this schema.
@@ -8,7 +8,7 @@ or peer membership appear in this schema.
 | Public RPC | Meaning |
 | --- | --- |
 | StoreService.ResolveStore | Discover IP/DNS endpoints and cache TTL for one named Store |
-| StoreService.Execute | Exchange bounded typed requests and indexed results on a finite bidirectional stream |
+| StoreService.Execute | Exchange typed requests and indexed results on a finite bidirectional stream |
 
 Execute accepts typed records, open Native forwarding and wait-until-visible
 mutations on one finite stream.
@@ -20,7 +20,7 @@ The input half-close ends the logical request sequence, which has no total item
 or byte limit. Document.content_type identifies the actual backend representation;
 Read and Scan do not negotiate alternative output encodings. NativeRequest carries
 a resource and an opaque request Document; NativeHead carries optional metadata
-and a body content type. Shared validation bounds envelopes while each adapter
+and a body content type. Shared validation checks envelopes while each adapter
 interprets its content type and bytes. No database-specific public DTO is required
 to add another Store.
 
@@ -43,7 +43,7 @@ continuation fixes the Store, resource, exact filter representation, projection
 and versioned backend traversal profile; the next page may change page_size.
 Its envelope and fingerprint use explicit version 1 formats. MongoDB profile
 `mongodb:v1` retains a native BSON _id checkpoint in ascending BSON order. Search
-profiles `search:elasticsearch:v1` and `search:opensearch:v1` retain PIT and sort
+profiles `search:elasticsearch:v2` and `search:opensearch:v2` retain physical index, PIT and sort
 checkpoints. Adaptive batch capacities and process-local scheduling state are not
 part of a token.
 
@@ -53,7 +53,7 @@ keyset reads without a cross-page snapshot or protocol-imposed expiry; interveni
 inserts, deletes and updates can change later pages. Search uses a backend PIT with
 60s keep_alive renewed by successful PIT search requests. Expired or lost
 PITs fail continuation without automatically restarting traversal. Tokens are
-opaque bounded checkpoints and do not grant additional access to backend data.
+opaque checkpoints and do not grant additional access to backend data.
 Continuation tokens must match the current envelope, fingerprint and traversal
 profile. A mismatched token fails without restarting the traversal.
 
@@ -65,7 +65,7 @@ an internal short transaction with group rollback on database write error; Searc
 uses per-item version conditions. Neither path adds document metadata.
 
 The independent internal [peer.proto](../internal/api/peer/v1/peer.proto), package
-weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory. It exchanges bounded
+weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory. It exchanges
 snapshots without depending on public business DTOs.
 
 | Internal field | Meaning |
@@ -92,7 +92,7 @@ The SDK has no dependency on the server. Server acceptance tests can consume the
 SDK without introducing a cycle. This repository generates only internal peer
 bindings with scripts/generate.sh. Future language SDKs can independently generate
 the public schema and implement discovery, endpoint refresh, load balancing and
-safe typed completion. The current dependencies are protocol v0.12.0 and Go SDK v0.14.0.
+safe typed completion. The current dependencies are protocol v0.13.0 and Go SDK v0.15.0.
 
 Internal execution plans retain scheduling budgets and backend state. They borrow
 the public Command and publish the public Event directly; no second request or

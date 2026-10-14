@@ -24,7 +24,7 @@ func DefaultOptions() Options {
 }
 
 func (opts Options) Validate() error {
-	if opts.ConnectTimeout <= 0 || opts.MetadataCacheEntries < 0 || opts.ExchangeBytes < 4<<20 || opts.ExchangeBytes > int(^uint(0)>>1)/3 {
+	if opts.ConnectTimeout <= 0 || opts.MetadataCacheEntries < 0 || opts.ExchangeBytes < 1 || opts.ExchangeBytes > int(^uint(0)>>1)/3 {
 		return fmt.Errorf("invalid backend connection, cache or batch exchange configuration")
 	}
 	if err := opts.Scan.Validate(); err != nil {

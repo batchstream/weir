@@ -14,8 +14,6 @@ import (
 
 func TestOrdinaryBSONUsesNativeBounds(t *testing.T) {
 	settings := backend.DefaultOptions()
-	settings.Lua.Values.MaxNodes = 32768
-	settings.Lua.Values.MaxDepth = 64
 	config := Config{Store: "mongo", Options: &settings}
 	adapter := &Adapter{config: config}
 	array := make(bson.A, 5000)
@@ -30,7 +28,7 @@ func TestOrdinaryBSONUsesNativeBounds(t *testing.T) {
 	}
 }
 
-func TestBSONEncodingUsesConfiguredNodesAndActualBytes(t *testing.T) {
+func TestBSONEncodingHasNoNodeQuota(t *testing.T) {
 	items := make([]value.Value, 140000)
 	for i := range items {
 		item := value.Value{Kind: value.Int32, Integer: int64(i)}
@@ -39,10 +37,8 @@ func TestBSONEncodingUsesConfiguredNodesAndActualBytes(t *testing.T) {
 	array := value.Value{Kind: value.Array, Items: items}
 	field := value.Field{Name: "items", Value: array}
 	document := value.Value{Kind: value.Object, Fields: []value.Field{field}}
-	limits := value.DefaultLimits()
-	limits.MaxNodes = 200000
-	if _, err := Encode(document, limits); err != nil {
-		t.Fatal("configured 200000-node BSON encode still failed hidden 4 MiB allocation budget", err)
+	if _, err := Encode(t.Context(), document); err != nil {
+		t.Fatal("large BSON encode retained a value quota", err)
 	}
 }
 
