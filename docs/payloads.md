@@ -121,11 +121,12 @@ status, headers, native error bodies and arbitrary entity bytes are preserved.
 
 `MutateRequest.options` carries `MutationOptions` for ordinary mutations, backend
 expressions and Lua transforms. An absent or empty options message defaults to
-`visibility=APPLICATION_ACKNOWLEDGED`. With `visibility=SEARCH_VISIBLE`,
-successful completion additionally confirms visibility to subsequent
-search queries. Search uses `refresh=wait_for` for physical writes and a refresh
-barrier for successful no-op results. A visibility failure preserves any known
-APPLIED evidence and reports a Failure; it is not permission to replay the write.
+`visibility=APPLICATION_ACKNOWLEDGED`. With `visibility=QUERY_VISIBLE`,
+successful completion additionally confirms visibility to subsequent normal
+queries through the adapter's query path. Search uses `refresh=wait_for` for
+physical writes and a refresh barrier for successful no-op results. A visibility
+failure preserves any known APPLIED evidence and reports a Failure; it is not
+permission to replay the write.
 MongoDB's existing majority-acknowledged writes and primary read path satisfy
 the option without adding a refresh operation. Compatible record batches keep
 visibility waits separate from default application-only work.

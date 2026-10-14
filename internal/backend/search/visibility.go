@@ -75,14 +75,14 @@ func (a *Adapter) refreshBarrier(ctx context.Context, index string) *pb.Failure 
 	}
 	switch err {
 	case errTimeout:
-		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "search visibility deadline exceeded")
+		return protocol.Fail(pb.FailureCode_DEADLINE_EXCEEDED, "query visibility deadline exceeded")
 	case errCanceled:
-		return protocol.Fail(pb.FailureCode_CANCELLED, "search visibility canceled")
+		return protocol.Fail(pb.FailureCode_CANCELLED, "query visibility canceled")
 	case errResponseLimit:
-		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "search visibility response exceeds byte limit")
+		return protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "query visibility response exceeds byte limit")
 	}
 	if err != nil {
-		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "search visibility acknowledgement unavailable or incomplete")
+		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "query visibility acknowledgement unavailable or incomplete")
 	}
 	if status != http.StatusOK {
 		return a.nativeResponseFailure(status, raw)
@@ -96,5 +96,5 @@ func (a *Adapter) refreshBarrier(ctx context.Context, index string) *pb.Failure 
 			return nil
 		}
 	}
-	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "search visibility acknowledgement unavailable or incomplete")
+	return protocol.Fail(pb.FailureCode_UNAVAILABLE, "query visibility acknowledgement unavailable or incomplete")
 }
