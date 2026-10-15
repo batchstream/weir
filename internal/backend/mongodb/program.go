@@ -1,6 +1,7 @@
 package mongodb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -453,6 +454,9 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			}
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement contains invalid BSON values")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+		}
+		if !missing && bytes.Equal(encoded, raw) {
+			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		}
 		prepared.document = encoded
 		prepared.action = "replace"

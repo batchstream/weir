@@ -1,6 +1,7 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -55,6 +56,15 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 			}
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement cannot be encoded as JSON")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
+		}
+		if *current.Found {
+			previous, encodeErr := value.EncodeJSON(ctx, currentValue)
+			if encodeErr != nil {
+				return nil, execution.LuaFailure(ctx, encodeErr)
+			}
+			if bytes.Equal(source, previous) {
+				return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
+			}
 		}
 		next.source = source
 		next.action = "create"
