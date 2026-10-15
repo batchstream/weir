@@ -1,8 +1,8 @@
 # What justifies Weir?
 
 Weir has measured value for independent concurrent small requests that can be
-aggregated across callers. The benefit depends on the workload and database
-budget; native bulk operations and low-concurrency direct access remain stronger
+aggregated across callers. The benefit depends on the workload and actual database
+load; native bulk operations and low-concurrency direct access remain stronger
 alternatives in the tested cases. The performance objective is lower actual
 database load at comparable completed throughput, or higher completed throughput
 at comparable actual database load, using a representative workload.
@@ -32,6 +32,22 @@ those rows do not establish sustainable capacity. Separate real-backend protocol
 tests with 128 mapped fields reduced each metadata response from about 4.2 KB to
 0.3–0.45 KB while preserving safety controls; that response-byte reduction is not
 a throughput claim.
+
+The separate [database-pressure follow-up](https://github.com/batchstream/weir-tests/blob/96a2e8ffc336ae11aea2e367741eb43c20e2275c/results/crawler-pressure-2026-10-15/README.md)
+retains a prospectively selected 512-worker matrix across four client processes,
+with 45, 57 and 68 offered products/s and three paired rounds per rate. All 27
+formal stages passed the source, field and all-arrivals audits, with zero failed,
+unknown, timed-out or rejected products. At 68, the metadata candidate reduced
+database CPU per completed product against the original Weir by 42.6%, 11.2% and
+6.6%, while paired completed throughput differed by less than 0.2%. At 45 and 57,
+the CPU direction reversed between rounds. Against native single-record updates,
+the candidate did not establish a stable CPU saving at any of the three rates.
+None of the 27 formal stages satisfied the sustained database CPU gate, so the
+short calibration's CPU pressure does not establish a formal database bottleneck
+or a capacity gain. The retained 2048-worker calibration failed with timeouts,
+unknown outcomes and field-audit failures; it is unqualified evidence. These
+measurements support a limited metadata improvement over the previous Weir at
+one tested rate, without establishing Weir's benefit for this crawler workload.
 
 These crawler results must be assessed separately from the simpler fixed atomic
 transform below. Its observed gain does not establish a gain for the crawler's
@@ -253,8 +269,9 @@ The sustained benchmark above demonstrates useful aggregation under specific
 high-concurrency conditions and retains direct-access counterexamples. It
 supports Weir as a **shared batching and transform service for fragmented
 concurrent callers**, conditional on the deployment's matched workload, actual
-database load, completed throughput and latency requirements. If the adoption gate fails and no shared transform/discovery
-contract is needed, use the direct driver and remove the extra service.
+database load, completed throughput and latency requirements. If the adoption gate
+fails and no shared transform/discovery contract is needed, use the direct driver
+and remove the extra service.
 
 ## Reproduce and audit the local mechanism experiment
 
