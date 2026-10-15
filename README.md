@@ -22,11 +22,12 @@ after transport failure and are never automatically replayed.
 See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
 and [payload contracts](docs/payloads.md) for the current contracts.
 
-The [value proof](docs/value-proof.md) compares real MongoDB access through the
-driver, native batches and the Weir SDK. Cross-request aggregation reduces
-database calls under concurrency; low-concurrency latency and efficient native
-batches favor direct access in this experiment. Production adoption still needs
-a matched workload and total resource measurements.
+The [value proof](docs/value-proof.md) links the executed Linux MongoDB/Search
+benchmark: 94 paired comparisons, all rounds and retained raw evidence.
+High-concurrency MongoDB requests benefit from aggregation; low concurrency,
+Search pure reads and efficient native batches favor direct access. The report
+includes throughput, tail latency, resource costs and grouping ablation.
+Production adoption still needs a matched workload and total resource measurements.
 
 ## Build and run
 
