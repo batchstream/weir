@@ -31,14 +31,14 @@ process is introduced.
 
 These values come from the initial preregistered selection among 20
 count/wait/concurrency configurations and a four-point byte anchor in the
-[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/README.md),
+[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/README.md),
 with the [selection audit retained at an immutable revision](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json).
 They are a finite workload choice, not a globally optimal value for each control.
 The selection rules were frozen before selection measurements. Actual
 default-path fixtures omit batching entirely and cross-check effective settings
 with all four runtime gauges.
 
-The later preregistered [20/40/80/160 ms study](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+The later preregistered [20/40/80/160 ms study](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
 holds count, bytes and executions fixed. Its result is inconclusive: the repeated
 20 ms crawler anchor fails backlog stability in round 3, and the 160 ms crawler's
 first round exceeds the three-second drain limit. Although 40 and 80 ms meet
@@ -58,8 +58,10 @@ alone does not establish stable arrivals, acceptable drain or maximum capacity.
 The 64 KiB payload case observes 47.73–48.82 records per bulk and framed body
 means of 2.990–3.059 MiB; its throughput gain accompanies higher actual database
 CPU. Native access remains faster in the tested Search read cases and MongoDB
-reads with four workers. The final registered longer-window capacity study
-remains pending.
+reads with four workers. The [final registered capacity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/FINAL-REGISTERED-CAPACITY-RESULT.md)
+fails on an Elasticsearch health request during fixture preparation, before any
+Weir/client process, warmup or timed stage. It produces no new throughput point,
+capacity upper bound or eligible sustained check.
 This finite selection does not establish a universal optimum or maximum
 sustainable throughput, and the five-second gate is not a general service
 guarantee.

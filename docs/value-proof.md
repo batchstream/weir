@@ -23,9 +23,9 @@ explicit `max_wait: 0s` and `max_in_flight: 0` retain immediate and unlimited
 execution policies. The owned default-path fixtures omit the entire batching
 block and audit the effective configuration plus all four runtime controls.
 
-The [measured-defaults report](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/README.md),
+The [measured-defaults report](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/README.md),
 [frozen selection audit](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json)
-and [complete 591-row audit](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/analysis-wait-sensitivity/analysis.json)
+and [complete 25-workflow, 591-row audit](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/analysis-final-registered-capacity/analysis.json)
 retain the source/configuration receipts, raw outcomes and independent audits.
 The confirmation server is
 [`084572d`](https://github.com/batchstream/weir/commit/084572d79b7a53230801297f90ca2363fd864913).
@@ -139,7 +139,7 @@ writes and reducing crawler database load. Read guards check default-change
 regressions in their declared cases, with no latency guarantee for arbitrary
 workloads.
 
-The later preregistered [wait sensitivity result](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+The later preregistered [wait sensitivity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
 is **inconclusive**. It measures 20/40/80/160 ms on both fixed-arrival profiles,
 holding 128 operations, 4 MiB and 16 executions fixed. All 24 stages complete
 every arrival with full-field audits and zero failed, unknown, timed-out or
@@ -155,7 +155,7 @@ The original duration-parser repair restored 48 pure-write/large-document rows
 after accepting the valid Go duration `1m0s`, preserving all 501 rows analyzed
 before that repair. These are historical equivalence counts, not the final
 inventory. The complete wait audit contains 591 rows; its
-[equivalence receipt](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/wait-sensitivity-equivalence.json)
+[equivalence receipt](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/wait-sensitivity-equivalence.json)
 preserves the prior 567 rows and original
 selection/capacity decisions. The independent crawler ladder with a database quota
 of 0.25 CPU has no rate that passes all three rounds, across all seven declared
@@ -172,7 +172,7 @@ five-second qualification failure is consistent with the configured startup
 budget, but the generic product-identification error does not prove the exact
 HTTP failure cause. No qualification gate or startup budget is relaxed.
 
-The [archived variability inspection](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/CAPACITY-VARIABILITY.md)
+The [archived variability inspection](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/CAPACITY-VARIABILITY.md)
 records sustained database CPU during the unstable rounds without establishing
 a cause. Young-GC time changes from 332 to 46 ms at 0.125 CPU and from
 163 to 174 ms at 0.25 CPU; these observations do not establish GC as the
@@ -182,7 +182,23 @@ they cannot locate activity within the falling interval or assign CPU cost.
 Disk latency and utilization were not recorded, and host I/O wait is not disk
 utilization. These observations do not prove a GC, merge or disk explanation.
 
-The final registered 96-minute longer-window capacity study remains pending.
+The [final registered capacity workflow](https://github.com/batchstream/weir-tests/actions/runs/38815775471)
+planned 96 minutes of warmup and timed work, but fails during fixture preparation:
+the Elasticsearch `/_cluster/health?wait_for_status=yellow&timeout=2s` request
+times out awaiting response headers. No Weir or client process, warmup or timed
+stage starts; actual measured work is zero. All
+[400 archived raw files](https://github.com/batchstream/weir-tests/tree/e8c439d31f43596f4fc75d1c920f9a14d36b3623/results/default-tuning-2026-10-16/raw/confirm-pure-extended-q0125)
+were committed before interpretation, including successful owned-container
+removal and an empty cleanup-error list. This is a preparation failure, not
+an observed service-overload boundary. It supplies no new throughput point,
+capacity upper bound or eligible five-minute sustained check. The preregistered
+study stops here, retaining all earlier unqualified capacity points without a
+performance retry, another concurrency level or a new quota.
+The [final full audit and unchanged decisions](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/final-analysis-equivalence.json)
+retain all 591 rows. The [original derivation still selects zero sustained checks](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/soak-derivation-final-no-qualified-points.json),
+so none was dispatched. Later fixture-health and diagnostic fixes have offline
+regression coverage; they supplied no replacement performance measurements.
+
 The tested configurations and owned loopback databases bound the selection.
 These results establish no maximum for these defaults, universal optimum or
 production-network capacity. Host and generator CPU are used to check measurement

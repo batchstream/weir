@@ -36,12 +36,14 @@ by 8.1–42.3%, with higher Weir p99 upper bounds of 3.932–4.194s. These compa
 points meet the declared five-second p99 gate. MongoDB write/mixed/Lua comparisons
 and invalid partial-update cases remain in the report.
 
-The later [20/40/80/160ms sensitivity study](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+The later [20/40/80/160ms sensitivity study](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
 is inconclusive because its repeated 20ms crawler anchor fails backlog stability
 in one round. It establishes no winning wait or justified replacement for the
-original default. The final registered longer-window capacity study remains
-pending. No sustainable maximum, universal optimum or general five-second
-service guarantee has been established.
+original default. The [final registered capacity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/FINAL-REGISTERED-CAPACITY-RESULT.md)
+fails during fixture preparation, before any Weir/client process, warmup or
+timed stage. It adds no throughput point or capacity upper bound. No sustainable
+maximum for these defaults, universal optimum or general five-second service
+guarantee has been established.
 
 The [historical Linux MongoDB/Search benchmark](docs/value-proof.md#sustained-linux-benchmark-2026-10-15)
 retains 94 paired comparisons, all rounds, raw evidence and grouping ablation.
