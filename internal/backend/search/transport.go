@@ -28,11 +28,13 @@ type exchange struct {
 	contentType string
 	native      bool
 	mutation    bool
+	operation   string
+	records     int
 }
 
 type requestContextKey struct{}
 
-func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, error) {
+func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw []byte, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if a.ctx.Err() != nil {
@@ -89,6 +91,12 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	if call.mutation && ctx.Err() != nil {
 		return 0, nil, errWriteNotSent
 	}
+	a.metrics.initialize()
+	started := time.Now()
+	defer func() {
+		observation := httpObservation{call: call, request: request, duration: time.Since(started), status: status, err: err}
+		a.metrics.observeHTTP(observation)
+	}()
 	response, err := client.Do(request)
 	if err != nil {
 		// A positive GetConn without GotConn proves that this HTTP exchange
@@ -115,7 +123,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	if response.Header.Get("Content-Encoding") != "" {
 		return response.StatusCode, nil, errResponse
 	}
-	raw, err := io.ReadAll(response.Body)
+	raw, err = io.ReadAll(response.Body)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return response.StatusCode, nil, errTimeout
 	}

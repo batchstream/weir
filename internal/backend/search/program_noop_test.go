@@ -27,7 +27,8 @@ func TestLuaUnchangedDocumentSkipsSearchWrite(t *testing.T) {
 			native := &plan{program: program}
 			found := tc.found
 			current := &getReply{Found: &found, Source: []byte(tc.current)}
-			write, result := evaluateProgram(t.Context(), native, current)
+			adapter := &Adapter{}
+			write, result := adapter.evaluateProgram(t.Context(), native, current)
 			if tc.unchanged {
 				if write != nil || result.GetOutcome() != pb.MutationOutcome_APPLIED || result.GetFailure() != nil {
 					t.Fatal("unchanged ordinary document was not a successful no-op", write, result)

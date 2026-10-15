@@ -68,7 +68,7 @@ func (b *recordBatch) flushVisibilityBarriers() {
 }
 
 func (a *Adapter) refreshBarrier(ctx context.Context, index string) *pb.Failure {
-	call := exchange{path: "/" + url.PathEscape(index) + "/_refresh", method: http.MethodPost}
+	call := exchange{path: "/" + url.PathEscape(index) + "/_refresh", method: http.MethodPost, operation: "refresh"}
 	status, raw, err := a.request(ctx, call)
 	if ctx.Err() != nil {
 		return protocol.ContextFailure(ctx)

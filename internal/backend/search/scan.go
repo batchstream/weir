@@ -175,7 +175,7 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		body["search_after"] = []int64{n.after}
 	}
 	encoded, _ := json.Marshal(body)
-	call := exchange{path: "/_search?allow_partial_search_results=false", body: encoded}
+	call := exchange{path: "/_search?allow_partial_search_results=false", body: encoded, operation: "search"}
 	status, raw, err := a.request(ctx, call)
 	failure := a.scanExchangeFailure(ctx, status, raw, err)
 	if failure != nil {
