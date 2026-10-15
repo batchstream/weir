@@ -158,8 +158,10 @@ func TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	waitContext, stopWaiting := context.WithTimeout(t.Context(), 3*time.Second)
+	defer stopWaiting()
 	t.Cleanup(func() {
 		cancel()
 		closeContext, stop := context.WithTimeout(context.Background(), time.Second)
@@ -182,7 +184,7 @@ func TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure(t *testing.T) {
 		if len(started) != limits.BatchOperations {
 			t.Fatal("continuous arrivals did not bypass collection on a full batch", len(started))
 		}
-	case <-ctx.Done():
+	case <-waitContext.Done():
 		t.Fatal("full batch did not start")
 	}
 	canceled, stop := context.WithCancel(ctx)
@@ -204,7 +206,7 @@ func TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure(t *testing.T) {
 		t.Fatal("busy slot did not apply bounded queue backpressure", failure)
 	}
 	stop()
-	event, err := tickets[4].Wait(ctx)
+	event, err := tickets[4].Wait(waitContext)
 	if err != nil || event.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal("canceled queued operation lost NOT_STARTED evidence", event, err)
 	}
@@ -234,12 +236,12 @@ func TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure(t *testing.T) {
 		if len(started) != 2 || started[0].ID != 3 || started[1].ID != 5 {
 			t.Fatal("slot completion reset the collection wait or retained canceled work", started)
 		}
-	case <-ctx.Done():
+	case <-waitContext.Done():
 		t.Fatal("expired partial batch started a second collection window")
 	}
 	close(adapter.finish)
 	for _, ticket := range tickets {
-		if _, err := ticket.Wait(ctx); err != nil {
+		if _, err := ticket.Wait(waitContext); err != nil {
 			t.Fatal(err)
 		}
 		ticket.Ack()
