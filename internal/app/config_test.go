@@ -299,7 +299,8 @@ func TestListenerRolesMatchAddressesAndMetricLabels(t *testing.T) {
 				if err == nil {
 					err = stream.Send(exchange)
 				}
-				if err == nil {
+				// A send EOF requires receiving the server's terminal status.
+				if err == nil || err == io.EOF {
 					_, err = stream.Recv()
 				}
 				if err == nil {
@@ -308,7 +309,7 @@ func TestListenerRolesMatchAddressesAndMetricLabels(t *testing.T) {
 				if err == nil {
 					err = stream.CloseSend()
 				}
-				if err == nil {
+				if err == nil || err == io.EOF {
 					_, err = stream.Recv()
 					if err == io.EOF {
 						err = nil

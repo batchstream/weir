@@ -7,6 +7,46 @@ alternatives in the tested cases. The performance objective is lower actual
 database load at comparable completed throughput, or higher completed throughput
 at comparable actual database load, using a representative workload.
 
+## Bounded collection follow-up, 2026-10-15
+
+The [collection and phase report](https://github.com/batchstream/weir-tests/blob/22d719cd10f4bc2c390a49772d606ed50922a4f5/results/batch-mechanism-2026-10-15/README.md)
+separates a simple partial-update mechanism control from the unchanged crawler
+Lua workload. Both Weir paths use the identical `49bab6a` binary, with
+`batching.max_wait=0s` or `20ms` as their only configuration difference. Four OS
+clients own 512 workers and submit exactly one record per native update or SDK
+call. Durability, query visibility and the crawler's reconciliation/product/seller
+dependencies remain unchanged. Formal stages use 30s warmup, 20s arrivals and
+three rotating rounds per workload, with the HTTP observer disabled.
+
+At 68 offered crawler products/s, all three paths completed every arrival and
+passed all nine full-field and all-arrivals checks. The 20ms path used less
+database CPU per completed product than native single-record updates in every
+paired round, while completed QPS stayed within the predefined 5% band:
+
+| Round | DB CPU/product change versus native | Completed QPS change versus native |
+| --- | ---: | ---: |
+| 1 | -65.9% | -1.40% |
+| 2 | -14.6% | -4.01% |
+| 3 | -5.5% | -0.59% |
+
+Against the same Weir binary with immediate dispatch, CPU/product fell by 35.5%,
+27.8% and 33.3%. Actual bulk requests carried about 6.8–6.9 records on average,
+compared with 2.1–2.3 at zero collection wait. Short diagnostics independently
+matched internal HTTP attempt counts and framed records against the HTTP
+observer; the report retains all requests and phase measurements. Bulk elapsed
+time includes visibility waiting, and concurrent phase durations are not CPU or
+exclusive critical-path time.
+
+This establishes a bounded database CPU improvement in the tested crawler
+model. The effect size varies substantially across rounds. Native did not meet
+the sustained CPU gate in those formal rounds, so this is not a maximum-capacity,
+steady-state or production-throughput claim. The separate 512 partial-updates/s
+formal control failed the strict comparison gates because of rejected arrivals
+and generator lag; only one of its nine stages passed all-arrivals checks.
+Larger batches there are mechanism evidence, not a qualified performance win.
+All failed and rejected observations remain in the report. The default collection
+wait remains `0s`; these experiments do not select a universal waiting policy.
+
 ## Single-record crawler follow-up, 2026-10-15
 
 The [cross-index batching experiment](https://github.com/batchstream/weir-tests/blob/bad363af4f36e366c1a7e7a55b8a36a4b9f713c8/results/search-batching-2026-10-15/README.md)

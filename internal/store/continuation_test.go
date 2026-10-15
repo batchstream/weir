@@ -51,7 +51,7 @@ func TestOnlyScanContinuationCanScheduleAnotherInvocation(t *testing.T) {
 				t.Fatal(failure)
 			}
 			runtime.mu.Lock()
-			batch := runtime.selectLocked(time.Now())
+			batch, _ := runtime.selectLocked(time.Now())
 			runtime.mu.Unlock()
 			done := make(chan struct{})
 			go func() {
@@ -124,7 +124,7 @@ func TestScanTerminalEvidenceStopsContinuationAndRejectsDuplicate(t *testing.T) 
 		t.Fatal(failure)
 	}
 	runtime.mu.Lock()
-	batch := runtime.selectLocked(time.Now())
+	batch, _ := runtime.selectLocked(time.Now())
 	runtime.mu.Unlock()
 	runtime.execute(batch)
 	select {

@@ -43,7 +43,7 @@ func TestEffectiveConfigurationDefaultsAndRedaction(t *testing.T) {
 		t.Fatal("effective configuration lost unbounded or automatic policy")
 	}
 	for _, store := range report.Routing.Stores {
-		if store.Queue.MaxOperations != 1024 || *store.Queue.MaxBytes != 32<<20 || store.Batching.MaxOperations != 32 || *store.Batching.MaxBytes != 8<<20 || store.Batching.MaxInFlight != 0 {
+		if store.Queue.MaxOperations != 1024 || *store.Queue.MaxBytes != 32<<20 || store.Batching.MaxOperations != 32 || *store.Batching.MaxBytes != 8<<20 || store.Batching.MaxInFlight != 0 || store.Batching.MaxWait == nil || *store.Batching.MaxWait != 0 {
 			t.Fatal("scheduler defaults missing", store.Name)
 		}
 		if store.Scan.MaxBatchDocuments != 128 || *store.Scan.MaxBatchBytes != 4<<20 || *store.Backend.ConnectTimeout != Duration(2*time.Second) || *store.Backend.MaxExchangeBytes != 32<<20 {

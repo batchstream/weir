@@ -40,7 +40,7 @@ func TestQueueCountAndBytesReleaseAtDispatch(t *testing.T) {
 				t.Fatal("full queue accepted an operation", failure)
 			}
 			runtime.mu.Lock()
-			batch := runtime.selectLocked(time.Now())
+			batch, _ := runtime.selectLocked(time.Now())
 			runtime.mu.Unlock()
 			if batch == nil {
 				t.Fatal("nothing dispatched")
@@ -88,7 +88,7 @@ func TestBatchDeadlineComesOnlyFromInterestedCallers(t *testing.T) {
 		}
 	}
 	runtime.mu.Lock()
-	batch := runtime.selectLocked(time.Now())
+	batch, _ := runtime.selectLocked(time.Now())
 	runtime.mu.Unlock()
 	if batch == nil || len(batch.items) != 2 {
 		t.Fatal("missing shared batch")

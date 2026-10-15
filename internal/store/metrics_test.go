@@ -60,7 +60,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 		}
 	}
 	r.mu.Lock()
-	b := r.selectLocked(time.Now())
+	b, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	r.execute(b)
 	ready := testmetrics.Gather(t, r)
@@ -100,7 +100,10 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_active_executions_limit") != float64(limits.MaxInFlight) {
 		t.Fatal("configured in-flight batch limit missing")
 	}
-	if testmetrics.Series(families) != 50 {
+	if testmetrics.Sum(families, "weir_store_batch_max_wait_seconds") != limits.BatchWait.Seconds() {
+		t.Fatal("configured collection wait missing")
+	}
+	if testmetrics.Series(families) != 51 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

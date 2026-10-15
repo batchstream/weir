@@ -45,7 +45,7 @@ func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {
 		tickets = append(tickets, ticket)
 	}
 	runtime.mu.Lock()
-	b := runtime.selectLocked(time.Now())
+	b, _ := runtime.selectLocked(time.Now())
 	runtime.mu.Unlock()
 	if b == nil || len(b.items) != 2 {
 		t.Fatal("missing shared batch")

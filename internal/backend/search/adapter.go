@@ -46,6 +46,7 @@ type Adapter struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	once            sync.Once
+	metrics         searchMetrics
 }
 
 type plan struct {
@@ -186,7 +187,7 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 		"flat_settings": {"true"},
 		"filter_path":   {"error,status,*.aliases,*.settings,*.mappings._source,*.mappings._routing,*.data_stream"},
 	}
-	call := exchange{path: "/" + url.PathEscape(target) + "?" + query.Encode(), native: native}
+	call := exchange{path: "/" + url.PathEscape(target) + "?" + query.Encode(), native: native, operation: "metadata"}
 	status, raw, err := a.request(ctx, call)
 	if ctx.Err() != nil {
 		return caps, protocol.ContextFailure(ctx)

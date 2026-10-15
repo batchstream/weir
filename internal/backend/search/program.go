@@ -14,7 +14,7 @@ import (
 
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
-func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {
+func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {
 	currentValue := value.Value{Kind: value.Missing}
 	if *current.Found {
 		var err error
@@ -32,7 +32,10 @@ func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*pla
 	}
 	program := *native.program
 	program.Current = currentValue
+	a.metrics.initialize()
+	started := time.Now()
 	transformed, err := luaengine.Evaluate(ctx, program)
+	a.metrics.observeLua(time.Since(started), err)
 	if err != nil {
 		return nil, execution.LuaFailure(ctx, err)
 	}

@@ -93,7 +93,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		encoded, _ := json.Marshal(body)
 		call := exchange{
 			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
-			contentType: "application/json"}
+			contentType: "application/json", operation: "mget", records: len(group)}
 		status, raw, err := a.request(ctx, call)
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
 		switch {
@@ -258,7 +258,7 @@ func (b *recordBatch) flush() {
 		}
 		call := exchange{
 			path: "/_bulk?pipeline=_none&refresh=" + refresh + "&wait_for_active_shards=1",
-			body: body[:length], mutation: true,
+			body: body[:length], mutation: true, operation: "bulk", records: len(works),
 		}
 		status, raw, err := b.adapter.request(b.ctx, call)
 		response := bulkResponse{works: works, status: status, raw: raw, err: err}
@@ -427,7 +427,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 					if work.Context != nil {
 						stop = context.AfterFunc(work.Context, cancel)
 					}
-					next, mutation := evaluateProgram(programContext, native, current)
+					next, mutation := a.evaluateProgram(programContext, native, current)
 					if stop != nil {
 						stop()
 					}

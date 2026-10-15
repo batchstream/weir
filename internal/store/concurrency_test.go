@@ -328,8 +328,8 @@ func TestOldestBatchKeyKeepsProgressUnderInFlightLimit(t *testing.T) {
 		tickets = append(tickets, ticket)
 	}
 	runtime.mu.Lock()
-	first := runtime.selectLocked(time.Now())
-	blocked := runtime.selectLocked(time.Now())
+	first, _ := runtime.selectLocked(time.Now())
+	blocked, _ := runtime.selectLocked(time.Now())
 	runtime.mu.Unlock()
 	if first == nil || len(first.items) != 2 || first.items[0] != tickets[0] || first.items[1] != tickets[2] || blocked != nil {
 		t.Fatal("batch compatibility or in-flight budget changed")
@@ -343,11 +343,11 @@ func TestOldestBatchKeyKeepsProgressUnderInFlightLimit(t *testing.T) {
 	tickets = append(tickets, newest)
 	runtime.mu.Lock()
 	finish(runtime, first)
-	second := runtime.selectLocked(time.Now())
+	second, _ := runtime.selectLocked(time.Now())
 	if second != nil {
 		finish(runtime, second)
 	}
-	third := runtime.selectLocked(time.Now())
+	third, _ := runtime.selectLocked(time.Now())
 	if third != nil {
 		finish(runtime, third)
 	}

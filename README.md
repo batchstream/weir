@@ -28,9 +28,13 @@ High-concurrency MongoDB requests benefit from aggregation; low concurrency,
 Search pure reads and efficient native batches favor direct access. The report
 includes throughput, tail latency, resource costs and grouping ablation.
 The [single-record crawler follow-up](docs/value-proof.md#single-record-crawler-follow-up-2026-10-15)
-retains rejected optimizations and does not establish a stable database CPU benefit
-for that workload. Adoption should compare completed throughput and actual database
-load using the application's submission and visibility requirements.
+retains rejected optimizations. The later
+[bounded collection experiment](docs/value-proof.md#bounded-collection-follow-up-2026-10-15)
+measures lower database CPU per completed crawler product in three paired rounds
+with 20ms collection at 68 offered products/s, with completed QPS within 5% of
+native. The effect varies across rounds and does not establish maximum capacity.
+Adoption should compare completed throughput and actual database load using the
+application's submission and visibility requirements.
 
 ## Build and run
 
@@ -87,6 +91,7 @@ stores:
     batching:
       max_operations: 32
       max_in_flight: 0
+      max_wait: "0s"
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -111,8 +116,12 @@ peers or backends. Configuration changes take effect after a restart.
 authentication and trust paths redacted. The [configuration review](docs/configuration.md)
 explains removed fields, retained controls and fixed protocol boundaries.
 
-Store defaults are 32 operations and 8MiB of input per batch. There is no
-collection delay; queued RPCs combine by namespace, actual input bytes and
+Store defaults are 32 operations and 8MiB of input per batch. `batching.max_wait`
+defaults to `0s` for immediate dispatch. A positive duration collects compatible
+RPCs until the oldest admission reaches that age; full batches, Scan/Native
+commands and draining Stores dispatch immediately. A caller deadline before the
+collection deadline also dispatches immediately. Collection uses the existing
+bounded queue and adds no per-request timer. Queued RPCs combine by namespace, actual input bytes and
 `batching.max_operations`. Large client batches split into sequential bounded groups.
 Lua transforms also combine compatible queued requests: MongoDB batches reads and
 writes in a short snapshot transaction, and Search batches real-time reads and
@@ -309,6 +318,19 @@ Monitor active executions, queue occupancy and per-record backend outcomes.
 The queue exposes count and byte capacity metrics. `weir_store_active_executions_limit`
 reports `batching.max_in_flight`, with `0` meaning unlimited. Active executions and
 average operations per batch show whether a budget retains enough work to aggregate.
+`weir_store_batch_max_wait_seconds` reports the configured collection wait.
+
+Search exposes `weir_search_http_requests_total` and
+`weir_search_http_request_duration_seconds` by fixed operation, outcome and
+visibility labels. They cover Record/Scan exchanges and startup qualification;
+Native relay is excluded. Bulk elapsed time includes `refresh=wait_for`, so it
+does not isolate refresh waiting. `weir_search_http_request_records` reports
+actual framed records per attempted mget/bulk request, including failures.
+`weir_search_lua_evaluation_duration_seconds` measures in-process Lua evaluation
+including its compile/conversion work, excluding external JSON decoding/encoding.
+HTTP success does not imply every bulk item succeeded. Concurrent durations
+overlap and must not be summed as wall time. Labels contain no target or document
+identities.
 
 Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.
