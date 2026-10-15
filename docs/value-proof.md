@@ -94,8 +94,8 @@ database connections. Search performance is not inferred from MongoDB.
 
 ## Correctness evidence alongside batching
 
-The following existing tests were executed and passed on the final source with
-the same owned MongoDB fixture.
+The following existing tests were executed and passed on the measured source
+snapshot recorded below, with the same owned MongoDB fixture.
 They are separate from the timed read comparison; the table identifies where a
 fixture replaces a component.
 

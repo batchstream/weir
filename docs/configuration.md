@@ -23,6 +23,24 @@ Every other field may be omitted for this standalone node. The complete
 their units and their defaults. Omission selects a documented default, never a
 second compatibility path.
 
+Copy the reference files to `weir.yaml` and, when hosting local Stores,
+`routes.yaml`. The CLI defaults to `--config ./weir.yaml` and an empty `--routes`;
+it does not discover other files. Both paths resolve from the process working
+directory. An empty routing path reads no Store document and assembles no backend.
+
+Each file contains one YAML mapping with exact lowercase keys. Unknown or
+duplicate keys, multiple documents, anchors, aliases, merge keys and explicit tags
+are rejected. Counts use integers, flags use `true` or `false`, and text, sizes and
+durations use strings. Omission selects a default; YAML null is not omission.
+Process fields cannot be null. Optional routing adapter, authentication and TLS
+blocks can be null; Store entries cannot.
+
+Durations require a unit: `ns`, `us`/`µs`/`μs`, `ms`, `s`, `m` or `h`, including
+combined forms such as `1m30s`. Values must fit a signed 64-bit nanosecond count;
+each field documents whether zero is allowed. Byte sizes use integer `B`, `KiB`,
+`MiB` or `GiB` units. Strings are literal; only `discovery.peer_address_env` reads
+the explicitly named environment variable.
+
 Inspect the resolved policy before startup:
 
 ```sh
@@ -44,6 +62,25 @@ Authentication values and CA paths are replaced with `<redacted>`; backend
 addresses, Store names and public discovery addresses remain visible. The output
 is an inspection report, not a replacement configuration file. Configuration
 changes require a restart.
+
+Memory capacity is discovered from visible container limits, physical host memory
+and any finite process address-space limit. Container/OS limits provide the hard
+boundary; overload admission observes actual use against that capacity. There is
+no configurable memory budget or startup reservation.
+
+Business RPCs and backend IO inherit caller contexts. Transport progress,
+connection establishment, keepalive and cleanup have separate controls.
+Diagnostics uses an independent HTTP listener; readiness describes node lifecycle,
+rather than backend health. Directory records carry Store names and public
+endpoints, without backend credentials.
+
+Record exchange targets split grouped work into native requests. One item larger
+than the target proceeds alone. MongoDB also respects its advertised BSON command
+boundary, normally `16MiB`; response paging remains controlled by MongoDB, with a
+document-count hint only below that boundary. Search uses the exchange target for
+record request/response groups. Scan publication has separate windows, and Native
+requests follow the backend's own command/message boundaries. Exchange targets
+do not define a Lua workspace budget.
 
 The configuration review makes these decisions:
 

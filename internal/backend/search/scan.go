@@ -143,7 +143,6 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		if page.Failure != nil {
 			return page
 		}
-		// Opening and fetching share the caller context.
 	}
 	if n.pit == "" {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "PIT unavailable")

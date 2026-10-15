@@ -30,9 +30,8 @@ type programBatch struct {
 	results []*pb.MutationResult
 }
 
-// Programs share a short snapshot transaction only when their target and typed
-// identities are distinct. Caller contexts govern evaluation and admission to W,
-// while the shared execution context governs the transaction's wire calls.
+// Programs with one target and distinct typed identities share a snapshot
+// transaction. Caller contexts govern evaluation; the batch context governs IO.
 func (a *Adapter) executePrograms(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
 	for start := 0; start < len(plans); {
