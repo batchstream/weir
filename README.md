@@ -28,9 +28,13 @@ High-concurrency MongoDB requests benefit from aggregation; low concurrency,
 Search pure reads and efficient native batches favor direct access. The report
 includes throughput, tail latency, resource costs and grouping ablation.
 The [single-record crawler follow-up](docs/value-proof.md#single-record-crawler-follow-up-2026-10-15)
-retains rejected optimizations and does not establish a stable database CPU benefit
-for that workload. Adoption should compare completed throughput and actual database
-load using the application's submission and visibility requirements.
+retains rejected optimizations. The later
+[bounded collection experiment](docs/value-proof.md#bounded-collection-follow-up-2026-10-15)
+measures lower database CPU per completed crawler product in three paired rounds
+with 20ms collection at 68 offered products/s, with completed QPS within 5% of
+native. The effect varies across rounds and does not establish maximum capacity.
+Adoption should compare completed throughput and actual database load using the
+application's submission and visibility requirements.
 
 ## Build and run
 
