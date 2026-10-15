@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	backendcfg "github.com/batchstream/weir/internal/backend"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -236,7 +237,7 @@ func TestNativeHTTPSyntheticFraming(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			transport := newTransport(connectionTimeout)
+			transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
 			transport.DisableKeepAlives = true
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
@@ -323,7 +324,7 @@ func TestNativeHTTPExplicitCongestion(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			transport := newTransport(connectionTimeout)
+			transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
 			transport.DisableKeepAlives = true
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
@@ -381,7 +382,7 @@ func TestNativeHTTPDoesNotQualifyTarget(t *testing.T) {
 			})
 			backend := httptest.NewServer(handler)
 			defer backend.Close()
-			transport := newTransport(connectionTimeout)
+			transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 			cfg := Config{Store: "search", URL: backend.URL}

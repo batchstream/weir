@@ -8,9 +8,9 @@ option go_package = "github.com/batchstream/weir/internal/api/peer/v1;peerv1";
 // It carries public endpoint advertisements and never carries business payloads
 // or backend credentials. Clients use the separate weir.v1.StoreService.
 service PeerDiscoveryService {
-  // SyncDirectory merges a bounded snapshot and returns the receiver's current
-  // snapshot. Every announcement retains its origin's revision and lease.
-  rpc SyncDirectory(SyncDirectoryRequest) returns (SyncDirectoryResponse);
+  // A finite handshake: empty opening request, one response snapshot, one
+  // request snapshot and client half-close, then final gRPC status.
+  rpc SyncDirectory(stream SyncDirectoryRequest) returns (stream SyncDirectoryResponse);
 }
 
 // SyncDirectoryRequest offers announcements learned locally or from other peers.
@@ -52,4 +52,8 @@ message NodeAnnouncement {
 
   // Explicit process withdrawal; this incarnation must no longer supply endpoints.
   bool withdrawn = 8;
+
+  // Complete lease duration chosen by the origin for this incarnation. It is
+  // immutable across revisions and lets receivers bound replay watermark age.
+  uint64 origin_lease_ms = 9;
 }

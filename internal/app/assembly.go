@@ -21,7 +21,9 @@ import (
 )
 
 func Open(ctx context.Context, cfg Config) (*Node, error) {
-	if err := cfg.Validate(); err != nil {
+	var err error
+	cfg, err = cfg.Resolve()
+	if err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -58,7 +60,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	complete := false
 	defer func() {
 		if !complete {
-			cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+			cleanup, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Basic.Lifecycle.CleanupTimeout))
 			defer cancel()
 			_ = node.Close(cleanup)
 		}
@@ -68,7 +70,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		runtime, err := openLocal(ctx, definition, cfg.Basic.Lua.limits())
+		runtime, err := openLocal(ctx, definition, cfg.Basic.Lua.limits(), time.Duration(cfg.Basic.Lifecycle.CleanupTimeout))
 		if err != nil {
 			return nil, err
 		}
@@ -107,6 +109,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	storeNames := slices.Sorted(maps.Keys(node.stores))
 	directoryConfig := directory.Config{
+		Policy:      discovery.policy(),
 		Group:       discovery.Group,
 		PeerAddress: peerAddress,
 		Targets:     targets,
@@ -150,18 +153,21 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	return node, nil
 }
 
-func openLocal(ctx context.Context, definition StoreConfig, lua luaengine.Limits) (*store.Runtime, error) {
+func openLocal(ctx context.Context, definition StoreConfig, lua luaengine.Limits, cleanup time.Duration) (*store.Runtime, error) {
 	name, cfg := definition.Name, definition.Local
 	limits := cfg.runtimeLimits()
+	limits.CleanupTimeout = cleanup
 	var adapter execution.Adapter
 	var err error
 	if cfg.Backend.MongoDB != nil {
 		config := cfg.mongoConfig(name)
 		config.Options.Lua = lua
+		config.Options.CleanupTimeout = cleanup
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
 		config := cfg.searchConfig(name)
 		config.Options.Lua = lua
+		config.Options.CleanupTimeout = cleanup
 		adapter, err = search.Open(ctx, config)
 	}
 	if err != nil {

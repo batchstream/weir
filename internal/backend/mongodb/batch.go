@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -425,7 +424,7 @@ type writeBatch struct {
 }
 
 func (a *Adapter) closeRecordCursor(state *recordCursor) {
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
 	defer cancel()
 	_ = a.closeRecordCursorState(ctx, state)
 }

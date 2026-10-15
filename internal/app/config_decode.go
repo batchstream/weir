@@ -20,7 +20,8 @@ func DecodeBasic(input io.Reader) (BasicConfig, error) {
 	if err := decodeConfigYAML(input, &cfg, false); err != nil {
 		return cfg, fmt.Errorf("basic %w", err)
 	}
-	return cfg, cfg.Validate()
+	cfg = cfg.resolved()
+	return cfg, cfg.validate()
 }
 
 // DecodeRouting validates resolved, inline configuration without performing IO.
@@ -29,7 +30,8 @@ func DecodeRouting(input io.Reader) (RoutingConfig, error) {
 	if err := decodeConfigYAML(input, &cfg, true); err != nil {
 		return cfg, fmt.Errorf("routing %w", err)
 	}
-	return cfg, cfg.Validate()
+	cfg = cfg.resolved()
+	return cfg, cfg.validate()
 }
 
 // Load resolves every configuration file and validates local Store definitions before startup.
@@ -42,7 +44,8 @@ func Load(basicFilename, routingFilename string) (Config, error) {
 	if err := loadConfigYAML(basicFilename, &basic, false); err != nil {
 		return cfg, fmt.Errorf("basic %w", err)
 	}
-	if err := basic.Validate(); err != nil {
+	basic = basic.resolved()
+	if err := basic.validate(); err != nil {
 		return cfg, err
 	}
 	if basic.Discovery.PeerAddressEnv != "" {
@@ -65,8 +68,8 @@ func Load(basicFilename, routingFilename string) (Config, error) {
 			return cfg, err
 		}
 	}
-	cfg.Basic, cfg.Routing = basic, routing
-	return cfg, cfg.Validate()
+	cfg.Basic, cfg.Routing = basic, routing.resolved()
+	return cfg, cfg.validate()
 }
 
 func loadConfigYAML(filename string, target any, allowNull bool) error {
@@ -199,7 +202,7 @@ func validateConfigYAML(node *yaml.Node, allowNull bool, field string) error {
 		case yaml.ScalarNode:
 			expectedTag := "!!str"
 			switch frame.field {
-			case "max_connecting", "max_operations", "max_pending_records", "max_batch_documents", "max_instructions", "max_call_depth", "max_stack_slots", "max_depth", "max_nodes", "metadata_cache_entries", "high_watermark", "low_watermark":
+			case "retry_attempts", "max_connecting", "max_operations", "max_pending_records", "max_batch_documents", "max_instructions", "max_call_depth", "max_stack_slots", "max_depth", "max_nodes", "metadata_cache_entries", "high_watermark", "low_watermark":
 				expectedTag = "!!int"
 			case "allow_intranet":
 				expectedTag = "!!bool"

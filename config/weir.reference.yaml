@@ -1,30 +1,10 @@
-# Weir process configuration reference
-#
-# Copy this file to weir.yaml, then edit listener addresses for the node.
-# Copy routes.reference.yaml to routes.yaml only when hosting local Stores.
-# Validate the edited files before starting:
-#   weir check --config weir.yaml --routes routes.yaml
-#   weir serve --config weir.yaml --routes routes.yaml
-# This reference is not auto-discovered. The default CLI path is ./weir.yaml.
-# Changes require a restart; there is no hot reload.
-# --routes defaults to "": no local Store file is read and no backend is assembled.
-# Both CLI paths resolve from the working directory; files are not auto-discovered.
-
-# Syntax: one YAML mapping per file; keys are exact lowercase names shown here.
-# Unknown/duplicate keys, multiple documents, anchors, aliases, merge keys and
-# explicit tags are rejected.
-# Use true/false for booleans, integers for counts, and strings for text and units.
-# Omit optional fields to use defaults; an empty value is YAML null, not omission.
-# Basic fields must not be null. Optional routing adapter/connection blocks may
-# be null; required fields still have to satisfy the rules below.
-# Strings are literal. Only discovery.peer_address_env reads the explicitly named
-# public-address environment variable during Load, never general substitution.
+# Weir process configuration reference.
+# Loading, syntax and runtime semantics: ../docs/configuration.md
+# Omit optional fields for defaults. Changes require a restart.
 
 # Application business/Resolve and peer directory listeners.
 # Required: yes, at least one child address must be nonempty. Default: both disabled.
-# Allowed: a mapping with application and/or peer.
-# Nodes hosting local Stores must enable application. Peer-only nodes may learn
-# and serve the directory without opening any backend.
+# Nodes hosting local Stores must enable application.
 listeners:
   # Address for SDK Resolve initialization and local business traffic.
   # Required: one of application/peer. Default: "" (disabled).
@@ -41,37 +21,25 @@ listeners:
   peer: ""
 
 # Independent HTTP diagnostics: /livez, /readyz and /metrics.
-# Required: no. Default: disabled. Allowed: the address/allow_intranet mapping below.
+# Required: no. Default: disabled until address is set.
 diagnostics:
   # Diagnostic listener address.
   # Required: no. Default: "" (disabled).
   # Allowed: explicit IP:port, port 0..65535. Loopback is required unless
-  # allow_intranet is true. Readiness describes node lifecycle, not backend health.
-  # This is a separate HTTP listener, not an application or peer gRPC endpoint.
+  # allow_intranet is true.
   address: "127.0.0.1:7449"
 
   # Permit a diagnostic listener on a non-loopback interface.
   # Required: no. Default: false. Allowed: true | false.
-  # true requires a nonempty address. Exec probes still target a loopback address.
+  # true requires a nonempty address.
   allow_intranet: false
 
   # HTTP header/read/write/idle deadline. Default: 1s; positive duration.
   # Independent of business RPC contexts and backend IO.
   timeout: 1s
 
-# Memory capacity is detected automatically from the visible container limits,
-# physical host memory and a finite process address-space limit. There is no
-# configurable process memory budget or startup reservation calculation.
-# Container/OS limits provide the hard boundary; overload admission observes use.
-
-# Transport progress deadlines. Business RPCs inherit the client context.
-# Required: no. Default: all child defaults below. Allowed: this mapping.
+# Transport connection and stream progress deadlines.
 transport:
-  # Stream-progress timeout.
-  # Required: no. Default: all child defaults below. Allowed: this mapping.
-  # The value is a duration string, e.g. "500ms", "1.5s", "30s", "5m".
-  # Supported units: ns, us/µs/μs, ms, s, m, h; combined forms such as "1m30s"
-  # are accepted. Values must be positive and fit a signed 64-bit nanosecond count.
   timeouts:
     # Maximum wait for transport/stream progress.
     # Required: no. Default: "30s". Allowed: positive duration.
@@ -102,8 +70,18 @@ transport:
 # Optional peer directory configuration. Uncomment this block when needed.
 # The defaults below keep a standalone node without explicit advertisements.
 # Enable listeners.peer before setting peer_address, peer_address_env or seeds.
-# Directory records contain Store names and endpoints, never backend credentials.
 # discovery:
+#   # Local announcement lifetime. Default: 60s; positive whole milliseconds.
+#   # Must exceed 2 * sync_timeout + sync_interval, covering peer and seed exchange.
+#   lease: 60s
+#
+#   # One cadence for local lease renewal, peer synchronization and seed discovery.
+#   # Default: 1s; positive duration.
+#   sync_interval: 1s
+#
+#   # Deadline of each peer exchange. Default: 2s; positive duration.
+#   sync_timeout: 2s
+#
 #   # Stable identity of replicas serving equivalent local Store definitions.
 #   # Required: no. Default: "" (a new random standalone group at startup).
 #   # Allowed: nonempty printable ASCII without spaces, or "" for default.
@@ -150,10 +128,13 @@ lifecycle:
   # Graceful drain before cancellation. Default: 5s; positive duration.
   # Align Kubernetes terminationGracePeriodSeconds with this and preStop time.
   shutdown_timeout: 5s
+  # Bound resource release after caller cancellation or forced process drain.
+  # Default: 2s; positive duration. Shared by Store and backend cleanup.
+  # Shutdown can require up to two cleanup phases after the drain deadline.
+  cleanup_timeout: 2s
 
-# Admission reacts to actual memory use against automatically discovered capacity.
-# There is no manually configured memory size, concurrency cap or reservation.
 overload:
+  # Compare actual use with automatically discovered process/container capacity.
   memory:
     # Latch overload at this percentage. Default: 80; integer 1..100.
     high_watermark: 80
@@ -163,14 +144,11 @@ overload:
     # Process/container sampling cadence. Default: 100ms; positive duration.
     sample_interval: 100ms
 
-# Lua policy belongs to this process and is shared by every local Store.
-# Execution runs in the main Weir process and follows each caller's context.
+# VM limits shared by every local Store.
 lua:
-  vm:
-    # Default: 0 (no instruction budget), or a positive instruction count.
-    # Set a measured budget only when workload evidence calls for one.
-    max_instructions: 0
-    # Default: 0 (VM native default 10000), or a positive call depth.
-    max_call_depth: 0
-    # Default: 0 (VM native default 1000000), or positive stack slots.
-    max_stack_slots: 0
+  # Default: 0 (no instruction budget), or a positive instruction count.
+  max_instructions: 0
+  # Default: 0 (VM native default 10000), or a positive call depth.
+  max_call_depth: 0
+  # Default: 0 (VM native default 1000000), or positive stack slots.
+  max_stack_slots: 0

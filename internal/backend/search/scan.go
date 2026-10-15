@@ -16,7 +16,6 @@ import (
 )
 
 const scanWorkingBytes = 64 << 20
-const pitKeepAlive = "60s"
 
 type scanPlan struct {
 	execution.ScanProgress
@@ -110,6 +109,7 @@ func (a *Adapter) prepareScan(ctx context.Context, req *pb.ScanRequest) (*execut
 
 func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.ScanPage {
 	n := p.Backend.(*scanPlan)
+	pitKeepAlive := strconv.FormatInt(a.options().PITKeepAlive.Milliseconds(), 10) + "ms"
 	page := &execution.ScanPage{}
 	if n.closed || ctx.Err() != nil {
 		page.Failure = protocol.ContextFailure(ctx)
@@ -143,7 +143,6 @@ func (a *Adapter) fetchScan(ctx context.Context, p *execution.Plan) *execution.S
 		if page.Failure != nil {
 			return page
 		}
-		// Opening and fetching share the caller context.
 	}
 	if n.pit == "" {
 		page.Failure = protocol.Fail(pb.FailureCode_INTERNAL, "PIT unavailable")

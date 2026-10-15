@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	backendcfg "github.com/batchstream/weir/internal/backend"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -192,7 +193,7 @@ func TestNativeHTTPPreservesCompressedResponse(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	transport := newTransport(connectionTimeout)
+	transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
 	transport.DisableKeepAlives = true
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
@@ -221,7 +222,7 @@ func TestNativeHTTPRedirectCannotSelectAnotherBackend(t *testing.T) {
 	})
 	backend := httptest.NewServer(handler)
 	defer backend.Close()
-	transport := newTransport(connectionTimeout)
+	transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
 	transport.DisableKeepAlives = true
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}

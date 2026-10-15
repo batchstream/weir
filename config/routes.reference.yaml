@@ -1,23 +1,8 @@
-# Weir local Store configuration reference
-#
-# Copy to routes.yaml, select Stores and edit backend values. Pair with an edited
-# weir.yaml copied from weir.reference.yaml:
-#   weir check --config weir.yaml --routes routes.yaml
-#   weir serve --config weir.yaml --routes routes.yaml
-# --routes defaults to "" (no local Stores); this reference is not auto-discovered.
-# check validates the entire graph and resolves credential files without backend,
-# DNS, listener or CA access. serve qualifies backends and reads CA files.
-# Changes require a restart. Example credentials and CA paths must be replaced.
-#
-# Syntax: one YAML mapping, exact lowercase keys.
-# Unknown/duplicate keys, multiple documents, anchors/aliases/merge keys and
-# explicit tags are rejected. Strings are literal, without expansion. Sizes and
-# durations are strings. Omit optional scalars for defaults; null is not omission.
-# Optional adapter/authentication/tls blocks may be null; Store entries may not.
-# Lua and Execute flow-control settings belong in the process document.
-#
+# Weir local Store configuration reference.
+# Loading, syntax and runtime semantics: ../docs/configuration.md
+# Replace example credentials and CA paths before use. Changes require a restart.
+
 # Default: no Stores. Store names are unique; each requires exactly one adapter.
-# Request URIs choose database/collection/index; peer discovery learns remote Stores.
 # Hosting Stores requires listeners.application in the process document.
 stores:
   - # Unique name: lowercase letters/digits/internal hyphens, nonempty.
@@ -27,18 +12,9 @@ stores:
       # TCP/DNS/TLS connection establishment only. Default: 2s; positive duration.
       # Business IO and server selection follow the caller's context.
       connect_timeout: 2s
-      # MongoDB completed target qualification entries. Default: 64; integer >= 0.
-      # 0 disables caching; pending checks do not occupy this capacity.
-      # Search qualifies targets afresh for each operation.
-      metadata_cache_entries: 64
       # Encoded record command/exchange chunk target. Default: 32MiB; positive size.
-      # Larger scheduled batches split instead of failing. MongoDB also observes
-      # its advertised BSON command boundary (normally 16MiB). Its response pages
-      # use a document-count hint only below that native boundary; MongoDB's own
-      # response paging remains authoritative. This is not a Lua workspace budget.
-      # Search record request/response groups use this target directly.
-      # One larger item proceeds alone. Scan has separate publication windows.
-      # Native uses the backend's own command/message boundaries.
+      # Larger scheduled batches split; one larger item proceeds alone.
+      # MongoDB also respects its advertised BSON command boundary.
       max_exchange_bytes: 32MiB
 
       mongodb:
@@ -52,11 +28,19 @@ stores:
         # mongodb://mongo.example:27017/?authSource=admin&authMechanism=SCRAM-SHA-256&tls=true
         # CA files belong in backend.tls.ca_file; URI tlsCAFile is rejected.
         uri: mongodb://127.0.0.1:27017/?directConnection=true
-        pool:
-          # Connection creation workers. Default: 2; 0 selects 2.
-          # Native driver goroutines for connection-establishment bursts.
-          # This does not cap active connections or backend operations.
-          max_connecting: 2
+        # Completed target qualification entries. Default: 64; integer >= 0.
+        # 0 disables caching; pending checks do not occupy this capacity.
+        metadata_cache_entries: 64
+        # Connection creation workers. Default: 2; 0 selects 2.
+        # This does not cap active connections or backend operations.
+        max_connecting: 2
+        # Total confirmed-conflict transaction attempts, including the first.
+        # Default: 5; 0 selects 5; 1 disables retries. Never replays unknown writes.
+        # The same bound applies separately to confirming one transaction commit.
+        retry_attempts: 5
+        # Pause between transaction attempts or same-commit confirmations.
+        # Default: 5ms; nonnegative duration; 0s disables the pause.
+        retry_backoff: 5ms
 
       # Optional, shared layout for MongoDB SCRAM and Search HTTP Basic auth.
       # Omit for no authentication. Credentials require both paired sources.
@@ -83,9 +67,8 @@ stores:
       #   # Read only during serve/startup. No insecure-verification switch.
       #   ca_file: /etc/weir/ca.pem
 
-    # Every command type uses this Store waiting queue, including Scan and Native.
-    # Only waiting inputs occupy capacity; dispatch releases it. Full queues wait
-    # for space or caller cancellation. This does not cap active execution.
+    # Bounds waiting inputs; dispatch releases capacity. Full queues wait for
+    # space or caller cancellation. Running work does not occupy this capacity.
     queue:
       # Waiting operations. Default: 1024; 0 selects 1024; positive integer.
       max_operations: 1024
@@ -111,15 +94,25 @@ stores:
 
   - name: search
     backend:
-      # Connection, cache and exchange settings have the same defaults above.
+      # Connection establishment only. Default: 2s; positive duration.
       connect_timeout: 2s
-      metadata_cache_entries: 64
+      # Record exchange chunk target. Default: 32MiB; positive size.
       max_exchange_bytes: 32MiB
       search:
         # One http:// or https:// IP/DNS origin and explicit port.
         # No userinfo, path/trailing slash, query or fragment. Requests choose index.
         # Authentication or custom CA requires HTTPS. Omit auth/tls for system roots.
         url: https://127.0.0.1:9200
+        # Total confirmed-version-conflict attempts, including the first.
+        # Default: 5; 0 selects 5; 1 disables retries.
+        retry_attempts: 5
+        # Retention renewed on PIT open/fetch; bounds scan checkpoint availability.
+        # Default: 60s; positive duration with whole milliseconds, minimum 1ms.
+        # Backend maximum retention settings remain authoritative.
+        pit_keep_alive: 60s
+        # Reap unused pooled HTTP connections after this time; no business deadline.
+        # Default: 30s; nonnegative duration; 0s disables expiry.
+        idle_timeout: 30s
       authentication:
         # Example paired credentials. Replace values or use paired file sources.
         # Field bounds/source rules are shared with MongoDB above.
@@ -131,4 +124,3 @@ stores:
         # Example custom trust bundle. Replace, or omit tls for system roots.
         # The path/read/trust rules are shared with MongoDB above.
         ca_file: /etc/weir/ca.pem
-    # Omitted queue, batching and scan groups use the documented defaults above.

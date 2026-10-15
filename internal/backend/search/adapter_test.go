@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"github.com/batchstream/weir/internal/backend"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,7 +82,7 @@ func TestResponseAndRequestLimits(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport(connectionTimeout)
+			transport := newTransport(connectionTimeout, backend.DefaultOptions().IdleTimeout)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			client := &http.Client{Transport: transport, CheckRedirect: noRedirect}

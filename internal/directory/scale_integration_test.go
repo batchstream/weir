@@ -5,6 +5,7 @@ package directory_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"slices"
 	"strings"
@@ -82,7 +83,7 @@ func TestDirectoryLargeMetadataAcrossProductionGRPC(t *testing.T) {
 	defer peerConnection.Close()
 	announcements := make([]*peerpb.NodeAnnouncement, 640)
 	for i := range announcements {
-		announcements[i] = &peerpb.NodeAnnouncement{IncarnationId: fmt.Sprintf("%032x", i+1), Revision: 1, ReplicaGroup: group, StoreNames: stores, StoreEndpoints: targets, LeaseRemainingMs: 30000}
+		announcements[i] = &peerpb.NodeAnnouncement{IncarnationId: fmt.Sprintf("%032x", i+1), Revision: 1, ReplicaGroup: group, StoreNames: stores, StoreEndpoints: targets, LeaseRemainingMs: 30000, OriginLeaseMs: 60000}
 	}
 	request := &peerpb.SyncDirectoryRequest{Announcements: announcements}
 	if proto.Size(request) <= 2<<20 {
@@ -91,7 +92,11 @@ func TestDirectoryLargeMetadataAcrossProductionGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	peer := peerpb.NewPeerDiscoveryServiceClient(peerConnection)
-	response, err := peer.SyncDirectory(ctx, request)
+	if _, err := exchangeDirectory(ctx, peer, request); err != nil {
+		t.Fatal(err)
+	}
+	empty := &peerpb.SyncDirectoryRequest{}
+	response, err := exchangeDirectory(ctx, peer, empty)
 	if err != nil || len(response.GetAnnouncements()) != 641 || proto.Size(response) <= 2<<20 {
 		t.Fatal("production gRPC directory truncated or rejected large metadata", err, len(response.GetAnnouncements()), proto.Size(response))
 	}
@@ -113,11 +118,10 @@ func TestDirectoryLargeMetadataAcrossProductionGRPC(t *testing.T) {
 	valid := proto.Clone(announcements[1]).(*peerpb.NodeAnnouncement)
 	valid.Revision = 2
 	invalidRequest := &peerpb.SyncDirectoryRequest{Announcements: []*peerpb.NodeAnnouncement{valid, malformed}}
-	if _, err := peer.SyncDirectory(ctx, invalidRequest); status.Code(err) != codes.InvalidArgument {
+	if _, err := exchangeDirectory(ctx, peer, invalidRequest); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("large-scale directory lost semantic validation", err)
 	}
-	empty := &peerpb.SyncDirectoryRequest{}
-	response, err = peer.SyncDirectory(ctx, empty)
+	response, err = exchangeDirectory(ctx, peer, empty)
 	if err != nil || len(response.GetAnnouncements()) != 641 {
 		t.Fatal("invalid snapshot partially changed membership", err)
 	}
@@ -126,4 +130,32 @@ func TestDirectoryLargeMetadataAcrossProductionGRPC(t *testing.T) {
 			t.Fatal("invalid snapshot partially advanced another node revision", node.Revision)
 		}
 	}
+}
+
+func exchangeDirectory(ctx context.Context, peer peerpb.PeerDiscoveryServiceClient, request *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {
+	stream, err := peer.SyncDirectory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	opening := &peerpb.SyncDirectoryRequest{}
+	if err := stream.Send(opening); err != nil {
+		return nil, err
+	}
+	response, err := stream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := stream.Send(request); err != nil {
+		return nil, err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return nil, err
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("unexpected extra snapshot")
+	}
+	return response, nil
 }

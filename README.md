@@ -22,6 +22,12 @@ after transport failure and are never automatically replayed.
 See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
 and [payload contracts](docs/payloads.md) for the current contracts.
 
+The [value proof](docs/value-proof.md) compares real MongoDB access through the
+driver, native batches and the Weir SDK. Cross-request aggregation reduces
+database calls under concurrency; low-concurrency latency and efficient native
+batches favor direct access in this experiment. Production adoption still needs
+a matched workload and total resource measurements.
+
 ## Build and run
 
 Requires Go **1.27.1**. Typed Read, Mutate and Scan require existing backend
@@ -39,6 +45,7 @@ and CA paths, then validate and start the node:
 
 ```sh
 bin/weir check --config weir.yaml --routes routes.yaml
+bin/weir check --config weir.yaml --routes routes.yaml --effective
 bin/weir serve --config weir.yaml --routes routes.yaml
 ```
 
@@ -95,6 +102,9 @@ Reference files are not automatically loaded. Both files use strict single-docum
 unknown/duplicate fields, anchors, aliases and explicit tags are rejected.
 `weir check` validates configuration without connecting to
 peers or backends. Configuration changes take effect after a restart.
+`check --effective` shows resolved defaults and automatic sources with
+authentication and trust paths redacted. The [configuration review](docs/configuration.md)
+explains removed fields, retained controls and fixed protocol boundaries.
 
 Store defaults are 32 operations and 8MiB of input per batch. There is no
 collection delay; queued RPCs combine by namespace, actual input bytes and
@@ -114,7 +124,8 @@ connections have no Weir concurrency cap. Backend protocols determine document s
 Store settings are grouped by responsibility: `backend` holds connection establishment
 and MongoDB target caching, native exchange chunk sizes, and the shared
 `authentication`/`tls` layout. MongoDB connection workers are under
-`backend.mongodb.pool`. Store `queue`, `batching` and `scan` hold waiting
+`backend.mongodb.max_connecting`. MongoDB target caching belongs to
+`backend.mongodb.metadata_cache_entries`. Store `queue`, `batching` and `scan` hold waiting
 work, request aggregation and Scan publication batches. Process `transport` owns
 Execute flow control and independent keepalive/progress settings; process `lua`
 sets VM execution policy for every Store. Business work
@@ -316,11 +327,13 @@ before it creates the release.
 | --- | --- |
 | `weir serve --config weir.yaml --routes routes.yaml` | Start discovery and configured local Stores from edited reference files. |
 | `weir check --config weir.yaml --routes routes.yaml` | Validate process settings, Stores and credential files. |
+| `weir check --config weir.yaml --routes routes.yaml --effective` | Inspect resolved policy and automatic sources with sensitive values redacted. |
 | `weir version` | Print build identity. |
 | `weir probe live` / `weir probe ready` | Check loopback diagnostics. |
 
 `serve` and `check` accept `-c` for `--config`. `probe --address` selects a loopback
-diagnostic address. The peer examples use their explicit local Store files:
+diagnostic address; `probe --timeout` controls its complete request deadline
+(default `750ms`). The peer examples use their explicit local Store files:
 
 ```sh
 weir serve --config examples/peer-a.yaml --routes examples/peer-a.routes.yaml

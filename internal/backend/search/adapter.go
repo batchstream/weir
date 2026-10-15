@@ -111,12 +111,12 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 		tlsConfig: tlsConfig,
 		conns:     make(map[*searchConn]struct{}),
 	}
-	transport := newTransport(settings.ConnectTimeout)
+	transport := newTransport(settings.ConnectTimeout, settings.IdleTimeout)
 	transport.DialContext = dialer.dial
 	transport.DialTLSContext = dialer.dial
 	transport.TLSClientConfig = tlsConfig
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
-	nativeTransport := newTransport(settings.ConnectTimeout)
+	nativeTransport := newTransport(settings.ConnectTimeout, settings.IdleTimeout)
 	nativeTransport.DialContext = dialer.dial
 	nativeTransport.DialTLSContext = dialer.dial
 	nativeTransport.TLSClientConfig = tlsConfig

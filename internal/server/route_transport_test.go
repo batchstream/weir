@@ -56,13 +56,29 @@ func TestBatchDeadlineAndCancellation(t *testing.T) {
 }
 
 func TestBatchGracefulDrainPreservesAdmittedMutation(t *testing.T) {
+	for _, delay := range []time.Duration{0, 5100 * time.Millisecond} {
+		t.Run(delay.String(), func(t *testing.T) {
+			testGracefulDrain(t, delay)
+		})
+	}
+}
+
+func testGracefulDrain(t *testing.T, delay time.Duration) {
+	t.Helper()
 	adapter, local := peerLocal(t, "records")
 	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
 	adapter.block = release
 	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
 	srv, address := startPeerServer(t, opts)
 	_, client := peerClient(t, address)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
 	defer cancel()
 	resultDone := make(chan error, 1)
 	go func() {
@@ -83,6 +99,13 @@ func TestBatchGracefulDrainPreservesAdmittedMutation(t *testing.T) {
 	case <-srv.admission.draining:
 	case <-ctx.Done():
 		t.Fatal("server did not begin drain")
+	}
+	if delay > 0 {
+		select {
+		case err := <-shutdown:
+			t.Fatal("graceful drain ended before the caller's configured budget", err)
+		case <-time.After(delay):
+		}
 	}
 	close(release)
 	if err := <-resultDone; err != nil {

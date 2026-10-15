@@ -2,6 +2,7 @@ package directory
 
 import (
 	"context"
+	"io"
 	"math/rand/v2"
 	"net"
 	"net/netip"
@@ -35,10 +36,10 @@ func (d *Directory) renew(now time.Time) {
 		return
 	}
 	owned.announcement.Revision++
-	owned.expires = now.Add(Lease)
+	owned.expires = now.Add(d.policy.Lease)
 	d.records[d.self] = owned
 	for id, remote := range d.records {
-		if id != d.self && !now.Before(remote.expires.Add(2*Lease)) {
+		if id != d.self && !now.Before(remote.forget) {
 			delete(d.records, id)
 		}
 	}
@@ -62,28 +63,23 @@ func (d *Directory) run(ctx context.Context) {
 	defer close(d.done)
 	timer := time.NewTimer(0)
 	defer timer.Stop()
-	nextHeartbeat := time.Time{}
-	nextSeed := time.Time{}
 	seedIndex := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-timer.C:
-			if !now.Before(nextHeartbeat) {
-				d.renew(now)
-				nextHeartbeat = now.Add(heartbeatInterval)
-			}
+		case <-timer.C:
+			now := time.Now()
+			d.renew(now)
 			peers := d.peers(now)
 			if len(peers) > 0 {
 				_ = d.syncPeer(ctx, peers[rand.IntN(len(peers))])
 			}
-			if len(d.seeds) > 0 && !now.Before(nextSeed) {
+			if len(d.seeds) > 0 {
 				_ = d.syncPeer(ctx, d.seeds[seedIndex%len(d.seeds)])
 				seedIndex++
-				nextSeed = now.Add(heartbeatInterval)
 			}
-			timer.Reset(syncInterval)
+			timer.Reset(max(0, d.policy.SyncInterval-time.Since(now)))
 		}
 	}
 }
@@ -92,7 +88,7 @@ func (d *Directory) run(ctx context.Context) {
 // this process. Reconnecting later gives that Service another chance to select
 // a different peer and reconnect independently formed membership sets.
 func (d *Directory) syncPeer(parent context.Context, address string) error {
-	ctx, cancel := context.WithTimeout(parent, SyncTimeout)
+	ctx, cancel := context.WithTimeout(parent, d.policy.SyncTimeout)
 	defer cancel()
 	host, port, _ := net.SplitHostPort(address)
 	if _, err := netip.ParseAddr(host); err != nil {
@@ -102,7 +98,7 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 		}
 		address = net.JoinHostPort(ips[rand.IntN(len(ips))], port)
 	}
-	dialer := net.Dialer{Timeout: SyncTimeout}
+	dialer := net.Dialer{Timeout: d.policy.SyncTimeout}
 	codec := peerCodec{}
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(),
@@ -118,9 +114,17 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 		return err
 	}
 	defer connection.Close()
-	request := &peerpb.SyncDirectoryRequest{Announcements: d.snapshot(time.Now())}
 	client := peerpb.NewPeerDiscoveryServiceClient(connection)
-	response, err := client.SyncDirectory(ctx, request)
+	anchor := time.Now()
+	stream, err := client.SyncDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	opening := &peerpb.SyncDirectoryRequest{}
+	if err := stream.Send(opening); err != nil {
+		return err
+	}
+	response, err := stream.Recv()
 	if err != nil {
 		return err
 	}
@@ -130,7 +134,25 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 	if len(response.ProtoReflect().GetUnknown()) > 0 {
 		return status.Error(codes.InvalidArgument, "unknown directory response fields")
 	}
-	return d.merge(response.Announcements, time.Now())
+	request := &peerpb.SyncDirectoryRequest{Announcements: d.snapshot()}
+	if err := stream.Send(request); err != nil {
+		return err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return status.Error(codes.InvalidArgument, "directory exchange contains extra responses")
+	}
+	// Install only a completely validated finite exchange. A closed directory
+	// still publishes its withdrawal but no longer installs remote state.
+	if err := d.merge(response.Announcements, anchor, time.Now()); err != nil && status.Code(err) != codes.Unavailable {
+		return err
+	}
+	return nil
 }
 
 func (d *Directory) Close(ctx context.Context) error {
@@ -146,7 +168,7 @@ func (d *Directory) Close(ctx context.Context) error {
 	owned.announcement.Withdrawn = true
 	owned.announcement.StoreNames = nil
 	owned.announcement.StoreEndpoints = nil
-	owned.expires = time.Now().Add(Lease)
+	owned.expires = time.Now().Add(d.policy.Lease)
 	d.records[d.self] = owned
 	d.mu.Unlock()
 	if cancel != nil {
@@ -156,7 +178,7 @@ func (d *Directory) Close(ctx context.Context) error {
 	// Withdrawal is best effort. Abrupt death is covered by the same owner lease.
 	peers := d.peers(time.Now())
 	peers = append(peers, d.seeds...)
-	for _, peer := range peers[:min(len(peers), 3)] {
+	for _, peer := range peers {
 		if ctx.Err() != nil {
 			break
 		}

@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-// Connection setup has its own bound; it does not limit a connected request's
-// headers or acknowledgement body.
 const connectionTimeout = 2 * time.Second
 
 var errTransport = errors.New("backend transport failed")
@@ -139,8 +137,8 @@ func (a *Adapter) request(ctx context.Context, call exchange) (int, []byte, erro
 	return response.StatusCode, raw, nil
 }
 
-// Both execution paths use exactly the immutable backend credentials. Native
-// Native HTTP requests cannot supply Authorization or replayable request headers.
+// Both execution paths use the configured backend credentials; Native requests
+// cannot supply Authorization or replayable request headers.
 func (a *Adapter) configureRequest(request *http.Request) {
 	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
 	// values. Keep the original request lifetime for our owned DNS/TLS I/O too.
@@ -152,14 +150,14 @@ func (a *Adapter) configureRequest(request *http.Request) {
 		request.SetBasicAuth(connection.Username, connection.Password)
 	}
 }
-func newTransport(timeout time.Duration) *http.Transport {
-	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
+func newTransport(timeout, idleTimeout time.Duration) *http.Transport {
+	dialer := &net.Dialer{Timeout: timeout}
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	transport := &http.Transport{
 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
 		DisableCompression: true, MaxConnsPerHost: 0,
-		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: 30 * time.Second,
+		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: idleTimeout,
 		MaxResponseHeaderBytes: math.MaxInt64,
 		TLSHandshakeTimeout:    timeout,
 	}

@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -26,6 +25,9 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/topology"
 )
+
+// DefaultMaxConnecting matches the native driver connection creation default.
+const DefaultMaxConnecting uint64 = 2
 
 type Config struct {
 	Options       *backend.Options
@@ -77,7 +79,7 @@ func Open(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	cfg.Options = &settings
 	if cfg.MaxConnecting == 0 {
-		cfg.MaxConnecting = 2
+		cfg.MaxConnecting = DefaultMaxConnecting
 	}
 
 	dialer := newConnectionOwner()
@@ -185,7 +187,7 @@ func mongoQualificationFailure(message string, err error) error {
 
 func (a *Adapter) Close() error {
 	a.once.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
 		defer cancel()
 		if a.dialer != nil {
 			a.dialer.stop()

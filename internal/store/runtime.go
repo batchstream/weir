@@ -16,18 +16,19 @@ import (
 // Limits controls batching and waiting work, not backend execution concurrency.
 type Limits struct {
 	Scan                        execution.ScanLimits
+	CleanupTimeout              time.Duration
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, Scan: execution.DefaultScanLimits()}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
 	return limits
 }
 
 func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
-		limits.BatchOperations < 1 || limits.BatchBytes < 1 {
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.CleanupTimeout < 0 {
 		return fmt.Errorf("invalid batch or queue bounds")
 	}
 	if limits.Scan.Documents != 0 {
@@ -115,6 +116,9 @@ func New(adapter execution.Adapter, limits Limits) (*Runtime, error) {
 	return runtime, nil
 }
 func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
+	if limits.CleanupTimeout == 0 {
+		limits.CleanupTimeout = DefaultLimits().CleanupTimeout
+	}
 	if limits.Scan.Documents == 0 {
 		limits.Scan = execution.DefaultScanLimits()
 	}
@@ -478,7 +482,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 	t.publishing = true
 	go func() {
 		if !continuation && t.plan.Command.GetScan() != nil {
-			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			cleanup, cancel := context.WithTimeout(context.Background(), r.limits.CleanupTimeout)
 			failure := r.adapter.ClosePlan(cleanup, t.plan)
 			cancel()
 			if failure != nil {
@@ -528,7 +532,7 @@ func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuati
 			r.mu.Unlock()
 		}
 		if continuation {
-			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			cleanup, cancel := context.WithTimeout(context.Background(), r.limits.CleanupTimeout)
 			_ = r.adapter.ClosePlan(cleanup, t.plan)
 			cancel()
 			r.mu.Lock()
@@ -711,7 +715,7 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	select {
 	case <-r.done:
-	case <-time.After(3 * time.Second):
+	case <-time.After(r.limits.CleanupTimeout):
 		r.closeOnce.Do(func() { r.closeErr = r.adapter.Close() })
 		return fmt.Errorf("backend executions failed to stop")
 	}

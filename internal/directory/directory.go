@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -13,26 +14,49 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	SyncTimeout       = 2 * time.Second
-	Lease             = 60 * time.Second
-	heartbeatInterval = 5 * time.Second
-	syncInterval      = time.Second
-)
+type Policy struct {
+	Lease        time.Duration
+	SyncInterval time.Duration
+	SyncTimeout  time.Duration
+}
+
+func DefaultPolicy() Policy {
+	policy := Policy{Lease: time.Minute, SyncInterval: time.Second, SyncTimeout: 2 * time.Second}
+	return policy
+}
+
+func (p Policy) Validate() error {
+	for _, duration := range []time.Duration{p.Lease, p.SyncInterval, p.SyncTimeout} {
+		if duration <= 0 {
+			return errors.New("discovery lease, sync interval and timeout must be positive")
+		}
+	}
+	if p.Lease%time.Millisecond != 0 {
+		return errors.New("discovery lease must be whole milliseconds for peer encoding")
+	}
+	remaining := p.Lease - p.SyncInterval
+	if remaining <= p.SyncTimeout || remaining-p.SyncTimeout <= p.SyncTimeout {
+		return errors.New("discovery lease must exceed sync interval plus two sync timeouts")
+	}
+	return nil
+}
 
 type Config struct {
 	Group, PeerAddress     string
 	Targets, Stores, Seeds []string
+	Policy                 Policy
 }
 
 type record struct {
 	announcement *peerpb.NodeAnnouncement
 	expires      time.Time
+	forget       time.Time
 }
 
 type Directory struct {
@@ -43,9 +67,16 @@ type Directory struct {
 	closed  bool
 	cancel  context.CancelFunc
 	done    chan struct{}
+	policy  Policy
 }
 
 func New(cfg Config) (*Directory, error) {
+	if cfg.Policy == (Policy{}) {
+		cfg.Policy = DefaultPolicy()
+	}
+	if err := cfg.Policy.Validate(); err != nil {
+		return nil, err
+	}
 	stores := slices.Clone(cfg.Stores)
 	slices.Sort(stores)
 	for i, name := range stores {
@@ -90,9 +121,9 @@ func New(cfg Config) (*Directory, error) {
 		return nil, errors.New("invalid discovery group")
 	}
 	now := time.Now()
-	announcement := &peerpb.NodeAnnouncement{IncarnationId: self, Revision: 1, PeerEndpoint: cfg.PeerAddress, ReplicaGroup: cfg.Group, StoreNames: stores, StoreEndpoints: targets}
-	owned := record{announcement: announcement, expires: now.Add(Lease)}
-	d := &Directory{self: self, records: map[string]record{self: owned}, seeds: seeds, done: make(chan struct{})}
+	announcement := &peerpb.NodeAnnouncement{IncarnationId: self, Revision: 1, PeerEndpoint: cfg.PeerAddress, ReplicaGroup: cfg.Group, StoreNames: stores, StoreEndpoints: targets, OriginLeaseMs: uint64(cfg.Policy.Lease / time.Millisecond)}
+	owned := record{announcement: announcement, expires: now.Add(cfg.Policy.Lease)}
+	d := &Directory{self: self, records: map[string]record{self: owned}, seeds: seeds, done: make(chan struct{}), policy: cfg.Policy}
 	return d, nil
 }
 
@@ -157,7 +188,8 @@ func (d *Directory) ResolveStore(ctx context.Context, request *pb.ResolveStoreRe
 }
 
 func validateAnnouncement(ad *peerpb.NodeAnnouncement) error {
-	if ad == nil || len(ad.ProtoReflect().GetUnknown()) > 0 || len(ad.IncarnationId) != 32 || strings.Trim(ad.IncarnationId, "0123456789abcdef") != "" || ad.Revision == 0 || !ValidReplicaGroup(ad.ReplicaGroup) || ad.LeaseRemainingMs == 0 || ad.LeaseRemainingMs > uint64((Lease-SyncTimeout)/time.Millisecond) {
+	const maximumDurationMilliseconds = uint64((1<<63 - 1) / int64(time.Millisecond))
+	if ad == nil || len(ad.ProtoReflect().GetUnknown()) > 0 || len(ad.IncarnationId) != 32 || strings.Trim(ad.IncarnationId, "0123456789abcdef") != "" || ad.Revision == 0 || !ValidReplicaGroup(ad.ReplicaGroup) || ad.LeaseRemainingMs == 0 || ad.LeaseRemainingMs > ad.OriginLeaseMs || ad.OriginLeaseMs > maximumDurationMilliseconds {
 		return status.Error(codes.InvalidArgument, "invalid node announcement")
 	}
 	if ad.PeerEndpoint != "" {
@@ -183,7 +215,7 @@ func validateAnnouncement(ad *peerpb.NodeAnnouncement) error {
 	return nil
 }
 
-func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error {
+func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, anchor, now time.Time) error {
 	seen := make(map[string]bool, len(nodes))
 	for _, ad := range nodes {
 		if err := validateAnnouncement(ad); err != nil {
@@ -199,8 +231,14 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 	if d.closed {
 		return status.Error(codes.Unavailable, "directory closed")
 	}
+	// Check immutable incarnation policy before mutating any records, including GC.
+	for _, ad := range nodes {
+		if owned, known := d.records[ad.IncarnationId]; known && ad.OriginLeaseMs != owned.announcement.OriginLeaseMs {
+			return status.Error(codes.InvalidArgument, "origin lease changed within an incarnation")
+		}
+	}
 	for id, owned := range d.records {
-		if id != d.self && !now.Before(owned.expires.Add(2*Lease)) {
+		if id != d.self && !now.Before(owned.forget) {
 			delete(d.records, id)
 		}
 	}
@@ -209,26 +247,30 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, now time.Time) error
 			continue
 		}
 		owned, known := d.records[ad.IncarnationId]
-		if known && ad.Revision <= owned.announcement.Revision {
+		if known && (ad.Revision <= owned.announcement.Revision || owned.announcement.Withdrawn) {
+			continue
+		}
+		expires := anchor.Add(time.Duration(ad.LeaseRemainingMs) * time.Millisecond)
+		if !now.Before(expires) {
 			continue
 		}
 		copy := proto.Clone(ad).(*peerpb.NodeAnnouncement)
 		copy.LeaseRemainingMs = 0
-		expires := now.Add(time.Duration(ad.LeaseRemainingMs) * time.Millisecond)
-		updated := record{announcement: copy, expires: expires}
+		updated := record{announcement: copy, expires: expires, forget: now.Add(time.Duration(ad.OriginLeaseMs) * time.Millisecond)}
 		d.records[ad.IncarnationId] = updated
 	}
 	return nil
 }
 
-// snapshot charges the full RPC timeout before sending. The receiver's bounded
-// timeout therefore cannot turn network delay into additional lease lifetime.
-func (d *Directory) snapshot(now time.Time) []*peerpb.NodeAnnouncement {
+// The receiver anchors each remaining lease before this snapshot was formed.
+// Its complete exchange delay is therefore deducted without synchronized clocks.
+func (d *Directory) snapshot() []*peerpb.NodeAnnouncement {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	now := time.Now()
 	nodes := make([]*peerpb.NodeAnnouncement, 0, len(d.records))
 	for _, owned := range d.records {
-		remaining := owned.expires.Sub(now) - SyncTimeout
+		remaining := owned.expires.Sub(now)
 		if remaining < time.Millisecond {
 			continue
 		}
@@ -240,16 +282,36 @@ func (d *Directory) snapshot(now time.Time) []*peerpb.NodeAnnouncement {
 	return nodes
 }
 
-func (d *Directory) SyncDirectory(ctx context.Context, request *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, status.FromContextError(err).Err()
+func (d *Directory) ExchangeTimeout() time.Duration { return d.policy.SyncTimeout }
+
+func (d *Directory) SyncDirectory(stream grpc.BidiStreamingServer[peerpb.SyncDirectoryRequest, peerpb.SyncDirectoryResponse]) error {
+	opening, err := stream.Recv()
+	if err != nil {
+		return err
 	}
-	if request == nil || len(request.ProtoReflect().GetUnknown()) > 0 {
-		return nil, status.Error(codes.InvalidArgument, "invalid directory sync")
+	if len(opening.ProtoReflect().GetUnknown()) != 0 || len(opening.Announcements) != 0 {
+		return status.Error(codes.InvalidArgument, "directory exchange must open with an empty request")
 	}
-	if err := d.merge(request.Announcements, time.Now()); err != nil {
-		return nil, err
+	anchor := time.Now()
+	response := &peerpb.SyncDirectoryResponse{Announcements: d.snapshot()}
+	if err := stream.Send(response); err != nil {
+		return err
 	}
-	response := &peerpb.SyncDirectoryResponse{Announcements: d.snapshot(time.Now())}
-	return response, nil
+	request, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if len(request.ProtoReflect().GetUnknown()) != 0 {
+		return status.Error(codes.InvalidArgument, "unknown directory request fields")
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return status.Error(codes.InvalidArgument, "directory exchange contains extra requests")
+	}
+	if err := stream.Context().Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	return d.merge(request.Announcements, anchor, time.Now())
 }

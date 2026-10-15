@@ -133,7 +133,10 @@ type NodeAnnouncement struct {
 	// Remaining origin lease in milliseconds at the time this snapshot is formed.
 	LeaseRemainingMs uint64 `protobuf:"varint,7,opt,name=lease_remaining_ms,json=leaseRemainingMs,proto3" json:"lease_remaining_ms,omitempty"`
 	// Explicit process withdrawal; this incarnation must no longer supply endpoints.
-	Withdrawn     bool `protobuf:"varint,8,opt,name=withdrawn,proto3" json:"withdrawn,omitempty"`
+	Withdrawn bool `protobuf:"varint,8,opt,name=withdrawn,proto3" json:"withdrawn,omitempty"`
+	// Complete lease duration chosen by the origin for this incarnation. It is
+	// immutable across revisions and lets receivers bound replay watermark age.
+	OriginLeaseMs uint64 `protobuf:"varint,9,opt,name=origin_lease_ms,json=originLeaseMs,proto3" json:"origin_lease_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -224,6 +227,13 @@ func (x *NodeAnnouncement) GetWithdrawn() bool {
 	return false
 }
 
+func (x *NodeAnnouncement) GetOriginLeaseMs() uint64 {
+	if x != nil {
+		return x.OriginLeaseMs
+	}
+	return 0
+}
+
 var File_internal_api_peer_v1_peer_proto protoreflect.FileDescriptor
 
 const file_internal_api_peer_v1_peer_proto_rawDesc = "" +
@@ -232,7 +242,7 @@ const file_internal_api_peer_v1_peer_proto_rawDesc = "" +
 	"\x14SyncDirectoryRequest\x12D\n" +
 	"\rannouncements\x18\x01 \x03(\v2\x1e.weir.peer.v1.NodeAnnouncementR\rannouncements\"]\n" +
 	"\x15SyncDirectoryResponse\x12D\n" +
-	"\rannouncements\x18\x01 \x03(\v2\x1e.weir.peer.v1.NodeAnnouncementR\rannouncements\"\xb5\x02\n" +
+	"\rannouncements\x18\x01 \x03(\v2\x1e.weir.peer.v1.NodeAnnouncementR\rannouncements\"\xdd\x02\n" +
 	"\x10NodeAnnouncement\x12%\n" +
 	"\x0eincarnation_id\x18\x01 \x01(\tR\rincarnationId\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x12#\n" +
@@ -242,9 +252,10 @@ const file_internal_api_peer_v1_peer_proto_rawDesc = "" +
 	"storeNames\x12'\n" +
 	"\x0fstore_endpoints\x18\x06 \x03(\tR\x0estoreEndpoints\x12,\n" +
 	"\x12lease_remaining_ms\x18\a \x01(\x04R\x10leaseRemainingMs\x12\x1c\n" +
-	"\twithdrawn\x18\b \x01(\bR\twithdrawn2p\n" +
-	"\x14PeerDiscoveryService\x12X\n" +
-	"\rSyncDirectory\x12\".weir.peer.v1.SyncDirectoryRequest\x1a#.weir.peer.v1.SyncDirectoryResponseB9Z7github.com/batchstream/weir/internal/api/peer/v1;peerv1b\x06proto3"
+	"\twithdrawn\x18\b \x01(\bR\twithdrawn\x12&\n" +
+	"\x0forigin_lease_ms\x18\t \x01(\x04R\roriginLeaseMs2t\n" +
+	"\x14PeerDiscoveryService\x12\\\n" +
+	"\rSyncDirectory\x12\".weir.peer.v1.SyncDirectoryRequest\x1a#.weir.peer.v1.SyncDirectoryResponse(\x010\x01B9Z7github.com/batchstream/weir/internal/api/peer/v1;peerv1b\x06proto3"
 
 var (
 	file_internal_api_peer_v1_peer_proto_rawDescOnce sync.Once

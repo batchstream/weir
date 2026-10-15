@@ -71,7 +71,8 @@ func TestProbeRejectsTargets(t *testing.T) {
 		"http://127.0.0.1:80",
 		"127.0.0.1:80/metrics",
 	} {
-		if err := runProbe(context.Background(), "live", address); err == nil {
+		err := runProbe(context.Background(), "live", address, probeTimeout)
+		if err == nil {
 			t.Fatal("accepted", address)
 		}
 	}
@@ -117,7 +118,7 @@ func TestProbeBoundedResponses(t *testing.T) {
 			}()
 
 			started := time.Now()
-			err = runProbe(context.Background(), "live", listener.Addr().String())
+			err = runProbe(context.Background(), "live", listener.Addr().String(), probeTimeout)
 			if (err == nil) != test.healthy {
 				t.Fatalf("healthy=%v err=%v", test.healthy, err)
 			}
@@ -140,7 +141,8 @@ func TestProbeCancellationAndAbsentListener(t *testing.T) {
 	}
 	address := listener.Addr().String()
 	listener.Close()
-	if err := runProbe(context.Background(), "live", address); err == nil {
+	err = runProbe(context.Background(), "live", address, probeTimeout)
+	if err == nil {
 		t.Fatal("absent listener healthy")
 	}
 
@@ -156,7 +158,7 @@ func TestProbeCancellationAndAbsentListener(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runProbe(ctx, "live", strings.TrimPrefix(server.URL, "http://"))
+		done <- runProbe(ctx, "live", strings.TrimPrefix(server.URL, "http://"), probeTimeout)
 	}()
 	<-arrived
 	cancel()
@@ -167,5 +169,33 @@ func TestProbeCancellationAndAbsentListener(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("cancellation stuck")
+	}
+}
+
+func TestProbeConfiguredDeadline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		select {
+		case <-request.Context().Done():
+			return
+		case <-time.After(80 * time.Millisecond):
+			_, _ = io.WriteString(w, "ok\n")
+		}
+	}))
+	defer server.Close()
+	address := strings.TrimPrefix(server.URL, "http://")
+	for _, test := range []struct {
+		timeout string
+		healthy bool
+	}{
+		{timeout: "20ms", healthy: false},
+		{timeout: "300ms", healthy: true},
+		{timeout: "0s", healthy: false},
+		{timeout: "-1s", healthy: false},
+	} {
+		var output bytes.Buffer
+		err := run([]string{"probe", "live", "--address", address, "--timeout", test.timeout}, &output)
+		if (err == nil) != test.healthy {
+			t.Fatal("probe did not honor the configured deadline", test.timeout, err)
+		}
 	}
 }

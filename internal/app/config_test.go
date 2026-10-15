@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"net"
 	"path/filepath"
 	"strings"
@@ -293,7 +294,26 @@ func TestListenerRolesMatchAddressesAndMetricLabels(t *testing.T) {
 				}
 				peer := peerpb.NewPeerDiscoveryServiceClient(connection)
 				exchange := &peerpb.SyncDirectoryRequest{}
-				_, err = peer.SyncDirectory(ctx, exchange)
+				stream, streamErr := peer.SyncDirectory(ctx)
+				err = streamErr
+				if err == nil {
+					err = stream.Send(exchange)
+				}
+				if err == nil {
+					_, err = stream.Recv()
+				}
+				if err == nil {
+					err = stream.Send(exchange)
+				}
+				if err == nil {
+					err = stream.CloseSend()
+				}
+				if err == nil {
+					_, err = stream.Recv()
+					if err == io.EOF {
+						err = nil
+					}
+				}
 				want = codes.Unimplemented
 				if role == "peer" {
 					want = codes.OK

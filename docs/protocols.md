@@ -51,7 +51,8 @@ Any equivalent node serving the same Store can resume a token; the backing targe
 and Store configuration must still describe the same logical data. MongoDB uses
 keyset reads without a cross-page snapshot or protocol-imposed expiry; intervening
 inserts, deletes and updates can change later pages. Search uses a backend PIT with
-60s keep_alive renewed by successful PIT search requests. Expired or lost
+`backend.search.pit_keep_alive` (default `60s`) renewed by successful PIT search
+requests. Expired or lost
 PITs fail continuation without automatically restarting traversal. Tokens are
 opaque checkpoints and do not grant additional access to backend data.
 Continuation tokens must match the current envelope, fingerprint and traversal
@@ -65,8 +66,14 @@ an internal short transaction with group rollback on database write error; Searc
 uses per-item version conditions. Neither path adds document metadata.
 
 The independent internal [peer.proto](../internal/api/peer/v1/peer.proto), package
-weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory. It exchanges
-snapshots without depending on public business DTOs.
+weir.peer.v1, exposes PeerDiscoveryService.SyncDirectory as a finite bidirectional
+stream. The initiator sends an empty request, receives one snapshot, sends its own
+snapshot and half-closes; final gRPC OK completes the exchange. Each receiver
+records a local anchor before the sender forms its snapshot and computes expiry
+as that anchor plus remaining lifetime. The receiver requires validated input
+half-close before installing the snapshot; the initiator requires exactly one
+response and final gRPC OK. It exchanges discovery metadata
+without depending on public business DTOs. There is no unary compatibility path.
 
 | Internal field | Meaning |
 | --- | --- |
@@ -79,9 +86,15 @@ snapshots without depending on public business DTOs.
 | store_endpoints | Business endpoints for those Stores |
 | lease_remaining_ms | Remaining origin lease; relays cannot extend it |
 | withdrawn | Explicit withdrawal of a process incarnation |
+| origin_lease_ms | Full origin lease, immutable for an incarnation; bounds replay watermark retention independently of receiver policy |
 
 Same-group endpoints merge; conflicting Store ownership fails ResolveStore.
 Replica groups stay internal and do not appear in its public response.
+Same or older revisions never extend expiry or watermark retention. A withdrawn
+incarnation cannot return to live state. Different origin lease policies are
+accepted; the former fixed `60s` lease and `2s` transit limits are not protocol
+bounds. Only positive millisecond values representable by `time.Duration` and
+remaining lifetime no greater than the full origin lease are accepted.
 Application listeners expose only StoreService; peer listeners expose only
 PeerDiscoveryService.
 

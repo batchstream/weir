@@ -131,7 +131,8 @@ admission limits. Value validation, JSON encoding and value/table conversion use
 explicit stacks and check the caller context; cyclic values and invalid types
 remain errors. JSON decoding uses Go's standard library and retains that
 library's parsing boundaries. Backend document-format limits still apply.
-Process `lua.vm` exposes optional instruction, call-depth and stack-slot budgets.
+Process `lua` exposes optional `max_instructions`, `max_call_depth` and
+`max_stack_slots` budgets.
 The default instruction budget is unlimited; zero call/stack settings use the
 VM native defaults. Compilation, top-level execution and the callback inherit
 the caller context. Evaluations run concurrently inside the main Weir process without a fixed

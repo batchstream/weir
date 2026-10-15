@@ -34,7 +34,7 @@ func newTestDirectory(t *testing.T, cfg Config) *Directory {
 }
 
 func announcement(id int, group, target string) *peerpb.NodeAnnouncement {
-	ad := &peerpb.NodeAnnouncement{IncarnationId: fmt.Sprintf("%032x", id), Revision: 1, ReplicaGroup: group, StoreNames: []string{"data"}, StoreEndpoints: []string{target}, LeaseRemainingMs: 10000}
+	ad := &peerpb.NodeAnnouncement{IncarnationId: fmt.Sprintf("%032x", id), Revision: 1, ReplicaGroup: group, StoreNames: []string{"data"}, StoreEndpoints: []string{target}, LeaseRemainingMs: 10000, OriginLeaseMs: 60000}
 	return ad
 }
 
@@ -43,46 +43,41 @@ func TestRelayLeaseCannotRenewOrResurrect(t *testing.T) {
 	d := newTestDirectory(t, cfg)
 	start := time.Now()
 	ad := announcement(1, "owner", "127.0.0.1:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start, start); err != nil {
 		t.Fatal(err)
 	}
 	original := d.records[ad.IncarnationId].expires
-	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(5*time.Second)); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(5*time.Second), start.Add(5*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if !d.records[ad.IncarnationId].expires.Equal(original) {
 		t.Fatal("same sequence renewed lease")
 	}
-	relayed := d.snapshot(start.Add(5 * time.Second))
+	relayed := d.snapshot()
 	var owner *peerpb.NodeAnnouncement
 	for _, node := range relayed {
 		if node.IncarnationId == ad.IncarnationId {
 			owner = node
 		}
 	}
-	if owner == nil || owner.LeaseRemainingMs != 3000 {
-		t.Fatal("relay did not debit age and full transport allowance", owner)
+	if owner == nil || owner.LeaseRemainingMs == 0 || owner.LeaseRemainingMs > ad.LeaseRemainingMs {
+		t.Fatal("relay did not preserve remaining lifetime", owner)
 	}
 	other := newTestDirectory(t, cfg)
-	if err := other.merge([]*peerpb.NodeAnnouncement{owner}, start.Add(7*time.Second)); err != nil {
+	if err := other.merge([]*peerpb.NodeAnnouncement{owner}, start, start.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if other.records[ad.IncarnationId].expires.After(original) {
 		t.Fatal("transport delay extended owner lease")
 	}
-	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(20*time.Second)); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(20*time.Second), start.Add(20*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if !d.records[ad.IncarnationId].expires.Equal(original) {
 		t.Fatal("expired owner resurrected from same sequence")
 	}
-	for _, node := range d.snapshot(start.Add(20 * time.Second)) {
-		if node.IncarnationId == ad.IncarnationId {
-			t.Fatal("expired record relayed")
-		}
-	}
 	ad.Revision = 2
-	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(20*time.Second)); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(20*time.Second), start.Add(20*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if !d.records[ad.IncarnationId].expires.After(original) {
@@ -96,7 +91,7 @@ func TestSameGroupUnionConflictAndWithdrawal(t *testing.T) {
 	first := announcement(1, "same", "shared.example:7447")
 	second := announcement(2, "same", "127.0.0.1:7447")
 	third := announcement(3, "same", "shared.example:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{first, second, third}, time.Now()); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{first, second, third}, time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	request := &pb.ResolveStoreRequest{StoreName: "data"}
@@ -105,7 +100,7 @@ func TestSameGroupUnionConflictAndWithdrawal(t *testing.T) {
 		t.Fatal(response, err)
 	}
 	conflict := announcement(4, "other", "127.0.0.1:7449")
-	if err := d.merge([]*peerpb.NodeAnnouncement{conflict}, time.Now()); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{conflict}, time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.ResolveStore(context.Background(), request); status.Code(err) != codes.FailedPrecondition {
@@ -114,13 +109,13 @@ func TestSameGroupUnionConflictAndWithdrawal(t *testing.T) {
 	conflict.Revision++
 	conflict.Withdrawn = true
 	conflict.StoreNames = nil
-	if err := d.merge([]*peerpb.NodeAnnouncement{conflict}, time.Now()); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{conflict}, time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	conflict.Revision--
 	conflict.Withdrawn = false
 	conflict.StoreNames = []string{"data"}
-	if err := d.merge([]*peerpb.NodeAnnouncement{conflict}, time.Now()); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{conflict}, time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.ResolveStore(context.Background(), request); err != nil {
@@ -142,10 +137,10 @@ func TestRestartAndExpiryRemoveOldEndpoint(t *testing.T) {
 	observerCfg := Config{Group: "observer"}
 	observer := newTestDirectory(t, observerCfg)
 	now := time.Now()
-	if err := observer.merge(first.snapshot(now), now); err != nil {
+	if err := observer.merge(first.snapshot(), now, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := observer.merge(restarted.snapshot(now), now); err != nil {
+	if err := observer.merge(restarted.snapshot(), now, now); err != nil {
 		t.Fatal(err)
 	}
 	observer.mu.Lock()
@@ -167,33 +162,33 @@ func TestDirectoryLargeMembershipAndAtomicValidation(t *testing.T) {
 	for i := 1; i < 640; i++ {
 		nodes = append(nodes, announcement(i, "same", "127.0.0.1:7447"))
 	}
-	if err := d.merge(nodes, time.Now()); err != nil {
+	if err := d.merge(nodes, time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	extra := announcement(640, "same", "127.0.0.1:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, time.Now()); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, time.Now(), time.Now()); err != nil {
 		t.Fatal("large live membership rejected", err)
 	}
 	withdraw := announcement(1, "same", "127.0.0.1:7447")
 	withdraw.Revision = 2
 	withdraw.Withdrawn = true
 	withdraw.StoreNames = nil
-	if err := d.merge([]*peerpb.NodeAnnouncement{withdraw, extra}, time.Now()); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{withdraw, extra}, time.Now(), time.Now()); err != nil {
 		t.Fatal("replacement after withdrawal blocked", err)
 	}
 	malformed := announcement(640+1, "same", "0.0.0.0:7447")
 	newer := announcement(2, "same", "127.0.0.1:7447")
 	newer.Revision = 2
-	if err := d.merge([]*peerpb.NodeAnnouncement{newer, malformed}, time.Now()); status.Code(err) != codes.InvalidArgument {
+	if err := d.merge([]*peerpb.NodeAnnouncement{newer, malformed}, time.Now(), time.Now()); status.Code(err) != codes.InvalidArgument {
 		t.Fatal(err)
 	}
 	if d.records[newer.IncarnationId].announcement.Revision != 1 {
 		t.Fatal("invalid snapshot partially merged")
 	}
 	oversized := announcement(640+2, "same", "127.0.0.1:7447")
-	oversized.LeaseRemainingMs = uint64(Lease / time.Millisecond)
-	if err := d.merge([]*peerpb.NodeAnnouncement{oversized}, time.Now()); status.Code(err) != codes.InvalidArgument {
-		t.Fatal("uncapped lease accepted", err)
+	oversized.LeaseRemainingMs = ^uint64(0)
+	if err := d.merge([]*peerpb.NodeAnnouncement{oversized}, time.Now(), time.Now()); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("unrepresentable lease accepted", err)
 	}
 }
 
@@ -201,7 +196,7 @@ func TestExpiredOwnersAndCancelledResolve(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	d := newTestDirectory(t, cfg)
 	ad := announcement(1, "same", "127.0.0.1:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, time.Now().Add(-20*time.Second)); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, time.Now().Add(-20*time.Second), time.Now().Add(-20*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	request := &pb.ResolveStoreRequest{StoreName: "data"}
@@ -289,21 +284,21 @@ func TestLargeReplayWatermarksAreEventuallyCollected(t *testing.T) {
 		ad.StoreEndpoints = nil
 		nodes = append(nodes, ad)
 	}
-	if err := d.merge(nodes, now); err != nil {
+	if err := d.merge(nodes, now, now); err != nil {
 		t.Fatal(err)
 	}
 	extra := announcement(768, "same", "127.0.0.1:7447")
-	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now, now); err != nil {
 		t.Fatal("large watermark snapshot rejected", err)
 	}
 	if len(d.records) != 769 {
 		t.Fatal("large watermark store changed", len(d.records))
 	}
-	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now.Add(3*Lease)); err != nil {
+	if err := d.merge([]*peerpb.NodeAnnouncement{extra}, now, now.Add(3*time.Minute)); err != nil {
 		t.Fatal("expired watermarks never collected", err)
 	}
-	if len(d.records) != 2 {
-		t.Fatal("expired watermarks retained indefinitely", len(d.records))
+	if len(d.records) != 1 {
+		t.Fatal("expired watermarks retained or delayed response resurrected", len(d.records))
 	}
 }
 
@@ -312,11 +307,11 @@ type seedSelector struct {
 	calls, connections atomic.Int32
 }
 
-func (s *seedSelector) SyncDirectory(ctx context.Context, request *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {
+func (s *seedSelector) SyncDirectory(stream grpc.BidiStreamingServer[peerpb.SyncDirectoryRequest, peerpb.SyncDirectoryResponse]) error {
 	if s.calls.Add(1) == 1 {
-		return s.self.SyncDirectory(ctx, request)
+		return s.self.SyncDirectory(stream)
 	}
-	return s.other.SyncDirectory(ctx, request)
+	return s.other.SyncDirectory(stream)
 }
 
 func (s *seedSelector) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context { return ctx }
@@ -366,11 +361,11 @@ func TestSeedSelfSelectionRetriesWithFreshConnection(t *testing.T) {
 type malformedDirectoryResponse struct {
 }
 
-func (*malformedDirectoryResponse) SyncDirectory(context.Context, *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {
+func (*malformedDirectoryResponse) SyncDirectory(stream grpc.BidiStreamingServer[peerpb.SyncDirectoryRequest, peerpb.SyncDirectoryResponse]) error {
 	ad := announcement(1, "bad", "127.0.0.1:7447")
 	response := &peerpb.SyncDirectoryResponse{Announcements: []*peerpb.NodeAnnouncement{ad}}
 	response.ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
-	return response, nil
+	return stream.Send(response)
 }
 
 func TestSyncDirectoryRejectsUnknownResponseBeforeMerge(t *testing.T) {
@@ -406,10 +401,10 @@ func TestSnapshotRetainsAllWithdrawalWatermarks(t *testing.T) {
 		nodes[i] = node
 	}
 	now := time.Now()
-	if err := source.merge(nodes, now); err != nil {
+	if err := source.merge(nodes, now, now); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := source.snapshot(now)
+	snapshot := source.snapshot()
 	if len(snapshot) != 768 {
 		t.Fatal("withdrawal watermarks lost during sync", len(snapshot))
 	}

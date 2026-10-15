@@ -73,7 +73,7 @@ func TestProcessLuaAndStreamPolicyReachEveryStore(t *testing.T) {
 	cfg.Basic.Transport.MaxPendingRecords = 3
 	cfg.Basic.Transport.Keepalive.Interval = Duration(2 * time.Minute)
 	cfg.Basic.Transport.Timeouts.Stall = Duration(time.Second)
-	cfg.Basic.Lua.VM.MaxInstructions = 50000
+	cfg.Basic.Lua.MaxInstructions = 50000
 	for _, name := range []string{"first", "second"} {
 		adapter := &Search{URL: endpoint.URL}
 		backend := BackendConfig{Search: adapter}

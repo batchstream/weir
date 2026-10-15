@@ -8,7 +8,55 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
+
+func TestCheckEffectiveDefaultsAndRedactionWithoutStartupIO(t *testing.T) {
+	t.Chdir(t.TempDir())
+	basic := "listeners:\n  application: 127.0.0.1:0\n"
+	routes := `stores:
+  - name: search
+    backend:
+      search:
+        url: https://unresolved.invalid:443
+      authentication:
+        username: user-sentinel
+        password: password-sentinel
+      tls:
+        ca_file: /missing/ca-sentinel.pem
+`
+	if err := os.WriteFile("weir.yaml", []byte(basic), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("routes.yaml", []byte(routes), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := run([]string{"check", "--routes", "routes.yaml", "--effective"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"user-sentinel", "password-sentinel", "ca-sentinel"} {
+		if strings.Contains(output.String(), secret) {
+			t.Fatal("effective configuration exposed a sensitive value")
+		}
+	}
+	var report map[string]any
+	if err := yaml.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	process, ok := report["basic"].(map[string]any)
+	if !ok {
+		t.Fatal("missing process settings", output.String())
+	}
+	lifecycle := process["lifecycle"].(map[string]any)
+	if lifecycle["startup_timeout"] != "5s" || lifecycle["shutdown_timeout"] != "5s" {
+		t.Fatal("effective output omitted lifecycle defaults", lifecycle)
+	}
+	if report["routing"] == nil || report["automatic"] == nil {
+		t.Fatal("effective output omitted Store settings or automatic sources", output.String())
+	}
+}
 
 func TestVersionWithoutConfiguration(t *testing.T) {
 	t.Chdir(t.TempDir())

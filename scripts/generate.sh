@@ -24,6 +24,18 @@ awk '
 ' internal/api/peer/v1/peer_grpc.pb.go > .tools/peer_grpc.pb.go
 mv .tools/peer_grpc.pb.go internal/api/peer/v1/peer_grpc.pb.go
 
+awk '
+ /^\/\/ This type alias is provided for backwards compatibility/ { next }
+ /^type PeerDiscoveryService_SyncDirectory(Client|Server) =/ { next }
+ $0 == "\treturn srv.(PeerDiscoveryServiceServer).SyncDirectory(&grpc.GenericServerStream[SyncDirectoryRequest, SyncDirectoryResponse]{ServerStream: stream})" {
+  print "\texchange := &grpc.GenericServerStream[SyncDirectoryRequest, SyncDirectoryResponse]{ServerStream: stream}";
+  print "\treturn srv.(PeerDiscoveryServiceServer).SyncDirectory(exchange)"; count++; next
+ }
+ { print }
+ END { if (count != 1) exit 1 }
+' internal/api/peer/v1/peer_grpc.pb.go > .tools/peer_grpc.pb.go
+mv .tools/peer_grpc.pb.go internal/api/peer/v1/peer_grpc.pb.go
+
 # Require each service implementation to implement the current contract directly.
 awk '
  /^\/\/ All implementations should embed UnimplementedPeerDiscoveryServiceServer$/ { next }

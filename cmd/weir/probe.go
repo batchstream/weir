@@ -14,7 +14,10 @@ const probeTimeout = 750 * time.Millisecond
 
 // Probe has no app/configuration dependency. Each invocation owns one bounded
 // HTTP/1 connection, and accepts only the exact diagnostic success response.
-func runProbe(ctx context.Context, mode, address string) error {
+func runProbe(ctx context.Context, mode, address string, timeout time.Duration) error {
+	if timeout <= 0 {
+		return errors.New("probe timeout must be positive")
+	}
 	want := ""
 	switch mode {
 	case "live":
@@ -30,10 +33,10 @@ func runProbe(ctx context.Context, mode, address string) error {
 		return errors.New("probe requires a loopback IP and nonzero port")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	dialer := &net.Dialer{Timeout: probeTimeout}
+	dialer := &net.Dialer{Timeout: timeout}
 	transport := &http.Transport{
 		Proxy:                  nil,
 		DialContext:            dialer.DialContext,
@@ -41,13 +44,13 @@ func runProbe(ctx context.Context, mode, address string) error {
 		DisableCompression:     true,
 		MaxConnsPerHost:        1,
 		MaxResponseHeaderBytes: 1024,
-		ResponseHeaderTimeout:  probeTimeout,
+		ResponseHeaderTimeout:  timeout,
 	}
 	defer transport.CloseIdleConnections()
 
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   probeTimeout,
+		Timeout:   timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -64,7 +67,7 @@ func runProbe(ctx context.Context, mode, address string) error {
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, 65))
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(len(want)+1)))
 	if err != nil || response.StatusCode != http.StatusOK || string(body) != want {
 		return errors.New("probe unhealthy")
 	}

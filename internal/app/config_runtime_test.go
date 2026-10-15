@@ -15,7 +15,6 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
       search:
         url: http://127.0.0.1:9200
       connect_timeout: 17ms
-      metadata_cache_entries: 0
       max_exchange_bytes: 16MiB
     batching:
       max_operations: 256
@@ -34,7 +33,7 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 	local := cfg.Stores[0].Local
 	native := local.searchConfig("search")
 	settings := *native.Options
-	if settings.ConnectTimeout != 17*time.Millisecond || settings.MetadataCacheEntries != 0 || settings.ExchangeBytes != 16<<20 || settings.Scan.Documents != 17 || settings.Scan.Bytes != 8<<20 {
+	if settings.ConnectTimeout != 17*time.Millisecond || settings.ExchangeBytes != 16<<20 || settings.Scan.Documents != 17 || settings.Scan.Bytes != 8<<20 {
 		t.Fatal(settings)
 	}
 	limits := local.runtimeLimits()
@@ -71,13 +70,13 @@ transport:
 lifecycle:
   startup_timeout: 30s
   shutdown_timeout: 20s
+  cleanup_timeout: 17ms
 diagnostics:
   timeout: 5s
 lua:
-  vm:
-    max_instructions: 9000000
-    max_call_depth: 512
-    max_stack_slots: 65536
+  max_instructions: 9000000
+  max_call_depth: 512
+  max_stack_slots: 65536
 overload:
   memory:
     high_watermark: 95
@@ -94,7 +93,7 @@ overload:
 	if lua.MaxInstructions != 9000000 || lua.MaxCallDepth != 512 || lua.MaxStackSlots != 65536 {
 		t.Fatal("process Lua configuration was not decoded", lua)
 	}
-	if transport.MaxPendingRecords != 96 || transport.KeepaliveInterval != time.Minute || transport.KeepaliveTimeout != 7*time.Second || transport.Handshake != 3*time.Second || transport.Idle != 0 || transport.Stall != 2*time.Minute || cfg.Lifecycle.ShutdownTimeout != Duration(20*time.Second) || cfg.Diagnostics.Timeout != Duration(5*time.Second) || memory.HighWatermark != 95 || memory.LowWatermark != 90 || memory.SampleInterval != 7*time.Millisecond {
+	if transport.MaxPendingRecords != 96 || transport.KeepaliveInterval != time.Minute || transport.KeepaliveTimeout != 7*time.Second || transport.Handshake != 3*time.Second || transport.Idle != 0 || transport.Stall != 2*time.Minute || cfg.Lifecycle.ShutdownTimeout != Duration(20*time.Second) || cfg.Lifecycle.CleanupTimeout != Duration(17*time.Millisecond) || cfg.Diagnostics.Timeout != Duration(5*time.Second) || memory.HighWatermark != 95 || memory.LowWatermark != 90 || memory.SampleInterval != 7*time.Millisecond {
 		t.Fatal(cfg)
 	}
 	for _, fragment := range []string{
@@ -102,11 +101,56 @@ overload:
 		"overload:\n  memory:\n    low_watermark: 90\n",
 		"overload:\n  memory:\n    sample_interval: 0s\n",
 		"lifecycle:\n  shutdown_timeout: 0s\n",
+		"lifecycle:\n  cleanup_timeout: 0s\n",
 		"transport:\n  timeouts:\n    handshake: 0s\n",
 		"transport:\n  keepalive:\n    interval: 500ms\n",
 	} {
 		if _, err := DecodeBasic(strings.NewReader("listeners:\n  application: 127.0.0.1:0\n" + fragment)); err == nil {
 			t.Fatal("invalid runtime policy accepted", fragment)
+		}
+	}
+}
+
+func TestBackendSpecificRetryAndPITConfiguration(t *testing.T) {
+	input := `stores:
+  - name: mongo
+    backend:
+      mongodb:
+        uri: mongodb://127.0.0.1:27017
+        metadata_cache_entries: 0
+        retry_attempts: 3
+        retry_backoff: 0s
+  - name: search
+    backend:
+      search:
+        url: http://127.0.0.1:9200
+        retry_attempts: 2
+        pit_keep_alive: 17500ms
+        idle_timeout: 0s
+`
+	cfg, err := DecodeRouting(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mongo := cfg.Stores[0].backendOptions()
+	search := cfg.Stores[1].backendOptions()
+	if mongo.MetadataCacheEntries != 0 || mongo.RetryAttempts != 3 || mongo.RetryBackoff != 0 || search.RetryAttempts != 2 || search.PITKeepAlive != 17500*time.Millisecond || search.IdleTimeout != 0 {
+		t.Fatal("retry and PIT policy did not reach adapters", mongo, search)
+	}
+	for _, replacement := range [][2]string{
+		{"retry_attempts: 3", "retry_attempts: -1"},
+		{"retry_backoff: 0s", "retry_backoff: -1s"},
+		{"retry_attempts: 2", "retry_attempts: -1"},
+		{"retry_attempts: 2", "retry_attempts: '2'"},
+		{"pit_keep_alive: 17500ms", "pit_keep_alive: 0s"},
+		{"pit_keep_alive: 17500ms", "pit_keep_alive: 1500us"},
+		{"idle_timeout: 0s", "idle_timeout: -1s"},
+		{"retry_backoff: 0s", "pit_keep_alive: 1s"},
+		{"        retry_attempts: 2", "        retry_attempts: 2\n        retry_backoff: 1ms"},
+	} {
+		invalid := strings.Replace(input, replacement[0], replacement[1], 1)
+		if _, err := DecodeRouting(strings.NewReader(invalid)); err == nil {
+			t.Fatal("invalid or inapplicable adapter policy accepted", replacement)
 		}
 	}
 }
@@ -117,8 +161,7 @@ func TestMongoConnectionWorkerConfiguration(t *testing.T) {
     backend:
       mongodb:
         uri: mongodb://127.0.0.1:27017
-        pool:
-          max_connecting: 32
+        max_connecting: 32
 `
 	cfg, err := DecodeRouting(strings.NewReader(input))
 	if err != nil {

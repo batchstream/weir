@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -16,6 +17,8 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/server"
 	"github.com/batchstream/weir/internal/store"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type sdkIngressReadAdapter struct{}
@@ -64,6 +67,25 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = d.Close(t.Context()) })
+			peerListener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			peerServer := grpc.NewServer()
+			peerpb.RegisterPeerDiscoveryServiceServer(peerServer, d)
+			peerDone := make(chan error, 1)
+			go func() { peerDone <- peerServer.Serve(peerListener) }()
+			t.Cleanup(func() {
+				peerServer.Stop()
+				_ = peerListener.Close()
+				<-peerDone
+			})
+			peerConnection, err := grpc.NewClient("passthrough:///"+peerListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = peerConnection.Close() })
+			peerClient := peerpb.NewPeerDiscoveryServiceClient(peerConnection)
 			names := make([]string, count)
 			runtimes := make(map[string]*store.Runtime, count)
 			for i := range names {
@@ -86,13 +108,35 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 			}
 			// Short advertisements exercise refresh past the original cache lease
 			// using the actual directory protocol without a thirty-second test.
-			advertisement := &peerpb.NodeAnnouncement{IncarnationId: strings.Repeat("1", 32), Revision: 1, ReplicaGroup: "records-group", StoreNames: names, StoreEndpoints: []string{address}, LeaseRemainingMs: 2000}
-			publish := func() error {
+			advertisement := &peerpb.NodeAnnouncement{IncarnationId: strings.Repeat("1", 32), Revision: 1, ReplicaGroup: "records-group", StoreNames: names, StoreEndpoints: []string{address}, LeaseRemainingMs: 2000, OriginLeaseMs: 2000}
+			publish := func(parent context.Context) error {
 				request := &peerpb.SyncDirectoryRequest{Announcements: []*peerpb.NodeAnnouncement{advertisement}}
-				_, err := d.SyncDirectory(context.Background(), request)
+				ctx, cancel := context.WithTimeout(parent, time.Second)
+				defer cancel()
+				stream, err := peerClient.SyncDirectory(ctx)
+				if err != nil {
+					return err
+				}
+				opening := &peerpb.SyncDirectoryRequest{}
+				if err := stream.Send(opening); err != nil {
+					return err
+				}
+				if _, err := stream.Recv(); err != nil {
+					return err
+				}
+				if err := stream.Send(request); err != nil {
+					return err
+				}
+				if err := stream.CloseSend(); err != nil {
+					return err
+				}
+				_, err = stream.Recv()
+				if err == io.EOF {
+					return nil
+				}
 				return err
 			}
-			if err := publish(); err != nil {
+			if err := publish(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			publisher, stopPublisher := context.WithCancel(t.Context())
@@ -107,8 +151,12 @@ func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 						return
 					case <-ticker.C:
 						advertisement.Revision++
-						if err := publish(); err != nil {
-							published <- err
+						if err := publish(publisher); err != nil {
+							if publisher.Err() != nil {
+								published <- nil
+							} else {
+								published <- err
+							}
 							return
 						}
 					}

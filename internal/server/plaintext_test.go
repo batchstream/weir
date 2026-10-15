@@ -25,6 +25,7 @@ func TestPlaintextPrefaceAndHeaderLifetime(t *testing.T) {
 				adapter, localRuntime := peerLocal(t, "records")
 				limits := DefaultLimits()
 				limits.Stall = 75 * time.Millisecond
+				limits.Handshake = 75 * time.Millisecond
 				opts := peerServerOptions{stores: map[string]*store.Runtime{"records": localRuntime}, peer: peer, limits: limits}
 				srv, address := startPeerServer(t, opts)
 				conn, err := net.DialTimeout("tcp", address, time.Second)

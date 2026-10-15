@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -177,12 +178,29 @@ func TestDiscoveryOnlyWildcardApplicationLearnsTargets(t *testing.T) {
 			advertisement := &peerpb.NodeAnnouncement{
 				IncarnationId: strings.Repeat("1", 32), Revision: 1,
 				ReplicaGroup: "owners", StoreNames: []string{"records"}, StoreEndpoints: []string{"business.example:7447"},
-				LeaseRemainingMs: 10000,
+				LeaseRemainingMs: 10000, OriginLeaseMs: 60000,
 			}
 			exchangeRequest := &peerpb.SyncDirectoryRequest{Announcements: []*peerpb.NodeAnnouncement{advertisement}}
 			peer := peerpb.NewPeerDiscoveryServiceClient(peerConnection)
-			exchanged, err := peer.SyncDirectory(ctx, exchangeRequest)
+			stream, err := peer.SyncDirectory(ctx)
 			if err != nil {
+				t.Fatal(err)
+			}
+			opening := &peerpb.SyncDirectoryRequest{}
+			if err := stream.Send(opening); err != nil {
+				t.Fatal(err)
+			}
+			exchanged, err := stream.Recv()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := stream.Send(exchangeRequest); err != nil {
+				t.Fatal(err)
+			}
+			if err := stream.CloseSend(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := stream.Recv(); err != io.EOF {
 				t.Fatal("discovery-only node rejected learned Store", err)
 			}
 			localAdvertisement := false

@@ -298,7 +298,7 @@ func TestMongoLuaBatchCommitReplyLossNeverReapplies(t *testing.T) {
 					}
 				}
 			}
-			if finds != 1 || writes != 1 || commits < 2 || commits > 2*programAttempts || dropped == 0 {
+			if finds != 1 || writes != 1 || commits < 2 || commits > 2*backend.DefaultOptions().RetryAttempts || dropped == 0 {
 				t.Fatal("transform/write replayed or ambiguity was not exercised", finds, writes, commits, dropped)
 			}
 			for _, id := range []string{"a", "b"} {
@@ -544,6 +544,10 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 	}
 	adapterOptions := adapterTestOptions{fixture: fixture, monitor: monitor}
 	adapter := testAdapter(t, adapterOptions)
+	settings := adapter.options()
+	settings.RetryAttempts = 3
+	settings.RetryBackoff = 0
+	adapter.config.Options = &settings
 	operation := batchOperationOptions{resource: fixture.DB + "/records/s:counter", program: incrementProgram}
 	work := prepareBatchProgram(t, adapter, operation)
 	plans := []*execution.Plan{work}
@@ -551,7 +555,7 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 	defer cancel()
 	results := adapter.executePrograms(ctx, plans)
 	result := results[0].GetMutationResult()
-	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT || reads.Load() != programAttempts || writes.Load() != programAttempts || aborts.Load() != programAttempts || commits.Load() != 0 {
+	if result.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || result.GetFailure().GetCode() != pb.FailureCode_CONFLICT || reads.Load() != int32(settings.RetryAttempts) || writes.Load() != int32(settings.RetryAttempts) || aborts.Load() != int32(settings.RetryAttempts) || commits.Load() != 0 {
 		t.Fatal("conflicts escaped the retry bound or committed a stale value", result, reads.Load(), writes.Load(), aborts.Load(), commits.Load())
 	}
 	for index := 1; index < len(transactions); index++ {
@@ -560,13 +564,13 @@ func TestMongoLuaConflictRetriesStopAtAttemptBound(t *testing.T) {
 		}
 	}
 	raw, err := collection.FindOne(ctx, filter).Raw()
-	if err != nil || raw.Lookup("n").Int32() != programAttempts {
+	if err != nil || raw.Lookup("n").Int32() != int32(settings.RetryAttempts) {
 		t.Fatal("aborted Lua writes changed the native writer's counter", raw, err)
 	}
 	canceled, stop := context.WithCancel(t.Context())
 	stop()
 	results = adapter.executePrograms(canceled, plans)
-	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || reads.Load() != programAttempts || writes.Load() != programAttempts {
+	if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || reads.Load() != int32(settings.RetryAttempts) || writes.Load() != int32(settings.RetryAttempts) {
 		t.Fatal("cancelled caller started a new transaction", results[0], reads.Load(), writes.Load())
 	}
 }

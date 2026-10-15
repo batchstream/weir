@@ -7,7 +7,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestDiscoverySynchronizationPolicyConfiguration(t *testing.T) {
+	prefix := "listeners:\n  application: 127.0.0.1:0\n"
+	input := prefix + "discovery:\n  lease: 3m\n  sync_interval: 3s\n  sync_timeout: 7s\n"
+	cfg, err := DecodeBasic(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := cfg.Discovery.policy()
+	if policy.Lease != 3*time.Minute || policy.SyncInterval != 3*time.Second || policy.SyncTimeout != 7*time.Second {
+		t.Fatal("discovery synchronization policy did not reach directory assembly", policy)
+	}
+	for _, fragment := range []string{
+		"sync_interval: 0s", "sync_interval: -1s", "sync_interval: 58s",
+		"sync_timeout: 0s", "sync_timeout: -1s", "sync_timeout: 30s",
+		"lease: 0s", "lease: 5s", "lease: 1500us",
+	} {
+		input := prefix + "discovery:\n  " + fragment + "\n"
+		if _, err := DecodeBasic(strings.NewReader(input)); err == nil {
+			t.Fatal("invalid discovery synchronization policy accepted", fragment)
+		}
+	}
+	input = prefix + "discovery:\n  sync_interval: 500us\n  sync_timeout: 1500us\n"
+	cfg, err = DecodeBasic(strings.NewReader(input))
+	if err != nil || cfg.Discovery.SyncInterval != Duration(500*time.Microsecond) || cfg.Discovery.SyncTimeout != Duration(1500*time.Microsecond) {
+		t.Fatal("local synchronization timers unnecessarily rounded to wire lease units", err)
+	}
+}
 
 func TestPeerAddressEnvironmentSource(t *testing.T) {
 	input := "listeners:\n  application: 127.0.0.1:0\n  peer: 0.0.0.0:7448\ndiscovery:\n  peer_address_env: WEIR_TEST_PUBLIC_PEER\n"
@@ -70,7 +99,7 @@ func TestDiscoveryRequiresReachableAdvertisements(t *testing.T) {
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("peer membership without peer listener accepted")
 	}
-	cfg.Basic.Discovery = DiscoveryConfig{}
+	cfg.Basic.Discovery = DefaultConfig().Basic.Discovery
 	cfg.Basic.Listeners.Application = ""
 	cfg.Basic.Listeners.Peer = "127.0.0.1:0"
 	if err := cfg.Validate(); err == nil {

@@ -18,7 +18,7 @@ func TestBasicConfigurationFile(t *testing.T) {
 		t.Fatal("basic configuration must load without routing", err)
 	}
 
-	expected := DefaultConfig().Basic
+	expected := DefaultConfig().Basic.resolved()
 	expected.Listeners.Application = "127.0.0.1:7447"
 	expected.Diagnostics.Address = "127.0.0.1:7449"
 	if !reflect.DeepEqual(cfg.Basic, expected) {
