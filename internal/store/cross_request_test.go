@@ -81,7 +81,8 @@ func prepareCrossRecord(t testing.TB, runtime *Runtime, index uint64, resource s
 func selectCrossBatch(runtime *Runtime) *batch {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	return runtime.selectLocked(time.Now())
+	selected, _ := runtime.selectLocked(time.Now())
+	return selected
 }
 func TestIndependentRPCsShareExecutionAndKeepResultsAndQuota(t *testing.T) {
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 8)}
@@ -209,7 +210,7 @@ func TestPreparedRecordBeyondBatchAndQueueWindows(t *testing.T) {
 	if failure != nil || ticket == nil {
 		t.Fatal("single large record rejected by batching windows", failure)
 	}
-	batch := runtime.selectLocked(time.Now())
+	batch, _ := runtime.selectLocked(time.Now())
 	if batch == nil || len(batch.items) != 1 {
 		t.Fatal("large record was not dispatched alone")
 	}

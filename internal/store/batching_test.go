@@ -57,7 +57,7 @@ func TestAllRecordActionsShareBatch(t *testing.T) {
 		}
 	}
 	r.mu.Lock()
-	b := r.selectLocked(time.Now())
+	b, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if b == nil || len(b.items) != len(recordActions) {
 		t.Fatalf("all reads and mutations should share one batch: %v", b)
@@ -101,26 +101,26 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 		t.Fatal(failure)
 	}
 	r.mu.Lock()
-	first := r.selectLocked(time.Now())
+	first, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if first == nil || len(first.items) != 2 || first.items[0].plan != firstWrite || first.items[1].plan != expression {
 		t.Fatal("record duplicate or byte limit ignored", first)
 	}
 	r.mu.Lock()
-	second := r.selectLocked(time.Now())
+	second, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if second == nil || len(second.items) != 2 || second.items[0].plan != program || second.items[1] != ticket {
 		t.Fatal("active session successor ran or independent record was blocked", second)
 	}
 	r.mu.Lock()
-	premature := r.selectLocked(time.Now())
+	premature, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if premature != nil {
 		t.Fatal("Replace bypassed its earlier same-session mutation")
 	}
 	r.mu.Lock()
 	finish(r, first)
-	third := r.selectLocked(time.Now())
+	third, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if third == nil || len(third.items) != 1 || third.items[0].plan != replace {
 		t.Fatal("same-session successor not released", third)
@@ -190,8 +190,8 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 		t.Fatal(failure)
 	}
 	r.mu.Lock()
-	a := r.selectLocked(time.Now())
-	b := r.selectLocked(time.Now())
+	a, _ := r.selectLocked(time.Now())
+	b, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	go r.execute(a)
 	dispatchedFirst := <-adapter.started
@@ -251,7 +251,7 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 				t.Fatal(failure)
 			}
 			r.mu.Lock()
-			batch := r.selectLocked(time.Now())
+			batch, _ := r.selectLocked(time.Now())
 			r.mu.Unlock()
 			go r.execute(batch)
 			dispatched := <-adapter.started

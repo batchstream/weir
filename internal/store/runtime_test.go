@@ -76,7 +76,7 @@ func TestAdmissionBoundsAndReservation(t *testing.T) {
 		t.Fatal("queue full", f)
 	}
 	r.mu.Lock()
-	b := r.selectLocked(time.Now())
+	b, _ := r.selectLocked(time.Now())
 	finish(r, b)
 	r.mu.Unlock()
 	_, f, _ = r.Submit(ctx, p, nil)
@@ -112,7 +112,7 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	independent := plan(0, "key", true)
 	read, _, _ := r.Submit(ctx, independent, nil)
 	r.mu.Lock()
-	flight := r.selectLocked(time.Now())
+	flight, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if flight.items[0] != a {
 		t.Fatal("order")
@@ -120,7 +120,7 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	stop()
 	r.mu.Lock()
 	r.cancelQueuedLocked()
-	overlap := r.selectLocked(time.Now())
+	overlap, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	if overlap == nil || overlap.items[0] != read {
 		t.Fatal("independent same-key read was serialized or cancelled successor released active key")
@@ -129,12 +129,12 @@ func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 		t.Fatal("queued cancellation")
 	}
 	r.mu.Lock()
-	if r.selectLocked(time.Now()) != nil {
+	if pending, _ := r.selectLocked(time.Now()); pending != nil {
 		t.Fatal("same stream successor ran early")
 	}
 	finish(r, flight)
 	finish(r, overlap)
-	successor := r.selectLocked(time.Now())
+	successor, _ := r.selectLocked(time.Now())
 	if successor == nil {
 		t.Fatal("successor not released")
 	}
@@ -151,7 +151,7 @@ func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 		p := plan(0, "a", false)
 		ticket, _, _ := r.Submit(ctx, p, nil)
 		r.mu.Lock()
-		b := r.selectLocked(time.Now())
+		b, _ := r.selectLocked(time.Now())
 		r.mu.Unlock()
 		cancel()
 		r.mu.Lock()
@@ -189,7 +189,7 @@ func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 		}
 	}
 	r.mu.Lock()
-	b := r.selectLocked(time.Now())
+	b, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
 	defer b.cancel()
 	deadline, _ := b.ctx.Deadline()

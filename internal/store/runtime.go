@@ -16,7 +16,7 @@ import (
 // Limits bounds waiting work, physical batch size and per-Store adapter invocations.
 type Limits struct {
 	Scan                        execution.ScanLimits
-	CleanupTimeout              time.Duration
+	CleanupTimeout, BatchWait   time.Duration
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
 	MaxInFlight                 int // Zero allows unlimited adapter invocations.
@@ -29,7 +29,7 @@ func DefaultLimits() Limits {
 
 func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
-		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.CleanupTimeout < 0 {
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.CleanupTimeout < 0 || limits.BatchWait < 0 {
 		return fmt.Errorf("invalid batch, execution or queue bounds")
 	}
 	if limits.Scan.Documents != 0 {
@@ -339,8 +339,18 @@ func (r *Runtime) cancelQueuedLocked() {
 }
 func (r *Runtime) loop() {
 	defer close(r.done)
+	var timer *time.Timer
+	var tick <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	for {
-		<-r.wake
+		select {
+		case <-r.wake:
+		case <-tick:
+		}
 		r.mu.Lock()
 		r.cancelQueuedLocked()
 		for b := range r.batches {
@@ -349,17 +359,18 @@ func (r *Runtime) loop() {
 				interested = interested || t.ctx.Err() == nil && !t.abandoned
 			}
 			if !interested {
-				// Let the deadline context retain its cause when the final caller
-				// expires; cancellation must not turn it into context.Canceled.
+				// Preserve a deadline's cause when the final caller expires.
 				deadline, bounded := b.ctx.Deadline()
 				if !bounded || time.Now().Before(deadline) {
 					b.cancel()
 				}
 			}
 		}
+		var wakeAt time.Time
 		for !r.closed {
-			b := r.selectLocked(time.Now())
+			b, next := r.selectLocked(time.Now())
 			if b == nil {
+				wakeAt = next
 				break
 			}
 			go r.execute(b)
@@ -369,18 +380,39 @@ func (r *Runtime) loop() {
 		if finish {
 			return
 		}
+		if timer != nil {
+			timer.Stop()
+		}
+		tick = nil
+		if !wakeAt.IsZero() {
+			if timer == nil {
+				timer = time.NewTimer(time.Until(wakeAt))
+			} else {
+				timer.Reset(time.Until(wakeAt))
+			}
+			tick = timer.C
+		}
 	}
 }
-func (r *Runtime) selectLocked(now time.Time) *batch {
+
+type batchCandidate struct {
+	items     []*Ticket
+	records   map[string]bool
+	bytes     int
+	singleton bool
+	full      bool
+}
+
+// selectLocked returns the earliest collection deadline when every eligible
+// batch is still collecting. Full batches and streaming commands can bypass it.
+func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
+	var next time.Time
 	if r.limits.MaxInFlight > 0 && len(r.batches) >= r.limits.MaxInFlight {
-		return nil
+		return nil, next
 	}
 	seen := make(map[resourceKey]bool)
-	records := make(map[string]bool)
-	selected := make(map[*Ticket]bool)
-	var items []*Ticket
-	bytes := 0
-	var seed *Ticket
+	groups := make(map[string]*batchCandidate)
+	var candidates []*batchCandidate
 	for _, t := range r.queue {
 		if t.state != 0 {
 			continue
@@ -392,25 +424,55 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 			}
 			seen[key] = true
 		}
-		if seed == nil {
-			seed = t
-		}
-		seedSingleton := seed.plan.Command.GetScan() != nil || seed.plan.Command.GetNative() != nil
 		singleton := t.plan.Command.GetScan() != nil || t.plan.Command.GetNative() != nil
-		previousWrite, duplicateResource := records[t.plan.Key]
-		if len(items) > 0 && (seedSingleton || singleton || seed.plan.BatchKey != t.plan.BatchKey || (duplicateResource && (previousWrite || t.plan.Command.GetMutate() != nil)) || t.plan.Bytes > r.limits.BatchBytes-bytes) {
+		candidate := groups[t.plan.BatchKey]
+		if candidate == nil || singleton {
+			candidate = &batchCandidate{records: make(map[string]bool), singleton: singleton}
+			candidates = append(candidates, candidate)
+			if !singleton {
+				groups[t.plan.BatchKey] = candidate
+			}
+		}
+		previousWrite, duplicate := candidate.records[t.plan.Key]
+		if len(candidate.items) > 0 && (duplicate && (previousWrite || t.plan.Command.GetMutate() != nil)) {
 			continue
 		}
-		items = append(items, t)
-		selected[t] = true
-		records[t.plan.Key] = t.plan.Command.GetMutate() != nil
-		bytes += t.plan.Bytes
-		if len(items) >= r.limits.BatchOperations || seedSingleton {
-			break
+		if len(candidate.items) >= r.limits.BatchOperations || len(candidate.items) > 0 && t.plan.Bytes > r.limits.BatchBytes-candidate.bytes {
+			candidate.full = true
+			continue
 		}
+		candidate.items = append(candidate.items, t)
+		candidate.records[t.plan.Key] = t.plan.Command.GetMutate() != nil
+		candidate.bytes += t.plan.Bytes
+		candidate.full = candidate.full || len(candidate.items) >= r.limits.BatchOperations || candidate.bytes >= r.limits.BatchBytes
+	}
+	var items []*Ticket
+	for _, candidate := range candidates {
+		at := candidate.items[0].queuedAt.Add(r.limits.BatchWait)
+		if r.limits.BatchWait == 0 || candidate.full || candidate.singleton || r.draining {
+			at = now
+		}
+		for _, ticket := range candidate.items {
+			if deadline, bounded := ticket.ctx.Deadline(); bounded && deadline.Before(at) {
+				at = now
+			}
+		}
+		if now.Before(at) {
+			if next.IsZero() || at.Before(next) {
+				next = at
+			}
+			continue
+		}
+		items = candidate.items
+		break
 	}
 	if len(items) == 0 {
-		return nil
+		return nil, next
+	}
+	seed := items[0]
+	selected := make(map[*Ticket]bool, len(items))
+	for _, ticket := range items {
+		selected[ticket] = true
 	}
 	workingBytes := 0
 	var latest time.Time
@@ -418,7 +480,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	for _, ticket := range items {
 		if ticket.ctx.Err() != nil || ticket.abandoned {
 			r.cancelQueuedLocked()
-			return nil
+			return nil, next
 		}
 		workingBytes = max(workingBytes, ticket.plan.WorkingBytes)
 		deadline, bounded := ticket.ctx.Deadline()
@@ -461,7 +523,7 @@ func (r *Runtime) selectLocked(now time.Time) *batch {
 	r.workingBytes += workingBytes
 	r.batches[b] = struct{}{}
 	r.notifyLocked()
-	return b
+	return b, next
 }
 
 func (t *Ticket) emit(event *pb.Event) error {
