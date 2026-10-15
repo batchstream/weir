@@ -445,6 +445,9 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 		candidate.records[t.plan.Key] = t.plan.Command.GetMutate() != nil
 		candidate.bytes += t.plan.Bytes
 		candidate.full = candidate.full || len(candidate.items) >= r.limits.BatchOperations || candidate.bytes >= r.limits.BatchBytes
+		if candidate == candidates[0] && len(candidate.items) >= r.limits.BatchOperations {
+			break
+		}
 	}
 	var items []*Ticket
 	for _, candidate := range candidates {
