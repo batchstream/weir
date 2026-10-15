@@ -220,13 +220,13 @@ user requirements; adding them does not strengthen the batching proof.
 
 ## Adoption gate
 
-Let `B` be the observed successful records per physical database command, `F`
-the database's fixed work per command, `V` its per-record work, and `H` Weir's
-extra work per record in comparable resource/cost units. The rough service-demand
-comparison is direct `F + V` versus Weir `F/B + V + H`. Weir has a resource
-advantage only if `F * (1 - 1/B) > H`. This is a cost model, not a formula for
-latency under concurrency. Different namespaces, conflicting keys, low overlap
-and multiple Weir replicas fragment the available batch, lowering `B`.
+Database CPU per completed record is the primary load measure here. Batching can
+reduce fixed database command work, while qualification, pre-reads, conflict
+retries and visibility barriers add database work or waiting. Moving transforms
+outside the database can reduce its per-record computation. Measure their net
+effect at the required completed throughput and latency; batch size alone cannot
+establish a benefit. Different namespaces, conflicting keys, low overlap and
+multiple Weir replicas can fragment the available batches.
 
 Before adopting Weir for performance, require all of the following:
 
@@ -252,8 +252,8 @@ Before adopting Weir for performance, require all of the following:
 The sustained benchmark above demonstrates useful aggregation under specific
 high-concurrency conditions and retains direct-access counterexamples. It
 supports Weir as a **shared batching and transform service for fragmented
-concurrent callers**, conditional on the deployment's matched workload and total
-resource budget. If the adoption gate fails and no shared transform/discovery
+concurrent callers**, conditional on the deployment's matched workload, actual
+database load, completed throughput and latency requirements. If the adoption gate fails and no shared transform/discovery
 contract is needed, use the direct driver and remove the extra service.
 
 ## Reproduce and audit the local mechanism experiment
