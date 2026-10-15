@@ -222,7 +222,9 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 		}
 		entry.WriteByte('\n')
 	}
-	if b.request.Len()+entry.Len() > b.adapter.options().ExchangeBytes {
+	settings := b.adapter.options()
+	window := min(settings.BatchBytes, settings.ExchangeBytes)
+	if b.request.Len()+entry.Len() > window {
 		b.flush()
 	}
 	start := b.request.Len()
@@ -231,6 +233,9 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	b.pending = append(b.pending, pending)
 	if native.program != nil {
 		native.source = nil
+	}
+	if b.request.Len() >= window {
+		b.flush()
 	}
 }
 

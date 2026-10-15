@@ -405,6 +405,7 @@ func (l *Local) runtimeLimits() store.Limits {
 func (l *Local) backendOptions() backend.Options {
 	opts := backend.DefaultOptions()
 	opts.ConnectTimeout = time.Duration(*l.Backend.ConnectTimeout)
+	opts.BatchBytes = boundedSize(*l.Batching.MaxBytes)
 	opts.ExchangeBytes = boundedSize(*l.Backend.MaxExchangeBytes)
 	opts.Scan.Documents = l.Scan.MaxBatchDocuments
 	opts.Scan.Bytes = boundedSize(*l.Scan.MaxBatchBytes)
