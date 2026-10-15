@@ -1,17 +1,71 @@
 # What justifies Weir?
 
-Weir has a demonstrated mechanism: it combines independent concurrent record
-requests into fewer real database commands, while retaining each caller's result.
-That mechanism is useful when many callers cannot batch together themselves and
-database command overhead is a material bottleneck. It does not establish that
-adding Weir makes every workload faster or cheaper.
+Weir has measured value for independent concurrent small requests that can be
+aggregated across callers. The benefit depends on the workload and database
+budget; native bulk operations and low-concurrency direct access remain stronger
+alternatives in the tested cases. Production economic value requires total
+resource and representative workload measurements.
 
-The local experiment below **does not justify Weir for an application that can
-already issue native database batches**. Direct native batches were much faster.
-It also does not justify Weir on single-caller latency. Production economic value
-remains conditional on representative saturation, latency and resource evidence.
+## Sustained Linux benchmark, 2026-10-15
 
-## Real MongoDB experiment, 2026-10-15
+The independent [complete benchmark report](https://github.com/batchstream/weir-tests/blob/main/results/value-2026-10-15/README.md)
+retains original JSON, commands, configuration, source/binary identities, logs,
+cleanup receipts and offline analysis. It measures this server at
+`8955cde10e574dae55d890b0c9c824fd39219d1c`, with Go 1.27.1, SDK v0.15.0,
+protocol v0.13.0, MongoDB 8.0.32 and Elasticsearch 8.19.22.
+Ten successful workflows produced 94 paired comparisons and 564 timed stages:
+95,142,464 successful records, zero errors, timeouts or unknown outcomes, with
+all independent final-state checks and owned-fixture cleanups passing.
+
+At a 1-CPU database quota, these observed improvements exceed 10% in every
+paired round. Rates use all successful records divided by all measured time.
+Each path shares a four-logical-CPU runner; Weir uses additional unrestricted
+service CPU, so equal database quota does not mean equal total CPU demand.
+
+| Work | Workers | Native records/s | Weir records/s | Change | Native p95 / p99 ms | Weir p95 / p99 ms |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| MongoDB read | 256 | 9,468.6 | 14,050.8 | +48.4% | 73.727 / 90.111 | 30.719 / 40.959 |
+| MongoDB 90/10 read/write | 256 | 4,876.2 | 9,743.8 | +99.8% | 106.495 / 180.223 | 49.151 / 73.727 |
+| MongoDB write | 128 | 2,530.2 | 3,390.3 | +34.0% | 98.303 / 425.983 | 90.111 / 212.991 |
+| Search fixed atomic transform | 256 | 1,628.6 | 3,526.0 | +116.5% | 196.607 / 229.375 | 131.071 / 180.223 |
+
+Latency numbers are pooled histogram upper bounds, with approximation up to
+12.5% + 1µs. Three paired rounds alternate path order; each path receives 10s
+warmup and 20s timed work. Four independent client processes issue one record
+per call against 8192 hot records with 1024-byte padding and disjoint writer
+keys. The transform control uses one native atomic update computing
+`revision = 1 - revision`, compared with the same computation in Weir Lua;
+there is no unnecessary native client read or transaction.
+
+A same-run grouping ablation supports the mechanism: at 128 MongoDB read workers,
+grouping limit 1 gives 7,433.0 Weir versus 8,644.4 native records/s; limit 32 gives
+15,667.8 versus 8,643.0. The native baseline is essentially unchanged, while
+Weir's selected MongoDB commands per record fall from 1.0000 to 0.1251.
+The configured maximum is 32, but the observed adapter average is 7.99 records.
+
+The report also retains the negative evidence. Low-concurrency ordinary MongoDB
+requests are slower through Weir. Search pure reads lose at every tested
+concurrency. Native MongoDB bulk reads achieve about 102,000–104,000 records/s,
+versus 19,000–29,000 through the SDK with 32 records per call. A 2-CPU database
+sensitivity run removes several apparent gains, and some Search write rounds
+vary substantially. Weir's CPU/RSS, client samples and database resource counters
+are included; lower total CPU or production cost is not established. Only
+MongoDB ordinary writes at 128 workers qualify on both paths for the primary
+database saturation and successor plateau conditions. Other rates are observed
+throughput within the tested ladder, not maximum-capacity claims.
+
+See the [method](https://github.com/batchstream/weir-tests/blob/main/results/value-2026-10-15/METHOD.md)
+and [complete round/latency/resource tables](https://github.com/batchstream/weir-tests/blob/main/results/value-2026-10-15/TABLES.md)
+before applying these numbers to a deployment. Single-owner loopback measurements
+with hot data do not establish cross-host, cold-data, conflicting-write or fleet
+behavior. The finite local experiment below is separate historical mechanism
+evidence; its timings are not combined with this sustained benchmark.
+
+## Local MongoDB mechanism experiment, 2026-10-15
+
+This local experiment **does not justify Weir for an application that can already
+issue native database batches**. Direct native batches were much faster.
+It also does not justify Weir on single-caller latency.
 
 The executable test is
 [`TestValueProofMongoReadPaths`](../internal/server/value_proof_integration_test.go).
@@ -162,18 +216,14 @@ Before adopting Weir for performance, require all of the following:
    the correctness contract. A result-count or throughput improvement cannot
    compensate for replaying an uncertain mutation.
 
-The independent [weir-tests](https://github.com/batchstream/weir-tests) repository
-contains the longer matched direct/Weir saturation harness. Its presence and
-compilation are not results; no historical or unexecuted report is counted here.
+The sustained benchmark above demonstrates useful aggregation under specific
+high-concurrency conditions and retains direct-access counterexamples. It
+supports Weir as a **shared batching and transform service for fragmented
+concurrent callers**, conditional on the deployment's matched workload and total
+resource budget. If the adoption gate fails and no shared transform/discovery
+contract is needed, use the direct driver and remove the extra service.
 
-With today's evidence, Weir is justified as a **candidate shared batching and
-transform service for fragmented concurrent callers**, with its core aggregation
-mechanism demonstrated against a real database. It is not yet justified as a
-universal faster database client or as a replacement for efficient native bulk
-operations. If the adoption gate fails and no shared transform/discovery contract
-is needed, use the direct driver and remove the extra service.
-
-## Reproduce and audit
+## Reproduce and audit the local mechanism experiment
 
 This measurement used Go 1.27.1 on Darwin/arm64, Apple M2 (8 logical CPUs),
 24 GiB host RAM, MongoDB 8.0.32 single-member `weir_local` replica set on
