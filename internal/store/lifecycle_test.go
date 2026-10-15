@@ -69,6 +69,56 @@ type forcedCloseAdapter struct {
 	started chan struct{}
 }
 
+type blockedCleanupAdapter struct {
+	lifecycleAdapter
+	started chan struct{}
+	release chan struct{}
+}
+
+func (a *blockedCleanupAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) bool {
+	close(a.started)
+	<-a.release
+	return false
+}
+
+func (a *blockedCleanupAdapter) Close() error {
+	close(a.release)
+	return a.lifecycleAdapter.Close()
+}
+
+func TestForcedCloseUsesConfiguredCleanupBudget(t *testing.T) {
+	adapter := &blockedCleanupAdapter{started: make(chan struct{}), release: make(chan struct{})}
+	limits := DefaultLimits()
+	limits.CleanupTimeout = 30 * time.Millisecond
+	runtime, err := New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := plan(1, "active", false)
+	ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer ticket.Ack()
+	select {
+	case <-adapter.started:
+	case <-time.After(time.Second):
+		t.Fatal("backend execution did not start")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	started := time.Now()
+	err = runtime.Close(ctx)
+	if err == nil || time.Since(started) > 500*time.Millisecond || adapter.closes.Load() != 1 {
+		t.Fatal("forced cleanup ignored its configured deadline", err, time.Since(started))
+	}
+	select {
+	case <-runtime.done:
+	case <-time.After(time.Second):
+		t.Fatal("backend execution did not join after forced adapter close")
+	}
+}
+
 func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	for _, work := range plans {
 		outcome := pb.MutationOutcome_APPLIED

@@ -26,7 +26,8 @@ address so bootstrap can return concrete peers for later synchronization.
 
 Every process gets a fresh random node ID and monotonically increasing heartbeat
 sequence. An advertisement contains its peer address, replica group, complete local Store
-names, business endpoints, revision, remaining lease and withdrawal state. Backend
+names, business endpoints, revision, remaining lease, immutable origin lease
+duration and withdrawal state. Backend
 URIs, authentication and backend configuration are never synchronized.
 
 Same-group live advertisements contribute the group's Store targets. Identical
@@ -34,22 +35,68 @@ shared DNS targets deduplicate; individual addresses union across replicas. If a
 Store is advertised by different groups, ResolveStore returns an explicit ownership
 conflict. Synchronization does not resolve conflicting ownership by arrival order.
 
-An owner periodically advances its sequence and renews its own lease. Relays send
-only remaining lifetime, with a fixed bounded transit allowance removed before
-transmission. Receiving the same sequence cannot extend its deadline. Expired and
-withdrawn versions retain bounded high-water marks long enough to reject delayed
-state. Older gossip cannot renew a dead origin. New processes use new node IDs,
-so a restart does not reset another incarnation's sequence.
+An owner periodically advances its sequence and renews its own configured lease.
+Relays send only remaining lifetime. Each receiver anchors expiry to its own
+monotonic time recorded before the sender formed that snapshot. The complete
+exchange delay is deducted; no synchronized wall clock or fixed transit allowance
+is required. Receiving the same or an older sequence cannot extend either its
+expiry or its replay watermark. Withdrawal is terminal for that incarnation,
+including when a later live revision is offered. New processes use new node IDs.
+
+Each accepted remote version retains its high-water mark until the local receipt
+time plus that origin's full lease, independently of this receiver's lease policy.
+The origin's lease duration is immutable across an incarnation's revisions; an
+exchange changing a known origin's duration is rejected before any mutation.
+Every older version was generated before the accepted version, so even its full
+origin lease expires by that retention deadline. Relays cannot extend it, and an
+in-flight snapshot arriving after collection has an already expired anchored
+deadline and is ignored. Replaying a revision never moves the collection time.
 
 ## Directory synchronization
 
-A worker periodically push/pulls snapshots with known direct peers and bootstrap
+A background loop periodically exchanges snapshots with known direct peers and bootstrap
 seeds. Bootstrap seed connections are recreated to avoid forever selecting the
 same Pod behind an ordinary service. Learning peer addresses joins initially
 separate membership islands. The algorithm is periodic anti-entropy for this
 ownership directory; it does not implement a new general-purpose SWIM stack.
 
-Synchronization uses short deadlines and lease-based expiry. There are no Weir
+Synchronization uses short deadlines and lease-based expiry. There are no
+independent heartbeat or seed timers: `discovery.sync_interval` (default `1s`)
+controls renewal and a round-robin bootstrap seed visit during each round.
+`discovery.sync_timeout` (default `2s`) bounds the entire peer exchange, including
+DNS, connection establishment and the complete handshake. The receiving peer
+also applies its own configured exchange deadline, including when the caller
+provides none. `discovery.lease` (default `60s`) is this node's origin lease;
+different nodes can choose different lease and timeout policies. These defaults
+are not maximum values. All three durations must be positive; only the lease
+requires whole milliseconds for its wire encoding. The lease must exceed the
+sync interval plus two exchange timeouts, covering one round's peer and seed
+visits. Addition is validated without duration overflow. The wire accepts any
+positive origin lease representable as Go `time.Duration` milliseconds, with
+remaining lifetime no greater than that origin lease.
+
+SyncDirectory is one finite bidirectional gRPC stream, with exactly this sequence:
+
+1. The initiator records its local anchor and sends an empty opening request.
+2. The receiver records its own local anchor and sends one current snapshot.
+3. The initiator validates the response envelope, sends its own current snapshot,
+   and half-closes input. The receiver validates that this is the only remaining
+   request and atomically merges it before returning final gRPC OK.
+4. The initiator requires exactly one response and final gRPC OK before atomically
+   merging the receiver's snapshot. In both directions, expiry is the local anchor
+   plus advertised remaining lifetime. Already expired entries are ignored.
+
+Each anchor precedes formation of the corresponding remote snapshot; arbitrary
+network delay can therefore only shorten a relayed lease. Extra messages and
+malformed snapshots do not partially install that received snapshot. The receiver
+requires validated input half-close; the initiator additionally requires final
+gRPC OK. A lost final status can leave the receiver's completed merge installed,
+but the initiator installs nothing from a failed exchange.
+Both directions learn membership through the same connection, including when
+only the initiating node has a bootstrap seed. There is no legacy unary fallback,
+reverse connection, challenge registry or persistent exchange session.
+Shutdown attempts withdrawals until its caller's drain deadline, without a fixed
+peer-count cutoff. There are no Weir
 message, node, Store or endpoint count quotas. A malformed exchange is rejected
 before partial state mutation. No
 peer control contains business payloads. Shutdown cancels synchronization, joins
@@ -90,7 +137,9 @@ cancels background work, closes owned channels and joins refresh/DNS work.
 
 Default offline tests must cover arbitrary seed ResolveStore, direct-only business RPCs,
 periodic peer convergence, same-group replicas, ownership conflicts, origin lease
-expiry without resurrection, withdrawal, malformed atomic exchange rejection,
+expiry without resurrection, terminal withdrawal, mixed origin lease policies,
+delayed responses after watermark collection, complete finite-handshake validation,
+server-side exchange deadlines without a caller deadline, malformed atomic exchange rejection,
 seed self-selection, lease expiry and lifecycle cleanup. Client tests must prove
 business never reaches the seed, multiple targets receive independent RPCs, DNS
 changes are observed while old connections remain healthy, invalid/expired

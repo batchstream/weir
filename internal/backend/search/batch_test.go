@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 )
 
@@ -247,7 +248,7 @@ func TestMgetRequiresCompleteIDCorrespondenceAndIsolatesItemErrors(t *testing.T)
 }
 
 func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
-	for _, mode := range []string{"conflict", "unknown", "exhausted"} {
+	for _, mode := range []string{"conflict", "unknown", "exhausted", "single"} {
 		t.Run(mode, func(t *testing.T) {
 			var reads, writes atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +290,12 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			cfg := Config{Store: "search", URL: server.URL}
+			settings := backend.DefaultOptions()
+			settings.RetryAttempts = 3
+			if mode == "single" {
+				settings.RetryAttempts = 1
+			}
+			cfg := Config{Store: "search", URL: server.URL, Options: &settings}
 			a := &Adapter{dialect: ElasticsearchProduct, config: cfg, client: server.Client(), ctx: context.Background()}
 			works := []*execution.Plan{batchTestPlan(t, a, "program", "records/s:program"), batchTestPlan(t, a, "put", "records/s:put")}
 			results := a.executeRecords(context.Background(), works)
@@ -297,15 +303,15 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 			if mode == "unknown" {
 				wantCalls, wantOutcome = 1, pb.MutationOutcome_UNKNOWN
 			}
-			if mode == "exhausted" {
-				wantCalls = programAttempts
+			if mode == "exhausted" || mode == "single" {
+				wantCalls = int32(a.options().RetryAttempts)
 			}
 			if reads.Load() != wantCalls || writes.Load() != wantCalls {
 				t.Fatal("unbounded/ambiguous retry", reads.Load(), writes.Load())
 			}
 			for i, result := range results {
 				expected := wantOutcome
-				if mode == "exhausted" && i == 0 {
+				if (mode == "exhausted" || mode == "single") && i == 0 {
 					expected = pb.MutationOutcome_NOT_APPLIED
 					if result.GetMutationResult().GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 						t.Fatal("retry limit did not report confirmed conflicts", result)

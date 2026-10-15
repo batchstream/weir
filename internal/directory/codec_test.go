@@ -2,7 +2,7 @@ package directory
 
 import (
 	"bytes"
-	"context"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -52,9 +52,22 @@ func (rawPeerResponseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 type rawDirectoryPeer struct {
 }
 
-func (rawDirectoryPeer) SyncDirectory(context.Context, *peerpb.SyncDirectoryRequest) (*peerpb.SyncDirectoryResponse, error) {
+func (rawDirectoryPeer) SyncDirectory(stream grpc.BidiStreamingServer[peerpb.SyncDirectoryRequest, peerpb.SyncDirectoryResponse]) error {
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
 	response := &peerpb.SyncDirectoryResponse{}
-	return response, nil
+	if err := stream.Send(response); err != nil {
+		return err
+	}
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	_, err := stream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	return err
 }
 
 func startRawDirectoryPeer(t *testing.T, raw []byte) string {

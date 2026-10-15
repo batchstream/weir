@@ -63,7 +63,13 @@ func (s *Server) admitRPC(ctx context.Context, info *tap.Info) (context.Context,
 	if err := s.admission.check(); err != nil {
 		return nil, err
 	}
-	rpcContext, cancel := context.WithCancel(ingress)
+	var rpcContext context.Context
+	var cancel context.CancelFunc
+	if s.peer {
+		rpcContext, cancel = context.WithTimeout(ingress, s.directory.ExchangeTimeout())
+	} else {
+		rpcContext, cancel = context.WithCancel(ingress)
+	}
 	s.admission.activeRPCs.Add(1)
 	state := &rpcState{server: s, method: methodLabel(info.FullMethodName), cancel: cancel}
 	state.mu.Lock()

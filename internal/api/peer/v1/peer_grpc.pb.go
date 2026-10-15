@@ -28,9 +28,9 @@ const (
 // It carries public endpoint advertisements and never carries business payloads
 // or backend credentials. Clients use the separate weir.v1.StoreService.
 type PeerDiscoveryServiceClient interface {
-	// SyncDirectory merges a bounded snapshot and returns the receiver's current
-	// snapshot. Every announcement retains its origin's revision and lease.
-	SyncDirectory(ctx context.Context, in *SyncDirectoryRequest, opts ...grpc.CallOption) (*SyncDirectoryResponse, error)
+	// A finite handshake: empty opening request, one response snapshot, one
+	// request snapshot and client half-close, then final gRPC status.
+	SyncDirectory(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SyncDirectoryRequest, SyncDirectoryResponse], error)
 }
 
 type peerDiscoveryServiceClient struct {
@@ -42,14 +42,14 @@ func NewPeerDiscoveryServiceClient(cc grpc.ClientConnInterface) PeerDiscoverySer
 	return client
 }
 
-func (c *peerDiscoveryServiceClient) SyncDirectory(ctx context.Context, in *SyncDirectoryRequest, opts ...grpc.CallOption) (*SyncDirectoryResponse, error) {
+func (c *peerDiscoveryServiceClient) SyncDirectory(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SyncDirectoryRequest, SyncDirectoryResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SyncDirectoryResponse)
-	err := c.cc.Invoke(ctx, PeerDiscoveryService_SyncDirectory_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &PeerDiscoveryService_ServiceDesc.Streams[0], PeerDiscoveryService_SyncDirectory_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[SyncDirectoryRequest, SyncDirectoryResponse]{ClientStream: stream}
+	return x, nil
 }
 
 // PeerDiscoveryServiceServer is the server API for PeerDiscoveryService service.
@@ -58,31 +58,18 @@ func (c *peerDiscoveryServiceClient) SyncDirectory(ctx context.Context, in *Sync
 // It carries public endpoint advertisements and never carries business payloads
 // or backend credentials. Clients use the separate weir.v1.StoreService.
 type PeerDiscoveryServiceServer interface {
-	// SyncDirectory merges a bounded snapshot and returns the receiver's current
-	// snapshot. Every announcement retains its origin's revision and lease.
-	SyncDirectory(context.Context, *SyncDirectoryRequest) (*SyncDirectoryResponse, error)
+	// A finite handshake: empty opening request, one response snapshot, one
+	// request snapshot and client half-close, then final gRPC status.
+	SyncDirectory(grpc.BidiStreamingServer[SyncDirectoryRequest, SyncDirectoryResponse]) error
 }
 
 func RegisterPeerDiscoveryServiceServer(s grpc.ServiceRegistrar, srv PeerDiscoveryServiceServer) {
 	s.RegisterService(&PeerDiscoveryService_ServiceDesc, srv)
 }
 
-func _PeerDiscoveryService_SyncDirectory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SyncDirectoryRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PeerDiscoveryServiceServer).SyncDirectory(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PeerDiscoveryService_SyncDirectory_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PeerDiscoveryServiceServer).SyncDirectory(ctx, req.(*SyncDirectoryRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _PeerDiscoveryService_SyncDirectory_Handler(srv interface{}, stream grpc.ServerStream) error {
+	exchange := &grpc.GenericServerStream[SyncDirectoryRequest, SyncDirectoryResponse]{ServerStream: stream}
+	return srv.(PeerDiscoveryServiceServer).SyncDirectory(exchange)
 }
 
 // PeerDiscoveryService_ServiceDesc is the grpc.ServiceDesc for PeerDiscoveryService service.
@@ -91,12 +78,14 @@ func _PeerDiscoveryService_SyncDirectory_Handler(srv interface{}, ctx context.Co
 var PeerDiscoveryService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "weir.peer.v1.PeerDiscoveryService",
 	HandlerType: (*PeerDiscoveryServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "SyncDirectory",
-			Handler:    _PeerDiscoveryService_SyncDirectory_Handler,
+			StreamName:    "SyncDirectory",
+			Handler:       _PeerDiscoveryService_SyncDirectory_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "internal/api/peer/v1/peer.proto",
 }

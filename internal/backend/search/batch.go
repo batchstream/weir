@@ -271,7 +271,7 @@ func (b *recordBatch) flush() {
 			if program == nil || mutation.GetOutcome() != pb.MutationOutcome_NOT_APPLIED || mutation.GetFailure().GetCode() != pb.FailureCode_CONFLICT {
 				continue
 			}
-			if b.attempts[position] < programAttempts {
+			if b.attempts[position] < b.adapter.options().RetryAttempts {
 				b.retry = append(b.retry, position)
 			} else {
 				failure := protocol.Fail(pb.FailureCode_CONFLICT, "Search record changed during every transform attempt")

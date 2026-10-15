@@ -87,7 +87,7 @@ func (d *connectionOwner) dialConnection(ctx context.Context, network, address s
 	}
 	// DNS is joined first. Try its finite address list serially under the same
 	// deadline: no Happy Eyeballs overlap, discovery, or business replay.
-	dialer := net.Dialer{Timeout: d.timeout, KeepAlive: 30 * time.Second}
+	dialer := net.Dialer{Timeout: d.timeout}
 	var raw net.Conn
 	for _, address := range ips {
 		ip, parseErr := netip.ParseAddr(address)

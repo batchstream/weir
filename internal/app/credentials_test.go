@@ -406,7 +406,11 @@ func TestMongoCredentialMappingAndProfile(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatal("special credential characters must be accepted without URI encoding", err)
 	}
-	backend := cfg.Routing.Stores[0].Local.mongoConfig("mongodb")
+	resolved, err := cfg.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := resolved.Routing.Stores[0].Local.mongoConfig("mongodb")
 	parsed, err := url.Parse(backend.URI)
 	if err != nil || parsed.User != nil || backend.URI != m.URI || backend.Username != cfg.Routing.Stores[0].Local.Backend.Authentication.Username || backend.Password != cfg.Routing.Stores[0].Local.Backend.Authentication.Password {
 		t.Fatal("MongoDB credentials must remain separate and unchanged in backend configuration", err)

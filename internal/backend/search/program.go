@@ -11,8 +11,6 @@ import (
 	"github.com/batchstream/weir/internal/value"
 )
 
-const programAttempts = 5
-
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
 func evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {

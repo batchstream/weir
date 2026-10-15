@@ -147,8 +147,9 @@ they are not authentication credentials.
 
 Only accept a page checkpoint after the matching document count, ScanEnd and final gRPC OK. On an interrupted page, reuse the previous checkpoint and handle
 repeated documents in the consumer. MongoDB uses an ascending `_id` keyset and
-has no cross-page snapshot. Search uses a backend PIT and fails if its 60-second
-keep-alive expires; it never restarts an expired snapshot automatically. A PIT
+has no cross-page snapshot. Search uses a backend PIT and fails if its configured
+`backend.search.pit_keep_alive` (default `60s`) expires; it never restarts an
+expired snapshot automatically. A PIT
 already passed to the client remains alive until that timeout, including after
 exhaustion or a failed page, so losing the final page response does not immediately
 invalidate the client's previous checkpoint.

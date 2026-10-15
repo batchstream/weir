@@ -152,14 +152,14 @@ func (a *Adapter) configureRequest(request *http.Request) {
 		request.SetBasicAuth(connection.Username, connection.Password)
 	}
 }
-func newTransport(timeout time.Duration) *http.Transport {
-	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
+func newTransport(timeout, idleTimeout time.Duration) *http.Transport {
+	dialer := &net.Dialer{Timeout: timeout}
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	transport := &http.Transport{
 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
 		DisableCompression: true, MaxConnsPerHost: 0,
-		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: 30 * time.Second,
+		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: idleTimeout,
 		MaxResponseHeaderBytes: math.MaxInt64,
 		TLSHandshakeTimeout:    timeout,
 	}

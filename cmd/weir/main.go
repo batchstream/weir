@@ -12,6 +12,7 @@ import (
 
 	"github.com/batchstream/weir/internal/app"
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 )
 
 func main() {
@@ -70,6 +71,7 @@ func run(args []string, output io.Writer) error {
 
 	checkConfig := "weir.yaml"
 	checkRoutes := ""
+	checkEffective := false
 	checkCommand := &cobra.Command{
 		Use:   "check",
 		Short: "Validate configuration without listeners, DNS or backend connections",
@@ -79,11 +81,24 @@ func run(args []string, output io.Writer) error {
 				return errors.New("--config requires a file")
 			}
 
-			if _, err := app.Load(checkConfig, checkRoutes); err != nil {
+			cfg, err := app.Load(checkConfig, checkRoutes)
+			if err != nil {
+				return err
+			}
+			if checkEffective {
+				effective, err := cfg.Effective()
+				if err != nil {
+					return err
+				}
+				encoded, err := yaml.Marshal(effective)
+				if err != nil {
+					return errors.New("effective configuration encoding failed")
+				}
+				_, err = command.OutOrStdout().Write(encoded)
 				return err
 			}
 
-			_, err := io.WriteString(command.OutOrStdout(), "configuration valid\n")
+			_, err = io.WriteString(command.OutOrStdout(), "configuration valid\n")
 			return err
 		},
 	}
@@ -101,6 +116,13 @@ func run(args []string, output io.Writer) error {
 		"optional local Store YAML configuration file",
 	)
 
+	checkCommand.Flags().BoolVar(
+		&checkEffective,
+		"effective",
+		false,
+		"print effective settings, defaults and automatic sources with secrets redacted",
+	)
+
 	versionCommand := &cobra.Command{
 		Use:   "version",
 		Short: "Print build identity",
@@ -111,12 +133,13 @@ func run(args []string, output io.Writer) error {
 	}
 
 	probeAddress := "127.0.0.1:7449"
+	probeDeadline := probeTimeout
 	probeCommand := &cobra.Command{
 		Use:   "probe live|ready",
 		Short: "Check loopback diagnostics",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			return runProbe(command.Context(), args[0], probeAddress)
+			return runProbe(command.Context(), args[0], probeAddress, probeDeadline)
 		},
 	}
 	probeCommand.Flags().StringVar(
@@ -124,6 +147,12 @@ func run(args []string, output io.Writer) error {
 		"address",
 		"127.0.0.1:7449",
 		"loopback diagnostic IP:port",
+	)
+	probeCommand.Flags().DurationVar(
+		&probeDeadline,
+		"timeout",
+		probeTimeout,
+		"positive deadline for the complete diagnostic request",
 	)
 
 	root.AddCommand(serveCommand, checkCommand, versionCommand, probeCommand)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	backendcfg "github.com/batchstream/weir/internal/backend"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -91,7 +92,7 @@ func TestSearchScanLargeSourcesDownsizeAndResume(t *testing.T) {
 			t.Error("owned PIT cleanup", failure)
 		}
 	}()
-	transport := newTransport(connectionTimeout)
+	transport := newTransport(connectionTimeout, backendcfg.DefaultOptions().IdleTimeout)
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	adapter := &Adapter{dialect: backend.Product, config: config, ctx: ctx, client: client}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/batchstream/weir/internal/backend"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -130,7 +131,7 @@ func TestScanResponseFramingBoundBeforeDecode(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			transport := newTransport(connectionTimeout)
+			transport := newTransport(connectionTimeout, backend.DefaultOptions().IdleTimeout)
 			defer transport.CloseIdleConnections()
 			a := &Adapter{dialect: ElasticsearchProduct, config: Config{URL: server.URL}, ctx: context.Background(), client: &http.Client{Transport: transport, CheckRedirect: noRedirect}}
 			call := exchange{path: "/_search", body: []byte("{}")}

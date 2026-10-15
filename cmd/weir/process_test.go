@@ -467,7 +467,8 @@ func TestCLIBasicOnlyServe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	for _, mode := range []string{"live", "ready"} {
-		if err := runProbe(ctx, mode, diagnostic); err != nil {
+		err := runProbe(ctx, mode, diagnostic, probeTimeout)
+		if err != nil {
 			t.Fatal("a node without routes must start and report health", mode, err)
 		}
 	}
@@ -697,7 +698,8 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 	diagnostic := strings.TrimPrefix(p.line(t), "Diagnostics listening on ")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	if err := runProbe(ctx, "ready", diagnostic); err != nil {
+	err := runProbe(ctx, "ready", diagnostic, probeTimeout)
+	if err != nil {
 		t.Fatal(err)
 	}
 	conn, err := grpc.NewClient(
@@ -747,7 +749,8 @@ func TestCLISignalDrainsInflight(t *testing.T) {
 			t.Fatal("readiness did not enter draining")
 		}
 	}
-	if err := runProbe(ctx, "live", diagnostic); err != nil {
+	err = runProbe(ctx, "live", diagnostic, probeTimeout)
+	if err != nil {
 		t.Fatal("drain liveness", err)
 	}
 	select {

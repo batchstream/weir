@@ -129,7 +129,7 @@ for a dispatched write remains UNKNOWN. Different RPCs gain no additional
 transaction or ordering guarantee.
 
 MongoDB collections receive a structural metadata check on
-first use, cached per Store according to `backend.metadata_cache_entries` (default
+first use, cached per Store according to `backend.mongodb.metadata_cache_entries` (default
 64 targets). Zero disables completed caching; concurrent cold requests still share
 one check. Failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require

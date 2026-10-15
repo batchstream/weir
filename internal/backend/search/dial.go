@@ -82,7 +82,7 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 			return nil, errTransport
 		}
 	}
-	dialer := net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
+	dialer := net.Dialer{Timeout: timeout}
 	raw, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.Unmap().String(), port))
 	if err != nil {
 		return nil, err

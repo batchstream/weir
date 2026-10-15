@@ -23,8 +23,6 @@ func (s *Server) Serve(listener net.Listener) error {
 }
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.once.Do(func() {
-		drain, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
 		s.admission.BeginDrain()
 		stopped := make(chan struct{})
 		go func() {
@@ -33,7 +31,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}()
 		select {
 		case <-stopped:
-		case <-drain.Done():
+		case <-ctx.Done():
 			s.metrics.forced.WithLabelValues("drain").Inc()
 			s.grpc.Stop()
 			<-stopped
@@ -62,7 +60,7 @@ func (l *limitedListener) Accept() (net.Conn, error) {
 	l.server.admission.activeConnections.Add(1)
 	c := &limitedConn{Conn: conn, server: l.server}
 	l.server.connections.Store(conn.RemoteAddr().String(), c)
-	timer := time.AfterFunc(min(5*time.Second, l.server.limits.Stall), func() { _ = c.close("open") })
+	timer := time.AfterFunc(l.server.limits.Handshake, func() { _ = c.close("open") })
 	c.opening.Store(timer)
 	return c, nil
 }

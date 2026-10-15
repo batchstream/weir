@@ -50,7 +50,7 @@ func scanBatchAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	transport := newTransport(connectionTimeout)
+	transport := newTransport(connectionTimeout, backend.DefaultOptions().IdleTimeout)
 	t.Cleanup(transport.CloseIdleConnections)
 	client := &http.Client{Transport: transport, CheckRedirect: noRedirect}
 	adapter := &Adapter{

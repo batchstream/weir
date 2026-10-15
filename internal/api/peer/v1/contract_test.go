@@ -37,7 +37,7 @@ func TestInternalPeerContract(t *testing.T) {
 		t.Fatal("unexpected internal service", service.FullName(), service.Methods().Len())
 	}
 	method := service.Methods().Get(0)
-	if method.Name() != "SyncDirectory" || method.Input().FullName() != "weir.peer.v1.SyncDirectoryRequest" || method.Output().FullName() != "weir.peer.v1.SyncDirectoryResponse" || method.IsStreamingClient() || method.IsStreamingServer() {
+	if method.Name() != "SyncDirectory" || method.Input().FullName() != "weir.peer.v1.SyncDirectoryRequest" || method.Output().FullName() != "weir.peer.v1.SyncDirectoryResponse" || !method.IsStreamingClient() || !method.IsStreamingServer() {
 		t.Fatal("SyncDirectory RPC contract changed", method)
 	}
 	if PeerDiscoveryService_SyncDirectory_FullMethodName != "/weir.peer.v1.PeerDiscoveryService/SyncDirectory" {
@@ -60,6 +60,7 @@ func TestInternalPeerContract(t *testing.T) {
 		{name: "store_endpoints", kind: protoreflect.StringKind, repeated: true},
 		{name: "lease_remaining_ms", kind: protoreflect.Uint64Kind},
 		{name: "withdrawn", kind: protoreflect.BoolKind},
+		{name: "origin_lease_ms", kind: protoreflect.Uint64Kind},
 	}
 	assertFields(t, file.Messages().ByName("NodeAnnouncement"), announcement)
 }

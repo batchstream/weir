@@ -104,6 +104,19 @@ transport:
 # Enable listeners.peer before setting peer_address, peer_address_env or seeds.
 # Directory records contain Store names and endpoints, never backend credentials.
 # discovery:
+#   # Local announcement lifetime. Default: 60s; positive whole milliseconds.
+#   # Must exceed 2 * sync_timeout + sync_interval, covering peer and seed exchange.
+#   # There is no independent fixed lease maximum beyond duration representation.
+#   lease: 60s
+#
+#   # One cadence for local lease renewal, peer synchronization and seed discovery.
+#   # Default: 1s; positive duration.
+#   sync_interval: 1s
+#
+#   # Deadline of each peer exchange. Default: 2s; positive duration.
+#   # Lower values fail unreachable peers sooner; the lease relation above applies.
+#   sync_timeout: 2s
+#
 #   # Stable identity of replicas serving equivalent local Store definitions.
 #   # Required: no. Default: "" (a new random standalone group at startup).
 #   # Allowed: nonempty printable ASCII without spaces, or "" for default.
@@ -150,6 +163,10 @@ lifecycle:
   # Graceful drain before cancellation. Default: 5s; positive duration.
   # Align Kubernetes terminationGracePeriodSeconds with this and preStop time.
   shutdown_timeout: 5s
+  # Bound resource release after caller cancellation or forced process drain.
+  # Default: 2s; positive duration. Shared by Store and backend cleanup.
+  # Shutdown can require up to two cleanup phases after the drain deadline.
+  cleanup_timeout: 2s
 
 # Admission reacts to actual memory use against automatically discovered capacity.
 # There is no manually configured memory size, concurrency cap or reservation.
@@ -166,11 +183,10 @@ overload:
 # Lua policy belongs to this process and is shared by every local Store.
 # Execution runs in the main Weir process and follows each caller's context.
 lua:
-  vm:
-    # Default: 0 (no instruction budget), or a positive instruction count.
-    # Set a measured budget only when workload evidence calls for one.
-    max_instructions: 0
-    # Default: 0 (VM native default 10000), or a positive call depth.
-    max_call_depth: 0
-    # Default: 0 (VM native default 1000000), or positive stack slots.
-    max_stack_slots: 0
+  # Default: 0 (no instruction budget), or a positive instruction count.
+  # Set a measured budget only when workload evidence calls for one.
+  max_instructions: 0
+  # Default: 0 (VM native default 10000), or a positive call depth.
+  max_call_depth: 0
+  # Default: 0 (VM native default 1000000), or positive stack slots.
+  max_stack_slots: 0

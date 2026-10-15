@@ -19,9 +19,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
-const programAttempts = 5
-const programCleanup = 200 * time.Millisecond
-
 // Lua evaluates one document at a time; workspace bytes below are accounting only.
 const programWorkingBytes = 64 << 20
 
@@ -83,7 +80,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 	}
 	ambiguous := false
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), programCleanup)
+		cleanup, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
 		defer cancel()
 		if ambiguous {
 			cancel()
@@ -91,7 +88,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 		session.EndSession(cleanup)
 	}()
 	txctx := mongo.NewSessionContext(ctx, session)
-	for attempt := 0; attempt < programAttempts && ctx.Err() == nil; attempt++ {
+	for attempt := 0; attempt < a.options().RetryAttempts && ctx.Err() == nil; attempt++ {
 		batch.cancelled(ctx)
 		active = batch.active()
 		if len(active) == 0 {
@@ -119,7 +116,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 				a.splitPrograms(ctx, batch, active)
 				return
 			}
-			if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx) {
+			if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
 				continue
 			}
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
@@ -157,7 +154,7 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 				a.splitPrograms(ctx, batch, batch.active())
 				return
 			}
-			if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx) {
+			if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
 				continue
 			}
 			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, writeErr))
@@ -195,13 +192,13 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 					return
 				}
 			}
-			if pauseProgram(ctx) {
+			if pauseProgram(ctx, a.options().RetryBackoff) {
 				continue
 			}
 			break
 		}
 		retryTransaction := false
-		for commitAttempt := 0; commitAttempt < programAttempts && ctx.Err() == nil; commitAttempt++ {
+		for commitAttempt := 0; commitAttempt < a.options().RetryAttempts && ctx.Err() == nil; commitAttempt++ {
 			commitContext, release := nativeAttemptContext(txctx)
 			err = session.CommitTransaction(commitContext)
 			release()
@@ -214,11 +211,11 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 				break
 			}
 			ambiguous = true
-			if !pauseProgram(ctx) {
+			if !pauseProgram(ctx, a.options().RetryBackoff) {
 				break
 			}
 		}
-		if !retryTransaction || !pauseProgram(ctx) {
+		if !retryTransaction || !pauseProgram(ctx, a.options().RetryBackoff) {
 			break
 		}
 	}
@@ -579,7 +576,7 @@ func programHasLabel(err error, label string) bool {
 }
 
 func (a *Adapter) abortProgramTransaction(session *mongo.Session, settled bool) bool {
-	cleanup, cancel := context.WithTimeout(context.Background(), programCleanup)
+	cleanup, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
 	defer cancel()
 	bounded, release := nativeAttemptContext(cleanup)
 	defer release()
@@ -614,8 +611,8 @@ func (a *Adapter) abortProgramTransaction(session *mongo.Session, settled bool) 
 	return false
 }
 
-func pauseProgram(ctx context.Context) bool {
-	timer := time.NewTimer(5 * time.Millisecond)
+func pauseProgram(ctx context.Context, backoff time.Duration) bool {
+	timer := time.NewTimer(backoff)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
