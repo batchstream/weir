@@ -3,8 +3,39 @@
 Weir has measured value for independent concurrent small requests that can be
 aggregated across callers. The benefit depends on the workload and database
 budget; native bulk operations and low-concurrency direct access remain stronger
-alternatives in the tested cases. Production economic value requires total
-resource and representative workload measurements.
+alternatives in the tested cases. The performance objective is lower actual
+database load at comparable completed throughput, or higher completed throughput
+at comparable actual database load, using a representative workload.
+
+## Single-record crawler follow-up, 2026-10-15
+
+The [cross-index batching experiment](https://github.com/batchstream/weir-tests/blob/bad363af4f36e366c1a7e7a55b8a36a4b9f713c8/results/search-batching-2026-10-15/README.md)
+and [metadata-only experiment](https://github.com/batchstream/weir-tests/blob/bad363af4f36e366c1a7e7a55b8a36a4b9f713c8/results/search-metadata-2026-10-15/README.md)
+retain all 54 timed stages, immutable sources, raw hashes and independent audits.
+Four client processes own 128 workers. Each native `_update` and Weir `Mutate`
+call contains one record; the native caller receives no preassembled batch.
+Business completion requires query-visible reconciliation, product mutation and
+the independent parallel seller mutations. The offered rates are 16, 48 and 96
+products/s, each with three paired rounds and the same database resources.
+
+The cross-index candidate `b13318f` was rejected. Completed throughput regressed
+by 3.6–12.3% at 48 offered products/s and 21.2–31.5% at 96. Larger batches did not
+compensate for the observed latency and drain regressions. That implementation
+was removed before merge.
+
+The metadata-only candidate `7455013` retains the original index-specific batching
+and fresh target checks. At 16 and 48, both Weir versions completed all arrivals
+and passed all arrival gates, with similar throughput. CPU per completed product
+reversed direction in the third round, so these measurements establish no stable
+database CPU saving against baseline or native. At 96, every path was overloaded;
+those rows do not establish sustainable capacity. Separate real-backend protocol
+tests with 128 mapped fields reduced each metadata response from about 4.2 KB to
+0.3–0.45 KB while preserving safety controls; that response-byte reduction is not
+a throughput claim.
+
+These crawler results must be assessed separately from the simpler fixed atomic
+transform below. Its observed gain does not establish a gain for the crawler's
+submission pattern and completion requirements.
 
 ## Sustained Linux benchmark, 2026-10-15
 
@@ -202,13 +233,15 @@ Before adopting Weir for performance, require all of the following:
 1. Real independent callers have overlapping compatible work and cannot already
    issue equivalent native batches cheaply. Measure actual batch distributions,
    not `batching.max_operations`.
-2. A matched direct-driver baseline and an available native-batch baseline use
-   identical data, mutation semantics, durability, visibility, retry policy,
-   concurrency and database resource limits. Verify all outcomes and persisted
-   mutation effects outside the timed phase.
-3. Representative sustained load shows lower total resource/cost at the required
-   p95/p99 latency, or higher verified successful throughput at the same budget.
-   Include Weir's CPU, memory, network, deployment and failure recovery cost.
+2. A matched direct-driver baseline uses identical submission sizes, data,
+   mutation semantics, durability, visibility, retry policy, concurrency and
+   database resource limits. A native-batch control must explain how the actual
+   callers obtain those batches; do not assume cross-process client aggregation.
+   Verify outcomes and persisted mutation effects outside the timed phase.
+3. Representative sustained load shows lower actual database load at comparable
+   completed throughput, or higher verified completed throughput at comparable
+   actual database load, while meeting the declared p95/p99 and drain limits.
+   Equal database quotas alone do not establish equal observed load.
 4. Both paths reach a demonstrated bottleneck and a higher-concurrency plateau
    before calling the comparison a capacity result. Use multiple runs and an
    explicit gain threshold agreed for the deployment; reject gains inside noise.
