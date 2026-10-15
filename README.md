@@ -27,7 +27,10 @@ benchmark: 94 paired comparisons, all rounds and retained raw evidence.
 High-concurrency MongoDB requests benefit from aggregation; low concurrency,
 Search pure reads and efficient native batches favor direct access. The report
 includes throughput, tail latency, resource costs and grouping ablation.
-Production adoption still needs a matched workload and total resource measurements.
+The [single-record crawler follow-up](docs/value-proof.md#single-record-crawler-follow-up-2026-10-15)
+retains rejected optimizations and does not establish a stable database CPU benefit
+for that workload. Adoption should compare completed throughput and actual database
+load using the application's submission and visibility requirements.
 
 ## Build and run
 

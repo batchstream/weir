@@ -280,7 +280,6 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		{"source", `{"mappings":{"_source":{"enabled":false}}}`},
 		{"pruned", `{"mappings":{"_source":{"excludes":["hidden"]}}}`},
 		{"routing", `{"mappings":{"_routing":{"required":true}}}`},
-		{"shards", `{"settings":{"number_of_shards":2,"number_of_replicas":0}}`},
 	} {
 		t.Run(spec.name, func(t *testing.T) {
 			index := b.Index + "_" + spec.name
@@ -291,7 +290,7 @@ func TestSearchIngestAndQualification(t *testing.T) {
 			}
 			assertOutcome(t, runSearch(t, a, searchPlan(t, a, "put", searchResource(index, "a"))), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 			deletion := searchPlan(t, a, "delete", searchResource(index, "a"))
-			if spec.name == "routing" || spec.name == "shards" {
+			if spec.name == "routing" {
 				assertOutcome(t, runSearch(t, a, deletion), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 			} else {
 				assertOutcome(t, runSearch(t, a, deletion), pb.MutationOutcome_APPLIED, 0)
@@ -304,7 +303,9 @@ func TestSearchIngestAndQualification(t *testing.T) {
 		t.Fatal(status)
 	}
 	aliasRead := searchPlan(t, a, "read", searchResource(alias, "a"))
-	if runSearch(t, a, aliasRead).GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED {
-		t.Fatal("alias accepted")
+	if result := runSearch(t, a, aliasRead).GetReadResult(); result.GetFailure() != nil || result.GetMissing() == nil {
+		t.Fatal("single-index alias did not preserve a missing-record read", result)
 	}
+	aliasWrite := searchPlan(t, a, "put", searchResource(alias, "a"))
+	assertOutcome(t, runSearch(t, a, aliasWrite), pb.MutationOutcome_NOT_APPLIED, pb.FailureCode_UNSUPPORTED)
 }

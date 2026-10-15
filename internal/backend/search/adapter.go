@@ -182,7 +182,11 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 	if ctx.Err() != nil {
 		return caps, protocol.ContextFailure(ctx)
 	}
-	call := exchange{path: "/" + url.PathEscape(target) + "?flat_settings=true", native: native}
+	query := url.Values{
+		"flat_settings": {"true"},
+		"filter_path":   {"error,status,*.aliases,*.settings,*.mappings._source,*.mappings._routing,*.data_stream"},
+	}
+	call := exchange{path: "/" + url.PathEscape(target) + "?" + query.Encode(), native: native}
 	status, raw, err := a.request(ctx, call)
 	if ctx.Err() != nil {
 		return caps, protocol.ContextFailure(ctx)

@@ -135,9 +135,11 @@ first use, cached per Store according to `backend.mongodb.metadata_cache_entries
 one check. Failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
-Search resolves and qualifies targets per operation without retaining completed
-metadata. A single-index alias binds that operation to its physical index;
-later operations observe alias changes. Multiple primary shards are supported.
+Search qualifies each distinct target once per adapter invocation without retaining
+completed metadata. It requests aliases, settings and the source/routing mapping
+controls, omitting unused field mappings. A single-index alias binds that operation
+to its physical index; later invocations observe alias changes. Multiple primary
+shards are supported.
 
 The active batch set also enforces `batching.max_in_flight` when it is positive.
 Zero, the default, means unlimited. Once the budget is full, compatible waiting

@@ -1,10 +1,57 @@
 # What justifies Weir?
 
 Weir has measured value for independent concurrent small requests that can be
-aggregated across callers. The benefit depends on the workload and database
-budget; native bulk operations and low-concurrency direct access remain stronger
-alternatives in the tested cases. Production economic value requires total
-resource and representative workload measurements.
+aggregated across callers. The benefit depends on the workload and actual database
+load; native bulk operations and low-concurrency direct access remain stronger
+alternatives in the tested cases. The performance objective is lower actual
+database load at comparable completed throughput, or higher completed throughput
+at comparable actual database load, using a representative workload.
+
+## Single-record crawler follow-up, 2026-10-15
+
+The [cross-index batching experiment](https://github.com/batchstream/weir-tests/blob/bad363af4f36e366c1a7e7a55b8a36a4b9f713c8/results/search-batching-2026-10-15/README.md)
+and [metadata-only experiment](https://github.com/batchstream/weir-tests/blob/bad363af4f36e366c1a7e7a55b8a36a4b9f713c8/results/search-metadata-2026-10-15/README.md)
+retain all 54 timed stages, immutable sources, raw hashes and independent audits.
+Four client processes own 128 workers. Each native `_update` and Weir `Mutate`
+call contains one record; the native caller receives no preassembled batch.
+Business completion requires query-visible reconciliation, product mutation and
+the independent parallel seller mutations. The offered rates are 16, 48 and 96
+products/s, each with three paired rounds and the same database resources.
+
+The cross-index candidate `b13318f` was rejected. Completed throughput regressed
+by 3.6–12.3% at 48 offered products/s and 21.2–31.5% at 96. Larger batches did not
+compensate for the observed latency and drain regressions. That implementation
+was removed before merge.
+
+The metadata-only candidate `7455013` retains the original index-specific batching
+and fresh target checks. At 16 and 48, both Weir versions completed all arrivals
+and passed all arrival gates, with similar throughput. CPU per completed product
+reversed direction in the third round, so these measurements establish no stable
+database CPU saving against baseline or native. At 96, every path was overloaded;
+those rows do not establish sustainable capacity. Separate real-backend protocol
+tests with 128 mapped fields reduced each metadata response from about 4.2 KB to
+0.3–0.45 KB while preserving safety controls; that response-byte reduction is not
+a throughput claim.
+
+The separate [database-pressure follow-up](https://github.com/batchstream/weir-tests/blob/96a2e8ffc336ae11aea2e367741eb43c20e2275c/results/crawler-pressure-2026-10-15/README.md)
+retains a prospectively selected 512-worker matrix across four client processes,
+with 45, 57 and 68 offered products/s and three paired rounds per rate. All 27
+formal stages passed the source, field and all-arrivals audits, with zero failed,
+unknown, timed-out or rejected products. At 68, the metadata candidate reduced
+database CPU per completed product against the original Weir by 42.6%, 11.2% and
+6.6%, while paired completed throughput differed by less than 0.2%. At 45 and 57,
+the CPU direction reversed between rounds. Against native single-record updates,
+the candidate did not establish a stable CPU saving at any of the three rates.
+None of the 27 formal stages satisfied the sustained database CPU gate, so the
+short calibration's CPU pressure does not establish a formal database bottleneck
+or a capacity gain. The retained 2048-worker calibration failed with timeouts,
+unknown outcomes and field-audit failures; it is unqualified evidence. These
+measurements support a limited metadata improvement over the previous Weir at
+one tested rate, without establishing Weir's benefit for this crawler workload.
+
+These crawler results must be assessed separately from the simpler fixed atomic
+transform below. Its observed gain does not establish a gain for the crawler's
+submission pattern and completion requirements.
 
 ## Sustained Linux benchmark, 2026-10-15
 
@@ -189,26 +236,28 @@ user requirements; adding them does not strengthen the batching proof.
 
 ## Adoption gate
 
-Let `B` be the observed successful records per physical database command, `F`
-the database's fixed work per command, `V` its per-record work, and `H` Weir's
-extra work per record in comparable resource/cost units. The rough service-demand
-comparison is direct `F + V` versus Weir `F/B + V + H`. Weir has a resource
-advantage only if `F * (1 - 1/B) > H`. This is a cost model, not a formula for
-latency under concurrency. Different namespaces, conflicting keys, low overlap
-and multiple Weir replicas fragment the available batch, lowering `B`.
+Database CPU per completed record is the primary load measure here. Batching can
+reduce fixed database command work, while qualification, pre-reads, conflict
+retries and visibility barriers add database work or waiting. Moving transforms
+outside the database can reduce its per-record computation. Measure their net
+effect at the required completed throughput and latency; batch size alone cannot
+establish a benefit. Different namespaces, conflicting keys, low overlap and
+multiple Weir replicas can fragment the available batches.
 
 Before adopting Weir for performance, require all of the following:
 
 1. Real independent callers have overlapping compatible work and cannot already
    issue equivalent native batches cheaply. Measure actual batch distributions,
    not `batching.max_operations`.
-2. A matched direct-driver baseline and an available native-batch baseline use
-   identical data, mutation semantics, durability, visibility, retry policy,
-   concurrency and database resource limits. Verify all outcomes and persisted
-   mutation effects outside the timed phase.
-3. Representative sustained load shows lower total resource/cost at the required
-   p95/p99 latency, or higher verified successful throughput at the same budget.
-   Include Weir's CPU, memory, network, deployment and failure recovery cost.
+2. A matched direct-driver baseline uses identical submission sizes, data,
+   mutation semantics, durability, visibility, retry policy, concurrency and
+   database resource limits. A native-batch control must explain how the actual
+   callers obtain those batches; do not assume cross-process client aggregation.
+   Verify outcomes and persisted mutation effects outside the timed phase.
+3. Representative sustained load shows lower actual database load at comparable
+   completed throughput, or higher verified completed throughput at comparable
+   actual database load, while meeting the declared p95/p99 and drain limits.
+   Equal database quotas alone do not establish equal observed load.
 4. Both paths reach a demonstrated bottleneck and a higher-concurrency plateau
    before calling the comparison a capacity result. Use multiple runs and an
    explicit gain threshold agreed for the deployment; reject gains inside noise.
@@ -219,9 +268,10 @@ Before adopting Weir for performance, require all of the following:
 The sustained benchmark above demonstrates useful aggregation under specific
 high-concurrency conditions and retains direct-access counterexamples. It
 supports Weir as a **shared batching and transform service for fragmented
-concurrent callers**, conditional on the deployment's matched workload and total
-resource budget. If the adoption gate fails and no shared transform/discovery
-contract is needed, use the direct driver and remove the extra service.
+concurrent callers**, conditional on the deployment's matched workload, actual
+database load, completed throughput and latency requirements. If the adoption gate
+fails and no shared transform/discovery contract is needed, use the direct driver
+and remove the extra service.
 
 ## Reproduce and audit the local mechanism experiment
 
