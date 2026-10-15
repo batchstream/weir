@@ -1,11 +1,142 @@
 # What justifies Weir?
 
-Weir has measured value for independent concurrent small requests that can be
-aggregated across callers. The benefit depends on the workload and actual database
-load; native bulk operations and low-concurrency direct access remain stronger
-alternatives in the tested cases. The performance objective is lower actual
-database load at comparable completed throughput, or higher completed throughput
-at comparable actual database load, using a representative workload.
+Weir has measured value when it aggregates independent concurrent single-record
+operations across callers. The current baseline uses multiple OS client processes
+and concurrent workers; each native or SDK call contains one record, matching
+fragmented crawler updates. Both paths must meet the same durability and
+visibility requirements.
+The objective is lower actual database load at comparable completed throughput,
+or higher completed throughput at comparable actual database load. Historical
+native client-preassembled bulk tests remain boundary evidence; they are not the
+current crawler baseline.
+
+## Default selection and independent confirmation, 2026-10-16
+
+The current defaults are **128 operations, 4 MiB, 20 ms write collection and
+16 simultaneous adapter invocations per Store**. They are the constrained
+selection from 20 count/wait/concurrency configurations and a four-point byte
+anchor. The selection rules were frozen before selection measurements. Typed
+reads and mixed batches containing reads become eligible without collection;
+explicit `max_wait: 0s` and `max_in_flight: 0` retain immediate and unlimited
+execution policies. The owned default-path fixtures omit the entire batching
+block and audit the effective configuration plus all four runtime controls.
+
+The [tuning evidence PR](https://github.com/batchstream/weir-tests/pull/30),
+[frozen selection audit](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json)
+and [corrected confirmation rows](https://github.com/batchstream/weir-tests/blob/acc5ec2e0e214e0edb28a20fc33d04788bb9e70a/results/default-tuning-2026-10-16/analysis-confirmation-parser-fix/stages.csv)
+retain the source/configuration receipts, raw outcomes and independent audits.
+The confirmation server is
+[`084572d`](https://github.com/batchstream/weir/commit/084572d79b7a53230801297f90ca2363fd864913).
+The results below distinguish actual database CPU from CPU per completed unit;
+equal configured database quotas do not establish equal actual load.
+
+For pure Search writes with 1 KiB padding, a database quota of 0.25 CPU and
+512 concurrent workers across four OS clients, both paths pass the measurement,
+rate-stability, generator/host-headroom and sustained database-CPU checks in all
+three rounds:
+
+| Round | Native writes/s | Default Weir writes/s | Throughput ratio | Measured DB CPU, native / Weir (% of quota) | Weir p99 upper bound |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 643.322 | 5270.143 | 8.19 | 99.82 / 99.14 | 327.679ms |
+| 2 | 664.674 | 4480.537 | 6.74 | 99.98 / 99.48 | 327.679ms |
+| 3 | 655.657 | 5468.189 | 8.34 | 100.05 / 99.14 | 294.911ms |
+
+This establishes 6.74–8.34 times the completed throughput at nearly the same
+measured database CPU for this tested point. Actual Weir bulks average
+115.52–118.60 records across these rounds. The 1024-worker successor has not
+established the declared repeatable throughput plateau; its third Weir round
+also fails rate stability. Maximum capacity and longer-run confirmation remain
+pending.
+
+The larger-body Search case uses 64 KiB payloads, a 2048-record namespace,
+a one-CPU database quota and 512 workers:
+
+| Round | Native writes/s | Default Weir writes/s | Native / Weir DB CPU ms per write | Mean Weir records per bulk | Mean framed Weir bulk body |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 961.448 | 1891.298 | 0.803 / 0.471 | 47.73 | 2.990 MiB |
+| 2 | 1399.400 | 1978.225 | 0.545 / 0.418 | 47.79 | 2.994 MiB |
+| 3 | 1305.379 | 2089.408 | 0.609 / 0.395 | 48.82 | 3.059 MiB |
+
+Completed throughput is 1.41–1.97 times native and CPU per completed write is
+23.3–41.3% lower. Actual database CPU is 4.6–16.0% higher, so these rows do not
+support an equal-load throughput claim. The legacy immediate/unlimited case
+retains means of 1.35–1.72 records per bulk. These are observed request-body
+means, not inferred batch sizes or maximum-body bounds. Neither path passes
+the sustained database-CPU gate in this larger-body case.
+
+With a one-CPU database quota and 68 offered two-step crawler products/s, the three
+paired rounds complete at comparable throughput, within 1.3%:
+
+| Round | Native products/s | Default Weir products/s | Native p99 upper bound | Default Weir p99 upper bound |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 65.737 | 65.676 | 3.408s | 3.932s |
+| 2 | 65.355 | 65.502 | 3.146s | 4.194s |
+| 3 | 66.312 | 65.457 | 3.146s | 3.932s |
+
+Measured database CPU is 8.1–42.3% lower across these paired rounds. Database
+CPU per completed product is 8.3–42.3% lower. The p99 increase remains part of the
+result; the measured completed rate and latency are not a maximum-capacity claim.
+
+At 512 offered partial updates/s, default Weir completes all 30,720 arrivals in
+each round. Native rejects 4,608, 3,072 and 2,625 arrivals respectively. This
+prevents a qualified three-round comparison at matched completed throughput;
+these rows cannot establish equal-throughput CPU savings or a maximum.
+
+MongoDB ordinary writes, mixed read/write traffic and Lua updates also compare
+the new default with the legacy immediate/unlimited settings. Each Weir result
+is first normalized against its own paired native result. The following ratios
+then compare default/native with legacy/native; they are not direct raw QPS or
+database CPU ratios between separately run cases.
+
+| MongoDB workload | Normalized default/legacy completed QPS | Normalized default/legacy DB CPU per completed operation |
+| --- | ---: | ---: |
+| Ordinary write | 1.079–1.100 | 0.586–0.644 |
+| Mixed read/write | 0.989–1.022 | 0.934–0.987 |
+| Lua update | 1.251–1.331 | 0.363–0.454 |
+
+All 12 predefined read guards pass, with the same normalized default/legacy
+completed-QPS ratio ranging from 0.934 to 1.065. These guards compare the new
+defaults with legacy Weir settings; passing does not establish a read speedup
+over native calls. The [absolute read measurements](https://github.com/batchstream/weir-tests/blob/acc5ec2e0e214e0edb28a20fc33d04788bb9e70a/results/default-tuning-2026-10-16/read-guards.json)
+retain these three-round ranges:
+
+| Backend | Total workers | Default Weir/native completed QPS | Default Weir p99 upper bound |
+| --- | ---: | ---: | ---: |
+| Search | 4 | 0.326–0.394 | 4.607–5.119ms |
+| Search | 128 | 0.682–0.709 | 61.439–65.535ms |
+| MongoDB | 4 | 0.418–0.447 | 2.303–2.815ms |
+| MongoDB | 128 | 1.236–1.289 | 32.767ms |
+
+Native access is faster in both tested Search read cases and the MongoDB
+four-worker read case. The measured adoption case is collecting concurrent
+writes and reducing crawler database load. Read guards check default-change
+regressions in their declared cases, with no latency guarantee for arbitrary
+workloads.
+
+Capacity confirmation remains pending. The corrected audit restores 48
+pure-write/large-document rows after accepting the valid Go duration `1m0s`.
+All 501 previously analyzed rows are unchanged; the original analysis and parser
+failures remain archived. The independent crawler ladder with a database quota
+of 0.25 CPU has no rate that passes all three rounds, across all seven declared
+rates from 8 through 544 products/s. The independent partial-update ladder has
+qualified three-round lower points at 32 and 64 updates/s, but no valid upper
+bound. Higher invalid rows cannot establish where sustainable capacity ends.
+
+Six higher-pressure native-paired crawler/partial cases with a database quota
+of 0.25 CPU record native warmup HTTP deadline errors, followed by default-Weir
+startup qualification failure before its measured stage. Cleanup preserves the
+nonzero exit while confirming owned process/container removal. They are neither valid
+paired comparisons nor a demonstrated Weir capacity upper bound. The roughly
+five-second qualification failure is consistent with the configured startup
+budget, but the generic product-identification error does not prove the exact
+HTTP failure cause. No qualification gate or startup budget is relaxed.
+
+The tested configurations and owned loopback databases bound the selection.
+Independent capacity and longer-run conclusions will be reported only after
+their original qualification checks complete. These results do not establish a
+universal optimum or production-network capacity. Host and generator CPU are
+used to check measurement headroom and bottleneck attribution; extra Weir CPU
+is not an adoption gate for the database-offload objective.
 
 ## Broader batching coverage, 2026-10-15
 
@@ -53,8 +184,8 @@ checks rather than throughput measurements of those distributions. Performance
 runs use one owned Elasticsearch host with four OS clients over loopback. All
 source/configuration receipts, raw hashes, actual CPU intervals and full-field
 oracles remain available. That experiment retained the defaults in effect on
-2026-10-15, and no
-maximum-capacity, steady-state or production-network claim is established.
+2026-10-15, and established no maximum-capacity, steady-state or production-network
+claim.
 
 ## Bounded collection follow-up, 2026-10-15
 
@@ -94,7 +225,8 @@ formal control failed the strict comparison gates because of rejected arrivals
 and generator lag; only one of its nine stages passed all-arrivals checks.
 Larger batches there are mechanism evidence, not a qualified performance win.
 All failed and rejected observations remain in the report. The default collection
-wait remains `0s`; these experiments do not select a universal waiting policy.
+wait was `0s` during this 2026-10-15 experiment; it did not select a universal
+waiting policy. The later default selection is described above.
 
 ## Single-record crawler follow-up, 2026-10-15
 

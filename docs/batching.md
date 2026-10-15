@@ -31,11 +31,21 @@ process is introduced.
 
 These values are the constrained selection from 20 count/wait/concurrency
 configurations and a four-point byte anchor in the
-[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/pull/30).
-The frozen selector balances the measured workloads and declared qualification
-rules. It does not establish a universal optimum. Three-round independent
-capacity confirmation is still pending; maximum sustainable throughput has not
-been established by this selection scan.
+[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/pull/30),
+with the [selection audit retained at an immutable revision](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json).
+The frozen selector uses the declared workloads and qualification rules. Actual
+default-path fixtures omit batching entirely and cross-check effective settings
+with all four runtime gauges. The [independent confirmation results](value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
+retain all 12 passed read guards against legacy Weir, the crawler CPU/latency
+tradeoff, MongoDB normalized comparisons and failed native partial-update cases. At a database
+quota of 0.25 CPU and 512 workers, pure Search writes complete 6.74–8.34 times
+native throughput at nearly the same measured database CPU in all three rounds.
+The 64 KiB payload case observes 47.73–48.82 records per bulk and framed body
+means of 2.990–3.059 MiB; its throughput gain accompanies higher actual database
+CPU. Native access remains faster in the tested Search read cases and MongoDB
+reads with four workers. Capacity and longer-run confirmation remain pending.
+This finite selection does not establish a universal optimum or maximum
+sustainable throughput.
 
 An execution slot includes metadata checks, pre-reads, Lua, writes and any requested
 visibility wait. A tiny limit can leave the database idle while writes wait for

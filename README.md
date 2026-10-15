@@ -22,11 +22,23 @@ after transport failure and are never automatically replayed.
 See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
 and [payload contracts](docs/payloads.md) for the current contracts.
 
-The [value proof](docs/value-proof.md) links the executed Linux MongoDB/Search
-benchmark: 94 paired comparisons, all rounds and retained raw evidence.
-High-concurrency MongoDB requests benefit from aggregation; low concurrency,
-Search pure reads and efficient native batches favor direct access. The report
-includes throughput, tail latency, resource costs and grouping ablation.
+The [current default selection and confirmation](docs/value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
+uses multiple OS client processes submitting native or Weir single-record calls.
+Defaults are 128 operations, 4MiB, 20ms write collection and 16 executions.
+Pure Search writes at a 0.25-CPU database quota and 512 workers complete
+6.74–8.34 times native throughput at nearly the same measured database CPU.
+All 12 read guards against legacy Weir pass; native access remains faster in
+the tested Search read cases and MongoDB reads with four workers. At comparable
+completed crawler throughput with a one-CPU database quota, database CPU falls
+by 8.1–42.3%, with higher reported p99
+latency. MongoDB write/mixed/Lua comparisons and invalid partial-update cases
+remain in the report. Capacity
+confirmation is pending; the selection is bounded by the tested workloads.
+
+The [historical Linux MongoDB/Search benchmark](docs/value-proof.md#sustained-linux-benchmark-2026-10-15)
+retains 94 paired comparisons, all rounds, raw evidence and grouping ablation.
+It includes preassembled native bulks as boundary evidence; current crawler
+comparisons use independent single-record native callers.
 The [single-record crawler follow-up](docs/value-proof.md#single-record-crawler-follow-up-2026-10-15)
 retains rejected optimizations. The later
 [bounded collection experiment](docs/value-proof.md#bounded-collection-follow-up-2026-10-15)
