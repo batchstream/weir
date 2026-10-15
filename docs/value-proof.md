@@ -174,8 +174,10 @@ HTTP failure cause. No qualification gate or startup budget is relaxed.
 
 The [archived variability inspection](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/CAPACITY-VARIABILITY.md)
 records sustained database CPU during the unstable rounds without establishing
-a cause. Young-GC counters do not show a late increase. Whole-stage merge and
-refresh totals were recorded, but their half-window timing series were not;
+a cause. Young-GC time changes from 332 to 46 ms at 0.125 CPU and from
+163 to 174 ms at 0.25 CPU; these observations do not establish GC as the
+cause of the decline. Whole-stage merge and refresh totals were recorded,
+but their half-window timing series were not;
 they cannot locate activity within the falling interval or assign CPU cost.
 Disk latency and utilization were not recorded, and host I/O wait is not disk
 utilization. These observations do not prove a GC, merge or disk explanation.
