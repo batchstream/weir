@@ -23,7 +23,7 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, MaxInFlight: 0, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 128, BatchBytes: 4 << 20, BatchWait: 20 * time.Millisecond, MaxInFlight: 16, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
 	return limits
 }
 
@@ -404,7 +404,7 @@ type batchCandidate struct {
 }
 
 // selectLocked returns the earliest collection deadline when every eligible
-// batch is still collecting. Full batches and streaming commands can bypass it.
+// batch is still collecting. Reads, full batches and streaming commands bypass it.
 func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	var next time.Time
 	if r.limits.MaxInFlight > 0 && len(r.batches) >= r.limits.MaxInFlight {
@@ -455,7 +455,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 		if candidate == candidates[0] {
 			if !oldestReady {
 				at := candidate.items[0].queuedAt.Add(r.limits.BatchWait)
-				oldestReady = r.limits.BatchWait == 0 || candidate.full || singleton || r.draining || !now.Before(at)
+				oldestReady = r.limits.BatchWait == 0 || candidate.full || singleton || t.plan.Command.GetRead() != nil || r.draining || !now.Before(at)
 				if deadline, bounded := t.ctx.Deadline(); bounded && deadline.Before(at) {
 					oldestReady = true
 				}
@@ -472,6 +472,10 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 			at = now
 		}
 		for _, ticket := range candidate.items {
+			if ticket.plan.Command.GetRead() != nil {
+				at = now
+				break
+			}
 			if deadline, bounded := ticket.ctx.Deadline(); bounded && deadline.Before(at) {
 				at = now
 			}

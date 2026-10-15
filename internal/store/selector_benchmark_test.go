@@ -13,6 +13,8 @@ func BenchmarkSelectorDrain(b *testing.B) {
 	for _, namespaces := range []int{1, 8, 64, 1024} {
 		b.Run(fmt.Sprintf("namespaces=%d", namespaces), func(b *testing.B) {
 			limits := DefaultLimits()
+			limits.BatchOperations = 32
+			limits.BatchWait = 0
 			works := make([]*execution.Plan, operations)
 			for index := range works {
 				work := plan(uint64(index), fmt.Sprintf("record-%d", index), false)

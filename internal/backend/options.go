@@ -26,7 +26,7 @@ type Options struct {
 func DefaultOptions() Options {
 	opts := Options{ConnectTimeout: 2 * time.Second, CleanupTimeout: 2 * time.Second,
 		RetryAttempts: 5, RetryBackoff: 5 * time.Millisecond, PITKeepAlive: time.Minute, IdleTimeout: 30 * time.Second, MetadataCacheEntries: 64,
-		BatchBytes: 8 << 20, ExchangeBytes: 32 << 20, Scan: execution.DefaultScanLimits(), Lua: luaengine.DefaultLimits()}
+		BatchBytes: 4 << 20, ExchangeBytes: 32 << 20, Scan: execution.DefaultScanLimits(), Lua: luaengine.DefaultLimits()}
 	return opts
 }
 

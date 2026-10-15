@@ -33,6 +33,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
 	limits.QueueBytes = (9 << 20)
 	limits.BatchOperations = 3
+	limits.BatchBytes = 8 << 20
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -103,7 +104,10 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_batch_max_wait_seconds") != limits.BatchWait.Seconds() {
 		t.Fatal("configured collection wait missing")
 	}
-	if testmetrics.Series(families) != 51 {
+	if testmetrics.Sum(families, "weir_store_batch_max_operations") != float64(limits.BatchOperations) || testmetrics.Sum(families, "weir_store_batch_max_bytes") != float64(limits.BatchBytes) {
+		t.Fatal("configured batch count or byte limit missing")
+	}
+	if testmetrics.Series(families) != 53 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }

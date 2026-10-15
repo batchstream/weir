@@ -13,18 +13,58 @@ dependent business phases and shared-key writes further limit aggregation.
   NDJSON body, including action metadata and newlines. Generated Lua output is
   measured after encoding. Search also uses `backend.max_exchange_bytes`; the
   smaller write aggregation target wins. A single legal oversized item goes alone.
-- `batching.max_wait` bounds collection from the oldest eligible admission. It
+- `batching.max_wait` bounds write collection from the oldest eligible admission. It
   overlaps waiting for an execution slot and is not restarted when a slot opens.
+- Reads dispatch with compatible work already queued, without waiting for future
+  arrivals. A mixed batch containing a read also bypasses collection.
 - Full batches, drain, Native/Scan and shorter caller deadlines bypass collection.
 - A positive `batching.max_in_flight` bounds simultaneous adapter invocations.
   Excess work stays in the bounded queue, where it can combine or be canceled.
   Completed execution releases the slot independently of response acknowledgement.
+  Omitting this field selects its default; an explicit `0` means unlimited.
 
-Defaults remain 32 operations, 8 MiB, zero collection delay and unlimited adapter
-invocations. Those defaults are immediate dispatch controls, not a calibrated
-database-protection policy. Configure a positive execution limit when protecting a
-slow database. The existing Store queue is the waiting boundary; no extra HTTP
-queue or worker process is introduced.
+Defaults are 128 operations, 4 MiB, a 20 ms write collection window and 16 adapter
+invocations per Store. Explicit `max_wait: 0s` disables collection; explicit
+`max_in_flight: 0` removes the execution limit. Reads remain eligible immediately.
+The existing Store queue is the waiting boundary; no extra HTTP queue or worker
+process is introduced.
+
+These values come from the initial preregistered selection among 20
+count/wait/concurrency configurations and a four-point byte anchor in the
+[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/README.md),
+with the [selection audit retained at an immutable revision](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json).
+They are a finite workload choice, not a globally optimal value for each control.
+The selection rules were frozen before selection measurements. Actual
+default-path fixtures omit batching entirely and cross-check effective settings
+with all four runtime gauges.
+
+The later preregistered [20/40/80/160 ms study](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+holds count, bytes and executions fixed. Its result is inconclusive: the repeated
+20 ms crawler anchor fails backlog stability in round 3, and the 160 ms crawler's
+first round exceeds the three-second drain limit. Although 40 and 80 ms meet
+their individual gates, the registered comparison requires a qualified anchor.
+It proposes no new wait and does not prove that 20 ms beats the longer waits.
+The current 20 ms default remains the original finite selection.
+
+The [independent confirmation results](value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
+retain all 12 passed read guards against legacy Weir, the crawler CPU/latency
+tradeoff, MongoDB normalized comparisons and failed native partial-update cases. At a database
+quota of 0.25 CPU and 512 workers, pure Search writes complete 6.74–8.34 times
+native throughput at nearly the same measured database CPU in all three rounds.
+At comparable completed crawler throughput, actual database CPU falls by
+8.1–42.3%. These pure-write and crawler points pass the declared five-second
+p99 gate; higher crawler tail latency remains part of the result. Passing p99
+alone does not establish stable arrivals, acceptable drain or maximum capacity.
+The 64 KiB payload case observes 47.73–48.82 records per bulk and framed body
+means of 2.990–3.059 MiB; its throughput gain accompanies higher actual database
+CPU. Native access remains faster in the tested Search read cases and MongoDB
+reads with four workers. The [final registered capacity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/FINAL-REGISTERED-CAPACITY-RESULT.md)
+fails on an Elasticsearch health request during fixture preparation, before any
+Weir/client process, warmup or timed stage. It produces no new throughput point,
+capacity upper bound or eligible sustained check.
+This finite selection does not establish a universal optimum or maximum
+sustainable throughput, and the five-second gate is not a general service
+guarantee.
 
 An execution slot includes metadata checks, pre-reads, Lua, writes and any requested
 visibility wait. A tiny limit can leave the database idle while writes wait for
@@ -83,4 +123,6 @@ compacts the bounded queue; the high-cardinality worst case remains quadratic.
 The [executed batching coverage report](https://github.com/batchstream/weir-tests/blob/17ab0506defcdb9f374aa994e7bb4467d43ebf82/results/batch-coverage-2026-10-15/README.md)
 retains count/wait/concurrency calibration, all three formal workloads and their
 negative observations, raw receipts and independent audits. Its fixed candidate
-is an explicit workload experiment; it does not change these defaults.
+was an explicit workload experiment and retained the defaults in effect on
+2026-10-15. The later constrained selection described above determines the current
+defaults.

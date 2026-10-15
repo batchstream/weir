@@ -80,6 +80,7 @@ func TestAllRecordActionsShareBatch(t *testing.T) {
 
 func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	limits := DefaultLimits()
+	limits.BatchWait = 0
 	limits.BatchOperations = 3
 	r := newRuntime(nil, limits)
 	session := r.NewSession()
@@ -175,6 +176,7 @@ func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {
 	}()
 	adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 2), gate: gate}
 	limits := DefaultLimits()
+	limits.BatchWait = 0
 	r := newRuntime(adapter, limits)
 	p := recordActionPlan(0, "same", "replace")
 	firstContext, cancelFirst := context.WithCancel(context.Background())
@@ -232,6 +234,7 @@ func TestAbandonAndSessionCloseCancelFuturePhasesOnly(t *testing.T) {
 			}()
 			adapter := &recordBatchAdapter{started: make(chan []*execution.Plan, 1), phases: make(chan *execution.Plan, 2), gate: gate}
 			limits := DefaultLimits()
+			limits.BatchWait = 0
 			r := newRuntime(adapter, limits)
 			original, cancel := context.WithCancel(context.Background())
 			defer cancel()

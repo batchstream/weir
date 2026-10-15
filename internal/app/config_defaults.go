@@ -72,6 +72,7 @@ func (cfg RoutingConfig) resolved() RoutingConfig {
 		}
 		local.Queue.MaxBytes = configDefault(local.Queue.MaxBytes, ByteSize(defaults.QueueBytes))
 		local.Batching.MaxBytes = configDefault(local.Batching.MaxBytes, ByteSize(defaults.BatchBytes))
+		local.Batching.MaxInFlight = configDefault(local.Batching.MaxInFlight, defaults.MaxInFlight)
 		local.Batching.MaxWait = configDefault(local.Batching.MaxWait, Duration(defaults.BatchWait))
 		local.Scan.MaxBatchBytes = configDefault(local.Scan.MaxBatchBytes, ByteSize(options.Scan.Bytes))
 		local.Backend.ConnectTimeout = configDefault(local.Backend.ConnectTimeout, Duration(options.ConnectTimeout))

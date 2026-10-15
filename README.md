@@ -22,11 +22,33 @@ after transport failure and are never automatically replayed.
 See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
 and [payload contracts](docs/payloads.md) for the current contracts.
 
-The [value proof](docs/value-proof.md) links the executed Linux MongoDB/Search
-benchmark: 94 paired comparisons, all rounds and retained raw evidence.
-High-concurrency MongoDB requests benefit from aggregation; low concurrency,
-Search pure reads and efficient native batches favor direct access. The report
-includes throughput, tail latency, resource costs and grouping ablation.
+The [current default selection and confirmation](docs/value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
+uses multiple OS client processes submitting native or Weir single-record calls.
+Defaults are 128 operations, 4MiB, 20ms write collection and 16 executions,
+selected by the original finite workload study.
+Pure Search writes at a 0.25-CPU database quota and 512 workers complete
+6.74–8.34 times native throughput at nearly the same measured database CPU,
+with Weir p99 upper bounds of 295–328ms.
+All 12 read guards against legacy Weir pass; native access remains faster in
+the tested Search read cases and MongoDB reads with four workers. At comparable
+completed crawler throughput with a one-CPU database quota, database CPU falls
+by 8.1–42.3%, with higher Weir p99 upper bounds of 3.932–4.194s. These comparison
+points meet the declared five-second p99 gate. MongoDB write/mixed/Lua comparisons
+and invalid partial-update cases remain in the report.
+
+The later [20/40/80/160ms sensitivity study](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+is inconclusive because its repeated 20ms crawler anchor fails backlog stability
+in one round. It establishes no winning wait or justified replacement for the
+original default. The [final registered capacity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/FINAL-REGISTERED-CAPACITY-RESULT.md)
+fails during fixture preparation, before any Weir/client process, warmup or
+timed stage. It adds no throughput point or capacity upper bound. No sustainable
+maximum for these defaults, universal optimum or general five-second service
+guarantee has been established.
+
+The [historical Linux MongoDB/Search benchmark](docs/value-proof.md#sustained-linux-benchmark-2026-10-15)
+retains 94 paired comparisons, all rounds, raw evidence and grouping ablation.
+It includes preassembled native bulks as boundary evidence; current crawler
+comparisons use independent single-record native callers.
 The [single-record crawler follow-up](docs/value-proof.md#single-record-crawler-follow-up-2026-10-15)
 retains rejected optimizations. The later
 [bounded collection experiment](docs/value-proof.md#bounded-collection-follow-up-2026-10-15)
@@ -40,7 +62,8 @@ The [broader batching follow-up](docs/value-proof.md#broader-batching-coverage-2
 adds pure indexing, larger-document partial updates, and multi-index/hot-key
 correctness cases. Its fixed collection/concurrency candidate lowers crawler
 database CPU at similar completed throughput with higher reported p99 latency.
-Default batching settings remain unchanged.
+That experiment retained the defaults in effect on 2026-10-15. The current
+defaults and their calibration scope are described in [batching guidance](docs/batching.md).
 
 ## Build and run
 
@@ -95,9 +118,10 @@ stores:
       mongodb:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
     batching:
-      max_operations: 32
-      max_in_flight: 0
-      max_wait: "0s"
+      max_operations: 128
+      max_bytes: 4MiB
+      max_in_flight: 16
+      max_wait: "20ms"
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -122,10 +146,12 @@ peers or backends. Configuration changes take effect after a restart.
 authentication and trust paths redacted. The [configuration review](docs/configuration.md)
 explains removed fields, retained controls and fixed protocol boundaries.
 
-Store defaults are 32 operations and 8MiB of input per batch. `batching.max_wait`
-defaults to `0s` for immediate dispatch. A positive duration collects compatible
-RPCs until the oldest admission reaches that age; full batches, Scan/Native
-commands and draining Stores dispatch immediately. A caller deadline before the
+Store defaults are 128 operations and 4MiB of input per batch. `batching.max_wait`
+defaults to `20ms`; explicit `0s` disables collection. A positive duration collects compatible
+writes until the oldest admission reaches that age. Reads use compatible work
+already queued without waiting for future arrivals, including in mixed batches.
+Full batches, Scan/Native commands and draining Stores bypass collection.
+A caller deadline before the
 collection deadline also dispatches immediately. Collection uses the existing
 bounded queue and adds no per-request timer. Queued RPCs combine by namespace, actual input bytes and
 `batching.max_operations`. Large client batches split into sequential bounded groups.
@@ -141,8 +167,9 @@ for byte/count/wait boundaries, execution backpressure and workload calibration.
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. A larger input
 can occupy an empty queue alone. `batching.max_in_flight` optionally bounds simultaneous
-adapter invocations per Store; its default `0` leaves them unlimited. A positive
-budget keeps excess requests in the bounded queue, allowing natural batching while
+adapter invocations per Store; omission selects its default of `16`, and
+explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
+bounded queue, allowing natural batching while
 the backend is busy. Execution completion returns this credit before consumer Ack;
 Scan publication releases it between pages. Search visibility waits and Native
 streaming still occupy credit, so a small budget can reduce throughput when waiting
@@ -327,6 +354,8 @@ The queue exposes count and byte capacity metrics. `weir_store_active_executions
 reports `batching.max_in_flight`, with `0` meaning unlimited. Active executions and
 average operations per batch show whether a budget retains enough work to aggregate.
 `weir_store_batch_max_wait_seconds` reports the configured collection wait.
+`weir_store_batch_max_operations` and `weir_store_batch_max_bytes` report the
+resolved count and byte aggregation bounds, including when configuration omits them.
 
 Search exposes `weir_search_http_requests_total` and
 `weir_search_http_request_duration_seconds` by fixed operation, outcome and

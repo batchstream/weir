@@ -50,7 +50,7 @@ func TestBatchByteConfigurationReachesSearchWithoutChangingReadBudget(t *testing
 		name, batching string
 		want           int
 	}{
-		{name: "default", want: 8 << 20},
+		{name: "default", want: 4 << 20},
 		{name: "smaller than exchange", batching: "    batching:\n      max_bytes: 1KiB\n", want: 1024},
 		{name: "larger than exchange", batching: "    batching:\n      max_bytes: 64MiB\n", want: 64 << 20},
 	}

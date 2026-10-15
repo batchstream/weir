@@ -8,6 +8,162 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
+func TestReadBypassesCollectionAndSharesReadyBatch(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		reads []bool
+	}{
+		{name: "single read", reads: []bool{true}},
+		{name: "compatible reads", reads: []bool{true, true}},
+		{name: "write then read", reads: []bool{false, true}},
+		{name: "read then write", reads: []bool{true, false}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			limits := DefaultLimits()
+			limits.BatchWait = time.Hour
+			limits.BatchOperations = 3
+			runtime := newRuntime(nil, limits)
+			base := time.Now()
+			var tickets []*Ticket
+			for i, read := range test.reads {
+				work := plan(uint64(i), string(rune('a'+i)), read)
+				ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				ticket.queuedAt = base
+				tickets = append(tickets, ticket)
+			}
+			selected, _ := runtime.selectLocked(base)
+			if selected == nil || len(selected.items) != len(tickets) {
+				t.Fatal("read waited for collection or lost compatible work", selected)
+			}
+			for i, ticket := range selected.items {
+				if ticket != tickets[i] {
+					t.Fatal("read changed compatible admission order")
+				}
+			}
+			finish(runtime, selected)
+			for _, ticket := range tickets {
+				ticket.Ack()
+			}
+		})
+	}
+}
+
+func TestReadyReadPassesCollectingWritesWithoutChangingTheirDeadline(t *testing.T) {
+	limits := DefaultLimits()
+	limits.BatchWait = time.Second
+	runtime := newRuntime(nil, limits)
+	base := time.Now()
+	var tickets []*Ticket
+	for i, read := range []bool{false, true} {
+		work := plan(uint64(i), string(rune('a'+i)), read)
+		work.BatchKey = work.Key
+		ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		ticket.queuedAt = base
+		tickets = append(tickets, ticket)
+	}
+	selected, _ := runtime.selectLocked(base)
+	if selected == nil || len(selected.items) != 1 || selected.items[0] != tickets[1] {
+		t.Fatal("read waited for another namespace's collection", selected)
+	}
+	finish(runtime, selected)
+	selected, next := runtime.selectLocked(base)
+	if selected != nil || !next.Equal(base.Add(time.Second)) {
+		t.Fatal("read changed another namespace's write collection deadline", selected, next)
+	}
+	selected, _ = runtime.selectLocked(next)
+	if selected == nil || len(selected.items) != 1 || selected.items[0] != tickets[0] {
+		t.Fatal("write did not dispatch at its original collection deadline", selected)
+	}
+	finish(runtime, selected)
+	for _, ticket := range tickets {
+		ticket.Ack()
+	}
+}
+
+func TestImmediateReadsRespectBatchCountAndByteBounds(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		operations int
+		bytes      int
+	}{
+		{name: "count", operations: 2, bytes: 8 << 20},
+		{name: "bytes", operations: 8, bytes: 2048},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			limits := DefaultLimits()
+			limits.BatchWait = time.Hour
+			limits.BatchOperations, limits.BatchBytes = test.operations, test.bytes
+			runtime := newRuntime(nil, limits)
+			base := time.Now()
+			var tickets []*Ticket
+			for i := range 3 {
+				work := plan(uint64(i), string(rune('a'+i)), true)
+				ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				ticket.queuedAt = base
+				tickets = append(tickets, ticket)
+			}
+			first, _ := runtime.selectLocked(base)
+			if first == nil || len(first.items) != 2 {
+				t.Fatal("immediate reads ignored their batch bound", first)
+			}
+			finish(runtime, first)
+			last, _ := runtime.selectLocked(base)
+			if last == nil || len(last.items) != 1 || last.items[0] != tickets[2] {
+				t.Fatal("remaining read waited for collection", last)
+			}
+			finish(runtime, last)
+			for _, ticket := range tickets {
+				ticket.Ack()
+			}
+		})
+	}
+}
+
+func TestImmediateReadStillWaitsForExecutionCapacity(t *testing.T) {
+	limits := DefaultLimits()
+	limits.BatchWait = time.Hour
+	limits.MaxInFlight = 1
+	runtime := newRuntime(nil, limits)
+	base := time.Now()
+	write := plan(0, "write", false)
+	writeTicket, failure, _ := runtime.Submit(t.Context(), write, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	writeTicket.queuedAt = base.Add(-limits.BatchWait)
+	active, _ := runtime.selectLocked(base)
+	if active == nil {
+		t.Fatal("expired write did not occupy the execution slot")
+	}
+	read := plan(1, "read", true)
+	readTicket, failure, _ := runtime.Submit(t.Context(), read, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	readTicket.queuedAt = base
+	blocked, _ := runtime.selectLocked(base)
+	if blocked != nil {
+		t.Fatal("read bypassed the occupied execution slot", blocked)
+	}
+	finish(runtime, active)
+	ready, _ := runtime.selectLocked(base)
+	if ready == nil || len(ready.items) != 1 || ready.items[0] != readTicket {
+		t.Fatal("read collected after the execution slot was released", ready)
+	}
+	finish(runtime, ready)
+	writeTicket.Ack()
+	readTicket.Ack()
+}
+
 func TestCollectionExpiresFromOldestAdmissionAndFullBatchBypassesWait(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second

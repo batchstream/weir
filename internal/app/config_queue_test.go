@@ -7,10 +7,50 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir/internal/store"
 	"go.yaml.in/yaml/v3"
 )
 
 const queueRoutingPrefix = "stores:\n  - name: records\n    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017/?directConnection=true\n"
+
+func TestBatchingDefaultsAndExplicitZerosRemainVisible(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		fragment string
+		want     int
+		wait     time.Duration
+	}{
+		{name: "omitted", want: store.DefaultLimits().MaxInFlight, wait: store.DefaultLimits().BatchWait},
+		{name: "explicit immediate and unlimited", fragment: "    batching:\n      max_in_flight: 0\n      max_wait: 0s\n", want: 0, wait: 0},
+		{name: "explicit finite", fragment: "    batching:\n      max_in_flight: 7\n      max_wait: 2ms\n", want: 7, wait: 2 * time.Millisecond},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			routing, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + test.fragment))
+			if err != nil {
+				t.Fatal(err)
+			}
+			local := routing.Stores[0].Local
+			if local.Batching.MaxInFlight == nil || *local.Batching.MaxInFlight != test.want || local.runtimeLimits().MaxInFlight != test.want {
+				t.Fatal("execution policy did not resolve", local.Batching.MaxInFlight)
+			}
+			if local.Batching.MaxWait == nil || time.Duration(*local.Batching.MaxWait) != test.wait || local.runtimeLimits().BatchWait != test.wait {
+				t.Fatal("collection policy did not resolve", local.Batching.MaxWait)
+			}
+			resolved := routing.resolved()
+			if resolved.Stores[0].Batching.MaxInFlight == local.Batching.MaxInFlight {
+				t.Fatal("resolved execution policy aliases its input")
+			}
+			encoded, err := json.Marshal(resolved)
+			if err != nil || !strings.Contains(string(encoded), `"max_in_flight":`) {
+				t.Fatal("resolved execution policy was hidden", err)
+			}
+			decoded, err := DecodeRouting(strings.NewReader(string(encoded)))
+			if err != nil || decoded.Stores[0].runtimeLimits().MaxInFlight != test.want || decoded.Stores[0].runtimeLimits().BatchWait != test.wait {
+				t.Fatal("explicit execution policy changed on round trip", err)
+			}
+		})
+	}
+}
 
 func TestBatchAndQueueConfigurationRoundTrip(t *testing.T) {
 	input := queueRoutingPrefix + "    batching:\n      max_operations: 128\n      max_bytes: 16MiB\n      max_in_flight: 7\n      max_wait: 20ms\n    queue:\n      max_operations: 4096\n      max_bytes: 256MiB\n"
@@ -48,6 +88,7 @@ func TestBatchQueueBoundsRejectInvalidConfiguration(t *testing.T) {
 		"    batching:\n      max_operations: -1\n",
 		"    batching:\n      max_in_flight: -1\n",
 		"    batching:\n      max_in_flight: '4'\n",
+		"    batching:\n      max_in_flight: null\n",
 		"    batching:\n      max_wait: -1ms\n",
 		"    batching:\n      max_wait: 20\n",
 		"    batching:\n      max_wait: null\n",

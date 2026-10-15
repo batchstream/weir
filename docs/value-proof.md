@@ -1,11 +1,209 @@
 # What justifies Weir?
 
-Weir has measured value for independent concurrent small requests that can be
-aggregated across callers. The benefit depends on the workload and actual database
-load; native bulk operations and low-concurrency direct access remain stronger
-alternatives in the tested cases. The performance objective is lower actual
-database load at comparable completed throughput, or higher completed throughput
-at comparable actual database load, using a representative workload.
+Weir has measured value when it aggregates independent concurrent single-record
+operations across callers. The current baseline uses multiple OS client processes
+and concurrent workers; each native or SDK call contains one record, matching
+fragmented crawler updates. Both paths must meet the same durability and
+visibility requirements.
+The objective is lower actual database load at comparable completed throughput,
+or higher completed throughput at comparable actual database load. Historical
+native client-preassembled bulk tests remain boundary evidence; they are not the
+current crawler baseline.
+
+## Default selection and independent confirmation, 2026-10-16
+
+The current defaults are **128 operations, 4 MiB, 20 ms write collection and
+16 simultaneous adapter invocations per Store**. They come from the initial
+finite selection among 20 count/wait/concurrency configurations and a four-point
+byte anchor, scoped to the declared workloads and gates. This does not establish
+a globally optimal value for each control. The selection rules were frozen
+before selection measurements. Typed reads and mixed batches containing reads
+become eligible without collection;
+explicit `max_wait: 0s` and `max_in_flight: 0` retain immediate and unlimited
+execution policies. The owned default-path fixtures omit the entire batching
+block and audit the effective configuration plus all four runtime controls.
+
+The [measured-defaults report](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/README.md),
+[frozen selection audit](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json)
+and [complete 25-workflow, 591-row audit](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/analysis-final-registered-capacity/analysis.json)
+retain the source/configuration receipts, raw outcomes and independent audits.
+The confirmation server is
+[`084572d`](https://github.com/batchstream/weir/commit/084572d79b7a53230801297f90ca2363fd864913).
+The results below distinguish actual database CPU from CPU per completed unit;
+equal configured database quotas do not establish equal actual load.
+
+For pure Search writes with 1 KiB padding, a database quota of 0.25 CPU and
+512 concurrent workers across four OS clients, both paths pass the measurement,
+rate-stability, generator/host-headroom and sustained database-CPU checks in all
+three rounds:
+
+| Round | Native writes/s | Default Weir writes/s | Throughput ratio | Measured DB CPU, native / Weir (% of quota) | Weir p99 upper bound |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 643.322 | 5270.143 | 8.19 | 99.82 / 99.14 | 327.679ms |
+| 2 | 664.674 | 4480.537 | 6.74 | 99.98 / 99.48 | 327.679ms |
+| 3 | 655.657 | 5468.189 | 8.34 | 100.05 / 99.14 | 294.911ms |
+
+This establishes 6.74–8.34 times the completed throughput at nearly the same
+measured database CPU for this tested point. Actual Weir bulks average
+115.52–118.60 records across these rounds. The 512-to-1024 gains are
+11.1%, 40.6% and 9.0%; the third 1024-worker round's second/first-half completion
+ratio is 0.864048. The successor therefore establishes neither the repeatable
+plateau nor stability required for maximum capacity.
+
+A separately registered 0.125-CPU study retains its original preparation failure
+and the named readiness correction. The correction removes a duplicate fixture
+deadline; it changes no Weir code, timed operations or qualification gates.
+At 512 workers, all three corrected rounds pass the original quality, headroom,
+stability and sustained database-CPU checks:
+
+| Round | Native writes/s | Default Weir writes/s | Throughput ratio | Measured DB CPU, native / Weir (% of quota) | Weir p99 upper bound |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 677.454 | 5197.600 | 7.67 | 103.409 / 103.640 | 393.215ms |
+| 2 | 695.808 | 5379.045 | 7.73 | 103.944 / 103.603 | 425.983ms |
+| 3 | 695.287 | 5794.242 | 8.33 | 103.967 / 103.947 | 327.679ms |
+
+Actual database CPU is approximately 0.129–0.130 cores; the paired Weir/native
+CPU ratios are 0.99672–1.00223. This independently confirms higher completed
+throughput at comparable actual database CPU for the tested point. Its
+512-to-1024 gains are 11.220%, 12.062% and 3.510%, and the third 1024-worker
+round's half-window completion ratio is 0.879494. Those observations still
+do not qualify a Weir maximum. The initial 256-worker round has strong
+cold-state effects and is not used as the principal benefit claim. The failed
+preparation, all measured rounds and unchanged zero-check soak derivations
+remain in the report.
+
+The larger-body Search case uses 64 KiB payloads, a 2048-record namespace,
+a one-CPU database quota and 512 workers:
+
+| Round | Native writes/s | Default Weir writes/s | Native / Weir DB CPU ms per write | Mean Weir records per bulk | Mean framed Weir bulk body |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 961.448 | 1891.298 | 0.803 / 0.471 | 47.73 | 2.990 MiB |
+| 2 | 1399.400 | 1978.225 | 0.545 / 0.418 | 47.79 | 2.994 MiB |
+| 3 | 1305.379 | 2089.408 | 0.609 / 0.395 | 48.82 | 3.059 MiB |
+
+Completed throughput is 1.41–1.97 times native and CPU per completed write is
+23.3–41.3% lower. Actual database CPU is 4.6–16.0% higher, so these rows do not
+support an equal-load throughput claim. The legacy immediate/unlimited case
+retains means of 1.35–1.72 records per bulk. These are observed request-body
+means, not inferred batch sizes or maximum-body bounds. Neither path passes
+the sustained database-CPU gate in this larger-body case.
+
+With a one-CPU database quota and 68 offered two-step crawler products/s, the three
+paired rounds complete at comparable throughput, within 1.3%:
+
+| Round | Native products/s | Default Weir products/s | Native p99 upper bound | Default Weir p99 upper bound |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 65.737 | 65.676 | 3.408s | 3.932s |
+| 2 | 65.355 | 65.502 | 3.146s | 4.194s |
+| 3 | 66.312 | 65.457 | 3.146s | 3.932s |
+
+Measured database CPU is 8.1–42.3% lower across these paired rounds. Database
+CPU per completed product is 8.3–42.3% lower. The p99 increase remains part of the
+result. The pure-write points above and these crawler points pass the declared
+five-second completion-p99 gate. This is not a general service latency guarantee,
+and p99 alone cannot substitute for arrival, backlog, drain or capacity gates.
+
+At 512 offered partial updates/s, default Weir completes all 30,720 arrivals in
+each round. Native rejects 4,608, 3,072 and 2,625 arrivals respectively. This
+prevents a qualified three-round comparison at matched completed throughput;
+these rows cannot establish equal-throughput CPU savings or a maximum.
+
+MongoDB ordinary writes, mixed read/write traffic and Lua updates also compare
+the new default with the legacy immediate/unlimited settings. Each Weir result
+is first normalized against its own paired native result. The following ratios
+then compare default/native with legacy/native; they are not direct raw QPS or
+database CPU ratios between separately run cases.
+
+| MongoDB workload | Normalized default/legacy completed QPS | Normalized default/legacy DB CPU per completed operation |
+| --- | ---: | ---: |
+| Ordinary write | 1.079–1.100 | 0.586–0.644 |
+| Mixed read/write | 0.989–1.022 | 0.934–0.987 |
+| Lua update | 1.251–1.331 | 0.363–0.454 |
+
+All 12 predefined read guards pass, with the same normalized default/legacy
+completed-QPS ratio ranging from 0.934 to 1.065. These guards compare the new
+defaults with legacy Weir settings; passing does not establish a read speedup
+over native calls. The [absolute read measurements](https://github.com/batchstream/weir-tests/blob/acc5ec2e0e214e0edb28a20fc33d04788bb9e70a/results/default-tuning-2026-10-16/read-guards.json)
+retain these three-round ranges:
+
+| Backend | Total workers | Default Weir/native completed QPS | Default Weir p99 upper bound |
+| --- | ---: | ---: | ---: |
+| Search | 4 | 0.326–0.394 | 4.607–5.119ms |
+| Search | 128 | 0.682–0.709 | 61.439–65.535ms |
+| MongoDB | 4 | 0.418–0.447 | 2.303–2.815ms |
+| MongoDB | 128 | 1.236–1.289 | 32.767ms |
+
+Native access is faster in both tested Search read cases and the MongoDB
+four-worker read case. The measured adoption case is collecting concurrent
+writes and reducing crawler database load. Read guards check default-change
+regressions in their declared cases, with no latency guarantee for arbitrary
+workloads.
+
+The later preregistered [wait sensitivity result](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+is **inconclusive**. It measures 20/40/80/160 ms on both fixed-arrival profiles,
+holding 128 operations, 4 MiB and 16 executions fixed. All 24 stages complete
+every arrival with full-field audits and zero failed, unknown, timed-out or
+rejected operations; every p99 is below five seconds. Nevertheless, the 20 ms
+crawler anchor's third round ends with backlog 254, above the allowed
+154 + 68 = 222. The 160 ms crawler's first round drains in 3.17392354 seconds,
+above the three-second limit. Although 40 and 80 ms meet their individual gates,
+the registered selector requires a qualified anchor in every round and
+proposes no replacement. It does not establish that 20 ms wins; the current
+default retains the initial finite selection.
+
+The original duration-parser repair restored 48 pure-write/large-document rows
+after accepting the valid Go duration `1m0s`, preserving all 501 rows analyzed
+before that repair. These are historical equivalence counts, not the final
+inventory. The complete wait audit contains 591 rows; its
+[equivalence receipt](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/wait-sensitivity-equivalence.json)
+preserves the prior 567 rows and original
+selection/capacity decisions. The independent crawler ladder with a database quota
+of 0.25 CPU has no rate that passes all three rounds, across all seven declared
+rates from 8 through 544 products/s. The independent partial-update ladder has
+qualified three-round lower points at 32 and 64 updates/s, but no valid upper
+bound. Higher invalid rows cannot establish where sustainable capacity ends.
+
+Six higher-pressure native-paired crawler/partial cases with a database quota
+of 0.25 CPU record native warmup HTTP deadline errors, followed by default-Weir
+startup qualification failure before its measured stage. Cleanup preserves the
+nonzero exit while confirming owned process/container removal. They are neither valid
+paired comparisons nor a demonstrated Weir capacity upper bound. The roughly
+five-second qualification failure is consistent with the configured startup
+budget, but the generic product-identification error does not prove the exact
+HTTP failure cause. No qualification gate or startup budget is relaxed.
+
+The [archived variability inspection](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/CAPACITY-VARIABILITY.md)
+records sustained database CPU during the unstable rounds without establishing
+a cause. Young-GC time changes from 332 to 46 ms at 0.125 CPU and from
+163 to 174 ms at 0.25 CPU; these observations do not establish GC as the
+cause of the decline. Whole-stage merge and refresh totals were recorded,
+but their half-window timing series were not;
+they cannot locate activity within the falling interval or assign CPU cost.
+Disk latency and utilization were not recorded, and host I/O wait is not disk
+utilization. These observations do not prove a GC, merge or disk explanation.
+
+The [final registered capacity workflow](https://github.com/batchstream/weir-tests/actions/runs/38815775471)
+planned 96 minutes of warmup and timed work, but fails during fixture preparation:
+the Elasticsearch `/_cluster/health?wait_for_status=yellow&timeout=2s` request
+times out awaiting response headers. No Weir or client process, warmup or timed
+stage starts; actual measured work is zero. All
+[400 archived raw files](https://github.com/batchstream/weir-tests/tree/e8c439d31f43596f4fc75d1c920f9a14d36b3623/results/default-tuning-2026-10-16/raw/confirm-pure-extended-q0125)
+were committed before interpretation, including successful owned-container
+removal and an empty cleanup-error list. This is a preparation failure, not
+an observed service-overload boundary. It supplies no new throughput point,
+capacity upper bound or eligible five-minute sustained check. The preregistered
+study stops here, retaining all earlier unqualified capacity points without a
+performance retry, another concurrency level or a new quota.
+The [final full audit and unchanged decisions](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/final-analysis-equivalence.json)
+retain all 591 rows. The [original derivation still selects zero sustained checks](https://github.com/batchstream/weir-tests/blob/98671e066d1a209439a154de9ded7e1397804b6e/results/default-tuning-2026-10-16/soak-derivation-final-no-qualified-points.json),
+so none was dispatched. Later fixture-health and diagnostic fixes have offline
+regression coverage; they supplied no replacement performance measurements.
+
+The tested configurations and owned loopback databases bound the selection.
+These results establish no maximum for these defaults, universal optimum or
+production-network capacity. Host and generator CPU are used to check measurement
+headroom and bottleneck attribution; extra Weir CPU
+is not an adoption gate for the database-offload objective.
 
 ## Broader batching coverage, 2026-10-15
 
@@ -52,8 +250,9 @@ eight-index skew, 1/256 KiB sources and hot-key increments; these are correctnes
 checks rather than throughput measurements of those distributions. Performance
 runs use one owned Elasticsearch host with four OS clients over loopback. All
 source/configuration receipts, raw hashes, actual CPU intervals and full-field
-oracles remain available. Default batching settings remain unchanged, and no
-maximum-capacity, steady-state or production-network claim is established.
+oracles remain available. That experiment retained the defaults in effect on
+2026-10-15, and established no maximum-capacity, steady-state or production-network
+claim.
 
 ## Bounded collection follow-up, 2026-10-15
 
@@ -93,7 +292,8 @@ formal control failed the strict comparison gates because of rejected arrivals
 and generator lag; only one of its nine stages passed all-arrivals checks.
 Larger batches there are mechanism evidence, not a qualified performance win.
 All failed and rejected observations remain in the report. The default collection
-wait remains `0s`; these experiments do not select a universal waiting policy.
+wait was `0s` during this 2026-10-15 experiment; it did not select a universal
+waiting policy. The later default selection is described above.
 
 ## Single-record crawler follow-up, 2026-10-15
 
@@ -143,7 +343,7 @@ submission pattern and completion requirements.
 
 ## Sustained Linux benchmark, 2026-10-15
 
-The independent [complete benchmark report](https://github.com/batchstream/weir-tests/blob/main/results/value-2026-10-15/README.md)
+The independent [complete benchmark report](https://github.com/batchstream/weir-tests/blob/bcda72693ee5a08539c03130db1963ca3164d103/results/value-2026-10-15/README.md)
 retains original JSON, commands, configuration, source/binary identities, logs,
 cleanup receipts and offline analysis. It measures this server at
 `8955cde10e574dae55d890b0c9c824fd39219d1c`, with Go 1.27.1, SDK v0.15.0,
@@ -184,13 +384,13 @@ concurrency. Native MongoDB bulk reads achieve about 102,000–104,000 records/s
 versus 19,000–29,000 through the SDK with 32 records per call. A 2-CPU database
 sensitivity run removes several apparent gains, and some Search write rounds
 vary substantially. Weir's CPU/RSS, client samples and database resource counters
-are included; lower total CPU or production cost is not established. Only
+are included as resource and headroom observations. Only
 MongoDB ordinary writes at 128 workers qualify on both paths for the primary
 database saturation and successor plateau conditions. Other rates are observed
 throughput within the tested ladder, not maximum-capacity claims.
 
-See the [method](https://github.com/batchstream/weir-tests/blob/main/results/value-2026-10-15/METHOD.md)
-and [complete round/latency/resource tables](https://github.com/batchstream/weir-tests/blob/main/results/value-2026-10-15/TABLES.md)
+See the [method](https://github.com/batchstream/weir-tests/blob/bcda72693ee5a08539c03130db1963ca3164d103/results/value-2026-10-15/METHOD.md)
+and [complete round/latency/resource tables](https://github.com/batchstream/weir-tests/blob/bcda72693ee5a08539c03130db1963ca3164d103/results/value-2026-10-15/TABLES.md)
 before applying these numbers to a deployment. Single-owner loopback measurements
 with hot data do not establish cross-host, cold-data, conflicting-write or fleet
 behavior. The finite local experiment below is separate historical mechanism

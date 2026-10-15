@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/batchstream/weir/internal/testutil"
 )
@@ -41,7 +42,7 @@ func TestRoutingConfigurationFile(t *testing.T) {
 	}
 	for _, definition := range cfg.Stores {
 		limits := definition.runtimeLimits()
-		if limits.BatchOperations != 32 || limits.BatchBytes != 8<<20 || limits.MaxInFlight != 0 {
+		if limits.BatchOperations != 128 || limits.BatchBytes != 4<<20 || limits.MaxInFlight != 16 || limits.BatchWait != 20*time.Millisecond {
 			t.Fatal("documented scheduler defaults differ")
 		}
 		if limits.QueueOperations != 1024 || limits.QueueBytes != 32<<20 {

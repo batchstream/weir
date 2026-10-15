@@ -74,8 +74,8 @@ contains only public ownership/address advertisements, never backend credentials
 | Read/Mutate stream | No total record limit; configurable publication window (default 32 tickets) |
 | Native input and output | Native backend boundary; no Weir size quota |
 | Store waiting queue | 1024 operations / 32 MiB, configurable via queue |
-| Physical batch input | 32 operations / 8 MiB, configurable |
-| Active adapter invocations per Store | Unlimited by default; configurable via batching.max_in_flight |
+| Physical batch input | 128 operations / 4 MiB, configurable |
+| Active adapter invocations per Store | 16 by default; explicit batching.max_in_flight=0 is unlimited |
 | Business connections and RPCs | No separate Weir concurrency limit |
 | Process memory capacity | Automatically detected from host/process/container limits |
 
@@ -142,13 +142,15 @@ to its physical index; later invocations observe alias changes. Multiple primary
 shards are supported.
 
 The active batch set also enforces `batching.max_in_flight` when it is positive.
-Zero, the default, means unlimited. Once the budget is full, compatible waiting
+The default is 16; an explicit zero means unlimited. Once the budget is full, compatible waiting
 records stay in the bounded queue until an adapter invocation finishes. They form
-batches naturally. `batching.max_wait` optionally collects compatible records for
-a bounded duration from the oldest admission; its default `0s` dispatches immediately.
+batches naturally. `batching.max_wait` optionally collects compatible writes for
+a bounded duration from the oldest admission; its default is `20ms`, and explicit
+`0s` disables collection.
 One Store timer wakes the scheduler for the earliest eligible collection deadline.
-Full batches, Scan/Native, draining Stores and shorter caller deadlines bypass
-collection. Ready namespaces can pass another namespace still collecting; once
+Reads and mixed batches containing reads use already queued compatible work without
+waiting for future arrivals. Full batches, Scan/Native, draining Stores and shorter
+caller deadlines bypass collection. Ready namespaces can pass another namespace still collecting; once
 both are ready, the oldest eligible namespace runs first. Credit returns at execution completion,
 independently of result acknowledgement. Each Store owns its budget. No Store workspace ceiling or backend connection-pool
 maximum is imposed. Transport failures do not replay mutations; confirmed conflicts

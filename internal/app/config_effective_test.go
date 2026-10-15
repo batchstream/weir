@@ -43,7 +43,7 @@ func TestEffectiveConfigurationDefaultsAndRedaction(t *testing.T) {
 		t.Fatal("effective configuration lost unbounded or automatic policy")
 	}
 	for _, store := range report.Routing.Stores {
-		if store.Queue.MaxOperations != 1024 || *store.Queue.MaxBytes != 32<<20 || store.Batching.MaxOperations != 32 || *store.Batching.MaxBytes != 8<<20 || store.Batching.MaxInFlight != 0 || store.Batching.MaxWait == nil || *store.Batching.MaxWait != 0 {
+		if store.Queue.MaxOperations != 1024 || *store.Queue.MaxBytes != 32<<20 || store.Batching.MaxOperations != 128 || *store.Batching.MaxBytes != 4<<20 || store.Batching.MaxInFlight == nil || *store.Batching.MaxInFlight != 16 || store.Batching.MaxWait == nil || *store.Batching.MaxWait != Duration(20*time.Millisecond) {
 			t.Fatal("scheduler defaults missing", store.Name)
 		}
 		if store.Scan.MaxBatchDocuments != 128 || *store.Scan.MaxBatchBytes != 4<<20 || *store.Backend.ConnectTimeout != Duration(2*time.Second) || *store.Backend.MaxExchangeBytes != 32<<20 {
@@ -76,7 +76,8 @@ func TestEffectiveConfigurationPreservesExplicitPolicy(t *testing.T) {
 	local.Backend.MongoDB.MaxConnecting = 7
 	local.Queue.MaxOperations = 77
 	local.Queue.MaxBytes = &queueBytes
-	local.Batching.MaxInFlight = 13
+	inFlight := 13
+	local.Batching.MaxInFlight = &inFlight
 	report, err := cfg.Effective()
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +86,7 @@ func TestEffectiveConfigurationPreservesExplicitPolicy(t *testing.T) {
 	if report.Basic.Lua != cfg.Basic.Lua || report.Automatic["lua.native_defaults"] == "" {
 		t.Fatal("inspection replaced explicit Lua policy")
 	}
-	if *resolved.Backend.ConnectTimeout != connectTimeout || *resolved.Backend.MongoDB.MetadataCacheEntries != 0 || resolved.Backend.MongoDB.MaxConnecting != 7 || resolved.Queue.MaxOperations != 77 || *resolved.Queue.MaxBytes != queueBytes || resolved.Batching.MaxInFlight != 13 {
+	if *resolved.Backend.ConnectTimeout != connectTimeout || *resolved.Backend.MongoDB.MetadataCacheEntries != 0 || resolved.Backend.MongoDB.MaxConnecting != 7 || resolved.Queue.MaxOperations != 77 || *resolved.Queue.MaxBytes != queueBytes || *resolved.Batching.MaxInFlight != 13 {
 		t.Fatal("inspection replaced explicit Store policy")
 	}
 }
