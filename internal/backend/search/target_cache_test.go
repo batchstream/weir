@@ -22,7 +22,7 @@ func TestSearchRecordsResolveMetadataOncePerExecution(t *testing.T) {
 		case "/records":
 			metadata.Add(1)
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/_mget":
+		case "/records/_mget":
 			reads.Add(1)
 			_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"same","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
 		case "/_bulk":
@@ -140,7 +140,7 @@ func TestSearchRecordPermissionsRemainPerExecution(t *testing.T) {
 			_, _ = io.WriteString(w, testIndexReply)
 			return
 		}
-		if r.URL.Path != "/_mget" {
+		if r.URL.Path != "/records/_mget" {
 			t.Error("unexpected business request", r.URL.Path)
 			http.NotFound(w, r)
 			return

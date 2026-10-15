@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,13 +68,15 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 		case "/records":
 			qualifications.Add(1)
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/_mget":
+		case "/records/_mget":
 			reads.Add(1)
-			ids, err := readMgetIDs(r.Body)
-			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || err != nil || strings.Join(ids, ",") != "read,missing,replace,program" {
-				t.Errorf("unexpected merged read: method=%s ids=%v", r.Method, ids)
+			var request struct {
+				IDs []string `json:"ids"`
 			}
-			if strings.Join(ids, ",") == "program" {
+			if r.Method != "POST" || r.URL.Query().Get("realtime") != "true" || json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "read,missing,replace,program" {
+				t.Errorf("unexpected merged read: method=%s ids=%v", r.Method, request.IDs)
+			}
+			if strings.Join(request.IDs, ",") == "program" {
 				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
 			} else {
 				_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":9007199254740993}},{"_index":"records","_id":"missing","found":false},{"_index":"records","_id":"replace","found":true,"_seq_no":2,"_primary_term":1,"_source":{"n":1}},{"_index":"records","_id":"program","found":true,"_seq_no":3,"_primary_term":1,"_source":{"n":1}}]}`)
@@ -157,7 +160,7 @@ func TestMixedWriteShardEvidenceNeverReplaysUnknown(t *testing.T) {
 					switch r.URL.Path {
 					case "/records":
 						_, _ = io.WriteString(w, testIndexReply)
-					case "/_mget":
+					case "/records/_mget":
 						reads.Add(1)
 						_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
 					case "/_bulk":
@@ -252,7 +255,7 @@ func TestMixedLuaCreateConflictRetriesOnlyConfirmedItem(t *testing.T) {
 				switch r.URL.Path {
 				case "/records":
 					_, _ = io.WriteString(w, testIndexReply)
-				case "/_mget":
+				case "/records/_mget":
 					attempt := reads.Add(1)
 					if attempt == 1 {
 						_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":false}]}`)
@@ -330,7 +333,7 @@ func TestCanceledCallerSkippedAfterBatchReadWithoutCancelingPeer(t *testing.T) {
 		switch r.URL.Path {
 		case "/records":
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/_mget":
+		case "/records/_mget":
 			cancel()
 			_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"replace","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
 		case "/_bulk":

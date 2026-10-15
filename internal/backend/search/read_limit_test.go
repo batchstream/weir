@@ -24,7 +24,7 @@ func TestSearchReadPreservesLargeDocumentsAndPeerWrites(t *testing.T) {
 				switch r.URL.Path {
 				case "/records":
 					_, _ = io.WriteString(w, testIndexReply)
-				case "/_mget":
+				case "/records/_mget":
 					_, _ = fmt.Fprintf(w, `{"docs":[{"_index":"records","_id":"read","found":true,"_seq_no":1,"_primary_term":1,"_source":%s}]}`, source)
 				case "/_bulk":
 					writes.Add(1)

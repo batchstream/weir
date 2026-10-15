@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,14 +22,14 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 		switch r.URL.Path {
 		case "/records":
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/_mget":
+		case "/records/_mget":
 			reads.Add(1)
-			ids, err := readMgetIDs(r.Body)
-			if err != nil || strings.Join(ids, ",") != "replace,keep,reject,invalid,delete,create" {
-				t.Error("Lua actions did not share their read", ids)
+			var request struct{ IDs []string }
+			if json.NewDecoder(r.Body).Decode(&request) != nil || strings.Join(request.IDs, ",") != "replace,keep,reject,invalid,delete,create" {
+				t.Error("Lua actions did not share their read", request.IDs)
 			}
 			_, _ = io.WriteString(w, `{"docs":[`)
-			for i, id := range ids {
+			for i, id := range request.IDs {
 				if i != 0 {
 					_, _ = io.WriteString(w, ",")
 				}
@@ -121,7 +122,7 @@ func TestLuaBatchCallerCancellationAndDeadlineKeepPeers(t *testing.T) {
 				switch r.URL.Path {
 				case "/records":
 					_, _ = io.WriteString(w, testIndexReply)
-				case "/_mget":
+				case "/records/_mget":
 					reads.Add(1)
 					if mode == "cancel" {
 						cancel()
@@ -166,20 +167,20 @@ func TestLuaBatchChunksLargeLegalSourcesBeforeEvaluation(t *testing.T) {
 		switch r.URL.Path {
 		case "/records":
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/_mget":
+		case "/records/_mget":
 			reads.Add(1)
-			ids, err := readMgetIDs(r.Body)
-			if err != nil {
+			var request struct{ IDs []string }
+			if json.NewDecoder(r.Body).Decode(&request) != nil {
 				t.Error("invalid mget body")
 				return
 			}
-			for current := maxReadItems.Load(); int32(len(ids)) > current; current = maxReadItems.Load() {
-				if maxReadItems.CompareAndSwap(current, int32(len(ids))) {
+			for current := maxReadItems.Load(); int32(len(request.IDs)) > current; current = maxReadItems.Load() {
+				if maxReadItems.CompareAndSwap(current, int32(len(request.IDs))) {
 					break
 				}
 			}
 			_, _ = io.WriteString(w, `{"docs":[`)
-			for i, id := range ids {
+			for i, id := range request.IDs {
 				if i != 0 {
 					_, _ = io.WriteString(w, ",")
 				}
@@ -236,7 +237,7 @@ func TestLuaBatchUsesAbsoluteBackendDeadlineBeyondFiveSeconds(t *testing.T) {
 				return
 			}
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/_mget":
+		case "/records/_mget":
 			reads.Add(1)
 			_, _ = io.WriteString(w, `{"docs":[{"_index":"records","_id":"program","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
 		case "/_bulk":

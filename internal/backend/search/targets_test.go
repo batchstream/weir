@@ -24,41 +24,33 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 		index := parts[0]
-		if (index == "left" || index == "right") && len(parts) == 1 {
-			inspections.Add(1)
-			_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", index))
-			return
-		}
-		if r.URL.Path == "/_mget" {
-			reads.Add(1)
-			var body struct {
-				Docs []struct {
-					Index string `json:"_index"`
-					ID    string `json:"_id"`
-				} `json:"docs"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Error(err)
+		if index == "left" || index == "right" {
+			if len(parts) == 1 {
+				inspections.Add(1)
+				_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", index))
 				return
 			}
-			if len(body.Docs) != 4 && len(body.Docs) != 2 {
-				t.Error("mixed index reads were split", len(body.Docs))
-			}
-			fmt.Fprint(w, `{"docs":[`)
-			for i, document := range body.Docs {
+			if parts[1] == "_mget" {
+				reads.Add(1)
+				var body struct{ IDs []string }
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
 				value, sequence := 10, 1
-				if document.Index == "right" {
+				if index == "right" {
 					value, sequence = 20, 2
-				} else if document.Index != "left" {
-					t.Error("unqualified mget target", document.Index)
 				}
-				if i != 0 {
-					fmt.Fprint(w, ",")
+				fmt.Fprint(w, `{"docs":[`)
+				for i, id := range body.IDs {
+					if i != 0 {
+						fmt.Fprint(w, ",")
+					}
+					fmt.Fprintf(w, `{"_index":%q,"_id":%q,"found":true,"_seq_no":%d,"_primary_term":1,"_source":{"n":%d}}`, index, id, sequence, value)
 				}
-				fmt.Fprintf(w, `{"_index":%q,"_id":%q,"found":true,"_seq_no":%d,"_primary_term":1,"_source":{"n":%d}}`, document.Index, document.ID, sequence, value)
+				fmt.Fprint(w, "]}")
+				return
 			}
-			fmt.Fprint(w, "]}")
-			return
 		}
 		if r.URL.Path != "/_bulk" {
 			t.Error("unexpected endpoint", r.URL.Path)
@@ -134,7 +126,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		works[i].ID = uint64(i)
 	}
 	results := a.executeRecords(context.Background(), works)
-	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 1 || writes.Load() != 1 {
+	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 2 || writes.Load() != 1 {
 		t.Fatal("mixed index request framing", len(results), inspections.Load(), reads.Load(), writes.Load())
 	}
 	for i, result := range results {
@@ -227,13 +219,17 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 				index := parts[0]
-				if (index == "left" || index == "right") && len(parts) == 1 {
-					_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", index))
-					return
-				}
-				if r.URL.Path == "/_mget" {
+				if index == "left" || index == "right" {
+					if len(parts) == 1 {
+						_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", index))
+						return
+					}
 					calls.Add(1)
-					fmt.Fprint(w, `{"docs":[{"_index":"right","_id":"same","found":false},{"_index":"left","_id":"same","found":false}]}`)
+					other := "left"
+					if index == "left" {
+						other = "right"
+					}
+					fmt.Fprintf(w, `{"docs":[{"_index":%q,"_id":"same","found":false}]}`, other)
 					return
 				}
 				calls.Add(1)
@@ -257,6 +253,9 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 				}
 			}
 			wantCalls := int32(1)
+			if action == "read" {
+				wantCalls = 2
+			}
 			if calls.Load() != wantCalls {
 				t.Fatal("ambiguous response triggered replay", calls.Load())
 			}

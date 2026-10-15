@@ -27,7 +27,7 @@ func TestLuaTransformReevaluatesAfterSearchVersionConflict(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/_mget":
+		case "/records/_mget":
 			if r.URL.Query().Get("realtime") != "true" {
 				t.Errorf("transform read was not realtime: %s", r.URL.RawQuery)
 			}
@@ -127,7 +127,7 @@ func TestLuaTransformRejectsUnqualifiedPipelines(t *testing.T) {
 					_, _ = fmt.Fprintf(w, `{"records":{"settings":{"index.uuid":"test","index.number_of_shards":"1",%q:"route"},"mappings":{"_source":{"enabled":true}}}}`, pipeline)
 					return
 				}
-				if r.URL.Path == "/_mget" {
+				if r.URL.Path == "/records/_mget" {
 					documentReads.Add(1)
 				}
 				http.NotFound(w, r)

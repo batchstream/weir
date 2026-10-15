@@ -33,7 +33,7 @@ func (b *deadlineBackend) serve(w http.ResponseWriter, r *http.Request) {
 		reply = `{"defaults":{"action.auto_create_index":"false"}}`
 	case "/records":
 		delay, reply = b.qualificationDelay, testIndexReply
-	case "/_mget":
+	case "/records/_mget":
 		delay = b.readDelay
 		reply = `{"docs":[{"_index":"records","_id":"write","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`
 	case "/_bulk":

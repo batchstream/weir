@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/url"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -19,29 +20,56 @@ type observedRecord struct {
 	failure *pb.Failure
 }
 
-type getReference struct {
-	Index string `json:"_index"`
-	ID    string `json:"_id"`
+type recordGroup struct {
+	index     string
+	works     []*execution.Plan
+	positions []int
 }
 
-// Each real-time pre-read retains the caller order across concrete indexes and
-// verifies every index and ID before publishing any document in its response.
+// mget groups the bounded batch by concrete index. Identical IDs in different
+// indexes remain separate records, with results restored to caller positions.
 func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedRecord {
+	byIndex := make(map[string]*recordGroup)
+	groups := make([]*recordGroup, 0)
+	for i, work := range works {
+		index := work.Backend.(*plan).index
+		group := byIndex[index]
+		if group == nil {
+			group = &recordGroup{index: index}
+			byIndex[index] = group
+			groups = append(groups, group)
+		}
+		group.works = append(group.works, work)
+		group.positions = append(group.positions, i)
+	}
+	observed := make([]observedRecord, len(works))
+	for _, group := range groups {
+		for i, record := range a.mgetIndex(ctx, group.index, group.works) {
+			observed[group.positions[i]] = record
+		}
+	}
+	return observed
+}
+
+// Each real-time pre-read verifies the entire positional ID and index
+// correspondence before publishing a document. Every response is validated in
+// full before its documents become observations.
+func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*execution.Plan) []observedRecord {
 	observed := make([]observedRecord, len(works))
 	for start := 0; start < len(works); {
 		end := start
 		bound := getFramingLimit
 		for end < len(works) {
-			native := works[end].Backend.(*plan)
-			item := a.options().Scan.Bytes + len(native.index) + len(native.id) + getFramingLimit
+			item := a.options().Scan.Bytes + len(works[end].Backend.(*plan).id) + getFramingLimit
 			if end > start && bound+item > a.options().ExchangeBytes {
 				break
 			}
 			bound += item
 			end++
 		}
+		group := make([]*execution.Plan, 0, end-start)
 		indexes := make([]int, 0, end-start)
-		documents := make([]getReference, 0, end-start)
+		ids := make([]string, 0, end-start)
 		for i := start; i < end; i++ {
 			work := works[i]
 			caller := ctx
@@ -53,19 +81,18 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 				observed[i] = observation
 				continue
 			}
+			group = append(group, work)
 			indexes = append(indexes, i)
-			native := work.Backend.(*plan)
-			document := getReference{Index: native.index, ID: native.id}
-			documents = append(documents, document)
+			ids = append(ids, work.Backend.(*plan).id)
 		}
 		start = end
-		if len(documents) == 0 {
+		if len(group) == 0 {
 			continue
 		}
-		body := map[string]any{"docs": documents}
+		body := map[string]any{"ids": ids}
 		encoded, _ := json.Marshal(body)
 		call := exchange{
-			path: "/_mget?realtime=true", body: encoded,
+			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
 			contentType: "application/json"}
 		status, raw, err := a.request(ctx, call)
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
@@ -87,12 +114,12 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 		var envelope struct {
 			Docs []getReply `json:"docs"`
 		}
-		if json.Unmarshal(raw, &envelope) != nil || len(envelope.Docs) != len(documents) {
+		if json.Unmarshal(raw, &envelope) != nil || len(envelope.Docs) != len(group) {
 			continue
 		}
 		corresponds := true
 		for i, reply := range envelope.Docs {
-			if reply.Index != documents[i].Index || reply.ID != documents[i].ID {
+			if reply.Index != index || reply.ID != ids[i] {
 				corresponds = false
 				break
 			}
