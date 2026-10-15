@@ -30,6 +30,55 @@ func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*executi
 	return false
 }
 
+func TestZeroInFlightBudgetDoesNotLimitIndependentBatches(t *testing.T) {
+	limits := DefaultLimits()
+	limits.BatchOperations = 1
+	limits.MaxInFlight = 0
+	const calls = 16
+	adapter := &concurrencyAdapter{started: make(chan []*execution.Plan, calls), finish: make(chan struct{})}
+	runtime, err := New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	t.Cleanup(func() {
+		cancel()
+		closeContext, stop := context.WithTimeout(context.Background(), time.Second)
+		defer stop()
+		if err := runtime.Close(closeContext); err != nil {
+			t.Error(err)
+		}
+	})
+	tickets := make([]*Ticket, 0, calls)
+	for index := range calls {
+		work := plan(uint64(index), fmt.Sprint(index), false)
+		ticket, failure, _ := runtime.Submit(ctx, work, nil)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		tickets = append(tickets, ticket)
+	}
+	for range calls {
+		select {
+		case <-adapter.started:
+		case <-ctx.Done():
+			t.Fatal("zero budget limited execution", runtime.Snapshot())
+		}
+	}
+	snapshot := runtime.Snapshot()
+	if snapshot.Active != calls || snapshot.Pending != 0 {
+		t.Fatal("zero budget retained waiting work", snapshot)
+	}
+	close(adapter.finish)
+	for _, ticket := range tickets {
+		if _, err := ticket.Wait(ctx); err != nil {
+			t.Fatal(err)
+		}
+		ticket.Ack()
+	}
+}
+
 func TestInFlightBatchesBoundExecutionAndReturnCreditBeforeAck(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchOperations = 1
