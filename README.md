@@ -124,8 +124,10 @@ explains removed fields, retained controls and fixed protocol boundaries.
 
 Store defaults are 32 operations and 8MiB of input per batch. `batching.max_wait`
 defaults to `0s` for immediate dispatch. A positive duration collects compatible
-RPCs until the oldest admission reaches that age; full batches, Scan/Native
-commands and draining Stores dispatch immediately. A caller deadline before the
+writes until the oldest admission reaches that age. Reads use compatible work
+already queued without waiting for future arrivals, including in mixed batches.
+Full batches, Scan/Native commands and draining Stores bypass collection.
+A caller deadline before the
 collection deadline also dispatches immediately. Collection uses the existing
 bounded queue and adds no per-request timer. Queued RPCs combine by namespace, actual input bytes and
 `batching.max_operations`. Large client batches split into sequential bounded groups.
@@ -141,8 +143,9 @@ for byte/count/wait boundaries, execution backpressure and workload calibration.
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. A larger input
 can occupy an empty queue alone. `batching.max_in_flight` optionally bounds simultaneous
-adapter invocations per Store; its default `0` leaves them unlimited. A positive
-budget keeps excess requests in the bounded queue, allowing natural batching while
+adapter invocations per Store; omission selects its default, currently `0`, and
+explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
+bounded queue, allowing natural batching while
 the backend is busy. Execution completion returns this credit before consumer Ack;
 Scan publication releases it between pages. Search visibility waits and Native
 streaming still occupy credit, so a small budget can reduce throughput when waiting
@@ -327,6 +330,8 @@ The queue exposes count and byte capacity metrics. `weir_store_active_executions
 reports `batching.max_in_flight`, with `0` meaning unlimited. Active executions and
 average operations per batch show whether a budget retains enough work to aggregate.
 `weir_store_batch_max_wait_seconds` reports the configured collection wait.
+`weir_store_batch_max_operations` and `weir_store_batch_max_bytes` report the
+resolved count and byte aggregation bounds, including when configuration omits them.
 
 Search exposes `weir_search_http_requests_total` and
 `weir_search_http_request_duration_seconds` by fixed operation, outcome and

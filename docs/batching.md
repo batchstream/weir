@@ -13,12 +13,15 @@ dependent business phases and shared-key writes further limit aggregation.
   NDJSON body, including action metadata and newlines. Generated Lua output is
   measured after encoding. Search also uses `backend.max_exchange_bytes`; the
   smaller write aggregation target wins. A single legal oversized item goes alone.
-- `batching.max_wait` bounds collection from the oldest eligible admission. It
+- `batching.max_wait` bounds write collection from the oldest eligible admission. It
   overlaps waiting for an execution slot and is not restarted when a slot opens.
+- Reads dispatch with compatible work already queued, without waiting for future
+  arrivals. A mixed batch containing a read also bypasses collection.
 - Full batches, drain, Native/Scan and shorter caller deadlines bypass collection.
 - A positive `batching.max_in_flight` bounds simultaneous adapter invocations.
   Excess work stays in the bounded queue, where it can combine or be canceled.
   Completed execution releases the slot independently of response acknowledgement.
+  Omitting this field selects its default; an explicit `0` means unlimited.
 
 Defaults remain 32 operations, 8 MiB, zero collection delay and unlimited adapter
 invocations. Those defaults are immediate dispatch controls, not a calibrated

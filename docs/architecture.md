@@ -144,11 +144,12 @@ shards are supported.
 The active batch set also enforces `batching.max_in_flight` when it is positive.
 Zero, the default, means unlimited. Once the budget is full, compatible waiting
 records stay in the bounded queue until an adapter invocation finishes. They form
-batches naturally. `batching.max_wait` optionally collects compatible records for
+batches naturally. `batching.max_wait` optionally collects compatible writes for
 a bounded duration from the oldest admission; its default `0s` dispatches immediately.
 One Store timer wakes the scheduler for the earliest eligible collection deadline.
-Full batches, Scan/Native, draining Stores and shorter caller deadlines bypass
-collection. Ready namespaces can pass another namespace still collecting; once
+Reads and mixed batches containing reads use already queued compatible work without
+waiting for future arrivals. Full batches, Scan/Native, draining Stores and shorter
+caller deadlines bypass collection. Ready namespaces can pass another namespace still collecting; once
 both are ready, the oldest eligible namespace runs first. Credit returns at execution completion,
 independently of result acknowledgement. Each Store owns its budget. No Store workspace ceiling or backend connection-pool
 maximum is imposed. Transport failures do not replay mutations; confirmed conflicts
