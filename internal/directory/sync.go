@@ -134,7 +134,7 @@ func (d *Directory) syncPeer(parent context.Context, address string) error {
 	if len(response.ProtoReflect().GetUnknown()) > 0 {
 		return status.Error(codes.InvalidArgument, "unknown directory response fields")
 	}
-	request := &peerpb.SyncDirectoryRequest{Announcements: d.snapshot(time.Now())}
+	request := &peerpb.SyncDirectoryRequest{Announcements: d.snapshot()}
 	if err := stream.Send(request); err != nil {
 		return err
 	}

@@ -53,18 +53,18 @@ func TestRelayLeaseCannotRenewOrResurrect(t *testing.T) {
 	if !d.records[ad.IncarnationId].expires.Equal(original) {
 		t.Fatal("same sequence renewed lease")
 	}
-	relayed := d.snapshot(start.Add(5 * time.Second))
+	relayed := d.snapshot()
 	var owner *peerpb.NodeAnnouncement
 	for _, node := range relayed {
 		if node.IncarnationId == ad.IncarnationId {
 			owner = node
 		}
 	}
-	if owner == nil || owner.LeaseRemainingMs != 5000 {
+	if owner == nil || owner.LeaseRemainingMs == 0 || owner.LeaseRemainingMs > ad.LeaseRemainingMs {
 		t.Fatal("relay did not preserve remaining lifetime", owner)
 	}
 	other := newTestDirectory(t, cfg)
-	if err := other.merge([]*peerpb.NodeAnnouncement{owner}, start.Add(5*time.Second), start.Add(7*time.Second)); err != nil {
+	if err := other.merge([]*peerpb.NodeAnnouncement{owner}, start, start.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if other.records[ad.IncarnationId].expires.After(original) {
@@ -75,11 +75,6 @@ func TestRelayLeaseCannotRenewOrResurrect(t *testing.T) {
 	}
 	if !d.records[ad.IncarnationId].expires.Equal(original) {
 		t.Fatal("expired owner resurrected from same sequence")
-	}
-	for _, node := range d.snapshot(start.Add(20 * time.Second)) {
-		if node.IncarnationId == ad.IncarnationId {
-			t.Fatal("expired record relayed")
-		}
 	}
 	ad.Revision = 2
 	if err := d.merge([]*peerpb.NodeAnnouncement{ad}, start.Add(20*time.Second), start.Add(20*time.Second)); err != nil {
@@ -142,10 +137,10 @@ func TestRestartAndExpiryRemoveOldEndpoint(t *testing.T) {
 	observerCfg := Config{Group: "observer"}
 	observer := newTestDirectory(t, observerCfg)
 	now := time.Now()
-	if err := observer.merge(first.snapshot(now), now, now); err != nil {
+	if err := observer.merge(first.snapshot(), now, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := observer.merge(restarted.snapshot(now), now, now); err != nil {
+	if err := observer.merge(restarted.snapshot(), now, now); err != nil {
 		t.Fatal(err)
 	}
 	observer.mu.Lock()
@@ -409,7 +404,7 @@ func TestSnapshotRetainsAllWithdrawalWatermarks(t *testing.T) {
 	if err := source.merge(nodes, now, now); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := source.snapshot(now)
+	snapshot := source.snapshot()
 	if len(snapshot) != 768 {
 		t.Fatal("withdrawal watermarks lost during sync", len(snapshot))
 	}

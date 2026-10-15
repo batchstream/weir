@@ -6,7 +6,6 @@ import (
 	"net"
 	"strings"
 	"testing"
-	"time"
 
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
 	"google.golang.org/grpc"
@@ -93,7 +92,7 @@ func startRawDirectoryPeer(t *testing.T, raw []byte) string {
 func TestSyncPeerAcceptsLargeWatermarksAndRejectsMalformedAnnouncements(t *testing.T) {
 	cfg := Config{Group: "observer"}
 	directory := newTestDirectory(t, cfg)
-	announcements := directory.snapshot(time.Now())
+	announcements := directory.snapshot()
 	for i := 1; i < 640; i++ {
 		node := announcement(i, "retired-"+strings.Repeat("g", 4096), "127.0.0.1:7447")
 		node.Withdrawn = true

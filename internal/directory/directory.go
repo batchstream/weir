@@ -264,9 +264,10 @@ func (d *Directory) merge(nodes []*peerpb.NodeAnnouncement, anchor, now time.Tim
 
 // The receiver anchors each remaining lease before this snapshot was formed.
 // Its complete exchange delay is therefore deducted without synchronized clocks.
-func (d *Directory) snapshot(now time.Time) []*peerpb.NodeAnnouncement {
+func (d *Directory) snapshot() []*peerpb.NodeAnnouncement {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	now := time.Now()
 	nodes := make([]*peerpb.NodeAnnouncement, 0, len(d.records))
 	for _, owned := range d.records {
 		remaining := owned.expires.Sub(now)
@@ -292,7 +293,7 @@ func (d *Directory) SyncDirectory(stream grpc.BidiStreamingServer[peerpb.SyncDir
 		return status.Error(codes.InvalidArgument, "directory exchange must open with an empty request")
 	}
 	anchor := time.Now()
-	response := &peerpb.SyncDirectoryResponse{Announcements: d.snapshot(anchor)}
+	response := &peerpb.SyncDirectoryResponse{Announcements: d.snapshot()}
 	if err := stream.Send(response); err != nil {
 		return err
 	}

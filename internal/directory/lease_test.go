@@ -9,6 +9,51 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestSnapshotSamplesTimeAfterConcurrentRenewal(t *testing.T) {
+	config := Config{Group: "owner"}
+	directory := newTestDirectory(t, config)
+	directory.mu.Lock()
+	started := make(chan struct{})
+	result := make(chan []*peerpb.NodeAnnouncement, 1)
+	go func() {
+		close(started)
+		result <- directory.snapshot()
+	}()
+	<-started
+	time.Sleep(20 * time.Millisecond)
+	owned := directory.records[directory.self]
+	owned.announcement.Revision++
+	owned.expires = time.Now().Add(directory.policy.Lease)
+	directory.records[directory.self] = owned
+	directory.mu.Unlock()
+	select {
+	case nodes := <-result:
+		if len(nodes) != 1 {
+			t.Fatal("renewed owner missing from snapshot", nodes)
+		}
+		if err := validateAnnouncement(nodes[0]); err != nil {
+			t.Fatal("concurrent renewal produced an invalid remaining lease", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("snapshot did not complete after directory unlocked")
+	}
+}
+
+func TestSnapshotSkipsExpiredRecords(t *testing.T) {
+	config := Config{Group: "observer"}
+	directory := newTestDirectory(t, config)
+	start := time.Now().Add(-time.Minute)
+	ad := announcement(1, "owner", "127.0.0.1:7447")
+	if err := directory.merge([]*peerpb.NodeAnnouncement{ad}, start, start); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range directory.snapshot() {
+		if node.IncarnationId == ad.IncarnationId {
+			t.Fatal("expired record relayed")
+		}
+	}
+}
+
 func TestOriginLeaseAndExchangeAnchorAreIndependentOfReceiverPolicy(t *testing.T) {
 	policy := Policy{Lease: 3 * time.Minute, SyncInterval: 3 * time.Second, SyncTimeout: 7 * time.Second}
 	ownerConfig := Config{Group: "owner", Stores: []string{"data"}, Targets: []string{"127.0.0.1:7447"}, Policy: policy}
@@ -17,10 +62,11 @@ func TestOriginLeaseAndExchangeAnchorAreIndependentOfReceiverPolicy(t *testing.T
 	observer := newTestDirectory(t, observerConfig)
 	start := time.Now()
 	owner.renew(start)
-	nodes := owner.snapshot(start.Add(10 * time.Second))
-	if len(nodes) != 1 || nodes[0].LeaseRemainingMs != 170000 || nodes[0].OriginLeaseMs != 180000 {
+	nodes := owner.snapshot()
+	if len(nodes) != 1 || (nodes[0].LeaseRemainingMs <= 60000 || nodes[0].LeaseRemainingMs > 180000) || nodes[0].OriginLeaseMs != 180000 {
 		t.Fatal("long owner lease was capped by historical constants", nodes)
 	}
+	nodes[0].LeaseRemainingMs = 170000
 	anchor := start.Add(5 * time.Second)
 	received := start.Add(20 * time.Second)
 	if err := observer.merge(nodes, anchor, received); err != nil {
