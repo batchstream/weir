@@ -52,9 +52,9 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 			delete(families, name)
 		}
 	}
-	// 16 Mongo Stores at 55 each + 2 listener transports at 30 each +
+	// 16 Mongo Stores at 56 each + 2 listener transports at 30 each +
 	// 3 admission + 2 directory + 7 diagnostics + 36 Node lifecycle/memory.
-	const maximumSeries = 988
+	const maximumSeries = 1004
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}

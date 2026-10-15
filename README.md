@@ -83,6 +83,7 @@ stores:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
     batching:
       max_operations: 32
+      max_in_flight: 0
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -119,8 +120,15 @@ one larger input executes alone.
 `queue.max_operations` (default 1024) and `queue.max_bytes` (default
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. A larger input
-can occupy an empty queue alone. Active execution, backend pools, RPCs and
-connections have no Weir concurrency cap. Backend protocols determine document sizes.
+can occupy an empty queue alone. `batching.max_in_flight` optionally bounds simultaneous
+adapter invocations per Store; its default `0` leaves them unlimited. A positive
+budget keeps excess requests in the bounded queue, allowing natural batching while
+the backend is busy. Execution completion returns this credit before consumer Ack;
+Scan publication releases it between pages. Search visibility waits and Native
+streaming still occupy credit, so a small budget can reduce throughput when waiting
+for refresh or a slow Native consumer. Select a budget with the actual workload;
+separate Stores have independent budgets. Backend pools, RPCs and connections have
+no separate concurrency cap. Backend protocols determine document sizes.
 
 Store settings are grouped by responsibility: `backend` holds connection establishment
 and MongoDB target caching, native exchange chunk sizes, and the shared
@@ -295,8 +303,9 @@ Run backend congestion tests separately with the default `overload` profile;
 stop the owned fixture before changing its capacity profile.
 
 Monitor active executions, queue occupancy and per-record backend outcomes.
-The queue exposes count and byte capacity metrics; removed concurrency and
-backend-timeout limits no longer publish limit or owned-timeout metrics.
+The queue exposes count and byte capacity metrics. `weir_store_active_executions_limit`
+reports `batching.max_in_flight`, with `0` meaning unlimited. Active executions and
+average operations per batch show whether a budget retains enough work to aggregate.
 
 Build reproducible archives from a clean commit with
 `python3 scripts/package.py --output dist/local-build`.

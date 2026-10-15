@@ -97,7 +97,10 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	if testmetrics.Sum(families, "weir_store_pending_entries_limit") != float64(limits.QueueOperations) {
 		t.Fatal("configured concurrency metric changed")
 	}
-	if testmetrics.Series(families) != 49 {
+	if testmetrics.Sum(families, "weir_store_active_executions_limit") != float64(limits.MaxInFlight) {
+		t.Fatal("configured in-flight batch limit missing")
+	}
+	if testmetrics.Series(families) != 50 {
 		t.Fatal("Store series changed", testmetrics.Series(families))
 	}
 }
