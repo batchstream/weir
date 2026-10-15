@@ -314,6 +314,7 @@ func TestCancellationRetainsCreditUntilAdapterStops(t *testing.T) {
 
 func TestOldestBatchKeyKeepsProgressUnderInFlightLimit(t *testing.T) {
 	limits := DefaultLimits()
+	limits.BatchWait = 0
 	limits.MaxInFlight = 1
 	limits.BatchOperations = 2
 	runtime := newRuntime(nil, limits)

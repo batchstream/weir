@@ -23,7 +23,7 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, MaxInFlight: 0, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 128, BatchBytes: 4 << 20, BatchWait: 20 * time.Millisecond, MaxInFlight: 16, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
 	return limits
 }
 

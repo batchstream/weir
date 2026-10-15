@@ -13,15 +13,16 @@ import (
 
 const queueRoutingPrefix = "stores:\n  - name: records\n    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017/?directConnection=true\n"
 
-func TestExecutionLimitDefaultsAndExplicitZeroRemainVisible(t *testing.T) {
+func TestBatchingDefaultsAndExplicitZerosRemainVisible(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		fragment string
 		want     int
+		wait     time.Duration
 	}{
-		{name: "omitted", want: store.DefaultLimits().MaxInFlight},
-		{name: "explicit unlimited", fragment: "    batching:\n      max_in_flight: 0\n", want: 0},
-		{name: "explicit finite", fragment: "    batching:\n      max_in_flight: 7\n", want: 7},
+		{name: "omitted", want: store.DefaultLimits().MaxInFlight, wait: store.DefaultLimits().BatchWait},
+		{name: "explicit immediate and unlimited", fragment: "    batching:\n      max_in_flight: 0\n      max_wait: 0s\n", want: 0, wait: 0},
+		{name: "explicit finite", fragment: "    batching:\n      max_in_flight: 7\n      max_wait: 2ms\n", want: 7, wait: 2 * time.Millisecond},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			routing, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + test.fragment))
@@ -32,6 +33,9 @@ func TestExecutionLimitDefaultsAndExplicitZeroRemainVisible(t *testing.T) {
 			if local.Batching.MaxInFlight == nil || *local.Batching.MaxInFlight != test.want || local.runtimeLimits().MaxInFlight != test.want {
 				t.Fatal("execution policy did not resolve", local.Batching.MaxInFlight)
 			}
+			if local.Batching.MaxWait == nil || time.Duration(*local.Batching.MaxWait) != test.wait || local.runtimeLimits().BatchWait != test.wait {
+				t.Fatal("collection policy did not resolve", local.Batching.MaxWait)
+			}
 			resolved := routing.resolved()
 			if resolved.Stores[0].Batching.MaxInFlight == local.Batching.MaxInFlight {
 				t.Fatal("resolved execution policy aliases its input")
@@ -41,7 +45,7 @@ func TestExecutionLimitDefaultsAndExplicitZeroRemainVisible(t *testing.T) {
 				t.Fatal("resolved execution policy was hidden", err)
 			}
 			decoded, err := DecodeRouting(strings.NewReader(string(encoded)))
-			if err != nil || decoded.Stores[0].runtimeLimits().MaxInFlight != test.want {
+			if err != nil || decoded.Stores[0].runtimeLimits().MaxInFlight != test.want || decoded.Stores[0].runtimeLimits().BatchWait != test.wait {
 				t.Fatal("explicit execution policy changed on round trip", err)
 			}
 		})

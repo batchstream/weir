@@ -78,21 +78,22 @@ stores:
 
     # Aggregate compatible waiting work within explicit size and wait bounds.
     batching:
-      # Operations per scheduled batch. Default: 32; 0 selects 32; positive integer.
-      max_operations: 32
-      # Input plus scheduler metadata per batch. Default: 8MiB; positive size.
+      # Operations per scheduled batch. Default: 128; 0 selects 128; positive integer.
+      max_operations: 128
+      # Input plus scheduler metadata per batch. Default: 4MiB; positive size.
       # A larger input executes alone; Scan/Native use singleton plans.
-      max_bytes: 8MiB
-      # Simultaneous adapter invocations per Store. Default: 0 (unlimited).
+      max_bytes: 4MiB
+      # Simultaneous adapter invocations per Store. Default: 16.
       # Omit for the default; explicit 0 keeps executions unlimited.
       # Positive values retain waiting work for natural batching and backpressure.
       # Includes Search visibility waits and Native streaming, not just DB apply.
-      max_in_flight: 0
+      max_in_flight: 16
       # Maximum write collection wait from the oldest eligible admission.
-      # Default: 0s (immediate); nonnegative duration. Full batches bypass it.
+      # Default: 20ms; nonnegative duration; 0s disables collection.
+      # Full batches bypass collection.
       # Read, Scan, Native, drain and shorter caller deadlines bypass this wait.
       # A mixed batch containing a Read also dispatches without collection.
-      max_wait: 0s
+      max_wait: 20ms
 
     # Retained fetch/publication batch size; total Scan output is not limited.
     scan:

@@ -33,6 +33,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()
 	limits.QueueBytes = (9 << 20)
 	limits.BatchOperations = 3
+	limits.BatchBytes = 8 << 20
 	adapter := &metricAdapter{}
 	r := newRuntime(adapter, limits)
 	ctx, cancel := context.WithCancel(context.Background())

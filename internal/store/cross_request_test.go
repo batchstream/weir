@@ -86,7 +86,9 @@ func selectCrossBatch(runtime *Runtime) *batch {
 }
 func TestIndependentRPCsShareExecutionAndKeepResultsAndQuota(t *testing.T) {
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 8)}
-	runtime := newRuntime(adapter, DefaultLimits())
+	limits := DefaultLimits()
+	limits.BatchOperations = 32
+	runtime := newRuntime(adapter, limits)
 	var tickets []*Ticket
 	for i := range 35 {
 		work := prepareCrossRecord(t, runtime, 1, fmt.Sprintf("records/s:%d", i))
@@ -163,7 +165,9 @@ func TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions(t *testing.T
 func TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation(t *testing.T) {
 	for _, firstRead := range []bool{false, true} {
 		t.Run(fmt.Sprint(firstRead), func(t *testing.T) {
-			runtime := newRuntime(nil, DefaultLimits())
+			limits := DefaultLimits()
+			limits.BatchWait = 0
+			runtime := newRuntime(nil, limits)
 			first := plan(1, "same", firstRead)
 			second := plan(2, "same", !firstRead)
 			firstTicket, failure, _ := runtime.Submit(t.Context(), first, nil)

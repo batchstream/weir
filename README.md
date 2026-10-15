@@ -40,7 +40,8 @@ The [broader batching follow-up](docs/value-proof.md#broader-batching-coverage-2
 adds pure indexing, larger-document partial updates, and multi-index/hot-key
 correctness cases. Its fixed collection/concurrency candidate lowers crawler
 database CPU at similar completed throughput with higher reported p99 latency.
-Default batching settings remain unchanged.
+That experiment retained the defaults in effect on 2026-10-15. The current
+defaults and their calibration scope are described in [batching guidance](docs/batching.md).
 
 ## Build and run
 
@@ -95,9 +96,10 @@ stores:
       mongodb:
         uri: "mongodb://127.0.0.1:27028/?directConnection=true"
     batching:
-      max_operations: 32
-      max_in_flight: 0
-      max_wait: "0s"
+      max_operations: 128
+      max_bytes: 4MiB
+      max_in_flight: 16
+      max_wait: "20ms"
 ```
 
 `discovery.group` identifies the replica group providing those Stores.
@@ -122,8 +124,8 @@ peers or backends. Configuration changes take effect after a restart.
 authentication and trust paths redacted. The [configuration review](docs/configuration.md)
 explains removed fields, retained controls and fixed protocol boundaries.
 
-Store defaults are 32 operations and 8MiB of input per batch. `batching.max_wait`
-defaults to `0s` for immediate dispatch. A positive duration collects compatible
+Store defaults are 128 operations and 4MiB of input per batch. `batching.max_wait`
+defaults to `20ms`; explicit `0s` disables collection. A positive duration collects compatible
 writes until the oldest admission reaches that age. Reads use compatible work
 already queued without waiting for future arrivals, including in mixed batches.
 Full batches, Scan/Native commands and draining Stores bypass collection.
@@ -143,7 +145,7 @@ for byte/count/wait boundaries, execution backpressure and workload calibration.
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. A larger input
 can occupy an empty queue alone. `batching.max_in_flight` optionally bounds simultaneous
-adapter invocations per Store; omission selects its default, currently `0`, and
+adapter invocations per Store; omission selects its default of `16`, and
 explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
 bounded queue, allowing natural batching while
 the backend is busy. Execution completion returns this credit before consumer Ack;

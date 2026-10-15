@@ -71,7 +71,7 @@ no configurable memory budget or startup reservation.
 Business RPCs and backend IO inherit caller contexts. Transport progress,
 connection establishment, keepalive and cleanup have separate controls.
 `batching.max_in_flight` controls simultaneous adapter invocations independently
-for each Store. Omission selects the default, currently `0` (unlimited); an explicit
+for each Store. Omission selects the default of `16`; an explicit
 `0` always means unlimited. Positive integers retain excess work
 in the bounded queue for natural batching and admission backpressure. Execution
 completion returns the credit without waiting for consumer acknowledgement. The
@@ -110,7 +110,7 @@ The configuration review makes these decisions:
 | `discovery.lease`, `discovery.sync_interval`, `discovery.sync_timeout` | Expose | Operators control announcement lifetime, exchange frequency and unreachable-peer deadlines. Defaults are `60s`, `1s` and `2s`. The lease uses positive whole milliseconds; local interval and timeout accept any positive duration. The relation `lease > 2 * sync_timeout + sync_interval` leaves room for one peer and one seed exchange. There are no fixed policy maximums. |
 | Memory capacity and advertised concrete listener addresses | Discover automatically | The process observes the container/OS limits and actual bound endpoints. Wildcard binds still require explicit reachable advertisements. |
 | `queue`, `batching`, `scan`, transport windows and progress deadlines | Retain | These govern different retained work and progress boundaries. Removing them would replace useful control with an invisible threshold. |
-| `batching.max_wait` | Expose; default `0s` | A positive duration bounds write collection from the oldest eligible admission. Reads and mixed batches containing reads use already queued compatible work without waiting for future arrivals. Full batches, streaming commands, drain and shorter caller deadlines also bypass collection. The resolved value is visible in effective configuration and Store metrics. |
+| `batching.max_wait` | Expose; default `20ms` | A positive duration bounds write collection from the oldest eligible admission; explicit `0s` disables collection. Reads and mixed batches containing reads use already queued compatible work without waiting for future arrivals. Full batches, streaming commands, drain and shorter caller deadlines also bypass collection. The resolved value is visible in effective configuration and Store metrics. |
 | `diagnostics.allow_intranet` | Retain | A non-loopback diagnostics bind needs an explicit opt-in because it exposes operational endpoints. |
 | `discovery.peer_address_env` | Retain | Dynamic instances need one explicit public address source, including Kubernetes downward-API values. General string substitution stays unsupported. |
 | Backend authentication and trust roots | Retain | These are deployment identity inputs; inferring them could select an unintended identity or trust boundary. |

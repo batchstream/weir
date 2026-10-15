@@ -23,11 +23,19 @@ dependent business phases and shared-key writes further limit aggregation.
   Completed execution releases the slot independently of response acknowledgement.
   Omitting this field selects its default; an explicit `0` means unlimited.
 
-Defaults remain 32 operations, 8 MiB, zero collection delay and unlimited adapter
-invocations. Those defaults are immediate dispatch controls, not a calibrated
-database-protection policy. Configure a positive execution limit when protecting a
-slow database. The existing Store queue is the waiting boundary; no extra HTTP
-queue or worker process is introduced.
+Defaults are 128 operations, 4 MiB, a 20 ms write collection window and 16 adapter
+invocations per Store. Explicit `max_wait: 0s` disables collection; explicit
+`max_in_flight: 0` removes the execution limit. Reads remain eligible immediately.
+The existing Store queue is the waiting boundary; no extra HTTP queue or worker
+process is introduced.
+
+These values are the constrained selection from 20 count/wait/concurrency
+configurations and a four-point byte anchor in the
+[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/pull/30).
+The frozen selector balances the measured workloads and declared qualification
+rules. It does not establish a universal optimum. Three-round independent
+capacity confirmation is still pending; maximum sustainable throughput has not
+been established by this selection scan.
 
 An execution slot includes metadata checks, pre-reads, Lua, writes and any requested
 visibility wait. A tiny limit can leave the database idle while writes wait for
@@ -86,4 +94,6 @@ compacts the bounded queue; the high-cardinality worst case remains quadratic.
 The [executed batching coverage report](https://github.com/batchstream/weir-tests/blob/17ab0506defcdb9f374aa994e7bb4467d43ebf82/results/batch-coverage-2026-10-15/README.md)
 retains count/wait/concurrency calibration, all three formal workloads and their
 negative observations, raw receipts and independent audits. Its fixed candidate
-is an explicit workload experiment; it does not change these defaults.
+was an explicit workload experiment and retained the defaults in effect on
+2026-10-15. The later constrained selection described above determines the current
+defaults.

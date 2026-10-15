@@ -52,7 +52,8 @@ eight-index skew, 1/256 KiB sources and hot-key increments; these are correctnes
 checks rather than throughput measurements of those distributions. Performance
 runs use one owned Elasticsearch host with four OS clients over loopback. All
 source/configuration receipts, raw hashes, actual CPU intervals and full-field
-oracles remain available. Default batching settings remain unchanged, and no
+oracles remain available. That experiment retained the defaults in effect on
+2026-10-15, and no
 maximum-capacity, steady-state or production-network claim is established.
 
 ## Bounded collection follow-up, 2026-10-15

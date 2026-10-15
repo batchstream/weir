@@ -36,7 +36,9 @@ func TestOnlyScanContinuationCanScheduleAnotherInvocation(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			adapter := &nonScanContinuationAdapter{}
-			runtime := newRuntime(adapter, DefaultLimits())
+			limits := DefaultLimits()
+			limits.BatchWait = 0
+			runtime := newRuntime(adapter, limits)
 			work := plan(1, name, false)
 			var session *Session
 			if native {
