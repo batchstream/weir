@@ -16,6 +16,7 @@ type searchMetrics struct {
 	httpRequests *prometheus.CounterVec
 	httpDuration *prometheus.HistogramVec
 	httpRecords  *prometheus.HistogramVec
+	httpBytes    *prometheus.HistogramVec
 	luaDuration  *prometheus.HistogramVec
 }
 
@@ -47,6 +48,12 @@ func (m *searchMetrics) initialize() {
 			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024},
 		}
 		m.httpRecords = prometheus.NewHistogramVec(recordOptions, []string{"operation", "visibility"})
+		byteOptions := prometheus.HistogramOpts{
+			Name:    "weir_search_http_request_body_bytes",
+			Help:    "Framed body bytes in each attempted Record/Scan or startup qualification HTTP request, including failed exchanges; excludes headers and Native relay. Attempts do not prove delivery or acknowledgement.",
+			Buckets: []float64{1024, 4096, 16384, 65536, 262144, 1 << 20, 4 << 20, 8 << 20, 16 << 20, 32 << 20},
+		}
+		m.httpBytes = prometheus.NewHistogramVec(byteOptions, []string{"operation", "visibility"})
 		luaOptions := prometheus.HistogramOpts{
 			Name:    "weir_search_lua_evaluation_duration_seconds",
 			Help:    "Main-process luaengine.Evaluate elapsed time including compile and conversion, excluding external JSON decoding/encoding and HTTP; concurrent durations overlap.",
@@ -89,6 +96,7 @@ func (m *searchMetrics) observeHTTP(observation httpObservation) {
 	}
 	m.httpRequests.WithLabelValues(operation, outcome, visibility).Inc()
 	m.httpDuration.WithLabelValues(operation, outcome, visibility).Observe(observation.duration.Seconds())
+	m.httpBytes.WithLabelValues(operation, visibility).Observe(float64(len(observation.call.body)))
 	if (operation == "mget" || operation == "bulk") && observation.call.records > 0 {
 		m.httpRecords.WithLabelValues(operation, visibility).Observe(float64(observation.call.records))
 	}
@@ -112,6 +120,7 @@ func (a *Adapter) Describe(ch chan<- *prometheus.Desc) {
 	a.metrics.httpRequests.Describe(ch)
 	a.metrics.httpDuration.Describe(ch)
 	a.metrics.httpRecords.Describe(ch)
+	a.metrics.httpBytes.Describe(ch)
 	a.metrics.luaDuration.Describe(ch)
 	for _, name := range []string{"owned", "peak", "acquired", "released"} {
 		ch <- connectionMetricDescription(name)
@@ -133,6 +142,7 @@ func (a *Adapter) Collect(ch chan<- prometheus.Metric) {
 	a.metrics.httpRequests.Collect(ch)
 	a.metrics.httpDuration.Collect(ch)
 	a.metrics.httpRecords.Collect(ch)
+	a.metrics.httpBytes.Collect(ch)
 	a.metrics.luaDuration.Collect(ch)
 	d := a.dialer
 	values := map[string]float64{"owned": 0, "peak": 0, "acquired": 0, "released": 0}

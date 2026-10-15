@@ -413,6 +413,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	seen := make(map[resourceKey]bool)
 	groups := make(map[string]*batchCandidate)
 	var candidates []*batchCandidate
+	oldestReady := false
 	for _, t := range r.queue {
 		if t.state != 0 {
 			continue
@@ -425,6 +426,11 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 			seen[key] = true
 		}
 		singleton := t.plan.Command.GetScan() != nil || t.plan.Command.GetNative() != nil
+		// Once the oldest candidate is ready, later namespaces cannot win this
+		// dispatch. Still observe their session keys above to preserve ordering.
+		if oldestReady && (singleton || t.plan.BatchKey != candidates[0].items[0].plan.BatchKey) {
+			continue
+		}
 		candidate := groups[t.plan.BatchKey]
 		if candidate == nil || singleton {
 			candidate = &batchCandidate{records: make(map[string]bool), singleton: singleton}
@@ -439,14 +445,24 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 		}
 		if len(candidate.items) >= r.limits.BatchOperations || len(candidate.items) > 0 && t.plan.Bytes > r.limits.BatchBytes-candidate.bytes {
 			candidate.full = true
+			oldestReady = oldestReady || candidate == candidates[0]
 			continue
 		}
 		candidate.items = append(candidate.items, t)
 		candidate.records[t.plan.Key] = t.plan.Command.GetMutate() != nil
 		candidate.bytes += t.plan.Bytes
 		candidate.full = candidate.full || len(candidate.items) >= r.limits.BatchOperations || candidate.bytes >= r.limits.BatchBytes
-		if candidate == candidates[0] && len(candidate.items) >= r.limits.BatchOperations {
-			break
+		if candidate == candidates[0] {
+			if !oldestReady {
+				at := candidate.items[0].queuedAt.Add(r.limits.BatchWait)
+				oldestReady = r.limits.BatchWait == 0 || candidate.full || singleton || r.draining || !now.Before(at)
+				if deadline, bounded := t.ctx.Deadline(); bounded && deadline.Before(at) {
+					oldestReady = true
+				}
+			}
+			if singleton || len(candidate.items) >= r.limits.BatchOperations {
+				break
+			}
 		}
 	}
 	var items []*Ticket

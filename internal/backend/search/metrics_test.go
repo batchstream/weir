@@ -63,6 +63,9 @@ func TestSearchMetricsMeasureActualRecordRequestsAndLua(t *testing.T) {
 			if before["weir_search_http_requests_total"] != nil {
 				t.Fatal("request fabricated before dispatch")
 			}
+			if before["weir_search_http_request_body_bytes"] != nil {
+				t.Fatal("body bytes fabricated before dispatch")
+			}
 			works := make([]*execution.Plan, 0, 2)
 			for _, id := range []string{"first", "second"} {
 				opts := visibilityPlanOptions{action: "program", id: id, wait: visible, program: `return function(current) current.n = 2; return current end`}
@@ -137,7 +140,7 @@ func TestSearchHTTPMetricsClassifyFailuresAndBoundLabels(t *testing.T) {
 			if err := registry.Register(adapter); err != nil {
 				t.Fatal(err)
 			}
-			call := exchange{path: "/private-index/_bulk?refresh=wait_for", operation: tc.operation, records: 3}
+			call := exchange{path: "/private-index/_bulk?refresh=wait_for", body: []byte("{}\n"), operation: tc.operation, records: 3}
 			_, _, _ = adapter.request(t.Context(), call)
 			families := searchMetricFamilies(t, registry)
 			operation, visibility := tc.operation, "none"
@@ -152,6 +155,11 @@ func TestSearchHTTPMetricsClassifyFailuresAndBoundLabels(t *testing.T) {
 			duration := searchMetric(t, families["weir_search_http_request_duration_seconds"], labels)
 			if counter.GetCounter().GetValue() != 1 || duration.GetHistogram().GetSampleCount() != 1 {
 				t.Fatal("failed attempt omitted or counted twice", counter, duration)
+			}
+			byteLabels := map[string]string{"operation": operation, "visibility": visibility}
+			bodyBytes := searchMetric(t, families["weir_search_http_request_body_bytes"], byteLabels).GetHistogram()
+			if bodyBytes.GetSampleCount() != 1 || bodyBytes.GetSampleSum() != float64(len(call.body)) {
+				t.Fatal("attempted body bytes omitted or counted twice", bodyBytes)
 			}
 			if operation == "bulk" || operation == "mget" {
 				recordLabels := map[string]string{"operation": operation, "visibility": visibility}
@@ -195,6 +203,11 @@ func TestSearchHTTPMetricsCountTransportFailure(t *testing.T) {
 	duration := searchMetric(t, families["weir_search_http_request_duration_seconds"], labels)
 	if counter.GetCounter().GetValue() != 1 || duration.GetHistogram().GetSampleCount() != 1 {
 		t.Fatal("failed connection acquisition omitted from attempts", counter, duration)
+	}
+	byteLabels := map[string]string{"operation": "bulk", "visibility": "none"}
+	bodyBytes := searchMetric(t, families["weir_search_http_request_body_bytes"], byteLabels).GetHistogram()
+	if bodyBytes.GetSampleCount() != 1 || bodyBytes.GetSampleSum() != float64(len(call.body)) {
+		t.Fatal("connection failure lost attempted body size", bodyBytes)
 	}
 }
 
@@ -248,8 +261,12 @@ func TestSearchHTTPMetricsCountCancellationAfterDispatchOnly(t *testing.T) {
 			duration := searchMetric(t, families["weir_search_http_request_duration_seconds"], labels)
 			recordLabels := map[string]string{"operation": "bulk", "visibility": "wait_for"}
 			records := searchMetric(t, families["weir_search_http_request_records"], recordLabels)
+			bodyBytes := searchMetric(t, families["weir_search_http_request_body_bytes"], recordLabels).GetHistogram()
 			if counter.GetCounter().GetValue() != 1 || duration.GetHistogram().GetSampleCount() != 1 || records.GetHistogram().GetSampleCount() != 1 || records.GetHistogram().GetSampleSum() != 4 {
 				t.Fatal("cancellation was omitted or pre-dispatch rejection was counted", counter, duration, records)
+			}
+			if bodyBytes.GetSampleCount() != 1 || bodyBytes.GetSampleSum() != float64(len(call.body)) {
+				t.Fatal("pre-dispatch cancellation changed attempted body bytes", bodyBytes)
 			}
 		})
 	}

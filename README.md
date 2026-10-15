@@ -36,6 +36,12 @@ native. The effect varies across rounds and does not establish maximum capacity.
 Adoption should compare completed throughput and actual database load using the
 application's submission and visibility requirements.
 
+The [broader batching follow-up](docs/value-proof.md#broader-batching-coverage-2026-10-15)
+adds pure indexing, larger-document partial updates, and multi-index/hot-key
+correctness cases. Its fixed collection/concurrency candidate lowers crawler
+database CPU at similar completed throughput with higher reported p99 latency.
+Default batching settings remain unchanged.
+
 ## Build and run
 
 Requires Go **1.27.1**. Typed Read, Mutate and Scan require existing backend
@@ -128,7 +134,9 @@ writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.
 Adapters issue their native read and write
 commands for each group. `batching.max_bytes` sets the aggregation window;
-one larger input executes alone.
+Search also applies it to final framed NDJSON, including generated Lua output.
+One larger legal item executes alone. See the [batching guidance](docs/batching.md)
+for byte/count/wait boundaries, execution backpressure and workload calibration.
 `queue.max_operations` (default 1024) and `queue.max_bytes` (default
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. A larger input

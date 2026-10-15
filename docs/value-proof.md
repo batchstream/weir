@@ -7,6 +7,54 @@ alternatives in the tested cases. The performance objective is lower actual
 database load at comparable completed throughput, or higher completed throughput
 at comparable actual database load, using a representative workload.
 
+## Broader batching coverage, 2026-10-15
+
+The [complete batching coverage report](https://github.com/batchstream/weir-tests/blob/17ab0506defcdb9f374aa994e7bb4467d43ebf82/results/batch-coverage-2026-10-15/README.md)
+retains exactly six prospectively declared workflows and all 60 timed stages:
+six-setting pure-write calibration, two observer diagnostics and three independent
+formal confirmations. Formal stages use 60s warmup, 60s timing and three rotating
+or alternating rounds. Native callers submit single-record operations. The
+candidate is 128 operations, 8 MiB, 5ms collection and 16 adapter executions;
+the immediate baseline is 32 operations, 8 MiB, zero wait and unlimited executions.
+Both Weir paths within each workflow use identical `b9dfbc2` server binaries.
+
+At 68 offered two-step crawler products/s, all nine formal stages complete every
+arrival with verified persisted fields and zero rejected, failed, unknown or
+timed-out products. Against native single-record updates, the candidate uses less
+database CPU per completed product while completed QPS stays within 1.3%:
+
+| Round | DB CPU/product change versus native | Completed QPS change versus native |
+| --- | ---: | ---: |
+| 1 | -41.6% | -0.70% |
+| 2 | -14.7% | -1.22% |
+| 3 | -13.7% | -1.22% |
+
+The latency tradeoff remains explicit: reported p99 histogram upper bounds rise
+from 3.146s to 4.194s. Candidate drain is 2.33–2.39s versus native 1.57–1.96s.
+Actual bulks carry about 12 records, compared with about 2.2 on immediate Weir.
+The 512 partial-updates/s profile uses 16 KiB seeded documents and application
+acknowledgement. Candidate versus immediate Weir reduces CPU/update by 31.9–35.5%
+at comparable completed QPS. Native rejects 1024 arrivals in round 1, preventing
+a strict three-round candidate/native comparison for that profile.
+
+Pure indexing at 128/512 workers completes 3.30–4.00 times as many writes/s as
+native in every paired round, with 48.2–53.7% lower measured database CPU.
+All twelve pure-write stages pass immutable-source, full 8192-record postflight
+and measurement checks with zero failed, unknown or timed-out writes. This is
+an observed gain at fixed concurrency. Neither path demonstrates sustained CPU
+saturation and a successor plateau, so it is not a maximum-capacity claim.
+
+The short calibration retains all six controls and negative immediate-dispatch
+results; it does not select a universal optimum. Actual NDJSON bytes, generated
+Lua output, sparse/burst scheduling, cancellation and bounded-slot behavior now
+have focused coverage. Owned Elasticsearch 8.19.22 and OpenSearch 3.3 tests add
+eight-index skew, 1/256 KiB sources and hot-key increments; these are correctness
+checks rather than throughput measurements of those distributions. Performance
+runs use one owned Elasticsearch host with four OS clients over loopback. All
+source/configuration receipts, raw hashes, actual CPU intervals and full-field
+oracles remain available. Default batching settings remain unchanged, and no
+maximum-capacity, steady-state or production-network claim is established.
+
 ## Bounded collection follow-up, 2026-10-15
 
 The [collection and phase report](https://github.com/batchstream/weir-tests/blob/22d719cd10f4bc2c390a49772d606ed50922a4f5/results/batch-mechanism-2026-10-15/README.md)

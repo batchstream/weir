@@ -89,6 +89,15 @@ record request/response groups. Scan publication has separate windows, and Nativ
 requests follow the backend's own command/message boundaries. Exchange targets
 do not define a Lua workspace budget.
 
+`batching.max_bytes` bounds both the Store's retained-input estimate and Search's
+final framed NDJSON aggregation. Lua-generated documents count at their actual
+encoded size. Search flushes when the smaller of this target and
+`backend.max_exchange_bytes` is reached, before processing another item. One legal
+item larger than a target is sent alone; these are aggregation targets, not a
+per-document rejection limit. The mget, Scan and metadata exchange budgets remain
+independent of this write target. See [batching guidance](batching.md) for joint
+batch-size, wait and execution-concurrency calibration.
+
 The configuration review makes these decisions:
 
 | Setting or mechanism | Decision | Reason |

@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
+	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/testutil"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"google.golang.org/grpc"
@@ -39,6 +40,35 @@ func TestConfigurationValidation(t *testing.T) {
 			}
 			if err := cfg.Validate(); err == nil {
 				t.Fatal("invalid configuration accepted")
+			}
+		})
+	}
+}
+
+func TestBatchByteConfigurationReachesSearchWithoutChangingReadBudget(t *testing.T) {
+	cases := []struct {
+		name, batching string
+		want           int
+	}{
+		{name: "default", want: 8 << 20},
+		{name: "smaller than exchange", batching: "    batching:\n      max_bytes: 1KiB\n", want: 1024},
+		{name: "larger than exchange", batching: "    batching:\n      max_bytes: 64MiB\n", want: 64 << 20},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "stores:\n  - name: search\n    backend:\n      search:\n        url: http://127.0.0.1:9200\n      max_exchange_bytes: 16MiB\n" + tc.batching
+			routing, err := DecodeRouting(strings.NewReader(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			local := routing.Stores[0].Local
+			settings := local.backendOptions()
+			limits := local.runtimeLimits()
+			if settings.BatchBytes != tc.want || limits.BatchBytes != tc.want || settings.ExchangeBytes != 16<<20 || settings.Scan != backend.DefaultOptions().Scan {
+				t.Fatal("batch bytes did not reach both collection and framing independently of reads", settings, limits)
+			}
+			if tc.batching == "" && settings.BatchBytes != backend.DefaultOptions().BatchBytes {
+				t.Fatal("standalone adapter and resolved configuration have different defaults", settings)
 			}
 		})
 	}
