@@ -79,3 +79,8 @@ The selector microbenchmark drains 1024 queued operations over 1, 8, 64 and 1024
 compatibility groups. When the oldest group is already eligible, the selector
 avoids constructing groups that cannot win that dispatch. It still scans and
 compacts the bounded queue; the high-cardinality worst case remains quadratic.
+
+The [executed batching coverage report](https://github.com/batchstream/weir-tests/blob/17ab0506defcdb9f374aa994e7bb4467d43ebf82/results/batch-coverage-2026-10-15/README.md)
+retains count/wait/concurrency calibration, all three formal workloads and their
+negative observations, raw receipts and independent audits. Its fixed candidate
+is an explicit workload experiment; it does not change these defaults.

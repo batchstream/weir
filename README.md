@@ -36,6 +36,12 @@ native. The effect varies across rounds and does not establish maximum capacity.
 Adoption should compare completed throughput and actual database load using the
 application's submission and visibility requirements.
 
+The [broader batching follow-up](docs/value-proof.md#broader-batching-coverage-2026-10-15)
+adds pure indexing, larger-document partial updates, and multi-index/hot-key
+correctness cases. Its fixed collection/concurrency candidate lowers crawler
+database CPU at similar completed throughput with higher reported p99 latency.
+Default batching settings remain unchanged.
+
 ## Build and run
 
 Requires Go **1.27.1**. Typed Read, Mutate and Scan require existing backend
