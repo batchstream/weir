@@ -30,7 +30,7 @@ func TestProcessLuaAndStreamPolicyReachEveryStore(t *testing.T) {
 			_, _ = w.Write([]byte(`{"persistent":{"action.auto_create_index":"false"}}`))
 		case "/records":
 			_, _ = w.Write([]byte(`{"records":{"settings":{"index.uuid":"owned","index.number_of_shards":"1"},"mappings":{}}}`))
-		case "/records/_mget":
+		case "/_mget":
 			reads.Add(1)
 			if blocking.Load() {
 				select {
@@ -40,15 +40,21 @@ func TestProcessLuaAndStreamPolicyReachEveryStore(t *testing.T) {
 				}
 			}
 			var data struct {
-				IDs []string `json:"ids"`
+				Docs []struct {
+					Index string `json:"_index"`
+					ID    string `json:"_id"`
+				} `json:"docs"`
 			}
 			if err := json.NewDecoder(request.Body).Decode(&data); err != nil {
 				t.Error(err)
 				return
 			}
-			docs := make([]map[string]any, len(data.IDs))
-			for i, id := range data.IDs {
-				docs[i] = map[string]any{"_index": "records", "_id": id, "found": false}
+			docs := make([]map[string]any, len(data.Docs))
+			for i, document := range data.Docs {
+				if document.Index != "records" {
+					t.Error("unexpected pre-read index", document.Index)
+				}
+				docs[i] = map[string]any{"_index": document.Index, "_id": document.ID, "found": false}
 			}
 			reply := map[string]any{"docs": docs}
 			if err := json.NewEncoder(w).Encode(reply); err != nil {

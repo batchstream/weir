@@ -83,6 +83,22 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 						_, _ = w.Write(scanBatchReply(nil))
 						return
 					}
+					if r.URL.Path == "/_mget" {
+						var request struct {
+							Docs []struct {
+								Index string `json:"_index"`
+								ID    string `json:"_id"`
+							} `json:"docs"`
+						}
+						if json.NewDecoder(r.Body).Decode(&request) != nil || len(request.Docs) != 1 || request.Docs[0].Index != index || request.Docs[0].ID != "item" {
+							t.Error("mget changed the decoded target")
+							w.WriteHeader(500)
+							return
+						}
+						paths["/_mget"]++
+						fmt.Fprintf(w, `{"docs":[{"_index":%q,"_id":"item","found":false}]}`, index)
+						return
+					}
 					if !strings.HasPrefix(r.URL.EscapedPath(), escaped) || strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")[0] != index {
 						t.Errorf("index was decoded twice or split: %s", r.RequestURI)
 						w.WriteHeader(500)
@@ -93,8 +109,6 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 					switch suffix {
 					case "":
 						fmt.Fprintf(w, `{%q:{"settings":{"index.uuid":"test","index.number_of_shards":"1"},"mappings":{"_source":{"enabled":true}}}}`, index)
-					case "/_mget":
-						fmt.Fprintf(w, `{"docs":[{"_index":%q,"_id":"item","found":false}]}`, index)
 					case "/_pit":
 						fmt.Fprint(w, `{"id":"snapshot","_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}`)
 					case "/_search/point_in_time":
@@ -122,7 +136,7 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				observations := adapter.mgetIndex(context.Background(), index, []*execution.Plan{work})
+				observations := adapter.mget(context.Background(), []*execution.Plan{work})
 				if observations[0].failure != nil || *observations[0].reply.Found {
 					t.Fatal("decoded index/read mismatch", observations[0].failure)
 				}
@@ -220,7 +234,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			observations := adapter.mgetIndex(context.Background(), "records", []*execution.Plan{work})
+			observations := adapter.mget(context.Background(), []*execution.Plan{work})
 			if observations[0].failure.GetCode() != item.code {
 				t.Fatal("warm read classification", observations[0].failure)
 			}

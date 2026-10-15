@@ -59,7 +59,7 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 	// single records may grow beyond that window.
 	work.WorkingBytes = 3 * a.options().ExchangeBytes
 	native := work.Backend.(*plan)
-	work.BatchKey = native.index
+	work.BatchKey = "records"
 	if native.waitUntilVisible {
 		work.BatchKey += "|visible"
 	}

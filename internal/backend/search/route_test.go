@@ -21,7 +21,7 @@ func TestRouteCallRelativeTargetAndLargeRead(t *testing.T) {
 		switch r.URL.Path {
 		case "/records":
 			_, _ = io.WriteString(w, testIndexReply)
-		case "/records/_mget":
+		case "/_mget":
 			_, _ = fmt.Fprintf(w, `{"docs":[{"_index":"records","_id":"a","found":true,"_seq_no":1,"_primary_term":1,"_source":%s}]}`, source)
 		default:
 			t.Errorf("unexpected unbatched request %s", r.URL.Path)

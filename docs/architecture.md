@@ -111,7 +111,7 @@ with its own caller context and clock; no VM or caller state is reused.
 
 Each prepared record enters one Store scheduler directly; there is no timed
 collection window or polling. The
-scheduler combines compatible queued records by target, actual input bytes and
+scheduler combines compatible queued records by backend constraints, actual input bytes and
 batching.max_operations and batching.max_bytes. A session/resource key serializes same-resource work
 within a stream; distinct resources and streams can share a physical batch.
 Scan and Native use the same scheduler with their required singleton lifecycle.
@@ -135,9 +135,14 @@ first use, cached per Store according to `backend.mongodb.metadata_cache_entries
 one check. Failed checks are not cached. The oldest completed target is evicted
 when full. Structure must remain stable while the Store is open; changes require
 reopening the Store. Actual commands still enforce current database permissions.
-Search resolves and qualifies targets per operation without retaining completed
-metadata. A single-index alias binds that operation to its physical index;
-later operations observe alias changes. Multiple primary shards are supported.
+Search qualifies each distinct target once per adapter invocation without retaining
+completed metadata. It requests aliases, settings and the source/routing mapping
+controls, omitting unused field mappings. A single-index alias binds that operation
+to its physical index; later invocations observe alias changes. Multiple primary
+shards are supported. Compatible records from different indices share a batch;
+query-visible writes remain separate from application-only operations. Multi-get
+uses each record's concrete index and ID, and validates the whole response's
+positional correspondence before any document is used.
 
 The active batch set also enforces `batching.max_in_flight` when it is positive.
 Zero, the default, means unlimited. Once the budget is full, compatible waiting

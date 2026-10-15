@@ -26,11 +26,24 @@ func TestSingleIndexAliasPinsLuaCASAndVisibility(t *testing.T) {
 				index = "right"
 			}
 			fmt.Fprintf(w, `{%q:{"settings":{"index.uuid":%q,"index.number_of_shards":"3"},"aliases":{"catalog":{}},"mappings":{}}}`, index, index)
-		case "/left/_mget":
-			generation.Store(1)
-			fmt.Fprint(w, `{"docs":[{"_index":"left","_id":"item","found":true,"_seq_no":7,"_primary_term":2,"_source":{"n":1}}]}`)
-		case "/right/_mget":
-			fmt.Fprint(w, `{"docs":[{"_index":"right","_id":"item","found":true,"_seq_no":17,"_primary_term":3,"_source":{"n":10}}]}`)
+		case "/_mget":
+			var request struct {
+				Docs []struct {
+					Index string `json:"_index"`
+				} `json:"docs"`
+			}
+			if json.NewDecoder(r.Body).Decode(&request) != nil || len(request.Docs) != 1 {
+				t.Error("invalid alias pre-read")
+				return
+			}
+			if request.Docs[0].Index == "left" {
+				generation.Store(1)
+				fmt.Fprint(w, `{"docs":[{"_index":"left","_id":"item","found":true,"_seq_no":7,"_primary_term":2,"_source":{"n":1}}]}`)
+			} else if request.Docs[0].Index == "right" {
+				fmt.Fprint(w, `{"docs":[{"_index":"right","_id":"item","found":true,"_seq_no":17,"_primary_term":3,"_source":{"n":10}}]}`)
+			} else {
+				t.Error("alias was not pinned to a physical index", request.Docs[0].Index)
+			}
 		case "/_bulk":
 			var header map[string]struct {
 				Index    string `json:"_index"`
@@ -181,7 +194,7 @@ func TestOpenSearchScanUsesBackendSortCapability(t *testing.T) {
 		switch r.URL.Path {
 		case "/records":
 			fmt.Fprint(w, strings.Replace(testIndexReply, `"index.number_of_shards":"1"`, `"index.number_of_shards":"3"`, 1))
-		case "/records/_mget":
+		case "/_mget":
 			fmt.Fprint(w, `{"docs":[{"_index":"records","_id":"item","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
 		case "/records/_search/point_in_time":
 			pitRequests.Add(1)

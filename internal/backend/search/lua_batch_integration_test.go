@@ -40,8 +40,8 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 				writeAttempt := int32(0)
 				if strings.HasSuffix(r.URL.Path, "/_mget") {
 					readAttempt = reads.Add(1)
-					var request struct{ IDs []string }
-					if json.Unmarshal(body, &request) != nil {
+					ids, err := readMgetIDs(strings.NewReader(string(body)))
+					if err != nil {
 						t.Error("invalid mget body")
 						return
 					}
@@ -49,8 +49,8 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 					if readAttempt > 1 {
 						want = "changed"
 					}
-					if strings.Join(request.IDs, ",") != want {
-						t.Error("Lua conflict reread unrelated peer", request.IDs)
+					if strings.Join(ids, ",") != want {
+						t.Error("Lua conflict reread unrelated peer", ids)
 					}
 				}
 				if r.URL.Path == "/_bulk" {

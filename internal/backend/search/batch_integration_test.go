@@ -29,7 +29,7 @@ func TestSearchEveryRecordActionSharesNativeBatch(t *testing.T) {
 		switch r.URL.Path {
 		case "/" + backend.Index:
 			inspections.Add(1)
-		case "/" + backend.Index + "/_mget":
+		case "/_mget":
 			reads.Add(1)
 		case "/_bulk":
 			writes.Add(1)

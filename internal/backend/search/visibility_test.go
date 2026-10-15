@@ -32,14 +32,14 @@ func (f *visibilityFixture) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/records":
 		_, _ = io.WriteString(w, testIndexReply)
-	case "/records/_mget":
-		var request struct{ IDs []string }
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	case "/_mget":
+		ids, err := readMgetIDs(r.Body)
+		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		docs := make([]string, len(request.IDs))
-		for i, id := range request.IDs {
+		docs := make([]string, len(ids))
+		for i, id := range ids {
 			if id == "lua_missing" {
 				docs[i] = fmt.Sprintf(`{"_index":"records","_id":%q,"found":false}`, id)
 			} else {
