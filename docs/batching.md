@@ -29,23 +29,40 @@ invocations per Store. Explicit `max_wait: 0s` disables collection; explicit
 The existing Store queue is the waiting boundary; no extra HTTP queue or worker
 process is introduced.
 
-These values are the constrained selection from 20 count/wait/concurrency
-configurations and a four-point byte anchor in the
-[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/pull/30),
+These values come from the initial preregistered selection among 20
+count/wait/concurrency configurations and a four-point byte anchor in the
+[2026-10-16 tuning evidence](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/README.md),
 with the [selection audit retained at an immutable revision](https://github.com/batchstream/weir-tests/blob/3f47919befc8db3f8e612cc7e0f17feda16ad912/results/default-tuning-2026-10-16/analysis-selection-parser-fix/analysis.json).
-The frozen selector uses the declared workloads and qualification rules. Actual
+They are a finite workload choice, not a globally optimal value for each control.
+The selection rules were frozen before selection measurements. Actual
 default-path fixtures omit batching entirely and cross-check effective settings
-with all four runtime gauges. The [independent confirmation results](value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
+with all four runtime gauges.
+
+The later preregistered [20/40/80/160 ms study](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+holds count, bytes and executions fixed. Its result is inconclusive: the repeated
+20 ms crawler anchor fails backlog stability in round 3, and the 160 ms crawler's
+first round exceeds the three-second drain limit. Although 40 and 80 ms meet
+their individual gates, the registered comparison requires a qualified anchor.
+It proposes no new wait and does not prove that 20 ms beats the longer waits.
+The current 20 ms default remains the original finite selection.
+
+The [independent confirmation results](value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
 retain all 12 passed read guards against legacy Weir, the crawler CPU/latency
 tradeoff, MongoDB normalized comparisons and failed native partial-update cases. At a database
 quota of 0.25 CPU and 512 workers, pure Search writes complete 6.74–8.34 times
 native throughput at nearly the same measured database CPU in all three rounds.
+At comparable completed crawler throughput, actual database CPU falls by
+8.1–42.3%. These pure-write and crawler points pass the declared five-second
+p99 gate; higher crawler tail latency remains part of the result. Passing p99
+alone does not establish stable arrivals, acceptable drain or maximum capacity.
 The 64 KiB payload case observes 47.73–48.82 records per bulk and framed body
 means of 2.990–3.059 MiB; its throughput gain accompanies higher actual database
 CPU. Native access remains faster in the tested Search read cases and MongoDB
-reads with four workers. Capacity and longer-run confirmation remain pending.
+reads with four workers. The final registered longer-window capacity study
+remains pending.
 This finite selection does not establish a universal optimum or maximum
-sustainable throughput.
+sustainable throughput, and the five-second gate is not a general service
+guarantee.
 
 An execution slot includes metadata checks, pre-reads, Lua, writes and any requested
 visibility wait. A tiny limit can leave the database idle while writes wait for

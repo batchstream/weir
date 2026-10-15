@@ -24,16 +24,24 @@ and [payload contracts](docs/payloads.md) for the current contracts.
 
 The [current default selection and confirmation](docs/value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
 uses multiple OS client processes submitting native or Weir single-record calls.
-Defaults are 128 operations, 4MiB, 20ms write collection and 16 executions.
+Defaults are 128 operations, 4MiB, 20ms write collection and 16 executions,
+selected by the original finite workload study.
 Pure Search writes at a 0.25-CPU database quota and 512 workers complete
-6.74–8.34 times native throughput at nearly the same measured database CPU.
+6.74–8.34 times native throughput at nearly the same measured database CPU,
+with Weir p99 upper bounds of 295–328ms.
 All 12 read guards against legacy Weir pass; native access remains faster in
 the tested Search read cases and MongoDB reads with four workers. At comparable
 completed crawler throughput with a one-CPU database quota, database CPU falls
-by 8.1–42.3%, with higher reported p99
-latency. MongoDB write/mixed/Lua comparisons and invalid partial-update cases
-remain in the report. Capacity
-confirmation is pending; the selection is bounded by the tested workloads.
+by 8.1–42.3%, with higher Weir p99 upper bounds of 3.932–4.194s. These comparison
+points meet the declared five-second p99 gate. MongoDB write/mixed/Lua comparisons
+and invalid partial-update cases remain in the report.
+
+The later [20/40/80/160ms sensitivity study](https://github.com/batchstream/weir-tests/blob/2030036091b1f9c76e32c7b8c8f1dc5124441789/results/default-tuning-2026-10-16/WAIT-SENSITIVITY-RESULT.md)
+is inconclusive because its repeated 20ms crawler anchor fails backlog stability
+in one round. It establishes no winning wait or justified replacement for the
+original default. The final registered longer-window capacity study remains
+pending. No sustainable maximum, universal optimum or general five-second
+service guarantee has been established.
 
 The [historical Linux MongoDB/Search benchmark](docs/value-proof.md#sustained-linux-benchmark-2026-10-15)
 retains 94 paired comparisons, all rounds, raw evidence and grouping ablation.
