@@ -13,23 +13,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Limits controls batching and waiting work, not backend execution concurrency.
+// Limits bounds waiting work, physical batch size and per-Store adapter invocations.
 type Limits struct {
 	Scan                        execution.ScanLimits
 	CleanupTimeout              time.Duration
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
+	MaxInFlight                 int // Zero allows unlimited adapter invocations.
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 32, BatchBytes: 8 << 20, MaxInFlight: 0, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
 	return limits
 }
 
 func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
-		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.CleanupTimeout < 0 {
-		return fmt.Errorf("invalid batch or queue bounds")
+		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.CleanupTimeout < 0 {
+		return fmt.Errorf("invalid batch, execution or queue bounds")
 	}
 	if limits.Scan.Documents != 0 {
 		return limits.Scan.Validate()
@@ -371,6 +372,9 @@ func (r *Runtime) loop() {
 	}
 }
 func (r *Runtime) selectLocked(now time.Time) *batch {
+	if r.limits.MaxInFlight > 0 && len(r.batches) >= r.limits.MaxInFlight {
+		return nil
+	}
 	seen := make(map[resourceKey]bool)
 	records := make(map[string]bool)
 	selected := make(map[*Ticket]bool)

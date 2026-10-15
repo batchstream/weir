@@ -119,6 +119,54 @@ func TestForcedCloseUsesConfiguredCleanupBudget(t *testing.T) {
 	}
 }
 
+func TestForcedCloseCancelsQueuedWorkBehindFullExecutionBudget(t *testing.T) {
+	limits := DefaultLimits()
+	limits.MaxInFlight = 1
+	adapter := &forcedCloseAdapter{started: make(chan struct{})}
+	runtime, err := New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	activePlan := plan(1, "active", false)
+	active, failure, _ := runtime.Submit(ctx, activePlan, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer active.Ack()
+	select {
+	case <-adapter.started:
+	case <-ctx.Done():
+		t.Fatal("active invocation did not start")
+	}
+	queuedPlan := plan(2, "queued", false)
+	queued, failure, _ := runtime.Submit(ctx, queuedPlan, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer queued.Ack()
+	if snapshot := runtime.Snapshot(); snapshot.Active != 1 || snapshot.Pending != 1 {
+		t.Fatal("full execution budget did not retain queued work", snapshot)
+	}
+	shutdown, stop := context.WithCancel(t.Context())
+	stop()
+	if err := runtime.Close(shutdown); err != nil {
+		t.Fatal(err)
+	}
+	activeResult, err := active.Wait(ctx)
+	if err != nil || activeResult.GetMutationResult().GetOutcome() != pb.MutationOutcome_UNKNOWN {
+		t.Fatal("forced shutdown changed dispatched outcome evidence", activeResult, err)
+	}
+	queuedResult, err := queued.Wait(ctx)
+	if err != nil || queuedResult.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED || queuedResult.GetMutationResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+		t.Fatal("forced shutdown executed waiting work or lost its outcome", queuedResult, err)
+	}
+	if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Pending != 0 || snapshot.WorkingBytes != 0 || snapshot.PendingBytes != 0 {
+		t.Fatal("forced shutdown retained execution or waiting credit", snapshot)
+	}
+}
+
 func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
 	for _, work := range plans {
 		outcome := pb.MutationOutcome_APPLIED

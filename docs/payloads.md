@@ -72,6 +72,12 @@ explicit `weir.keep()`, `weir.delete()` or `weir.reject(message)` action. Nil,
 missing returns, multiple returns and scalar results are errors. Reject returns
 `NOT_APPLIED/PRECONDITION_FAILED`.
 
+Returning an unchanged ordinary document succeeds without a replacement write.
+MongoDB compares the encoded BSON, including its value types and field order;
+Search compares the losslessly encoded JSON. A missing document still requires
+creation, even when the returned object is empty. Search query-visible completion
+retains its visibility barrier when no replacement is needed.
+
 `weir.object()` and `weir.array()` construct explicitly typed empty containers;
 an unmarked empty `{}` is an object. Unmarked nonempty tables with dense integer
 keys starting at 1 are arrays; tables with string keys are objects. Mixed keys,

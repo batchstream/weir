@@ -243,7 +243,7 @@ finished:
 func TestBlockedScanReleasesOnlyExecutionPermitAtConcurrencyOne(t *testing.T) {
 	adapter := &scanTestAdapter{pages: 5, documents: execution.ScanBatchDocuments}
 	limits := DefaultLimits()
-
+	limits.MaxInFlight = 1
 	runtime, err := New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)

@@ -12,13 +12,13 @@ import (
 const queueRoutingPrefix = "stores:\n  - name: records\n    backend:\n      mongodb:\n        uri: mongodb://127.0.0.1:27017/?directConnection=true\n"
 
 func TestBatchAndQueueConfigurationRoundTrip(t *testing.T) {
-	input := queueRoutingPrefix + "    batching:\n      max_operations: 128\n      max_bytes: 16MiB\n    queue:\n      max_operations: 4096\n      max_bytes: 256MiB\n"
+	input := queueRoutingPrefix + "    batching:\n      max_operations: 128\n      max_bytes: 16MiB\n      max_in_flight: 7\n    queue:\n      max_operations: 4096\n      max_bytes: 256MiB\n"
 	routing, err := DecodeRouting(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	limits := routing.Stores[0].runtimeLimits()
-	if limits.BatchOperations != 128 || limits.BatchBytes != 16<<20 || limits.QueueOperations != 4096 || limits.QueueBytes != 256<<20 {
+	if limits.BatchOperations != 128 || limits.BatchBytes != 16<<20 || limits.MaxInFlight != 7 || limits.QueueOperations != 4096 || limits.QueueBytes != 256<<20 {
 		t.Fatal(limits)
 	}
 	encodedYAML, err := yaml.Marshal(routing)
@@ -45,6 +45,8 @@ func TestBatchQueueBoundsRejectInvalidConfiguration(t *testing.T) {
 		"    queue:\n      max_bytes: 9223372036854775808B\n",
 		"    batching:\n      max_bytes: 0B\n",
 		"    batching:\n      max_operations: -1\n",
+		"    batching:\n      max_in_flight: -1\n",
+		"    batching:\n      max_in_flight: '4'\n",
 	} {
 		if _, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + fragment)); err == nil {
 			t.Fatal("invalid capacity accepted", fragment)

@@ -91,6 +91,7 @@ type BackendTLS struct {
 type BatchingConfig struct {
 	MaxOperations int       `json:"max_operations" yaml:"max_operations"`
 	MaxBytes      *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
+	MaxInFlight   int       `json:"max_in_flight" yaml:"max_in_flight"`
 }
 
 type ScanConfig struct {
@@ -394,7 +395,8 @@ func (l *Local) runtimeLimits() store.Limits {
 	limits := store.Limits{
 		QueueOperations: l.Queue.MaxOperations, QueueBytes: boundedSize(*l.Queue.MaxBytes),
 		BatchOperations: l.Batching.MaxOperations, BatchBytes: boundedSize(*l.Batching.MaxBytes),
-		Scan: l.backendOptions().Scan, CleanupTimeout: backend.DefaultOptions().CleanupTimeout,
+		MaxInFlight: l.Batching.MaxInFlight,
+		Scan:        l.backendOptions().Scan, CleanupTimeout: backend.DefaultOptions().CleanupTimeout,
 	}
 	return limits
 }

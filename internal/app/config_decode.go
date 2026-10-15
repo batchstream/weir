@@ -202,7 +202,7 @@ func validateConfigYAML(node *yaml.Node, allowNull bool, field string) error {
 		case yaml.ScalarNode:
 			expectedTag := "!!str"
 			switch frame.field {
-			case "retry_attempts", "max_connecting", "max_operations", "max_pending_records", "max_batch_documents", "max_instructions", "max_call_depth", "max_stack_slots", "max_depth", "max_nodes", "metadata_cache_entries", "high_watermark", "low_watermark":
+			case "retry_attempts", "max_connecting", "max_operations", "max_in_flight", "max_pending_records", "max_batch_documents", "max_instructions", "max_call_depth", "max_stack_slots", "max_depth", "max_nodes", "metadata_cache_entries", "high_watermark", "low_watermark":
 				expectedTag = "!!int"
 			case "allow_intranet":
 				expectedTag = "!!bool"

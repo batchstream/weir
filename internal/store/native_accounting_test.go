@@ -39,7 +39,9 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 			endValue := &pb.Event_NativeEnd{NativeEnd: end}
 			endEvent := &pb.Event{Value: endValue}
 			adapter := &nativeAccountingAdapter{events: []*pb.Event{headEvent, endEvent}}
-			runtime := newRuntime(adapter, DefaultLimits())
+			limits := DefaultLimits()
+			limits.MaxInFlight = 1
+			runtime := newRuntime(adapter, limits)
 			session := runtime.NewSession()
 			defer session.Close()
 			ctx, cancel := context.WithCancel(t.Context())

@@ -45,3 +45,44 @@ func nativeCall() *pb.Command {
 	command := &pb.Command{Operation: variant}
 	return command
 }
+
+func TestBlockedNativeLeavesOtherExecutionCreditAvailable(t *testing.T) {
+	limits := DefaultLimits()
+	limits.MaxInFlight = 2
+	adapter := &nonScanContinuationAdapter{}
+	runtime, err := New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(context.Background())
+	session := runtime.NewSession()
+	defer session.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	nativePlan := plan(1, "native", false)
+	nativePlan.Command = nativeCall()
+	_, failure, _ := runtime.Submit(ctx, nativePlan, session)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	var blocked *Emission
+	select {
+	case blocked = <-session.Events:
+	case <-ctx.Done():
+		t.Fatal("Native output did not reach the consumer")
+	}
+	defer blocked.Release()
+	ordinary := plan(2, "record", false)
+	ticket, failure, _ := runtime.Submit(ctx, ordinary, nil)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	result, err := ticket.Wait(ctx)
+	if err != nil || result.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+		t.Fatal("one blocked Native call monopolized both execution credits", result, err)
+	}
+	ticket.Ack()
+	if snapshot := runtime.Snapshot(); snapshot.Active != 1 {
+		t.Fatal("Native output did not retain its own execution credit", snapshot)
+	}
+}

@@ -70,6 +70,13 @@ no configurable memory budget or startup reservation.
 
 Business RPCs and backend IO inherit caller contexts. Transport progress,
 connection establishment, keepalive and cleanup have separate controls.
+`batching.max_in_flight` controls simultaneous adapter invocations independently
+for each Store. It defaults to `0` (unlimited); positive integers retain excess work
+in the bounded queue for natural batching and admission backpressure. Execution
+completion returns the credit without waiting for consumer acknowledgement. The
+budget includes Search visibility waits and Native streaming, so use the actual
+visibility and traffic pattern when evaluating `1`, `4` or `16`. A smaller budget
+does not by itself prove lower database load or higher throughput.
 Diagnostics uses an independent HTTP listener; readiness describes node lifecycle,
 rather than backend health. Directory records carry Store names and public
 endpoints, without backend credentials.

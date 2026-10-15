@@ -19,6 +19,7 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
     batching:
       max_operations: 256
       max_bytes: 64MiB
+      max_in_flight: 11
     queue:
       max_operations: 8192
       max_bytes: 256MiB
@@ -37,7 +38,7 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 		t.Fatal(settings)
 	}
 	limits := local.runtimeLimits()
-	if limits.BatchOperations != 256 || limits.BatchBytes != 64<<20 || limits.QueueOperations != 8192 || limits.QueueBytes != 256<<20 || limits.Scan != settings.Scan {
+	if limits.BatchOperations != 256 || limits.BatchBytes != 64<<20 || limits.MaxInFlight != 11 || limits.QueueOperations != 8192 || limits.QueueBytes != 256<<20 || limits.Scan != settings.Scan {
 		t.Fatal(limits)
 	}
 	encoded, err := json.Marshal(cfg)

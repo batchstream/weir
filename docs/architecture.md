@@ -75,7 +75,8 @@ contains only public ownership/address advertisements, never backend credentials
 | Native input and output | Native backend boundary; no Weir size quota |
 | Store waiting queue | 1024 operations / 32 MiB, configurable via queue |
 | Physical batch input | 32 operations / 8 MiB, configurable |
-| Business connections, RPCs and active executions | No Weir concurrency limit |
+| Active adapter invocations per Store | Unlimited by default; configurable via batching.max_in_flight |
+| Business connections and RPCs | No separate Weir concurrency limit |
 | Process memory capacity | Automatically detected from host/process/container limits |
 
 The waiting queue counts prepared input and scheduler metadata. Dispatch releases
@@ -138,14 +139,29 @@ Search resolves and qualifies targets per operation without retaining completed
 metadata. A single-index alias binds that operation to its physical index;
 later operations observe alias changes. Multiple primary shards are supported.
 
-The active batch set measures execution concurrency without capping it. There is
-no Store workspace ceiling or backend connection-pool maximum. Transport failures
-do not replay mutations; confirmed conflicts and aborts can retry within the
+The active batch set also enforces `batching.max_in_flight` when it is positive.
+Zero, the default, means unlimited. Once the budget is full, compatible waiting
+records stay in the bounded queue until an adapter invocation finishes. They form
+batches naturally, without a collection timer. Credit returns at execution completion,
+independently of result acknowledgement. Each Store owns its budget; the oldest
+eligible queued plan chooses the next batch's key, so newer traffic for another key
+cannot continually bypass it. No Store workspace ceiling or backend connection-pool
+maximum is imposed. Transport failures do not replay mutations; confirmed conflicts
+and aborts can retry within the
 participating caller contexts. Waiting work is bounded by queue count and bytes.
+
+The budget covers the whole adapter invocation, including Search `refresh=wait_for`
+and synchronous Native output. It cannot distinguish waiting for visibility from
+database application; a small budget can therefore reduce visible-write throughput.
+Long Native calls should use a separate Store when isolation from record traffic is
+required. Scan releases credit before publication and queues its next page at the
+tail after the consumer releases the previous page. Abandoning all callers cancels
+an invocation but returns its credit only when the adapter actually stops.
 
 Metrics observe execution rather than control scheduling.
 Queue occupancy and capacity metrics describe waiting operations. Active execution
-and per-record outcome counters retain actual backend evidence, including unknown writes.
+limits report zero for unlimited operation. Execution and per-record outcome counters
+retain actual backend evidence, including unknown writes.
 
 Scan fetches up to `scan.max_batch_documents` (default 128) per backend
 call, bounded by the remaining logical page size. It validates the complete native response and retains an
