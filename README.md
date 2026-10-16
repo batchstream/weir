@@ -242,7 +242,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.15.0`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.16.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -273,8 +273,8 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/basic)
-and [native](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/native) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.16.0/examples/basic)
+and [native](https://github.com/batchstream/weir-go/tree/v0.16.0/examples/native) examples
 initialize through a seed. Read and Mutate accept batches for one Store and use
 one bidirectional Execute RPC, with indexed results in input order. There is no
 whole-call byte or item-count limit; each wire request carries one record.
@@ -282,7 +282,7 @@ Resources are canonical relative paths. ReadStream and MutateStream accept an
 incremental producer and consumer so callers can avoid retaining the full input
 and output. The slice convenience methods accumulate results in client memory.
 The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform
-and Native methods. It pins public protocol v0.13.0. Advanced fixed-owner callers
+and Native methods. It pins public protocol v0.14.0. Advanced fixed-owner callers
 can use Dial and package-level business helpers.
 
 The SDK validates slice inputs before sending them. The server validates each
