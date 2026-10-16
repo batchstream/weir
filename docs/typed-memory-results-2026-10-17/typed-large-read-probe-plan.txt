@@ -1,0 +1,44 @@
+DIAGNOSTIC ONLY. Not formal qualification. Prepared only; not built or run.
+Do not execute until the root explicitly opens an isolated DB/CPU window after
+the formal/fault run and PR80 merge. No production source is changed by this overlay.
+
+Frozen reference C0:
+  source fde3b1775b0a36dbb4f4044be1299f731db43314
+  SHA256 795601c60e8f4398a8108843939361032f88249acc8f75ee42ae322ca7269c79
+  receipt .testdata/reliability-2026-10-16/production-qualification-final-build.json
+
+Prerequisites when authorized:
+  Existing explicitly owned plain MongoDB fixture, replica set weir_local,
+  host port 27028. testmongo.Open checks hello and creates/drops a fresh DB.
+  Cached pinned busybox:1.37.0 native Linux arm64 Docker fixture.
+  Frozen C0 CLI binary must remain at the path in its receipt with its exact hash.
+
+Pressure scenario for each fresh 512MiB and 1GiB real CLI container:
+  One Mongo Store and all scheduler/overload limits at defaults.
+  Automatic CLI Go runtime memory management left enabled.
+  Exactly 32 different IDs; 12MiB string per document; BSON length/hash recorded.
+  32 streams opened before a common Send barrier, one typed Read per stream.
+  Static 64KiB stream and 4MiB connection windows, retries disabled.
+  No Recv for three seconds; then bounded reception for ID/hash verification.
+  All callers share a five-second deadline. No request replenishment or flood.
+  Metrics failures remain evidence, never abort the diagnostic on process death.
+  memory.events and narrow Docker OOMKilled/ExitCode sampled during pressure.
+  Final state saved before shared fixture cleanup removes the container.
+
+OOM is a diagnostic finding, not a successful production acceptance result.
+The existing owned-container helper deliberately reports OOM/nonzero CLI exits
+as test errors even though a JSON evidence receipt is still written.
+If metrics are lost before death, Docker OOMKilled=true is the OOM evidence;
+missing metrics or an estimated byte total alone is never labelled OOM.
+
+Authorized run command (also compiles the host test driver; DO NOT RUN YET):
+  WEIR_INTEGRATION=1 WEIR_TYPED_LARGE_DIAGNOSTIC=1 \
+  WEIR_TYPED_LARGE_RECEIPT="$PWD/.testdata/reliability-2026-10-16/production-qualification-final-build.json" \
+  WEIR_TYPED_LARGE_OUTPUT_DIR="$PWD/.testdata/resource-audit-20261016" \
+  GOPROXY=off go test -overlay .testdata/resource-audit-20261016/typed-large-read-overlay.json \
+  -tags=integration ./internal/app -run '^TestDiagnosticCLITypedLargeReadBurst$' \
+  -count=1 -timeout=3m -v
+
+The three-second hold can finish up to one 300ms observation later; every RPC
+still has the original five-second deadline. Setup/seeding and owned-container
+cleanup are outside the pressure window.

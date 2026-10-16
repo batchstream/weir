@@ -13,7 +13,14 @@ import (
 )
 
 func prepareTestRecord(adapter *Adapter, operation *pb.ExecuteRequest) (*execution.Plan, *pb.Failure) {
-	return testrecords.Prepare(context.Background(), adapter, adapter.config.Store, operation)
+	work, failure := testrecords.Prepare(context.Background(), adapter, adapter.config.Store, operation)
+	if failure == nil {
+		failure = adapter.validateRecord(context.Background(), work)
+	}
+	if failure != nil {
+		return nil, failure
+	}
+	return work, nil
 }
 
 func testHTTPAdapter(t *testing.T, handler http.HandlerFunc) *Adapter {

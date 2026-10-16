@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type ExecutionSnapshot struct {
@@ -26,7 +27,7 @@ func (s *Server) Snapshot() ExecutionSnapshot {
 
 // RecordStreamItems bounds admitted and publishing records per stream. Store
 // queue capacity bounds waiting inputs; active results follow stream backpressure.
-const RecordStreamItems = 32
+const RecordStreamItems = execution.RecordStreamItems
 
 // Execute consumes single requests while the shared Store scheduler aggregates
 // database work. Results are published in input order without waiting for EOF.
@@ -207,7 +208,7 @@ func (s *Server) publishRecord(stream grpc.BidiStreamingServer[pb.ExecuteRequest
 	if event == nil {
 		return status.Error(codes.Internal, "missing record result")
 	}
-	return s.sendEvent(stream, event, index)
+	return s.sendEvent(stream, event, index, ticket)
 }
 
 func commandKind(command *pb.Command) string {
@@ -236,13 +237,13 @@ func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteReques
 	ctx := stream.Context()
 	plan, failure := runtime.PrepareCommand(ctx, 1, command)
 	if failure != nil {
-		return s.sendEvent(stream, failedCommand(failure), 1)
+		return s.sendEvent(stream, failedCommand(failure), 1, nil)
 	}
 	session := runtime.NewSession()
 	defer session.Close()
 	ticket, failure := s.submitPlan(ctx, runtime, plan, session)
 	if failure != nil {
-		return s.sendEvent(stream, failedCommand(failure), 1)
+		return s.sendEvent(stream, failedCommand(failure), 1, nil)
 	}
 	for {
 		select {
@@ -257,7 +258,7 @@ func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteReques
 				ticket.Ack()
 				return nil
 			}
-			err := s.sendEvent(stream, emission.Event, 1)
+			err := s.sendEvent(stream, emission.Event, 1, ticket)
 			emission.Release()
 			if err != nil {
 				return err
@@ -273,17 +274,34 @@ func failedCommand(failure *pb.Failure) *pb.Event {
 	return event
 }
 
-func (s *Server) sendEvent(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], event *pb.Event, index uint64) error {
+func (s *Server) sendEvent(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], event *pb.Event, index uint64, ticket *store.Ticket) error {
 	response := &pb.ExecuteResponse{Index: index, Event: event}
 	if err := protocol.ValidateExecuteResponse(response); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
+	capacity := max(proto.Size(response), execution.MinimumWireBytes)
+	var reservation *store.WireReservation
+	var err error
+	if ticket == nil {
+		reservation, err = s.admission.memory.ReserveWire(capacity)
+	} else {
+		reservation, err = ticket.ReserveWire(capacity)
+	}
+	if err != nil {
+		return status.Error(codes.ResourceExhausted, execution.ErrExecutionMemory.Error())
+	}
+	s.admission.reservations.Store(response, reservation)
+	defer func() {
+		if reserved, ok := s.admission.reservations.LoadAndDelete(response); ok {
+			reserved.(*store.WireReservation).Release()
+		}
+	}()
 	timer := time.AfterFunc(s.limits.Stall, func() {
 		s.metrics.watchdogs.WithLabelValues("output").Inc()
 		s.abortPeer(stream.Context())
 	})
 	defer timer.Stop()
-	err := stream.Send(response)
+	err = stream.Send(response)
 	timer.Stop()
 	if value, ok := s.admission.responses.Load(response); ok {
 		owner := value.(*responseBufferOwner)

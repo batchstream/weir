@@ -6,6 +6,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/value"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -48,9 +49,9 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		return nil, failure
 	}
 	work.ID = record.Index()
-	// Reserve initial parsing work from the scheduling window; larger
-	// single records may grow beyond that window.
-	work.WorkingBytes = 3 * a.options().ExchangeBytes
+	// Known input/framing copies add up; response growth is approved before allocation.
+	work.IOReserve = 64 << 10
+	work.WorkingBytes = 2*record.Bytes() + execution.EntryOverheadBytes
 	native := work.Backend.(*plan)
 	work.BatchKey = "records"
 	if native.waitUntilVisible {
@@ -66,6 +67,15 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 	work := works[0]
 	if work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
 		results := a.executeRecords(ctx, works)
+		for _, entry := range works {
+			if program := entry.Backend.(*plan).program; program != nil {
+				program.Source = ""
+				program.Input = value.Value{Kind: value.Missing}
+			}
+		}
+		if work.Memory != nil {
+			_ = work.Memory.SetWorking(0)
+		}
 		for i, result := range results {
 			_ = emit(works[i], result)
 		}

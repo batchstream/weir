@@ -38,7 +38,7 @@ func (limits Limits) Validate() error {
 type Runtime struct {
 	mu                                      sync.Mutex
 	adapter                                 execution.Adapter
-	nativeMemory                            *NativeMemory
+	memory                                  *ExecutionMemory
 	limits                                  Limits
 	queue                                   []*Ticket
 	queueHead, queueTail                    *Ticket
@@ -77,7 +77,8 @@ func (e *Emission) Release() {
 
 type Ticket struct {
 	publishing       bool
-	nativeLease      *nativeLease
+	executionLease   *executionLease
+	batch            *batch
 	blocked          bool
 	runtime          *Runtime
 	session          *Session
@@ -104,6 +105,7 @@ type resourceKey struct {
 type batch struct {
 	runtime      *Runtime
 	native       *Ticket
+	owner        *executionLease
 	io           bool
 	readWindow   int
 	ctx          context.Context
@@ -126,7 +128,7 @@ type Snapshot struct {
 	Draining, Closed, Overloaded          bool
 }
 
-func New(adapter execution.Adapter, limits Limits, memory *NativeMemory) (*Runtime, error) {
+func New(adapter execution.Adapter, limits Limits, memory *ExecutionMemory) (*Runtime, error) {
 	if adapter == nil {
 		return nil, fmt.Errorf("missing adapter")
 	}
@@ -138,17 +140,17 @@ func New(adapter execution.Adapter, limits Limits, memory *NativeMemory) (*Runti
 	go runtime.loop()
 	return runtime, nil
 }
-func newRuntime(adapter execution.Adapter, limits Limits, memory *NativeMemory) *Runtime {
+func newRuntime(adapter execution.Adapter, limits Limits, memory *ExecutionMemory) *Runtime {
 	if limits.CleanupTimeout == 0 {
 		limits.CleanupTimeout = DefaultLimits().CleanupTimeout
 	}
 	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[resourceKey]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
 	if memory == nil {
-		memory = NewNativeMemory()
+		memory = NewExecutionMemory()
 		guard := overload.New(nil, overload.DefaultLimits())
 		memory.ObserveMemory(guard.Snapshot())
 	}
-	runtime.nativeMemory = memory
+	runtime.memory = memory
 	memory.register(runtime.wake)
 	runtime.metrics = newRuntimeMetrics()
 	return runtime
@@ -157,6 +159,8 @@ func (r *Runtime) NewSession() *Session {
 	session := &Session{runtime: r}
 	return session
 }
+
+func (r *Runtime) ExecutionMemory() *ExecutionMemory { return r.memory }
 
 func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	plan, failure := r.adapter.PrepareRecord(ctx, record)
@@ -203,27 +207,18 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid execution accounting"), changed
 	}
 	if !r.queueCapacityLocked(plan) {
-		if session == nil || singleton {
-			r.metrics.rejections.WithLabelValues("capacity").Inc()
-		}
-		if singleton {
-			// Native callers must wait only after their input has a bounded lease.
-			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), nil
-		}
-		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
+		r.metrics.rejections.WithLabelValues("capacity").Inc()
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), nil
 	}
-	var nativeLease *nativeLease
-	if singleton {
-		var failure *pb.Failure
-		nativeLease, failure = r.nativeMemory.admit(plan)
-		if failure != nil {
-			return nil, failure, nil
-		}
+	lease, failure := r.memory.admit(plan)
+	if failure != nil {
+		return nil, failure, nil
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
 	ownedPlan := *plan
 	ownedPlan.Context = ticketContext
-	ticket := &Ticket{nativeLease: nativeLease, runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: &ownedPlan, ready: make(chan struct{}), queuedAt: time.Now()}
+	ticket := &Ticket{executionLease: lease, runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: &ownedPlan, ready: make(chan struct{}), queuedAt: time.Now()}
+	ownedPlan.Memory = ticket
 	if session != nil && ownedPlan.Command.GetNative() != nil && session.Events == nil {
 		session.Events = make(chan *Emission, 1)
 	}
@@ -310,6 +305,48 @@ func (t *Ticket) Wait(ctx context.Context) (*pb.Event, error) {
 		return nil, ctx.Err()
 	}
 }
+
+func (t *Ticket) SetWorking(bytes int) error {
+	r := t.runtime
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t.batch == nil {
+		return execution.ErrExecutionMemory
+	}
+	b := t.batch
+	if err := b.owner.setWorking(bytes); err != nil {
+		return err
+	}
+	r.workingBytes += bytes - b.workingBytes
+	b.workingBytes = bytes
+	return nil
+}
+
+func (t *Ticket) ReserveResult(bytes int) error {
+	r := t.runtime
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t.plan == nil {
+		return execution.ErrExecutionMemory
+	}
+	if err := t.executionLease.reserveResult(bytes); err != nil {
+		return err
+	}
+	bytes = max(bytes, execution.ResultOverheadBytes)
+	r.resultBytes += bytes - t.plan.ResultBytes
+	t.plan.ResultBytes = bytes
+	return nil
+}
+
+func (t *Ticket) ReserveWire(bytes int) (*WireReservation, error) {
+	r := t.runtime
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t.executionLease == nil {
+		return nil, execution.ErrExecutionMemory
+	}
+	return t.executionLease.reserveWire(bytes)
+}
 func (t *Ticket) Ack() {
 	r := t.runtime
 	r.mu.Lock()
@@ -362,35 +399,42 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 		return
 	}
 	delete(r.live, t)
-	if t.nativeLease != nil {
-		t.nativeLease.release()
-		t.nativeLease = nil
+	if t.executionLease != nil {
+		t.executionLease.release()
+		t.executionLease = nil
 	}
 	r.resultBytes -= t.plan.ResultBytes
 	t.plan = nil
 	t.event = nil
 }
 func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
-	if t.nativeLease != nil {
+	if t.plan.Command.GetNative() != nil {
 		if event == nil {
 			failure := protocol.ContextFailure(t.ctx)
 			end := protocol.NativeFailure(false, failure)
 			value := &pb.Event_NativeEnd{NativeEnd: end}
 			event = &pb.Event{Value: value}
 		}
-		if err := t.nativeLease.terminal(proto.Size(event)); err != nil {
+		if err := t.executionLease.terminal(proto.Size(event)); err != nil {
 			started := event.GetNativeEnd().GetCompletion() != pb.NativeCompletion_NATIVE_NOT_STARTED
-			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errNativeMemory.Error())
+			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error())
 			end := protocol.NativeFailure(started, failure)
 			value := &pb.Event_NativeEnd{NativeEnd: end}
 			event = &pb.Event{Value: value}
 			// Every admitted lease already owns a fixed terminal window;
 			// this fixed failure fits without borrowing further capacity.
-			_ = t.nativeLease.terminal(proto.Size(event))
+			_ = t.executionLease.terminal(proto.Size(event))
 		}
 		result := proto.Size(event) + execution.ResultOverheadBytes
 		r.resultBytes += result - t.plan.ResultBytes
 		t.plan.ResultBytes = result
+	} else {
+		if err := t.executionLease.finishResult(proto.Size(event)+execution.ResultOverheadBytes, event.GetReadResult().GetDocument() != nil); err != nil {
+			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error())
+			event = execution.FailedEvent(t.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			_ = t.executionLease.finishResult(execution.ResultOverheadBytes, false)
+		}
+		t.executionLease.markTerminal()
 	}
 	r.terminalLocked(t, event)
 	t.state = 2
@@ -437,7 +481,7 @@ func (r *Runtime) cancelQueuedLocked() {
 }
 func (r *Runtime) loop() {
 	defer close(r.done)
-	defer r.nativeMemory.unregister(r.wake)
+	defer r.memory.unregister(r.wake)
 	var timer *time.Timer
 	var tick <-chan time.Time
 	defer func() {
@@ -704,7 +748,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	}
 	if r.resumeHead != nil && (chosen == nil || r.resumeHead.resumeOrder < chosen.items[0].order) {
 		b := r.resumeHead
-		started, waiting := b.native.nativeLease.beginRead(b.readWindow)
+		started, waiting := b.native.executionLease.beginRead(b.readWindow)
 		if !started && waiting {
 			if chosen == nil {
 				return nil, next
@@ -715,7 +759,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 				r.releasePauseLocked(b)
 				b.io = true
 			} else {
-				b.resumeErr = errNativeMemory
+				b.resumeErr = errExecutionMemory
 			}
 			close(b.resume)
 			b.resume = nil
@@ -728,25 +772,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	}
 	items := chosen.items
 	seed := items[0]
-	if seed.nativeLease != nil {
-		started, waiting := seed.nativeLease.start(seed.plan.WorkingBytes, seed.plan.IOReserve)
-		if !started {
-			r.candidates = nil
-			if waiting {
-				seed.blocked = true
-			} else {
-				r.dequeueLocked(seed)
-				failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errNativeMemory.Error())
-				end := protocol.NativeFailure(false, failure)
-				value := &pb.Event_NativeEnd{NativeEnd: end}
-				event := &pb.Event{Value: value}
-				r.completeLocked(seed, event)
-				r.startPublisherLocked(seed)
-			}
-			return r.selectLocked(now)
-		}
-	}
-	workingBytes := 0
+	workingBytes, reserve := 0, 0
 	var latest time.Time
 	allBounded := true
 	for _, ticket := range items {
@@ -754,12 +780,39 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 			r.cancelQueuedLocked()
 			return nil, next
 		}
-		workingBytes = max(workingBytes, ticket.plan.WorkingBytes)
+		workingBytes += ticket.plan.WorkingBytes
+		reserve = max(reserve, ticket.plan.IOReserve)
 		deadline, bounded := ticket.ctx.Deadline()
 		allBounded = allBounded && bounded
 		if deadline.After(latest) {
 			latest = deadline
 		}
+	}
+	if seed.plan.Command.GetNative() == nil {
+		workingBytes += reserve
+	}
+	started, waiting := seed.executionLease.start(workingBytes, reserve)
+	if !started {
+		r.candidates = nil
+		for _, ticket := range items {
+			if waiting {
+				ticket.blocked = true
+				continue
+			}
+			r.dequeueLocked(ticket)
+			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error())
+			if ticket.plan.Command.GetNative() != nil {
+				end := protocol.NativeFailure(false, failure)
+				value := &pb.Event_NativeEnd{NativeEnd: end}
+				event := &pb.Event{Value: value}
+				r.completeLocked(ticket, event)
+				r.startPublisherLocked(ticket)
+			} else {
+				event := execution.FailedEvent(ticket.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
+				r.completeLocked(ticket, event)
+			}
+		}
+		return r.selectLocked(now)
 	}
 	// A shared batch lives while any caller remains interested. An unbounded
 	// caller must not inherit another caller's deadline. Per-plan contexts still
@@ -773,8 +826,8 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	} else {
 		ctx, cancel = context.WithCancel(context.Background())
 	}
-	b := &batch{runtime: r, io: true, ctx: ctx, items: items, cancel: cancel, workingBytes: workingBytes}
-	if seed.nativeLease != nil {
+	b := &batch{runtime: r, owner: seed.executionLease, io: true, ctx: ctx, items: items, cancel: cancel, workingBytes: workingBytes}
+	if seed.plan.Command.GetNative() != nil {
 		b.native = seed
 		seed.plan.NativeIO = b
 	}
@@ -787,6 +840,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 		r.dequeueLocked(ticket)
 		r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(ticket.queuedAt).Seconds())
 		ticket.state = 1
+		ticket.batch = b
 		if ticket.session != nil && ticket.plan.Command.GetMutate() != nil && ticket.plan.Key != "" {
 			key := resourceKey{session: ticket.session, resource: ticket.plan.Key}
 			r.keys[key] = ticket
@@ -825,7 +879,7 @@ func (r *Runtime) emitNative(b *batch, ticket *Ticket, event *pb.Event) error {
 	if event.GetNativeEnd() != nil {
 		if err := b.EndIO(ticket.plan.WorkingBytes, proto.Size(event)); err != nil {
 			started := event.GetNativeEnd().Completion != pb.NativeCompletion_NATIVE_NOT_STARTED
-			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errNativeMemory.Error())
+			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error())
 			end := protocol.NativeFailure(started, failure)
 			value := &pb.Event_NativeEnd{NativeEnd: end}
 			event = &pb.Event{Value: value}
@@ -844,19 +898,19 @@ func (r *Runtime) emitNative(b *batch, ticket *Ticket, event *pb.Event) error {
 }
 
 func (b *batch) GrowIO(working int) error {
-	m := b.native.nativeLease.memory
+	m := b.native.executionLease.memory
 	m.mu.Lock()
-	m.reserve = max(m.reserve, uint64(b.native.plan.IOReserve))
+	m.reserve = max(m.reserve, uint64(b.native.plan.IOReserve)+executionProgressReserve)
 	m.resizeInputLocked()
 	m.mu.Unlock()
-	return b.native.nativeLease.grow(working)
+	return b.native.executionLease.grow(working)
 }
 
 func (b *batch) EndIO(working, eventBytes int) error {
 	r := b.runtime
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := b.native.nativeLease.settle(working, eventBytes); err != nil {
+	if err := b.native.executionLease.settle(working, eventBytes); err != nil {
 		return err
 	}
 	r.workingBytes += working - b.workingBytes
@@ -1017,6 +1071,12 @@ func (r *Runtime) execute(b *batch) {
 		}
 	}
 	r.workingBytes -= b.workingBytes
+	if b.native == nil {
+		b.owner.finishWorking()
+	}
+	for _, ticket := range b.items {
+		ticket.batch = nil
+	}
 	if b.pausedBytes != 0 {
 		if b.resume != nil {
 			r.removeResumeLocked(b)

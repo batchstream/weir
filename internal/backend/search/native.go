@@ -46,7 +46,7 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	}
 	working, valid := a.nativeRequestWorking(frame, request.Resource)
 	if !valid {
-		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error())
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error())
 	}
 
 	native := &nativePlan{resource: request.Resource, raw: request.Request.Data, working: working}
@@ -170,7 +170,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	}
 	if p.NativeIO != nil {
 		if err := p.NativeIO.GrowIO(nativeBudget + native.working); err != nil {
-			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error()))
+			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error()))
 		}
 	}
 	d, nativeBody, failure := parseNativeHTTPRequest(native.raw)
@@ -219,8 +219,8 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	response, err := a.nativeClient.Do(request)
 	headerMemory.finish()
 	if err != nil {
-		if errors.Is(err, execution.ErrNativeMemory) {
-			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error()))
+		if errors.Is(err, execution.ErrExecutionMemory) {
+			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error()))
 		}
 		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete"))
 	}
@@ -346,8 +346,8 @@ func nativeExchangeFailure(ctx context.Context, message string) *pb.Failure {
 }
 
 func nativeMemoryFailure(err error) *pb.NativeEnd {
-	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error())
-	if !errors.Is(err, execution.ErrNativeMemory) {
+	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error())
+	if !errors.Is(err, execution.ErrExecutionMemory) {
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native IO unavailable")
 	}
 	return protocol.NativeFailure(true, failure)

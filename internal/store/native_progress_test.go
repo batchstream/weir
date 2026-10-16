@@ -90,7 +90,7 @@ func TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy(t *testing.
 	limits := DefaultLimits()
 	limits.MaxInFlight = 1
 	limits.QueueBytes = 1024
-	memory := NewNativeMemory()
+	memory := NewExecutionMemory()
 	memory.known, memory.trusted = true, true
 	memory.budget = 128 << 20
 	adapter := &singleExecutionAdapter{}
@@ -445,7 +445,7 @@ func TestNativeTerminalOutputUsesCurrentWorkingSetInsteadOfReleasedPeak(t *testi
 		}
 	}
 	snapshot := runtime.Snapshot()
-	if snapshot.Paused != 0 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 32 || runtime.nativeMemory.Snapshot().Terminal != 32 {
+	if snapshot.Paused != 0 || snapshot.Active != 0 || snapshot.WorkingBytes != 0 || snapshot.Publishers != 32 || runtime.memory.Snapshot().Terminal != 32 {
 		t.Fatal("terminal output retained peak working reservations", snapshot)
 	}
 	work := plan(100, "healthy", true)

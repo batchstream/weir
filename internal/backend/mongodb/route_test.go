@@ -73,7 +73,7 @@ func TestRouteLuaPlanSharesBoundedTransaction(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if work.Command.GetNative() != nil || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" || work.WorkingBytes != programWorkingBytes {
+	if work.Command.GetNative() != nil || work.Backend.(*plan).program == nil || work.BatchKey != "db.records/lua" || work.WorkingBytes < 2*work.Bytes || work.IOReserve != adapter.nativeReplyBytes() {
 		t.Fatal("Lua plan did not declare bounded transaction batching")
 	}
 }

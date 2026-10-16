@@ -11,8 +11,8 @@ Linux sustained-load boundaries.
 | Automatic recovery after Go memory bursts with default configuration | [PR 77](https://github.com/batchstream/weir/pull/77) merged after new independent review and Linux CI; initial isolated-cgroup evidence below |
 | Recovery with shared cgroup memory outside the process | [PR 78](https://github.com/batchstream/weir/pull/78) merged after new independent review and Linux CI |
 | Healthy queries with a full Native output reservation | [PR 79](https://github.com/batchstream/weir/pull/79) merged after independent exact-head review and CI; clean Linux focused ownership qualification passed |
-| Short Native mixed bursts with transient IO reservations | [Correction and causal evidence](native-burst-admission-2026-10-16.md); clean acceptance/review pending |
-| Typed large-result memory safety | Confirmed 512 MiB OOM; separate correction pending |
+| Short Native mixed bursts with transient IO reservations | [PR 80](https://github.com/batchstream/weir/pull/80) merged after new independent exact-head review, two 2560-call real-backend runs and full CI; [causal evidence](native-burst-admission-2026-10-16.md) |
+| Typed large-result memory safety | [Confirmed 512 MiB OOM and correction gates](typed-memory-qualification-2026-10-17.md); implementation in progress |
 | Linux complete-process sustained mixed workload and failure recovery | First formal run failed at the 256-request burst; original gates remain pending |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
@@ -47,8 +47,10 @@ retains the original execution credit and backpressure. With finite execution
 limits this preserves bounded executing and paused work.
 
 PR 76 added four fixed-vocabulary gauges for paused output count, bytes and
-their limits. The current shared account removes the two misleading per-Store
-output-limit gauges and exports thirteen fixed Node gauges/counters instead. Existing active-execution metrics exclude paused output, while
+their limits. The current shared execution account covers typed and Native operations,
+removes the two earlier per-Store output-limit gauges and exports nineteen
+fixed Node gauges/counters, including actual wire ownership. Existing
+active-execution metrics exclude paused output, while
 retained working memory and backend connection ownership remain observable.
 Native invocation elapsed-time histograms still include consumer waits; inspect
 the pause gauges when distinguishing backend execution from output delay.

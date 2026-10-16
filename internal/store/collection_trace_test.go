@@ -210,10 +210,8 @@ func TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure(t *testing.T) {
 	if err != nil || event.GetMutationResult().GetOutcome() != pb.MutationOutcome_NOT_STARTED {
 		t.Fatal("canceled queued operation lost NOT_STARTED evidence", event, err)
 	}
-	select {
-	case <-changed:
-	default:
-		t.Fatal("queue cancellation did not wake admission waiters")
+	if changed != nil {
+		t.Fatal("full input queue created an unowned admission waiter")
 	}
 	runtime.mu.Lock()
 	for _, ticket := range runtime.queue {

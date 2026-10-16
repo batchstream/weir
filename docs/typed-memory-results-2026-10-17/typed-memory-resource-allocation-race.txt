@@ -1,0 +1,47 @@
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:49: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2 allocated_bytes=144
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.01s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:49: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2 allocated_bytes=144
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.00s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:49: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2 allocated_bytes=144
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.00s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:49: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2 allocated_bytes=144
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.00s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:49: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2 allocated_bytes=144
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.00s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/execution	1.648s

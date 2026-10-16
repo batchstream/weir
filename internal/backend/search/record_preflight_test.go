@@ -43,7 +43,7 @@ func TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory(t *testing.T
 				}
 			})
 			work := batchTestPlan(t, adapter, action, "records/s:record")
-			if work.ResultBytes != execution.ResultOverheadBytes || work.WorkingBytes < 3*execution.BackendBatchBytes {
+			if work.ResultBytes != execution.ResultOverheadBytes || work.WorkingBytes < 2*work.Bytes || work.IOReserve != 64<<10 {
 				t.Fatal("mutation declarations misplaced pre-read scratch", work.ResultBytes, work.WorkingBytes)
 			}
 			record, err := execution.NewRecord("search", 1, work.Command)

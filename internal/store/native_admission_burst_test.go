@@ -50,7 +50,7 @@ func TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake(t *testing.
 	work := plan(1, "initial", false)
 	work.Command, work.WorkingBytes = nativeCall(), initialWorking
 	input := work.Bytes + max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes)
-	memory := NewNativeMemory()
+	memory := NewExecutionMemory()
 	memory.known, memory.trusted = true, true
 	memory.budget = 2*uint64(initialWorking+input) + 64<<10
 	release := make(chan struct{})
@@ -199,7 +199,7 @@ func (a *nativeSameBytesIOAdapter) Execute(ctx context.Context, works []*executi
 }
 
 func TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission(t *testing.T) {
-	memory := testNativeMemory(192 << 20)
+	memory := testExecutionMemory(192 << 20)
 	finish := make(chan struct{})
 	adapter := &nativeSameBytesIOAdapter{reading: make(chan struct{}), finish: finish, extra: 2 << 20}
 	limits := DefaultLimits()

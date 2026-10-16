@@ -87,6 +87,11 @@ func (a *Adapter) bulkResults(ctx context.Context, response bulkResponse) []*pb.
 	// A timeout changes what we know about the reply, never whether a connected
 	// mutation might have committed. Keep causes fixed and omit native bodies.
 	switch err {
+	case errWriteMemoryNotSent:
+		outcome = pb.MutationOutcome_NOT_APPLIED
+		failure = recordMemoryFailure()
+	case execution.ErrExecutionMemory:
+		failure = recordMemoryFailure()
 	case errWriteNotSent:
 		outcome = pb.MutationOutcome_NOT_APPLIED
 		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "write request not sent to backend")

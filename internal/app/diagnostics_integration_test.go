@@ -54,7 +54,7 @@ func TestDiagnosticsMaximumStaticSeries(t *testing.T) {
 	}
 	// 16 Mongo Stores (55 runtime + 6 connection series each), two listener
 	// transports at 22 each, plus admission, directory, diagnostics, and Node.
-	const maximumSeries = 16*(55+6) + 2*22 + 8 + 2 + 3 + 55
+	const maximumSeries = 16*(55+6) + 2*22 + 8 + 2 + 3 + 59
 	if got := testmetrics.Series(families); got != maximumSeries {
 		t.Fatal("maximum static series changed", got)
 	}

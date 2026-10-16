@@ -1,0 +1,1118 @@
+{
+  "diagnostic_only_not_formal": true,
+  "receipt": {
+    "source": "fde3b1775b0a36dbb4f4044be1299f731db43314",
+    "state": "clean-commit",
+    "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-production-qualified-linux",
+    "sha256": "795601c60e8f4398a8108843939361032f88249acc8f75ee42ae322ca7269c79",
+    "target": "linux/arm64"
+  },
+  "capacity_mib": 1024,
+  "store": "mongo",
+  "version": "{\"product\":\"weir\",\"version\":\"local-fde3b1775b0a36dbb4f4044be1299f731db43314\",\"revision\":\"fde3b1775b0a36dbb4f4044be1299f731db43314\",\"go\":\"go1.27.1\",\"target\":\"linux/arm64\",\"state\":\"clean-commit\",\"dirty\":\"false\"}",
+  "started_at": "2026-10-16T15:40:48.403153Z",
+  "static_stream_window_bytes": 65536,
+  "static_connection_window_bytes": 4194304,
+  "no_recv_milliseconds": 3000,
+  "caller_budget_milliseconds": 5000,
+  "before": {
+    "at": "2026-10-16T15:40:48.466746Z",
+    "metrics": {
+      "go_memstats_heap_alloc_bytes": 1285088,
+      "go_memstats_heap_idle_bytes": 4481024,
+      "go_memstats_heap_released_bytes": 4481024,
+      "process_resident_memory_bytes": 13332480,
+      "weir_ingress_queued_response_bytes": 0,
+      "weir_ingress_sessions": 0,
+      "weir_memory_cgroup_current_bytes": 25645056,
+      "weir_memory_cgroup_working_set_bytes": 25591808,
+      "weir_memory_go_runtime_limit_bytes": 598261104,
+      "weir_memory_latched": 0,
+      "weir_native_memory_leases": 0,
+      "weir_native_memory_used_bytes": 0,
+      "weir_store_active_executions": 0,
+      "weir_store_pending_entries": 0,
+      "weir_store_result_reserved_bytes": 0,
+      "weir_store_result_reserved_entries": 0,
+      "weir_store_retained_result_reserved_bytes": 0,
+      "weir_store_working_reserved_bytes": 0
+    },
+    "memory_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+    "container_state": {
+      "owner": "weir-memory-recovery-93411-1792165248212591000",
+      "running": true,
+      "oom_killed": false,
+      "exit_code": 0
+    }
+  },
+  "during_no_recv": [
+    {
+      "at": "2026-10-16T15:40:48.524577Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 2001672,
+        "go_memstats_heap_idle_bytes": 8462336,
+        "go_memstats_heap_released_bytes": 7389184,
+        "process_resident_memory_bytes": 22429696,
+        "weir_ingress_queued_response_bytes": 0,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 25485312,
+        "weir_memory_cgroup_working_set_bytes": 25432064,
+        "weir_memory_go_runtime_limit_bytes": 592870768,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 3,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 0,
+        "weir_store_working_reserved_bytes": 301989888
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:48.655243Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 202828944,
+        "go_memstats_heap_idle_bytes": 8519680,
+        "go_memstats_heap_released_bytes": 6889472,
+        "process_resident_memory_bytes": 225202176,
+        "weir_ingress_queued_response_bytes": 37748994,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 157351936,
+        "weir_memory_cgroup_working_set_bytes": 157298688,
+        "weir_memory_go_runtime_limit_bytes": 595534806,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 1,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 50333184,
+        "weir_store_working_reserved_bytes": 100663296
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:48.782432Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 379233440,
+        "go_memstats_heap_idle_bytes": 16613376,
+        "go_memstats_heap_released_bytes": 15163392,
+        "process_resident_memory_bytes": 399474688,
+        "weir_ingress_queued_response_bytes": 37748994,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 287940608,
+        "weir_memory_cgroup_working_set_bytes": 287887360,
+        "weir_memory_go_runtime_limit_bytes": 595207126,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 1,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 50333184,
+        "weir_store_working_reserved_bytes": 100663296
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:48.908866Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 517642608,
+        "go_memstats_heap_idle_bytes": 12427264,
+        "go_memstats_heap_released_bytes": 10878976,
+        "process_resident_memory_bytes": 531832832,
+        "weir_ingress_queued_response_bytes": 37748994,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 498335744,
+        "weir_memory_cgroup_working_set_bytes": 498282496,
+        "weir_memory_go_runtime_limit_bytes": 594876169,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 1,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 50333184,
+        "weir_store_working_reserved_bytes": 100663296
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.033141Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807260464,
+        "go_memstats_heap_idle_bytes": 8044544,
+        "go_memstats_heap_released_bytes": 7888896,
+        "process_resident_memory_bytes": 829177856,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 828829696,
+        "weir_memory_cgroup_working_set_bytes": 828776448,
+        "weir_memory_go_runtime_limit_bytes": 581716540,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.153538Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807218768,
+        "go_memstats_heap_idle_bytes": 8134656,
+        "go_memstats_heap_released_bytes": 8110080,
+        "process_resident_memory_bytes": 829042688,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839827456,
+        "weir_memory_cgroup_working_set_bytes": 839774208,
+        "weir_memory_go_runtime_limit_bytes": 592978902,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.279365Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807369848,
+        "go_memstats_heap_idle_bytes": 7995392,
+        "go_memstats_heap_released_bytes": 7987200,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839798784,
+        "weir_memory_cgroup_working_set_bytes": 839745536,
+        "weir_memory_go_runtime_limit_bytes": 593028054,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.422968Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807241800,
+        "go_memstats_heap_idle_bytes": 8060928,
+        "go_memstats_heap_released_bytes": 8060928,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839786496,
+        "weir_memory_cgroup_working_set_bytes": 839733248,
+        "weir_memory_go_runtime_limit_bytes": 592982179,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.548613Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807260312,
+        "go_memstats_heap_idle_bytes": 8093696,
+        "go_memstats_heap_released_bytes": 8093696,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839909376,
+        "weir_memory_cgroup_working_set_bytes": 839856128,
+        "weir_memory_go_runtime_limit_bytes": 592890428,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.683807Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807258280,
+        "go_memstats_heap_idle_bytes": 8118272,
+        "go_memstats_heap_released_bytes": 8110080,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839852032,
+        "weir_memory_cgroup_working_set_bytes": 839798784,
+        "weir_memory_go_runtime_limit_bytes": 592926473,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.818252Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807240168,
+        "go_memstats_heap_idle_bytes": 8069120,
+        "go_memstats_heap_released_bytes": 8069120,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 840085504,
+        "weir_memory_cgroup_working_set_bytes": 840032256,
+        "weir_memory_go_runtime_limit_bytes": 592680713,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:49.962301Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807228704,
+        "go_memstats_heap_idle_bytes": 8151040,
+        "go_memstats_heap_released_bytes": 8142848,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 840085504,
+        "weir_memory_cgroup_working_set_bytes": 840032256,
+        "weir_memory_go_runtime_limit_bytes": 592729865,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.109187Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807194472,
+        "go_memstats_heap_idle_bytes": 8159232,
+        "go_memstats_heap_released_bytes": 8159232,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839868416,
+        "weir_memory_cgroup_working_set_bytes": 839815168,
+        "weir_memory_go_runtime_limit_bytes": 592877321,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.243328Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807236000,
+        "go_memstats_heap_idle_bytes": 8118272,
+        "go_memstats_heap_released_bytes": 8118272,
+        "process_resident_memory_bytes": 829042688,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839671808,
+        "weir_memory_cgroup_working_set_bytes": 839618560,
+        "weir_memory_go_runtime_limit_bytes": 593005116,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.37878Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807212952,
+        "go_memstats_heap_idle_bytes": 8167424,
+        "go_memstats_heap_released_bytes": 8167424,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 840122368,
+        "weir_memory_cgroup_working_set_bytes": 840069120,
+        "weir_memory_go_runtime_limit_bytes": 592644668,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.5193Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807209240,
+        "go_memstats_heap_idle_bytes": 8142848,
+        "go_memstats_heap_released_bytes": 8142848,
+        "process_resident_memory_bytes": 829173760,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839983104,
+        "weir_memory_cgroup_working_set_bytes": 839929856,
+        "weir_memory_go_runtime_limit_bytes": 592779017,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.649553Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807256504,
+        "go_memstats_heap_idle_bytes": 8126464,
+        "go_memstats_heap_released_bytes": 8118272,
+        "process_resident_memory_bytes": 829038592,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839905280,
+        "weir_memory_cgroup_working_set_bytes": 839852032,
+        "weir_memory_go_runtime_limit_bytes": 592887152,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.782255Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807216736,
+        "go_memstats_heap_idle_bytes": 8167424,
+        "go_memstats_heap_released_bytes": 8167424,
+        "process_resident_memory_bytes": 829038592,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 840118272,
+        "weir_memory_cgroup_working_set_bytes": 840065024,
+        "weir_memory_go_runtime_limit_bytes": 592657776,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:50.920169Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807179584,
+        "go_memstats_heap_idle_bytes": 8208384,
+        "go_memstats_heap_released_bytes": 8208384,
+        "process_resident_memory_bytes": 829038592,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 840015872,
+        "weir_memory_cgroup_working_set_bytes": 839962624,
+        "weir_memory_go_runtime_limit_bytes": 592752803,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:51.063209Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807173056,
+        "go_memstats_heap_idle_bytes": 8200192,
+        "go_memstats_heap_released_bytes": 8200192,
+        "process_resident_memory_bytes": 828903424,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839872512,
+        "weir_memory_cgroup_working_set_bytes": 839819264,
+        "weir_memory_go_runtime_limit_bytes": 592913366,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:51.210327Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807195112,
+        "go_memstats_heap_idle_bytes": 8167424,
+        "go_memstats_heap_released_bytes": 8167424,
+        "process_resident_memory_bytes": 828903424,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839995392,
+        "weir_memory_cgroup_working_set_bytes": 839942144,
+        "weir_memory_go_runtime_limit_bytes": 592824892,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:51.350017Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807219232,
+        "go_memstats_heap_idle_bytes": 8167424,
+        "go_memstats_heap_released_bytes": 8167424,
+        "process_resident_memory_bytes": 829034496,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 839770112,
+        "weir_memory_cgroup_working_set_bytes": 839716864,
+        "weir_memory_go_runtime_limit_bytes": 592946134,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    },
+    {
+      "at": "2026-10-16T15:40:51.474658Z",
+      "metrics": {
+        "go_memstats_heap_alloc_bytes": 807257992,
+        "go_memstats_heap_idle_bytes": 8110080,
+        "go_memstats_heap_released_bytes": 8101888,
+        "process_resident_memory_bytes": 829034496,
+        "weir_ingress_queued_response_bytes": 402655936,
+        "weir_ingress_sessions": 32,
+        "weir_memory_cgroup_current_bytes": 840024064,
+        "weir_memory_cgroup_working_set_bytes": 839970816,
+        "weir_memory_go_runtime_limit_bytes": 592844553,
+        "weir_memory_latched": 0,
+        "weir_native_memory_leases": 0,
+        "weir_native_memory_used_bytes": 0,
+        "weir_store_active_executions": 0,
+        "weir_store_pending_entries": 0,
+        "weir_store_result_reserved_bytes": 536887296,
+        "weir_store_result_reserved_entries": 32,
+        "weir_store_retained_result_reserved_bytes": 536887296,
+        "weir_store_working_reserved_bytes": 0
+      },
+      "container_state": {
+        "owner": "weir-memory-recovery-93411-1792165248212591000",
+        "running": true,
+        "oom_killed": false,
+        "exit_code": 0
+      }
+    }
+  ],
+  "after_consumption_and_cancel": {
+    "at": "2026-10-16T15:40:53.528156Z",
+    "metrics": {
+      "go_memstats_heap_alloc_bytes": 1179272,
+      "go_memstats_heap_idle_bytes": 814350336,
+      "go_memstats_heap_released_bytes": 234479616,
+      "process_resident_memory_bytes": 602873856,
+      "weir_ingress_queued_response_bytes": 0,
+      "weir_ingress_sessions": 0,
+      "weir_memory_cgroup_current_bytes": 842305536,
+      "weir_memory_cgroup_working_set_bytes": 842252288,
+      "weir_memory_go_runtime_limit_bytes": 591029206,
+      "weir_memory_latched": 0,
+      "weir_native_memory_leases": 0,
+      "weir_native_memory_used_bytes": 0,
+      "weir_store_active_executions": 0,
+      "weir_store_pending_entries": 0,
+      "weir_store_result_reserved_bytes": 0,
+      "weir_store_result_reserved_entries": 0,
+      "weir_store_retained_result_reserved_bytes": 0,
+      "weir_store_working_reserved_bytes": 0
+    },
+    "memory_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+    "container_state": {
+      "owner": "weir-memory-recovery-93411-1792165248212591000",
+      "running": true,
+      "oom_killed": false,
+      "exit_code": 0
+    }
+  },
+  "final_container_state_before_cleanup": {
+    "owner": "weir-memory-recovery-93411-1792165248212591000",
+    "running": true,
+    "oom_killed": false,
+    "exit_code": 0
+  },
+  "last_successful_metrics": {
+    "go_memstats_heap_alloc_bytes": 1179272,
+    "go_memstats_heap_idle_bytes": 814350336,
+    "go_memstats_heap_released_bytes": 234479616,
+    "process_resident_memory_bytes": 602873856,
+    "weir_ingress_queued_response_bytes": 0,
+    "weir_ingress_sessions": 0,
+    "weir_memory_cgroup_current_bytes": 842305536,
+    "weir_memory_cgroup_working_set_bytes": 842252288,
+    "weir_memory_go_runtime_limit_bytes": 591029206,
+    "weir_memory_latched": 0,
+    "weir_native_memory_leases": 0,
+    "weir_native_memory_used_bytes": 0,
+    "weir_store_active_executions": 0,
+    "weir_store_pending_entries": 0,
+    "weir_store_result_reserved_bytes": 0,
+    "weir_store_result_reserved_entries": 0,
+    "weir_store_retained_result_reserved_bytes": 0,
+    "weir_store_working_reserved_bytes": 0
+  },
+  "peak_observed_metrics": {
+    "go_memstats_heap_alloc_bytes": 807369848,
+    "go_memstats_heap_idle_bytes": 16613376,
+    "go_memstats_heap_released_bytes": 15163392,
+    "process_resident_memory_bytes": 829177856,
+    "weir_ingress_queued_response_bytes": 402655936,
+    "weir_ingress_sessions": 32,
+    "weir_memory_cgroup_current_bytes": 840122368,
+    "weir_memory_cgroup_working_set_bytes": 840069120,
+    "weir_memory_go_runtime_limit_bytes": 595534806,
+    "weir_memory_latched": 0,
+    "weir_native_memory_leases": 0,
+    "weir_native_memory_used_bytes": 0,
+    "weir_store_active_executions": 3,
+    "weir_store_pending_entries": 0,
+    "weir_store_result_reserved_bytes": 536887296,
+    "weir_store_result_reserved_entries": 32,
+    "weir_store_retained_result_reserved_bytes": 536887296,
+    "weir_store_working_reserved_bytes": 301989888
+  },
+  "requests": [
+    {
+      "id": "typed-large-00",
+      "resource": "weir_test_93411_1/records/s:typed-large-00",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "f5177e7782dd7a934b5642dc23158c6f5d2b0235cc3bdd08609d83a3e874a645",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-01",
+      "resource": "weir_test_93411_1/records/s:typed-large-01",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "66afeea29711b5d17f04c327e198a32e3761f588aa5795e1f13e1c272d3d9ad9",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-02",
+      "resource": "weir_test_93411_1/records/s:typed-large-02",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "eb99b4a4a488975bac5c54be5722e2ba89f7c3aa0dd02a001a428f74d239abfb",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-03",
+      "resource": "weir_test_93411_1/records/s:typed-large-03",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "1cdb21b0bfb51042bd542c11067cd9329d971cdb1319161552a193b7afd8bae0",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-04",
+      "resource": "weir_test_93411_1/records/s:typed-large-04",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "3016892519e3f0d88ab2d98e48551bdd74de9a406fa0499d7796fe30aecab235",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-05",
+      "resource": "weir_test_93411_1/records/s:typed-large-05",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "c41f96d269cb04a36be34b16e587836fca22b89391d6e6caf5b36fabb1203664",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-06",
+      "resource": "weir_test_93411_1/records/s:typed-large-06",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "87dee4a158e8e859d8635552994d81ae91ba3ad3c939f629f7eafd06be22f2ec",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-07",
+      "resource": "weir_test_93411_1/records/s:typed-large-07",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "35e1da6091df746fb5dcf3ee11f12d98cc73b15c50e0816c9c9f8f6cab2bb5c4",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-08",
+      "resource": "weir_test_93411_1/records/s:typed-large-08",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "2874735e749ca3e5a135f4675b8c4708f00308db8e796a31157a5a471474b5e7",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-09",
+      "resource": "weir_test_93411_1/records/s:typed-large-09",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "9d6d5d99b7def20c0453f560439e0e35be73bdeb63c8c66fae8f70085d777f65",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-10",
+      "resource": "weir_test_93411_1/records/s:typed-large-10",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "123d352295628d282b97fdb22ceceb068f0c5bfbd40d88af24c03a97c17025f9",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-11",
+      "resource": "weir_test_93411_1/records/s:typed-large-11",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "94d8bdcb3f28f60639462936af2be5069131c8a456d96ba449f9877314220d79",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-12",
+      "resource": "weir_test_93411_1/records/s:typed-large-12",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "8af5c6b78e79010ea8197956486380d32613f9974a1d09f3773105a3398e4d64",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-13",
+      "resource": "weir_test_93411_1/records/s:typed-large-13",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "407cb77aeb97044a7ec1afefe80c67304420de221f3099a3c5f342a4d69cb225",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-14",
+      "resource": "weir_test_93411_1/records/s:typed-large-14",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "2c684fc331c2bd3fb15323979fadda0c9b4a9c7694a84d053961f1d186c2db33",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-15",
+      "resource": "weir_test_93411_1/records/s:typed-large-15",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "2cbd648a9061c45010b69181f87d36a61adcd7f837b21a96e9dfbb26c4182f01",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-16",
+      "resource": "weir_test_93411_1/records/s:typed-large-16",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "ad30542636d6389cbba05c45a95a897d7c78474880f9b31102e6d810481ac4fa",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-17",
+      "resource": "weir_test_93411_1/records/s:typed-large-17",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "ad3757678f20347d06155b37bee89098e78abe56be5f701e43bf24f8c5112afe",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-18",
+      "resource": "weir_test_93411_1/records/s:typed-large-18",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "af8d74bfec0d123075704bb6c1018443baa4511fde96c5c00573e3eda874392d",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-19",
+      "resource": "weir_test_93411_1/records/s:typed-large-19",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "6a32e0529c48767945022d8eb77f0ff688cf9ff637ffd94a62e9a6254bf9624f",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-20",
+      "resource": "weir_test_93411_1/records/s:typed-large-20",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "c33ab1cfc7f8793e6ad8a150a8db963934ab10fd7c9aa07b1727b5bfd99f547c",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-21",
+      "resource": "weir_test_93411_1/records/s:typed-large-21",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "80f52e0a44cba79e820e6e2f394a4637df5d2a27fea1eafb34bbcc2fd151b40a",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-22",
+      "resource": "weir_test_93411_1/records/s:typed-large-22",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "3fdac9efa5dd399288a0e1d52fb00e41d0680337c3aa33ada2eab9a0a2c6c4e2",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-23",
+      "resource": "weir_test_93411_1/records/s:typed-large-23",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "8a2c3c39ef2eefba73df8377dd59f46f799ae5d4a9a36c38cf55d727abc365c7",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-24",
+      "resource": "weir_test_93411_1/records/s:typed-large-24",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "89de8fbc99899dc2588715726f03b1d3305c9e86de28362d3a5a04bf6a9d0ac1",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-25",
+      "resource": "weir_test_93411_1/records/s:typed-large-25",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "842e181f2acc648b751994bc75225e42431820d762d8e992584c8742a485f405",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-26",
+      "resource": "weir_test_93411_1/records/s:typed-large-26",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "f9d4c34640eee9df88da6e9d538b01f36388db73c58af8fb404cbacacde915b1",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-27",
+      "resource": "weir_test_93411_1/records/s:typed-large-27",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "5a14821dbb37b36be077dce90b08c7d7a50b14ee4bae787ab82e3a5d87ab8b5d",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-28",
+      "resource": "weir_test_93411_1/records/s:typed-large-28",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "7025909915b903e018031299bbbecb81d1ff67bc164f5117fa2d5bcecae28272",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-29",
+      "resource": "weir_test_93411_1/records/s:typed-large-29",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "9ba144ec5b8f2c220d0b4c09e0d40087a4620900150482fe0de92ccfb81dcf34",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-30",
+      "resource": "weir_test_93411_1/records/s:typed-large-30",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "a3aa5a255d56ef1a42e6abdbcdbf271a716ca0aabd863699d0a988c1660d7916",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    },
+    {
+      "id": "typed-large-31",
+      "resource": "weir_test_93411_1/records/s:typed-large-31",
+      "expected_bson_bytes": 12582958,
+      "expected_bson_sha256": "2c0cdb2b1f1366d7a71a76380718261af735b8bce315a18dfdcf256a5501c181",
+      "request_sent": true,
+      "receive_status": "DeadlineExceeded",
+      "receive_error": "rpc error: code = DeadlineExceeded desc = context deadline exceeded",
+      "id_and_hash_match": false
+    }
+  ],
+  "sent_requests": 32,
+  "validated_documents": 0,
+  "no_recv_actual_milliseconds": 3001
+}

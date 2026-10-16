@@ -251,6 +251,9 @@ func TestRecordPublicationCancellationReleasesSourceButKeepsEncodedCredits(t *te
 	if server.admission.wireBytes.Load() == 0 {
 		t.Fatal("cancellation returned still-owned encoded credits")
 	}
+	if snapshot := local.ExecutionMemory().Snapshot(); snapshot.Count != 1 || snapshot.WireCount != 1 || snapshot.WireBytes != uint64(server.admission.wireBytes.Load()) || snapshot.UsedBytes < snapshot.WireBytes {
+		t.Fatal("Ack/cancellation returned live wire to the shared execution budget", snapshot)
+	}
 	server.admission.responses.Range(func(key, value any) bool {
 		t.Error("canceled publication retained a source message", key)
 		return true
@@ -258,6 +261,9 @@ func TestRecordPublicationCancellationReleasesSourceButKeepsEncodedCredits(t *te
 	encoded.Free()
 	encoded = nil
 	waitPeerIdle(t, server)
+	if snapshot := local.ExecutionMemory().Snapshot(); snapshot.Count != 0 || snapshot.WireCount != 0 || snapshot.WireBytes != 0 || snapshot.InputUsedBytes != 0 || snapshot.UsedBytes != 0 {
+		t.Fatal("actual native Free retained shared execution credits", snapshot)
+	}
 }
 
 func TestOutputWatchdogTransfersToEncodedBufferAfterSend(t *testing.T) {
@@ -271,7 +277,7 @@ func TestOutputWatchdogTransfersToEncodedBufferAfterSend(t *testing.T) {
 	value := &pb.Event_ReadResult{ReadResult: read}
 	event := &pb.Event{Value: value}
 	completed := make(chan error, 1)
-	go func() { completed <- server.sendEvent(stream, event, 1) }()
+	go func() { completed <- server.sendEvent(stream, event, 1, nil) }()
 	encoded := <-stream.encoded
 	defer func() { encoded.Free() }()
 	var owner *responseBufferOwner

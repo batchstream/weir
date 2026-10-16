@@ -25,7 +25,7 @@ func (c *checkpointCancelContext) Err() error {
 	return c.Context.Err()
 }
 
-func TestSearchPreparationObservesInFlightCancellation(t *testing.T) {
+func TestSearchAdmittedPreparationObservesInFlightCancellation(t *testing.T) {
 	cfg := Config{Store: "search"}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct}
 	raw := []byte(`{"payload":"` + strings.Repeat("x", 4<<20) + `"}`)
@@ -35,7 +35,6 @@ func TestSearchPreparationObservesInFlightCancellation(t *testing.T) {
 			defer cancel()
 			ctx := &checkpointCancelContext{Context: inner, cancel: cancel}
 			ctx.remaining.Store(20)
-			var failure *pb.Failure
 			work := batchTestPlan(t, adapter, action, "records/s:item")
 			mutation := work.Command.GetMutate()
 			switch action {
@@ -51,9 +50,17 @@ func TestSearchPreparationObservesInFlightCancellation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, failure = adapter.PrepareRecord(ctx, record)
-			if !errors.Is(ctx.Err(), context.Canceled) || failure.GetCode() != pb.FailureCode_CANCELLED {
-				t.Fatal("cancellation became an argument error or was ignored", failure)
+			prepared, failure := adapter.PrepareRecord(ctx, record)
+			if failure != nil || prepared == nil || ctx.Err() != nil {
+				t.Fatal("raw preparation materialized payload before admission", failure)
+			}
+			probe := &recordMemoryProbe{limit: 128 << 20}
+			prepared.Memory = probe
+			memory := &recordMemory{owner: probe, base: prepared.WorkingBytes + prepared.IOReserve}
+			admitted := context.WithValue(ctx, recordMemoryContextKey, memory)
+			failure = adapter.validateRecord(admitted, prepared)
+			if !errors.Is(ctx.Err(), context.Canceled) || failure.GetCode() != pb.FailureCode_CANCELLED || probe.peak == 0 {
+				t.Fatal("admitted cancellation became an argument error or skipped memory", failure, probe.peak)
 			}
 		})
 	}

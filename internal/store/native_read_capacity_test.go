@@ -40,7 +40,7 @@ func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execut
 	}
 	err := work.NativeIO.BeginIO(ctx, 2<<20)
 	code := pb.FailureCode_UNAVAILABLE
-	if errors.Is(err, execution.ErrNativeMemory) {
+	if errors.Is(err, execution.ErrExecutionMemory) {
 		code = pb.FailureCode_RESOURCE_EXHAUSTED
 	}
 	if err == nil {
@@ -59,7 +59,7 @@ func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execut
 }
 
 func TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge(t *testing.T) {
-	memory := testNativeMemory(96 << 20)
+	memory := testExecutionMemory(96 << 20)
 	publication := 2*protocol.NativeChunk + execution.ResultOverheadBytes - nativeQueuedWindow
 	held := int((memory.budget - memory.inputTargetLocked() - 2*uint64(publication) - (1 << 20)) / 2)
 	adapter := &nativeReadCapacityAdapter{held: held}

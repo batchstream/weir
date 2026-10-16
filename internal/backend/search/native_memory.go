@@ -19,6 +19,7 @@ type nativeHeaderKey struct{}
 type nativeHeaderMemory struct {
 	mu        sync.Mutex
 	io        execution.NativeIO
+	memory    execution.Memory
 	base      int
 	bytes     int
 	lines     int
@@ -28,19 +29,23 @@ type nativeHeaderMemory struct {
 func (m *nativeHeaderMemory) read(data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.completed || m.io == nil {
+	if m.completed || m.io == nil && m.memory == nil {
 		return nil
 	}
 	lines := bytes.Count(data, []byte{'\n'})
 	if len(data) > (math.MaxInt-8192)/8-m.bytes || lines > (math.MaxInt-8192)/512-m.lines {
-		return execution.ErrNativeMemory
+		return execution.ErrExecutionMemory
 	}
 	m.bytes += len(data)
 	m.lines += lines
 	if m.base > math.MaxInt-8192-m.lines*512 || m.bytes > (math.MaxInt-8192-m.lines*512-m.base)/8 {
-		return execution.ErrNativeMemory
+		return execution.ErrExecutionMemory
 	}
-	return m.io.GrowIO(m.base + 8192 + m.bytes*8 + m.lines*512)
+	working := m.base + 8192 + m.bytes*8 + m.lines*512
+	if m.memory != nil {
+		return m.memory.SetWorking(working)
+	}
+	return m.io.GrowIO(working)
 }
 
 func (m *nativeHeaderMemory) finish() {
@@ -48,5 +53,6 @@ func (m *nativeHeaderMemory) finish() {
 	m.completed = true
 	// Detached HTTP transport contexts must not retain the Runtime or input.
 	m.io = nil
+	m.memory = nil
 	m.mu.Unlock()
 }

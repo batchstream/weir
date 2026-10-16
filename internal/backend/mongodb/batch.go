@@ -18,18 +18,41 @@ import (
 // budget controls retained framing, and does not reject the whole batch.
 func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
+	memory := &recordMemory{base: recordWorking(plans)}
+	if len(plans) != 0 {
+		memory.owner = plans[0].Memory
+	}
+	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
+	active := make([]*execution.Plan, 0, len(plans))
+	positions := make([]int, 0, len(plans))
+	for i, work := range plans {
+		if failure := a.validateRecord(ctx, work); failure != nil {
+			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			continue
+		}
+		active = append(active, work)
+		positions = append(positions, i)
+	}
+	if err := reserveRecordWorking(ctx, active, 0); err != nil {
+		for i, work := range active {
+			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+		}
+		return results
+	}
 	limit := a.options().ExchangeBytes
-	for start := 0; start < len(plans); {
+	for start := 0; start < len(active); {
 		end, bytes := start, 0
-		for end < len(plans) {
-			charge := proto.Size(plans[end].Command) + execution.EntryOverheadBytes
+		for end < len(active) {
+			charge := proto.Size(active[end].Command) + execution.EntryOverheadBytes
 			if end > start && charge > limit-bytes {
 				break
 			}
 			bytes += charge
 			end++
 		}
-		copy(results[start:end], a.executeRecordChunk(ctx, plans[start:end]))
+		for i, event := range a.executeRecordChunk(ctx, active[start:end]) {
+			results[positions[start+i]] = event
+		}
 		start = end
 	}
 	return results
@@ -190,6 +213,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			if page != 0 {
 				attempt, release = nativeAttemptContext(ctx)
 			}
+			if budgetErr := reserveRecordWorking(ctx, plans, 0); budgetErr != nil {
+				err = budgetErr
+				valid = false
+				break
+			}
 			raw, readErr := a.client.Database(target.database).RunCommand(attempt, command).Raw()
 			if release != nil {
 				release()
@@ -229,8 +257,16 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				var document *pb.ReadResult
 				for _, i := range matches {
 					// Duplicate reads share immutable bytes; every RPC reserves its own output.
+					if plans[i].Memory != nil {
+						if err := plans[i].Memory.ReserveResult(len(raw) + execution.ResultOverheadBytes); err != nil {
+							results[i] = execution.FailedEvent(plans[i].Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+							continue
+						}
+					}
 					if document == nil {
-						d := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), raw...)}
+						data := make([]byte, len(raw))
+						copy(data, raw)
+						d := &pb.Document{ContentType: "application/bson", Data: data}
 						document = protocol.ReadDocument(d)
 					}
 					value := &pb.Event_ReadResult{ReadResult: document}
@@ -274,6 +310,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "point read acknowledgement unavailable or incomplete")
 			if stopped && p.Context != nil && p.Context.Err() != nil {
 				failure = protocol.ContextFailure(p.Context)
+			} else if errors.Is(err, execution.ErrExecutionMemory) {
+				failure = recordMemoryFailure()
 			} else if err != nil {
 				failure = backendFailure(ctx, err)
 			}

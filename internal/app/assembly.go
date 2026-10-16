@@ -44,7 +44,8 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		registry:        prometheus.NewRegistry(),
 	}
 	overloadTargets := []overload.Target{admission}
-	node.nativeMemory = store.NewNativeMemory()
+	node.executionMemory = store.NewExecutionMemory()
+	admission.SetExecutionMemory(node.executionMemory)
 
 	drainOpts := prometheus.CounterOpts{
 		Name: "weir_node_drains_total",
@@ -71,7 +72,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		options := localOptions{definition: definition, lua: cfg.Basic.Lua.limits(), cleanup: time.Duration(cfg.Basic.Lifecycle.CleanupTimeout), memory: node.nativeMemory}
+		options := localOptions{definition: definition, lua: cfg.Basic.Lua.limits(), cleanup: time.Duration(cfg.Basic.Lifecycle.CleanupTimeout), memory: node.executionMemory}
 		runtime, err := openLocal(ctx, options)
 		if err != nil {
 			return nil, err
@@ -139,7 +140,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 
 	node.guard = overload.New(overloadTargets, cfg.Basic.Overload.Memory.limits())
-	node.guard.ObserveMemory(node.nativeMemory)
+	node.guard.ObserveMemory(node.executionMemory)
 	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}
@@ -160,7 +161,7 @@ type localOptions struct {
 	definition StoreConfig
 	lua        luaengine.Limits
 	cleanup    time.Duration
-	memory     *store.NativeMemory
+	memory     *store.ExecutionMemory
 }
 
 func openLocal(ctx context.Context, options localOptions) (*store.Runtime, error) {

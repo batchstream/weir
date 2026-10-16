@@ -1,0 +1,19 @@
+=== RUN   TestDiagnosticCLITypedLargeReadBurst
+=== RUN   TestDiagnosticCLITypedLargeReadBurst/512MiB
+    typed_large_read_diagnostic_integration_test.go:134: DIAGNOSTIC ONLY cap=512MiB sent=32 expected=32 hold=3001ms validated=0 final_running=false final_OOMKilled=true last_wire=0 last_results=0
+    typed_large_read_diagnostic_integration_test.go:116: DIAGNOSTIC ONLY evidence=/Users/liran/Projects/liran/go/weir/.testdata/resource-audit-20261016/typed-large-C0-512MiB-1792165244875332000.json OOMKilled=true running=false exit=137 successful_ID_matches=0
+    memory_recovery_integration_test.go:188: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+    memory_recovery_integration_test.go:200: CLI failed or required forced shutdown [true 137]
+    memory_recovery_integration_test.go:202: CLI exit=true 137
+=== RUN   TestDiagnosticCLITypedLargeReadBurst/1024MiB
+    typed_large_read_diagnostic_integration_test.go:134: DIAGNOSTIC ONLY cap=1024MiB sent=32 expected=32 hold=3001ms validated=0 final_running=true final_OOMKilled=false last_wire=0 last_results=0
+    typed_large_read_diagnostic_integration_test.go:116: DIAGNOSTIC ONLY evidence=/Users/liran/Projects/liran/go/weir/.testdata/resource-audit-20261016/typed-large-C0-1024MiB-1792165248403156000.json OOMKilled=false running=true exit=0 successful_ID_matches=0
+    memory_recovery_integration_test.go:188: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 15:40:53 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=4 dialing=0 closing=0 acquired=4 released=4
+    memory_recovery_integration_test.go:202: CLI exit=false 0
+--- FAIL: TestDiagnosticCLITypedLargeReadBurst (12.57s)
+    --- FAIL: TestDiagnosticCLITypedLargeReadBurst/512MiB (3.58s)
+    --- PASS: TestDiagnosticCLITypedLargeReadBurst/1024MiB (5.65s)
+FAIL

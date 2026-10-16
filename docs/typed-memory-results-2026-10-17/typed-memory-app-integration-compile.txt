@@ -1,0 +1,2 @@
+ok  	github.com/batchstream/weir/internal/app	2.650s [no tests to run]
+ok  	github.com/batchstream/weir/cmd/weir	1.938s [no tests to run]

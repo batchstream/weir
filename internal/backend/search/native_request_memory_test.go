@@ -171,7 +171,7 @@ func TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal(t *
 	client := &http.Client{Transport: lifetime}
 	cfg := Config{URL: server.URL}
 	adapter := &Adapter{config: cfg, client: client, nativeClient: client, transport: transport, nativeTransport: transport, ctx: ctx, cancel: cancel}
-	memory := store.NewNativeMemory()
+	memory := store.NewExecutionMemory()
 	sample := overload.Snapshot{RecoveryAllowanceKnown: true, RecoveryAllowance: 768 << 20}
 	memory.ObserveMemory(sample)
 	limits := store.DefaultLimits()
@@ -296,7 +296,7 @@ func TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow(t *testing.T)
 	}
 	probe := &nativeMemoryProbe{}
 	memory := &nativeHeaderMemory{io: probe, base: math.MaxInt - 8192}
-	if memory.read([]byte("header\r\n")) != execution.ErrNativeMemory {
+	if memory.read([]byte("header\r\n")) != execution.ErrExecutionMemory {
 		t.Fatal("response parser growth overflowed its still-held request base")
 	}
 }
