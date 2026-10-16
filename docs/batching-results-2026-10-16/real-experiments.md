@@ -75,11 +75,13 @@ Exact validation commands and their exit status are in `validation.json`.
 
 ## Observed results
 
-The final candidate completes all seven experiments: 84 timed native/Weir stages and 8,208,279 successful operations, with persistence checks passing and zero errors, timeouts or indeterminate writes. Every current candidate report matches the same version-VII binary checksum, and the final workspace rebuild produces that identical executable.
+The measured version-VII candidate completes all seven experiments: 84 timed native/Weir stages and 8,208,279 successful operations, with persistence checks passing and zero errors, timeouts or indeterminate writes. Every measured candidate report matches the same version-VII binary checksum. The formatting-checkpoint rebuild produced that identical executable.
+
+Independent PR review subsequently found and fixed MongoDB cross-namespace authorization failure isolation. The correction has separate offline race and real TLS/SCRAM validation; the performance matrix was not rerun after it. Store runtime and Search source remain unchanged. The [review record](pr-review.md) and post-review build receipt distinguish the delivered sources from the measured binary.
 
 ### Implementation comparison at 256 workers
 
-These are observed baseline/current comparisons using default settings. Native controls are shown alongside Weir so host drift is visible. MongoDB baseline measurements remain exploratory for the overlap noted above; Search at this concurrency has steady native controls.
+These are observed baseline/version-VII comparisons using default settings. Native controls are shown alongside Weir so host drift is visible. MongoDB baseline measurements remain exploratory for the overlap noted above; Search at this concurrency has steady native controls. In the tables below, current means the measured version-VII candidate.
 
 | Workload | Native old / current ops/s | Weir old / current ops/s | Weir/native old / current | Estimated Weir DB CPU s/1,000 ops old / current |
 | --- | ---: | ---: | ---: | ---: |
@@ -184,4 +186,4 @@ round order, native controls, all resource samples and raw Prometheus snapshots.
 QPS, business commands per operation, p99 bounds and estimated CPU per completed
 unit. Raw reports and generated summary accompany this file.
 
-The final formatter removes one trailing blank line from a test file. The measured and final-workspace build receipts retain both source-tree hashes, and rebuilding confirms an identical executable. See `workspace-format-audit.json` and `workspace-server.receipt.json`. Production Go source hashes are unchanged.
+At the formatting checkpoint, the formatter removed one trailing blank line from a test file. The measured and formatting-checkpoint build receipts retain both source-tree hashes, and rebuilding confirmed an identical executable with unchanged production Go source. See `workspace-format-audit.json` and `workspace-server.receipt.json`. Later PR-review changes are recorded separately in `post-review-build-audit.json` and `post-review-server.receipt.json`; they do not replace the measured receipts.

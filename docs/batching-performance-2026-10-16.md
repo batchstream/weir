@@ -16,6 +16,13 @@ for actual multiprocess throughput, commands, CPU and measurement exclusions.
 The complete Store matrix is available as [CSV](batching-results-2026-10-16/summary.csv)
 and [JSON](batching-results-2026-10-16/summary.json).
 
+The measurements freeze version VII. The subsequent independent review of
+PR #74 found and fixed MongoDB cross-namespace authorization failure isolation.
+That error-path correction was validated separately; the 84-stage performance
+matrix was not rerun afterward. Store runtime and Search source are unchanged.
+See the [review and validation record](batching-results-2026-10-16/pr-review.md)
+for the reproduction, final source differences and post-review build receipt.
+
 Real confirmation uses four client OS processes and one record per call. At
 256 Elasticsearch readers, observed throughput rises from **15,610 to 18,479
 operations/s** against the old Weir, with about **36% less estimated database

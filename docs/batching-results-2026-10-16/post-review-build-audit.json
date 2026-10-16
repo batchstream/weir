@@ -1,0 +1,27 @@
+{
+  "measured_receipt": "candidate-server.receipt.json",
+  "formatting_checkpoint_receipt": "workspace-server.receipt.json",
+  "post_review_receipt": "post-review-server.receipt.json",
+  "formatting_checkpoint_source_tree_sha256": "a3af054602885d0b754a2f62c8eeb93112b192d38e3cbf92d24b67c217802c1e",
+  "post_review_source_tree_sha256": "497983752811dfc2e9bd690aa6e7ee63ce98b3e790e3d0f0a38e6dac465f8e67",
+  "post_review_binary_sha256": "6c6ffd5bc964783280984eabd5235f713405a974e8de8a841f1da070ffd6a122",
+  "performance_matrix_rerun": false,
+  "source_differences": [
+    {
+      "path": "internal/backend/mongodb/authorization_isolation_integration_test.go",
+      "before_sha256": null,
+      "after_sha256": "539945f77e4c563d4ddc6e48a824923b95cf53c0518aa5730fb1e64ee9b1fb39"
+    },
+    {
+      "path": "internal/backend/mongodb/authorization_isolation_test.go",
+      "before_sha256": null,
+      "after_sha256": "cc9593a44555b21d4130e4e7461a51a67502f65f81f7303fe691c69fdf91457e"
+    },
+    {
+      "path": "internal/backend/mongodb/batch.go",
+      "before_sha256": "b4048bb98ec723cb0de6321cddb15a3e48e269ba4ad07132f8ca0d283e79f43d",
+      "after_sha256": "7a62445f74ccd5e27aa4bc0aba1ba8f3e0c24f8b1e0a7ae461a6895c5967dee4"
+    }
+  ],
+  "note": "Independent review corrected only MongoDB command-level authorization failure isolation. Store runtime and Search input hashes are unchanged; original performance receipts and raw outputs are preserved."
+}
