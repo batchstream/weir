@@ -1,0 +1,861 @@
+{
+  "created_utc": "2026-10-16T21:08:34.580144+00:00",
+  "status": "FAIL_ACTUAL_LUA_PROCESS_OOM",
+  "actual_go_exit": 1,
+  "runtime_run_count": 1,
+  "retry": false,
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "source": "a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc",
+  "driver_source": "a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc",
+  "source_files_count": 957,
+  "source_before_after_clean_unchanged": true,
+  "grpc_pin_SHA256": "43e88ff7f4928ddaaadb1a7379b77c23f603208a7402bc3a3327c187d6043987",
+  "CLI_binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-weir-linux",
+  "CLI_binary_SHA256": "1e50a806e1f363115dfa2ac744e5b4357cbf9e98f547a97022297807d5818137",
+  "actual_target": "linux/arm64",
+  "race_driver_SHA256": "de16ad5b22b24679a60e62ad46d85e7c9cb93187098356bf32c1e6b973d23a4e",
+  "build_actual_exit": 0,
+  "build_seconds": 1.4200067500059959,
+  "no_foreign_future_harness_overlay_or_production_changes": true,
+  "runtime_identity": [
+    {
+      "raw_line": 2,
+      "text": "lua_memory_budget_integration_test.go:91: Lua fixed512MiB/2CPU single_process=true source=a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc binary_SHA256=1e50a806e1f363115dfa2ac744e5b4357cbf9e98f547a97022297807d5818137 version={\"product\":\"weir\",\"version\":\"local-a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc\",\"revision\":\"a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc\",\"go\":\"go1.27.1\",\"target\":\"linux/arm64\",\"state\":\"clean-commit\",\"dirty\":\"false\"} engine=linux/aarch64/2 kernel=7.0.12-linuxkit image=linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b"
+    }
+  ],
+  "profile": {
+    "capacity_MiB": 512,
+    "CPUs": 2,
+    "single_Weir_process": true,
+    "source_bytes": 96,
+    "source_SHA256": "5056d1b223d893e1ae6ea8f2a80aa80af78b75b1610aae5f65bce6883fdf6730",
+    "doublings": 29,
+    "program_final_string_upper_bytes": 536870912,
+    "actual_completed_iteration_and_string_bytes": "NOT_INSTRUMENTED",
+    "caller_seconds": 3,
+    "retry": 0,
+    "host_Lua_interpreter_executed": false,
+    "default_Store_policy_asserted_unchanged": true
+  },
+  "normal_business_control": {
+    "status": "PASS",
+    "Transform_APPLIED": true,
+    "independent_ID_n2_pad_and_SHA_valid": true,
+    "evidence": [
+      {
+        "raw_line": 8,
+        "text": "lua_memory_budget_integration_test.go:122: Lua_normal_control Transform_APPLIED=true ID_n_pad_valid=true bytes=1071 SHA256=e4c35b4ae559db91a7df884b3adb80e5260301dcb722c2047a49e7a9d254ed1c caller3s"
+      }
+    ]
+  },
+  "Lua_probe": {
+    "status": "FAIL",
+    "mutation_outcome": "UNCONFIRMED",
+    "RPC": "Unavailable",
+    "error": "error reading from server: EOF",
+    "returned_seconds": 0.169917375,
+    "confirmed_successful_Keep": false,
+    "safe_explicit_capacity_outcome": false,
+    "evidence": [
+      {
+        "raw_line": 17,
+        "text": "lua_memory_budget_integration_test.go:160: Lua_probe_outcome outcome=UNCONFIRMED failure= RPC=Unavailable error=rpc error: code = Unavailable desc = error reading from server: EOF returned=true started=2026-10-16T21:06:06.071534Z finished=2026-10-16T21:06:06.241454Z deadline=2026-10-16T21:06:09.071534Z within_original_deadline=true elapsed_or_observation_wait=169.917375ms confirmed_successful_Keep=false safe_capacity_rejection=false timeout_or_UNKNOWN_is_not_Keep=true"
+      }
+    ]
+  },
+  "independent_original_document": {
+    "bytes_before": 1076,
+    "bytes_after": 1076,
+    "before_SHA256": "897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c",
+    "after_SHA256": "897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c",
+    "unchanged": true,
+    "evidence": [
+      {
+        "raw_line": 33,
+        "text": "lua_memory_budget_integration_test.go:175: Lua_independent_unchanged ID=lua-bound-target bytes_before=1076 bytes_after=1076 before_SHA256=897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c after_SHA256=897d51bafa1d9a23ef9728feb897efaa527bccd013f709c60395140f8795da6c unchanged=true error=<nil>"
+      }
+    ],
+    "scope": "Unchangedbackend document does not create an APPLIEDKeep acknowledgement."
+  },
+  "process_lifecycle": {
+    "Docker_OOMKilled": true,
+    "Docker_ExitCode": 137,
+    "Docker_Running": false,
+    "first_independent_OOM_state": {
+      "raw_line": 25,
+      "at": "2026-10-16T21:06:06.366577Z",
+      "state": "weir-memory-recovery-82217-1792184765717582000 false true 137",
+      "error": "<nil>"
+    },
+    "independent_OOM_observation_count": 154,
+    "Docker_unknown_observation_count": 0,
+    "helper_CLI_exit": [
+      {
+        "raw_line": 946,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=true 137"
+      }
+    ],
+    "normal_exit0": false,
+    "container_removed_after_original_cleanup": true,
+    "independent_selected_ps_after": "",
+    "initial_and_final_cgroup_events": [
+      {
+        "raw_line": 4,
+        "text": "lua_memory_budget_integration_test.go:120: cgroup_memory_events phase=Lua_initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+      },
+      {
+        "raw_line": 937,
+        "text": "lua_memory_budget_integration_test.go:199: cgroup_memory_events phase=Lua_after_probe value=\"Error response from daemon: container f931e3ed42569cffc2c1bf7d1a9dd73fb8959bff50407f91eb8b133ffa9ca67c is not running\" error=exit status 1"
+      },
+      {
+        "raw_line": 940,
+        "text": "lua_memory_budget_integration_test.go:116: cgroup_memory_events phase=Lua_final_cleanup value=\"Error response from daemon: container f931e3ed42569cffc2c1bf7d1a9dd73fb8959bff50407f91eb8b133ffa9ca67c is not running\" error=exit status 1"
+      }
+    ],
+    "final_cgroup_events_known": false,
+    "scope": "Initialmemory.events all0; afterOOM dockerexec cannotreaddeadcontainer. ActualOOM is independently established byDockerStateOOMKilled=true/exit137, not inferredfromRPC/metrics."
+  },
+  "health_and_recovery": {
+    "fresh_Read_and_Native": "FAIL_after_process_death",
+    "health_evidence": [
+      {
+        "raw_line": 29,
+        "text": "lua_memory_budget_integration_test.go:167: ingress_health SDK_client=0xc000342a20 kind=0 caller3s elapsed=316.25\u00b5s error=rpc error: code = Unavailable desc = connection error: desc = \"error reading server preface: EOF\""
+      },
+      {
+        "raw_line": 31,
+        "text": "lua_memory_budget_integration_test.go:167: ingress_health SDK_client=0xc000342a20 kind=2 caller3s elapsed=422.125\u00b5s error=rpc error: code = Unavailable desc = connection error: desc = \"error reading server preface: EOF\""
+      }
+    ],
+    "same_original_SDK_smallPutRead": "ATTEMPTED_BOTH_FAILED_connectionrefused",
+    "sameSDK_errors": [
+      {
+        "raw_line": 328,
+        "text": "lua_memory_budget_integration_test.go:194: fresh small Put after recovery failed; still checking same-SDK Read rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:64209: connect: connection refused\""
+      },
+      {
+        "raw_line": 329,
+        "text": "lua_memory_budget_integration_test.go:194: fresh small Read after recovery failed rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:64209: connect: connection refused\""
+      }
+    ],
+    "allzero_recovery": "FAIL_UNOBSERVABLE_after_processdeath",
+    "allzero_failures": [
+      {
+        "raw_line": 326,
+        "text": "lua_memory_budget_integration_test.go:192: fixed absolute5s ingress ownership recovery failed expected_connections 2 expected_used_resident_connection_bytes 1048576 Get \"http://127.0.0.1:64211/metrics\": dial tcp 127.0.0.1:64211: connect: connection refused"
+      },
+      {
+        "raw_line": 630,
+        "text": "lua_memory_budget_integration_test.go:195: fixed absolute5s ingress ownership recovery failed expected_connections 2 expected_used_resident_connection_bytes 1048576 Get \"http://127.0.0.1:64211/metrics\": dial tcp 127.0.0.1:64211: connect: connection refused"
+      },
+      {
+        "raw_line": 932,
+        "text": "lua_memory_budget_integration_test.go:198: fixed absolute5s ingress ownership recovery failed expected_connections 0 expected_used_resident_connection_bytes 0 Get \"http://127.0.0.1:64211/metrics\": dial tcp 127.0.0.1:64211: connect: connection refused"
+      }
+    ],
+    "scope": "Container removal/OSprocessdeath are cleanup, not successful ownership recovery or normal shutdown."
+  },
+  "Mongo_fixture_cleanup": {
+    "status": "UNKNOWN_OR_FAILED_WITHIN_ORIGINAL3s",
+    "original_error": [
+      {
+        "raw_line": 947,
+        "text": "backend.go:65:  connection(127.0.0.1:27028[-3]) incomplete read of message header: context deadline exceeded: client timed out waiting for server response: read tcp 127.0.0.1:64207->127.0.0.1:27028: i/o timeout: connection(127.0.0.1:27028[-3]) incomplete read of message header: context deadline exceeded: client timed out waiting for server response: read tcp 127.0.0.1:64207->127.0.0.1:27028: i/o timeout"
+      }
+    ],
+    "extra_DB_query_drop_retry_performed": false,
+    "scope": "Do not claim all backendowners/namespace resources released. The originalfixtureDrop timedout; no namespace was verified absent afterward."
+  },
+  "metrics": {
+    "successful_scrapes": 6,
+    "failed_scrapes": 604,
+    "peaks_at_separate_sample_times": {
+      "process_resident_memory_bytes": {
+        "value": 291393536,
+        "at": "2026-10-16T21:06:06.122326Z",
+        "raw_line": 15
+      },
+      "weir_memory_cgroup_current_bytes": {
+        "value": 59121664,
+        "at": "2026-10-16T21:06:06.097745Z",
+        "raw_line": 13
+      },
+      "weir_memory_cgroup_working_set_bytes": {
+        "value": 59064320,
+        "at": "2026-10-16T21:06:06.097745Z",
+        "raw_line": 13
+      },
+      "go_memstats_heap_alloc_bytes": {
+        "value": 202598856,
+        "at": "2026-10-16T21:06:06.122326Z",
+        "raw_line": 15
+      },
+      "weir_execution_memory_used_bytes": {
+        "value": 82638448,
+        "at": "2026-10-16T21:06:06.097745Z",
+        "raw_line": 13
+      }
+    },
+    "ranges": {
+      "go_gc_cycles": {
+        "min": 0,
+        "max": 8,
+        "first": 0,
+        "last": 8
+      },
+      "go_gc_pause_seconds": {
+        "min": 0,
+        "max": 0.000403623,
+        "first": 0,
+        "last": 0.000403623
+      },
+      "go_memstats_alloc_bytes": {
+        "min": 1340184,
+        "max": 202598856,
+        "first": 1702624,
+        "last": 202598856
+      },
+      "go_memstats_alloc_bytes_total": {
+        "min": 1702624,
+        "max": 273154584,
+        "first": 1702624,
+        "last": 273154584
+      },
+      "go_memstats_buck_hash_sys_bytes": {
+        "min": 1445413,
+        "max": 1445413,
+        "first": 1445413,
+        "last": 1445413
+      },
+      "go_memstats_frees_total": {
+        "min": 2043,
+        "max": 41460,
+        "first": 2043,
+        "last": 41460
+      },
+      "go_memstats_gc_sys_bytes": {
+        "min": 1608976,
+        "max": 3302704,
+        "first": 1608976,
+        "last": 3302704
+      },
+      "go_memstats_heap_alloc_bytes": {
+        "min": 1340184,
+        "max": 202598856,
+        "first": 1702624,
+        "last": 202598856
+      },
+      "go_memstats_heap_idle_bytes": {
+        "min": 4046848,
+        "max": 72007680,
+        "first": 4046848,
+        "last": 72007680
+      },
+      "go_memstats_heap_inuse_bytes": {
+        "min": 2998272,
+        "max": 204095488,
+        "first": 3620864,
+        "last": 204095488
+      },
+      "go_memstats_heap_objects": {
+        "min": 6539,
+        "max": 17359,
+        "first": 11860,
+        "last": 7951
+      },
+      "go_memstats_heap_released_bytes": {
+        "min": 3227648,
+        "max": 4046848,
+        "first": 4046848,
+        "last": 3358720
+      },
+      "go_memstats_heap_sys_bytes": {
+        "min": 7667712,
+        "max": 276103168,
+        "first": 7667712,
+        "last": 276103168
+      },
+      "go_memstats_last_gc_time_seconds": {
+        "min": 0,
+        "max": 1792184766.1498497,
+        "first": 0,
+        "last": 1792184766.1498497
+      },
+      "go_memstats_mallocs_total": {
+        "min": 13903,
+        "max": 49411,
+        "first": 13903,
+        "last": 49411
+      },
+      "go_memstats_mcache_inuse_bytes": {
+        "min": 4592,
+        "max": 4592,
+        "first": 4592,
+        "last": 4592
+      },
+      "go_memstats_mcache_sys_bytes": {
+        "min": 16072,
+        "max": 16072,
+        "first": 16072,
+        "last": 16072
+      },
+      "go_memstats_mspan_inuse_bytes": {
+        "min": 64000,
+        "max": 64000,
+        "first": 64000,
+        "last": 64000
+      },
+      "go_memstats_mspan_sys_bytes": {
+        "min": 65280,
+        "max": 65280,
+        "first": 65280,
+        "last": 65280
+      },
+      "go_memstats_next_gc_bytes": {
+        "min": 4194304,
+        "max": 269304170,
+        "first": 4194304,
+        "last": 269304170
+      },
+      "go_memstats_other_sys_bytes": {
+        "min": 567339,
+        "max": 815147,
+        "first": 753675,
+        "last": 567339
+      },
+      "go_memstats_stack_inuse_bytes": {
+        "min": 655360,
+        "max": 720896,
+        "first": 720896,
+        "last": 688128
+      },
+      "go_memstats_stack_sys_bytes": {
+        "min": 655360,
+        "max": 720896,
+        "first": 720896,
+        "last": 688128
+      },
+      "go_memstats_sys_bytes": {
+        "min": 12278024,
+        "max": 282188104,
+        "first": 12278024,
+        "last": 282188104
+      },
+      "process_cpu_seconds_total": {
+        "min": 0.03,
+        "max": 0.14,
+        "first": 0.03,
+        "last": 0.14
+      },
+      "process_resident_memory_bytes": {
+        "min": 17985536,
+        "max": 291393536,
+        "first": 17985536,
+        "last": 291393536
+      },
+      "weir_execution_memory_borrowed": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_budget_bytes": {
+        "min": 237681049,
+        "max": 244969198,
+        "first": 244969198,
+        "last": 237681049
+      },
+      "weir_execution_memory_budget_known": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_execution_memory_budget_rejections_total": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_ingress_buffers": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_ingress_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_ingress_connection_bytes": {
+        "min": 1048576,
+        "max": 1048576,
+        "first": 1048576,
+        "last": 1048576
+      },
+      "weir_execution_memory_ingress_connections": {
+        "min": 2,
+        "max": 2,
+        "first": 2,
+        "last": 2
+      },
+      "weir_execution_memory_ingress_messages": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_ingress_reserved_bytes": {
+        "min": 0,
+        "max": 8504,
+        "first": 0,
+        "last": 8504
+      },
+      "weir_execution_memory_ingress_waiting": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_input_reserved_bytes": {
+        "min": 0,
+        "max": 33554432,
+        "first": 0,
+        "last": 33554432
+      },
+      "weir_execution_memory_input_used_bytes": {
+        "min": 0,
+        "max": 3381,
+        "first": 0,
+        "last": 3381
+      },
+      "weir_execution_memory_io_reserve_bytes": {
+        "min": 48795648,
+        "max": 48795648,
+        "first": 48795648,
+        "last": 48795648
+      },
+      "weir_execution_memory_leases": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 1
+      },
+      "weir_execution_memory_leases_limit": {
+        "min": 32768,
+        "max": 32768,
+        "first": 32768,
+        "last": 32768
+      },
+      "weir_execution_memory_native_leases": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_native_leases_limit": {
+        "min": 1024,
+        "max": 1024,
+        "first": 1024,
+        "last": 1024
+      },
+      "weir_execution_memory_resident_bytes": {
+        "min": 1048576,
+        "max": 34611512,
+        "first": 1048576,
+        "last": 34611512
+      },
+      "weir_execution_memory_settled": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_starting": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 1
+      },
+      "weir_execution_memory_terminal": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_used_bytes": {
+        "min": 1048576,
+        "max": 82638448,
+        "first": 1048576,
+        "last": 82638448
+      },
+      "weir_execution_memory_waiting": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_wire_buffers": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_wire_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_ingress_connections": {
+        "min": 2,
+        "max": 2,
+        "first": 2,
+        "last": 2
+      },
+      "weir_ingress_queued_response_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_ingress_sessions": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 1
+      },
+      "weir_memory_budget_bytes": {
+        "min": 536870912,
+        "max": 536870912,
+        "first": 536870912,
+        "last": 536870912
+      },
+      "weir_memory_cgroup_current_bytes": {
+        "min": 26669056,
+        "max": 59121664,
+        "first": 26669056,
+        "last": 59121664
+      },
+      "weir_memory_cgroup_finite": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_levels": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_limit_bytes": {
+        "min": 536870912,
+        "max": 536870912,
+        "first": 536870912,
+        "last": 536870912
+      },
+      "weir_memory_cgroup_scope": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_state": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_valid": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_working_set_bytes": {
+        "min": 26611712,
+        "max": 59064320,
+        "first": 26611712,
+        "last": 59064320
+      },
+      "weir_memory_go_runtime_limit_bytes": {
+        "min": 285217259,
+        "max": 293963038,
+        "first": 293963038,
+        "last": 285217259
+      },
+      "weir_memory_go_runtime_managed": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_latched": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_memory_process_valid": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_recovery_allowance_bytes": {
+        "min": 356521574,
+        "max": 367453798,
+        "first": 367453798,
+        "last": 356521574
+      },
+      "weir_memory_recovery_allowance_known": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_sample_bytes": {
+        "min": 18255872,
+        "max": 39776256,
+        "first": 18255872,
+        "last": 39776256
+      },
+      "weir_memory_sample_observed": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_unknown": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_active_executions": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 1
+      },
+      "weir_store_active_executions_limit": {
+        "min": 16,
+        "max": 16,
+        "first": 16,
+        "last": 16
+      },
+      "weir_store_batch_max_bytes": {
+        "min": 4194304,
+        "max": 4194304,
+        "first": 4194304,
+        "last": 4194304
+      },
+      "weir_store_batch_max_operations": {
+        "min": 128,
+        "max": 128,
+        "first": 128,
+        "last": 128
+      },
+      "weir_store_batch_max_wait_seconds": {
+        "min": 0.02,
+        "max": 0.02,
+        "first": 0.02,
+        "last": 0.02
+      },
+      "weir_store_batch_operations": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_closed": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_draining": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_execution_seconds": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_executions_total": {
+        "min": 0,
+        "max": 2,
+        "first": 0,
+        "last": 2
+      },
+      "weir_store_overloaded": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_paused_native_outputs": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_paused_native_reserved_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_pending_entries": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_pending_entries_limit": {
+        "min": 1024,
+        "max": 1024,
+        "first": 1024,
+        "last": 1024
+      },
+      "weir_store_pending_reserved_bytes": {
+        "min": 0,
+        "max": 1332,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_pending_reserved_bytes_limit": {
+        "min": 33554432,
+        "max": 33554432,
+        "first": 33554432,
+        "last": 33554432
+      },
+      "weir_store_publishers": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_queue_wait_seconds": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_records_total": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 1
+      },
+      "weir_store_rejections_total": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_result_reserved_bytes": {
+        "min": 0,
+        "max": 512,
+        "first": 0,
+        "last": 512
+      },
+      "weir_store_result_reserved_entries": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 1
+      },
+      "weir_store_retained_result_reserved_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_retained_results": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_working_reserved_bytes": {
+        "min": 0,
+        "max": 48026936,
+        "first": 0,
+        "last": 48026936
+      }
+    },
+    "limits": "OOM occurredfast; finalmetrics absent, missingmetrics are notzero. These samples do not capture peakallocation or exactfailingLuaiteration."
+  },
+  "prior_evidence_preserved": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-validation.json": "e13e6cd11d39035aaae4315d410fe8107f3e16f5a92033acdeeed10691da869b",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-validation.json": "b86a744c301acd89ce406eb643de417f8550b7ea23df362b1f5b4dc215041fc3",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v3-validation.json": "254387ab9e8b5cfb2232424600f60c0d00c72f0c546db1afc54d29315e5ee5fb"
+  },
+  "evidence_files": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-source-before.json": {
+      "sha256": "44a8b8df530c8e6e37b504ab5b40516f9f300830f98fc6b5f3c2fa499e48cd1c",
+      "bytes": 117889
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-source-after.json": {
+      "sha256": "d8b3fb2bee6a216ed5f1301188bfdb284b1e57fa25a95f8c695fadb40295650a",
+      "bytes": 118563
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-build-command.json": {
+      "sha256": "7fa2c8b49a9d1024ac8847a21ef733ccb5e55b0bb6d472cd100377b2e6a3ff95",
+      "bytes": 816
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-build.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-build.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-build.json": {
+      "sha256": "a87e0dd16db49fe1b181f1579d7625ff9e43f671a5041171be05e79406503e8e",
+      "bytes": 1950
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-buildinfo.txt": {
+      "sha256": "dc583824f59b34dcf64a403de7b78d7efd3e7f5ca4ad4b08a45161d4f34fef31",
+      "bytes": 2833
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-weir-linux": {
+      "sha256": "1e50a806e1f363115dfa2ac744e5b4357cbf9e98f547a97022297807d5818137",
+      "bytes": 29582882
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-command.json": {
+      "sha256": "53f674e387597f8cf9325c1d69df7a7df7e5a519647d3c1a7853a04f36c7e99d",
+      "bytes": 1662
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-process.txt": {
+      "sha256": "069ae3360a68cde15de24aafc9974213a30a9ba8c79188a1a66428f28a9da26f",
+      "bytes": 227654
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-process.exit": {
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-driver.test": {
+      "sha256": "de16ad5b22b24679a60e62ad46d85e7c9cb93187098356bf32c1e6b973d23a4e",
+      "bytes": 41503458
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-driver-buildinfo.txt": {
+      "sha256": "975d473c8e4898e86220be359077770974d079646b437e7538b128dbaeaab439",
+      "bytes": 2871
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-observations.json": {
+      "sha256": "fc7be513249a2c0dc0f27e977f7722e93c23e9e72112ce4ab67f26d479f07ba5",
+      "bytes": 241814
+    }
+  },
+  "exclusive_window": "RETURNED to root after frozen sourceafter/driver/containerabsence. No subsequentGo/DB/CLI/load/diagnosticretry."
+}

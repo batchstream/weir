@@ -1,0 +1,49 @@
+{
+  "started_utc": "2026-10-16T21:06:01.229529+00:00",
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "source": "a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "GOFLAGS": "",
+    "GOOS": "darwin",
+    "GOARCH": "arm64",
+    "CGO_ENABLED": "1",
+    "WEIR_INTEGRATION": "1",
+    "WEIR_LUA_MEMORY_INTEGRATION": "1",
+    "WEIR_LUA_MEMORY_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-weir-linux",
+    "WEIR_LUA_MEMORY_SOURCE": "a6ccb9b8e0b7397cc7e7e796e0d8b1bd0b8855fc",
+    "WEIR_LUA_MEMORY_SHA256": "1e50a806e1f363115dfa2ac744e5b4357cbf9e98f547a97022297807d5818137"
+  },
+  "unset_env": [
+    "WEIR_MONGO_PROFILE",
+    "WEIR_INGRESS_MEMORY_INTEGRATION",
+    "WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION",
+    "WEIR_INGRESS_DIAGNOSTIC",
+    "WEIR_NATIVE_BURST_INTEGRATION"
+  ],
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-mod=readonly",
+    "-buildvcs=true",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLILuaMemoryBudget$",
+    "-timeout",
+    "2m",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-production-baseline-driver.test",
+    "-v",
+    "./internal/app"
+  ],
+  "scope": "One originaltinyLua29doublingfinal512MiB/caller3s owned512MiB2CPUCLI only; host neverinterpretsLua; no retry/configchange/diagnostic overlay"
+}
