@@ -178,6 +178,9 @@ func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr err
 	if err != nil {
 		return err
 	}
+	// Register this first so the node closes before its process budget is restored.
+	restoreMemoryLimit := node.ManageRuntimeMemoryLimit()
+	defer restoreMemoryLimit()
 
 	defer func() {
 		// A startup cancellation must not cancel the drain budget too.

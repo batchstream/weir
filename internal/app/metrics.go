@@ -103,6 +103,22 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
 	}
+	managed := 0.0
+	if memory.GoRuntimeManaged {
+		managed = 1
+	}
+	for name, value := range map[string]float64{
+		"go_runtime_limit_bytes": float64(memory.GoRuntimeLimit),
+		"go_runtime_managed":     managed,
+	} {
+		desc := prometheus.NewDesc(
+			"weir_memory_"+name,
+			"Last sampled Go soft memory limit (MaxInt64 means unlimited) and whether the CLI still owns an automatic finite limit; OS memory remains the admission boundary.",
+			nil,
+			nil,
+		)
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
+	}
 
 	desc = prometheus.NewDesc(
 		"weir_memory_sample_bytes",

@@ -20,7 +20,7 @@ func DefaultLimits() Limits {
 }
 
 func (limits Limits) Validate() error {
-	if limits.HighWatermark > 100 || limits.HighWatermark < 1 || limits.LowWatermark >= limits.HighWatermark || limits.SampleInterval <= 0 {
+	if limits.HighWatermark > 100 || limits.HighWatermark < 1 || limits.LowWatermark < 1 || limits.LowWatermark >= limits.HighWatermark || limits.SampleInterval <= 0 {
 		return fmt.Errorf("invalid memory pressure watermarks or sampling interval")
 	}
 	return nil
@@ -39,6 +39,7 @@ type Guard struct {
 	state         Snapshot
 	profile       memoryProfile
 	processBudget uint64
+	runtimeMemory *runtimeMemoryLimit
 }
 
 type Snapshot struct {
@@ -48,6 +49,8 @@ type Snapshot struct {
 	ProcessValid      bool
 	Unknown           bool
 	Cgroup            CgroupSnapshot
+	GoRuntimeLimit    uint64
+	GoRuntimeManaged  bool
 }
 
 // Cgroup is the most pressured finite visible level, with its own working-set/max
@@ -117,6 +120,7 @@ func (g *Guard) sample(o observation) {
 		}
 		g.state.Budget = smallerBudget(g.state.Budget, capacity)
 	}
+	g.updateRuntimeMemoryLocked(limits)
 	// Missing observations do not manufacture overload. Actual process or
 	// container pressure controls admission once a trustworthy sample exists.
 	if o.high || o.processValid && g.processBudget != 0 && o.bytes >= watermark(g.processBudget, limits.HighWatermark, true) {
