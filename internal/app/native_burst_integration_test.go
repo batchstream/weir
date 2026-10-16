@@ -235,7 +235,7 @@ func seedNativeBurstDataset(t *testing.T, dataset *nativeBurstDataset) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		dataset.native, err = weirclient.NewHTTPNativeRequest(dataset.root, request)
+		dataset.native, err = weirclient.NewHTTPNativeRequest("", request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -319,8 +319,11 @@ func executeNativeBurstCall(ctx context.Context, client *weirclient.Client, data
 			actual = response.Cursor.Batch[0]
 		} else {
 			metadata, err := weirclient.ParseHTTPNativeResponse(result.Response)
-			if err != nil || metadata.StatusCode != http.StatusOK {
+			if err != nil {
 				return fmt.Errorf("Native HTTP metadata invalid: %v", err)
+			}
+			if metadata.StatusCode != http.StatusOK {
+				return fmt.Errorf("Native HTTP status %d, want %d", metadata.StatusCode, http.StatusOK)
 			}
 			var response struct {
 				Found  bool              `json:"found"`
