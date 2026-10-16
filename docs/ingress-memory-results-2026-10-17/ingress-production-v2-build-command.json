@@ -1,0 +1,27 @@
+{
+  "started_utc": "2026-10-16T20:32:30.846432+00:00",
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "GOFLAGS": "",
+    "GOOS": "linux",
+    "GOARCH": "arm64",
+    "CGO_ENABLED": "0"
+  },
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "build",
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid= -X main.sourceRevision=262f3f37b669ebd751a43269c7a3bfd90086857f",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-weir-linux",
+    "./cmd/weir"
+  ]
+}

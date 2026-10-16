@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-16T19:19:41.838975+00:00",
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-modfile",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC.mod",
+    "-mod=readonly",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-combined-overlay.json",
+    "-race",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^$",
+    "./internal/app"
+  ],
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "unset_env": [
+    "WEIR_INTEGRATION",
+    "WEIR_INGRESS_MEMORY_INTEGRATION",
+    "WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION",
+    "WEIR_INGRESS_DIAGNOSTIC",
+    "WEIR_MONGO_PROFILE"
+  ],
+  "scope": "compile-only; no test bodies/DB/Docker/CLI"
+}

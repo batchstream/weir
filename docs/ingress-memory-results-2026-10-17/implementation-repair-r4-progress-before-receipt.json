@@ -1,0 +1,16 @@
+{
+  "status": "EXPECTED_FAIL",
+  "exit": 1,
+  "baseline_head": "9dbf1d11414ba834b7e62ce7cb85309fc694889a",
+  "production_source_unchanged": true,
+  "baseline_core_sha256": {
+    "internal/store/execution_memory.go": "81a717783e33dc9b042a8a7566850694c49ea42722704e819206ef75f7edaa57",
+    "internal/store/ingress_memory.go": "58e21264e074dce7d258b142469f9de6df364f0efd761f9fcae59a871c7b1538"
+  },
+  "added_test_file": "internal/store/ingress_progress_reserve_test.go",
+  "added_test_sha256": "cb2e492cfe39bdfaba1e448ed5dcc0953c1897b9e1e2e40c21cc593b641f75ad",
+  "inert_test_snapshot": "repair-r4-progress-before-test.go.txt",
+  "raw": "repair-r4-progress-before.txt",
+  "raw_sha256": "4da5516a93960667239c46603b6a5b7d78c71b49a668094a6ea524e08fb2fc86",
+  "observed": "Both first automatic input promise and ObserveMemory refill exhaust resident headroom; all four concurrent short NewIngress calls fail immediately while actual first input and IO remain live; budget rejection counter remains zero."
+}

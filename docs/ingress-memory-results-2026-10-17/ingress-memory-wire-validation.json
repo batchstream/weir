@@ -1,0 +1,43 @@
+{
+  "scope": "PURE LOCAL OBSERVER TESTS AND OFFLINE COMPILE ONLY; A/B not run; no DB/Docker/load",
+  "at_utc": "2026-10-16T16:58:41.702553+00:00",
+  "primary_base": "fcd583919f32ccab2b6bc96791b1871241941d13",
+  "source_sha256": {
+    "internal/app/ingress_memory_budget_integration_test.go": "a42f476258676aa58e01aae7700403d4d45a825f76a396740c5ef9eb21125f9f",
+    "internal/app/ingress_memory_wire_test.go": "d16802f4d135c61e95543b96854f8023d7785e3db5fde4cc2d7c3638fdf7f3ab"
+  },
+  "source_lines": {
+    "internal/app/ingress_memory_budget_integration_test.go": 877,
+    "internal/app/ingress_memory_wire_test.go": 129
+  },
+  "functional_ingress_source_change": "none; only4-line pinned HTTP2 writer serialization comment added since873-line review",
+  "tests": [
+    "fragmented preface/header/DATA with actual partial Writes; ignores stream3 and empty control frames",
+    "partial Write+error and zero Write+error count successful bytes only",
+    "32 PADDED DATA observations stay invalid and cannot form prefix condition"
+  ],
+  "commands": [
+    "go test -race -count=1 -tags integration -run ^TestIngressMemoryWire -timeout 2m -v ./internal/app",
+    "go test -race -count=1 -tags integration -run ^$ ./internal/app"
+  ],
+  "actual_exits": {
+    "pure_local": 0,
+    "compile": 0
+  },
+  "toolchain": "Go1.27.1 explicit GOROOT; GOENVoff GOTOOLCHAINlocal GOWORKoff GOPROXYoff GOSUMDBoff CGO1",
+  "artifacts_sha256": {
+    "ingress-memory-wire-local.txt": "256960da947c8f511e67726bc1f99a7bfbc07e1792f72a498bd90b51627b02da",
+    "ingress-memory-wire-local.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "ingress-memory-wire-compile.txt": "163a3f27ce324849ffe60d1ba5bd33b7ac83ab296fcc4ae6a1377dca78106e15",
+    "ingress-memory-wire-compile.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "writer_serialization_evidence": {
+    "pinned_module": "golang.org/x/net@v0.58.0/http2/transport.go",
+    "initial_preface_flush_before_read_loop": "538-554",
+    "ClientConn_wmu_contract": "271-277",
+    "DATA_write_and_flush_lock": "1562-1576",
+    "response_flowcontrol_write_and_flush_lock": "2212-2220",
+    "PING_ACK_write_and_flush_lock": "2672-2678"
+  },
+  "source_status": "?? internal/app/ingress_memory_budget_integration_test.go\n?? internal/app/ingress_memory_wire_test.go\n"
+}

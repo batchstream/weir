@@ -1,0 +1,7 @@
+{
+  "started_utc": "2026-10-16T19:00:25.419366+00:00",
+  "driver_helper_exceptions_allowed_by_root": true,
+  "driver_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+  "artifact_revision": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+  "scope": "ONLY TestCLIIngressConcurrentPut; original A once; no proxy/fault/overlay/retry; B/Lua/formal not run"
+}

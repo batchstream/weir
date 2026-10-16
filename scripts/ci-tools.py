@@ -18,6 +18,26 @@ def download(pin, destination):
         raise ValueError('public tool checksum mismatch')
 
 
+def prepare_modules(source, work_root, env):
+    # The root uses the reviewed native receiver patch. Preparing its graph in
+    # isolation still requires the replacement's module files at the same path.
+    directories = (Path('.'), Path('third_party/grpc'))
+    inputs = {directory / name: (source / directory / name).read_bytes()
+              for directory in directories for name in ('go.mod', 'go.sum')}
+    with tempfile.TemporaryDirectory(prefix='module-prepare-', dir=work_root) as work:
+        for relative, raw in inputs.items():
+            target = Path(work) / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        # Each module has its own selected test dependency versions. Both must
+        # be cached before CI switches back to its network-disabled test mode.
+        for directory in directories:
+            subprocess.run(['go', 'mod', 'download', 'all'], cwd=Path(work) / directory,
+                           env=env, check=True, timeout=300)
+    if inputs != {relative: (source / relative).read_bytes() for relative in inputs}:
+        raise ValueError('module preparation changed fixed go.mod/go.sum')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('test', 'publish', 'smoke'))
@@ -44,17 +64,12 @@ def main():
             raise ValueError('native Go driver/compiler mismatch: ' + go_version)
         print(go_version, flush=True)
         env.update(GOPROXY='https://proxy.golang.org', GOSUMDB='sum.golang.org')
-        module_inputs = {name: Path(name).read_bytes() for name in ('go.mod', 'go.sum')}
         # The packager inventories the complete module graph, including lazy test dependencies.
         # Download in a temporary module copy: full downloads may add unused zip sums.
-        with tempfile.TemporaryDirectory(prefix='module-prepare-', dir=root) as work:
-            for name, raw in module_inputs.items():
-                (Path(work) / name).write_bytes(raw)
-            subprocess.run(['go', 'mod', 'download', 'all'], cwd=work, env=env, check=True, timeout=300)
-        if module_inputs != {name: Path(name).read_bytes() for name in module_inputs}:
-            raise ValueError('module preparation changed fixed go.mod/go.sum')
+        prepare_modules(Path.cwd(), root, env)
         env.update(GOPROXY='off', GOSUMDB='off')
-        subprocess.run(['go', 'mod', 'verify'], env=env, check=True, timeout=60)
+        for directory in (Path('.'), Path('third_party/grpc')):
+            subprocess.run(['go', 'mod', 'verify'], cwd=directory, env=env, check=True, timeout=60)
         subprocess.run(['go', 'list', '-m', '-json', 'all'], env=env, check=True, timeout=60, stdout=subprocess.DEVNULL)
     if args.mode != 'test':
         dest = bins / 'regctl'

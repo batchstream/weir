@@ -1,0 +1,11 @@
+{
+  "scope": "Historical observation recorded after author fixed the manifest; exact earlier tool output preserved as text facts, not a fresh execution",
+  "observed_stdout": [
+    "PATCH_DIFF_EXISTS True PATCH_DIFF_RECORDED False",
+    "ACTUAL_RELEASE_WHITELIST_VALIDATION_FAIL exported gRPC sources differ from the pinned patch manifest",
+    "ACTUAL_COUNT 562"
+  ],
+  "cause": "WEIR_PATCH.diff was exported but absent from manifest.files/newFiles",
+  "exact_pre_fix_manifest_bytes_or_SHA": "NOT_CAPTURED",
+  "subsequent_actual_validation": "PASS for manifest71a01b1d8dc69f64d51fd029f20981a992e98685fcedf39f18a9f702258f52ea; see ingress-support-package-actual-first.json"
+}

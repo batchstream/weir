@@ -1,0 +1,33 @@
+File: ingress-DIAGNOSTIC-driver-BDP-host.test
+Type: cpu
+Time: 2026-10-17 03:20:37 CST
+Duration: 6.48s, Total samples = 4.74s (73.18%)
+Showing nodes accounting for 4.53s, 95.57% of 4.74s total
+Dropped 138 nodes (cum <= 0.02s)
+Showing top 25 nodes out of 164
+      flat  flat%   sum%        cum   cum%
+     2.89s 60.97% 60.97%      2.89s 60.97%  runtime._ExternalCode
+     0.47s  9.92% 70.89%      0.47s  9.92%  runtime.memmove
+     0.24s  5.06% 75.95%      0.24s  5.06%  syscall.rawsyscalln
+     0.18s  3.80% 79.75%      0.18s  3.80%  crypto/internal/fips140/sha256.blockSHA2
+     0.13s  2.74% 82.49%      0.13s  2.74%  runtime.memclrNoHeapPointers
+     0.09s  1.90% 84.39%      0.09s  1.90%  racecall
+     0.09s  1.90% 86.29%      0.09s  1.90%  runtime.pthread_cond_wait
+     0.09s  1.90% 88.19%      0.09s  1.90%  runtime.usleep
+     0.08s  1.69% 89.87%      0.08s  1.69%  racecalladdr
+     0.08s  1.69% 91.56%      0.08s  1.69%  runtime.kevent
+     0.05s  1.05% 92.62%      0.05s  1.05%  runtime.(*spanInlineMarkBits).init
+     0.03s  0.63% 93.25%      0.03s  0.63%  runtime.pthread_cond_signal
+     0.02s  0.42% 93.67%      0.06s  1.27%  bytes.(*Buffer).WriteByte
+     0.02s  0.42% 94.09%      0.14s  2.95%  github.com/prometheus/common/expfmt.(*TextParser).readTokenUntilNewline
+     0.02s  0.42% 94.51%      0.10s  2.11%  runtime.newobject
+     0.01s  0.21% 94.73%      0.07s  1.48%  github.com/prometheus/common/expfmt.(*TextParser).readTokenAsMetricName
+     0.01s  0.21% 94.94%      0.08s  1.69%  github.com/prometheus/common/expfmt.(*TextParser).setOrCreateCurrentMF
+     0.01s  0.21% 95.15%      0.39s  8.23%  google.golang.org/grpc/internal/transport.(*loopyWriter).processData
+     0.01s  0.21% 95.36%      0.28s  5.91%  runtime.mallocgc
+     0.01s  0.21% 95.57%      0.06s  1.27%  runtime.mallocgcSmallNoscan
+         0     0% 95.57%      0.07s  1.48%  bufio.(*Reader).Read
+         0     0% 95.57%      0.11s  2.32%  bufio.(*Reader).ReadByte
+         0     0% 95.57%      0.05s  1.05%  bufio.(*Reader).fill
+         0     0% 95.57%      0.08s  1.69%  bytes.(*Buffer).String (inline)
+         0     0% 95.57%      0.06s  1.27%  bytes.(*Buffer).Write

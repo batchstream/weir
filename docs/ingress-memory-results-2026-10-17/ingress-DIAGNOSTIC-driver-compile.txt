@@ -1,0 +1,6 @@
+# github.com/batchstream/weir/internal/app [github.com/batchstream/weir/internal/app.test]
+internal/app/lua_memory_budget_integration_test.go:167:40: not enough arguments in call to ingressMemoryHealth
+	have (*testing.T, *weir.Client, *nativeBurstDataset)
+	want (*testing.T, *weir.Client, *nativeBurstDataset, string)
+FAIL	github.com/batchstream/weir/internal/app [build failed]
+FAIL

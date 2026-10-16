@@ -667,8 +667,8 @@ func observeTypedMemory(process *memoryRecoveryCLI) (map[string]*dto.MetricFamil
 
 func validateTypedMemorySnapshot(t *testing.T, process *memoryRecoveryCLI, sample map[string]*dto.MetricFamily, largestBudget float64) float64 {
 	t.Helper()
-	values := make(map[string]float64, 19)
-	for _, suffix := range []string{"budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "native_leases", "native_leases_limit", "starting", "settled", "borrowed", "waiting", "terminal", "wire_bytes", "wire_buffers", "budget_rejections_total"} {
+	values := make(map[string]float64, 26)
+	for _, suffix := range []string{"ingress_connection_bytes", "ingress_connections", "ingress_bytes", "ingress_reserved_bytes", "ingress_buffers", "ingress_messages", "ingress_waiting", "budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "native_leases", "native_leases_limit", "starting", "settled", "borrowed", "waiting", "terminal", "wire_bytes", "wire_buffers", "budget_rejections_total"} {
 		family := sample["weir_execution_memory_"+suffix]
 		if family == nil || len(family.Metric) != 1 || len(family.Metric[0].Label) != 0 || suffix != "budget_rejections_total" && family.Metric[0].Gauge == nil || suffix == "budget_rejections_total" && family.Metric[0].Counter == nil {
 			t.Fatal("required execution-memory metric missing or mislabeled", suffix)
@@ -685,7 +685,7 @@ func validateTypedMemorySnapshot(t *testing.T, process *memoryRecoveryCLI, sampl
 			families++
 		}
 	}
-	if values["budget_known"] != 1 || families != 19 || values["leases_limit"] != 32768 || values["native_leases_limit"] != 1024 || values["budget_bytes"] <= 0 {
+	if values["budget_known"] != 1 || families != 26 || values["leases_limit"] != 32768 || values["native_leases_limit"] != 1024 || values["budget_bytes"] <= 0 {
 		t.Error("fixed shared execution policy unknown or changed", families, values)
 	}
 	if values["budget_known"] == 1 {

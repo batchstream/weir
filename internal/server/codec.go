@@ -13,7 +13,6 @@ import (
 	"github.com/batchstream/weir/internal/protowire"
 	"github.com/batchstream/weir/internal/store"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -84,7 +83,26 @@ func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 			return err
 		}
 	}
-	return encoding.GetCodecV2("proto").Unmarshal(data, value)
+	message, ok := value.(protoadapt.MessageV1)
+	var wire proto.Message
+	if ok {
+		wire = protoadapt.MessageV2Of(message)
+	} else {
+		wire, ok = value.(proto.Message)
+	}
+	if !ok || wire == nil {
+		return fmt.Errorf("request is not a protobuf message: %T", value)
+	}
+	// The standard codec materializes fragmented input into the default pool,
+	// whose 1MiB tier can far exceed a short message's promised copy. Allocate
+	// exactly the validated length; a single native buffer needs no copy.
+	var raw []byte
+	if len(data) == 1 {
+		raw = data[0].ReadOnlyData()
+	} else {
+		raw = data.Materialize()
+	}
+	return proto.Unmarshal(raw, wire)
 }
 
 // responseConnection retains only account owners, never RPC contexts or encoded

@@ -20,6 +20,11 @@ const executionBorrowWindow = 4*protocol.NativeChunk + execution.ResultOverheadB
 const executionBorrowLimit = 2
 const executionProgressReserve = executionBorrowLimit*executionBorrowWindow + 2*protocol.NativeChunk
 
+// Unused queue promises and large receive promises both leave entry space for
+// bounded short RPCs. This is unused capacity in the same Node ledger, never a
+// second pool or a revocable allowance for already held inputs and buffers.
+const ingressProgressReserve = 1 << 20
+
 var errExecutionMemory = execution.ErrExecutionMemory
 
 const (
@@ -34,37 +39,46 @@ const (
 // reservation covers queued inputs, initial backend work, retained responses,
 // and publication. No reservation is released while its owner still holds data.
 type ExecutionMemory struct {
-	mu            sync.Mutex
-	budget        uint64
-	reserve       uint64
-	used          uint64
-	resident      uint64
-	inputReserved uint64
-	inputUsed     uint64
-	wireBytes     uint64
-	wireCount     int
-	nativeCount   int
-	borrowed      int
-	io            uint64
-	known         bool
-	trusted       bool
-	rejections    uint64
-	leases        map[*executionLease]struct{}
-	wakes         map[chan struct{}]struct{}
+	mu                                              sync.Mutex
+	budget                                          uint64
+	reserve                                         uint64
+	used                                            uint64
+	resident                                        uint64
+	ingressConnectionBytes                          uint64
+	ingressConnections                              int
+	ingressBytes, ingressReserved                   uint64
+	ingressBuffers, ingressMessages, ingressWaiting int
+	inputReserved                                   uint64
+	inputUsed                                       uint64
+	wireBytes                                       uint64
+	wireCount                                       int
+	nativeCount                                     int
+	borrowed                                        int
+	io                                              uint64
+	known                                           bool
+	trusted                                         bool
+	rejections                                      uint64
+	leases                                          map[*executionLease]struct{}
+	wakes                                           map[chan struct{}]struct{}
+	ingressHandoffs                                 map[*execution.Plan]*IngressInput
 }
 
 type ExecutionMemorySnapshot struct {
-	BudgetBytes, UsedBytes, IOReserveBytes uint64
-	ResidentBytes                          uint64
-	InputReservedBytes, InputUsedBytes     uint64
-	WireBytes                              uint64
-	WireCount                              int
-	NativeCount, NativeCountLimit          int
-	Count, CountLimit                      int
-	Starting, Settled, Waiting, Terminal   int
-	Borrowed                               int
-	Known                                  bool
-	BudgetRejections                       uint64
+	BudgetBytes, UsedBytes, IOReserveBytes          uint64
+	ResidentBytes                                   uint64
+	InputReservedBytes, InputUsedBytes              uint64
+	WireBytes                                       uint64
+	IngressConnectionBytes                          uint64
+	IngressConnections                              int
+	IngressBytes, IngressReservedBytes              uint64
+	IngressBuffers, IngressMessages, IngressWaiting int
+	WireCount                                       int
+	NativeCount, NativeCountLimit                   int
+	Count, CountLimit                               int
+	Starting, Settled, Waiting, Terminal            int
+	Borrowed                                        int
+	Known                                           bool
+	BudgetRejections                                uint64
 }
 
 type executionLease struct {
@@ -104,7 +118,7 @@ func (m *ExecutionMemory) ObserveMemory(snapshot overload.Snapshot) {
 func (m *ExecutionMemory) Snapshot() ExecutionMemorySnapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	snapshot := ExecutionMemorySnapshot{BudgetBytes: m.budget, UsedBytes: m.used, ResidentBytes: m.resident, InputReservedBytes: m.inputReserved, InputUsedBytes: m.inputUsed, WireBytes: m.wireBytes, WireCount: m.wireCount, IOReserveBytes: m.reserve, Count: len(m.leases), CountLimit: nativeCountLimit * execution.RecordStreamItems, NativeCount: m.nativeCount, NativeCountLimit: nativeCountLimit, Known: m.known, BudgetRejections: m.rejections}
+	snapshot := ExecutionMemorySnapshot{IngressConnectionBytes: m.ingressConnectionBytes, IngressConnections: m.ingressConnections, IngressBytes: m.ingressBytes, IngressReservedBytes: m.ingressReserved, IngressBuffers: m.ingressBuffers, IngressMessages: m.ingressMessages, IngressWaiting: m.ingressWaiting, BudgetBytes: m.budget, UsedBytes: m.used, ResidentBytes: m.resident, InputReservedBytes: m.inputReserved, InputUsedBytes: m.inputUsed, WireBytes: m.wireBytes, WireCount: m.wireCount, IOReserveBytes: m.reserve, Count: len(m.leases), CountLimit: nativeCountLimit * execution.RecordStreamItems, NativeCount: m.nativeCount, NativeCountLimit: nativeCountLimit, Known: m.known, BudgetRejections: m.rejections}
 	for lease := range m.leases {
 		switch lease.state {
 		case nativeWaiting:
@@ -165,9 +179,13 @@ func (m *ExecutionMemory) resizeInputLocked() {
 		m.used -= delta
 		m.resident -= delta
 	} else if target > m.inputReserved && m.used < m.budget && m.resident < m.residentLimitLocked() {
-		// A larger trusted capacity may promise only space actually available.
-		// A shrink revokes unused promises, never a live input or response.
-		delta := min(target-m.inputReserved, m.budget-m.used, m.residentLimitLocked()-m.resident)
+		// New automatic credit leaves short-RPC entry space. Existing input
+		// promises remain intact while other resident owners grow; only the
+		// trusted-capacity shrink above may revoke their unused portion.
+		available := m.residentLimitLocked() - m.resident
+		progress := min(uint64(ingressProgressReserve), m.residentLimitLocked()/2)
+		available -= min(available, progress)
+		delta := min(target-m.inputReserved, m.budget-m.used, available)
 		m.inputReserved += delta
 		m.used += delta
 		m.resident += delta
@@ -181,7 +199,7 @@ func (l *executionLease) reclaimUnusedInputLocked(additional, resident uint64) b
 	m := l.memory
 	_, owns := m.leases[l]
 	if !owns || len(m.leases) != 1 || l.released || l.wire != 0 || l.extra != 0 || l.result != 0 || l.window != nativeQueuedWindow || l.resident != 0 ||
-		m.inputReserved < m.inputUsed || m.inputUsed != uint64(l.input)+nativeQueuedWindow || m.resident != m.inputReserved || m.used < m.inputReserved || m.used-m.inputReserved != uint64(l.working) {
+		m.inputReserved < m.inputUsed || m.inputUsed != uint64(l.input)+nativeQueuedWindow || m.resident != m.inputReserved+m.ingressReserved+m.ingressConnectionBytes || m.used < m.inputReserved+m.ingressReserved+m.ingressConnectionBytes || m.used-m.inputReserved-m.ingressReserved-m.ingressConnectionBytes != uint64(l.working) {
 		return false
 	}
 	unused := m.inputReserved - m.inputUsed
@@ -201,30 +219,51 @@ func (l *executionLease) reclaimUnusedInputLocked(additional, resident uint64) b
 	return true
 }
 
-func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Failure) {
+func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Failure, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.trusted {
 		m.rejections++
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "execution memory capacity is unknown")
+		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "execution memory capacity is unknown"), false
 	}
 	publication := nativeQueuedWindow
 	if plan.Command.GetNative() != nil {
 		publication = max(plan.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes)
 	}
 	bytes := uint64(plan.Bytes) + nativeQueuedWindow
+	input := m.ingressHandoffs[plan]
+	credit := uint64(0)
+	if input != nil && !input.account.closed {
+		credit = input.bytes
+	}
+	used, resident := m.used-credit, m.resident-credit
 	reserved := m.inputReserved
 	if len(m.leases) == 0 {
-		reserved = max(bytes, m.inputTargetLocked())
+		available := m.residentLimitLocked() - min(resident, m.residentLimitLocked())
+		// At very small capacities the existing half-resident queue policy
+		// already leaves half for progress; do not consume that entire queue.
+		progress := min(uint64(ingressProgressReserve), m.residentLimitLocked()/2)
+		automatic := min(m.inputTargetLocked(), m.budget-min(used, m.budget), available-min(available, progress))
+		reserved = max(bytes, automatic)
 	}
 	// A single input larger than the normal queue promise can proceed alone,
 	// provided its full initial execution peak genuinely fits the same budget.
 	oversized := len(m.leases) == 0 && bytes > m.inputTargetLocked()
 	peak := uint64(plan.WorkingBytes) + uint64(publication-nativeQueuedWindow)
 	native := plan.Command.GetNative() != nil
-	if len(m.leases) >= nativeCountLimit*execution.RecordStreamItems || native && m.nativeCount >= nativeCountLimit || m.budget == 0 || reserved > m.budget || bytes > reserved-m.inputUsed || (oversized && peak > m.budget-reserved) {
-		m.rejections++
-		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error())
+	if len(m.leases) >= nativeCountLimit*execution.RecordStreamItems || native && m.nativeCount >= nativeCountLimit || m.budget == 0 || reserved > m.budget || (m.inputReserved == 0 && m.ingressReserved+m.ingressConnectionBytes > 0 && (used > m.budget || reserved > m.budget-used || resident > m.residentLimitLocked() || reserved > m.residentLimitLocked()-resident)) || bytes > reserved-m.inputUsed || (oversized && peak > m.budget-reserved) {
+		// A decoded input already has a bounded same-Node owner. Temporary
+		// input-credit exhaustion may wait for an existing lease to release its
+		// real ownership. An input that cannot run alone, or an unowned source,
+		// must still fail promptly instead of creating an external input queue.
+		wait := credit != 0 && len(m.leases) != 0 && bytes <= m.residentLimitLocked() && bytes <= m.budget && peak <= m.budget-bytes
+		if !wait {
+			m.rejections++
+		}
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error()), wait
+	}
+	if input != nil {
+		input.releaseLocked()
 	}
 	lease := &executionLease{memory: m, input: plan.Bytes, window: nativeQueuedWindow, publication: publication, native: native}
 	m.leases[lease] = struct{}{}
@@ -237,7 +276,7 @@ func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Fail
 		m.resident += reserved
 	}
 	m.inputUsed += bytes
-	return lease, nil
+	return lease, nil, false
 }
 
 // start is called before any command I/O. Existing initial invocations may
@@ -440,7 +479,7 @@ func (l *executionLease) reserveWire(bytes int) (*WireReservation, error) {
 // admission failure. It uses the same finite count/input promise and lifetime.
 func (m *ExecutionMemory) ReserveWire(bytes int) (*WireReservation, error) {
 	plan := &execution.Plan{Bytes: execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes}
-	lease, failure := m.admit(plan)
+	lease, failure, _ := m.admit(plan)
 	if failure != nil {
 		return nil, execution.ErrExecutionMemory
 	}

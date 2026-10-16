@@ -1,0 +1,285 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/signal"
+	"runtime/metrics"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/batchstream/weir/internal/app"
+	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
+)
+
+func main() {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string, output io.Writer) error {
+	completion := cobra.CompletionOptions{DisableDefaultCmd: true}
+	root := &cobra.Command{
+		Use:               "weir",
+		Short:             "Run and inspect a Weir node",
+		Args:              cobra.NoArgs,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		CompletionOptions: completion,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return command.Help()
+		},
+	}
+
+	serveConfig := "weir.yaml"
+	serveRoutes := ""
+	serveCommand := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the node using process configuration and optional local Stores",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if serveConfig == "" {
+				return errors.New("--config requires a file")
+			}
+
+			cfg, err := app.Load(serveConfig, serveRoutes)
+			if err != nil {
+				return err
+			}
+
+			return serve(command.Context(), cfg, command.OutOrStdout())
+		},
+	}
+	serveCommand.Flags().StringVarP(
+		&serveConfig,
+		"config",
+		"c",
+		"weir.yaml",
+		"basic YAML configuration file",
+	)
+	serveCommand.Flags().StringVar(
+		&serveRoutes,
+		"routes",
+		"",
+		"optional local Store YAML configuration file",
+	)
+
+	checkConfig := "weir.yaml"
+	checkRoutes := ""
+	checkEffective := false
+	checkCommand := &cobra.Command{
+		Use:   "check",
+		Short: "Validate configuration without listeners, DNS or backend connections",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if checkConfig == "" {
+				return errors.New("--config requires a file")
+			}
+
+			cfg, err := app.Load(checkConfig, checkRoutes)
+			if err != nil {
+				return err
+			}
+			if checkEffective {
+				effective, err := cfg.Effective()
+				if err != nil {
+					return err
+				}
+				encoded, err := yaml.Marshal(effective)
+				if err != nil {
+					return errors.New("effective configuration encoding failed")
+				}
+				_, err = command.OutOrStdout().Write(encoded)
+				return err
+			}
+
+			_, err = io.WriteString(command.OutOrStdout(), "configuration valid\n")
+			return err
+		},
+	}
+	checkCommand.Flags().StringVarP(
+		&checkConfig,
+		"config",
+		"c",
+		"weir.yaml",
+		"basic YAML configuration file",
+	)
+	checkCommand.Flags().StringVar(
+		&checkRoutes,
+		"routes",
+		"",
+		"optional local Store YAML configuration file",
+	)
+
+	checkCommand.Flags().BoolVar(
+		&checkEffective,
+		"effective",
+		false,
+		"print effective settings, defaults and automatic sources with secrets redacted",
+	)
+
+	versionCommand := &cobra.Command{
+		Use:   "version",
+		Short: "Print build identity",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return printVersion(command.OutOrStdout())
+		},
+	}
+
+	probeAddress := "127.0.0.1:7449"
+	probeDeadline := probeTimeout
+	probeCommand := &cobra.Command{
+		Use:   "probe live|ready",
+		Short: "Check loopback diagnostics",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			return runProbe(command.Context(), args[0], probeAddress, probeDeadline)
+		},
+	}
+	probeCommand.Flags().StringVar(
+		&probeAddress,
+		"address",
+		"127.0.0.1:7449",
+		"loopback diagnostic IP:port",
+	)
+	probeCommand.Flags().DurationVar(
+		&probeDeadline,
+		"timeout",
+		probeTimeout,
+		"positive deadline for the complete diagnostic request",
+	)
+
+	root.AddCommand(serveCommand, checkCommand, versionCommand, probeCommand)
+	root.SetOut(output)
+	root.SetErr(output)
+
+	if args == nil {
+		args = []string{}
+	}
+	root.SetArgs(args)
+	return root.ExecuteContext(context.Background())
+}
+
+func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr error) {
+	diagnosticContext, diagnosticCancel := context.WithCancel(ctx)
+	diagnosticDone := make(chan struct{})
+	go func() {
+		defer close(diagnosticDone)
+		ingressDiagnosticRuntime(diagnosticContext)
+	}()
+	defer func() {
+		diagnosticCancel()
+		<-diagnosticDone
+	}()
+	// The CLI owns signals from before assembly until all owned resources close.
+	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancelSignal()
+
+	startup, stop := context.WithTimeout(signals, time.Duration(cfg.Basic.Lifecycle.StartupTimeout))
+	defer stop()
+
+	node, err := app.Open(startup, cfg)
+	if err != nil {
+		return err
+	}
+	// Register this first so the node closes before its process budget is restored.
+	restoreMemoryLimit := node.ManageRuntimeMemoryLimit()
+	defer restoreMemoryLimit()
+
+	defer func() {
+		// A startup cancellation must not cancel the drain budget too.
+		drain, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Basic.Lifecycle.ShutdownTimeout))
+		defer cancel()
+
+		resultErr = errors.Join(resultErr, node.Close(drain))
+
+		// Close joins the listeners. Preserve their errors even if a signal won
+		// the select below; normal shutdown contributes only nil errors.
+		for {
+			select {
+			case err := <-node.Errors:
+				resultErr = errors.Join(resultErr, err)
+			default:
+				return
+			}
+		}
+	}()
+
+	if err := node.Start(startup); err != nil {
+		return err
+	}
+	stop()
+
+	_, err = fmt.Fprintf(output, "Weir listening on %v; local execution and peer directory discovery\n", node.Addresses())
+	if err != nil {
+		return errors.New("listener output failed")
+	}
+
+	if node.DiagnosticAddress() != "" {
+		if _, err := fmt.Fprintf(output, "Diagnostics listening on %s\n", node.DiagnosticAddress()); err != nil {
+			return errors.New("listener output failed")
+		}
+	}
+
+	select {
+	case <-signals.Done():
+		return nil
+	case err := <-node.Errors:
+		return err
+	}
+}
+
+// Diagnostic runtime counters do not request a GC or change the GC policy.
+func ingressDiagnosticRuntime(ctx context.Context) {
+	names := []string{
+		"/cpu/classes/gc/mark/assist:cpu-seconds",
+		"/cpu/classes/gc/mark/dedicated:cpu-seconds",
+		"/cpu/classes/gc/mark/idle:cpu-seconds",
+		"/cpu/classes/gc/pause:cpu-seconds",
+		"/cpu/classes/gc/total:cpu-seconds",
+		"/cpu/classes/user:cpu-seconds",
+		"/cpu/classes/total:cpu-seconds",
+		"/gc/cycles/total:gc-cycles",
+		"/gc/gomemlimit:bytes",
+		"/gc/heap/goal:bytes",
+		"/gc/heap/live:bytes",
+		"/memory/classes/heap/objects:bytes",
+		"/sched/gomaxprocs:threads",
+	}
+	samples := make([]metrics.Sample, len(names))
+	for index, name := range names {
+		samples[index].Name = name
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		metrics.Read(samples)
+		var line strings.Builder
+		fmt.Fprintf(&line, "INGRESS_DIAGNOSTIC phase=cli_runtime at=%s stream_id=0", time.Now().UTC().Format(time.RFC3339Nano))
+		for _, sample := range samples {
+			switch sample.Value.Kind() {
+			case metrics.KindUint64:
+				fmt.Fprintf(&line, " %s=%d", sample.Name, sample.Value.Uint64())
+			case metrics.KindFloat64:
+				fmt.Fprintf(&line, " %s=%.9f", sample.Name, sample.Value.Float64())
+			default:
+				fmt.Fprintf(&line, " %s=unsupported", sample.Name)
+			}
+		}
+		log.Print(line.String())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}

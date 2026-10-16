@@ -20,7 +20,7 @@ func TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity(t *testing.T
 			memory := testExecutionMemory((capacity << 20) * 70 / 100)
 			work := plan(1, "db/records/s:item", true)
 			work.WorkingBytes, work.IOReserve = 4096, 48_000_000
-			lease, failure := memory.admit(work)
+			lease, failure, _ := memory.admit(work)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -58,7 +58,7 @@ func TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge(t *t
 	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
 	work.Command = nativeCall()
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -82,7 +82,7 @@ func TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge(t *t
 	if snapshot := memory.Snapshot(); snapshot.UsedBytes < snapshot.WireBytes || snapshot.WireBytes != protocol.NativeChunk+30 || snapshot.Count != 1 || snapshot.InputUsedBytes == 0 {
 		t.Fatal("cancel or known-zero capacity erased transport ownership", snapshot)
 	}
-	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("known-zero share admitted new memory", failure)
 	}
 	wire.Release()
@@ -94,7 +94,7 @@ func TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge(t *t
 func TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget(t *testing.T) {
 	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "queued", true)
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -131,7 +131,7 @@ func TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress(t *t
 			memory := testExecutionMemory((256 << 20) * 70 / 100)
 			held := plan(1, "held", false)
 			held.Command = nativeCall()
-			lease, failure := memory.admit(held)
+			lease, failure, _ := memory.admit(held)
 			if failure != nil {
 				t.Fatal(failure)
 			}

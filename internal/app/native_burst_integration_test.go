@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/netip"
 	"os"
@@ -23,7 +22,6 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"github.com/batchstream/weir/internal/testutil/testsearch"
-	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -179,7 +177,7 @@ func TestCLINativeSmallBurstPreservesAdmission(t *testing.T) {
 	for {
 		snapshot := nativeBurstSnapshot(t, process)
 		idle := true
-		for _, name := range []string{"used_bytes", "resident_bytes", "wire_bytes", "wire_buffers", "input_reserved_bytes", "input_used_bytes", "leases", "native_leases", "starting", "settled", "borrowed", "waiting", "terminal"} {
+		for _, name := range []string{"used_bytes", "resident_bytes", "wire_bytes", "wire_buffers", "input_reserved_bytes", "input_used_bytes", "leases", "native_leases", "starting", "settled", "borrowed", "waiting", "terminal", "ingress_bytes", "ingress_reserved_bytes", "ingress_buffers", "ingress_messages", "ingress_waiting", "ingress_connections", "ingress_connection_bytes"} {
 			idle = idle && snapshot[name] == 0
 		}
 		metrics := process.sample(t)
@@ -344,61 +342,27 @@ func executeNativeBurstCall(ctx context.Context, client *weirclient.Client, data
 func nativeBurstSnapshot(t *testing.T, process *memoryRecoveryCLI) map[string]float64 {
 	t.Helper()
 	metrics := process.sample(t)
-	values := make(map[string]float64, 19)
-	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "wire_bytes", "wire_buffers", "input_reserved_bytes", "input_used_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "native_leases", "native_leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
-		values[name] = nativeBurstGauge(t, metrics, "weir_execution_memory_"+name, nil)
-	}
-	denials := metrics["weir_execution_memory_budget_rejections_total"].GetMetric()
-	if len(denials) != 1 || denials[0].Counter == nil || len(denials[0].Label) != 0 {
-		t.Fatal("missing unlabeled Node execution denial counter")
-	}
-	values["budget_rejections_total"] = denials[0].GetCounter().GetValue()
-	if value := values["budget_rejections_total"]; math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-		t.Fatal("invalid Node execution denial counter", value)
-	}
-	families := 0
-	for name := range metrics {
-		if strings.HasPrefix(name, "weir_execution_memory_") {
-			families++
-		}
-	}
-	states := values["starting"] + values["settled"] + values["borrowed"] + values["waiting"] + values["terminal"]
-	if families != 19 || values["budget_known"] != 1 || values["leases_limit"] != 32768 || values["native_leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > process.capacity*.70*2/3 || values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["wire_bytes"] > values["used_bytes"] || values["wire_buffers"] > values["leases"] || values["input_used_bytes"] > values["input_reserved_bytes"] || values["input_reserved_bytes"] > values["resident_bytes"] || values["leases"] > 32768 || values["native_leases"] > 1024 || values["native_leases"] > values["leases"] || states != values["leases"] {
-		t.Error("Execution ledger violated fixed shared bounds", families, values)
-	}
-	latched := nativeBurstGauge(t, metrics, "weir_memory_latched", nil)
+	values := qualificationExecutionMemory(t, metrics, process.capacity)
+	latched := qualificationGauge(t, metrics, "weir_memory_latched", nil)
 	if latched != 0 {
 		t.Error("small burst unexpectedly latched memory pressure")
 	}
 	for _, store := range []string{"mongo", "search"} {
 		labels := map[string]string{"store": store}
 		for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-			actual := nativeBurstGauge(t, metrics, name, labels)
+			actual := qualificationGauge(t, metrics, name, labels)
 			if actual != want {
 				t.Error("default Store policy changed", store, name, actual, want)
 			}
 		}
 		for name, limit := range map[string]float64{"weir_store_active_executions": 16, "weir_store_pending_entries": 1024, "weir_store_pending_reserved_bytes": 32 << 20} {
-			actual := nativeBurstGauge(t, metrics, name, labels)
+			actual := qualificationGauge(t, metrics, name, labels)
 			if actual > limit {
 				t.Error("Store exceeded unchanged default bound", store, name, actual, limit)
 			}
 		}
 	}
 	return values
-}
-
-func nativeBurstGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name string, labels map[string]string) float64 {
-	t.Helper()
-	metric := testmetrics.Sample(metrics, name, labels)
-	if metric == nil || metric.Gauge == nil || len(metric.Label) != len(labels) || labels == nil && len(metrics[name].Metric) != 1 {
-		t.Fatal("required bounded gauge missing or mislabeled", name)
-	}
-	value := metric.GetGauge().GetValue()
-	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-		t.Fatal("required gauge invalid", name, value)
-	}
-	return value
 }
 
 func verifyNativeBurstOracle(t *testing.T, dataset *nativeBurstDataset) {

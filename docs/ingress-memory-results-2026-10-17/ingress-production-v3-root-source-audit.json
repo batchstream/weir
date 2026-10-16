@@ -1,0 +1,28 @@
+{
+  "all_current_source_hashes_verified": true,
+  "all_six_checks_exit_zero": true,
+  "base_head": "9dbf1d11414ba834b7e62ce7cb85309fc694889a",
+  "created_at": "2026-10-16T20:47:27.380112+00:00",
+  "full_check_receipt_sha256": "13c0251b0ea9e6ee8637d9b06f18ba865023fe60e289296e797de898892c338e",
+  "grpc_files_verified": 564,
+  "grpc_manifest_sha256": "43e88ff7f4928ddaaadb1a7379b77c23f603208a7402bc3a3327c187d6043987",
+  "note": "The offline Linux build is supplementary amd64; clean Linux arm64 runtime matrix pending. Existing original tests and runtime profiles were not relaxed.",
+  "release_grpc_subset_validated": true,
+  "source_before_equals_after": true,
+  "source_files": 932,
+  "source_whitespace_command": [
+    "git",
+    "diff",
+    "--check",
+    "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+    "--",
+    ".",
+    ":(exclude)docs/ingress-memory-results-2026-10-17",
+    ":(exclude)third_party/grpc/WEIR_PATCH.diff",
+    ":(exclude)third_party/grpc/LICENSE",
+    ":(exclude)third_party/grpc/AUTHORS",
+    ":(exclude)third_party/grpc/benchmark/benchmain/main.go"
+  ],
+  "source_whitespace_exit": 0,
+  "status": "PASS"
+}

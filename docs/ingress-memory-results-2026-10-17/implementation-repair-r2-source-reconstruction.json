@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "files": 931,
+  "all_sha256_match": "repair-r2-source-before.json",
+  "reconstructed_after_edit": [
+    "internal/store/ingress_memory.go",
+    "internal/store/ingress_progress_test.go"
+  ],
+  "method": "Exact reversal of the known R2-to-R3 patch, then all-file SHA verification before creating inert full-source archive; no working-tree rollback.",
+  "archive": "repair-r2-source-snapshot.tar.gz",
+  "archive_sha256": "a8510166d60d5ecd0cfeaf8835e04970907dc105bf51ff5f9bff046d9f76759f"
+}

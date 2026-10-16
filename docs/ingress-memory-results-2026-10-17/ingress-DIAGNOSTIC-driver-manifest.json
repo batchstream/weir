@@ -1,0 +1,21 @@
+{
+  "created_utc": "2026-10-16T19:10:57.725578+00:00",
+  "status": "DRIVER_FIXED_NOT_RUNTIME_EXECUTED",
+  "driver_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+  "original_source_sha256": "941d8dbb37b1449dfdb0a8f6c33e5402eafc70b6ca97ab2c100b8c8f8df35c07",
+  "diagnostic_source_sha256": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72",
+  "diagnostic_overlay_sha256": "085aa834eb5214c6e24d9cf5f69905c446141044e5611d56b040cc5f8fdc1fc0",
+  "plan_sha256": "86ad2665d4f54016dd719d3ae18c692c4cf26e6e84ae03de987876442fc7847e",
+  "files": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.go.txt": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-overlay.json": "085aa834eb5214c6e24d9cf5f69905c446141044e5611d56b040cc5f8fdc1fc0",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.diff": "0756906eb3b72d114d4aebdb0c5433fba0d890717126ca37e355b6f320822ed0",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source-r2.diff": "386eed8bc98ed76bfa24c5d91ba3dc778da67e923405933b7bbad73e14fe9d4f",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-command.json": "c444ebefc8342d9998db84ecb3c3d291f48e70cde713dfe120919ea167ab99e3",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile.txt": "a6702ed3d5c5928b913aef3016e02d5d204a328f96ad54aae3a3a9f522a7ace6",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-failed-source.go.txt": "8ccc9dc4afe921be2622161b69a0b75a444741a9eabe739e21dd9d3f00630bb4"
+  },
+  "permanent_source_clean": true,
+  "DB_or_Docker_or_CLI_load_started": false
+}

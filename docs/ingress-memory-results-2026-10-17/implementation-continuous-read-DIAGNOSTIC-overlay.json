@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/server/route_acceptance_test.go": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/continuous-read-DIAGNOSTIC.go.txt"
+  }
+}

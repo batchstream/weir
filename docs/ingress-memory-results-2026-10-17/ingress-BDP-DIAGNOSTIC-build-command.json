@@ -1,0 +1,29 @@
+{
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "GOFLAGS": "",
+    "CGO_ENABLED": "0",
+    "GOOS": "linux",
+    "GOARCH": "arm64"
+  },
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "build",
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-modfile=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC.mod",
+    "-overlay=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-server-module-overlay.json",
+    "-ldflags=-buildid=",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-weir-linux",
+    "./cmd/weir"
+  ],
+  "purpose": "DIAGNOSTIC causal comparison only; no load started"
+}
