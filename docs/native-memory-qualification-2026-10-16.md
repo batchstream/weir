@@ -143,3 +143,49 @@ full affected-package race results and focused twenty-round regressions are
 retained. New coverage includes real Runtime fast-consumer publication, both
 initial and ongoing-read convergence, and an actual HTTP exchange that preserves
 Head, one backend attempt and incomplete terminal evidence without body reads.
+
+The final artifact is clean source `ab48b32720c10ef50250c4ab0010735c5d942be3`,
+SHA-256 `23556ac9d38837817cf76971d0bd957fbf22855637117bea741be16a7c2b1aef`,
+Go 1.27.1 linux/arm64. Its
+[build receipt](native-memory-results-2026-10-16/native-memory-final-build.json)
+identifies the code including the continuation correction. Source-frozen Store,
+MongoDB and Search full race suites pass, as do application/server/CLI race
+suites and integration-tag vet. Final real-process repetition is running.
+
+Final-artifact progress checks passed five formal race rounds. Every round
+retained all thirty-two 8 MiB replies with zero active/pending IO. Healthy
+typed/Native probes took 2.30–3.68 ms; cancellation returned all Store/RPC/wire
+and shared Native ownership in 8.12–13.21 ms, with GC unchanged at six cycles.
+No watchdog, latch or Native-budget rejection occurred. The final diagnostics
+check confirmed 1086 Weir series; Mongo valid/malformed and Elasticsearch small
+progress cases passed three rounds. Every CLI exited zero without OOM or an
+owned-connection/container residual. Final typed/shared recovery tests follow.
+
+The second clean-artifact memory matrix is explicitly not an all-pass result:
+11/12 cases passed. Its 512 MiB automatic-off round two timed out waiting for
+the first large typed response's byte-account predicate, before establishing
+the pressure/recovery phase. The raw failure is preserved. Six automatic cases
+recovered in 142.2–155.7 ms, and all four shared-memory cases passed.
+The helper used a net increment over a previous global wire-byte sample;
+unrelated completed-response credit can disappear between samples, so that
+predicate needs causal diagnosis rather than an increased timeout. Final
+qualification remains pending until the failure is explained and corrected.
+
+Ten targeted original-predicate diagnostic repetitions did not reproduce the
+512 MiB off failure. They retained 140 large replies and completed 600 normal
+read/write calls; first-response samples were consistently zero then 12 MiB
+plus 70 bytes. This does not establish the cause of the earlier failure.
+The failure and [diagnostic receipt](native-memory-results-2026-10-16/native-memory-wire-threshold-diagnostic-manifest.json)
+remain preserved.
+
+The helper independently had an invalid global-delta premise. Its dedicated
+static-64-KiB stream windows and absent Recv keep every preceding 12 MiB message
+owned until cancellation, whereas unrelated completed healthy replies can be
+freed between samples. It now checks cumulative owned large-response bytes,
+(count + 1) times 12 MiB. KiB-sized healthy responses and framing cannot replace
+a missing 12 MiB message. The unchanged three-second bound, 32 MiB safety
+headroom, real RSS/latch evidence and five-second recovery gate remain required.
+Before/maximum/required metrics and a bounded failure-only Recv diagnostic are
+retained, so a real missing response still fails with useful evidence. This is
+a correction to the test predicate, not a claimed explanation of the old failure
+or a production behavior change. A new clean artifact and complete rerun follow.
