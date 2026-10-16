@@ -52,12 +52,6 @@ func TestCLISharedMemoryRecoveryProbe(t *testing.T) {
 	if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertMany(ctx, documents); err != nil {
 		t.Fatal(err)
 	}
-	filter := bson.D{{Key: "_id", Value: "shared-large"}}
-	command := bson.D{{Key: "find", Value: "records"}, {Key: "filter", Value: filter}, {Key: "limit", Value: 1}, {Key: "singleBatch", Value: true}}
-	raw, err := bson.Marshal(command)
-	if err != nil {
-		t.Fatal(err)
-	}
 	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 512, automatic: true, sharedMemoryMiB: sharedMiB + 32}
 	service := startMemoryRecoveryCLI(t, opts)
 	t.Logf("supplied CLI identity=%s", strings.TrimSpace(packagedDocker(t, "exec", service.name, "/weir", "version")))
@@ -119,9 +113,7 @@ func TestCLISharedMemoryRecoveryProbe(t *testing.T) {
 		t.Logf("low positive/zero recovery allowance probe completed=%d rejected=%d", completed, rejected)
 		return
 	}
-	input := &pb.Document{ContentType: "application/bson", Data: raw}
-	native := &pb.NativeRequest{Resource: fixture.DB, Request: input}
-	memoryRecoveryBurst(t, service, client, native)
+	memoryRecoveryBurst(t, service, fixture.DB+"/records/s:shared-large")
 	probe := &http.Client{Timeout: time.Second}
 	response, err := probe.Get("http://" + service.diagnostic + "/livez")
 	if err != nil {

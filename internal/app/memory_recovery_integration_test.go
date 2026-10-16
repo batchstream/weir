@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -23,7 +22,9 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	dto "github.com/prometheus/client_model/go"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -57,14 +58,6 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 	if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertOne(ctx, document); err != nil {
 		t.Fatal(err)
 	}
-	filter := bson.D{{Key: "_id", Value: "large"}}
-	command := bson.D{{Key: "find", Value: "records"}, {Key: "filter", Value: filter}, {Key: "limit", Value: 1}, {Key: "singleBatch", Value: true}}
-	raw, err := bson.Marshal(command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input := &pb.Document{ContentType: "application/bson", Data: raw}
-	native := &pb.NativeRequest{Resource: fixture.DB, Request: input}
 	for _, capacity := range []int{256, 512} {
 		for _, automatic := range []bool{true, false} {
 			for round := range 3 {
@@ -87,7 +80,7 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 					}
 					resource := fixture.DB + "/records/s:health"
 					memoryRecoverySteady(t, service, client, resource)
-					memoryRecoveryBurst(t, service, client, native)
+					memoryRecoveryBurst(t, service, fixture.DB+"/records/s:large")
 					if testmetrics.Sum(service.sample(t), "weir_memory_latched") == 0 {
 						memoryRecoverySteady(t, service, client, resource)
 					}
@@ -308,14 +301,24 @@ func memoryRecoverySteady(t *testing.T, service *memoryRecoveryCLI, client pb.St
 		testmetrics.Sum(after, "process_resident_memory_bytes"), testmetrics.Sum(after, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(after, "go_memstats_heap_alloc_bytes"))
 }
 
-func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.StoreServiceClient, native *pb.NativeRequest) {
+// Typed Read responses exercise real business heap pressure independently of
+// Native's separate working-memory protection. Static flow-control windows keep
+// each complete 12 MiB document resident without retaining it in the host driver.
+func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, resource string) {
 	t.Helper()
+	parts := strings.SplitN(resource, "/", 2)
+	if len(parts) != 2 {
+		t.Fatal("owned typed Read resource must include its database")
+	}
+	dialOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64 << 10), grpc.WithStaticConnWindowSize(4 << 20)}
+	connection, err := grpc.NewClient("passthrough:///"+service.address, dialOptions...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
-	var calls sync.WaitGroup
-	defer func() {
-		cancel()
-		calls.Wait()
-	}()
+	defer func() { cancel(); _ = connection.Close() }()
+	blockedClient := pb.NewStoreServiceClient(connection)
+	var streams []grpc.BidiStreamingClient[pb.ExecuteRequest, pb.ExecuteResponse]
 	metrics := service.sample(t)
 	count := 0
 	for testmetrics.Sum(metrics, "weir_memory_latched") == 0 {
@@ -323,43 +326,44 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.Sto
 		if working+float64(32<<20) > service.capacity || count >= 40 {
 			t.Fatal("safe business-pressure headroom exhausted before reaching overload", count, working, service.capacity)
 		}
-		ready := make(chan struct{})
-		done := make(chan error, 1)
-		store := fmt.Sprintf("mongo%d", count%service.stores)
-		calls.Add(1)
-		go func() {
-			defer calls.Done()
-			first := true
-			consume := func(ctx context.Context, _ *weirclient.NativeResponse, _ []byte) error {
-				if first {
-					first = false
-					close(ready)
-				}
-				<-ctx.Done()
-				return ctx.Err()
-			}
-			options := weirclient.NativeOptions{StoreName: store, Request: native, Consume: consume}
-			result, err := weirclient.Native(ctx, client, options)
-			if err == nil {
-				err = fmt.Errorf("pressure call ended before cancellation: %v", result)
-			}
-			done <- err
-		}()
-		select {
-		case <-ready:
-			count++
-		case err := <-done:
+		before := testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes")
+		stream, err := blockedClient.Execute(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read := &pb.ReadRequest{Resource: resource}
+		operation := &pb.Command_Read{Read: read}
+		command := &pb.Command{Operation: operation}
+		request := &pb.ExecuteRequest{StoreName: fmt.Sprintf("mongo%d", count%service.stores), Index: 1, Command: command}
+		if err := stream.Send(request); err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.CloseSend(); err != nil {
+			t.Fatal(err)
+		}
+		streams = append(streams, stream)
+		deadline := time.Now().Add(3 * time.Second)
+		for {
 			metrics = service.sample(t)
-			if testmetrics.Sum(metrics, "weir_memory_latched") == 0 {
-				t.Fatal("Native call failed below the pressure threshold", err)
+			// A full encoded document is charged before DATA waits on flow
+			// control. A small admission failure cannot satisfy this check.
+			if testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes") >= before+float64(12<<20) {
+				count++
+				break
 			}
-		case <-time.After(3 * time.Second):
-			t.Fatal("Native business pressure did not reach first output")
+			if testmetrics.Sum(metrics, "weir_memory_latched") == 1 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("typed business pressure did not retain its full response", count)
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 		time.Sleep(120 * time.Millisecond)
 		metrics = service.sample(t)
 	}
-	read := &weirclient.ReadRequest{Resource: native.Resource + "/records/s:health"}
+	client := endpointProcessClient(t, service.address)
+	read := &weirclient.ReadRequest{Resource: parts[0] + "/records/s:health"}
 	readOptions := weirclient.ReadOneOptions{StoreName: "mongo0", Request: read}
 	probe, stop := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	result, err := weirclient.ReadOne(probe, client, readOptions)
@@ -370,15 +374,16 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, client pb.Sto
 	for range 10 {
 		metrics = service.sample(t)
 		if testmetrics.Sum(metrics, "weir_memory_latched") != 1 {
-			t.Fatal("live Native replies manufactured memory recovery")
+			t.Fatal("live typed Read replies manufactured memory recovery")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Logf("live pressure requests=%d RSS=%.0f working_set=%.0f heap=%.0f latch=1", count,
+	t.Logf("live pressure kind=typed_Read response_document=12MiB requests=%d RSS=%.0f working_set=%.0f heap=%.0f latch=1", count,
 		testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"))
 	released := time.Now()
+	runtime.KeepAlive(streams)
 	cancel()
-	calls.Wait()
+	_ = connection.Close()
 	rejections := 0
 	for {
 		metrics = service.sample(t)
