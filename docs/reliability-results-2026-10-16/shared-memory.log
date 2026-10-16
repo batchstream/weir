@@ -1,0 +1,5 @@
+=== RUN   TestLinuxSharedMemoryDoesOverload
+    native_integration_test.go:186: shared_memory shmem=234881024 inactive_file=16384 snapshot={Budget:268435456 Bytes:7458816 Source:linux_rss Observed:true Latched:true ProcessValid:true Unknown:false Cgroup:{Current:244748288 WorkingSet:244731904 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}}
+    native_integration_test.go:195: released shared_memory snapshot={Budget:268435456 Bytes:7479296 Source:linux_rss Observed:true Latched:false ProcessValid:true Unknown:false Cgroup:{Current:9601024 WorkingSet:9584640 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf}}
+--- PASS: TestLinuxSharedMemoryDoesOverload (0.11s)
+PASS

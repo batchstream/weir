@@ -67,6 +67,16 @@ Memory capacity is discovered from visible container limits, physical host memor
 and any finite process address-space limit. Container/OS limits provide the hard
 boundary; overload admission observes actual use against that capacity. There is
 no configurable memory budget or startup reservation.
+Linux cgroup v2 admission compares `memory.current - inactive_file` with each
+visible level's own limit. Only validated `memory.stat` values are subtracted;
+missing, malformed or inconsistent values retain raw `memory.current`.
+`weir_memory_cgroup_current_bytes` preserves raw charge and
+`weir_memory_cgroup_working_set_bytes` reports the corresponding admission usage.
+Freed Go objects may leave resident idle heap above the recovery watermark.
+The standard Go `GOMEMLIMIT` environment variable can encourage earlier release;
+choose it below the low watermark with space for stacks and other resident
+memory, then verify recovery under the actual workload. Weir does not set it
+automatically.
 
 Business RPCs and backend IO inherit caller contexts. Transport progress,
 connection establishment, keepalive and cleanup have separate controls.
