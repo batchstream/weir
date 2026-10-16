@@ -8,16 +8,21 @@ import (
 )
 
 type Plan struct {
-	ID                               uint64
-	Command                          *pb.Command
-	Key, BatchKey                    string
-	Bytes, ResultBytes, WorkingBytes int
-	Context                          context.Context
-	Backend                          any
+	ID                 uint64
+	Command            *pb.Command
+	Key, BatchKey      string
+	Bytes, ResultBytes int
+	// Native adapters update WorkingBytes before each serial Emit to describe
+	// the response working set they still retain. Emit synchronizes accounting.
+	WorkingBytes int
+	Context      context.Context
+	Backend      any
 }
 
 // Emit borrows an event until it returns. Callers must not mutate its contents.
 // One caller's canceled emission does not cancel other members of a shared batch.
+// Native emissions are serial. NativeEnd is the final emission; the adapter
+// performs no more backend I/O after it and returns from Execute.
 type Emit func(*Plan, *pb.Event) error
 
 type Adapter interface {

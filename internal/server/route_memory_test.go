@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -122,6 +123,52 @@ func TestEncodedResponseMarshalErrorReturnsCredit(t *testing.T) {
 	if admission.wireBytes.Load() != 0 {
 		t.Fatal("buffer double cleanup returned byte credits twice")
 	}
+}
+
+func TestCanceledOutputWatchdogDoesNotRetainOrphanedBufferUntilStall(t *testing.T) {
+	_, local := peerLocal(t, "records")
+	opts := peerServerOptions{stores: map[string]*store.Runtime{"records": local}}
+	server, _ := startPeerServer(t, opts)
+	owner := orphanWatchdogBuffer(t, server)
+	deadline := time.Now().Add(time.Second)
+	for server.admission.wireBytes.Load() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("canceled RPC context retained orphaned encoded storage until the long output stall", server.admission.wireBytes.Load())
+		}
+		runtime.GC()
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-owner.done:
+	default:
+		t.Fatal("orphaned buffer cleanup did not complete ownership")
+	}
+}
+
+func orphanWatchdogBuffer(t *testing.T, server *Server) *responseBufferOwner {
+	t.Helper()
+	codec := &responseCodec{admission: server.admission}
+	response := &pb.ExecuteResponse{Index: 1}
+	encoded, err := codec.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok := server.admission.responses.Load(response)
+	if !ok {
+		t.Fatal("missing encoded buffer owner")
+	}
+	owner := value.(*responseBufferOwner)
+	// gRPC RPC contexts reach the transport. Model that strong reference so
+	// the watchdog must detach it before GC can reclaim an orphaned DATA buffer.
+	ctx := context.WithValue(context.Background(), rpcKey, encoded)
+	owner.watch(ctx, server)
+	owner.detachMessage()
+	owner.watch(ctx, server) // A late stats notification must not recreate the cycle.
+	if server.admission.wireBytes.Load() == 0 {
+		t.Fatal("cancellation returned still-owned encoded credits")
+	}
+	runtime.KeepAlive(encoded)
+	return owner
 }
 
 func TestZeroWindowReaderCannotKeepQueuedResponseAlive(t *testing.T) {

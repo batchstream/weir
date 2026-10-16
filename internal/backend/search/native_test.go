@@ -125,6 +125,50 @@ func TestNativeHTTPRequestPreservesNativeOperations(t *testing.T) {
 	}
 }
 
+func TestNativeEarlyCancellationReleasesMaximumWorkingReservation(t *testing.T) {
+	adapter := &Adapter{}
+	request := nativeRequest(t, "records", "GET", "/_search")
+	work, failure := adapter.prepareNative(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work.Command = testutil.NativeCommand(request)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	capture := &nativeCapture{}
+	end := adapter.executeNative(ctx, work, capture.Emit)
+	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.Failure == nil || work.WorkingBytes != 8<<10 {
+		t.Fatal("early canceled Native retained a maximum reply reservation", end, work.WorkingBytes)
+	}
+}
+
+func TestNativeRejectedResponseAccountsForActualParsedHeaders(t *testing.T) {
+	large := strings.Repeat("x", 128<<10)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("X-Large", large)
+		w.Header().Set("Trailer", "X-Future-End")
+		_, _ = io.WriteString(w, "body")
+	})
+	backend := httptest.NewServer(handler)
+	defer backend.Close()
+	config := Config{URL: backend.URL}
+	adapter := &Adapter{config: config, nativeClient: backend.Client()}
+	request := nativeRequest(t, "records", "GET", "/_search")
+	work, failure := adapter.prepareNative(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	work.Command = testutil.NativeCommand(request)
+	capture := &nativeCapture{}
+	end := adapter.executeNative(t.Context(), work, capture.Emit)
+	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_UNSUPPORTED || capture.head != nil {
+		t.Fatal("unsupported Native trailers did not terminate before output", end, capture.head)
+	}
+	if work.WorkingBytes < len(large)+(8<<10) || work.WorkingBytes >= nativeBudget {
+		t.Fatal("rejected Native response lost actual header accounting or retained maximum estimate", work.WorkingBytes)
+	}
+}
+
 func TestNativeHTTPForwardsOpaqueBodiesAndHeaders(t *testing.T) {
 	body := []byte("{\"update\":{\"_index\":\"other\",\"_id\":\"x\",\"routing\":\"tenant\"}}\n{\"doc\":{\"pad\":\"" + strings.Repeat("x", 512<<10) + "\"}}\n")
 	var calls atomic.Int32

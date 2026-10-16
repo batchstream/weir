@@ -103,6 +103,7 @@ func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 }
 
 func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+	p.WorkingBytes = 8 << 10 // HTTP connection buffers and exchange bookkeeping.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if a.ctx != nil {
@@ -157,6 +158,13 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete"))
 	}
 	defer response.Body.Close()
+	p.WorkingBytes += len(response.Status) + len(response.Proto)
+	for name, values := range response.Header {
+		p.WorkingBytes += len(name) + 64 + cap(values)*16
+		for _, value := range values {
+			p.WorkingBytes += len(value)
+		}
+	}
 	if response.StatusCode < 100 || response.StatusCode > 599 {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "invalid Native HTTP response status"))
 	}
@@ -177,6 +185,7 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		}
 	}
 	metadata.WriteString("\r\n")
+	p.WorkingBytes += metadata.Cap() + protocol.NativeChunk
 	contentType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	document := &pb.Document{ContentType: "application/http", Data: metadata.Bytes()}
 	head := &pb.NativeHead{Metadata: document, BodyContentType: contentType}

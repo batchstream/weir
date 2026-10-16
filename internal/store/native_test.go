@@ -83,8 +83,8 @@ func TestBlockedNativeLeavesOtherExecutionCreditAvailable(t *testing.T) {
 		t.Fatal("one blocked Native call monopolized both execution credits", result, err)
 	}
 	ticket.Ack()
-	if snapshot := runtime.Snapshot(); snapshot.Active != 1 {
-		t.Fatal("Native output did not retain its own execution credit", snapshot)
+	if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Paused != 1 {
+		t.Fatal("Native output did not return its backend execution credit", snapshot)
 	}
 }
 

@@ -255,6 +255,9 @@ func TestMongoNativeAdapterOwnsRequestFormat(t *testing.T) {
 	if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || capture.head != nil || capture.body.Len() != 0 {
 		t.Fatal("invalid BSON reached backend", end)
 	}
+	if work.WorkingBytes != execution.EntryOverheadBytes {
+		t.Fatal("small early Native failure retained maximum reply reservation", work.WorkingBytes)
+	}
 }
 
 func TestMongoNativeSmallRequestPublishesLargeReply(t *testing.T) {
@@ -379,6 +382,9 @@ func TestMongoNativeDatabaseRoutingRejectsAmbiguousEnvelopes(t *testing.T) {
 		end := adapter.executeNative(t.Context(), work, capture.Emit)
 		if end.Completion != pb.NativeCompletion_NATIVE_NOT_STARTED || end.GetFailure().GetCode() != pb.FailureCode_INVALID_ARGUMENT || capture.head != nil || capture.body.Len() != 0 {
 			t.Fatal("invalid routing touched backend", command, end)
+		}
+		if work.WorkingBytes != execution.EntryOverheadBytes {
+			t.Fatal("invalid database envelope retained maximum reply reservation", work.WorkingBytes)
 		}
 	}
 }

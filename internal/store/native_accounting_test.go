@@ -41,7 +41,11 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 			adapter := &nativeAccountingAdapter{events: []*pb.Event{headEvent, endEvent}}
 			limits := DefaultLimits()
 			limits.MaxInFlight = 1
-			runtime := newRuntime(adapter, limits)
+			runtime, err := New(adapter, limits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Close(context.Background())
 			session := runtime.NewSession()
 			defer session.Close()
 			ctx, cancel := context.WithCancel(t.Context())
@@ -53,12 +57,6 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 			if rejected != nil {
 				t.Fatal(rejected)
 			}
-			batch := selectCrossBatch(runtime)
-			done := make(chan struct{})
-			go func() {
-				runtime.execute(batch)
-				close(done)
-			}()
 			deadline, stop := context.WithTimeout(t.Context(), 2*time.Second)
 			defer stop()
 			var paused *Emission
@@ -79,10 +77,8 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 				t.Fatal("large paused Native event was discounted", snapshot.ResultBytes, actual)
 			}
 			cancel()
-			select {
-			case <-done:
-			case <-deadline.Done():
-				t.Fatal("cancellation retained Native execution")
+			if _, err := ticket.Wait(deadline); err != nil {
+				t.Fatal("cancellation retained Native execution", err)
 			}
 			paused.Release()
 			ticket.Ack()
