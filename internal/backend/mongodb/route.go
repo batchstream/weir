@@ -58,7 +58,10 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		work.WorkingBytes = 24 << 20
 	}
 	native := work.Backend.(*plan)
-	work.BatchKey = native.target.String()
+	work.BatchKey = "records"
+	if native.action == "read" || native.program != nil {
+		work.BatchKey = native.target.String()
+	}
 	if native.program != nil {
 		work.BatchKey += "/lua"
 		work.WorkingBytes = programWorkingBytes

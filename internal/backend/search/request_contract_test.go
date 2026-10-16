@@ -106,7 +106,7 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				if failure != nil {
 					t.Fatal(failure)
 				}
-				observations := adapter.mgetIndex(context.Background(), index, []*execution.Plan{work})
+				observations := adapter.mgetUnique(context.Background(), []*execution.Plan{work})
 				if observations[0].failure != nil || *observations[0].reply.Found {
 					t.Fatal("decoded index/read mismatch", observations[0].failure)
 				}
@@ -148,7 +148,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			observations := adapter.mgetIndex(context.Background(), "records", []*execution.Plan{work})
+			observations := adapter.mgetUnique(context.Background(), []*execution.Plan{work})
 			if observations[0].failure.GetCode() != item.code {
 				t.Fatal("warm read classification", observations[0].failure)
 			}

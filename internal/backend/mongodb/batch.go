@@ -90,12 +90,18 @@ func (a *Adapter) executeRecordChunk(ctx context.Context, plans []*execution.Pla
 			}
 		}
 	}
+	var writes []*execution.Plan
+	var writePositions []int
 	for _, group := range groups {
-		if group.qualified && len(group.writes) != 0 {
-			replies := a.executeWrites(ctx, group.writes)
-			for i, reply := range replies {
-				results[group.writePositions[i]] = reply
-			}
+		if group.qualified {
+			writes = append(writes, group.writes...)
+			writePositions = append(writePositions, group.writePositions...)
+		}
+	}
+	if len(writes) != 0 {
+		replies := a.executeWrites(ctx, writes)
+		for i, reply := range replies {
+			results[writePositions[i]] = reply
 		}
 	}
 	if len(programs) != 0 {
@@ -300,7 +306,8 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
-	target := plans[0].Backend.(*plan).target
+	namespaces := make(bson.A, 0)
+	namespaceIndexes := make(map[namespace]int32)
 	for i, p := range plans {
 		if result := unstarted(ctx, p); result != nil {
 			results[i] = result
@@ -308,21 +315,28 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		}
 
 		n := p.Backend.(*plan)
+		namespaceIndex, exists := namespaceIndexes[n.target]
+		if !exists {
+			namespaceIndex = int32(len(namespaces))
+			namespaceIndexes[n.target] = namespaceIndex
+			info := bson.D{{Key: "ns", Value: n.target.String()}}
+			namespaces = append(namespaces, info)
+		}
 		filter := bson.D{{Key: "_id", Value: n.id}}
 		var op bson.D
 		switch n.action {
 		case "create":
-			op = bson.D{{Key: "insert", Value: int32(0)}, {Key: "document", Value: n.document}}
+			op = bson.D{{Key: "insert", Value: namespaceIndex}, {Key: "document", Value: n.document}}
 		case "put", "replace", "expression":
 			op = bson.D{
-				{Key: "update", Value: int32(0)},
+				{Key: "update", Value: namespaceIndex},
 				{Key: "filter", Value: filter},
 				{Key: "updateMods", Value: n.document},
 				{Key: "multi", Value: false},
 				{Key: "upsert", Value: n.action == "put"},
 			}
 		case "delete":
-			op = bson.D{{Key: "delete", Value: int32(0)}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
+			op = bson.D{{Key: "delete", Value: namespaceIndex}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
 		default:
 			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_INTERNAL, "unsupported prepared operation"))
 			continue
@@ -335,13 +349,12 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		return results
 	}
 
-	namespaceInfo := bson.D{{Key: "ns", Value: target.String()}}
 	concern := bson.D{{Key: "w", Value: "majority"}}
 	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(active))}}
 	var command any = bson.D{
 		{Key: "bulkWrite", Value: int32(1)},
 		{Key: "ops", Value: ops},
-		{Key: "nsInfo", Value: bson.A{namespaceInfo}},
+		{Key: "nsInfo", Value: namespaces},
 		{Key: "ordered", Value: false},
 		{Key: "errorsOnly", Value: false},
 		{Key: "cursor", Value: cursorOpts},
