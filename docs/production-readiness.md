@@ -9,7 +9,8 @@ Linux sustained-load boundaries.
 | Reclaimable file cache and baseline verification | [PR 75](https://github.com/batchstream/weir/pull/75) merged after independent review and Linux CI |
 | Native consumer progress and output ownership | [PR 76](https://github.com/batchstream/weir/pull/76) merged after new independent review, repeated race checks and Linux CI |
 | Automatic recovery after Go memory bursts with default configuration | [PR 77](https://github.com/batchstream/weir/pull/77) merged after new independent review and Linux CI; initial isolated-cgroup evidence below |
-| Recovery with shared cgroup memory outside the process | Reproduced a remaining 160/192 MiB boundary; correction and qualification in progress |
+| Recovery with shared cgroup memory outside the process | Corrected and qualified on clean Linux source; independent review and CI pending |
+| Healthy queries with a full Native output reservation | A further single-Store 32 x 8 MiB boundary is reproduced; correction pending |
 | Linux complete-process sustained mixed workload and failure recovery | Pending |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
@@ -250,5 +251,37 @@ still take precedence. A known zero allowance preserves the prior owned limit;
 it never installs zero. Actual outside pressure can keep the Guard latched
 until sufficient memory is released.
 
-Qualification of the final clean artifact is in progress. The sustained mixed
-workload and backend-fault milestone remains pending.
+The [clean build receipt](shared-recovery-results-2026-10-16/shared-recovery-clean-build.json)
+identifies source `b3672473309638fb60358d95ec828221d7fd9fc6`, Go 1.27.1 and
+Linux arm64 binary SHA256
+`e7fa6e60820af1cb93c4262cdf659b07a73ce9a5ba2b2e8845621bf5fa7ca33a`.
+The worktree was clean before and after compilation. Every complete-process
+case checked the mounted binary's hash and `version` output, including
+`state=clean-commit` and `dirty=false`.
+
+| Retained shared memory / 512 MiB container | Complete-process result |
+| --- | --- |
+| [160 MiB](shared-recovery-results-2026-10-16/shared-pressure-160-clean-after.txt) | 18 live 12 MiB replies crossed admission pressure; after cancellation recovered in 124.4 ms, final working set 352.1 MB |
+| [192 MiB](shared-recovery-results-2026-10-16/shared-pressure-192-clean-after.txt) | 15 live replies crossed admission pressure; after cancellation recovered in 128.6 ms, final working set 339.3 MB |
+| [344 MiB](shared-recovery-results-2026-10-16/shared-pressure-344-clean-after.txt) | 29 low-rate reads, no rejection; 16 MiB Go floor, one GC and 0.11 process CPU seconds over 3.09 s |
+
+All three cases use default admission, batching, queue and transport settings,
+retain their shared memory through recovery, verify all Store/RPC/output bytes
+return to zero and exit normally without OOM. During the deliberate live-heap
+pressure and recovery phases, the 160/192 MiB cases respectively used 0.77/0.64
+process CPU seconds and 102/105 GC cycles; these are not steady-load capacity
+measurements. Per-GC CPU is unavailable from this CLI's metrics.
+
+The earlier floor experiments are labelled exploratory dirty builds in their
+raw logs. An independent
+[368 MiB Linux control](shared-recovery-results-2026-10-16/shared-allowance-368-floor-after.txt)
+keeps outside memory above the recovery threshold: it stays latched with a known
+zero allowance for five seconds, performs no GC in that observation window and
+does not manufacture recovery. Unit coverage also distinguishes every visible
+ancestor, capacity changes, missing observations and explicit runtime ownership.
+The affected default race suites and vet pass; the
+[real Mongo diagnostics check](shared-recovery-results-2026-10-16/shared-recovery-diagnostics-clean.txt)
+passes with exactly 1105 fixed Weir series at the maximum local Store count.
+
+The sustained mixed workload, full Native output boundary and backend-fault
+milestones remain pending.
