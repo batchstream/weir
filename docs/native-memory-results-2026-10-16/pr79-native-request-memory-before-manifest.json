@@ -1,0 +1,26 @@
+{
+  "source": "9d62ad1696670f7da5ecd6e1399c5e6445b22203",
+  "base": "76a3862941f1f9611ae9240a63185c958f5fede9",
+  "cwd": "/Users/liran/.codex/worktrees/native-output-memory/weir",
+  "method": "read-only Go overlay test; 100000 unique HTTP request header names, raw immutable request kept live; GC separates retained parsed header ownership from temporary parsing allocations",
+  "raw_bytes": 1300035,
+  "plan_bytes": 1300582,
+  "initial_working_bytes": 4194304,
+  "first_three_retained_parse_heap_bytes": [
+    8733232,
+    8699080,
+    8697264
+  ],
+  "note": "parser predates PR; the new NativeMemory admission charges only plan.Bytes + event window and does not own this retained parser heap. All source edits are external overlays; no repo edits.",
+  "retained_parse_heap_bytes_in_saved_raw": [
+    8733296,
+    8697376,
+    8697568
+  ],
+  "files_sha256": {
+    "pr79-native-request-memory-before-probe.go.txt": "71aa5b266698197aa9c8c57c0f0b583bd4e6945cde46e0f64848836a1a955cc7",
+    "pr79-native-request-memory-before-overlay.json": "43c2514a087412729138b56c976db435975da0989ec0e5772ab30779278ce691",
+    "pr79-native-request-memory-before-command.txt": "aecc31a5530cfe25af1b088d61a6877a2d39bcfd92fe953460445607bf4ab9dd",
+    "pr79-native-request-memory-before-raw.txt": "997b1ed51d504f5c16ccc034f6250c94c9533ea4876ef04f04c6df2dfad04f40"
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
@@ -24,8 +25,12 @@ const nativeBudget = 4 << 20
 
 type nativePlan struct {
 	resource string
-	request  *http.Request
-	body     []byte
+	raw      []byte
+	working  int
+}
+
+type nativeRequestFrame struct {
+	headerBytes, lines int
 }
 
 func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
@@ -35,29 +40,35 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 	if request.Request.ContentType != "application/http" {
 		return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Native requires application/http")
 	}
-	httpRequest, body, failure := parseNativeHTTPRequest(request.Request.Data)
+	frame, failure := scanNativeHTTPRequest(request.Request.Data)
 	if failure != nil {
 		return nil, failure
 	}
+	working, valid := a.nativeRequestWorking(frame, request.Resource)
+	if !valid {
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error())
+	}
 
-	native := &nativePlan{resource: request.Resource, request: httpRequest, body: body}
+	native := &nativePlan{resource: request.Resource, raw: request.Request.Data, working: working}
 	p := &execution.Plan{
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
-		WorkingBytes: nativeBudget,
+		WorkingBytes: nativeBudget + working,
 		Backend:      native,
 	}
 	return p, nil
 }
 
-// Check header framing before net/http allocates header entries.
-// The body remains a borrowed slice of the admitted Native request.
-func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
+// Preparation only scans borrowed bytes. In particular, a large count of short
+// headers cannot allocate a Header map before the Native lease owns its parser
+// and cloned-request working reservation.
+func scanNativeHTTPRequest(raw []byte) (nativeRequestFrame, *pb.Failure) {
+	frame := nativeRequestFrame{}
 	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native HTTP framing")
 	end := bytes.Index(raw, []byte("\r\n\r\n"))
 	if end < 0 {
-		return nil, nil, invalid
+		return frame, invalid
 	}
 	head := raw[:end+4]
 	remaining := head[:len(head)-2]
@@ -67,37 +78,76 @@ func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
 		remaining = rest
 		lines++
 		if bytes.ContainsAny(line, "\r\n") || lines > 1 && len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
-			return nil, nil, invalid
+			return frame, invalid
 		}
 		if lines == 1 || len(line) == 0 {
 			continue
 		}
 		colon := bytes.IndexByte(line, ':')
 		if colon < 1 {
-			return nil, nil, invalid
+			return frame, invalid
 		}
-		name := string(line[:colon])
-		if strings.EqualFold(name, "Transfer-Encoding") || strings.EqualFold(name, "Trailer") {
-			return nil, nil, invalid
+		name := line[:colon]
+		if bytes.EqualFold(name, []byte("Transfer-Encoding")) || bytes.EqualFold(name, []byte("Trailer")) {
+			return frame, invalid
 		}
-		if strings.EqualFold(name, "Content-Length") {
+		if bytes.EqualFold(name, []byte("Content-Length")) {
 			lengths++
 			if lengths > 1 {
-				return nil, nil, invalid
+				return frame, invalid
 			}
 		}
 	}
+	frame.headerBytes, frame.lines = len(head), lines
+	return frame, nil
+}
+
+// Include both parsed and outbound Header maps, copied value slices, URL/path
+// construction and parser line buffers. Body bytes remain borrowed input and
+// are not part of this bound. The same reservation stays live until exchange
+// cleanup, including while publishing the response to a slow consumer.
+func (a *Adapter) nativeRequestWorking(frame nativeRequestFrame, resource string) (int, bool) {
+	bytes := len(a.config.URL)
+	if connection := a.config.Connection; connection != nil && connection.Username != "" {
+		if len(connection.Username) > math.MaxInt-bytes || len(connection.Password) > math.MaxInt-bytes-len(connection.Username) {
+			return 0, false
+		}
+		bytes += len(connection.Username) + len(connection.Password)
+	}
+	if frame.headerBytes > math.MaxInt-bytes || len(resource) > (math.MaxInt-bytes-frame.headerBytes)/3 {
+		return 0, false
+	}
+	bytes += frame.headerBytes + 3*len(resource)
+	if frame.lines > (math.MaxInt-nativeBudget-8192)/512 {
+		return 0, false
+	}
+	base := 8192 + frame.lines*512
+	if bytes > (math.MaxInt-nativeBudget-base)/8 {
+		return 0, false
+	}
+	return base + bytes*8, true
+}
+
+// This allocating parser is used only after dispatch owns the request working
+// reservation. The body remains a borrowed slice of the admitted Native input.
+func parseNativeHTTPRequest(raw []byte) (*http.Request, []byte, *pb.Failure) {
+	frame, failure := scanNativeHTTPRequest(raw)
+	if failure != nil {
+		return nil, nil, failure
+	}
+	invalid := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid Native HTTP framing")
+	head := raw[:frame.headerBytes]
 	request, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(head)))
 	if err != nil {
 		return nil, nil, invalid
 	}
 	_ = request.Body.Close()
 	request.Body = http.NoBody
-	body := raw[end+4:]
+	body := raw[frame.headerBytes:]
 	if request.Proto != "HTTP/1.1" || request.URL.IsAbs() || request.URL.Host != "" || request.URL.Opaque != "" ||
 		!strings.HasPrefix(request.RequestURI, "/") || strings.HasPrefix(request.RequestURI, "//") ||
 		len(request.TransferEncoding) != 0 || len(request.Trailer) != 0 || request.ContentLength != int64(len(body)) ||
-		lengths == 0 && len(body) != 0 {
+		request.Header.Get("Content-Length") == "" && len(body) != 0 {
 		return nil, nil, invalid
 	}
 	return request, body, nil
@@ -115,10 +165,19 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		defer stop()
 	}
 	native := p.Backend.(*nativePlan)
-	d := native.request
 	if ctx.Err() != nil {
 		return protocol.NativeFailure(false, protocol.ContextFailure(ctx))
 	}
+	if p.NativeIO != nil {
+		if err := p.NativeIO.GrowIO(nativeBudget + native.working); err != nil {
+			return protocol.NativeFailure(false, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error()))
+		}
+	}
+	d, nativeBody, failure := parseNativeHTTPRequest(native.raw)
+	if failure != nil {
+		return protocol.NativeFailure(false, failure)
+	}
+	p.WorkingBytes += native.working
 	path := d.URL.EscapedPath()
 	if native.resource != "" {
 		parts, _ := protocol.ParseRelativeResource(native.resource)
@@ -132,8 +191,8 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		endpoint += "?" + d.URL.RawQuery
 	}
 	var body io.Reader
-	if len(native.body) != 0 {
-		body = bytes.NewReader(native.body)
+	if len(nativeBody) != 0 {
+		body = bytes.NewReader(nativeBody)
 	}
 	request, err := http.NewRequestWithContext(ctx, d.Method, endpoint, body)
 	if err != nil {
@@ -147,14 +206,14 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		}
 		request.Header[name] = append([]string(nil), values...)
 	}
-	request.ContentLength = int64(len(native.body))
+	request.ContentLength = int64(len(nativeBody))
 	// Closing the body terminates this exchange on cancellation. net/http
 	// has at most one writer/read loop for this one non-reused HTTP/1 connection.
 	if body != nil {
 		request.Body = &nativeHTTPBody{Reader: body}
 		defer request.Body.Close()
 	}
-	headerMemory := &nativeHeaderMemory{io: p.NativeIO}
+	headerMemory := &nativeHeaderMemory{io: p.NativeIO, base: native.working}
 	headerKey := nativeHeaderKey{}
 	*request = *request.WithContext(context.WithValue(request.Context(), headerKey, headerMemory))
 	response, err := a.nativeClient.Do(request)

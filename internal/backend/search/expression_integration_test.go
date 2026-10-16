@@ -239,7 +239,8 @@ func TestSearchExpressionPipelineAndSourceQualification(t *testing.T) {
 
 func TestSearchExpressionRealCapacity(t *testing.T) {
 	a, b := setupSearch(t)
-	body := `{"n":0,"pad":"` + strings.Repeat("x", 200<<10) + `"}`
+	padding := strings.Repeat("x", 200<<10)
+	body := `{"n":0,"pad":"` + padding + `"}`
 	status, _ := b.Do(t, "PUT", "/"+b.Index+"/_doc/counter", body)
 	if status != 201 {
 		t.Fatal(status)
@@ -276,6 +277,23 @@ func TestSearchExpressionRealCapacity(t *testing.T) {
 	if applied.Load() == 0 || congested.Load() == 0 {
 		t.Fatal("real Update capacity rejection not exercised")
 	}
+	status, raw := b.Do(t, "GET", "/"+b.Index+"/_doc/counter", "")
+	var persisted struct {
+		ID      string `json:"_id"`
+		Found   bool   `json:"found"`
+		Version int64  `json:"_version"`
+		Source  struct {
+			Pad string `json:"pad"`
+		} `json:"_source"`
+	}
+	err := json.Unmarshal(raw, &persisted)
+	if status != 200 || err != nil || !persisted.Found || persisted.ID != "counter" || persisted.Source.Pad != padding {
+		t.Fatal("independent capacity oracle lost the owned document or preserved fields", status, err, persisted.Found, persisted.ID, len(persisted.Source.Pad))
+	}
+	if persisted.Version != 1+int64(applied.Load()) {
+		t.Fatal("independent capacity oracle observed a hidden write or replay", persisted.Version, applied.Load(), conflicts.Load(), congested.Load())
+	}
+	t.Logf("independent capacity oracle found=true id=counter version=%d seed=1 applied=%d conflict=%d congestion=%d preserved_padding_bytes=%d", persisted.Version, applied.Load(), conflicts.Load(), congested.Load(), len(persisted.Source.Pad))
 }
 
 func TestSearchExpressionRealConflictEvidence(t *testing.T) {

@@ -1,0 +1,42 @@
+package search
+
+import (
+    "fmt"
+    "runtime"
+    "strings"
+    "testing"
+
+    pb "github.com/batchstream/weir-protocol/api/weir/v1"
+)
+
+func reviewHeaderInput() []byte {
+    var builder strings.Builder
+    builder.WriteString("GET / HTTP/1.1\r\nHost: localhost\r\n")
+    for i := 0; i < 100000; i++ {
+        fmt.Fprintf(&builder, "X-%06d: x\r\n", i)
+    }
+    builder.WriteString("\r\n")
+    raw := []byte(builder.String())
+    return raw
+}
+
+func TestReviewNativePreparedInputOwnership(t *testing.T) {
+    raw := reviewHeaderInput()
+    document := &pb.Document{ContentType: "application/http", Data: raw}
+    request := &pb.NativeRequest{Resource: "records", Request: document}
+    adapter := &Adapter{}
+    runtime.GC()
+    var before runtime.MemStats
+    runtime.ReadMemStats(&before)
+    work, failure := adapter.prepareNative(request)
+    if failure != nil { t.Fatal(failure) }
+    runtime.GC()
+    var after runtime.MemStats
+    runtime.ReadMemStats(&after)
+    native := work.Backend.(*nativePlan)
+    retained := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+    t.Logf("raw_input=%d plan_input=%d parsed_headers=%d retained_parse_heap=%d initial_working=%d", len(raw), work.Bytes, len(native.request.Header), retained, work.WorkingBytes)
+    if retained <= int64(work.WorkingBytes) { t.Fatal("probe did not exceed the fixed preparation workspace") }
+    runtime.KeepAlive(work)
+    runtime.KeepAlive(request)
+}

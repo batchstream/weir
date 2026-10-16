@@ -93,7 +93,7 @@ func TestNativeHeaderMemoryReservesBeforeHTTPParser(t *testing.T) {
 			}
 			probe := &nativeMemoryProbe{active: true}
 			if mode == "budget_full" {
-				probe.limit = nativeBudget
+				probe.limit = work.WorkingBytes
 			}
 			work.Command = testutil.NativeCommand(request)
 			work.NativeIO = probe

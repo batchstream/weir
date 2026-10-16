@@ -19,6 +19,7 @@ type nativeHeaderKey struct{}
 type nativeHeaderMemory struct {
 	mu        sync.Mutex
 	io        execution.NativeIO
+	base      int
 	bytes     int
 	lines     int
 	completed bool
@@ -36,10 +37,10 @@ func (m *nativeHeaderMemory) read(data []byte) error {
 	}
 	m.bytes += len(data)
 	m.lines += lines
-	if m.bytes > (math.MaxInt-8192-m.lines*512)/8 {
+	if m.base > math.MaxInt-8192-m.lines*512 || m.bytes > (math.MaxInt-8192-m.lines*512-m.base)/8 {
 		return execution.ErrNativeMemory
 	}
-	return m.io.GrowIO(8192 + m.bytes*8 + m.lines*512)
+	return m.io.GrowIO(m.base + 8192 + m.bytes*8 + m.lines*512)
 }
 
 func (m *nativeHeaderMemory) finish() {

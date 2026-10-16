@@ -1,0 +1,72 @@
+{
+  "all_passed": true,
+  "test_command": "WEIR_SEARCH_INTEGRATION=opensearch Go1.27.1 offline go test -race -tags=integration -timeout=90s -count=3 -run ^TestSearch(RealBackendCongestion|ExpressionRealCapacity)$ -v ./internal/backend/search",
+  "congestion_rounds": [
+    {
+      "applied_documents": 256,
+      "definite_rejected_documents": 256,
+      "rejected_ID_oracle": "first3 GET404 before owned index cleanup"
+    },
+    {
+      "applied_documents": 256,
+      "definite_rejected_documents": 256,
+      "rejected_ID_oracle": "first3 GET404 before owned index cleanup"
+    },
+    {
+      "applied_documents": 256,
+      "definite_rejected_documents": 256,
+      "rejected_ID_oracle": "first3 GET404 before owned index cleanup"
+    }
+  ],
+  "expression_rounds": [
+    {
+      "applied": 2,
+      "conflict": 0,
+      "definite_rejected": 6,
+      "independent_oracle": {
+        "found": true,
+        "id": "counter",
+        "version": 3,
+        "seed_version": 1,
+        "preserved_padding_bytes": 204800
+      }
+    },
+    {
+      "applied": 2,
+      "conflict": 0,
+      "definite_rejected": 6,
+      "independent_oracle": {
+        "found": true,
+        "id": "counter",
+        "version": 3,
+        "seed_version": 1,
+        "preserved_padding_bytes": 204800
+      }
+    },
+    {
+      "applied": 2,
+      "conflict": 0,
+      "definite_rejected": 6,
+      "independent_oracle": {
+        "found": true,
+        "id": "counter",
+        "version": 3,
+        "seed_version": 1,
+        "preserved_padding_bytes": 204800
+      }
+    }
+  ],
+  "real_backend_write_task_rejections": 24,
+  "remaining_owned_indexes_before_stop": [],
+  "source_receipt": "pr79-bounded-search-source.json",
+  "source_unchanged_during_run": true,
+  "fixture_removed": true,
+  "loopback19202_LISTEN_absent": true,
+  "loopback19202_reuseaddr_bind_available": true,
+  "plain_bind_immediately_after_stop": "EADDRINUSE; follow-up confirmed no LISTEN and SO_REUSEADDR bind succeeded",
+  "normal_ES_identity_unchanged": true,
+  "normal_ES_write_size": 2,
+  "normal_ES_write_queue": 10000,
+  "mutation_scope": "expression_integration_test.go only: permanent independent version/padding oracle (19added/1removed); no production source edits by this agent",
+  "qualification_limit": "run against author-approved compilation-window dirty tree at9d62ad1; final Native production artifact remains separate"
+}

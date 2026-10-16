@@ -9,8 +9,8 @@ failure diagnostics. The [build receipt](native-memory-results-2026-10-16/native
 and [progress validation](native-memory-results-2026-10-16/native-memory-qualified-validation.json)
 record exact identities, source hashes and environment.
 
-Status: progress, diagnostics and complete recovery requalification pass;
-independent PR review/CI are pending. Sustained mixed-load and backend-fault
+Status: independent review found a blocking parsed-request ownership gap;
+this candidate is not approved. A correction and new exact-head review are pending. Sustained mixed-load and backend-fault
 qualification remains a separate milestone.
 
 ## Reproduced failure and corrected ownership
@@ -136,7 +136,7 @@ process RSS or the Go runtime. Actual resident admission still protects the whol
 process. Infinite slow consumers remain finite resource consumers and can exhaust
 the real account. Production endpoints have not been accessed.
 
-## Final recovery qualification
+## Prior clean-artifact recovery qualification
 
 The same `7787dc` artifact passed all twelve 256/512 MiB × automatic/off ×
 three-round cases using the corrected cumulative predicate. Each establishes
@@ -150,3 +150,53 @@ All sixteen identities match the clean artifact; exits were zero, with no OOM,
 owned connections or CLI container residuals. The
 [final recovery summary](native-memory-results-2026-10-16/native-memory-qualified-summary.json)
 links the five raw logs and preserves the earlier unexplained failure separately.
+
+## Independent review and request-parser correction
+
+Fresh review of PR79 head `9d62ad1` found valid Search HTTP input with 100,000
+short unique headers occupied 8.70–8.73 MB of parsed retained heap for only
+1.30 MB of raw input. Prepare allocated that map before admission, and execution
+dropped its initial working estimate while the parsed request remained reachable
+in Plan.Backend. Passing prior tests did not establish complete Native ownership.
+The [before measurement](native-memory-results-2026-10-16/pr79-native-request-memory-before-manifest.json)
+retains the independent probe, command, hashes and three observations. PR79 is
+draft while the parser correction receives fresh artifact validation and exact-head
+independent approval.
+
+The independent serial real-backend race run passed MongoDB, server and app,
+but Search had two explicit congestion-test failures against the normal write
+pool (size two/queue 10000). These tests require native rejection under a bounded
+pool; the raw aggregate result remains FAIL. Separate size-one/queue-one owned
+OpenSearch qualification passed both tests three times under race: each create
+round applied 256 and rejected 256, and each expression round applied two and
+rejected six. Persisted version equals one plus the applied count; rejected create
+IDs are absent and the 200 KiB counter padding remains intact. This temporary
+OpenSearch fixture was removed after verification. The normal ES fixture was
+unchanged. See the bounded-search summary and raw results in this directory.
+
+The correction keeps only borrowed raw request bytes in the prepared plan. An
+allocation-free framing scan computes a conservative bound for parsed and cloned
+request headers, URL construction and parser buffers. The dispatch lease approves
+this bound before the allocating HTTP parser or backend call runs. Request working
+credit remains charged through slow Head/Chunk publication and is released only
+after response Body.Close, request-body cleanup and context cancellation return.
+The terminal ticket retains input bytes and its bounded output window, without a
+parsed Header map. Response-header growth includes the still-held request bound.
+
+Focused race checks three times and complete Search/Store/server race checks pass.
+The 100,000-header preparation stays at seven allocations and three prepared plans
+retain only hundreds of additional heap bytes. Deliberate insufficient admission
+allocates 592 bytes and makes zero HTTP attempts. The slow Head keeps more than
+61 MB of request working charged. Its unacknowledged terminal no longer owns the
+outbound Request. Raw failed and successful test runs are retained alongside the
+original independent before measurement.
+
+A first-GC heap-drop assertion was invalid: Go's net/http headerSorterPool may
+retain physical header sorting storage, and transport goroutine stacks may unwind
+after Body.Close. The stable interface contract permits request reuse after
+response Body.Close; the tests check that close/cancel boundary separately from
+bounded weak-reference quiescence while the terminal remains unacknowledged.
+Explicit GC is confined to these allocation/reachability diagnostics, never the
+production path or process recovery qualification. No causal claim is made about
+a test observer retaining the request, and no transport join or GC workaround is
+added to production. A new clean-artifact validation follows this correction.
