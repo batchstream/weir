@@ -73,10 +73,23 @@ missing, malformed or inconsistent values retain raw `memory.current`.
 `weir_memory_cgroup_current_bytes` preserves raw charge and
 `weir_memory_cgroup_working_set_bytes` reports the corresponding admission usage.
 Freed Go objects may leave resident idle heap above the recovery watermark.
-The standard Go `GOMEMLIMIT` environment variable can encourage earlier release;
-choose it below the low watermark with space for stacks and other resident
-memory, then verify recovery under the actual workload. Weir does not set it
-automatically.
+The CLI enables the standard Go soft memory limit before accepting requests,
+using 80% of the recovery-watermark budget: the default is 56% of discovered
+capacity. This leaves room below the 70% recovery line for the binary, sockets
+and other memory outside Go. The existing sampler follows trusted capacity
+changes; unknown samples preserve the previous limit. It never forces GC or
+scavenging on each sample. Actual RSS and cgroup working set still control
+admission, including memory the Go runtime cannot release.
+
+An explicitly present `GOMEMLIMIT` (including `off`) or an already finite runtime
+limit takes precedence. A later external runtime-limit change ends automatic
+ownership. Shutdown restores the prior value only while Weir still owns it.
+`app.Open` leaves this process-wide policy unchanged; embedded callers can
+explicitly opt in through `Node.ManageRuntimeMemoryLimit`. Inspect
+`weir_memory_go_runtime_limit_bytes` and `weir_memory_go_runtime_managed` to
+distinguish the sampled runtime limit from automatic management. MaxInt64 means
+the Go limit is disabled. A zero recovery watermark is rejected because a live
+process cannot return to zero resident bytes after overload.
 
 Business RPCs and backend IO inherit caller contexts. Transport progress,
 connection establishment, keepalive and cleanup have separate controls.

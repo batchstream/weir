@@ -96,6 +96,7 @@ overload:
 	}
 	for _, fragment := range []string{
 		"overload:\n  memory:\n    high_watermark: 0\n",
+		"overload:\n  memory:\n    low_watermark: 0\n",
 		"overload:\n  memory:\n    low_watermark: 90\n",
 		"overload:\n  memory:\n    sample_interval: 0s\n",
 		"lifecycle:\n  shutdown_timeout: 0s\n",

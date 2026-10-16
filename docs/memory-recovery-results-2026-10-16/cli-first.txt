@@ -1,0 +1,12 @@
+=== RUN   TestCLIBusinessHeapRecovery
+    memory_recovery_integration_test.go:49: driver Go=go1.27.1 host=darwin/arm64 engine=29.7.2 kernel=7.0.12-linuxkit linux/aarch64 cgroup=2 image=linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b
+=== RUN   TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=1
+    memory_recovery_integration_test.go:73: Get "http://127.0.0.1:56605/metrics": EOF
+    memory_recovery_integration_test.go:163: CLI exit=false 0 logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 13:05:09 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- FAIL: TestCLIBusinessHeapRecovery (2.60s)
+    --- FAIL: TestCLIBusinessHeapRecovery/256MiB/automatic=true/round=1 (0.51s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/app	3.233s
+FAIL

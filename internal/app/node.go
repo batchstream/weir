@@ -44,6 +44,12 @@ type endpoint struct {
 	peer     bool
 }
 
+// ManageRuntimeMemoryLimit is an explicit process-wide opt-in for the CLI.
+// Opening an embedded Node leaves the host application's Go runtime unchanged.
+func (n *Node) ManageRuntimeMemoryLimit() func() {
+	return n.guard.ManageRuntimeMemoryLimit()
+}
+
 func (n *Node) Start(startup context.Context) error {
 	n.start.Do(func() {
 		n.mu.Lock()

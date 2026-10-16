@@ -1,0 +1,29 @@
+{
+  "owner": "weir-memory-dynamic-a256c5d5b9",
+  "steps": [
+    {
+      "capacity_mib": 512,
+      "go_limit": 300647710,
+      "elapsed_seconds": 0.014
+    },
+    {
+      "capacity_mib": 256,
+      "go_limit": 150323855,
+      "elapsed_seconds": 0.074
+    },
+    {
+      "capacity_mib": 512,
+      "go_limit": 300647710,
+      "elapsed_seconds": 0.075
+    }
+  ],
+  "passed": true,
+  "exit": [
+    "weir-memory-dynamic-a256c5d5b9",
+    "false",
+    "0",
+    "false"
+  ],
+  "logs": "Weir listening on [127.0.0.1:7447]; local execution and peer directory discovery\nDiagnostics listening on [::]:7449",
+  "removed": true
+}

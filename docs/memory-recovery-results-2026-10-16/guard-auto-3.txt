@@ -1,0 +1,4 @@
+=== RUN   TestLinuxAutomaticRuntimeMemoryRecoversReleasedHeap
+    runtime_memory_linux_integration_test.go:16: automatic recovery=217.206834ms HeapAlloc=157608 HeapIdle=242311168 HeapReleased=98099200 GoLimit=150323855 snapshot={Budget:268435456 Bytes:152236032 Source:linux_rss Observed:true Latched:false ProcessValid:true Unknown:false Cgroup:{Current:155713536 WorkingSet:155713536 Limit:268435456 Capacity:268435456 Levels:1 Finite:true Valid:true State:v2 Scope:leaf} GoRuntimeLimit:150323855 GoRuntimeManaged:true}
+--- PASS: TestLinuxAutomaticRuntimeMemoryRecoversReleasedHeap (0.53s)
+PASS
