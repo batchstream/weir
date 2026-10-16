@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -84,6 +85,62 @@ func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	}
 	if work.Command.GetNative() != nil || work.BatchKey != "records" || work.Backend.(*plan).program == nil {
 		t.Fatal("Lua cannot join its index's bounded conditional record batch")
+	}
+}
+
+func TestRouteNativeReleasesHTTPWorkingSetBeforeTerminalOutput(t *testing.T) {
+	for _, failChunk := range []bool{false, true} {
+		name := "complete"
+		if failChunk {
+			name = "delivery_failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			header := strings.Repeat("h", 128<<10)
+			body := strings.Repeat("b", 512<<10)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				w.Header().Set("X-Large", header)
+				_, _ = io.WriteString(w, body)
+			})
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			config := Config{URL: server.URL}
+			adapter := &Adapter{config: config, nativeClient: server.Client()}
+			request := nativeRequest(t, "records", "GET", "/_search")
+			variant := &pb.Command_Native{Native: request}
+			call := &pb.Command{Operation: variant}
+			work, failure := adapter.PrepareCommand(t.Context(), 1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			chunks, terminal := 0, false
+			emit := func(work *execution.Plan, event *pb.Event) error {
+				if end := event.GetNativeEnd(); end != nil {
+					terminal = true
+					if work.WorkingBytes != execution.EntryOverheadBytes {
+						t.Fatal("terminal output retained released HTTP working buffers", work.WorkingBytes)
+					}
+					if failChunk && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || !failChunk && end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+						t.Fatal("working-set cleanup changed Native delivery evidence", end)
+					}
+					return nil
+				}
+				if work.WorkingBytes < 2*len(header)+(64<<10) {
+					t.Fatal("HTTP output discounted still-held headers and chunk buffer", work.WorkingBytes)
+				}
+				if event.GetChunk() != nil {
+					chunks++
+					if failChunk {
+						return errors.New("test output canceled")
+					}
+				}
+				return nil
+			}
+			works := []*execution.Plan{work}
+			adapter.Execute(t.Context(), works, emit)
+			if chunks == 0 || !terminal {
+				t.Fatal("Native reply did not exercise chunk and terminal ownership", chunks, terminal)
+			}
+		})
 	}
 }
 

@@ -176,13 +176,16 @@ for byte/count/wait boundaries, execution backpressure and workload calibration.
 32MiB) bound waiting work, with capacity returned at dispatch. Full queues apply
 backpressure until capacity is available or the caller cancels. A larger input
 can occupy an empty queue alone. `batching.max_in_flight` optionally bounds simultaneous
-adapter invocations per Store; omission selects its default of `16`, and
+backend executions per Store; omission selects its default of `16`, and
 explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
 bounded queue, allowing natural batching while
 the backend is busy. Execution completion returns this credit before consumer Ack.
-Search visibility waits and Native
-streaming still occupy credit, so a small budget can reduce throughput when waiting
-for refresh or a slow Native consumer. Select a budget with the actual workload;
+Search visibility waits retain execution credit. Native output can borrow a
+bounded pause reservation while waiting for the consumer, then rejoin the Store
+queue to obtain execution credit before continuing. Pause count and retained
+bytes have independent bounds using the configured queue limits; one larger
+stream can occupy an empty pause budget alone. A full pause budget keeps the
+original execution credit and applies backpressure. Select a budget with the actual workload;
 separate Stores have independent budgets. Backend pools, RPCs and connections have
 no separate concurrency cap. Backend protocols determine document sizes.
 
@@ -210,6 +213,8 @@ Use container/OS memory limits for the hard boundary.
 The [local reliability verification](docs/production-reliability-2026-10-16.md)
 records the cache regression, real backend read/write observations, and the
 remaining Native, resident-heap and cleanup latency boundaries.
+The [production reliability milestones](docs/production-readiness.md) track
+subsequent fixes, including bounded Native output progress and cancellation.
 
 A MongoDB Lua transaction can contain records from several RPCs. A database write
 failure rolls back that transaction; a confirmed abort can be retried within the

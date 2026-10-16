@@ -41,6 +41,7 @@ func TestCommandCompletionReleasesReservations(t *testing.T) {
 			adapter := &singleExecutionAdapter{}
 			limits := DefaultLimits()
 			limits.BatchWait = 0
+			limits.MaxInFlight = 0
 			runtime := newRuntime(adapter, limits)
 			work := plan(1, name, false)
 			var session *Session

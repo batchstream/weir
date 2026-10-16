@@ -72,6 +72,9 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		return
 	}
 	end := a.executeNative(ctx, work, emit)
+	// Response headers, body buffers and the HTTP exchange are now released.
+	// Keep only terminal bookkeeping while the admitted input stays charged.
+	work.WorkingBytes = execution.EntryOverheadBytes
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Value: value}
 	_ = emit(work, event)

@@ -82,6 +82,9 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		return
 	}
 	end := a.executeNative(ctx, work, emit)
+	// The response working set has left executeNative; only terminal bookkeeping
+	// remains while the caller receives NativeEnd. The admitted input stays charged.
+	work.WorkingBytes = execution.EntryOverheadBytes
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Value: value}
 	_ = emit(work, event)

@@ -54,6 +54,9 @@ func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 }
 
 func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit execution.Emit) *pb.NativeEnd {
+	// Early validation failures retain only the admitted request and bookkeeping.
+	// The initial preparation estimate remains charged until the first Emit.
+	work.WorkingBytes = execution.EntryOverheadBytes
 	raw := work.Command.GetNative().Request.Data
 	database := work.Backend.(string)
 	if f := a.nativeCommand(raw); f != nil {
@@ -105,6 +108,9 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	attempt, release := nativeAttemptContext(ctx)
 	defer release()
 	err := operation.Execute(attempt)
+	// The response is now finite and retained locally. Small replies must not
+	// reserve the largest legal MongoDB reply while waiting on a slow caller.
+	work.WorkingBytes = cap(reply) + execution.EntryOverheadBytes
 	failure := backendFailure(ctx, err)
 	// Raw is the actual driver-retained wire response, including ok:0 and write
 	// errors. Never reconstruct BSON from the Go error or normalize write effects.

@@ -63,7 +63,7 @@ func TestSparseReadsBypassCollectingNamespacesInRunningScheduler(t *testing.T) {
 	waitReleased(t, runtime)
 }
 
-func TestSlowNativeConsumersReleaseSaturatedSlotsOnCancellation(t *testing.T) {
+func TestSlowNativeConsumersUseBoundedOutputCapacity(t *testing.T) {
 	limits := DefaultLimits()
 	limits.QueueOperations = 1
 	adapter := &singleExecutionAdapter{}
@@ -102,20 +102,15 @@ func TestSlowNativeConsumersReleaseSaturatedSlotsOnCancellation(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	_, failure, _ = runtime.Submit(ctx, work, nil)
-	if failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
-		t.Fatal("saturated Native consumers did not retain bounded queue credit", failure)
-	}
-	if snapshot := runtime.Snapshot(); snapshot.Active != limits.MaxInFlight || snapshot.Pending != 1 {
-		t.Fatal("stalled Native output escaped its execution bounds", snapshot)
-	}
-	sessions[0].Close()
 	event, err := ticket.Wait(ctx)
 	if err != nil || event.GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
-		t.Fatal("canceling a stalled Native consumer did not return execution credit", event, err)
+		t.Fatal("bounded Native output consumed every backend slot", event, err)
 	}
 	ticket.Ack()
-	for _, session := range sessions[1:] {
+	if snapshot := runtime.Snapshot(); snapshot.Active != limits.MaxInFlight-1 || snapshot.Paused != 1 || snapshot.PausedBytes > limits.QueueBytes || snapshot.Pending != 0 {
+		t.Fatal("stalled Native output escaped its separate bounds", snapshot)
+	}
+	for _, session := range sessions {
 		session.Close()
 	}
 	waitReleased(t, runtime)

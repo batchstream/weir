@@ -117,7 +117,7 @@ func (owner *responseBufferOwner) Put(*[]byte) {
 func (owner *responseBufferOwner) watch(ctx context.Context, server *Server) {
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
-	if owner.released {
+	if owner.released || owner.message == nil || ctx.Err() != nil {
 		return
 	}
 	owner.timer = time.AfterFunc(server.limits.Stall, func() {
@@ -137,6 +137,12 @@ func (owner *responseBufferOwner) watch(ctx context.Context, server *Server) {
 func (owner *responseBufferOwner) detachMessage() {
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
+	// The watchdog's RPC context can reach the orphaned transport buffer.
+	// End that reference chain on cancellation; storage cleanup still owns credit.
+	if owner.timer != nil {
+		owner.timer.Stop()
+		owner.timer = nil
+	}
 	if owner.message != nil {
 		owner.admission.responses.CompareAndDelete(owner.message, owner)
 		owner.message = nil

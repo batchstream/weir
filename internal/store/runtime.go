@@ -48,6 +48,8 @@ type Runtime struct {
 	keys                                    map[resourceKey]*Ticket
 	pendingBytes, resultBytes, workingBytes int
 	publishers                              int
+	paused, pausedBytes                     int
+	resumeHead, resumeTail                  *batch
 	draining, closed, overloaded            bool
 	wake, changed, done                     chan struct{}
 	closeOnce                               sync.Once
@@ -100,12 +102,18 @@ type batch struct {
 	items        []*Ticket
 	cancel       context.CancelFunc
 	workingBytes int
+	pausedBytes  int
+	resume       chan struct{}
+	resumeOrder  uint64
+	resumePrev   *batch
+	resumeNext   *batch
 }
 type Snapshot struct {
 	Ready, ReadyBytes                     int
 	Pending, PendingBytes                 int
 	Active, Retained                      int
 	ResultBytes, WorkingBytes, Publishers int
+	Paused, PausedBytes                   int
 	Draining, Closed, Overloaded          bool
 }
 
@@ -456,7 +464,7 @@ func (r *Runtime) collectLocked(now time.Time) {
 	r.selectionCutoff = nil
 	ready, slots := 0, len(r.queue)
 	if r.limits.MaxInFlight > 0 {
-		slots = r.limits.MaxInFlight - len(r.batches)
+		slots = r.limits.MaxInFlight - (len(r.batches) - r.paused)
 	}
 	for t := r.queueHead; t != nil; t = t.queueNext {
 		if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
@@ -576,7 +584,7 @@ func (r *Runtime) reinsertCandidateLocked(candidate *batchCandidate) {
 // batch is still collecting. Reads, full batches and streaming commands bypass it.
 func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	var next time.Time
-	if r.limits.MaxInFlight > 0 && len(r.batches) >= r.limits.MaxInFlight {
+	if r.limits.MaxInFlight > 0 && len(r.batches)-r.paused >= r.limits.MaxInFlight {
 		return nil, next
 	}
 	var chosen, previous *batchCandidate
@@ -627,15 +635,20 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 			break
 		}
 	}
+	if chosen == nil && r.selectionCutoff != nil {
+		r.candidates = nil
+		return r.selectLocked(now)
+	}
+	if r.resumeHead != nil && (chosen == nil || r.resumeHead.resumeOrder < chosen.items[0].order) {
+		b := r.resumeHead
+		r.removeResumeLocked(b)
+		r.releasePauseLocked(b)
+		close(b.resume)
+		b.resume = nil
+		r.notifyLocked()
+		return r.selectLocked(now)
+	}
 	if chosen == nil {
-		if r.selectionCutoff != nil {
-			// Cached collecting groups can remain after every ready group was
-			// dispatched. Examine omitted groups before sleeping: they may
-			// contain reads or another batch that is already ready. A freshly
-			// bounded round always contains at least one ready candidate.
-			r.candidates = nil
-			return r.selectLocked(now)
-		}
 		return nil, next
 	}
 	items := chosen.items
@@ -708,6 +721,82 @@ func (t *Ticket) emit(event *pb.Event) error {
 		return t.ctx.Err()
 	}
 }
+
+// Native output may wait on the caller after backend work has stopped. Borrow
+// a separate, bounded output reservation so that wait does not consume a backend
+// execution slot. Full output capacity keeps the original slot and backpressure.
+// The same queued byte/item bounds apply; a single oversized stream proceeds alone.
+func (r *Runtime) emitNative(b *batch, ticket *Ticket, event *pb.Event) error {
+	r.mu.Lock()
+	if err := ticket.ctx.Err(); err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	r.workingBytes += ticket.plan.WorkingBytes - b.workingBytes
+	b.workingBytes = ticket.plan.WorkingBytes
+	resultBytes := proto.Size(event) + execution.ResultOverheadBytes
+	r.resultBytes += resultBytes - ticket.plan.ResultBytes
+	ticket.plan.ResultBytes = resultBytes
+	bytes := ticket.plan.Bytes + b.workingBytes + resultBytes
+	paused := r.limits.MaxInFlight > 0 && r.paused < r.limits.QueueOperations &&
+		(r.paused == 0 || bytes <= r.limits.QueueBytes-r.pausedBytes)
+	if paused {
+		b.pausedBytes = bytes
+		r.paused++
+		r.pausedBytes += bytes
+		r.notifyLocked()
+	}
+	r.mu.Unlock()
+	err := ticket.emit(event)
+	if !paused || err != nil || event.GetNativeEnd() != nil {
+		return err
+	}
+	r.mu.Lock()
+	if b.ctx.Err() != nil {
+		r.mu.Unlock()
+		return b.ctx.Err()
+	}
+	resume := make(chan struct{})
+	b.resume = resume
+	b.resumeOrder = r.nextOrder
+	r.nextOrder++
+	b.resumePrev = r.resumeTail
+	if r.resumeTail == nil {
+		r.resumeHead = b
+	} else {
+		r.resumeTail.resumeNext = b
+	}
+	r.resumeTail = b
+	r.candidates = nil
+	r.notifyLocked()
+	r.mu.Unlock()
+	select {
+	case <-resume:
+		return b.ctx.Err()
+	case <-b.ctx.Done():
+		return b.ctx.Err()
+	}
+}
+
+func (r *Runtime) removeResumeLocked(b *batch) {
+	if b.resumePrev == nil {
+		r.resumeHead = b.resumeNext
+	} else {
+		b.resumePrev.resumeNext = b.resumeNext
+	}
+	if b.resumeNext == nil {
+		r.resumeTail = b.resumePrev
+	} else {
+		b.resumeNext.resumePrev = b.resumePrev
+	}
+	b.resumePrev, b.resumeNext = nil, nil
+}
+
+func (r *Runtime) releasePauseLocked(b *batch) {
+	r.paused--
+	r.pausedBytes -= b.pausedBytes
+	b.pausedBytes = 0
+}
 func (r *Runtime) startPublisherLocked(t *Ticket) {
 	r.publishers++
 	t.publishing = true
@@ -739,6 +828,7 @@ func (r *Runtime) execute(b *batch) {
 		plans[i] = t.plan
 		positions[t.plan] = t
 	}
+	nativeEnded := false
 	emit := func(plan *execution.Plan, event *pb.Event) error {
 		ticket := positions[plan]
 		if ticket == nil {
@@ -761,10 +851,11 @@ func (r *Runtime) execute(b *batch) {
 			return nil
 		}
 		if plan.Command.GetNative() != nil {
-			r.mu.Lock()
-			r.retainResultLocked(ticket, proto.Size(event)+execution.ResultOverheadBytes)
-			r.mu.Unlock()
-			return ticket.emit(event)
+			if nativeEnded {
+				return fmt.Errorf("Native emitted after terminal result")
+			}
+			nativeEnded = event.GetNativeEnd() != nil
+			return r.emitNative(b, ticket, event)
 		}
 		return fmt.Errorf("adapter emitted unknown command result")
 	}
@@ -777,6 +868,12 @@ func (r *Runtime) execute(b *batch) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.workingBytes -= b.workingBytes
+	if b.pausedBytes != 0 {
+		if b.resume != nil {
+			r.removeResumeLocked(b)
+		}
+		r.releasePauseLocked(b)
+	}
 	delete(r.batches, b)
 	for _, ticket := range b.items {
 		event := ticket.event
@@ -794,7 +891,7 @@ func (r *Runtime) execute(b *batch) {
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches), Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
+	snapshot := Snapshot{Pending: len(r.queue), PendingBytes: r.pendingBytes, Active: len(r.batches) - r.paused, Paused: r.paused, PausedBytes: r.pausedBytes, Retained: len(r.live), ResultBytes: r.resultBytes, WorkingBytes: r.workingBytes, Publishers: r.publishers, Draining: r.draining, Closed: r.closed, Overloaded: r.overloaded}
 	for t := range r.live {
 		if t.state == 2 {
 			snapshot.Ready++

@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -111,5 +112,64 @@ func TestRouteNativeBackendBudgetExcludesOutputStall(t *testing.T) {
 	adapter.Execute(context.Background(), []*execution.Plan{work}, emit)
 	if end.GetCompletion() != pb.NativeCompletion_RESPONSE_COMPLETE || end.GetFailure() != nil || time.Since(started) < 150*time.Millisecond {
 		t.Fatal("output stalls consumed backend I/O budget", end, time.Since(started))
+	}
+}
+
+func TestRouteNativeReleasesReplyWorkingSetBeforeTerminalOutput(t *testing.T) {
+	for _, failChunk := range []bool{false, true} {
+		name := "complete"
+		if failChunk {
+			name = "delivery_failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			response := bson.D{{Key: "ok", Value: 1}, {Key: "pad", Value: strings.Repeat("x", 1<<20)}}
+			reply, err := bson.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replies := []bson.D{response}
+			adapter := batchMockAdapter(t, replies, nil)
+			command := bson.D{{Key: "ping", Value: 1}}
+			raw, err := bson.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := &pb.Document{ContentType: "application/bson", Data: raw}
+			request := &pb.NativeRequest{Resource: "db", Request: body}
+			variant := &pb.Command_Native{Native: request}
+			call := &pb.Command{Operation: variant}
+			work, failure := adapter.PrepareCommand(t.Context(), 1, call)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			chunks, terminal := 0, false
+			emit := func(work *execution.Plan, event *pb.Event) error {
+				if end := event.GetNativeEnd(); end != nil {
+					terminal = true
+					if work.WorkingBytes != execution.EntryOverheadBytes {
+						t.Fatal("terminal output retained the released reply's working set", work.WorkingBytes)
+					}
+					if failChunk && end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || !failChunk && end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE {
+						t.Fatal("working-set cleanup changed Native delivery evidence", end)
+					}
+					return nil
+				}
+				if work.WorkingBytes < len(reply) {
+					t.Fatal("streaming output discounted a still-held Mongo reply", work.WorkingBytes, len(reply))
+				}
+				if event.GetChunk() != nil {
+					chunks++
+					if failChunk {
+						return errors.New("test output canceled")
+					}
+				}
+				return nil
+			}
+			works := []*execution.Plan{work}
+			adapter.Execute(t.Context(), works, emit)
+			if chunks == 0 || !terminal {
+				t.Fatal("Native reply did not exercise chunk and terminal ownership", chunks, terminal)
+			}
+		})
 	}
 }
