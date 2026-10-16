@@ -1,0 +1,39 @@
+{
+  "NativeBurst_completed": 2560,
+  "NativeBurst_p99_ms_max": 52.60775,
+  "NativeBurst_p99_ms_min": 39.332625,
+  "actual_two_export_package_status": "PASS",
+  "all_current_932_source_hashes_match_runtime_and_offline": true,
+  "archive_sha256": {
+    "weir-darwin-amd64.tar.gz": "c31967f390dfc1713d2424731c1403e0240cbf5bbe6c3745b46d6ee215cf725e",
+    "weir-darwin-arm64.tar.gz": "1cbff3ec24b405618d1921773a34bec2ba6a07cfb858361140d41aef66d893ac",
+    "weir-linux-amd64.tar.gz": "c558fc86efb5a684deb80cb0ae5ad8cec656094b0e07da4c1b3ce6c69a7b99c0",
+    "weir-linux-arm64.tar.gz": "9e0813956f8e1e0b356cfc2b776445cbcdb08cfe4d1d58f432f33122261ded12"
+  },
+  "binary_sha256": {
+    "darwin-amd64": "a17805a2b9f67ba06e0a0a6d6eaa493a9e4f7228f49ae5198efc7cb466429d7f",
+    "darwin-arm64": "c8b5b9812183c8417e36da5c733864dd977cfd9c182e4a28981ec9c16b22955d",
+    "linux-amd64": "c174b9832bb5618c82a96c7ad137f955902c4ca22ed6f8202aca44cd2bf1a4e4",
+    "linux-arm64": "72ab151e80bca4b8b6c5d9d80ad92c212289652d9289acfe9651f7ce66fa8477"
+  },
+  "created_at": "2026-10-16T20:55:59.107672+00:00",
+  "first_second_binary_and_archive_hashes_equal": true,
+  "grpc_attribution_and_patch_members_verified_in_all_8_archives": true,
+  "only_local_replacement": [
+    {
+      "GoVersion": "1.25.0",
+      "Path": "google.golang.org/grpc",
+      "Replace": {
+        "Path": "./third_party/grpc"
+      },
+      "Version": "v1.83.2"
+    }
+  ],
+  "package_inputs_verified": 670,
+  "qualified_linux_arm64_sha256": "a901b5c48725978a5068989509d3d45121604bc349208a39fe149f7bb0cf4f5a",
+  "qualified_source": "e264138ea0820a9664f3e5b6b7ee51925f3473fa",
+  "runtime_evidence_files_independently_verified": 24,
+  "runtime_validation_sha256": "254387ab9e8b5cfb2232424600f60c0d00c72f0c546db1afc54d29315e5ee5fb",
+  "scope": "Ingress goal local qualification only; final Lua allocation, sustained600s and final fault qualification remain pending.",
+  "status": "PASS"
+}

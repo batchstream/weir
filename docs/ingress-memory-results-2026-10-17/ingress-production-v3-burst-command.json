@@ -1,0 +1,49 @@
+{
+  "started_utc": "2026-10-16T20:50:03.828764+00:00",
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "source": "e264138ea0820a9664f3e5b6b7ee51925f3473fa",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "GOFLAGS": "",
+    "GOOS": "darwin",
+    "GOARCH": "arm64",
+    "CGO_ENABLED": "1",
+    "WEIR_INTEGRATION": "1",
+    "WEIR_SEARCH_INTEGRATION": "elasticsearch",
+    "WEIR_NATIVE_BURST_INTEGRATION": "1",
+    "WEIR_NATIVE_BURST_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v3-weir-linux",
+    "WEIR_NATIVE_BURST_SOURCE": "e264138ea0820a9664f3e5b6b7ee51925f3473fa",
+    "WEIR_NATIVE_BURST_SHA256": "a901b5c48725978a5068989509d3d45121604bc349208a39fe149f7bb0cf4f5a"
+  },
+  "unset_env": [
+    "WEIR_MONGO_PROFILE",
+    "WEIR_INGRESS_MEMORY_INTEGRATION",
+    "WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION",
+    "WEIR_INGRESS_DIAGNOSTIC"
+  ],
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-mod=readonly",
+    "-buildvcs=true",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLINativeSmallBurstPreservesAdmission$",
+    "-timeout",
+    "3m",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v3-burst-driver.test",
+    "-v",
+    "./internal/app"
+  ],
+  "scope": "original10x256 mixed1KiB trueMongo/ES1GiB2CPU caller3s/final5s once, precedingM3A/Bactualexit0"
+}

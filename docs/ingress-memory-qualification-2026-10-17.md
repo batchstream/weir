@@ -1,9 +1,10 @@
 # Ingress memory qualification, 2026-10-17
 
-Status: **incomplete**. The original qualification failed. Two subsequent
-instrumented runs localized the failure; neither is qualification or a passing
-production result. The first clean repair candidate also failed A512; further
-implementation and unchanged-profile acceptance are required.
+Status: **this ingress goal passed local fixed-profile qualification and actual
+reproducible release builds**. PR review, CI and merge remain pending. Earlier
+failures and rejected intermediate implementations are retained below. Overall
+production-readiness acceptance is still incomplete: final Lua allocation,
+600-second sustained load and fault-recovery qualification have not yet run.
 
 ## Preserved original failure
 
@@ -134,7 +135,8 @@ vet, and Linux arm64 compilation. The 926 recorded source/provenance file hashes
 were unchanged across these checks and independently matched the frozen files.
 The native transport accounts header-map copies before their allocation, with
 early refusal/cancellation retiring both handler and native stream ownership.
-Real-backend acceptance remains pending.
+At that checkpoint, real-backend acceptance remained pending; the final result
+is recorded below.
 
 CI and the release packager must carry the local patch. Their dependency guard
 permits only the exact grpc v1.83.2 replacement inside the current source tree;
@@ -142,8 +144,9 @@ SDK/protocol or unrelated replacements remain errors. Offline bootstrap prepares
 both module graphs, and CI runs the nested receive-ownership race tests. Release
 exports include the public gRPC Go packages, patch and attribution; build-info
 receipts record the exact local replacement without temporary export paths.
-The 45 script tests passed in normal and optimized Python modes. Clean release
-export/build reproducibility and final runtime qualification are still pending.
+The 45 script tests passed in normal and optimized Python modes. At that checkpoint, clean release
+export/build reproducibility and final runtime qualification were still pending;
+both were subsequently completed for the third clean candidate below.
 
 ## First clean repair candidate: A512 failed
 
@@ -314,7 +317,62 @@ times passed. The final complete repository race suite, nested gRPC receive race
 tests five times, Docker-observer integration race tests, ordinary and integration
 vet, and Linux amd64 build then all passed. All 932 source/provenance hashes
 were identical before and after and independently matched the current files and
-the pinned gRPC manifest. A new clean Linux arm64 runtime matrix remains pending.
+the pinned gRPC manifest. The third clean Linux arm64 candidate subsequently passed the complete fixed
+runtime matrix described below.
+
+## Third clean candidate: fixed ingress qualification passed
+
+Candidate `e264138ea0820a9664f3e5b6b7ee51925f3473fa` supplied the clean Linux
+arm64 CLI, SHA256
+`a901b5c48725978a5068989509d3d45121604bc349208a39fe149f7bb0cf4f5a`.
+The race drivers used that same commit. All 932 source/provenance hashes and
+564 pinned gRPC files matched before and after the full runtime window; no
+source, profile, caller budget or retry policy changed. All cases were rerun
+from this candidate rather than reusing earlier passing subcases.
+
+| Original ordinary-put case | APPLIED with complete hashes | Explicit NOT_STARTED/capacity | Unconfirmed calls |
+| --- | ---: | ---: | ---: |
+| 512 MiB, two CPUs, 32 exact 12 MiB puts, common five seconds | 12 | 20 | 0 |
+| 1024 MiB, same profile | 22 | 10 | 0 |
+
+All 64 RPCs completed with confirmed outcomes. Independent per-ID contents,
+lengths, full SHA256 hashes and total cardinality matched every applied effect
+and every rejected absence. These are bounded-capacity passes, not a claim that
+all 32 large writes succeeded. Each case also passed same-SDK small-write/read
+recovery and ownership cleanup.
+
+B512 and B1024 both formed 32 pending incomplete uploads, then passed independent
+and same-HTTP/2-connection Read/Native health before the original fixed
+three-second missing-tail hold ended. Same-connection Read/Native took
+7.266/8.909 ms at 512 MiB and 32.262/31.719 ms at 1024 MiB. These are measured
+latencies in this controlled profile, not general production SLOs. All 64 uploads
+were intentionally cancelled at the scheduled boundary with no complete request
+frame, mutation acknowledgement or backend effect. Every large ID was absent.
+Temporary ownership returned while all 34 connections were still open in
+14.915/13.080 ms; closing them and final SDK recovery also passed.
+
+The original Native small-burst test then completed all ten rounds of 256 mixed
+one-KiB Read/Put/Native calls against MongoDB and Elasticsearch, with zero budget
+rejections. Per-round p99 was 39.333–52.608 ms. Independent backends verified all
+expected IDs, numbers, payload lengths, hashes and cardinalities (MongoDB 421
+documents; Elasticsearch 431). Across the five owned CLI processes, there was no
+OOM; all exited normally, all final Node/Store/RPC/raw/wire/queue and connection
+owners reached zero, and independent inspection found no residual CLI.
+
+The actual release packager then built two independent source exports with
+separate fresh caches: Linux/macOS, amd64/arm64. All four binaries and four
+archives were byte-identical across exports. All 670 exported input hashes
+matched this candidate. The only local replacement was the pinned native gRPC
+patch, and every archive retained its license, attribution, source manifest and
+patch. This was local artifact validation; OCI build and publishing were not run.
+
+The [runtime receipt](ingress-memory-results-2026-10-17/ingress-production-v3-validation.json),
+[actual packaging receipt](ingress-memory-results-2026-10-17/ingress-production-v3-package-validation.json)
+and [independent final audit](ingress-memory-results-2026-10-17/ingress-production-v3-root-final-audit.json)
+record exact sources, commands, raw outputs and artifact hashes. Ordinary builds
+used VCS metadata while export builds omit it, so the packaged binary hashes
+differ from the runtime-qualified CLI; source hashes, selected modules and
+business build settings were verified for both paths.
 
 ## Required acceptance
 
