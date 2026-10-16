@@ -94,3 +94,52 @@ separate milestone. The Native account bounds Native ownership, not every typed
 pipeline allocation, process RSS or Go runtime memory. Actual resident admission
 continues to protect the whole process. Infinite slow streams remain finite
 resource consumers and can exhaust the actual budget.
+
+The formal Linux artifact was built from clean commit
+`adc4daab1dff2d369246801e416bb64183af63ae`, SHA-256
+`789e15b5688725ed313abc9e9fea239e8adc8b8d37173514feb32eac13ccde2b`.
+The [build identity](native-memory-results-2026-10-16/native-memory-clean-build.json)
+records compiler flags and target. Full default race and vet passed before this
+build; subsequent evidence-only commits do not change its production source.
+
+Five formal clean-artifact rounds passed with race detection: all thirty-two
+large replies reached their blocked consumers with zero active/pending IO.
+Typed and short Native probes took 2.16–4.46 ms. Cancellation returned every
+Store/RPC/wire/Native account in 8.63–14.88 ms, with GC cycles unchanged at six
+in every round; no watchdog or overload/budget rejection occurred. All five
+processes exited zero without OOM or owned backend connections remaining.
+The [repeat log](native-memory-results-2026-10-16/native-memory-clean-output-repeat.txt)
+and [summary](native-memory-results-2026-10-16/native-memory-clean-output-summary.json)
+retain the values. Real MongoDB diagnostics confirmed exactly 1086 fixed Weir
+series at sixteen local Stores. Small-response MongoDB, malformed-command and
+Elasticsearch progress regressions also passed three rounds with default policy.
+
+The first clean artifact also passed the real typed-Read pressure matrix:
+256/512 MiB, automatic/off, three rounds each. Automatic recovery took
+141.7–154.2 ms; all six off controls remained latched at five seconds. Shared
+160/192 MiB pressure recovered in 155.3/160.3 ms. Low-allowance 344/368 MiB
+controls completed every healthy read with one GC and 0.11/0.10 CPU seconds.
+All sixteen processes had matching clean identities, exited zero without OOM
+and left no owned CLI containers. The
+[first-candidate summary](native-memory-results-2026-10-16/native-memory-clean-summary.json)
+keeps these observations separate from the subsequent final candidate.
+
+A further offline lifecycle regression found a full-budget continuation wait:
+when no initial or body IO can converge, two Search-like Native invocations
+could publish Head to fast consumers but wait indefinitely for their next
+2 MiB body-read workspace. Typed queries still progressed, and the account was
+honestly full; the missing behavior was a timely explicit incomplete result.
+This exact Runtime lifecycle regression is synthetic, not a claim that a real
+HTTP header reached the same estimate. Mixed retained replies or capacity
+shrink can also create the full state. Final qualification must include the
+no-converging-IO correction and a new clean artifact.
+
+The final continuation correction distinguishes a converging initial/read IO
+reservation from a full account owned only by waiting output. Only the former
+waits in FIFO. The latter wakes the body-read continuation with a memory error,
+without granting an IO slot, and Search returns INCOMPLETE/RESOURCE_EXHAUSTED.
+Its [before failure](native-memory-results-2026-10-16/native-read-capacity-before.txt),
+full affected-package race results and focused twenty-round regressions are
+retained. New coverage includes real Runtime fast-consumer publication, both
+initial and ongoing-read convergence, and an actual HTTP exchange that preserves
+Head, one backend attempt and incomplete terminal evidence without body reads.

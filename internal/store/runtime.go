@@ -112,6 +112,7 @@ type batch struct {
 	workingBytes int
 	pausedBytes  int
 	resume       chan struct{}
+	resumeErr    error
 	resumeOrder  uint64
 	resumePrev   *batch
 	resumeNext   *batch
@@ -699,14 +700,19 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	}
 	if r.resumeHead != nil && (chosen == nil || r.resumeHead.resumeOrder < chosen.items[0].order) {
 		b := r.resumeHead
-		if b.native != nil && !b.native.nativeLease.beginRead(b.readWindow) {
+		started, waiting := b.native.nativeLease.beginRead(b.readWindow)
+		if !started && waiting {
 			if chosen == nil {
 				return nil, next
 			}
 		} else {
 			r.removeResumeLocked(b)
-			r.releasePauseLocked(b)
-			b.io = true
+			if started {
+				r.releasePauseLocked(b)
+				b.io = true
+			} else {
+				b.resumeErr = errNativeMemory
+			}
 			close(b.resume)
 			b.resume = nil
 			r.notifyLocked()
@@ -879,6 +885,7 @@ func (b *batch) BeginIO(ctx context.Context, extra int) error {
 		return ctx.Err()
 	}
 	b.readWindow = extra
+	b.resumeErr = nil
 	resume := make(chan struct{})
 	b.resume = resume
 	b.resumeOrder = r.nextOrder
@@ -895,7 +902,10 @@ func (b *batch) BeginIO(ctx context.Context, extra int) error {
 	r.mu.Unlock()
 	select {
 	case <-resume:
-		return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return b.resumeErr
 	case <-ctx.Done():
 		return ctx.Err()
 	}

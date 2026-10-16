@@ -24,7 +24,7 @@ waited for the client. Thirty-two small MongoDB requests with zero HTTP/2 output
 windows left sixteen running and sixteen queued, reaching the three-second
 probe deadline despite the backend having finished its replies.
 
-PR 76 made Native publication borrow a bounded output reservation and releases its
+PR 76 made Native publication borrow a bounded output reservation and release its
 execution slot while waiting on the consumer. Further backend work joins FIFO
 with new requests before regaining the slot. The original batch remains owned
 by the Runtime throughout cancellation, draining and shutdown. A delivered

@@ -180,14 +180,17 @@ backend executions per Store; omission selects its default of `16`, and
 explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
 bounded queue, allowing natural batching while
 the backend is busy. Execution completion returns this credit before consumer Ack.
-Search visibility waits retain execution credit. Native output can borrow a
-bounded pause reservation while waiting for the consumer, then rejoin the Store
-queue to obtain execution credit before continuing. Pause count and retained
-bytes have independent bounds using the configured queue limits; one larger
-stream can occupy an empty pause budget alone. A full pause budget keeps the
-original execution credit and applies backpressure. Select a budget with the actual workload;
-separate Stores have independent budgets. Backend pools, RPCs and connections have
-no separate concurrency cap. Backend protocols determine document sizes.
+Search visibility waits retain execution credit. Native output owns memory but
+releases backend execution credit; further HTTP body reads fairly regain credit
+through the Store scheduler. A Node-wide Native account shares two thirds of the
+trusted remaining memory-recovery allowance across all Stores, with at most 1024
+invocations. It reserves inputs, reply work before IO, retained output and
+terminal publication until their owners finish. Real capacity exhaustion returns
+an explicit Native failure rather than retaining a backend slot while a consumer
+waits. Store input queues and execution budgets remain independent. Backend
+pools, RPCs and connections have no separate concurrency cap. Backend protocols
+determine document sizes. See the [Native ownership qualification](docs/native-memory-qualification-2026-10-16.md)
+for the reserved IO workspace and unknown/shrinking-capacity behavior.
 
 Store settings are grouped by responsibility: `backend` holds connection establishment
 and MongoDB target caching, native exchange chunk sizes, and the shared

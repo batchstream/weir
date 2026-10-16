@@ -41,7 +41,7 @@ func TestNativeMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 	if err := lease.settle(8<<20, 1); err != nil {
 		t.Fatal(err)
 	}
-	if !lease.beginRead(2 << 20) {
+	if started, _ := lease.beginRead(2 << 20); !started {
 		t.Fatal("a settled output consumed the reserved IO workspace")
 	}
 	if snapshot := memory.Snapshot(); snapshot.Settled != 1 || snapshot.UsedBytes != input+(10<<20) {
@@ -93,7 +93,8 @@ func TestNativeMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) {
 	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("a zero share admitted more work", failure)
 	}
-	if lease.grow(9<<20) == nil || lease.beginRead(1) {
+	started, _ := lease.beginRead(1)
+	if lease.grow(9<<20) == nil || started {
 		t.Fatal("shrunk capacity allowed more allocations")
 	}
 	if err := lease.settle(1, 1); err != nil {
@@ -162,6 +163,51 @@ func TestNativeTerminalCannotGrowBeyondOwnedCapacity(t *testing.T) {
 	other.release()
 	if snapshot := memory.Snapshot(); snapshot.Count != 0 || snapshot.UsedBytes != 0 {
 		t.Fatal("rejected terminal leaked credit", snapshot)
+	}
+}
+
+func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
+	memory := testNativeMemory(96 << 20)
+	work := plan(1, "native", false)
+	first, failure := memory.admit(work)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer first.release()
+	second, failure := memory.admit(work)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer second.release()
+	if started, _ := first.start(31<<20, defaultNativeIOReserve); !started {
+		t.Fatal("first response could not start")
+	}
+	if err := first.settle(31<<20, 1); err != nil {
+		t.Fatal(err)
+	}
+	if started, _ := second.start(31<<20, defaultNativeIOReserve); !started {
+		t.Fatal("second initial IO could not start")
+	}
+	if started, waiting := first.beginRead(2 << 20); started || !waiting {
+		t.Fatal("initial IO convergence was mistaken for fixed output pressure", started, waiting)
+	}
+	if err := second.settle(1<<20, 1); err != nil {
+		t.Fatal(err)
+	}
+	if started, waiting := first.beginRead(2 << 20); !started || waiting {
+		t.Fatal("released initial estimate did not let a real body read proceed", started, waiting)
+	}
+	if started, waiting := second.beginRead(32 << 20); started || !waiting {
+		t.Fatal("a real ongoing body read was mistaken for fixed output pressure", started, waiting)
+	}
+	if err := first.settle(1<<20, 1); err != nil {
+		t.Fatal(err)
+	}
+	if started, waiting := second.beginRead(32 << 20); !started || waiting {
+		t.Fatal("body IO convergence did not release its allocation window", started, waiting)
+	}
+	if snapshot := memory.Snapshot(); snapshot.BudgetRejections != 0 || snapshot.UsedBytes > snapshot.BudgetBytes {
+		t.Fatal("temporary convergence produced a hard rejection or exceeded B", snapshot)
 	}
 }
 

@@ -159,12 +159,7 @@ func (l *nativeLease) start(working, reserve int) (bool, bool) {
 		m.used += uint64(working)
 		return true, false
 	}
-	for lease := range m.leases {
-		if lease.preparing {
-			return false, true
-		}
-	}
-	if m.io != 0 {
+	if m.convergingLocked() {
 		return false, true
 	}
 	m.rejections++
@@ -188,17 +183,36 @@ func (l *nativeLease) grow(working int) error {
 	return nil
 }
 
-func (l *nativeLease) beginRead(extra int) bool {
+func (l *nativeLease) beginRead(extra int) (bool, bool) {
 	m := l.memory
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.used > m.budget || uint64(extra) > m.budget-m.used {
-		return false
+		if m.convergingLocked() {
+			return false, true
+		}
+		// Waiting outputs cannot release their response working sets by first
+		// reading more body bytes. Fail this attempted exchange instead of
+		// cyclically waiting for memory that no current IO can relinquish.
+		m.rejections++
+		return false, false
 	}
 	m.used += uint64(extra)
 	m.io += uint64(extra)
 	l.extra = extra
-	return true
+	return true, false
+}
+
+func (m *NativeMemory) convergingLocked() bool {
+	if m.io != 0 {
+		return true
+	}
+	for lease := range m.leases {
+		if lease.preparing {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *nativeLease) settle(working, eventBytes int) error {

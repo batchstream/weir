@@ -25,6 +25,7 @@ type nativeMemoryProbe struct {
 	working int
 	reads   int
 	active  bool
+	readErr error
 }
 
 func (p *nativeMemoryProbe) GrowIO(working int) error {
@@ -44,6 +45,9 @@ func (p *nativeMemoryProbe) BeginIO(ctx context.Context, extra int) error {
 		return errors.New("invalid body IO boundary")
 	}
 	p.reads++
+	if p.readErr != nil {
+		return p.readErr
+	}
 	p.active = true
 	return ctx.Err()
 }
@@ -132,5 +136,29 @@ func TestNativeHeaderMemoryDetachesFinishedExchange(t *testing.T) {
 	memory.finish()
 	if memory.io != nil || memory.read([]byte("later body bytes")) != nil {
 		t.Fatal("finished exchange retained its Runtime through the transport")
+	}
+}
+
+func TestNativeBodyWorkspaceExhaustionPreservesAttemptedExchange(t *testing.T) {
+	var calls atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = io.WriteString(w, "body")
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	cfg := Config{URL: server.URL}
+	adapter := &Adapter{config: cfg, nativeClient: server.Client()}
+	request := nativeRequest(t, "records", "GET", "/_search")
+	work, failure := adapter.prepareNative(request)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	probe := &nativeMemoryProbe{active: true, readErr: execution.ErrNativeMemory}
+	work.Command, work.NativeIO = testutil.NativeCommand(request), probe
+	capture := &nativeCapture{}
+	end := adapter.executeNative(t.Context(), work, capture.Emit)
+	if end.Completion != pb.NativeCompletion_RESPONSE_INCOMPLETE || end.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || capture.head == nil || capture.body.Len() != 0 || calls.Load() != 1 || probe.reads != 1 || probe.active {
+		t.Fatal("body allocation pressure was replayed, reported not-started, or held IO", end, calls.Load(), probe, capture)
 	}
 }
