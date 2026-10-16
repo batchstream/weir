@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 import package
+import release
 
 ROOT = package.ROOT
 OUT = ROOT / '.testdata/images'
@@ -389,11 +390,7 @@ def main():
     parser.add_argument('mode', choices=('build', 'publish', 'anonymous'))
     args = parser.parse_args()
     if args.mode != 'anonymous':
-        if (
-            os.environ.get('GITHUB_REPOSITORY') != 'batchstream/weir'
-            or os.environ.get('GITHUB_REF') != 'refs/heads/main'
-        ):
-            raise ValueError('publication is restricted to batchstream/weir main')
+        release.check_source(os.environ.get('RELEASE_VERSION', ''))
         revision = package.clean_head(ROOT)
         if revision != os.environ.get('GITHUB_SHA'):
             raise ValueError('checkout does not match Actions source SHA')

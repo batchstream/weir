@@ -4,14 +4,17 @@ import importlib.util
 import fnmatch
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import package
+import release
 
 spec = importlib.util.spec_from_file_location('ci_images', Path(__file__).with_name('ci-images.py'))
 ci = importlib.util.module_from_spec(spec)
@@ -60,6 +63,82 @@ def fixture(path, change):
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_entrypoint_accepts_verified_main_and_release_sources(self):
+        source = 'a' * 40
+        cases = (
+            dict(GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main', RELEASE_VERSION=''),
+            dict(GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_REF='refs/heads/main', RELEASE_VERSION='v1.2.3'),
+            dict(GITHUB_EVENT_NAME='release', GITHUB_REF='refs/tags/v1.2.3', RELEASE_VERSION='v1.2.3'),
+        )
+        for mode in ('build', 'publish'):
+            for case in cases:
+                environment = dict(GITHUB_REPOSITORY='batchstream/weir', GITHUB_SHA=source, **case)
+                ancestry_result = subprocess.CompletedProcess([], 0)
+                with self.subTest(mode=mode, case=case), patch.dict(os.environ, environment), \
+                     patch.object(sys, 'argv', ['ci-images.py', mode]), \
+                     patch.object(ci.package, 'clean_head', return_value=source), \
+                     patch.object(release, 'run', side_effect=[source, '']) as git, \
+                     patch.object(release.subprocess, 'run', return_value=ancestry_result) as ancestry, \
+                     patch.object(ci, mode) as action:
+                    ci.main()
+                    action.assert_called_once_with()
+                    self.assertEqual(git.call_args_list[0].args[0], ['git', 'rev-parse', 'HEAD'])
+                    self.assertEqual(git.call_args_list[1].args[0], ['git', 'fetch', '--no-tags', 'origin', 'main'])
+                    self.assertEqual(ancestry.call_args.args[0],
+                                     ['git', 'merge-base', '--is-ancestor', source, 'origin/main'])
+
+    def test_entrypoint_refuses_unqualified_sources_before_build_or_publish(self):
+        source = 'a' * 40
+        cases = (
+            ('fork', dict(GITHUB_REPOSITORY='fork/weir'), source, 0),
+            ('push', dict(GITHUB_EVENT_NAME='push'), source, 0),
+            ('manual_branch', dict(GITHUB_REF='refs/heads/feature'), source, 0),
+            ('manual_tag', dict(GITHUB_REF='refs/tags/v1.2.3'), source, 0),
+            ('noncanonical_version', dict(RELEASE_VERSION='v01.2.3'), source, 0),
+            ('release_without_version', dict(GITHUB_EVENT_NAME='release', GITHUB_REF='refs/tags/v1.2.3', RELEASE_VERSION=''), source, 0),
+            ('release_branch', dict(GITHUB_EVENT_NAME='release', GITHUB_REF='refs/heads/main'), source, 0),
+            ('release_wrong_tag', dict(GITHUB_EVENT_NAME='release', GITHUB_REF='refs/tags/v1.2.4'), source, 0),
+            ('invalid_source', dict(GITHUB_SHA='not-a-sha'), source, 0),
+            ('checkout_mismatch', dict(GITHUB_EVENT_NAME='release', GITHUB_REF='refs/tags/v1.2.3'), 'b' * 40, 0),
+            ('unmerged_release', dict(GITHUB_EVENT_NAME='release', GITHUB_REF='refs/tags/v1.2.3'), source, 1),
+        )
+        for mode in ('build', 'publish'):
+            for name, changed, checkout, ancestry_status in cases:
+                environment = dict(GITHUB_REPOSITORY='batchstream/weir', GITHUB_EVENT_NAME='workflow_dispatch',
+                                   GITHUB_REF='refs/heads/main', GITHUB_SHA=source, RELEASE_VERSION='v1.2.3')
+                environment.update(changed)
+                ancestry_result = subprocess.CompletedProcess([], ancestry_status)
+                with self.subTest(mode=mode, case=name), patch.dict(os.environ, environment), \
+                     patch.object(sys, 'argv', ['ci-images.py', mode]), \
+                     patch.object(ci.package, 'clean_head', return_value=source), \
+                     patch.object(release, 'run', side_effect=[checkout, '']), \
+                     patch.object(release.subprocess, 'run', return_value=ancestry_result), \
+                     patch.object(ci, mode) as action:
+                    with self.assertRaises(ValueError):
+                        ci.main()
+                    action.assert_not_called()
+
+    def test_entrypoint_requires_the_verified_source_to_remain_clean_and_unchanged(self):
+        source = 'a' * 40
+        environment = dict(GITHUB_REPOSITORY='batchstream/weir', GITHUB_EVENT_NAME='workflow_dispatch',
+                           GITHUB_REF='refs/heads/main', GITHUB_SHA=source, RELEASE_VERSION='')
+        for mode in ('build', 'publish'):
+            for changed in (False, True):
+                ancestry_result = subprocess.CompletedProcess([], 0)
+                with self.subTest(mode=mode, changed=changed), patch.dict(os.environ, environment), \
+                     patch.object(sys, 'argv', ['ci-images.py', mode]), \
+                     patch.object(release, 'run', side_effect=[source, '']), \
+                     patch.object(release.subprocess, 'run', return_value=ancestry_result), \
+                     patch.object(ci.package, 'clean_head') as clean_head, \
+                     patch.object(ci, mode) as action:
+                    if changed:
+                        clean_head.return_value = 'b' * 40
+                    else:
+                        clean_head.side_effect = ValueError('dirty worktree')
+                    with self.assertRaises(ValueError):
+                        ci.main()
+                    action.assert_not_called()
+
     def test_workflow_discovers_all_offline_python_tests_in_both_modes(self):
         workflow = (package.ROOT / '.github/workflows/images.yml').read_text()
         for mode in ('', '-O '):
