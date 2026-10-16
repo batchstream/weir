@@ -1,0 +1,3 @@
+ok  	github.com/batchstream/weir/internal/server	36.352s
+ok  	github.com/batchstream/weir/internal/app	44.206s
+ok  	github.com/batchstream/weir/internal/backend/mongodb	25.907s

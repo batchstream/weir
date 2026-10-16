@@ -29,13 +29,18 @@ Dependent business phases and shared-key writes further limit aggregation.
   remains soft-accounted. Lua and mutation pre-reads retain their conservative
   source window and do not use this retry mechanism.
 - Full batches, drain, Native and shorter caller deadlines bypass collection.
-- A positive `batching.max_in_flight` bounds simultaneous adapter invocations.
+- A positive `batching.max_in_flight` bounds simultaneous backend executions.
   Excess work stays in the bounded queue, where it can combine or be canceled.
   Completed execution releases the slot independently of response acknowledgement.
   Omitting this field selects its default; an explicit `0` means unlimited.
+- A Native output wait may borrow a bounded pause reservation and release its
+  execution slot. Further backend work fairly reacquires a slot through the same
+  scheduler. Output pause count and retained bytes separately use the configured
+  queue bounds, including a single oversized item alone; full pause capacity
+  retains the original execution slot and applies backpressure.
 
-Defaults are 128 operations, 4 MiB, a 20 ms write collection window and 16 adapter
-invocations per Store. Explicit `max_wait: 0s` disables collection; explicit
+Defaults are 128 operations, 4 MiB, a 20 ms write collection window and 16 backend
+executions per Store. Explicit `max_wait: 0s` disables collection; explicit
 `max_in_flight: 0` removes the execution limit. Reads remain eligible immediately.
 The existing Store queue is the waiting boundary; no extra HTTP queue or worker
 process is introduced.

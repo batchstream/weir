@@ -1,0 +1,7 @@
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries
+    native_progress_integration_test.go:55: slow Native replies retained execution capacity {0 0 16 69344 16 32 2113536 402653184 0 false false false} 16400
+2026/10/16 20:41:48 INFO backend_connections_closed backend=mongo store=records owned=0 peak=6 dialing=0 closing=0 acquired=6 released=6
+--- FAIL: TestMongoSlowNativeOutputAllowsHealthyQueries (3.14s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/server	4.091s
+FAIL

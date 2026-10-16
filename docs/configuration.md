@@ -80,13 +80,21 @@ automatically.
 
 Business RPCs and backend IO inherit caller contexts. Transport progress,
 connection establishment, keepalive and cleanup have separate controls.
-`batching.max_in_flight` controls simultaneous adapter invocations independently
+`batching.max_in_flight` controls simultaneous backend executions independently
 for each Store. Omission selects the default of `16`; an explicit
 `0` always means unlimited. Positive integers retain excess work
 in the bounded queue for natural batching and admission backpressure. Execution
 completion returns the credit without waiting for consumer acknowledgement. The
-budget includes Search visibility waits and Native streaming, so use the actual
-visibility and traffic pattern when evaluating `1`, `4` or `16`. A smaller budget
+budget includes Search visibility waits. Native consumer waits can release
+execution credit by borrowing a bounded pause reservation, then fairly regain
+credit through the same scheduler before further backend work. The pause budget
+separately uses `queue.max_operations` and `queue.max_bytes`, charging retained
+input, actual response working memory and the current event; one oversized item
+can occupy an empty pause budget alone. If that output budget is full, the
+current Native execution retains its slot and applies backpressure. Observe
+`weir_store_paused_native_outputs` and `weir_store_paused_native_reserved_bytes`
+alongside their limits and active executions. Use the actual visibility and
+traffic pattern when evaluating `1`, `4` or `16`. A smaller budget
 does not by itself prove lower database load or higher throughput.
 Diagnostics uses an independent HTTP listener; readiness describes node lifecycle,
 rather than backend health. Directory records carry Store names and public

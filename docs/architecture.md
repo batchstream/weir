@@ -149,7 +149,7 @@ controls, omitting unused field mappings. A single-index alias binds that operat
 to its physical index; later invocations observe alias changes. Multiple primary
 shards are supported.
 
-The active batch set also enforces `batching.max_in_flight` when it is positive.
+The executing portion of the batch set enforces `batching.max_in_flight` when it is positive.
 The default is 16; an explicit zero means unlimited. Once the budget is full, compatible waiting
 records stay in the bounded queue until an adapter invocation finishes. They form
 batches naturally. `batching.max_wait` optionally collects compatible writes for
@@ -167,12 +167,17 @@ maximum is imposed. Transport failures do not replay mutations; confirmed confli
 and aborts can retry within the
 participating caller contexts. Waiting work is bounded by queue count and bytes.
 
-The budget covers the whole adapter invocation, including Search `refresh=wait_for`
-and synchronous Native output. It cannot distinguish waiting for visibility from
-database application; a small budget can therefore reduce visible-write throughput.
-Long Native calls should use a separate Store when isolation from record traffic is
-required. Abandoning all callers cancels
-an invocation but returns its credit only when the adapter actually stops.
+The budget includes Search `refresh=wait_for`. It cannot distinguish waiting for
+visibility from database application; a small budget can therefore reduce
+visible-write throughput. Native publication can borrow a separately bounded
+pause reservation, release execution credit while waiting on the consumer, and
+fairly regain it through the same scheduler before continuing. Paused batches
+remain in the lifecycle set for cancellation and shutdown. The pause count and
+retained byte bounds separately reuse the Store queue configuration; charging
+includes input, actual response working memory and the current event. A single
+oversized stream may occupy an empty pause budget alone. When that budget is
+full, output retains its execution slot and backpressure. Abandoning callers
+cancels the invocation; retained credits return only when their owners stop.
 
 Metrics observe execution rather than control scheduling.
 Queue occupancy and capacity metrics describe waiting operations. Active execution
