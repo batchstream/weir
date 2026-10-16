@@ -239,6 +239,45 @@ timed-out observations remain failures; this changes no business load, capacity,
 caller deadline, success criteria or retry policy. The original observer failure
 remains preserved.
 
+## Second clean repair candidate: ordinary puts passed; partial-upload health failed
+
+Candidate `262f3f37b669ebd751a43269c7a3bfd90086857f` supplied the clean Linux
+arm64 CLI, SHA256
+`466dc0730c9f81143cad8125745d5e6e915604f25864e865abc8adc4b8b9d10b`.
+The actual arm64 build and both race drivers used that commit without an overlay
+or application overrides. The qualification agent froze all 931 source files,
+564 pinned gRPC files and the CLI unchanged after testing.
+
+The original ordinary-put profile passed at both capacities. At 512 MiB,
+12 writes were APPLIED with complete hashes and 20 explicitly returned
+NOT_STARTED/capacity. At 1024 MiB, 21 were APPLIED and 11 explicitly returned
+NOT_STARTED/capacity. Every call had a successful RPC and a confirmed outcome;
+no call was ambiguous. Independent ID/content/hash and cardinality checks matched
+all applied effects and all rejected absences. This is bounded-capacity behavior,
+not proof that all 32 large writes can succeed at these capacities.
+
+The first actual B512 run failed small-request health. At t0+231 ms, all
+32 incomplete uploads remained pending, with 34 live connections, three message
+promises, 29 waiters and zero execution inputs or backend effects. Independent
+Read and Native calls and Native on one of the same upload HTTP/2 connections
+returned ResourceExhausted in about 1.7 ms. Read on that same connection succeeded
+in 3.189 ms. These are capacity errors, not caller or Docker-observer timeouts.
+A subsequent asynchronous sample showed one short execution lease with the
+automatic queue promise occupying every remaining resident byte, although RSS
+was about 65.7 MB and the overload latch was clear. This supports a queue-promise
+contention path; it does not identify the owner of each error. The
+[root ledger audit](ingress-memory-results-2026-10-17/ingress-production-v2-B-root-ledger-audit.json)
+records the exact sample and the pending causal check.
+
+All uploads were intentionally cancelled at the original three-second boundary;
+no complete request frame or mutation acknowledgement was sent, and every large
+ID was absent. Temporary owners drained in 14.372 ms while all 34 connections
+remained open. Closing the upload connections, same-SDK small-write/read recovery,
+and final ownership zero passed. There was no OOM or cgroup max event, and every
+owned CLI exited normally and was removed. The A512/A1024 successes are retained;
+B1024 and the Native burst were stopped without running, and no failed profile
+was retried. This candidate remains unqualified.
+
 ## Required acceptance
 
 The repair must account for raw transport buffers before business admission,

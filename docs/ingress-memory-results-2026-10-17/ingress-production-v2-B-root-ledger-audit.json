@@ -1,0 +1,30 @@
+{
+  "actual_profiles": "A512 and A1024 PASS; B512 FAIL; B1024 and Native burst NOT_RUN; no retry",
+  "business_failure": "Three of four small Read/Native calls returned RPC ResourceExhausted in about1.7ms while32 requests intentionally lacked their final16KiB. The same-HTTP2-connection small Read succeeded3.189ms. No mutation effects, OOM or cleanup failure.",
+  "created_at": "2026-10-16T20:36:43.996734+00:00",
+  "inference": "First-input automatic Q may consume all remaining resident space, leaving none for concurrent short RPC creation/receive. This sample is asynchronous and does not assign the lease or each error to an individual caller. Deterministic source-level reproduction required before selecting the repair.",
+  "observations": [
+    {
+      "RSS": 65732608,
+      "latch": 0,
+      "raw_line": 137,
+      "sample_at": "2026-10-16T20:34:13.310895Z",
+      "values": {
+        "budget_bytes": 245436142,
+        "budget_rejections_total": 0,
+        "ingress_connection_bytes": 17825792,
+        "ingress_reserved_bytes": 153336732,
+        "input_reserved_bytes": 25477970,
+        "input_used_bytes": 3236,
+        "io_reserve_bytes": 48795648,
+        "leases": 1,
+        "resident_bytes": 196640494,
+        "used_bytes": 244643380
+      }
+    }
+  ],
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-process.txt",
+  "raw_sha256": "429a6e6a6058d523edca7bd0574c875582456f643dca4246334a18008554c8fc",
+  "source": "262f3f37b669ebd751a43269c7a3bfd90086857f",
+  "status": "FAIL_B512"
+}
