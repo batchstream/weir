@@ -17,13 +17,16 @@ import (
 const deadlineWriteReply = `{"errors":false,"took":1,"items":[{"index":{"_index":"records","_id":"write","status":200,"result":"updated","_seq_no":2,"_primary_term":1,"_shards":{"total":1,"successful":1,"failed":0}}}]}`
 
 type deadlineBackend struct {
-	qualificationDelay, readDelay, writeDelay time.Duration
-	bodyDelay, stall                          bool
-	writes                                    atomic.Int32
+	writeDelay       time.Duration
+	bodyDelay, stall bool
+	writeStarted     chan struct{}
+	writes           atomic.Int32
 }
 
 func (b *deadlineBackend) serve(w http.ResponseWriter, r *http.Request) {
-	_, _ = io.ReadAll(r.Body)
+	if _, err := io.ReadAll(r.Body); err != nil {
+		return
+	}
 	var delay time.Duration
 	var reply string
 	switch r.URL.Path {
@@ -32,17 +35,19 @@ func (b *deadlineBackend) serve(w http.ResponseWriter, r *http.Request) {
 	case "/_cluster/settings":
 		reply = `{"defaults":{"action.auto_create_index":"false"}}`
 	case "/records":
-		delay, reply = b.qualificationDelay, testIndexReply
+		reply = testIndexReply
 	case "/records/_mget":
-		delay = b.readDelay
 		reply = `{"docs":[{"_index":"records","_id":"write","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`
 	case "/_bulk":
-		b.writes.Add(1)
+		writes := b.writes.Add(1)
 		delay, reply = b.writeDelay, deadlineWriteReply
 		if b.bodyDelay {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.(http.Flusher).Flush()
+		}
+		if b.writeStarted != nil && writes == 1 {
+			close(b.writeStarted)
 		}
 		if b.stall {
 			<-r.Context().Done()
@@ -140,23 +145,34 @@ func TestCallerDeadlineAcceptsAcknowledgementAfterTwoSeconds(t *testing.T) {
 func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 	for _, body := range []bool{false, true} {
 		t.Run(map[bool]string{false: "headers", true: "body"}[body], func(t *testing.T) {
-			backend := &deadlineBackend{stall: true, bodyDelay: body}
+			writeStarted := make(chan struct{})
+			backend := &deadlineBackend{stall: true, bodyDelay: body, writeStarted: writeStarted}
 			adapter, runtime := deadlineRuntime(t, backend)
 			prepared := deadlineMutation(t, runtime, "put")
-			caller, stopCaller := context.WithTimeout(t.Context(), 80*time.Millisecond)
+			caller, stopCaller := context.WithTimeout(t.Context(), time.Second)
 			defer stopCaller()
 			ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			wait, cancel := context.WithTimeout(t.Context(), time.Second)
+			select {
+			case <-writeStarted:
+			case <-caller.Done():
+			}
+			// Both can be ready if this goroutine resumes after the deadline.
+			select {
+			case <-writeStarted:
+			default:
+				t.Fatal("bulk did not reach the backend before its deadline", caller.Err())
+			}
+			wait, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			result, err := ticket.Wait(wait)
 			if err != nil || result == nil {
 				t.Fatal(err, result)
 			}
 			mutation := result.GetMutationResult()
-			if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || mutation.GetFailure().GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || backend.writes.Load() != 1 {
+			if caller.Err() != context.DeadlineExceeded || mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || mutation.GetFailure().GetMessage() != "backend write deadline exceeded; acknowledgement unavailable" || backend.writes.Load() != 1 {
 				t.Fatal("deadline lost the sent-write uncertainty or cause", mutation, backend.writes.Load())
 			}
 			ticket.Ack()
@@ -172,26 +188,62 @@ func TestConnectedBackendDeadlineIsUnknownAndReleasesOwnership(t *testing.T) {
 	}
 }
 
+type deadlineObservation struct {
+	path        string
+	deadline    time.Time
+	hasDeadline bool
+}
+
+type deadlineObservingTransport struct {
+	transport    http.RoundTripper
+	observations chan deadlineObservation
+}
+
+func (t *deadlineObservingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	deadline, bounded := request.Context().Deadline()
+	observation := deadlineObservation{path: request.URL.Path, deadline: deadline, hasDeadline: bounded}
+	select {
+	case t.observations <- observation:
+	case <-request.Context().Done():
+		return nil, request.Context().Err()
+	}
+	return t.transport.RoundTrip(request)
+}
+
 func TestCallerDeadlineCoversQualificationReadAndWrite(t *testing.T) {
-	backend := &deadlineBackend{qualificationDelay: 60 * time.Millisecond, readDelay: 60 * time.Millisecond, writeDelay: 60 * time.Millisecond}
-	_, runtime := deadlineRuntime(t, backend)
+	backend := &deadlineBackend{}
+	adapter, runtime := deadlineRuntime(t, backend)
+	observations := make(chan deadlineObservation, 3)
+	transport := &deadlineObservingTransport{transport: adapter.client.Transport, observations: observations}
+	adapter.client.Transport = transport
 	prepared := deadlineMutation(t, runtime, "replace")
-	started := time.Now()
-	caller, stopCaller := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	caller, stopCaller := context.WithTimeout(t.Context(), 5*time.Second)
 	defer stopCaller()
 	ticket, failure, _ := runtime.Submit(caller, prepared, nil)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	wait, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	result, err := ticket.Wait(wait)
+	result, err := ticket.Wait(caller)
 	if err != nil || result == nil {
 		t.Fatal(err, result)
 	}
 	mutation := result.GetMutationResult()
-	if mutation.GetOutcome() != pb.MutationOutcome_UNKNOWN || mutation.GetFailure().GetCode() != pb.FailureCode_DEADLINE_EXCEEDED || backend.writes.Load() != 1 || time.Since(started) > 500*time.Millisecond {
-		t.Fatal("a later backend stage received a fresh deadline", mutation, backend.writes.Load(), time.Since(started))
+	if mutation.GetOutcome() != pb.MutationOutcome_APPLIED || mutation.GetFailure() != nil || backend.writes.Load() != 1 {
+		t.Fatal("shared deadline lost acknowledgement or replayed a write", mutation, backend.writes.Load())
+	}
+	deadline, _ := caller.Deadline()
+	for _, path := range []string{"/records", "/records/_mget", "/_bulk"} {
+		select {
+		case observation := <-observations:
+			if observation.path != path || !observation.hasDeadline || !observation.deadline.Equal(deadline) {
+				t.Fatal("backend stage did not retain the original caller deadline", observation, deadline)
+			}
+		default:
+			t.Fatal("missing backend stage", path)
+		}
+	}
+	if len(observations) != 0 {
+		t.Fatal("unexpected repeated backend stage", len(observations))
 	}
 	ticket.Ack()
 	assertDeadlineReleased(t, runtime)
