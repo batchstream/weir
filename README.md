@@ -148,12 +148,14 @@ explains removed fields, retained controls and fixed protocol boundaries.
 
 Store defaults are 128 operations and 4MiB of input per batch. `batching.max_wait`
 defaults to `20ms`; explicit `0s` disables collection. A positive duration collects compatible
-writes until the oldest admission reaches that age. Reads use compatible work
-already queued without waiting for future arrivals, including in mixed batches.
+writes until the oldest admission reaches that age. Reads combine compatible reads
+already queued without waiting for future arrivals. Read and mutation batches
+share the Store queue and execution budget, but reads do not flush write collection
+or wait for unrelated writes in the same batch.
 Full batches, Scan/Native commands and draining Stores bypass collection.
 A caller deadline before the
 collection deadline also dispatches immediately. Collection uses the existing
-bounded queue and adds no per-request timer. Queued RPCs combine by namespace, actual input bytes and
+bounded queue and adds no per-request timer. Queued RPCs of the same kind combine by namespace, actual input bytes and
 `batching.max_operations`. Large client batches split into sequential bounded groups.
 Lua transforms also combine compatible queued requests: MongoDB batches reads and
 writes in a short snapshot transaction, and Search batches real-time reads and

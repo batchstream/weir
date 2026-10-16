@@ -109,11 +109,12 @@ with its own caller context and clock; no VM or caller state is reused.
 
 ## Scheduling and backend work
 
-Each prepared record enters one Store scheduler directly; there is no timed
-collection window or polling. The
-scheduler combines compatible queued records by target, actual input bytes and
-batching.max_operations and batching.max_bytes. A session/resource key serializes same-resource work
-within a stream; distinct resources and streams can share a physical batch.
+Each prepared record enters one Store scheduler directly. It forms separate read
+and mutation batches, then combines compatible queued records by backend target,
+actual input bytes, `batching.max_operations` and `batching.max_bytes`. Reads use
+already queued reads; mutations retain the bounded write collection window. A
+session/resource key serializes same-resource mutations within a stream; distinct
+resources and streams can share a batch of the same kind.
 Scan and Native use the same scheduler with their required singleton lifecycle.
 Execution mode and cleanup follow the command type. A Scan adapter returns whether
 another bounded fetch is needed; the scheduler retains no duplicate mode flags or
@@ -148,10 +149,12 @@ batches naturally. `batching.max_wait` optionally collects compatible writes for
 a bounded duration from the oldest admission; its default is `20ms`, and explicit
 `0s` disables collection.
 One Store timer wakes the scheduler for the earliest eligible collection deadline.
-Reads and mixed batches containing reads use already queued compatible work without
-waiting for future arrivals. Full batches, Scan/Native, draining Stores and shorter
-caller deadlines bypass collection. Ready namespaces can pass another namespace still collecting; once
-both are ready, the oldest eligible namespace runs first. Credit returns at execution completion,
+Reads use already queued compatible reads without waiting for future arrivals.
+They neither join mutation batches nor flush their collection window, so a completed
+read does not wait for unrelated writes in the same adapter invocation. Both kinds
+still share the Store queue and execution budget. Full batches, Scan/Native, draining Stores and shorter
+caller deadlines bypass collection. Ready groups can pass another group still collecting; once
+both are ready, the oldest eligible group runs first. Credit returns at execution completion,
 independently of result acknowledgement. Each Store owns its budget. No Store workspace ceiling or backend connection-pool
 maximum is imposed. Transport failures do not replay mutations; confirmed conflicts
 and aborts can retry within the
