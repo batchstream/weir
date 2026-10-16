@@ -396,6 +396,27 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		}
 	}
 	valid := state.reply(raw, true)
+	if valid && state.authorizationRejected && len(namespaces) > 1 {
+		// Authorization checks every namespace before bulkWrite executes any
+		// operation. Only this definite initial rejection permits isolation.
+		groups := make([][]*execution.Plan, len(namespaces))
+		groupPositions := make([][]int, len(namespaces))
+		for i, p := range active {
+			index := namespaceIndexes[p.Backend.(*plan).target]
+			groups[index] = append(groups[index], p)
+			groupPositions[index] = append(groupPositions[index], positions[i])
+		}
+		for i, group := range groups {
+			if len(group) == 0 {
+				continue
+			}
+			replies := a.executeWrites(ctx, group)
+			for j, reply := range replies {
+				results[groupPositions[i][j]] = reply
+			}
+		}
+		return results
+	}
 	for page := 1; valid && state.cursor.cursor != 0 && page < len(active); page++ {
 		command = bson.D{
 			{Key: "getMore", Value: state.cursor.cursor},
@@ -426,14 +447,15 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 }
 
 type writeBatch struct {
-	plans           []*execution.Plan
-	results         []*pb.MutationResult
-	cursor          recordCursor
-	received        int
-	concern         bool
-	counts          [6]int64
-	observed        [6]int64
-	uncertainCounts bool
+	plans                 []*execution.Plan
+	results               []*pb.MutationResult
+	cursor                recordCursor
+	received              int
+	concern               bool
+	counts                [6]int64
+	observed              [6]int64
+	uncertainCounts       bool
+	authorizationRejected bool
 }
 
 func (a *Adapter) closeRecordCursor(state *recordCursor) {
@@ -467,6 +489,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 		if fields["writeConcernError"].Type != 0 {
 			return true
 		}
+		b.authorizationRejected = writeAuthorizationRejection(fields)
 		for i := range b.results {
 			unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write command rejected without definite evidence"))
 			b.results[i] = writeRejection(fields["code"], unknown)
@@ -549,6 +572,33 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 	}
 	if b.cursor.cursor != 0 && b.received == len(b.plans) {
 		return false
+	}
+	return true
+}
+
+func writeAuthorizationRejection(fields map[string]bson.RawValue) bool {
+	code, valid := writeCount(fields["code"])
+	if !valid || code != 13 {
+		return false
+	}
+	for key, value := range fields {
+		switch key {
+		case "ok", "code", "operationTime", "$clusterTime":
+		case "errmsg":
+			if _, valid := value.StringValueOK(); !valid {
+				return false
+			}
+		case "codeName":
+			if name, valid := value.StringValueOK(); !valid || name != "Unauthorized" {
+				return false
+			}
+		case "nErrors", "nInserted", "nDeleted", "nMatched", "nModified", "nUpserted":
+			if count, valid := writeCount(value); !valid || count != 0 {
+				return false
+			}
+		default:
+			return false
+		}
 	}
 	return true
 }
