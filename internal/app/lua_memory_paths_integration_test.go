@@ -106,7 +106,9 @@ func TestCLILuaMemoryPaths(t *testing.T) {
 		ingressMemoryDocker(t, process)
 	})
 	client, healthClient := luaMemoryPathsClient(t, process), luaMemoryPathsClient(t, process)
-	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
+	// Each SDK opens a separate channel for each Store: two SDKs, two Stores.
+	const liveStoreConnections = 4
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), liveStoreConnections)
 	ingressMemoryEvents(t, process, "Lua_paths_initial")
 	for _, dataset := range datasets {
 		for index, path := range paths {
@@ -124,10 +126,10 @@ func TestCLILuaMemoryPaths(t *testing.T) {
 			luaMemoryPathsOracle(t, dataset, id, expected)
 			dataset.expected[id] = nativeBurstRecord{N: path.n, Pad: strings.Repeat("x", 1<<10)}
 			ingressMemoryDocker(t, process)
-			ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
+			ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), liveStoreConnections)
 			luaMemoryPathsRecovery(t, client, dataset, 2000000+index)
 			ingressMemoryHealth(t, healthClient, dataset)
-			ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
+			ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), liveStoreConnections)
 		}
 		verifyNativeBurstOracle(t, dataset)
 	}
