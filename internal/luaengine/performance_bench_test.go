@@ -97,3 +97,27 @@ func BenchmarkEvaluatePayload(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkBridgeKind(b *testing.B) {
+	for _, depth := range []int{1, 100, 1000} {
+		b.Run(fmt.Sprintf("Depth%d", depth), func(b *testing.B) {
+			child := value.Value{Kind: value.String, Text: "payload"}
+			for range depth {
+				field := value.Field{Name: "nested", Value: child}
+				child = value.Value{Kind: value.Object, Fields: []value.Field{field}}
+			}
+			conversion := newBridge(context.Background())
+			input, err := conversion.toLua(child)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := conversion.kind(input); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

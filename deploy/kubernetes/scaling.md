@@ -15,6 +15,11 @@ Observe backend connection ownership, active executions, queue count/bytes,
 completed throughput and latency together with backend CPU and memory.
 Use the container memory limit for the hard memory boundary; Weir detects the
 visible capacity and observes actual pressure automatically.
+Linux admission excludes reclaimable inactive file cache and exports both raw
+cgroup usage and working-set metrics. Configure a Go soft memory limit below
+the overload recovery watermark, leaving headroom for other resident memory,
+and verify release after allocation bursts. Low live heap alone does not imply
+low resident memory or guarantee overload recovery.
 
 The configured queue bounds waiting input. Reads and mutations form separate
 batches within that one queue. Reads use compatible reads already queued without
@@ -23,6 +28,14 @@ can wait for an occupied execution slot. A full queue waits for dispatch or call
 cancellation, and dispatch immediately returns its capacity. An active request
 does not hold waiting queue capacity. Use integration measurements to select
 execution and replica budgets for the actual workload.
+Native response consumption holds an execution slot. Enough slow or long-lived
+Native streams can delay ordinary requests while backend CPU remains low.
+Use caller deadlines and prompt response consumption; when independent latency
+requirements require isolation, host Native traffic in a separate Store with
+its own adapter and execution budget, accounting for its additional connections.
+The transport stall watchdog closes a connection that stops output progress,
+affecting other RPCs on that connection. Continuously progressing streams have
+no total lifetime bound without a caller deadline.
 
 During rolling updates, account for overlap with terminating Pods when measuring
 backend connections. `maxSurge: 0` and HPA `maxReplicas` do not cap that overlap.

@@ -1,0 +1,115 @@
+//go:build integration
+
+package mongodb
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/store"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/event"
+)
+
+func TestAuditMongoCleanupExecutionTail(t *testing.T) {
+	fixture := testmongo.Open(t)
+	proxy := testmongo.StartProxy(t, fixture)
+	limits := store.DefaultLimits()
+	limits.BatchWait = 0
+	limits.MaxInFlight = 1
+	proxy.DropCommand = "find"
+	proxy.DropRemaining.Store(int64(limits.MaxInFlight))
+	entered := make(chan struct{}, limits.MaxInFlight)
+	gate := make(chan struct{})
+	var release sync.Once
+	defer release.Do(func() { close(gate) })
+	proxy.Monitor = &event.CommandMonitor{Started: func(ctx context.Context, e *event.CommandStartedEvent) {
+		if e.CommandName == "killSessions" {
+			entered <- struct{}{}
+			select {
+			case <-gate:
+			case <-ctx.Done():
+			}
+		}
+	}}
+	opts := adapterTestOptions{fixture: fixture, uri: proxy.URI()}
+	adapter := testAdapter(t, opts)
+	runtime, err := store.New(adapter, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		release.Do(func() { close(gate) })
+		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := runtime.Close(cleanup); err != nil {
+			t.Error(err)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	doc := bson.D{{Key: "_id", Value: "healthy"}, {Key: "n", Value: 1}}
+	if _, err := fixture.Admin.Database(fixture.DB).Collection("records").InsertOne(ctx, doc); err != nil {
+		t.Fatal(err)
+	}
+	submit := func(caller context.Context, id string) *store.Ticket {
+		options := batchOperationOptions{resource: fixture.DB + "/records/s:" + id, action: "read"}
+		operation := batchOperation(t, options)
+		record, err := execution.NewRecord("mongo", 1, operation.Command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		work, failure := runtime.PrepareRecord(caller, record)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		session := runtime.NewSession()
+		t.Cleanup(session.Close)
+		ticket, failure, _ := runtime.Submit(caller, work, session)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		return ticket
+	}
+	var affected []*store.Ticket
+	for i := range limits.MaxInFlight {
+		ticket := submit(ctx, fmt.Sprintf("lost-%d", i))
+		affected = append(affected, ticket)
+		select {
+		case <-entered:
+		case <-ctx.Done():
+			t.Fatal("cleanup did not start", i, ctx.Err())
+		}
+	}
+	healthyContext, stop := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer stop()
+	started := time.Now()
+	healthy := submit(healthyContext, "healthy")
+	snapshot := runtime.Snapshot()
+	_, waitErr := healthy.Wait(healthyContext)
+	elapsed := time.Since(started)
+	if waitErr == nil || snapshot.Active != limits.MaxInFlight || snapshot.Pending != 1 {
+		t.Fatal("cleanup did not hold all execution slots", snapshot, waitErr)
+	}
+	t.Logf("lost find replies=%d; held killSessions cleanups=%d; healthy query pending=%d active=%d failed after=%s cause=%v", len(affected), len(affected), snapshot.Pending, snapshot.Active, elapsed, waitErr)
+	release.Do(func() { close(gate) })
+	for _, ticket := range affected {
+		result, err := ticket.Wait(ctx)
+		if err != nil || result.GetReadResult().GetFailure().GetCode() != pb.FailureCode_UNAVAILABLE {
+			t.Fatal("lost reply read evidence changed", result, err)
+		}
+		ticket.Ack()
+	}
+	next := submit(ctx, "healthy")
+	result, err := next.Wait(ctx)
+	if err != nil || result.GetReadResult().GetDocument() == nil {
+		t.Fatal("healthy query did not recover after cleanup", result, err)
+	}
+	next.Ack()
+}

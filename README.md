@@ -201,7 +201,15 @@ Memory capacity is detected from physical host memory, a finite process
 address-space limit, and visible container memory limits. Actual process and
 container memory pressure controls overload admission; no configured budget or
 startup working-set reservation can reject otherwise valid configuration.
+On Linux cgroup v2, container pressure excludes validated reclaimable
+`inactive_file` cache from `memory.current`; missing or inconsistent cache
+statistics retain the raw usage. Metrics expose both current and working-set
+bytes. Go idle heap can remain resident after objects are freed; configure and
+validate `GOMEMLIMIT` below the recovery watermark with room for other memory.
 Use container/OS memory limits for the hard boundary.
+The [local reliability verification](docs/production-reliability-2026-10-16.md)
+records the cache regression, real backend read/write observations, and the
+remaining Native, resident-heap and cleanup latency boundaries.
 
 A MongoDB Lua transaction can contain records from several RPCs. A database write
 failure rolls back that transaction; a confirmed abort can be retried within the
