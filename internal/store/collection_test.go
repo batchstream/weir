@@ -15,8 +15,6 @@ func TestReadBypassesCollectionAndSharesReadyBatch(t *testing.T) {
 	}{
 		{name: "single read", reads: []bool{true}},
 		{name: "compatible reads", reads: []bool{true, true}},
-		{name: "write then read", reads: []bool{false, true}},
-		{name: "read then write", reads: []bool{true, false}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			limits := DefaultLimits()
@@ -51,15 +49,82 @@ func TestReadBypassesCollectionAndSharesReadyBatch(t *testing.T) {
 	}
 }
 
-func TestReadyReadPassesCollectingWritesWithoutChangingTheirDeadline(t *testing.T) {
+func TestReadsPreserveWriteCollectionAndAggregation(t *testing.T) {
+	for _, readFirst := range []bool{false, true} {
+		name := "write-first"
+		if readFirst {
+			name = "read-first"
+		}
+		t.Run(name, func(t *testing.T) {
+			limits := DefaultLimits()
+			limits.BatchWait = time.Second
+			limits.BatchOperations = 3
+			runtime := newRuntime(nil, limits)
+			base := time.Now()
+			var reads, writes []*Ticket
+			for i, read := range []bool{readFirst, !readFirst, readFirst, !readFirst} {
+				work := plan(uint64(i), string(rune('a'+i)), read)
+				work.BatchKey = "same-namespace"
+				session := runtime.NewSession()
+				defer session.Close()
+				ticket, failure, _ := runtime.Submit(t.Context(), work, session)
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				ticket.queuedAt = base
+				if read {
+					reads = append(reads, ticket)
+				} else {
+					writes = append(writes, ticket)
+				}
+			}
+			selected, _ := runtime.selectLocked(base)
+			if selected == nil || len(selected.items) != 2 || selected.items[0] != reads[0] || selected.items[1] != reads[1] {
+				t.Fatal("reads waited for compatible writes or lost cross-RPC aggregation", selected)
+			}
+			finish(runtime, selected)
+			selected, next := runtime.selectLocked(base.Add(100 * time.Millisecond))
+			if selected != nil || !next.Equal(base.Add(time.Second)) {
+				t.Fatal("reads flushed writes or changed their original collection deadline", selected, next)
+			}
+			work := plan(4, "last-write", false)
+			work.BatchKey = "same-namespace"
+			ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			ticket.queuedAt = base.Add(100 * time.Millisecond)
+			writes = append(writes, ticket)
+			selected, _ = runtime.selectLocked(ticket.queuedAt)
+			if selected == nil || len(selected.items) != 3 {
+				t.Fatal("later compatible write did not fill the retained write batch", selected)
+			}
+			for i, ticket := range selected.items {
+				if ticket != writes[i] {
+					t.Fatal("writes lost cross-RPC order or identity")
+				}
+			}
+			finish(runtime, selected)
+			for _, ticket := range append(reads, writes...) {
+				ticket.Ack()
+			}
+			if snapshot := runtime.Snapshot(); snapshot.Pending != 0 || snapshot.Active != 0 || snapshot.Retained != 0 || snapshot.PendingBytes != 0 || snapshot.ResultBytes != 0 {
+				t.Fatal("separate groups leaked queue, execution or result credits", snapshot)
+			}
+		})
+	}
+}
+
+func TestReadyWritesKeepProgressAheadOfLaterReads(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second
+	limits.MaxInFlight = 1
 	runtime := newRuntime(nil, limits)
 	base := time.Now()
 	var tickets []*Ticket
-	for i, read := range []bool{false, true} {
+	for i, read := range []bool{false, true, false, true} {
 		work := plan(uint64(i), string(rune('a'+i)), read)
-		work.BatchKey = work.Key
+		work.BatchKey = "same-namespace"
 		ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
 		if failure != nil {
 			t.Fatal(failure)
@@ -67,22 +132,23 @@ func TestReadyReadPassesCollectingWritesWithoutChangingTheirDeadline(t *testing.
 		ticket.queuedAt = base
 		tickets = append(tickets, ticket)
 	}
-	selected, _ := runtime.selectLocked(base)
-	if selected == nil || len(selected.items) != 1 || selected.items[0] != tickets[1] {
-		t.Fatal("read waited for another namespace's collection", selected)
-	}
-	finish(runtime, selected)
-	selected, next := runtime.selectLocked(base)
-	if selected != nil || !next.Equal(base.Add(time.Second)) {
-		t.Fatal("read changed another namespace's write collection deadline", selected, next)
-	}
-	selected, _ = runtime.selectLocked(next)
-	if selected == nil || len(selected.items) != 1 || selected.items[0] != tickets[0] {
-		t.Fatal("write did not dispatch at its original collection deadline", selected)
-	}
-	finish(runtime, selected)
-	for _, ticket := range tickets {
-		ticket.Ack()
+	for _, want := range [][]*Ticket{{tickets[0], tickets[2]}, {tickets[1], tickets[3]}} {
+		selected, _ := runtime.selectLocked(base.Add(limits.BatchWait))
+		if selected == nil || len(selected.items) != len(want) {
+			t.Fatal("ready write group lost priority or read/write groups mixed", selected)
+		}
+		for i, ticket := range selected.items {
+			if ticket != want[i] {
+				t.Fatal("later reads overtook an eligible write group")
+			}
+		}
+		if blocked, _ := runtime.selectLocked(base.Add(limits.BatchWait)); blocked != nil {
+			t.Fatal("separate groups bypassed their shared execution budget", blocked)
+		}
+		finish(runtime, selected)
+		for _, ticket := range selected.items {
+			ticket.Ack()
+		}
 	}
 }
 

@@ -31,7 +31,7 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 		transform := &pb.Transform{Form: form}
 		m.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
 	case "program":
-		program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return weir.keep() end`)}
+		program := &pb.LuaTransform{Source: []byte(`return function(current, incoming) return current end`)}
 		form := &pb.Transform_Lua{Lua: program}
 		transform := &pb.Transform{Form: form}
 		m.Action = &pb.MutateRequest_AtomicTransform{AtomicTransform: transform}
@@ -41,44 +41,50 @@ func recordActionPlan(index uint64, key, action string) *execution.Plan {
 	return p
 }
 
-func TestAllRecordActionsShareBatch(t *testing.T) {
+func TestRecordActionsBatchSeparatelyByReadAndMutation(t *testing.T) {
 	limits := DefaultLimits()
+	limits.BatchWait = 0
 	r := newRuntime(nil, limits)
 	session := r.NewSession()
 	defer session.Close()
+	var tickets []*Ticket
 	for i, action := range recordActions {
 		p := recordActionPlan(uint64(i), action+"/record", action)
 		var s *Session
 		if i%2 == 0 {
 			s = session
 		}
-		if _, failure, _ := r.Submit(context.Background(), p, s); failure != nil {
+		ticket, failure, _ := r.Submit(t.Context(), p, s)
+		if failure != nil {
 			t.Fatal(failure)
 		}
+		tickets = append(tickets, ticket)
 	}
-	r.mu.Lock()
-	b, _ := r.selectLocked(time.Now())
-	r.mu.Unlock()
-	if b == nil || len(b.items) != len(recordActions) {
-		t.Fatalf("all reads and mutations should share one batch: %v", b)
-	}
-	for i, ticket := range b.items {
-		if ticket.plan.ID != uint64(i) {
-			t.Fatal("mixed batch changed operation identity")
+	for _, want := range [][]*Ticket{tickets[:1], tickets[1:]} {
+		r.mu.Lock()
+		b, _ := r.selectLocked(time.Now())
+		r.mu.Unlock()
+		if b == nil || len(b.items) != len(want) {
+			t.Fatal("read and mutation groups were mixed or compatible actions fragmented", b)
+		}
+		for i, ticket := range b.items {
+			if ticket != want[i] {
+				t.Fatal("batch changed operation identity or admission order")
+			}
+		}
+		r.mu.Lock()
+		finish(r, b)
+		r.mu.Unlock()
+		for _, ticket := range b.items {
+			ticket.Ack()
 		}
 	}
-	r.mu.Lock()
-	finish(r, b)
-	r.mu.Unlock()
-	for _, ticket := range b.items {
-		ticket.Ack()
-	}
 	if snapshot := r.Snapshot(); snapshot.Retained != 0 || snapshot.Pending != 0 || snapshot.Active != 0 {
-		t.Fatal("mixed batch leaked admission credits", snapshot)
+		t.Fatal("separate read and mutation batches leaked admission credits", snapshot)
 	}
 }
 
-func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
+func TestMutationBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = 0
 	limits.BatchOperations = 3
@@ -110,8 +116,14 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	r.mu.Lock()
 	second, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
-	if second == nil || len(second.items) != 2 || second.items[0].plan != program || second.items[1] != ticket {
-		t.Fatal("active session successor ran or independent record was blocked", second)
+	if second == nil || len(second.items) != 1 || second.items[0].plan != program {
+		t.Fatal("active session successor ran or mutation batch included an independent read", second)
+	}
+	r.mu.Lock()
+	readBatch, _ := r.selectLocked(time.Now())
+	r.mu.Unlock()
+	if readBatch == nil || len(readBatch.items) != 1 || readBatch.items[0] != ticket {
+		t.Fatal("independent read was blocked by active mutations", readBatch)
 	}
 	r.mu.Lock()
 	premature, _ := r.selectLocked(time.Now())
@@ -128,6 +140,7 @@ func TestMixedBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	}
 	r.mu.Lock()
 	finish(r, second)
+	finish(r, readBatch)
 	finish(r, third)
 	r.mu.Unlock()
 	ticket.Ack()

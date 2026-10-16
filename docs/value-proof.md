@@ -17,8 +17,8 @@ The current defaults are **128 operations, 4 MiB, 20 ms write collection and
 finite selection among 20 count/wait/concurrency configurations and a four-point
 byte anchor, scoped to the declared workloads and gates. This does not establish
 a globally optimal value for each control. The selection rules were frozen
-before selection measurements. Typed reads and mixed batches containing reads
-become eligible without collection;
+before selection measurements. Typed reads now form separate batches from mutations
+and become eligible without collection;
 explicit `max_wait: 0s` and `max_in_flight: 0` retain immediate and unlimited
 execution policies. The owned default-path fixtures omit the entire batching
 block and audit the effective configuration plus all four runtime controls.
@@ -29,6 +29,10 @@ and [complete 25-workflow, 591-row audit](https://github.com/batchstream/weir-te
 retain the source/configuration receipts, raw outcomes and independent audits.
 The confirmation server is
 [`084572d`](https://github.com/batchstream/weir/commit/084572d79b7a53230801297f90ca2363fd864913).
+That revision allowed mixed read/mutation batches. The current scheduler separates
+them to prevent unrelated writes from delaying completed reads and to preserve
+write collection. The results below remain evidence for the measured revision;
+this scheduling change has no new real-database throughput or load measurements.
 The results below distinguish actual database CPU from CPU per completed unit;
 equal configured database quotas do not establish equal actual load.
 

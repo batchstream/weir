@@ -403,6 +403,11 @@ type batchCandidate struct {
 	full      bool
 }
 
+type batchGroup struct {
+	backend string
+	read    bool
+}
+
 // selectLocked returns the earliest collection deadline when every eligible
 // batch is still collecting. Reads, full batches and streaming commands bypass it.
 func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
@@ -411,7 +416,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 		return nil, next
 	}
 	seen := make(map[resourceKey]bool)
-	groups := make(map[string]*batchCandidate)
+	groups := make(map[batchGroup]*batchCandidate)
 	var candidates []*batchCandidate
 	oldestReady := false
 	for _, t := range r.queue {
@@ -426,17 +431,19 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 			seen[key] = true
 		}
 		singleton := t.plan.Command.GetScan() != nil || t.plan.Command.GetNative() != nil
-		// Once the oldest candidate is ready, later namespaces cannot win this
+		// Separate completion and collection windows for reads and mutations.
+		group := batchGroup{backend: t.plan.BatchKey, read: t.plan.Command.GetRead() != nil}
+		candidate := groups[group]
+		// Once the oldest candidate is ready, later groups cannot win this
 		// dispatch. Still observe their session keys above to preserve ordering.
-		if oldestReady && (singleton || t.plan.BatchKey != candidates[0].items[0].plan.BatchKey) {
+		if oldestReady && (singleton || candidate != candidates[0]) {
 			continue
 		}
-		candidate := groups[t.plan.BatchKey]
 		if candidate == nil || singleton {
 			candidate = &batchCandidate{records: make(map[string]bool), singleton: singleton}
 			candidates = append(candidates, candidate)
 			if !singleton {
-				groups[t.plan.BatchKey] = candidate
+				groups[group] = candidate
 			}
 		}
 		previousWrite, duplicate := candidate.records[t.plan.Key]

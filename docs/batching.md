@@ -3,7 +3,8 @@
 Weir aggregates independent single-record callers at each Store. Useful batching
 requires compatible arrivals, a bounded collection delay and appropriate execution
 concurrency. Increasing only `max_operations` cannot create arrivals that do not
-exist. Each Search index and visibility mode has its own compatibility group;
+exist. Reads and mutations form separate compatibility groups. Each Search index
+and visibility mode further restricts compatibility;
 dependent business phases and shared-key writes further limit aggregation.
 
 ## Flush and admission boundaries
@@ -15,8 +16,10 @@ dependent business phases and shared-key writes further limit aggregation.
   smaller write aggregation target wins. A single legal oversized item goes alone.
 - `batching.max_wait` bounds write collection from the oldest eligible admission. It
   overlaps waiting for an execution slot and is not restarted when a slot opens.
-- Reads dispatch with compatible work already queued, without waiting for future
-  arrivals. A mixed batch containing a read also bypasses collection.
+- Reads dispatch with compatible reads already queued, without waiting for future
+  arrivals. They do not join mutation batches or flush write collection. Both
+  kinds share the Store queue and execution budget, so reads can still wait for
+  an occupied execution slot.
 - Full batches, drain, Native/Scan and shorter caller deadlines bypass collection.
 - A positive `batching.max_in_flight` bounds simultaneous adapter invocations.
   Excess work stays in the bounded queue, where it can combine or be canceled.
@@ -28,6 +31,9 @@ invocations per Store. Explicit `max_wait: 0s` disables collection; explicit
 `max_in_flight: 0` removes the execution limit. Reads remain eligible immediately.
 The existing Store queue is the waiting boundary; no extra HTTP queue or worker
 process is introduced.
+
+The measurements below predate read/mutation batch separation. They do not
+establish its database load or throughput effect.
 
 These values come from the initial preregistered selection among 20
 count/wait/concurrency configurations and a four-point byte anchor in the
