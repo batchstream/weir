@@ -143,8 +143,9 @@ overload:
     low_watermark: 70
     # Process/container sampling cadence. Default: 100ms; positive duration.
     sample_interval: 100ms
-    # The CLI automatically gives Go 80% of this recovery-watermark budget
-    # (56% of capacity with defaults), leaving room for non-Go resident memory.
+    # The CLI gives Go 80% of the remaining process recovery allowance after
+    # accounting for memory outside its RSS (at most 56% of capacity by default).
+    # Positive automatic targets have a 16 MiB floor, capped by that upper bound.
     # Explicit GOMEMLIMIT takes precedence. The OS limit remains the hard boundary.
 
 # VM limits shared by every local Store.

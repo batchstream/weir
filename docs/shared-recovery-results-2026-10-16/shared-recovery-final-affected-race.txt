@@ -1,0 +1,3 @@
+ok  	github.com/batchstream/weir/internal/overload	2.130s
+ok  	github.com/batchstream/weir/internal/app	7.293s
+ok  	github.com/batchstream/weir/cmd/weir	19.166s

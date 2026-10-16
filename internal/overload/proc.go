@@ -58,6 +58,20 @@ func (p *memoryProfile) observe(limits Limits) observation {
 		o.bytes = goBytes()
 	}
 	o.cgroup, o.high, o.low = p.cgroupObservation(limits)
+	if o.processValid && o.cgroup.Valid {
+		for _, level := range p.levels {
+			if !level.finite {
+				continue
+			}
+			external := level.workingSet - min(level.workingSet, o.bytes)
+			recovery := watermark(level.limit, limits.LowWatermark, false)
+			allowance := recovery - min(recovery, external)
+			if !o.recoveryAllowanceKnown || allowance < o.recoveryAllowance {
+				o.recoveryAllowance = allowance
+			}
+			o.recoveryAllowanceKnown = true
+		}
+	}
 	return o
 }
 

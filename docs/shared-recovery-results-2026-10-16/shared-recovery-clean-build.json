@@ -1,0 +1,15 @@
+{
+  "source": "b3672473309638fb60358d95ec828221d7fd9fc6",
+  "state": "clean-commit",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-shared-recovery-clean-linux",
+  "sha256": "e7fa6e60820af1cb93c4262cdf659b07a73ce9a5ba2b2e8845621bf5fa7ca33a",
+  "target": "linux/arm64",
+  "toolchain": "go1.27.1",
+  "flags": [
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid= -X main.sourceRevision=b3672473309638fb60358d95ec828221d7fd9fc6"
+  ],
+  "scope": "PR78 exact clean source local qualification; not yet sustained-load acceptance"
+}

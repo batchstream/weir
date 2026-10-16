@@ -80,7 +80,7 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 					if automatic {
 						limit := testmetrics.Sum(initial, "weir_memory_go_runtime_limit_bytes")
 						want := uint64(capacity<<20) * 70 / 100 * 80 / 100
-						if limit != float64(want) {
+						if limit <= 0 || limit > float64(want) {
 							t.Fatal("unexpected default soft limit", limit, want)
 						}
 						t.Logf("automatic Go soft limit=%g", limit)
