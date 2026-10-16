@@ -110,13 +110,13 @@ func TestMutationBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	r.mu.Lock()
 	first, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
-	if first == nil || len(first.items) != 2 || first.items[0].plan != firstWrite || first.items[1].plan != expression {
+	if first == nil || len(first.items) != 2 || first.items[0].plan.Command != firstWrite.Command || first.items[1].plan.Command != expression.Command {
 		t.Fatal("record duplicate or byte limit ignored", first)
 	}
 	r.mu.Lock()
 	second, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
-	if second == nil || len(second.items) != 1 || second.items[0].plan != program {
+	if second == nil || len(second.items) != 1 || second.items[0].plan.Command != program.Command {
 		t.Fatal("active session successor ran or mutation batch included an independent read", second)
 	}
 	r.mu.Lock()
@@ -135,7 +135,7 @@ func TestMutationBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 	finish(r, first)
 	third, _ := r.selectLocked(time.Now())
 	r.mu.Unlock()
-	if third == nil || len(third.items) != 1 || third.items[0].plan != replace {
+	if third == nil || len(third.items) != 1 || third.items[0].plan.Command != replace.Command {
 		t.Fatal("same-session successor not released", third)
 	}
 	r.mu.Lock()

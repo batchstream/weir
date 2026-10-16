@@ -30,7 +30,7 @@ func BenchmarkSelectorDrain(b *testing.B) {
 				now := time.Now()
 				for _, work := range works {
 					ticket := &Ticket{runtime: runtime, ctx: b.Context(), plan: work, queuedAt: now}
-					runtime.queue = append(runtime.queue, ticket)
+					runtime.enqueueLocked(ticket)
 					runtime.pendingBytes += work.Bytes
 				}
 				b.StartTimer()
