@@ -1,0 +1,14 @@
+=== RUN   TestCLISharedMemoryRecoveryProbe
+    shared_pressure_integration_test.go:52: supplied CLI identity={"product":"weir","version":"dev","revision":"00bb67b0a825953e0f540c6703511e831e6ba38e","go":"go1.27.1","target":"linux/arm64","state":"dev","dirty":"true"}
+    shared_pressure_integration_test.go:76: live pressure requests=20 RSS=292339712 working_set=439177216 heap=272719928 latch=1
+    shared_pressure_integration_test.go:76: recovered=1.887380791s overload_rejections=17 RSS=214843392 working_set=367837184 heap=1611024
+    shared_pressure_integration_test.go:71: shared pressure final elapsed=5.997288709s shmem=134217728 RSS=215715840 working_set=367837184 heap_live=1821504 heap_idle=288677888 heap_released=94568448 GoLimit=300647710 latch=0 idle=true process_cpu_delta=0.63 GC_cycles=8 GC_pause_sum=0.001084957 GC_CPU=unavailable_in_supplied_binary
+    memory_recovery_integration_test.go:185: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 13:19:18 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 13:19:18 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 13:19:18 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:199: CLI exit=false 0
+--- PASS: TestCLISharedMemoryRecoveryProbe (7.39s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	8.068s

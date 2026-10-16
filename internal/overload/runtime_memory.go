@@ -6,6 +6,8 @@ import (
 	"runtime/debug"
 )
 
+const minimumAutomaticRuntimeLimit = 16 << 20
+
 type runtimeMemoryLimit struct {
 	prior, lastApplied int64
 	owned              bool
@@ -64,13 +66,17 @@ func (g *Guard) updateRuntimeMemoryLocked(limits Limits) {
 }
 
 func runtimeMemoryTarget(snapshot Snapshot, lowWatermark uint64) int64 {
-	if !snapshot.Observed || snapshot.Unknown || !snapshot.ProcessValid || snapshot.Budget == 0 || lowWatermark == 0 ||
+	if !snapshot.Observed || snapshot.Unknown || !snapshot.ProcessValid || !snapshot.RecoveryAllowanceKnown || snapshot.RecoveryAllowance == 0 || lowWatermark == 0 ||
 		snapshot.Cgroup.Valid && snapshot.Cgroup.Finite && snapshot.Cgroup.Limit == 0 {
 		return 0
 	}
-	// Keep Go's managed memory below the recovery watermark, leaving 20% of
-	// that allowance for the executable, kernel buffers, mmap and other non-Go use.
-	recovery := watermark(snapshot.Budget, lowWatermark, false)
-	target := watermark(recovery, 80, false)
+	// The process shares each cgroup's recovery allowance with other users. Keep
+	// 20% of its remaining share for executable, kernel buffers and non-Go memory.
+	target := watermark(snapshot.RecoveryAllowance, 80, false)
+	// A tiny remaining share cannot fit the runtime's necessary resident memory.
+	// Bound futile GC work with a small floor, capped by the ordinary full-budget
+	// target. The OS Guard still decides whether actual pressure can recover.
+	floor := min(uint64(minimumAutomaticRuntimeLimit), watermark(watermark(snapshot.Budget, lowWatermark, false), 80, false))
+	target = max(target, floor)
 	return int64(min(target, uint64(math.MaxInt64)))
 }

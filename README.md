@@ -208,8 +208,10 @@ On Linux cgroup v2, container pressure excludes validated reclaimable
 `inactive_file` cache from `memory.current`; missing or inconsistent cache
 statistics retain the raw usage. Metrics expose both current and working-set
 bytes. To release idle Go heap after allocation bursts, the CLI automatically
-sets a standard Go soft limit at 80% of the recovery-watermark budget (56% of
-capacity by default). Explicit `GOMEMLIMIT` settings take precedence.
+sets a standard Go soft limit at 80% of the process's remaining recovery
+allowance after accounting for memory outside its RSS. With default watermarks
+the upper bound is 56% of capacity; positive automatic targets have a 16 MiB floor
+capped by that upper bound. Explicit `GOMEMLIMIT` takes precedence.
 Use container/OS memory limits for the hard boundary.
 The [local reliability verification](docs/production-reliability-2026-10-16.md)
 records the cache regression, real backend read/write observations, and the

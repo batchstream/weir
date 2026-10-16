@@ -92,9 +92,12 @@ uses the smallest known physical host, finite process address-space, and visible
 container limit. Container pressure is checked at every finite visible ancestor;
 each current/limit pair keeps its own accounting. Unknown observations do not
 manufacture overload. Container/OS limits remain the hard memory boundary.
-The CLI explicitly owns a Go soft limit below the recovery watermark and follows
-trusted capacity changes through this same sampler. Explicit runtime policy
-takes precedence. Library assembly alone does not change process-wide GC policy.
+The CLI explicitly owns a Go soft limit below the recovery watermark. At every
+finite level it accounts for memory outside process RSS before choosing the
+remaining process allowance, and follows trusted changes through this sampler.
+Positive automatic targets have a 16 MiB floor, capped by the ordinary capacity
+target, to bound futile GC under external pressure. Explicit runtime policy takes
+precedence. Library assembly alone does not change process-wide GC policy.
 
 Encoded output ownership is tracked until the transport frees the last buffer
 reference, including after handler completion. There is no aggregate response

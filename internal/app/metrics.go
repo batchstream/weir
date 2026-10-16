@@ -119,6 +119,22 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
 	}
+	known := 0.0
+	if memory.RecoveryAllowanceKnown {
+		known = 1
+	}
+	for name, value := range map[string]float64{
+		"recovery_allowance_bytes": float64(memory.RecoveryAllowance),
+		"recovery_allowance_known": known,
+	} {
+		desc := prometheus.NewDesc(
+			"weir_memory_"+name,
+			"Process resident allowance below all trusted recovery thresholds after accounting for memory outside process RSS; known distinguishes zero allowance from missing observations.",
+			nil,
+			nil,
+		)
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
+	}
 
 	desc = prometheus.NewDesc(
 		"weir_memory_sample_bytes",

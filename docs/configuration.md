@@ -74,9 +74,14 @@ missing, malformed or inconsistent values retain raw `memory.current`.
 `weir_memory_cgroup_working_set_bytes` reports the corresponding admission usage.
 Freed Go objects may leave resident idle heap above the recovery watermark.
 The CLI enables the standard Go soft memory limit before accepting requests,
-using 80% of the recovery-watermark budget: the default is 56% of discovered
-capacity. This leaves room below the 70% recovery line for the binary, sockets
-and other memory outside Go. The existing sampler follows trusted capacity
+using 80% of the process's recovery allowance. At every finite cgroup level,
+memory outside process RSS is subtracted from that level's low-watermark
+threshold; the smallest remaining allowance is combined with the host/process
+recovery budget. The default upper bound is 56% of discovered capacity, and
+shared memory can make the effective limit lower. Positive targets have a 16 MiB
+floor, capped by the ordinary total-capacity target, to avoid futile GC when the
+remaining share cannot fit the runtime. This leaves room below the recovery line
+for memory outside Go. The existing sampler follows trusted capacity
 changes; unknown samples preserve the previous limit. It never forces GC or
 scavenging on each sample. Actual RSS and cgroup working set still control
 admission, including memory the Go runtime cannot release.
@@ -90,6 +95,11 @@ explicitly opt in through `Node.ManageRuntimeMemoryLimit`. Inspect
 distinguish the sampled runtime limit from automatic management. MaxInt64 means
 the Go limit is disabled. A zero recovery watermark is rejected because a live
 process cannot return to zero resident bytes after overload.
+`weir_memory_recovery_allowance_bytes` reports the remaining resident allowance,
+with `weir_memory_recovery_allowance_known` distinguishing a known zero from an
+unknown sample. When memory outside the process alone consumes the recovery
+allowance, the policy preserves its prior Go limit instead of installing zero;
+the actual-pressure Guard remains closed until enough memory is released.
 
 Business RPCs and backend IO inherit caller contexts. Transport progress,
 connection establishment, keepalive and cleanup have separate controls.
