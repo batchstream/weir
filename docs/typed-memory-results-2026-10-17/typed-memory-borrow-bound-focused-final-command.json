@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=1",
+    "-run",
+    "^Test(NativeLargeOutputCannot|SharedShortHandoffs|NativeTerminalRetainsCanceled|NativeFixedTerminalPreserves|NativeResidentCredit|RuntimeSharedHandoffs|RuntimeLargeBorrow)",
+    "-v",
+    "./internal/store"
+  ],
+  "exit": 0,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-focused-final.txt"
+}

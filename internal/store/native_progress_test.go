@@ -113,10 +113,10 @@ func TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy(t *testing.
 		work := plan(uint64(index), fmt.Sprint(index), false)
 		work.Bytes = 512
 		work.Command = nativeCall()
-		work.WorkingBytes = 4096
+		work.WorkingBytes = int(memory.reserve) + 4096
 		if index == 0 {
 			publication := max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow
-			work.WorkingBytes = int(memory.budget-memory.inputTargetLocked()) - publication
+			work.WorkingBytes = int(memory.residentLimitLocked()-memory.inputTargetLocked()) - publication
 		}
 		ticket, failure, _ := runtime.Submit(ctx, work, session)
 		if failure != nil {

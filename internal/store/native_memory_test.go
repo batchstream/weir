@@ -54,7 +54,7 @@ func TestExecutionMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	lease.terminal(20)
-	if snapshot := memory.Snapshot(); snapshot.Terminal != 1 || snapshot.UsedBytes != reserved+publication || snapshot.InputUsedBytes != input {
+	if snapshot := memory.Snapshot(); snapshot.Terminal != 1 || snapshot.UsedBytes != reserved || snapshot.InputUsedBytes != input {
 		t.Fatal("terminal publication retained a cleaned response peak", snapshot)
 	}
 	lease.release()
@@ -191,21 +191,23 @@ func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 		t.Fatal(failure)
 	}
 	defer second.release()
-	publication := uint64(first.publication - nativeQueuedWindow)
-	held := int((memory.budget - memory.inputReserved - 2*publication - (1 << 20)) / 2)
+	// Retain a genuinely small response; only the second initial estimate
+	// consumes the temporary workspace that will converge.
+	held := protocol.NativeChunk + execution.EntryOverheadBytes
 	if started, _ := first.start(held, defaultNativeIOReserve); !started {
 		t.Fatal("first response could not start")
 	}
 	if err := first.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
-	if started, _ := second.start(held, defaultNativeIOReserve); !started {
+	initial := int(memory.budget-memory.Snapshot().UsedBytes) - (1 << 20)
+	if started, _ := second.start(initial, defaultNativeIOReserve); !started {
 		t.Fatal("second initial IO could not start")
 	}
 	if started, waiting := first.beginRead(2 << 20); started || !waiting {
 		t.Fatal("initial IO convergence was mistaken for fixed output pressure", started, waiting)
 	}
-	if err := second.settle(1<<20, 1); err != nil {
+	if err := second.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
 	if started, waiting := first.beginRead(2 << 20); !started || waiting {
@@ -215,7 +217,7 @@ func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 	if started, waiting := second.beginRead(readWindow); started || !waiting {
 		t.Fatal("a real ongoing body read was mistaken for fixed output pressure", started, waiting)
 	}
-	if err := first.settle(1<<20, 1); err != nil {
+	if err := first.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
 	if started, waiting := second.beginRead(readWindow); !started || waiting {

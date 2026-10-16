@@ -877,16 +877,9 @@ func (t *Ticket) emit(event *pb.Event) error {
 // owns backend IO, and never attempts to borrow the input queue's byte limit.
 func (r *Runtime) emitNative(b *batch, ticket *Ticket, event *pb.Event) error {
 	if event.GetNativeEnd() != nil {
-		if err := b.EndIO(ticket.plan.WorkingBytes, proto.Size(event)); err != nil {
-			started := event.GetNativeEnd().Completion != pb.NativeCompletion_NATIVE_NOT_STARTED
-			failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error())
-			end := protocol.NativeFailure(started, failure)
-			value := &pb.Event_NativeEnd{NativeEnd: end}
-			event = &pb.Event{Value: value}
-			_ = b.EndIO(0, proto.Size(event))
-			ticket.event = event
-			return err
-		}
+		// The adapter has no more backend work. After Execute returns, the
+		// existing completion path releases working memory and reserves only
+		// this terminal, without borrowing another output handoff first.
 		ticket.event = event
 		return nil
 	}

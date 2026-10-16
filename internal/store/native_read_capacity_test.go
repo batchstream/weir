@@ -16,6 +16,7 @@ type nativeReadCapacityAdapter struct {
 	lifecycleAdapter
 	reads atomic.Int32
 	held  int
+	extra int
 }
 
 func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
@@ -38,7 +39,7 @@ func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execut
 	if err := emit(work, event); err != nil {
 		return
 	}
-	err := work.NativeIO.BeginIO(ctx, 2<<20)
+	err := work.NativeIO.BeginIO(ctx, a.extra)
 	code := pb.FailureCode_UNAVAILABLE
 	if errors.Is(err, execution.ErrExecutionMemory) {
 		code = pb.FailureCode_RESOURCE_EXHAUSTED
@@ -59,10 +60,12 @@ func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execut
 }
 
 func TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge(t *testing.T) {
-	memory := testExecutionMemory(96 << 20)
-	publication := 2*protocol.NativeChunk + execution.ResultOverheadBytes - nativeQueuedWindow
-	held := int((memory.budget - memory.inputTargetLocked() - 2*uint64(publication) - (1 << 20)) / 2)
-	adapter := &nativeReadCapacityAdapter{held: held}
+	memory := fullResidentBorrowMemory(t)
+	baseline := memory.Snapshot()
+	// Legal short handoffs cannot fill R with arbitrary headers any more. A
+	// body reader that genuinely needs more than the protected workspace must
+	// still fail without a circular wait or acquiring an IO slot.
+	adapter := &nativeReadCapacityAdapter{held: protocol.NativeChunk + execution.EntryOverheadBytes, extra: int(memory.reserve) + 1}
 	limits := DefaultLimits()
 	runtime, err := New(adapter, limits, memory)
 	if err != nil {
@@ -93,7 +96,7 @@ func TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge(t *tes
 		}
 	}
 	before := memory.Snapshot()
-	if before.Borrowed != 2 || before.BudgetBytes-before.UsedBytes >= 2<<20 || before.UsedBytes > before.BudgetBytes {
+	if before.Borrowed != 2 || before.BudgetBytes-before.UsedBytes >= uint64(adapter.extra) || before.UsedBytes > before.BudgetBytes {
 		t.Fatal("test did not fill actual output ownership", before)
 	}
 	// Both consumers are immediately ready. Their body reads cannot be the
@@ -134,7 +137,7 @@ func TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge(t *tes
 		session.Close()
 	}
 	waitReleased(t, runtime)
-	if snapshot := memory.Snapshot(); snapshot.Count != 0 || snapshot.UsedBytes != 0 {
+	if snapshot := memory.Snapshot(); snapshot.Count != baseline.Count || snapshot.UsedBytes != baseline.UsedBytes {
 		t.Fatal("failed continuation retained working credit", snapshot)
 	}
 }

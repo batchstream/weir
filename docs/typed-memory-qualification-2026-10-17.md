@@ -1,8 +1,9 @@
 # Typed execution, result and network memory qualification
 
-Status: this typed-memory milestone passes the fixed local real-backend gates.
-Independent PR review and CI remain required. Overall default-production
-qualification still requires ingress, Lua, sustained-load and fault checks.
+Status: PR 81 is blocked by independent review. Its first clean run passed,
+but the unchanged cross-Store pressure case subsequently rejected a healthy
+short Native. A correction and renewed qualification are required. Overall
+default-production qualification remains incomplete.
 
 ## Preserved failure
 
@@ -65,8 +66,9 @@ preserved with the passing regressions.
 Minimum encoded buffers are 1025 bytes because smaller gRPC buffers do not call
 the supplied pool owner. Queue/terminal reservations include this minimum before
 publication. The IO progress reserve is derived from the negotiated reply bound,
-publication windows, one bounded borrowed short result and short-request frame
-copies. It does not grow permanently with a large mutation frame.
+publication windows, initially one bounded borrowed short result and short-request
+frame copies. The independent-review correction below replaces that allowance
+with two explicitly bounded shared handoffs. It does not grow permanently with a large mutation frame.
 
 Plain BSON Put validation scans supported raw types, UTF-8, canonical arrays and
 its matching first unique _id without constructing a disposable Value tree.
@@ -313,3 +315,92 @@ candidates and diagnostic-only runs. This documentation-only evidence commit
 changes no executable source from the clean artifact. Ingress, Lua, the final
 600-second sustained run and fault qualification have not yet run on this
 candidate. Overall production readiness is not claimed by this milestone.
+
+## Independent review blocks the third candidate
+
+[PR 81](https://github.com/batchstream/weir/pull/81), exact head
+`30a3d01790b7dacbd495b30f864de8b8b79e56dc`, has
+[green default/race/vet CI](https://github.com/batchstream/weir/actions/runs/38941194188),
+but two new independent agents both return BLOCK. The head contains only
+documentation changes after clean artifact source `007bc59`; all 348 source
+hashes and the binary hash match. It has not been merged.
+
+The backend reviewer independently passed the original burst: 2560/2560, no
+budget rejection or business failure, and twenty exact database ID/n/pad/count
+oracles. It then ran the unchanged seven typed-memory cases once. The first
+five passed; the cross-Store Typed/Native slow-output case failed. Healthy Typed
+Read completed with a full content hash in 276.885 ms, while the healthy short
+Native returned NATIVE_NOT_STARTED / RESOURCE_EXHAUSTED after 1.000 seconds,
+inside the original three-second hold. All 32 offered pressure calls ended as
+13 full hash/EOF successes, 12 capacity failures and 7 caller deadlines. The
+harness preserves aggregate results, not a per-index map.
+
+The reviewer stopped at that first failure. Search and further small-query
+checks were not run. All seven CLI containers survived without OOM, exited zero
+and were removed; source hashes remained unchanged. The
+[backend review receipt](typed-memory-results-2026-10-17/review81-backend-review-receipt.json)
+and original failed raw output preserve the independent counterexample.
+
+The core reviewer also found a deterministic protected-IO violation. At a fixed
+500,000,000-byte budget, legal typed retained results and an active Native
+initial reservation fit. Settling its 12 MiB reply into the unconditional Native
+borrow fallback leaves only 36,405,990 bytes free, while a healthy short Native
+requires 48,137,983 bytes. The short start returns false without waiting, and
+the desired-behavior probe exits 1. No document buffers, database calls or
+manual account mutations are used. This proves the reservation flaw; it does
+not identify the separate live CLI failure's mutex-held instant from samples.
+The [core report](typed-memory-results-2026-10-17/review81-core-report.json)
+retains source, overlay, commands, failure and successful core race/vet checks.
+
+The old probe deliberately requires a large response to enter borrowed state
+before checking short progress. The correction must prevent that unbounded
+state: large responses that cannot reside may return honest capacity failure
+and clean up, while bounded short-response handoffs preserve IO progress.
+The original probe and its exit remain immutable evidence; new regressions
+must check the corrected contract without changing any process acceptance gate.
+
+## Protected-IO correction awaiting a new clean acceptance run
+
+Typed and Native results now share at most two bounded nonresident handoffs.
+Each handoff allows 262,656 bytes: four 64 KiB chunks plus 512 bytes of fixed
+metadata. This covers a small retained response/framing workspace and two
+publication chunks, rather than imposing an accidental 2 KiB Native-result
+threshold. Existing resident credit remains charged across later reads and
+capacity shrink; only actual nonresident debt consumes a handoff.
+
+The protected reserve is derived as the existing negotiated Native IO and
+publication reserve plus two handoffs and two short-request frame copies:
+`48,000,000 + 2*65,536 + 8192 + 2*262,656 + 2*65,536 = 48,795,648`.
+The Node budget B is unchanged. This reserves finite progress space instead of
+allowing an arbitrary large response to take it. Native settlement validates
+all limits before changing any ownership fields. A large response that cannot
+reside fails with honest INCOMPLETE capacity evidence and is cleaned without
+replay; it does not become a permanently borrowed large object.
+
+Terminal cleanup drops unused future chunk promises and retains real wire
+ownership. Normal `sendEvent` waits for the actual wire owner to finish before
+releasing the Native emission; cancellation retains that one wire and sends no
+further event. The single-wire model and original structural oracles remain.
+NativeEnd now records the event and uses the existing completion path after
+Adapter.Execute returns, removing its redundant pre-cleanup EndIO settlement.
+This preserves fixed NOT_STARTED/INVALID_ARGUMENT or attempted INCOMPLETE
+evidence even when both handoffs are occupied.
+
+New fixed-budget tests cover atomic large-response rejection, resident-fit
+12 MiB success, retained resident credit after shrink, both short-handoff
+orders, actual cross-Store Runtime delivery, a third handoff's real rejection,
+cancelled wire through actual Free, and attempted large-response failure with
+one execution and no replay. Focused race passes in 1.689 s. Full core race
+passes: Store 3.410 s, Server 20.086 s, Execution 1.662 s, App 8.016 s and
+CLI 19.690 s, plus vet. All source hashes remain unchanged. The original
+64-session/2048-small-read test is untouched.
+
+Earlier focused fixture failures and complete Store failures remain preserved.
+Old unit fixtures that relied on large borrowed outputs now use legal bounded
+ownership to exercise the same no-circular-wait and same-byte wake conditions;
+fixed historical R/Q numbers are retained in before evidence while current
+expectations derive from the new reserve. All process workloads, sizes,
+concurrency, data oracles and timing gates remain byte-identical. The
+[correction receipt](typed-memory-results-2026-10-17/typed-memory-borrow-bound-final-receipt.json)
+records exact commands, exits and source hashes. A new clean artifact, the
+original CLI gates, renewed independent review and fresh CI remain required.

@@ -1,0 +1,458 @@
+{
+  "decision": "BLOCK",
+  "exact_head": "30a3d01790b7dacbd495b30f864de8b8b79e56dc",
+  "base": "8c1b1b3bd1bd1519079f69a163c1772d171791e8",
+  "scope": "Independent PR81 backend review. No executable source edits, commits, merge, overlays, retries or production activity.",
+  "artifact_source": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+  "source_348_hashes": "identical to clean007 before and after; current PR head differs only in documentation",
+  "binary_sha256": "adc3f4a07ac381a78fddfb3c04b7a3d60a4f1176b28616259f2317f9e0c1cdf4",
+  "source_after": "review81-backend-source-after.json",
+  "before": "review81-backend-before.json",
+  "burst": {
+    "actual_exit": 0,
+    "result": "review81-backend-burst-result.json",
+    "offered": 2560,
+    "completed": 2560,
+    "business_failures": 0,
+    "budget_rejections": 0,
+    "rounds": [
+      {
+        "raw_line": 245,
+        "text": "native_burst_integration_test.go:170: burst round=0 offered=256 received=256 completed=256 p50=40.110417ms p99=53.423042ms max=54.3715ms Native=map[borrowed:0 budget_bytes:4.91888093e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 326,
+        "text": "native_burst_integration_test.go:170: burst round=1 offered=256 received=256 completed=256 p50=15.774291ms p99=51.544292ms max=51.924542ms Native=map[borrowed:0 budget_bytes:4.91232733e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 587,
+        "text": "native_burst_integration_test.go:170: burst round=2 offered=256 received=256 completed=256 p50=14.73975ms p99=79.238375ms max=125.018333ms Native=map[borrowed:0 budget_bytes:4.91317384e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 880,
+        "text": "native_burst_integration_test.go:170: burst round=3 offered=256 received=256 completed=256 p50=26.961541ms p99=54.738042ms max=55.870625ms Native=map[borrowed:0 budget_bytes:4.91224541e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 1040,
+        "text": "native_burst_integration_test.go:170: burst round=4 offered=256 received=256 completed=256 p50=23.858416ms p99=58.448042ms max=59.383375ms Native=map[borrowed:0 budget_bytes:4.91145352e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 1300,
+        "text": "native_burst_integration_test.go:170: burst round=5 offered=256 received=256 completed=256 p50=27.879333ms p99=40.486708ms max=41.732583ms Native=map[borrowed:0 budget_bytes:4.90675677e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 1568,
+        "text": "native_burst_integration_test.go:170: burst round=6 offered=256 received=256 completed=256 p50=27.017125ms p99=40.206042ms max=41.537875ms Native=map[borrowed:0 budget_bytes:4.90307037e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 1862,
+        "text": "native_burst_integration_test.go:170: burst round=7 offered=256 received=256 completed=256 p50=28.730458ms p99=45.986583ms max=46.595459ms Native=map[borrowed:0 budget_bytes:4.90331613e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 2066,
+        "text": "native_burst_integration_test.go:170: burst round=8 offered=256 received=256 completed=256 p50=11.292791ms p99=43.105042ms max=80.648833ms Native=map[borrowed:0 budget_bytes:4.90233309e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      },
+      {
+        "raw_line": 2301,
+        "text": "native_burst_integration_test.go:170: burst round=9 offered=256 received=256 completed=256 p50=32.318416ms p99=50.17475ms max=50.571666ms Native=map[borrowed:0 budget_bytes:4.90129544e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      }
+    ],
+    "oracles": [
+      {
+        "raw_line": 246,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=43 seen=43 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 247,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=44 seen=44 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 327,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=85 seen=85 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 328,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=87 seen=87 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 588,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=127 seen=127 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 589,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=130 seen=130 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 881,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=169 seen=169 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 882,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=173 seen=173 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1041,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=211 seen=211 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1042,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=216 seen=216 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1301,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=253 seen=253 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1302,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=259 seen=259 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1569,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=295 seen=295 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1570,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=302 seen=302 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1863,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=337 seen=337 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1864,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=345 seen=345 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2067,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=379 seen=379 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2068,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=388 seen=388 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2302,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=421 seen=421 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2303,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=431 seen=431 every_ID_n_pad_checked=true"
+      }
+    ],
+    "final_ownership": [
+      {
+        "raw_line": 2304,
+        "text": "native_burst_integration_test.go:193: final5s Node/Store/RPC/wire ownership0 Q=I=0 Native=map[borrowed:0 budget_bytes:4.90129544e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.840192e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      }
+    ],
+    "CLI_cleanup": [
+      {
+        "raw_line": 2307,
+        "text": "2026/10/16 17:40:01 INFO backend_connections_closed backend=search store=search owned=0 peak=50 acquired=428 released=428"
+      },
+      {
+        "raw_line": 2308,
+        "text": "2026/10/16 17:40:01 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=10 dialing=0 closing=0 acquired=10 released=10"
+      },
+      {
+        "raw_line": 2309,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      }
+    ],
+    "full_document_hash_scope": "Small-record original oracle validates every ID/n/pad and exact cardinality, not complete serialized document hashes."
+  },
+  "typed7": {
+    "actual_exit": 1,
+    "result": "review81-backend-typed7-result.json",
+    "failed_case": "cross_store_typed_native/1024MiB",
+    "passed_subcases": 5,
+    "not_run": "search_no_stall/1024MiB due -failfast",
+    "health_evidence": [
+      {
+        "raw_line": 11,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=132.343167ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 12,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=132.728583ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 48,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=5.84875ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 49,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=9.626334ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 128,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=276.884792ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 135,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=1.000162667s within_original_hold=true error=healthy short Native failed: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}"
+      },
+      {
+        "raw_line": 153,
+        "text": "typed_memory_budget_integration_test.go:135: small query failed during the fixed pressure hold healthy short Native failed: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}"
+      }
+    ],
+    "32_result_aggregates": [
+      {
+        "raw_line": 35,
+        "text": "typed_memory_budget_integration_test.go:101: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=6 complete_RPC_OK=6 capacity_denied=26 caller_deadline=0; caller deadlines are not correctness passes"
+      },
+      {
+        "raw_line": 74,
+        "text": "typed_memory_budget_integration_test.go:101: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=16 complete_RPC_OK=16 capacity_denied=16 caller_deadline=0; caller deadlines are not correctness passes"
+      },
+      {
+        "raw_line": 154,
+        "text": "typed_memory_budget_integration_test.go:135: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=13 complete_RPC_OK=13 capacity_denied=12 caller_deadline=7; caller deadlines are not correctness passes"
+      }
+    ],
+    "individual_32_result_limit": "The unchanged original harness logs aggregate outcomes only; no per-index outcome rows were emitted. Cross-store received32 = full completeRPCOK13 + explicit capacity failures12 + caller deadlines7. No post hoc per-ID outcome or deadline-as-success inference is made. Raw logs retained in full.",
+    "all_completed_business_chains": [
+      {
+        "raw_line": 84,
+        "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-large-00 bytes=12582962 sha256=643ad446df048cf1d7ca7fd8431913617682c162cf08e7c7032c654448f37092 elapsed=134.367875ms"
+      },
+      {
+        "raw_line": 85,
+        "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-near16MiB bytes=16777152 sha256=8198972ae1b85be3dcc5421d7c2baca1088c2088100cb2725f64bc29816dffcf elapsed=160.122458ms"
+      },
+      {
+        "raw_line": 86,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-256-12582912 exact_BSON_bytes=12582912 sha256=5b1771d1ef9f171a9a880c22e5798176cb22ec8c08c8a1e0d69f4b27e6b4132f Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 87,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-256-16777152 exact_BSON_bytes=16777152 sha256=b16b146bd020679f6d2a14cb5841a1ec12e4f4c6217d6478a6c1c65ab4743e8f Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 97,
+        "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-large-00 bytes=12582962 sha256=643ad446df048cf1d7ca7fd8431913617682c162cf08e7c7032c654448f37092 elapsed=137.532541ms"
+      },
+      {
+        "raw_line": 98,
+        "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-near16MiB bytes=16777152 sha256=8198972ae1b85be3dcc5421d7c2baca1088c2088100cb2725f64bc29816dffcf elapsed=162.999208ms"
+      },
+      {
+        "raw_line": 99,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-512-12582912 exact_BSON_bytes=12582912 sha256=68352185c5e143f294b7c43abdd55771e9c5c1610cb90403b7b48b5f48bdc5e0 Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 100,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-512-16777152 exact_BSON_bytes=16777152 sha256=484c3906d61c324ac4c27ff2f3efcfd01fc6c2720e57a87632b672eaf16e84fd Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 110,
+        "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-large-00 bytes=12582962 sha256=643ad446df048cf1d7ca7fd8431913617682c162cf08e7c7032c654448f37092 elapsed=111.224375ms"
+      },
+      {
+        "raw_line": 111,
+        "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-near16MiB bytes=16777152 sha256=8198972ae1b85be3dcc5421d7c2baca1088c2088100cb2725f64bc29816dffcf elapsed=150.258084ms"
+      },
+      {
+        "raw_line": 112,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-1024-12582912 exact_BSON_bytes=12582912 sha256=95d1b337eb482b475698dd33c6d9bf134af451cdc74aed3e71194d429e9a6fde Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 113,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-1024-16777152 exact_BSON_bytes=16777152 sha256=35d80e694e14213c66f0314b24d49620641f88f44a1e18ab67682daf5a95a1e3 Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      }
+    ],
+    "fixed_original_parameters": [
+      {
+        "raw_line": 34,
+        "text": "typed_memory_budget_integration_test.go:101: pressure original_noRecv=3s actual_hold=3.002027708s original_common_caller=5s count=32 native_every=0"
+      },
+      {
+        "raw_line": 73,
+        "text": "typed_memory_budget_integration_test.go:101: pressure original_noRecv=3s actual_hold=3.002089583s original_common_caller=5s count=32 native_every=0"
+      },
+      {
+        "raw_line": 152,
+        "text": "typed_memory_budget_integration_test.go:135: pressure original_noRecv=3s actual_hold=3.002024917s original_common_caller=5s count=32 native_every=4"
+      }
+    ],
+    "final_ownership": [
+      {
+        "raw_line": 37,
+        "text": "typed_memory_budget_integration_test.go:101: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.093292ms"
+      },
+      {
+        "raw_line": 76,
+        "text": "typed_memory_budget_integration_test.go:101: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=12.164917ms"
+      },
+      {
+        "raw_line": 89,
+        "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.998916ms"
+      },
+      {
+        "raw_line": 102,
+        "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.107667ms"
+      },
+      {
+        "raw_line": 115,
+        "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=8.70425ms"
+      },
+      {
+        "raw_line": 156,
+        "text": "typed_memory_budget_integration_test.go:135: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=28.157584ms"
+      }
+    ],
+    "CLI_before_cleanup": [
+      {
+        "raw_line": 38,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-87603-1792172434109340000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 77,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-87603-1792172438318698000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 90,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-87603-1792172443666120000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 103,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-87603-1792172445999327000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 116,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-87603-1792172447777803000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 157,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-87603-1792172449384843000 true false 0 error=<nil>"
+      }
+    ],
+    "CLI_after_stop": [
+      {
+        "raw_line": 41,
+        "text": "2026/10/16 17:40:38 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=4 dialing=0 closing=0 acquired=4 released=4"
+      },
+      {
+        "raw_line": 42,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 80,
+        "text": "2026/10/16 17:40:43 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=10 dialing=0 closing=0 acquired=10 released=10"
+      },
+      {
+        "raw_line": 81,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 93,
+        "text": "2026/10/16 17:40:45 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+      },
+      {
+        "raw_line": 94,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 106,
+        "text": "2026/10/16 17:40:47 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+      },
+      {
+        "raw_line": 107,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 119,
+        "text": "2026/10/16 17:40:49 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+      },
+      {
+        "raw_line": 120,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 160,
+        "text": "2026/10/16 17:40:54 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=5 dialing=0 closing=0 acquired=5 released=5"
+      },
+      {
+        "raw_line": 161,
+        "text": "2026/10/16 17:40:54 INFO backend_connections_closed backend=mongo store=sibling owned=0 peak=8 dialing=0 closing=0 acquired=8 released=8"
+      },
+      {
+        "raw_line": 162,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      }
+    ],
+    "failure_samples": [
+      {
+        "raw_line": 134,
+        "text": "typed_memory_budget_integration_test.go:135: execution_snapshot at=2026-10-16T17:40:50.682143Z Node=map[borrowed:0 budget_bytes:4.96085128e+08 budget_known:1 budget_rejections_total:11 input_reserved_bytes:3.3554432e+07 input_used_bytes:100151 io_reserve_bytes:4.840192e+07 leases:22 leases_limit:32768 native_leases:9 native_leases_limit:1024 resident_bytes:4.1181344e+08 settled:6 starting:1 terminal:12 used_bytes:4.59816402e+08 waiting:3 wire_buffers:18 wire_bytes:1.513893e+08] RSS=497119232 WS=504950784 latch=0 pending=3 active=1 wire=151389300 sessions=22"
+      },
+      {
+        "raw_line": 136,
+        "text": "typed_memory_budget_integration_test.go:135: execution_snapshot at=2026-10-16T17:40:50.792103Z Node=map[borrowed:1 budget_bytes:4.96238045e+08 budget_known:1 budget_rejections_total:13 input_reserved_bytes:3.3554432e+07 input_used_bytes:87353 io_reserve_bytes:4.840192e+07 leases:20 leases_limit:32768 native_leases:7 native_leases_limit:1024 resident_bytes:4.36978405e+08 settled:6 starting:0 terminal:13 used_bytes:4.49691643e+08 waiting:0 wire_buffers:20 wire_bytes:1.64037848e+08] RSS=543318016 WS=544653312 latch=0 pending=0 active=0 wire=164037848 sessions=20"
+      }
+    ],
+    "samples_are_not_rejection_instant": true
+  },
+  "finding": {
+    "priority": "P1",
+    "title": "Mixed Typed/Native retained outputs can reject healthy short Native during fixed pressure hold",
+    "primary_location": "internal/store/execution_memory.go:255-267",
+    "emission_location": "internal/store/runtime.go:794-808",
+    "test_trigger_location": "internal/app/typed_memory_budget_integration_test.go:133-135;299-325;433-464",
+    "impact": "The original required progress gate fails despite no OOM, no Guard latch and eventual ownership recovery. Current exact head cannot be approved.",
+    "observed": "healthy typed Read full hash passes in276.884792ms; short Native returns NATIVE_NOT_STARTED/RESOURCE_EXHAUSTED after1.000162667s during original3s hold.",
+    "IO_stage_limit": "No independent command-monitor trace or byte counter was captured for the health Native. Protocol evidence and exact error string are consistent with Runtime pre-dispatch memory denial; they do not independently establish backendbytes=0 or the exact locking branch. Mongo native GrowIO uses a different failure message.",
+    "causal_hypothesis_not_proven": "Native settle at execution_memory.go530-537 can mark a retained large reply as borrowed without executionBorrowWindow bound; the protected progress reserve only includes a small borrowed window. Subsequent resident outputs may leave less than one full negotiated Native IO window. Per-lease mutex-held denial evidence is required before calling this the precise cause.",
+    "recommended_validation": "Preserve this first failure. Derive a deterministic no-load ledger regression for mixed retained Typed and large Native outputs that asserts one healthy short Native dispatches within the unchanged budget and deadlines; then repeat original acceptance only on the corrected frozen source."
+  },
+  "static_backend_review": "Read Mongo terminal cap(raw)+36 accounting, nonterminal/getMore window, later metadata/write restoration, cleanup context, raw Put parity; Search request growth, JSON/parser bounds, normal ACK floor and dynamic source/frame/header accounting. No separate confirmed backend implementation finding from static inspection.",
+  "not_run_after_first_failure": [
+    "small-query count3",
+    "Search typed7 final subcase",
+    "new focused unit/race backend tests",
+    "ingress",
+    "Lua",
+    "formal600",
+    "fault"
+  ],
+  "cleanup": {
+    "CLI_cleanup_checks_passed": 7,
+    "scope": "One burst CLI plus six typed CLI: unchanged harness verifies owner label, after-stop Running=false/OOMKilled=false/ExitCode0 and removal. Typed raw logs include all six before-cleanup names. Burst original harness does not print its CLI name; its cleanup assertions passed.",
+    "remaining_owned_CLI_query": "",
+    "owned_CLI_remaining": 0,
+    "fixtures_preserved": true,
+    "exclusive_window_returned": true
+  },
+  "historical_failure_diagnostics_preserved": {
+    "typed-memory-fixed-process.txt": {
+      "sha256": "5bbd3193a9231a4307e1dc71b236f52f3eea3b73c1073ff3bbdca9d3aead43be",
+      "unchanged": true
+    },
+    "typed-memory-fixed-r2-burst.txt": {
+      "sha256": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51",
+      "unchanged": true
+    },
+    "typed-memory-fixed-r2-validation.json": {
+      "sha256": "684caa7123a8956279ca2186e3105a83f007cd5d14c35ec9193d7756079a38ec",
+      "unchanged": true
+    },
+    "typed-memory-r2-burst-causal-manifest.json": {
+      "sha256": "29b114f8d54c940ccd27968baf48ea03ab0253f4abd4bc025bab892c616a14b2",
+      "unchanged": true
+    }
+  },
+  "at_utc": "2026-10-16T17:42:33.435477+00:00",
+  "evidence_sha256": {
+    "review81-backend-before.json": "8880699902042f5a524a2a671eabcd8c3f5dfcde55857ad1a24a3ebbc770d2b1",
+    "review81-backend-source-after.json": "4163b7295368aa7542ca490c8765dc8f1018651a92ca24368ad93111f106ec8f",
+    "review81-backend-burst.txt": "cc1981d385a13f0f785167bac5b36971716420cabdfa8b5f6dc0cd1e72fb48ff",
+    "review81-backend-burst.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "review81-backend-burst-command.json": "7f63952b50cf2e6d73531a57225560bdb6305606674e2e59707743585288e66e",
+    "review81-backend-burst-result.json": "416a33f22664d1070c3b73f03c09d3c8a6f83963a2861047981f43acd5b0192e",
+    "review81-backend-typed7.txt": "71c57dce65e2d3dbcc5934252dadff22b23d89de3b88a360f74a238da7b2dd9a",
+    "review81-backend-typed7.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "review81-backend-typed7-command.json": "f09d7d8e19eb232aa62a1d14f6e889b2f8cb20597e4f9ec14dd99f3e9382bd14",
+    "review81-backend-typed7-result.json": "cc33781da8e6d9a9dbfc0095b800018242ae797a42d1f9b7700873c17400ad94"
+  }
+}

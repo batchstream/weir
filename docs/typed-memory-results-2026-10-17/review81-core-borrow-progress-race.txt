@@ -1,0 +1,7 @@
+=== RUN   TestReview81DesiredShortNativeProgressAfterLargeNativeBorrows
+    review81_core_borrow_progress_test.go:55: before={BudgetBytes:500000000 UsedBytes:499018802 IOReserveBytes:48401920 ResidentBytes:450881011 InputReservedBytes:33554432 InputUsedBytes:43022 WireBytes:0 WireCount:0 NativeCount:1 NativeCountLimit:1024 Count:14 CountLimit:32768 Starting:1 Settled:13 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} settled={BudgetBytes:500000000 UsedBytes:463594010 IOReserveBytes:48401920 ResidentBytes:450881011 InputReservedBytes:33554432 InputUsedBytes:43022 WireBytes:0 WireCount:0 NativeCount:1 NativeCountLimit:1024 Count:14 CountLimit:32768 Starting:0 Settled:13 Waiting:0 Terminal:0 Borrowed:1 Known:true BudgetRejections:0} borrowed_bytes=12712999 protected_reserve=48401920 free_after_settle=36405990 short_working=48008448 short_publication=129535 after={BudgetBytes:500000000 UsedBytes:463594010 IOReserveBytes:48401920 ResidentBytes:450881011 InputReservedBytes:33554432 InputUsedBytes:46095 WireBytes:0 WireCount:0 NativeCount:2 NativeCountLimit:1024 Count:15 CountLimit:32768 Starting:0 Settled:13 Waiting:1 Terminal:0 Borrowed:1 Known:true BudgetRejections:1}
+    review81_core_borrow_progress_test.go:57: healthy short Native cannot use the promised protected IO reserve after a large paused Native reply borrowed it
+--- FAIL: TestReview81DesiredShortNativeProgressAfterLargeNativeBorrows (0.00s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/store	0.928s
+FAIL

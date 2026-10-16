@@ -12,8 +12,13 @@ import (
 const nativeCountLimit = 1024
 const defaultNativeIOReserve = 48_000_000 + 2*protocol.NativeChunk + 8192
 const nativeQueuedWindow = 2*execution.ResultOverheadBytes + execution.MinimumWireBytes
-const executionBorrowWindow = 2*protocol.NativeChunk + execution.ResultOverheadBytes
-const executionProgressReserve = executionBorrowWindow + 2*protocol.NativeChunk
+
+// Each short handoff can retain two chunks of response/framing workspace and
+// two publication chunks. It is an actual nonresident-byte bound, not a limit
+// on otherwise resident documents or metadata.
+const executionBorrowWindow = 4*protocol.NativeChunk + execution.ResultOverheadBytes
+const executionBorrowLimit = 2
+const executionProgressReserve = executionBorrowLimit*executionBorrowWindow + 2*protocol.NativeChunk
 
 var errExecutionMemory = execution.ErrExecutionMemory
 
@@ -76,7 +81,7 @@ type executionLease struct {
 }
 
 func NewExecutionMemory() *ExecutionMemory {
-	// Keep one bounded borrowed output and a short Native request's two frame
+	// Keep two bounded borrowed outputs and a short Native request's two frame
 	// copies beside the negotiated response and its publication workspace.
 	memory := &ExecutionMemory{reserve: defaultNativeIOReserve + executionProgressReserve, leases: make(map[*executionLease]struct{}), wakes: make(map[chan struct{}]struct{})}
 	return memory
@@ -354,8 +359,13 @@ func (l *executionLease) resizeResultLocked(result, window int) error {
 	otherResident := m.resident - l.resident
 	limit := m.residentLimitLocked()
 	residentFits := otherResident <= limit && next <= limit-otherResident
-	borrow := !residentFits && next <= executionBorrowWindow && (m.borrowed == 0 || l.state == nativeBorrowed)
-	if next > previous && (m.used > m.budget || next-previous > m.budget-m.used || !residentFits && !borrow) {
+	resident := next
+	if !residentFits {
+		resident = min(l.resident, next)
+	}
+	borrow := next > resident
+	if next > previous && (m.used > m.budget || next-previous > m.budget-m.used) ||
+		borrow && (next-resident > executionBorrowWindow || m.borrowed >= executionBorrowLimit && l.state != nativeBorrowed) {
 		m.rejections++
 		return execution.ErrExecutionMemory
 	}
@@ -364,11 +374,9 @@ func (l *executionLease) resizeResultLocked(result, window int) error {
 		m.borrowed--
 	}
 	l.result, l.window = result, window
-	if residentFits {
-		l.resident = next
-		l.state = nativeSettled
-	} else {
-		l.resident = min(l.resident, next)
+	l.resident = resident
+	l.state = nativeSettled
+	if borrow {
 		l.state = nativeBorrowed
 		m.borrowed++
 	}
@@ -509,7 +517,16 @@ func (l *executionLease) settle(working, eventBytes int) error {
 	window := max(l.window, 2*eventBytes+execution.ResultOverheadBytes)
 	previous := uint64(l.working) + uint64(l.window) + uint64(l.extra)
 	next := uint64(working) + uint64(window)
-	if next > previous && (m.used > m.budget || next-previous > m.budget-m.used) {
+	total := next - nativeQueuedWindow
+	otherResident := m.resident - l.resident
+	limit := m.residentLimitLocked()
+	resident := total
+	if otherResident > limit || total > limit-otherResident {
+		resident = min(l.resident, total)
+	}
+	borrow := total > resident
+	if next > previous && (m.used > m.budget || next-previous > m.budget-m.used) ||
+		borrow && (total-resident > executionBorrowWindow || m.borrowed >= executionBorrowLimit && l.state != nativeBorrowed) {
 		m.rejections++
 		return errExecutionMemory
 	}
@@ -520,19 +537,10 @@ func (l *executionLease) settle(working, eventBytes int) error {
 		m.borrowed--
 	}
 	l.working, l.window, l.extra, l.preparing = working, window, 0, false
-	total := next - nativeQueuedWindow
-	otherResident := m.resident - l.resident
-	limit := m.residentLimitLocked()
-	if otherResident <= limit && total <= limit-otherResident {
-		m.resident = otherResident + total
-		l.resident = total
-		l.state = nativeSettled
-	} else {
-		// The original IO reservation already owns this response. Preserve it while
-		// publishing, rather than killing a fast consumer or pretending it is IO.
-		base := uint64(l.window - nativeQueuedWindow)
-		l.resident = min(l.resident, base)
-		m.resident = otherResident + l.resident
+	l.resident = resident
+	m.resident = otherResident + resident
+	l.state = nativeSettled
+	if borrow {
 		l.state = nativeBorrowed
 		m.borrowed++
 	}
@@ -548,10 +556,20 @@ func (l *executionLease) terminal(eventBytes int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	previous := uint64(l.working) + uint64(l.window) + uint64(l.extra)
-	// The largest encoded emission can remain transport-owned until publication
-	// finishes. Keep its bounded window, while discarding the cleaned reply peak.
-	window := max(l.window, 2*eventBytes+execution.ResultOverheadBytes)
-	if uint64(window) > previous && (m.used > m.budget || uint64(window)-previous > m.budget-m.used) {
+	// Normal publication joins the previous wire owner before the next emission.
+	// Cancellation may retain that wire, but sends no further terminal message.
+	// Keep that actual owner or the new terminal promise, not unused chunks.
+	window := max(nativeQueuedWindow, l.wire+2*execution.ResultOverheadBytes, 2*eventBytes+execution.ResultOverheadBytes)
+	otherResident := m.resident - l.resident
+	total := uint64(window - nativeQueuedWindow)
+	limit := m.residentLimitLocked()
+	resident := total
+	if otherResident > limit || total > limit-otherResident {
+		resident = min(l.resident, total)
+	}
+	borrow := total > resident
+	if uint64(window) > previous && (m.used > m.budget || uint64(window)-previous > m.budget-m.used) ||
+		borrow && (total-resident > executionBorrowWindow || m.borrowed >= executionBorrowLimit && l.state != nativeBorrowed) {
 		m.rejections++
 		return errExecutionMemory
 	}
@@ -562,13 +580,10 @@ func (l *executionLease) terminal(eventBytes int) error {
 		m.borrowed--
 	}
 	l.working, l.extra, l.state, l.preparing = 0, 0, nativeTerminal, false
-	otherResident := m.resident - l.resident
-	total := uint64(l.window - nativeQueuedWindow)
-	limit := m.residentLimitLocked()
-	if otherResident <= limit && total <= limit-otherResident {
-		l.resident = total
-	} else {
-		l.resident = min(l.resident, total)
+	l.resident = resident
+	if borrow {
+		l.state = nativeBorrowed
+		m.borrowed++
 	}
 	m.resident = otherResident + l.resident
 	m.promoteLocked()

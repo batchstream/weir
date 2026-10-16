@@ -121,14 +121,14 @@ func TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage(t 
 			before := memory.Snapshot()
 			const next = 33_553_279 + execution.ResultOverheadBytes
 			const requested = 16_777_664
-			if before.InputUsedBytes != 3296 || before.InputReservedBytes != 32_571_238 || before.ResidentBytes != before.InputReservedBytes {
-				t.Fatal("test no longer reproduces the observed locked Read ownership", before)
+			if before.InputUsedBytes != 3296 || before.InputReservedBytes != (before.BudgetBytes-before.IOReserveBytes)/2 || before.ResidentBytes != before.InputReservedBytes {
+				t.Fatal("test no longer uses the observed Read input and current derived reserve", before)
 			}
 			if err := lease.reserveResult(requested); err != nil {
 				t.Fatal("first result was denied solely by unused input promise", err, before, memory.Snapshot())
 			}
 			after := memory.Snapshot()
-			const revoked = 982_041 + execution.ResultOverheadBytes
+			revoked := before.ResidentBytes + next - (before.BudgetBytes - before.IOReserveBytes)
 			if before.InputReservedBytes-after.InputReservedBytes != revoked || after.InputUsedBytes != before.InputUsedBytes || after.IOReserveBytes != before.IOReserveBytes || after.UsedBytes != before.UsedBytes+next-revoked || after.ResidentBytes != after.BudgetBytes-after.IOReserveBytes || lease.working != working {
 				t.Fatal("first result did not revoke the minimum of both real constraints", before, after)
 			}
@@ -372,7 +372,7 @@ func TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease(t *
 	lease.finishWorking()
 	sample.Unknown, sample.RecoveryAllowanceKnown, sample.RecoveryAllowance = false, true, singleOwnerBudget*3/2
 	memory.ObserveMemory(sample)
-	if snapshot := memory.Snapshot(); snapshot.InputReservedBytes != 32_571_238 || snapshot.UsedBytes != snapshot.InputReservedBytes || snapshot.InputUsedBytes != before.InputUsedBytes {
+	if snapshot := memory.Snapshot(); snapshot.InputReservedBytes != (snapshot.BudgetBytes-snapshot.IOReserveBytes)/2 || snapshot.UsedBytes != snapshot.InputReservedBytes || snapshot.InputUsedBytes != before.InputUsedBytes {
 		t.Fatal("freed backend workspace did not restore the ordinary input promise", snapshot)
 	}
 	sample.RecoveryAllowance = 0
