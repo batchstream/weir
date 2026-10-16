@@ -1,0 +1,17 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/batchstream/weir/internal/store
+cpu: Apple M2
+BenchmarkSelectorDrain/namespaces=1-8         	     576	    311051 ns/op	        32.00 batches/drain	      1024 operations/drain	  175762 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=1-8         	     590	    312726 ns/op	        32.00 batches/drain	      1024 operations/drain	  175762 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=1-8         	     364	    426893 ns/op	        32.00 batches/drain	      1024 operations/drain	  175762 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=8-8         	     433	    396473 ns/op	        32.00 batches/drain	      1024 operations/drain	  175760 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=8-8         	     456	    392397 ns/op	        32.00 batches/drain	      1024 operations/drain	  175761 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=8-8         	     454	    393187 ns/op	        32.00 batches/drain	      1024 operations/drain	  175774 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=64-8        	     184	    952754 ns/op	        64.00 batches/drain	      1024 operations/drain	  181395 B/op	    1345 allocs/op
+BenchmarkSelectorDrain/namespaces=64-8        	     192	    936382 ns/op	        64.00 batches/drain	      1024 operations/drain	  181394 B/op	    1345 allocs/op
+BenchmarkSelectorDrain/namespaces=64-8        	     190	    952740 ns/op	        64.00 batches/drain	      1024 operations/drain	  181393 B/op	    1345 allocs/op
+BenchmarkSelectorDrain/namespaces=1024-8      	      18	   9632095 ns/op	      1024 batches/drain	      1024 operations/drain	  606372 B/op	    9217 allocs/op
+BenchmarkSelectorDrain/namespaces=1024-8      	      18	   9616597 ns/op	      1024 batches/drain	      1024 operations/drain	  606384 B/op	    9217 allocs/op
+BenchmarkSelectorDrain/namespaces=1024-8      	      18	   9648079 ns/op	      1024 batches/drain	      1024 operations/drain	  606384 B/op	    9217 allocs/op
+PASS

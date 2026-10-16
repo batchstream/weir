@@ -39,6 +39,10 @@ type Runtime struct {
 	adapter                                 execution.Adapter
 	limits                                  Limits
 	queue                                   []*Ticket
+	queueHead, queueTail                    *Ticket
+	nextOrder                               uint64
+	candidates                              *batchCandidate
+	selectionCutoff                         *Ticket
 	live                                    map[*Ticket]struct{}
 	batches                                 map[*batch]struct{}
 	keys                                    map[resourceKey]*Ticket
@@ -80,6 +84,11 @@ type Ticket struct {
 	state            uint8
 	abandoned, acked bool
 	stopWatch        func() bool
+	queueIndex       int
+	order            uint64
+	queuePrev        *Ticket
+	queueNext        *Ticket
+	selectionNext    *Ticket
 }
 type resourceKey struct {
 	session  *Session
@@ -176,14 +185,16 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
-	ticket := &Ticket{runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: plan, ready: make(chan struct{}), queuedAt: time.Now()}
-	if session != nil && plan.Command.GetNative() != nil && session.Events == nil {
+	ownedPlan := *plan
+	ownedPlan.Context = ticketContext
+	ticket := &Ticket{runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: &ownedPlan, ready: make(chan struct{}), queuedAt: time.Now()}
+	if session != nil && ownedPlan.Command.GetNative() != nil && session.Events == nil {
 		session.Events = make(chan *Emission, 1)
 	}
-	r.queue = append(r.queue, ticket)
+	r.enqueueLocked(ticket)
 	r.live[ticket] = struct{}{}
-	r.pendingBytes += plan.Bytes
-	r.resultBytes += plan.ResultBytes
+	r.pendingBytes += ownedPlan.Bytes
+	r.resultBytes += ownedPlan.ResultBytes
 	ticket.stopWatch = context.AfterFunc(ticketContext, r.signal)
 	r.signal()
 	return ticket, nil, changed
@@ -193,6 +204,45 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 // batching window. Further waiting work resumes after dispatch releases credit.
 func (r *Runtime) queueCapacityLocked(plan *execution.Plan) bool {
 	return len(r.queue) < r.limits.QueueOperations && (len(r.queue) == 0 || plan.Bytes <= r.limits.QueueBytes-r.pendingBytes)
+}
+
+// The slice bounds membership and supports constant-time removal. The linked
+// order keeps dispatch FIFO when removing a ticket swaps another slice entry.
+func (r *Runtime) enqueueLocked(ticket *Ticket) {
+	ticket.order = r.nextOrder
+	r.nextOrder++
+	ticket.queueIndex = len(r.queue)
+	ticket.queuePrev = r.queueTail
+	if r.queueTail == nil {
+		r.queueHead = ticket
+	} else {
+		r.queueTail.queueNext = ticket
+	}
+	r.queueTail = ticket
+	r.queue = append(r.queue, ticket)
+	r.candidates = nil
+}
+
+func (r *Runtime) dequeueLocked(ticket *Ticket) {
+	if ticket.queuePrev == nil {
+		r.queueHead = ticket.queueNext
+	} else {
+		ticket.queuePrev.queueNext = ticket.queueNext
+	}
+	if ticket.queueNext == nil {
+		r.queueTail = ticket.queuePrev
+	} else {
+		ticket.queueNext.queuePrev = ticket.queuePrev
+	}
+	last := len(r.queue) - 1
+	moved := r.queue[last]
+	r.queue[ticket.queueIndex] = moved
+	moved.queueIndex = ticket.queueIndex
+	r.queue[last] = nil
+	r.queue = r.queue[:last]
+	ticket.queuePrev, ticket.queueNext = nil, nil
+	ticket.selectionNext = nil
+	r.pendingBytes -= ticket.plan.Bytes
 }
 
 func (r *Runtime) retainResultLocked(ticket *Ticket, bytes int) {
@@ -279,7 +329,6 @@ func (r *Runtime) releaseLocked(t *Ticket) {
 	r.resultBytes -= t.plan.ResultBytes
 	t.plan = nil
 	t.event = nil
-	r.notifyLocked()
 }
 func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
 	r.terminalLocked(t, event)
@@ -292,17 +341,20 @@ func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
 	key := resourceKey{session: t.session, resource: t.plan.Key}
 	if t.session != nil && t.plan.Command.GetMutate() != nil && r.keys[key] == t {
 		delete(r.keys, key)
+		r.candidates = nil
 	}
 	if t.abandoned || t.session != nil && t.session.closed {
 		r.releaseLocked(t)
 	}
-	r.notifyLocked()
 }
 func (r *Runtime) cancelQueuedLocked() {
-	keep := r.queue[:0]
-	for _, t := range r.queue {
+	changed := false
+	for t := r.queueHead; t != nil; {
+		next := t.queueNext
 		if t.ctx.Err() != nil || t.abandoned || r.closed {
-			r.pendingBytes -= t.plan.Bytes
+			r.dequeueLocked(t)
+			r.candidates = nil
+			changed = true
 			failure := protocol.ContextFailure(t.ctx)
 			if r.closed {
 				failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "shutdown deadline")
@@ -315,14 +367,12 @@ func (r *Runtime) cancelQueuedLocked() {
 			if t.session != nil && t.session.Events != nil && !t.acked {
 				r.startPublisherLocked(t)
 			}
-		} else {
-			keep = append(keep, t)
 		}
+		t = next
 	}
-	for i := len(keep); i < len(r.queue); i++ {
-		r.queue[i] = nil
+	if changed {
+		r.notifyLocked()
 	}
-	r.queue = keep
 }
 func (r *Runtime) loop() {
 	defer close(r.done)
@@ -383,16 +433,143 @@ func (r *Runtime) loop() {
 }
 
 type batchCandidate struct {
-	items     []*Ticket
-	records   map[string]bool
-	bytes     int
-	singleton bool
-	full      bool
+	items                    []*Ticket
+	pendingHead, pendingTail *Ticket
+	singleton                bool
+	full                     bool
+	next                     *batchCandidate
 }
 
 type batchGroup struct {
 	backend string
 	read    bool
+}
+
+// collectLocked builds one selection round. Every eligible group is examined
+// once, then each dispatch removes its tickets directly instead of rescanning
+// and compacting the entire queue. Admission, cancellation and a released
+// session dependency start a fresh round.
+func (r *Runtime) collectLocked(now time.Time) {
+	var seen map[resourceKey]struct{}
+	groups := make(map[batchGroup]*batchCandidate)
+	var tail *batchCandidate
+	r.selectionCutoff = nil
+	ready, slots := 0, len(r.queue)
+	if r.limits.MaxInFlight > 0 {
+		slots = r.limits.MaxInFlight - len(r.batches)
+	}
+	for t := r.queueHead; t != nil; t = t.queueNext {
+		if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
+			key := resourceKey{session: t.session, resource: t.plan.Key}
+			if _, duplicate := seen[key]; duplicate || r.keys[key] != nil {
+				continue
+			}
+			if seen == nil {
+				seen = make(map[resourceKey]struct{})
+			}
+			seen[key] = struct{}{}
+		}
+		singleton := t.plan.Command.GetNative() != nil
+		group := batchGroup{backend: t.plan.BatchKey, read: t.plan.Command.GetRead() != nil}
+		candidate := groups[group]
+		if candidate == nil || singleton {
+			// A busy runtime needs only enough ready groups to fill its free
+			// slots. New admissions can invalidate this round immediately;
+			// avoid allocating candidates they cannot dispatch yet.
+			if ready >= slots {
+				if r.selectionCutoff == nil {
+					r.selectionCutoff = t
+				}
+				continue
+			}
+			candidate = &batchCandidate{singleton: singleton}
+			if tail == nil {
+				r.candidates = candidate
+			} else {
+				tail.next = candidate
+			}
+			tail = candidate
+			if !singleton {
+				groups[group] = candidate
+			}
+			at := t.queuedAt.Add(r.limits.BatchWait)
+			deadline, bounded := t.ctx.Deadline()
+			if singleton || group.read || r.draining || r.limits.BatchOperations == 1 || t.plan.Bytes >= r.limits.BatchBytes || !now.Before(at) || bounded && deadline.Before(at) {
+				ready++
+			}
+		}
+		t.selectionNext = nil
+		if candidate.pendingTail == nil {
+			candidate.pendingHead = t
+		} else {
+			candidate.pendingTail.selectionNext = t
+		}
+		candidate.pendingTail = t
+	}
+	for candidate := r.candidates; candidate != nil; candidate = candidate.next {
+		r.fillCandidateLocked(candidate)
+	}
+}
+
+func (r *Runtime) fillCandidateLocked(candidate *batchCandidate) {
+	candidate.items = nil
+	candidate.full = false
+	var records map[string]struct{}
+	if candidate.pendingHead.plan.Command.GetMutate() != nil {
+		records = make(map[string]struct{})
+	}
+	var previous *Ticket
+	bytes := 0
+	for ticket := candidate.pendingHead; ticket != nil; {
+		if len(candidate.items) >= r.limits.BatchOperations || len(candidate.items) > 0 && bytes >= r.limits.BatchBytes {
+			break
+		}
+		next := ticket.selectionNext
+		if _, duplicate := records[ticket.plan.Key]; duplicate {
+			previous = ticket
+			ticket = next
+			continue
+		}
+		if len(candidate.items) > 0 && ticket.plan.Bytes > r.limits.BatchBytes-bytes {
+			candidate.full = true
+			previous = ticket
+			ticket = next
+			continue
+		}
+		candidate.items = append(candidate.items, ticket)
+		if records != nil {
+			records[ticket.plan.Key] = struct{}{}
+		}
+		bytes += ticket.plan.Bytes
+		if previous == nil {
+			candidate.pendingHead = next
+		} else {
+			previous.selectionNext = next
+		}
+		if next == nil {
+			candidate.pendingTail = previous
+		}
+		ticket.selectionNext = nil
+		ticket = next
+	}
+	candidate.full = candidate.full || len(candidate.items) >= r.limits.BatchOperations || bytes >= r.limits.BatchBytes
+}
+
+func (r *Runtime) reinsertCandidateLocked(candidate *batchCandidate) {
+	r.fillCandidateLocked(candidate)
+	order := candidate.items[0].order
+	var previous *batchCandidate
+	next := r.candidates
+	for next != nil && next.items[0].order < order {
+		previous = next
+		next = next.next
+	}
+	candidate.next = next
+	if previous == nil {
+		r.candidates = candidate
+	} else {
+		previous.next = candidate
+	}
 }
 
 // selectLocked returns the earliest collection deadline when every eligible
@@ -402,95 +579,67 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 	if r.limits.MaxInFlight > 0 && len(r.batches) >= r.limits.MaxInFlight {
 		return nil, next
 	}
-	seen := make(map[resourceKey]bool)
-	groups := make(map[batchGroup]*batchCandidate)
-	var candidates []*batchCandidate
-	oldestReady := false
-	for _, t := range r.queue {
-		if t.state != 0 {
-			continue
-		}
-		key := resourceKey{session: t.session, resource: t.plan.Key}
-		if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
-			if seen[key] || (r.keys[key] != nil && r.keys[key] != t) {
-				continue
-			}
-			seen[key] = true
-		}
-		singleton := t.plan.Command.GetNative() != nil
-		// Separate completion and collection windows for reads and mutations.
-		group := batchGroup{backend: t.plan.BatchKey, read: t.plan.Command.GetRead() != nil}
-		candidate := groups[group]
-		// Once the oldest candidate is ready, later groups cannot win this
-		// dispatch. Still observe their session keys above to preserve ordering.
-		if oldestReady && (singleton || candidate != candidates[0]) {
-			continue
-		}
-		if candidate == nil || singleton {
-			candidate = &batchCandidate{records: make(map[string]bool), singleton: singleton}
-			candidates = append(candidates, candidate)
-			if !singleton {
-				groups[group] = candidate
-			}
-		}
-		previousWrite, duplicate := candidate.records[t.plan.Key]
-		if len(candidate.items) > 0 && (duplicate && (previousWrite || t.plan.Command.GetMutate() != nil)) {
-			continue
-		}
-		if len(candidate.items) >= r.limits.BatchOperations || len(candidate.items) > 0 && t.plan.Bytes > r.limits.BatchBytes-candidate.bytes {
-			candidate.full = true
-			oldestReady = oldestReady || candidate == candidates[0]
-			continue
-		}
-		candidate.items = append(candidate.items, t)
-		candidate.records[t.plan.Key] = t.plan.Command.GetMutate() != nil
-		candidate.bytes += t.plan.Bytes
-		candidate.full = candidate.full || len(candidate.items) >= r.limits.BatchOperations || candidate.bytes >= r.limits.BatchBytes
-		if candidate == candidates[0] {
-			if !oldestReady {
-				at := candidate.items[0].queuedAt.Add(r.limits.BatchWait)
-				oldestReady = r.limits.BatchWait == 0 || candidate.full || singleton || t.plan.Command.GetRead() != nil || r.draining || !now.Before(at)
-				if deadline, bounded := t.ctx.Deadline(); bounded && deadline.Before(at) {
-					oldestReady = true
+	var chosen, previous *batchCandidate
+	if r.limits.BatchOperations == 1 {
+		// A one-record batch is full immediately and cannot combine work.
+		// Select its oldest eligible ticket without building group backlogs.
+		r.candidates = nil
+		r.selectionCutoff = nil
+		for ticket := r.queueHead; ticket != nil; ticket = ticket.queueNext {
+			if ticket.session != nil && ticket.plan.Command.GetMutate() != nil && ticket.plan.Key != "" {
+				key := resourceKey{session: ticket.session, resource: ticket.plan.Key}
+				if r.keys[key] != nil {
+					continue
 				}
 			}
-			if singleton || len(candidate.items) >= r.limits.BatchOperations {
-				break
+			items := []*Ticket{ticket}
+			chosen = &batchCandidate{items: items}
+			break
+		}
+	} else {
+		if r.candidates == nil {
+			r.collectLocked(now)
+		}
+		for candidate := r.candidates; candidate != nil; candidate = candidate.next {
+			if r.selectionCutoff != nil && candidate.items[0].order > r.selectionCutoff.order {
+				// Refilled groups must not overtake an older group omitted by the
+				// free-slot bound. Rebuild with that oldest pending admission.
+				r.candidates = nil
+				return r.selectLocked(now)
 			}
+			at := candidate.items[0].queuedAt.Add(r.limits.BatchWait)
+			if r.limits.BatchWait == 0 || candidate.full || candidate.singleton || r.draining || candidate.items[0].plan.Command.GetRead() != nil {
+				at = now
+			}
+			for _, ticket := range candidate.items {
+				if deadline, bounded := ticket.ctx.Deadline(); bounded && deadline.Before(at) {
+					at = now
+				}
+			}
+			if now.Before(at) {
+				if next.IsZero() || at.Before(next) {
+					next = at
+				}
+				previous = candidate
+				continue
+			}
+			chosen = candidate
+			break
 		}
 	}
-	var items []*Ticket
-	for _, candidate := range candidates {
-		at := candidate.items[0].queuedAt.Add(r.limits.BatchWait)
-		if r.limits.BatchWait == 0 || candidate.full || candidate.singleton || r.draining {
-			at = now
+	if chosen == nil {
+		if r.selectionCutoff != nil {
+			// Cached collecting groups can remain after every ready group was
+			// dispatched. Examine omitted groups before sleeping: they may
+			// contain reads or another batch that is already ready. A freshly
+			// bounded round always contains at least one ready candidate.
+			r.candidates = nil
+			return r.selectLocked(now)
 		}
-		for _, ticket := range candidate.items {
-			if ticket.plan.Command.GetRead() != nil {
-				at = now
-				break
-			}
-			if deadline, bounded := ticket.ctx.Deadline(); bounded && deadline.Before(at) {
-				at = now
-			}
-		}
-		if now.Before(at) {
-			if next.IsZero() || at.Before(next) {
-				next = at
-			}
-			continue
-		}
-		items = candidate.items
-		break
-	}
-	if len(items) == 0 {
 		return nil, next
 	}
+	items := chosen.items
 	seed := items[0]
-	selected := make(map[*Ticket]bool, len(items))
-	for _, ticket := range items {
-		selected[ticket] = true
-	}
 	workingBytes := 0
 	var latest time.Time
 	allBounded := true
@@ -519,24 +668,23 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 		ctx, cancel = context.WithCancel(context.Background())
 	}
 	b := &batch{ctx: ctx, items: items, cancel: cancel, workingBytes: workingBytes}
-	keep := r.queue[:0]
-	for _, t := range r.queue {
-		if selected[t] {
-			r.pendingBytes -= t.plan.Bytes
-			r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(t.queuedAt).Seconds())
-			t.state = 1
-			if t.session != nil && t.plan.Command.GetMutate() != nil && t.plan.Key != "" {
-				key := resourceKey{session: t.session, resource: t.plan.Key}
-				r.keys[key] = t
-			}
-		} else {
-			keep = append(keep, t)
+	if previous == nil {
+		r.candidates = chosen.next
+	} else {
+		previous.next = chosen.next
+	}
+	for _, ticket := range items {
+		r.dequeueLocked(ticket)
+		r.metrics.queue.WithLabelValues("execution").Observe(now.Sub(ticket.queuedAt).Seconds())
+		ticket.state = 1
+		if ticket.session != nil && ticket.plan.Command.GetMutate() != nil && ticket.plan.Key != "" {
+			key := resourceKey{session: ticket.session, resource: ticket.plan.Key}
+			r.keys[key] = ticket
 		}
 	}
-	for i := len(keep); i < len(r.queue); i++ {
-		r.queue[i] = nil
+	if chosen.pendingHead != nil {
+		r.reinsertCandidateLocked(chosen)
 	}
-	r.queue = keep
 	r.workingBytes += workingBytes
 	r.batches[b] = struct{}{}
 	r.notifyLocked()
@@ -588,10 +736,8 @@ func (r *Runtime) execute(b *batch) {
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
 	for i, t := range b.items {
-		plan := *t.plan
-		plan.Context = t.ctx
-		plans[i] = &plan
-		positions[&plan] = t
+		plans[i] = t.plan
+		positions[t.plan] = t
 	}
 	emit := func(plan *execution.Plan, event *pb.Event) error {
 		ticket := positions[plan]

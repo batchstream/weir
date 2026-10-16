@@ -1,0 +1,205 @@
+{
+  "abba": {
+    "a": "baseline",
+    "b": "iteration6 (archived timing-drift control; final VII comparison uses newly recaptured adjacent baseline/candidate full matrix)",
+    "backend_overlap": false,
+    "cases_per_file": 3,
+    "order": [
+      "abba-a1.txt",
+      "abba-b1.txt",
+      "abba-b2.txt",
+      "abba-a2.txt"
+    ],
+    "samples_per_case_per_file": 1
+  },
+  "accepted_comparison": {
+    "backend_overlap": false,
+    "runtime": [
+      "paired-baseline-runtime.txt",
+      "final-runtime.txt"
+    ],
+    "runtime_cases": 21,
+    "samples_per_case": 3,
+    "selector": [
+      "paired-baseline-selector.txt",
+      "final-selector.txt"
+    ],
+    "selector_cases": 4
+  },
+  "backend_http": {
+    "baseline_type": "modeled prior per-index seven-record grouping without dedup, using current adapter code",
+    "candidate_type": "coalesced current adapter",
+    "command": "go test ./internal/backend/search -run '^$' -bench '^BenchmarkMgetCoalescing$' -benchtime=1s -count=3 -benchmem",
+    "duration_per_measurement": "1s",
+    "fixture": "actual loopback HTTP with 1 KiB documents; no database",
+    "raw": "final-backend-http.txt",
+    "samples_per_policy": 3,
+    "scenarios": 5,
+    "unit": "one input batch (1, 32 or 128 records)"
+  },
+  "baseline": {
+    "commit": "30ac2d10e8ec85a94512036abada5041b39ea606",
+    "runtime_sha256": "02814d0187bd3de8be7ffe3e725e2d7ce2dab45b7653b3a3c6c54c8f2e558837",
+    "test_binary_sha256": "2870e9e0a53e6ef68f643c57e3bb0b768ddb3849d6b79e584bcb6c7e7b3b1f8f"
+  },
+  "candidate": {
+    "iteration": 7,
+    "runtime_sha256": "4332d31167075f213521a557ac217595520d8aca19ede51a53f7c8ba417bb300",
+    "test_binary_sha256": "99bf26e34469b1121bcebb2ccd173f829071ad1ad5692c94a0609aa1d1a5cd76"
+  },
+  "commands": {
+    "abba": "/tmp/weir-batching.test -test.run '^$' -test.bench '^BenchmarkRuntimeFragmented/(read|unbatched)/callers=(1|256)$' -test.benchtime=200ms -test.count=1 -test.benchmem",
+    "compile": "go test -c ./internal/store -o /tmp/weir-batching.test",
+    "runtime": "/tmp/weir-batching.test -test.run '^$' -test.bench '^BenchmarkRuntimeFragmented$' -test.benchtime=250ms -test.count=3 -test.benchmem",
+    "selector": "/tmp/weir-batching.test -test.run '^$' -test.bench '^BenchmarkSelectorDrain$' -test.benchtime=150ms -test.count=3 -test.benchmem"
+  },
+  "date": "2026-10-16",
+  "exclusions": {
+    "baseline-runtime.txt": "Earlier timing period; final throughput comparison uses paired-baseline-runtime.txt.",
+    "iteration1-runtime.txt": "Rejected dynamic namespace allocation regression.",
+    "iteration1-selector-with-mongo-interference.txt": "Possible overlap with real MongoDB measurement; not used in final comparisons.",
+    "iteration2-interrupted-runtime.txt": "Intentionally interrupted to hand host back to real-database tests.",
+    "iteration4-runtime.txt": "Rejected batch-size-one and hot-write allocated-byte regression.",
+    "iteration5-memory.txt": "Rejected hot-write allocated-byte regression."
+  },
+  "host": {
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "go": "go1.27.1",
+    "logical_cpus": 8,
+    "memory_bytes": 25769803776,
+    "os": "darwin"
+  },
+  "plan_ownership_control": {
+    "allocation_counts_unchanged": [
+      27,
+      12,
+      27
+    ],
+    "baseline": "iteration7-control-vi.txt",
+    "candidate": "iteration7-control-vii.txt",
+    "cases": 3,
+    "comparison": "iteration7-control-comparison.json",
+    "original_baseline_failure": "baseline-plan-regression.txt",
+    "samples_per_case": 3
+  },
+  "previous_candidate": {
+    "archive_directory": "iteration6",
+    "iteration": 6,
+    "reason_superseded": "Final review reproduced original shared-plan reservation accounting failure and race; VII moves the existing Plan copy to admission for per-ticket ownership."
+  },
+  "raw_files": {
+    "abba-a1.txt": {
+      "bytes": 854,
+      "sha256": "3cacb1dfdecc8091875139e179d752271d9ceab8834ea0b9620145be216e6fd8"
+    },
+    "abba-a2.txt": {
+      "bytes": 854,
+      "sha256": "3cf49f1f5e7feb43752a30cc4645b334e01b927e464350f2923528f6e8fee1ec"
+    },
+    "abba-b1.txt": {
+      "bytes": 854,
+      "sha256": "a675d789a58086797286626fbecf58bf1c91c1ea10c5c776a23202209a5ea130"
+    },
+    "abba-b2.txt": {
+      "bytes": 854,
+      "sha256": "d6fb388018a562614325c29e8bcf9ee05c8c792273420b202cd43ce78485bcd9"
+    },
+    "baseline-plan-regression.txt": {
+      "bytes": 107516,
+      "sha256": "2c1b9bed20461b9f3ff39dc86c999d34a49d25070b2838ad5dc2b19637064821"
+    },
+    "baseline-runtime.go.txt": {
+      "bytes": 21020,
+      "sha256": "02814d0187bd3de8be7ffe3e725e2d7ce2dab45b7653b3a3c6c54c8f2e558837"
+    },
+    "baseline-runtime.txt": {
+      "bytes": 16430,
+      "sha256": "86c2ab63407571dac9d5d252e6e4533bda3742e67f1598cdf7b7102fd81642e3"
+    },
+    "baseline-selector.txt": {
+      "bytes": 2084,
+      "sha256": "7192448a1d0069d6a72d6a597451e5bd4e205ff0a7f28a822b8678a74c1cc359"
+    },
+    "candidate-runtime.go.txt": {
+      "bytes": 25425,
+      "sha256": "4332d31167075f213521a557ac217595520d8aca19ede51a53f7c8ba417bb300"
+    },
+    "final-backend-http.txt": {
+      "bytes": 4870,
+      "sha256": "e28af40a844a038662a39d5d987ae15c11f082fed94255b11f41ae5bf0c5ff2f"
+    },
+    "final-backend-integration-race.txt": {
+      "bytes": 13345,
+      "sha256": "1402c8916d8b7fcfdea912b813349fc60ec0d514325ecbf5179c7dd0b5273e3e"
+    },
+    "final-race.txt": {
+      "bytes": 1397,
+      "sha256": "eb35c430eb0fb2026f2ce7ce245568952414b0dcc4e4d9b883e185fa19c21d69"
+    },
+    "final-runtime.txt": {
+      "bytes": 16438,
+      "sha256": "47700e1352a66b9eccc8e851784116a49c9b1313d8121fa824718cc0298fd90f"
+    },
+    "final-selector.txt": {
+      "bytes": 2029,
+      "sha256": "88f1843a595d0e95805f638c70757d6ead251a206082ea2bfb5920673775a99d"
+    },
+    "final-server-integration.txt": {
+      "bytes": 9784,
+      "sha256": "18c080de9b560e182efd88fcc2a374a6add721a059904ea025fca8089a59216d"
+    },
+    "iteration1-runtime.txt": {
+      "bytes": 16438,
+      "sha256": "fef2334330797c9b21787d9b27f211992e7a77067ce7fee6bb92da0806e27b4b"
+    },
+    "iteration1-selector-with-mongo-interference.txt": {
+      "bytes": 2029,
+      "sha256": "0cdc80738dbe15d9ce8b49d3f49f58a98c0dd3c2b03f20043e504403f9e5391c"
+    },
+    "iteration1-selector.txt": {
+      "bytes": 2029,
+      "sha256": "48b1ec242d4b5fda4984b945610fa34b690dfddfa54014920f47d348282df9e6"
+    },
+    "iteration2-interrupted-runtime.txt": {
+      "bytes": 7525,
+      "sha256": "e9c2ab1fcd685b6aa3d50e9493c1dcd916c03e2aaab2e8a16ab9b7fb8593dc7f"
+    },
+    "iteration2-selector.txt": {
+      "bytes": 2029,
+      "sha256": "99f7b4ae417f54161c4cd07304622bf0bb3e6b6f8faac278064f4defa8e7e7a7"
+    },
+    "iteration4-runtime.txt": {
+      "bytes": 16438,
+      "sha256": "6e94a28a86721a226e4b81c69c65f00f834762b651f7c3f109b3e09339ea293e"
+    },
+    "iteration4-selector.txt": {
+      "bytes": 2029,
+      "sha256": "1ce14aaf39ba567708abb0d1544270706b309772327767b4aa628d06275fb553"
+    },
+    "iteration5-memory.txt": {
+      "bytes": 2509,
+      "sha256": "f15a80020966aaf972afbe3c5e3fa54e6545053c8ad50f21a57bde927e6f1303"
+    },
+    "iteration6-memory.txt": {
+      "bytes": 2509,
+      "sha256": "9c9f4862b6d82de7e1123da9babaf3d399892211db781de02fdec7185ff8060d"
+    },
+    "iteration7-control-vi.txt": {
+      "bytes": 2374,
+      "sha256": "7199b76c8838d6fb3ad296c3fa435f9885a02e9019f5052062ea96e8be7e1108"
+    },
+    "iteration7-control-vii.txt": {
+      "bytes": 2374,
+      "sha256": "59fdb2c04fe49773af0a395974a49d134e3f1a3bacbc7a20b979dd498629edf9"
+    },
+    "paired-baseline-runtime.txt": {
+      "bytes": 16432,
+      "sha256": "77ef8f86e575cf5dae3f074e7becdd9f0f2c81f9d18d4f5c996452ac03db74ea"
+    },
+    "paired-baseline-selector.txt": {
+      "bytes": 2029,
+      "sha256": "2c95d80b77d0d1d77c1b910fe7f1e31fc54c2afb1dedd7e526b3a7942b94ca2a"
+    }
+  }
+}

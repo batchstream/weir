@@ -30,27 +30,32 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 				_, _ = io.WriteString(w, strings.ReplaceAll(testIndexReply, "records", index))
 				return
 			}
-			if parts[1] == "_mget" {
-				reads.Add(1)
-				var body struct{ IDs []string }
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Error(err)
-					return
-				}
-				value, sequence := 10, 1
-				if index == "right" {
-					value, sequence = 20, 2
-				}
-				fmt.Fprint(w, `{"docs":[`)
-				for i, id := range body.IDs {
-					if i != 0 {
-						fmt.Fprint(w, ",")
-					}
-					fmt.Fprintf(w, `{"_index":%q,"_id":%q,"found":true,"_seq_no":%d,"_primary_term":1,"_source":{"n":%d}}`, index, id, sequence, value)
-				}
-				fmt.Fprint(w, "]}")
+		}
+		if r.URL.Path == "/_mget" {
+			reads.Add(1)
+			var body struct {
+				Docs []struct {
+					Index string `json:"_index"`
+					ID    string `json:"_id"`
+				} `json:"docs"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
 				return
 			}
+			fmt.Fprint(w, `{"docs":[`)
+			for i, doc := range body.Docs {
+				if i != 0 {
+					fmt.Fprint(w, ",")
+				}
+				value, sequence := 10, 1
+				if doc.Index == "right" {
+					value, sequence = 20, 2
+				}
+				fmt.Fprintf(w, `{"_index":%q,"_id":%q,"found":true,"_seq_no":%d,"_primary_term":1,"_source":{"n":%d}}`, doc.Index, doc.ID, sequence, value)
+			}
+			fmt.Fprint(w, "]}")
+			return
 		}
 		if r.URL.Path != "/_bulk" {
 			t.Error("unexpected endpoint", r.URL.Path)
@@ -126,7 +131,7 @@ func TestSearchMixedRequestTargets(t *testing.T) {
 		works[i].ID = uint64(i)
 	}
 	results := a.executeRecords(context.Background(), works)
-	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 2 || writes.Load() != 1 {
+	if len(results) != len(works) || inspections.Load() != 2 || reads.Load() != 1 || writes.Load() != 1 {
 		t.Fatal("mixed index request framing", len(results), inspections.Load(), reads.Load(), writes.Load())
 	}
 	for i, result := range results {
@@ -240,9 +245,6 @@ func TestSearchCrossIndexRepliesAreNotTrusted(t *testing.T) {
 				}
 			}
 			wantCalls := int32(1)
-			if action == "read" {
-				wantCalls = 2
-			}
 			if calls.Load() != wantCalls {
 				t.Fatal("ambiguous response triggered replay", calls.Load())
 			}

@@ -1,0 +1,57 @@
+=== RUN   TestRouteSearchCollectionAcrossSkewedIndexesAndDocumentSizes
+    batching_scenarios_integration_test.go:151: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    batching_scenarios_integration_test.go:198: 8 indexes, 80% hot-index traffic, 1/256 KiB source documents: 100 acknowledged increments; 11 multi-record bulks, 10 isolated large bodies
+2026/10/16 19:05:56 INFO backend_connections_closed backend=search store=records owned=0 peak=4 acquired=4 released=4
+--- PASS: TestRouteSearchCollectionAcrossSkewedIndexesAndDocumentSizes (1.06s)
+=== RUN   TestRouteSearchBoundedCollectionPreservesHotKeyIncrements
+    batching_scenarios_integration_test.go:202: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    batching_scenarios_integration_test.go:238: 10% shared-key increments, 4 execution slots and 20ms collection: 8/8 shared mutations applied; persisted counter and version match exactly
+2026/10/16 19:05:56 INFO backend_connections_closed backend=search store=records owned=0 peak=4 acquired=4 released=4
+--- PASS: TestRouteSearchBoundedCollectionPreservesHotKeyIncrements (0.25s)
+=== RUN   TestRouteMongoLuaRPCsShareTransactionWithoutDocumentMetadata
+    lua_batch_integration_test.go:298: 16 concurrent single-record RPCs: transactional native grouping; canceled/rejected/failed/keep items isolated; exactly the original document fields persisted
+2026/10/16 19:05:56 INFO backend_connections_closed backend=mongo store=records owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3
+--- PASS: TestRouteMongoLuaRPCsShareTransactionWithoutDocumentMetadata (0.27s)
+=== RUN   TestRouteSearchLuaRPCsShareOCCBatchWithoutDocumentMetadata
+    lua_batch_integration_test.go:354: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    lua_batch_integration_test.go:389: 14 concurrent single-record RPCs: native _mget/_bulk grouping; canceled/rejected/failed/keep items isolated; exactly the original source fields persisted
+2026/10/16 19:05:57 INFO backend_connections_closed backend=search store=records owned=0 peak=2 acquired=2 released=2
+--- PASS: TestRouteSearchLuaRPCsShareOCCBatchWithoutDocumentMetadata (0.13s)
+=== RUN   TestRouteMongoLuaSameURIRPCsPreserveAppliedIncrements
+    lua_batch_integration_test.go:441: 16 concurrent same-URI Lua RPCs: persisted increments match APPLIED outcomes; document fields unchanged
+2026/10/16 19:05:57 INFO backend_connections_closed backend=mongo store=records owned=0 peak=13 dialing=0 closing=0 acquired=13 released=13
+--- PASS: TestRouteMongoLuaSameURIRPCsPreserveAppliedIncrements (0.26s)
+=== RUN   TestRouteSearchLuaSameURIRPCsPreserveAppliedIncrements
+    lua_batch_integration_test.go:448: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    lua_batch_integration_test.go:477: 16 concurrent same-URI Lua RPCs: native versions and persisted increments match APPLIED outcomes; source fields unchanged
+2026/10/16 19:05:57 INFO backend_connections_closed backend=search store=records owned=0 peak=18 acquired=18 released=18
+--- PASS: TestRouteSearchLuaSameURIRPCsPreserveAppliedIncrements (0.18s)
+=== RUN   TestValueProofMongoReadPaths
+    value_proof_integration_test.go:275: round=1 path=direct request_records=1 concurrency=1 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=47.656458ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=weir request_records=1 concurrency=1 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=123.532292ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=direct request_records=1 concurrency=32 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=26.346542ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=weir request_records=1 concurrency=32 records=512 backend_calls=188 mean_records_per_call=2.723 elapsed=41.891958ms find_batch_histogram=map[1:99 2:34 3:21 4:6 5:5 6:5 7:3 8:2 9:3 11:4 12:2 13:1 14:1 19:1 25:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=direct request_records=1 concurrency=128 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=32.260625ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=weir request_records=1 concurrency=128 records=512 backend_calls=127 mean_records_per_call=4.031 elapsed=23.9315ms find_batch_histogram=map[1:76 2:12 3:12 4:9 5:3 6:5 7:2 8:3 9:2 52:1 85:1 102:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=direct request_records=32 concurrency=1 records=512 backend_calls=16 mean_records_per_call=32.000 elapsed=3.736209ms find_batch_histogram=map[32:16] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=1 path=weir request_records=32 concurrency=1 records=512 backend_calls=78 mean_records_per_call=6.564 elapsed=17.116792ms find_batch_histogram=map[1:15 2:11 3:8 4:4 5:6 6:3 7:2 8:3 9:4 10:3 11:4 12:4 13:1 14:3 16:1 17:2 21:3 23:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=weir request_records=32 concurrency=1 records=512 backend_calls=82 mean_records_per_call=6.244 elapsed=21.388958ms find_batch_histogram=map[1:19 2:14 3:5 4:6 5:6 6:1 7:4 8:2 9:2 10:2 11:6 12:4 13:2 14:2 17:3 18:1 20:1 21:1 30:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=direct request_records=32 concurrency=1 records=512 backend_calls=16 mean_records_per_call=32.000 elapsed=3.331625ms find_batch_histogram=map[32:16] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=weir request_records=1 concurrency=128 records=512 backend_calls=142 mean_records_per_call=3.606 elapsed=21.097167ms find_batch_histogram=map[1:87 2:14 3:5 4:8 5:3 6:3 7:4 8:3 9:1 10:1 11:1 12:1 13:2 15:2 17:2 22:2 24:1 25:1 40:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=direct request_records=1 concurrency=128 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=25.037042ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=weir request_records=1 concurrency=32 records=512 backend_calls=218 mean_records_per_call=2.349 elapsed=32.85025ms find_batch_histogram=map[1:137 2:27 3:15 4:18 5:5 6:1 7:1 8:3 9:1 10:2 11:2 12:2 13:1 15:1 19:1 20:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=direct request_records=1 concurrency=32 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=16.750083ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=weir request_records=1 concurrency=1 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=106.71725ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=2 path=direct request_records=1 concurrency=1 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=39.201875ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=direct request_records=1 concurrency=1 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=40.577291ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=weir request_records=1 concurrency=1 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=136.71175ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=direct request_records=1 concurrency=32 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=17.068417ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=weir request_records=1 concurrency=32 records=512 backend_calls=237 mean_records_per_call=2.160 elapsed=23.489541ms find_batch_histogram=map[1:153 2:36 3:12 4:11 5:12 6:2 7:4 8:2 11:1 13:1 19:1 22:1 26:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=direct request_records=1 concurrency=128 records=512 backend_calls=512 mean_records_per_call=1.000 elapsed=19.165625ms find_batch_histogram=map[1:512] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=weir request_records=1 concurrency=128 records=512 backend_calls=94 mean_records_per_call=5.447 elapsed=19.987625ms find_batch_histogram=map[1:41 2:16 3:6 4:2 5:8 6:1 7:3 8:2 9:3 10:1 12:1 13:1 14:1 15:1 17:1 18:2 25:1 30:1 51:1 80:1] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=direct request_records=32 concurrency=1 records=512 backend_calls=16 mean_records_per_call=32.000 elapsed=3.467834ms find_batch_histogram=map[32:16] all_BSON_results_verified=true
+    value_proof_integration_test.go:275: round=3 path=weir request_records=32 concurrency=1 records=512 backend_calls=62 mean_records_per_call=8.258 elapsed=16.804792ms find_batch_histogram=map[1:12 2:1 3:7 4:7 5:4 6:3 7:2 8:3 9:3 10:2 11:3 12:2 13:1 15:1 17:1 18:2 20:2 21:1 22:1 23:1 26:1 28:2] all_BSON_results_verified=true
+2026/10/16 19:05:58 INFO backend_connections_closed backend=mongo store=records owned=0 peak=17 dialing=0 closing=0 acquired=17 released=17
+--- PASS: TestValueProofMongoReadPaths (1.28s)
+PASS
+ok  	github.com/batchstream/weir/internal/server	4.311s

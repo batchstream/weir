@@ -1,0 +1,89 @@
+{
+  "BenchmarkRuntimeFragmented/read/callers=1": {
+    "after": {
+      "B/op": 2064.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 240.8,
+      "ns/op": 240881.0,
+      "operations/s": 4151.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 262.1,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/iteration7-control-vi.txt",
+    "before": {
+      "B/op": 2064.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 241.4,
+      "ns/op": 241491.0,
+      "operations/s": 4141.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 524.3,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/iteration7-control-vii.txt",
+    "speedup": 1.0025323707556844
+  },
+  "BenchmarkRuntimeFragmented/read/callers=256": {
+    "after": {
+      "B/op": 1126.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.066,
+      "mean-us": 3785.0,
+      "ns/op": 15342.0,
+      "operations/s": 65182.0,
+      "ops/call": 15.15,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/iteration7-control-vi.txt",
+    "before": {
+      "B/op": 1128.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.0663,
+      "mean-us": 3811.0,
+      "ns/op": 15481.0,
+      "operations/s": 64597.0,
+      "ops/call": 15.08,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/iteration7-control-vii.txt",
+    "speedup": 1.0090600964672143
+  },
+  "BenchmarkRuntimeFragmented/unbatched/callers=256": {
+    "after": {
+      "B/op": 2165.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 49518.0,
+      "ns/op": 232387.0,
+      "operations/s": 4303.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/iteration7-control-vi.txt",
+    "before": {
+      "B/op": 2154.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 49327.0,
+      "ns/op": 231535.0,
+      "operations/s": 4319.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/iteration7-control-vii.txt",
+    "speedup": 0.9963337019712807
+  }
+}

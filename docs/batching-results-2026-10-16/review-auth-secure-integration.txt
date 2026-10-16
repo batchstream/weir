@@ -1,0 +1,19 @@
+Command:
+WEIR_MONGO_SECURE_INTEGRATION=1 go test -race -tags integration ./internal/backend/mongodb -run '^TestMongoCrossNamespaceAuthorizationIsolationPersistsAllowedWrites$' -count=1 -v
+
+Output:
+=== RUN   TestMongoCrossNamespaceAuthorizationIsolationPersistsAllowedWrites
+    authorization_isolation_integration_test.go:76: real TLS/SCRAM permissions: one rejected cross-namespace command, one allowed namespace batch persisted two records, one denied namespace returned PERMISSION_DENIED, zero denied documents
+2026/10/16 19:42:13 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    secure.go:495: MongoDB fixture log preserved at /Users/liran/Projects/liran/go/weir/.testdata/mongo-secure-70433-1/mongod.log (port 54649 stopped)
+--- PASS: TestMongoCrossNamespaceAuthorizationIsolationPersistsAllowedWrites (2.20s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/mongodb	4.271s
+
+Additional offline validation:
+go test ./internal/backend/mongodb -run 'TestMongoCrossNamespace' -count=1 -v
+PASS
+ok  	github.com/batchstream/weir/internal/backend/mongodb	0.689s
+
+go test -race ./internal/backend/mongodb -count=1
+ok  	github.com/batchstream/weir/internal/backend/mongodb	7.511s

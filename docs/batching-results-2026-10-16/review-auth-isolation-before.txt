@@ -1,0 +1,96 @@
+Reviewed original head: a3a5ac046518b1a7d196e17ca6663078de721e67
+Primary MongoDB pre-execution authorization source: https://github.com/mongodb/mongo/blob/r8.0.0/src/mongo/db/commands/bulk_write.cpp#L1382-L1389
+
+Command (original production batch.go pinned through Go overlay):
+GOPROXY=off go test -overlay /var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-pr74-review-eb5rpzqy/original-overlay.json ./internal/backend/mongodb -run '^TestReviewCrossNamespaceAuthorizationIsolation$' -count=1 -v
+
+=== RUN   TestReviewCrossNamespaceAuthorizationIsolation
+=== RUN   TestReviewCrossNamespaceAuthorizationIsolation/separate
+    authorization_review_test.go:65: bulk calls=2 allowed=outcome:APPLIED forbidden=outcome:NOT_APPLIED  failure:{code:PERMISSION_DENIED  message:"backend permission denied"}
+=== RUN   TestReviewCrossNamespaceAuthorizationIsolation/combined
+    authorization_review_test.go:65: bulk calls=1 allowed=outcome:NOT_APPLIED  failure:{code:PERMISSION_DENIED  message:"backend permission denied"} forbidden=outcome:NOT_APPLIED  failure:{code:PERMISSION_DENIED  message:"backend permission denied"}
+    authorization_review_test.go:67: healthy namespace inherited another namespace authorization failure
+--- FAIL: TestReviewCrossNamespaceAuthorizationIsolation (0.00s)
+    --- PASS: TestReviewCrossNamespaceAuthorizationIsolation/separate (0.00s)
+    --- FAIL: TestReviewCrossNamespaceAuthorizationIsolation/combined (0.00s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/backend/mongodb	0.677s
+FAIL
+
+Exit code: 1
+
+Injected offline test source (outside checkout):
+package mongodb
+
+import (
+    "context"
+    "testing"
+
+    pb "github.com/batchstream/weir-protocol/api/weir/v1"
+    "github.com/batchstream/weir/internal/execution"
+    "go.mongodb.org/mongo-driver/v2/bson"
+    "go.mongodb.org/mongo-driver/v2/event"
+    "go.mongodb.org/mongo-driver/v2/x/mongo/driver/drivertest"
+)
+
+func TestReviewCrossNamespaceAuthorizationIsolation(t *testing.T) {
+    for _, combined := range []bool{false, true} {
+        name := "separate"
+        if combined { name = "combined" }
+        t.Run(name, func(t *testing.T) {
+            var adapter *Adapter
+            calls := 0
+            monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
+                deployment := adapter.deployment.(*drivertest.MockDeployment)
+                if e.CommandName == "listCollections" {
+                    collection := e.Command.Lookup("filter").Document().Lookup("name").StringValue()
+                    deployment.AddResponses(collectionQualificationResponse("db", collection))
+                    return
+                }
+                if e.CommandName == "endSessions" {
+                    response := bson.D{{Key:"ok", Value:1}}
+                    deployment.AddResponses(response)
+                    return
+                }
+                if e.CommandName != "bulkWrite" { t.Fatal("unexpected command", e.CommandName) }
+                calls++
+                namespaces, _ := e.Command.Lookup("nsInfo").Array().Values()
+                for _, ns := range namespaces {
+                    if ns.Document().Lookup("ns").StringValue() == "db.forbidden" {
+                        rejection := bson.D{{Key:"ok", Value:0}, {Key:"code", Value:13}, {Key:"errmsg", Value:"unauthorized"}}
+                        deployment.AddResponses(rejection)
+                        return
+                    }
+                }
+                item := bson.D{{Key:"ok", Value:1}, {Key:"idx", Value:0}, {Key:"n", Value:1}}
+                cursor := bson.D{{Key:"id", Value:int64(0)}, {Key:"ns", Value:"admin.$cmd.bulkWrite"}, {Key:"firstBatch", Value:bson.A{item}}}
+                response := bson.D{{Key:"ok", Value:1}, {Key:"cursor", Value:cursor}, {Key:"nErrors", Value:0}, {Key:"nInserted", Value:0}, {Key:"nDeleted", Value:1}, {Key:"nMatched", Value:0}, {Key:"nModified", Value:0}, {Key:"nUpserted", Value:0}}
+                deployment.AddResponses(response)
+            }}
+            adapter = batchMockAdapter(t, nil, monitor)
+            var works []*execution.Plan
+            for _, collection := range []string{"allowed", "forbidden"} {
+                opts := batchOperationOptions{resource:"db/"+collection+"/s:item", action:"delete"}
+                work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+                if failure != nil { t.Fatal(failure) }
+                works = append(works, work)
+            }
+            var results []*pb.Event
+            if combined {
+                results = adapter.executeRecords(t.Context(), works)
+            } else {
+                for _, work := range works {
+                    group := []*execution.Plan{work}
+                    results = append(results, adapter.executeRecords(t.Context(), group)...)
+                }
+            }
+            t.Logf("bulk calls=%d allowed=%v forbidden=%v", calls, results[0].GetMutationResult(), results[1].GetMutationResult())
+            if results[0].GetMutationResult().GetOutcome() != pb.MutationOutcome_APPLIED {
+                t.Fatal("healthy namespace inherited another namespace authorization failure")
+            }
+            if results[1].GetMutationResult().GetFailure().GetCode() != pb.FailureCode_PERMISSION_DENIED {
+                t.Fatal("forbidden namespace lost permission failure")
+            }
+        })
+    }
+}

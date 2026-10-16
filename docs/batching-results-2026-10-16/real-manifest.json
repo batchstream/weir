@@ -1,0 +1,291 @@
+{
+  "candidate_binary_sha256": "93cfc5a72ccd59c89f4905788c7d6f0ab667768f32e86a901028b88119ea7227",
+  "candidate_source_tree_sha256": "61d1d980dd690ea4a3c3168aa184e847808d03ed323f825771061fe281ecabe5",
+  "runtime_sha256": "4332d31167075f213521a557ac217595520d8aca19ede51a53f7c8ba417bb300",
+  "artifacts": [
+    {
+      "path": "baseline-plan-regression.txt",
+      "bytes": 107516,
+      "sha256": "2c1b9bed20461b9f3ff39dc86c999d34a49d25070b2838ad5dc2b19637064821"
+    },
+    {
+      "path": "baseline-server.receipt.json",
+      "bytes": 46722,
+      "sha256": "1eaa6635792efb1ce623a1ad3b1e6bc404ed411a23395f316f7ba98b4b9c2915"
+    },
+    {
+      "path": "candidate-server.receipt.json",
+      "bytes": 48016,
+      "sha256": "459a4d98e4fbf7873b81f264ee38f16c64df90a99eb97cc4679801f762c9f49d"
+    },
+    {
+      "path": "final-backend-integration-race.txt",
+      "bytes": 13345,
+      "sha256": "1402c8916d8b7fcfdea912b813349fc60ec0d514325ecbf5179c7dd0b5273e3e"
+    },
+    {
+      "path": "final-race.txt",
+      "bytes": 1397,
+      "sha256": "eb35c430eb0fb2026f2ce7ce245568952414b0dcc4e4d9b883e185fa19c21d69"
+    },
+    {
+      "path": "final-server-integration.txt",
+      "bytes": 9784,
+      "sha256": "18c080de9b560e182efd88fcc2a374a6add721a059904ea025fca8089a59216d"
+    },
+    {
+      "path": "iteration6-real-commands.json",
+      "bytes": 4015,
+      "sha256": "a2ac1408bebbe4da0b5d922a196ed6b5e07f85401d2a85b0801571cbbc0ddd4e"
+    },
+    {
+      "path": "iteration6-real-mongo-mixed/mongo.json.gz",
+      "bytes": 183093,
+      "sha256": "25b453fffd48089bd7900a82577380ff8c076aea8badc9099371f61b982f19c0"
+    },
+    {
+      "path": "iteration6-real-mongo-mixed/mongo.md",
+      "bytes": 7108,
+      "sha256": "7e894066cbad5ead14d7ed5e345d71c1a236b515bd799a835152351870c960df"
+    },
+    {
+      "path": "iteration6-real-mongo-read/mongo.json.gz",
+      "bytes": 169471,
+      "sha256": "95ebc06de4e553d8765ccd3dfc44f05712e899bd89c3e54b3973ece08c50fd09"
+    },
+    {
+      "path": "iteration6-real-mongo-read/mongo.md",
+      "bytes": 7068,
+      "sha256": "649baf5a4bed84b7d4213e40d92fffb7940149a48e38c0fb9f8c7c1f4db4a125"
+    },
+    {
+      "path": "iteration6-real-mongo-write/mongo.json.gz",
+      "bytes": 159923,
+      "sha256": "f966c456bbf770a2faa79a009ab15879cf3f9fbb20bf50d3e5fb697c009b0797"
+    },
+    {
+      "path": "iteration6-real-mongo-write/mongo.md",
+      "bytes": 7043,
+      "sha256": "672b82acba9a216c54dfe67b617153d55a170894b02ca5ab3fa801e8f7c778c5"
+    },
+    {
+      "path": "iteration6-real-search-interrupted/interrupted.log",
+      "bytes": 6575,
+      "sha256": "4f497602c4b3982475b770836cb433521770d3a9e19b68fe3ca386d1a605dcbb"
+    },
+    {
+      "path": "iteration6-real-search-interrupted/search.json.gz",
+      "bytes": 132737,
+      "sha256": "cc7d6f4a8c08cf7a5d4e95f8546ec559dd2403b765f10eacc37d68bc325c9eb0"
+    },
+    {
+      "path": "iteration6-real-search-interrupted/search.md",
+      "bytes": 5908,
+      "sha256": "8f2723268bcc741bb5cb21cc4067fe6283ffad90196d613365c56780ff60abc3"
+    },
+    {
+      "path": "iteration6/final-backend-integration-race.txt",
+      "bytes": 13345,
+      "sha256": "60843aea1d2f057d0145efc82d4963f42aa39328f28bd8b776f21420f0926be0"
+    },
+    {
+      "path": "iteration6/final-race.txt",
+      "bytes": 1387,
+      "sha256": "663272d017b73b950ea01c379bf9cb58da1c62ee5ca4929cc5055854f734e8e1"
+    },
+    {
+      "path": "iteration6/final-server-integration.txt",
+      "bytes": 9823,
+      "sha256": "e8535f0d81fedfeaefd8f7df33428c63597f7eb2e5f0d77c80b1207abf97ab31"
+    },
+    {
+      "path": "post-review-build-audit.json",
+      "bytes": 1452,
+      "sha256": "d178302b92cbe0787fb41838369d01e6b8b5f81e56627fe4af78173e2127692c"
+    },
+    {
+      "path": "post-review-server.receipt.json",
+      "bytes": 48369,
+      "sha256": "fd5e0f7d4fddeb49e0ea3f63c26ef792382b9618f4b3c9f65e54d799985e08ac"
+    },
+    {
+      "path": "pr-review.md",
+      "bytes": 2562,
+      "sha256": "d572c049216d2c7ae3b45e7c7cb2298527bde995672ef11125854a3dc4dad5c9"
+    },
+    {
+      "path": "real-experiments.md",
+      "bytes": 13934,
+      "sha256": "5c1f11ef9b9b6af99965a3efe54e02ff262d7d14d5af7a87640e6308d0e45aa3"
+    },
+    {
+      "path": "real-mongo-baseline-mixed/mongo.json.gz",
+      "bytes": 183447,
+      "sha256": "8ac432f70b2ecb3d9005b44a81f2a2816eee0a2460010858a6af3091248acbb7"
+    },
+    {
+      "path": "real-mongo-baseline-mixed/mongo.md",
+      "bytes": 7108,
+      "sha256": "c83fbdb19f0d16bb835a5e9d143be0611ccfdd9692b0f4aa9485618bfed3ab36"
+    },
+    {
+      "path": "real-mongo-baseline-read/mongo.json.gz",
+      "bytes": 170305,
+      "sha256": "b9cbeffa9b0f88aa68df2db74c34018f96844662e0645216d1f49bad07b01065"
+    },
+    {
+      "path": "real-mongo-baseline-read/mongo.md",
+      "bytes": 7063,
+      "sha256": "23d49bb5672799a2b6b88ee699f45b4df3f65d49da6d90a44715f5e0a7c3011c"
+    },
+    {
+      "path": "real-mongo-baseline-write/mongo.json.gz",
+      "bytes": 160384,
+      "sha256": "2690a7b47b901a3d835b570fa301453b5b20107ab95f0c3aa9baeb500e13b3e8"
+    },
+    {
+      "path": "real-mongo-baseline-write/mongo.md",
+      "bytes": 7038,
+      "sha256": "53b0ea972e9dafb4fc1195a4888456349ac852e31691642edc14dcd9e0736c5b"
+    },
+    {
+      "path": "real-mongo-candidate-mixed-wait1ms/mongo.json.gz",
+      "bytes": 182352,
+      "sha256": "b9b2c11b9ba0cd894fe7aecbe70b6ef3c5257d4fe634606054ae2b4a9aeb3fe4"
+    },
+    {
+      "path": "real-mongo-candidate-mixed-wait1ms/mongo.md",
+      "bytes": 7110,
+      "sha256": "a9454a8a039909289ddda1abbff339414d42aee8c6cc4a1f3ee52e81170c3017"
+    },
+    {
+      "path": "real-mongo-candidate-mixed/mongo.json.gz",
+      "bytes": 183177,
+      "sha256": "02eaa06008c85b3bc983b11d215c29d8850fecf3b97ff95d702314bcdf0f4119"
+    },
+    {
+      "path": "real-mongo-candidate-mixed/mongo.md",
+      "bytes": 7108,
+      "sha256": "1b9e3a591ec9d097ffa88b790c30780d5c6177b4429fbf761c16efdb623acf24"
+    },
+    {
+      "path": "real-mongo-candidate-read/mongo.json.gz",
+      "bytes": 169603,
+      "sha256": "d4c3686f6317cf2636397126a84d50381e31b499e471017df02094ebb6f82ae5"
+    },
+    {
+      "path": "real-mongo-candidate-read/mongo.md",
+      "bytes": 7068,
+      "sha256": "8a0381dbfd24f09635054b389c5281cd5cf05c8aa1800cb17757d04822dbcbd2"
+    },
+    {
+      "path": "real-mongo-candidate-write-wait1ms/mongo.json.gz",
+      "bytes": 162404,
+      "sha256": "2740735f83c9f22562200dbe5c91d78577184181bbf49cddbbccba2b3cf1b0e4"
+    },
+    {
+      "path": "real-mongo-candidate-write-wait1ms/mongo.md",
+      "bytes": 7053,
+      "sha256": "44a693fff332935738f4dc0a9be68db9fe2c3d4e0272d0c495a53e04fea8d40e"
+    },
+    {
+      "path": "real-mongo-candidate-write/mongo.json.gz",
+      "bytes": 159951,
+      "sha256": "2e8022da383a8905aabbda95c2fc38686db23e5735b36ae5c9c9fcfd2912d872"
+    },
+    {
+      "path": "real-mongo-candidate-write/mongo.md",
+      "bytes": 7037,
+      "sha256": "9788427444b1ad8313bd7a25f77b128cbd635d60da1920d35ede2c54651dfbba"
+    },
+    {
+      "path": "real-raw-manifest.json",
+      "bytes": 4483,
+      "sha256": "a215b6cf8e02973d3008440296bed9a93c894fb5fbad267277e5dc4ae1a21be6"
+    },
+    {
+      "path": "real-search-baseline-read/search.json.gz",
+      "bytes": 254854,
+      "sha256": "725b84df4fbac7efbf9a8c7f4628a9385319dea9fc28e4fbc68a3b9802f6e251"
+    },
+    {
+      "path": "real-search-baseline-read/search.md",
+      "bytes": 7061,
+      "sha256": "7fb143ebff45ceede2726eb836081066912d1a9bb194cea4b853f2697818f97e"
+    },
+    {
+      "path": "real-search-candidate-read/search.json.gz",
+      "bytes": 254189,
+      "sha256": "2cd35f7a95a5a8595b489d6eb3d5a41db1ed283b052d99b0d3f36d025001be50"
+    },
+    {
+      "path": "real-search-candidate-read/search.md",
+      "bytes": 7061,
+      "sha256": "b9f5100389a12d986b083ab162000df0cfabb3502aade68ed52d73bfac50d16a"
+    },
+    {
+      "path": "real-search-candidate-write/search.json.gz",
+      "bytes": 249589,
+      "sha256": "5aa5ff8447970a25ef3b7f34346a126fc4680dd24cafe2330e3353168dc68517"
+    },
+    {
+      "path": "real-search-candidate-write/search.md",
+      "bytes": 7036,
+      "sha256": "c29b8d137faf1aaddb483bac3d3cad5434a7d07809dd4d4512aff4af3c1a4314"
+    },
+    {
+      "path": "real-summary.json",
+      "bytes": 35355,
+      "sha256": "f95a3cdc3b576218d5a302747ae92a20fc7f1fbf238be018cc1efd314d4fbf9c"
+    },
+    {
+      "path": "real-summary.md",
+      "bytes": 1449,
+      "sha256": "13417ff96321c0d13dd256a730adc1dea672c12c046ed11a9a12d2fc08d8e752"
+    },
+    {
+      "path": "restored-protocol-tests.txt",
+      "bytes": 260,
+      "sha256": "c73401d1291ae1dc6e39e151ca968c296c0ff19b662d699f449841989c2433c6"
+    },
+    {
+      "path": "review-auth-isolation-after.txt",
+      "bytes": 5345,
+      "sha256": "47c8e73096c47d8852e067947bff1c752d8bc352df5bd1054573610a69ccd0ee"
+    },
+    {
+      "path": "review-auth-isolation-before.txt",
+      "bytes": 5401,
+      "sha256": "6769f0fb08583579923545078b92365b597390eba3d939f6af02adfbb087ed5b"
+    },
+    {
+      "path": "review-auth-secure-integration.txt",
+      "bytes": 1251,
+      "sha256": "6bd7eea98cc2b0ee3a625bfc773e4eb55ce747f2984bb7680ed18a3df219f6bc"
+    },
+    {
+      "path": "review-focused-tests.txt",
+      "bytes": 538,
+      "sha256": "e56ec58908a29e0de94ab6143c74b0041bb66c08ad28ccdd945faf4aeea27675"
+    },
+    {
+      "path": "validation.json",
+      "bytes": 3681,
+      "sha256": "0a39aa35841b0dc3f3b20d19936e211d2ad2d5731bd8b79c718b45271c5262b5"
+    },
+    {
+      "path": "workspace-format-audit.json",
+      "bytes": 732,
+      "sha256": "adfda067e91e473e2f8c307c5a6c7b854b0b1dc9e63c29a1ec14bd531b7f74e7"
+    },
+    {
+      "path": "workspace-server.receipt.json",
+      "bytes": 48015,
+      "sha256": "9d23cccb2e0371df4bfd530a0b5637a23ca109b4306be445c05b5f4c87f09169"
+    }
+  ],
+  "workspace_source_tree_sha256": "a3af054602885d0b754a2f62c8eeb93112b192d38e3cbf92d24b67c217802c1e",
+  "post_review_binary_sha256": "6c6ffd5bc964783280984eabd5235f713405a974e8de8a841f1da070ffd6a122",
+  "post_review_source_tree_sha256": "497983752811dfc2e9bd690aa6e7ee63ce98b3e790e3d0f0a38e6dac465f8e67",
+  "workspace_checkpoint_note": "workspace_source_tree_sha256 identifies the earlier formatting checkpoint, before the separately recorded PR review correction."
+}

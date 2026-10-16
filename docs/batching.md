@@ -3,9 +3,11 @@
 Weir aggregates independent single-record callers at each Store. Useful batching
 requires compatible arrivals, a bounded collection delay and appropriate execution
 concurrency. Increasing only `max_operations` cannot create arrivals that do not
-exist. Reads and mutations form separate compatibility groups. Each Search index
-and visibility mode further restricts compatibility;
-dependent business phases and shared-key writes further limit aggregation.
+exist. Reads and mutations form separate compatibility groups. Ordinary MongoDB
+mutations can share one native `bulkWrite` across collections and databases;
+MongoDB reads and Lua transactions retain their collection boundary. Search
+records can batch across concrete indexes, with visibility modes kept separate.
+Dependent business phases and shared-key writes further limit aggregation.
 
 ## Flush and admission boundaries
 
@@ -20,6 +22,12 @@ dependent business phases and shared-key writes further limit aggregation.
   arrivals. They do not join mutation batches or flush write collection. Both
   kinds share the Store queue and execution budget, so reads can still wait for
   an occupied execution slot.
+- Search pure reads deduplicate concrete `(index, id)` pairs and aggregate using
+  actual HTTP response bytes. Multi-record responses exceeding
+  `backend.max_exchange_bytes` are discarded and safely split into smaller read
+  requests. A single large document may exceed that target; final result memory
+  remains soft-accounted. Lua and mutation pre-reads retain their conservative
+  source window and do not use this retry mechanism.
 - Full batches, drain, Native and shorter caller deadlines bypass collection.
 - A positive `batching.max_in_flight` bounds simultaneous adapter invocations.
   Excess work stays in the bounded queue, where it can combine or be canceled.
@@ -34,6 +42,8 @@ process is introduced.
 
 The measurements below predate read/mutation batch separation. They do not
 establish its database load or throughput effect.
+Current implementation measurements and rejected candidates are recorded in the
+[2026-10-16 batching study](batching-performance-2026-10-16.md).
 
 These values come from the initial preregistered selection among 20
 count/wait/concurrency configurations and a four-point byte anchor in the
@@ -78,6 +88,25 @@ refresh. More slots can increase small concurrent requests and memory consumptio
 Choose the limit with the real completion mode and document sizes.
 
 ## Calibrate count, bytes, wait and concurrency separately
+
+The [current local experiments](batching-results-2026-10-16/real-experiments.md)
+include this explicit MongoDB small-write profile:
+
+```yaml
+batching:
+  max_operations: 128
+  max_bytes: 4MiB
+  max_in_flight: 16
+  max_wait: 1ms
+```
+
+With four client processes and 32 concurrent one-record writers, this profile
+completes about 3,686 operations/s versus 3,632 native, at about 74% less
+estimated database CPU per completed operation. At 256 writers it increases
+throughput by about 9% relative to the default 20 ms collection window, but
+increases database CPU per completed operation by about 51%, with more native
+commands per record. These are finite 1 KiB local MongoDB observations; the
+profile is not a replacement for workload calibration or a universal default.
 
 Use native single-record clients and the same single-record traffic through Weir.
 Keep durability, query visibility, retry budgets and deadlines equal. Start with a

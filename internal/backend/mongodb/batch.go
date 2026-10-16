@@ -90,12 +90,18 @@ func (a *Adapter) executeRecordChunk(ctx context.Context, plans []*execution.Pla
 			}
 		}
 	}
+	var writes []*execution.Plan
+	var writePositions []int
 	for _, group := range groups {
-		if group.qualified && len(group.writes) != 0 {
-			replies := a.executeWrites(ctx, group.writes)
-			for i, reply := range replies {
-				results[group.writePositions[i]] = reply
-			}
+		if group.qualified {
+			writes = append(writes, group.writes...)
+			writePositions = append(writePositions, group.writePositions...)
+		}
+	}
+	if len(writes) != 0 {
+		replies := a.executeWrites(ctx, writes)
+		for i, reply := range replies {
+			results[writePositions[i]] = reply
 		}
 	}
 	if len(programs) != 0 {
@@ -300,7 +306,8 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
-	target := plans[0].Backend.(*plan).target
+	namespaces := make(bson.A, 0)
+	namespaceIndexes := make(map[namespace]int32)
 	for i, p := range plans {
 		if result := unstarted(ctx, p); result != nil {
 			results[i] = result
@@ -308,21 +315,28 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		}
 
 		n := p.Backend.(*plan)
+		namespaceIndex, exists := namespaceIndexes[n.target]
+		if !exists {
+			namespaceIndex = int32(len(namespaces))
+			namespaceIndexes[n.target] = namespaceIndex
+			info := bson.D{{Key: "ns", Value: n.target.String()}}
+			namespaces = append(namespaces, info)
+		}
 		filter := bson.D{{Key: "_id", Value: n.id}}
 		var op bson.D
 		switch n.action {
 		case "create":
-			op = bson.D{{Key: "insert", Value: int32(0)}, {Key: "document", Value: n.document}}
+			op = bson.D{{Key: "insert", Value: namespaceIndex}, {Key: "document", Value: n.document}}
 		case "put", "replace", "expression":
 			op = bson.D{
-				{Key: "update", Value: int32(0)},
+				{Key: "update", Value: namespaceIndex},
 				{Key: "filter", Value: filter},
 				{Key: "updateMods", Value: n.document},
 				{Key: "multi", Value: false},
 				{Key: "upsert", Value: n.action == "put"},
 			}
 		case "delete":
-			op = bson.D{{Key: "delete", Value: int32(0)}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
+			op = bson.D{{Key: "delete", Value: namespaceIndex}, {Key: "filter", Value: filter}, {Key: "multi", Value: false}}
 		default:
 			results[i] = execution.FailedEvent(p.Command, pb.MutationOutcome_NOT_STARTED, protocol.Fail(pb.FailureCode_INTERNAL, "unsupported prepared operation"))
 			continue
@@ -335,13 +349,12 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		return results
 	}
 
-	namespaceInfo := bson.D{{Key: "ns", Value: target.String()}}
 	concern := bson.D{{Key: "w", Value: "majority"}}
 	cursorOpts := bson.D{{Key: "batchSize", Value: int32(len(active))}}
 	var command any = bson.D{
 		{Key: "bulkWrite", Value: int32(1)},
 		{Key: "ops", Value: ops},
-		{Key: "nsInfo", Value: bson.A{namespaceInfo}},
+		{Key: "nsInfo", Value: namespaces},
 		{Key: "ordered", Value: false},
 		{Key: "errorsOnly", Value: false},
 		{Key: "cursor", Value: cursorOpts},
@@ -383,6 +396,27 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 		}
 	}
 	valid := state.reply(raw, true)
+	if valid && state.authorizationRejected && len(namespaces) > 1 {
+		// Authorization checks every namespace before bulkWrite executes any
+		// operation. Only this definite initial rejection permits isolation.
+		groups := make([][]*execution.Plan, len(namespaces))
+		groupPositions := make([][]int, len(namespaces))
+		for i, p := range active {
+			index := namespaceIndexes[p.Backend.(*plan).target]
+			groups[index] = append(groups[index], p)
+			groupPositions[index] = append(groupPositions[index], positions[i])
+		}
+		for i, group := range groups {
+			if len(group) == 0 {
+				continue
+			}
+			replies := a.executeWrites(ctx, group)
+			for j, reply := range replies {
+				results[groupPositions[i][j]] = reply
+			}
+		}
+		return results
+	}
 	for page := 1; valid && state.cursor.cursor != 0 && page < len(active); page++ {
 		command = bson.D{
 			{Key: "getMore", Value: state.cursor.cursor},
@@ -413,14 +447,15 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 }
 
 type writeBatch struct {
-	plans           []*execution.Plan
-	results         []*pb.MutationResult
-	cursor          recordCursor
-	received        int
-	concern         bool
-	counts          [6]int64
-	observed        [6]int64
-	uncertainCounts bool
+	plans                 []*execution.Plan
+	results               []*pb.MutationResult
+	cursor                recordCursor
+	received              int
+	concern               bool
+	counts                [6]int64
+	observed              [6]int64
+	uncertainCounts       bool
+	authorizationRejected bool
 }
 
 func (a *Adapter) closeRecordCursor(state *recordCursor) {
@@ -454,6 +489,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 		if fields["writeConcernError"].Type != 0 {
 			return true
 		}
+		b.authorizationRejected = writeAuthorizationRejection(fields)
 		for i := range b.results {
 			unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write command rejected without definite evidence"))
 			b.results[i] = writeRejection(fields["code"], unknown)
@@ -536,6 +572,33 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 	}
 	if b.cursor.cursor != 0 && b.received == len(b.plans) {
 		return false
+	}
+	return true
+}
+
+func writeAuthorizationRejection(fields map[string]bson.RawValue) bool {
+	code, valid := writeCount(fields["code"])
+	if !valid || code != 13 {
+		return false
+	}
+	for key, value := range fields {
+		switch key {
+		case "ok", "code", "operationTime", "$clusterTime":
+		case "errmsg":
+			if _, valid := value.StringValueOK(); !valid {
+				return false
+			}
+		case "codeName":
+			if name, valid := value.StringValueOK(); !valid || name != "Unauthorized" {
+				return false
+			}
+		case "nErrors", "nInserted", "nDeleted", "nMatched", "nModified", "nUpserted":
+			if count, valid := writeCount(value); !valid || count != 0 {
+				return false
+			}
+		default:
+			return false
+		}
 	}
 	return true
 }

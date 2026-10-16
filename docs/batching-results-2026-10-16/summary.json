@@ -1,0 +1,695 @@
+{
+  "BenchmarkRuntimeFragmented/cost/callers=256/fixed=0s": {
+    "after": {
+      "B/op": 1151.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.0744,
+      "mean-us": 724.8,
+      "ns/op": 2877.0,
+      "operations/s": 347552.0,
+      "ops/call": 13.44,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 2097.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1488.0,
+      "allocs/op": 15.0,
+      "calls/op": 0.07394,
+      "mean-us": 785.1,
+      "ns/op": 3134.0,
+      "operations/s": 319099.0,
+      "ops/call": 13.52,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 2097.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.089329162321863
+  },
+  "BenchmarkRuntimeFragmented/cost/callers=256/fixed=2ms": {
+    "after": {
+      "B/op": 1154.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.0661,
+      "mean-us": 36320.0,
+      "ns/op": 152765.0,
+      "operations/s": 6546.0,
+      "ops/call": 15.13,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1441.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06693,
+      "mean-us": 37265.0,
+      "ns/op": 155733.0,
+      "operations/s": 6421.0,
+      "ops/call": 14.94,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.0194285340228455
+  },
+  "BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=0": {
+    "after": {
+      "B/op": 1120.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.06562,
+      "mean-us": 3846.0,
+      "ns/op": 15185.0,
+      "operations/s": 65855.0,
+      "ops/call": 15.24,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1340.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06531,
+      "mean-us": 3824.0,
+      "ns/op": 15168.0,
+      "operations/s": 65930.0,
+      "ops/call": 15.31,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9988804741521238
+  },
+  "BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=1": {
+    "after": {
+      "B/op": 2112.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 54376.0,
+      "ns/op": 236405.0,
+      "operations/s": 4230.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2546.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 53488.0,
+      "ns/op": 235178.0,
+      "operations/s": 4252.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.994809754446818
+  },
+  "BenchmarkRuntimeFragmented/mixed/callers=1": {
+    "after": {
+      "B/op": 2056.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 290.0,
+      "ns/op": 290148.0,
+      "operations/s": 3447.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2544.0,
+      "allocs/op": 33.0,
+      "calls/op": 1.0,
+      "mean-us": 289.1,
+      "ns/op": 289309.0,
+      "operations/s": 3457.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9971083722789749
+  },
+  "BenchmarkRuntimeFragmented/mixed/callers=256": {
+    "after": {
+      "B/op": 1125.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.06741,
+      "mean-us": 3908.0,
+      "ns/op": 15626.0,
+      "operations/s": 63994.0,
+      "ops/call": 14.83,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1409.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06664,
+      "mean-us": 3891.0,
+      "ns/op": 15474.0,
+      "operations/s": 64624.0,
+      "ops/call": 15.01,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9902726225521566
+  },
+  "BenchmarkRuntimeFragmented/mixed/callers=32": {
+    "after": {
+      "B/op": 1579.0,
+      "allocs/op": 20.0,
+      "calls/op": 0.5301,
+      "mean-us": 3917.0,
+      "ns/op": 123386.0,
+      "operations/s": 8105.0,
+      "ops/call": 1.886,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1916.0,
+      "allocs/op": 23.0,
+      "calls/op": 0.5192,
+      "mean-us": 3855.0,
+      "ns/op": 122086.0,
+      "operations/s": 8191.0,
+      "ops/call": 1.926,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9894639586338807
+  },
+  "BenchmarkRuntimeFragmented/namespace/callers=256/ns=256": {
+    "after": {
+      "B/op": 2118.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 54263.0,
+      "ns/op": 236854.0,
+      "operations/s": 4222.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2551.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 54374.0,
+      "ns/op": 238152.0,
+      "operations/s": 4199.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.005480169218168
+  },
+  "BenchmarkRuntimeFragmented/namespace/callers=256/ns=64": {
+    "after": {
+      "B/op": 1409.0,
+      "allocs/op": 17.0,
+      "calls/op": 0.3486,
+      "mean-us": 19390.0,
+      "ns/op": 81502.0,
+      "operations/s": 12270.0,
+      "ops/call": 2.868,
+      "p50-upper-us": 33554.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1681.0,
+      "allocs/op": 20.0,
+      "calls/op": 0.3454,
+      "mean-us": 19598.0,
+      "ns/op": 82559.0,
+      "operations/s": 12113.0,
+      "ops/call": 2.895,
+      "p50-upper-us": 33554.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.0129690068955364
+  },
+  "BenchmarkRuntimeFragmented/namespace/callers=256/ns=8": {
+    "after": {
+      "B/op": 1129.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.07859,
+      "mean-us": 4604.0,
+      "ns/op": 18181.0,
+      "operations/s": 55001.0,
+      "ops/call": 12.72,
+      "p50-upper-us": 8389.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1408.0,
+      "allocs/op": 15.0,
+      "calls/op": 0.07828,
+      "mean-us": 4637.0,
+      "ns/op": 18517.0,
+      "operations/s": 54006.0,
+      "ops/call": 12.78,
+      "p50-upper-us": 8389.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.0184808316374236
+  },
+  "BenchmarkRuntimeFragmented/payload/callers=256/bytes=64": {
+    "after": {
+      "B/op": 1125.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.06752,
+      "mean-us": 3934.0,
+      "ns/op": 15711.0,
+      "operations/s": 63648.0,
+      "ops/call": 14.81,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1411.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06712,
+      "mean-us": 3905.0,
+      "ns/op": 15578.0,
+      "operations/s": 64193.0,
+      "ops/call": 14.9,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9915345935968429
+  },
+  "BenchmarkRuntimeFragmented/payload/callers=256/bytes=65536": {
+    "after": {
+      "B/op": 1124.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.06752,
+      "mean-us": 3940.0,
+      "ns/op": 15734.0,
+      "operations/s": 63558.0,
+      "ops/call": 14.81,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1408.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06694,
+      "mean-us": 3893.0,
+      "ns/op": 15489.0,
+      "operations/s": 64563.0,
+      "ops/call": 14.94,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9844286259056819
+  },
+  "BenchmarkRuntimeFragmented/read/callers=1": {
+    "after": {
+      "B/op": 2062.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 251.0,
+      "ns/op": 251110.0,
+      "operations/s": 3982.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 524.3,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2485.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 240.9,
+      "ns/op": 240988.0,
+      "operations/s": 4150.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 524.3,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9596909720839473
+  },
+  "BenchmarkRuntimeFragmented/read/callers=256": {
+    "after": {
+      "B/op": 1121.0,
+      "allocs/op": 12.0,
+      "calls/op": 0.06621,
+      "mean-us": 3866.0,
+      "ns/op": 15362.0,
+      "operations/s": 65096.0,
+      "ops/call": 15.1,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1408.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06529,
+      "mean-us": 3820.0,
+      "ns/op": 15150.0,
+      "operations/s": 66007.0,
+      "ops/call": 15.32,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9861997135789611
+  },
+  "BenchmarkRuntimeFragmented/read/callers=32": {
+    "after": {
+      "B/op": 1571.0,
+      "allocs/op": 19.0,
+      "calls/op": 0.5259,
+      "mean-us": 3977.0,
+      "ns/op": 124812.0,
+      "operations/s": 8012.0,
+      "ops/call": 1.901,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1859.0,
+      "allocs/op": 23.0,
+      "calls/op": 0.5094,
+      "mean-us": 3831.0,
+      "ns/op": 120369.0,
+      "operations/s": 8308.0,
+      "ops/call": 1.963,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9644024613017979
+  },
+  "BenchmarkRuntimeFragmented/unbatched/callers=256": {
+    "after": {
+      "B/op": 2125.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 52874.0,
+      "ns/op": 235843.0,
+      "operations/s": 4240.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2543.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 52794.0,
+      "ns/op": 236684.0,
+      "operations/s": 4225.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.003565931573123
+  },
+  "BenchmarkRuntimeFragmented/window/callers=32/wait=0s": {
+    "after": {
+      "B/op": 1573.0,
+      "allocs/op": 19.0,
+      "calls/op": 0.5298,
+      "mean-us": 4004.0,
+      "ns/op": 126289.0,
+      "operations/s": 7918.0,
+      "ops/call": 1.888,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 1863.0,
+      "allocs/op": 23.0,
+      "calls/op": 0.5159,
+      "mean-us": 3857.0,
+      "ns/op": 121641.0,
+      "operations/s": 8221.0,
+      "ops/call": 1.938,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9631955277181702
+  },
+  "BenchmarkRuntimeFragmented/window/callers=32/wait=20ms": {
+    "after": {
+      "B/op": 2102.0,
+      "allocs/op": 24.0,
+      "calls/op": 0.6178,
+      "mean-us": 5111.0,
+      "ns/op": 223232.0,
+      "operations/s": 4480.0,
+      "ops/call": 1.619,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 3831.0,
+      "allocs/op": 38.0,
+      "calls/op": 0.6104,
+      "mean-us": 5091.0,
+      "ns/op": 210529.0,
+      "operations/s": 4750.0,
+      "ops/call": 1.638,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9430950759747706
+  },
+  "BenchmarkRuntimeFragmented/write/callers=1": {
+    "after": {
+      "B/op": 2083.0,
+      "allocs/op": 27.0,
+      "calls/op": 1.0,
+      "mean-us": 531.8,
+      "ns/op": 531882.0,
+      "operations/s": 1880.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 3150.0,
+      "allocs/op": 42.0,
+      "calls/op": 1.0,
+      "mean-us": 540.0,
+      "ns/op": 540127.0,
+      "operations/s": 1851.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.015501558616385
+  },
+  "BenchmarkRuntimeFragmented/write/callers=256": {
+    "after": {
+      "B/op": 1771.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.01215,
+      "mean-us": 928.6,
+      "ns/op": 3713.0,
+      "operations/s": 269296.0,
+      "ops/call": 82.3,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 2097.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2185.0,
+      "allocs/op": 18.0,
+      "calls/op": 0.01401,
+      "mean-us": 1084.0,
+      "ns/op": 4345.0,
+      "operations/s": 230133.0,
+      "ops/call": 71.39,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 1.1702127659574468
+  },
+  "BenchmarkRuntimeFragmented/write/callers=32": {
+    "after": {
+      "B/op": 1559.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.03338,
+      "mean-us": 540.2,
+      "ns/op": 17007.0,
+      "operations/s": 58799.0,
+      "ops/call": 29.95,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-runtime.txt",
+    "before": {
+      "B/op": 2283.0,
+      "allocs/op": 20.0,
+      "calls/op": 0.03682,
+      "mean-us": 535.8,
+      "ns/op": 16957.0,
+      "operations/s": 58972.0,
+      "ops/call": 27.16,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-runtime.txt",
+    "speedup": 0.9970600341036044
+  },
+  "BenchmarkSelectorDrain/namespaces=1": {
+    "after": {
+      "B/op": 127698.0,
+      "allocs/op": 546.0,
+      "batches/drain": 32.0,
+      "ns/op": 176107.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 175762.0,
+      "allocs/op": 769.0,
+      "batches/drain": 32.0,
+      "ns/op": 310558.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 1.7634619861788572
+  },
+  "BenchmarkSelectorDrain/namespaces=1024": {
+    "after": {
+      "B/op": 467606.0,
+      "allocs/op": 6465.0,
+      "batches/drain": 1024.0,
+      "ns/op": 922111.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 606378.0,
+      "allocs/op": 9217.0,
+      "batches/drain": 1024.0,
+      "ns/op": 9634808.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 10.448642300113544
+  },
+  "BenchmarkSelectorDrain/namespaces=64": {
+    "after": {
+      "B/op": 133298.0,
+      "allocs/op": 981.0,
+      "batches/drain": 64.0,
+      "ns/op": 214589.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 181394.0,
+      "allocs/op": 1345.0,
+      "batches/drain": 64.0,
+      "ns/op": 940490.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 4.382750280769285
+  },
+  "BenchmarkSelectorDrain/namespaces=8": {
+    "after": {
+      "B/op": 128146.0,
+      "allocs/op": 553.0,
+      "batches/drain": 32.0,
+      "ns/op": 181236.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 175762.0,
+      "allocs/op": 769.0,
+      "batches/drain": 32.0,
+      "ns/op": 396664.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 2.1886600896069215
+  }
+}

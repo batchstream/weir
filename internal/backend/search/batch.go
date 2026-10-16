@@ -18,32 +18,49 @@ type observedRecord struct {
 	failure *pb.Failure
 }
 
-type recordGroup struct {
-	index     string
-	works     []*execution.Plan
-	positions []int
+type readIdentity struct {
+	index string
+	id    string
 }
 
-// mget groups the bounded batch by concrete index. Identical IDs in different
-// indexes remain separate records, with results restored to caller positions.
+// A real-time observation can serve every caller of the same concrete record.
+// Keep index in the identity so equal IDs in different indexes stay separate.
 func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedRecord {
-	byIndex := make(map[string]*recordGroup)
-	groups := make([]*recordGroup, 0)
-	for i, work := range works {
-		index := work.Backend.(*plan).index
-		group := byIndex[index]
-		if group == nil {
-			group = &recordGroup{index: index}
-			byIndex[index] = group
-			groups = append(groups, group)
-		}
-		group.works = append(group.works, work)
-		group.positions = append(group.positions, i)
-	}
 	observed := make([]observedRecord, len(works))
-	for _, group := range groups {
-		for i, record := range a.mgetIndex(ctx, group.index, group.works) {
-			observed[group.positions[i]] = record
+	unique := make([]*execution.Plan, 0, len(works))
+	positions := make([]int, len(works))
+	identities := make(map[readIdentity]int, len(works))
+	for i, work := range works {
+		caller := ctx
+		if work.Context != nil && work.Context.Err() != nil {
+			caller = work.Context
+		}
+		if caller.Err() != nil {
+			observed[i].failure = protocol.ContextFailure(caller)
+			continue
+		}
+		native := work.Backend.(*plan)
+		identity := readIdentity{index: native.index, id: native.id}
+		position, exists := identities[identity]
+		if !exists {
+			position = len(unique)
+			identities[identity] = position
+			unique = append(unique, work)
+		}
+		positions[i] = position
+	}
+	if len(unique) == 0 {
+		return observed
+	}
+	replies := a.mgetUnique(ctx, unique)
+	for i, position := range positions {
+		if works[i].Context != nil && works[i].Context.Err() != nil {
+			observed[i].reply = nil
+			observed[i].failure = protocol.ContextFailure(works[i].Context)
+			continue
+		}
+		if observed[i].failure == nil {
+			observed[i] = replies[position]
 		}
 	}
 	return observed
@@ -52,14 +69,27 @@ func (a *Adapter) mget(ctx context.Context, works []*execution.Plan) []observedR
 // Each real-time pre-read verifies the entire positional ID and index
 // correspondence before publishing a document. Every response is validated in
 // full before its documents become observations.
-func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*execution.Plan) []observedRecord {
+func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []observedRecord {
 	observed := make([]observedRecord, len(works))
+	readOnly := true
+	for _, work := range works {
+		readOnly = readOnly && work.Backend.(*plan).action == "read"
+	}
 	for start := 0; start < len(works); {
 		end := start
 		bound := getFramingLimit
+		if readOnly {
+			bound = 16
+		}
 		for end < len(works) {
-			item := a.options().BatchBytes + len(works[end].Backend.(*plan).id) + getFramingLimit
-			if end > start && bound+item > a.options().ExchangeBytes {
+			native := works[end].Backend.(*plan)
+			item := a.options().BatchBytes + len(native.index) + len(native.id) + getFramingLimit
+			if readOnly {
+				// JSON can escape each byte to six bytes. Pure reads use the real
+				// response byte window instead of assuming every source is 4 MiB.
+				item = 6*(len(native.index)+len(native.id)) + 64
+			}
+			if end > start && item > a.options().ExchangeBytes-bound {
 				break
 			}
 			bound += item
@@ -70,13 +100,8 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		ids := make([]string, 0, end-start)
 		for i := start; i < end; i++ {
 			work := works[i]
-			caller := ctx
-			if work.Context != nil && work.Context.Err() != nil {
-				caller = work.Context
-			}
-			if caller.Err() != nil {
-				observation := observedRecord{failure: protocol.ContextFailure(caller)}
-				observed[i] = observation
+			if ctx.Err() != nil {
+				observed[i].failure = protocol.ContextFailure(ctx)
 				continue
 			}
 			group = append(group, work)
@@ -87,12 +112,47 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		if len(group) == 0 {
 			continue
 		}
+		index := group[0].Backend.(*plan).index
+		for _, work := range group[1:] {
+			if work.Backend.(*plan).index != index {
+				index = ""
+				break
+			}
+		}
 		body := map[string]any{"ids": ids}
+		path := "/" + url.PathEscape(index) + "/_mget?realtime=true"
+		if index == "" {
+			type recordReference struct {
+				Index string `json:"_index"`
+				ID    string `json:"_id"`
+			}
+			docs := make([]recordReference, len(group))
+			for i, work := range group {
+				native := work.Backend.(*plan)
+				docs[i] = recordReference{Index: native.index, ID: native.id}
+			}
+			body = map[string]any{"docs": docs}
+			path = "/_mget?realtime=true"
+		}
 		encoded, _ := json.Marshal(body)
 		call := exchange{
-			path: "/" + url.PathEscape(index) + "/_mget?realtime=true", body: encoded,
+			path: path, body: encoded,
 			contentType: "application/json", operation: "mget", records: len(group)}
+		if readOnly && len(group) > 1 {
+			call.responseLimit = a.options().ExchangeBytes
+		}
 		status, raw, err := a.request(ctx, call)
+		if err == errResponseWindow && status == 200 {
+			// No partial body is retained or published. Reads can safely retry in
+			// smaller groups; a single large source retains its existing contract.
+			middle := len(group) / 2
+			replies := a.mgetUnique(ctx, group[:middle])
+			replies = append(replies, a.mgetUnique(ctx, group[middle:])...)
+			for i, position := range indexes {
+				observed[position] = replies[i]
+			}
+			continue
+		}
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
 		switch {
 		case ctx.Err() != nil:
@@ -117,7 +177,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		}
 		corresponds := true
 		for i, reply := range envelope.Docs {
-			if reply.Index != index || reply.ID != ids[i] {
+			if reply.Index != group[i].Backend.(*plan).index || reply.ID != ids[i] {
 				corresponds = false
 				break
 			}
@@ -292,6 +352,10 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		return nil
 	}
 	works = append([]*execution.Plan(nil), works...)
+	readOnly := true
+	for _, work := range works {
+		readOnly = readOnly && work.Backend.(*plan).action == "read"
+	}
 	batch := recordBatch{
 		adapter:  a,
 		ctx:      ctx,
@@ -364,15 +428,20 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 		// read capacity rather than rejecting individual large sources.
 		for start := 0; start < len(positions); {
 			end, readBytes := start, getFramingLimit
+			identities := make(map[readIdentity]bool)
 			for end < len(positions) {
 				work := works[positions[end]]
 				native := work.Backend.(*plan)
-				if batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
-					bound := a.options().BatchBytes + getFramingLimit
-					if end > start && bound > a.options().ExchangeBytes-readBytes {
-						break
+				if !readOnly && batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
+					identity := readIdentity{index: native.index, id: native.id}
+					if !identities[identity] {
+						bound := a.options().BatchBytes + len(native.index) + len(native.id) + getFramingLimit
+						if end > start && bound > a.options().ExchangeBytes-readBytes {
+							break
+						}
+						readBytes += bound
+						identities[identity] = true
 					}
-					readBytes += bound
 				}
 				end++
 			}

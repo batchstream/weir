@@ -20,16 +20,18 @@ var errResponse = errors.New("invalid or excessive backend response")
 var errTimeout = errors.New("backend call deadline")
 var errCanceled = errors.New("backend call canceled")
 var errWriteNotSent = errors.New("backend write request not sent")
+var errResponseWindow = errors.New("read response exceeds exchange window")
 
 type exchange struct {
-	path        string
-	body        []byte
-	method      string
-	contentType string
-	native      bool
-	mutation    bool
-	operation   string
-	records     int
+	path          string
+	body          []byte
+	method        string
+	contentType   string
+	native        bool
+	mutation      bool
+	operation     string
+	records       int
+	responseLimit int
 }
 
 type requestContextKey struct{}
@@ -123,7 +125,14 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	if response.Header.Get("Content-Encoding") != "" {
 		return response.StatusCode, nil, errResponse
 	}
-	raw, err = io.ReadAll(response.Body)
+	var reader io.Reader = response.Body
+	if call.responseLimit > 0 {
+		reader = io.LimitReader(reader, int64(call.responseLimit)+1)
+	}
+	raw, err = io.ReadAll(reader)
+	if err == nil && call.responseLimit > 0 && len(raw) > call.responseLimit {
+		return response.StatusCode, nil, errResponseWindow
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return response.StatusCode, nil, errTimeout
 	}

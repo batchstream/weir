@@ -108,16 +108,27 @@ with its own caller context and clock; no VM or caller state is reused.
 ## Scheduling and backend work
 
 Each prepared record enters one Store scheduler directly. It forms separate read
-and mutation batches, then combines compatible queued records by backend target,
+and mutation batches, then combines compatible queued records by backend semantics,
 actual input bytes, `batching.max_operations` and `batching.max_bytes`. Reads use
 already queued reads; mutations retain the bounded write collection window. A
 session/resource key serializes same-resource mutations within a stream; distinct
 resources and streams can share a batch of the same kind.
+Ordinary MongoDB mutations share a native bulk across qualified namespaces;
+reads and Lua transactions remain scoped to one collection. Search bulk and
+real-time multi-get requests can span concrete indexes. Duplicate Search reads
+share an observation within a batch, while retaining individual caller results
+and cancellation. Visibility modes remain separate.
 Native uses the same scheduler as a singleton invocation with incremental output.
-There is no scheduler continuation or traversal state.
+The scheduler reuses bounded candidate groups between dispatches; admissions,
+queued cancellation and released session dependencies invalidate that selection
+round. Queue removal preserves FIFO order without compacting the entire queue
+for each dispatched batch. Adapters run their dispatched work to completion.
 
-Every record keeps its owning RPC context, result reservation and ordinal. Backend
-results are assigned by dispatched plan identity, because different RPCs can use
+Every record keeps its owning RPC context, result reservation and ordinal.
+Plan metadata is copied at admission, so reusable prepared plans cannot share
+result-accounting changes or caller contexts. Command and backend payloads retain
+their existing immutable-input boundary.
+Backend results are assigned by dispatched plan identity, because different RPCs can use
 the same ordinal. The shared backend context uses the latest caller deadline;
 an unbounded caller keeps that context unbounded. Canceling one caller does not interrupt
 its peers; when all callers stop waiting, the shared execution is canceled.
