@@ -346,6 +346,7 @@ type scanRPCStallOptions struct {
 	resource     string
 	readResource string
 	filter       *pb.Document
+	observation  *scanRPCObservation
 }
 
 func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions) {
@@ -356,6 +357,14 @@ func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions)
 	defer cancel()
 	request := &pb.ScanRequest{Resource: opts.resource, PageSize: 256}
 	command := scanRPCCommand(request)
+	prepared, failure := node.runtime.PrepareCommand(caller, 1, command)
+	if failure != nil {
+		t.Fatal("Scan reservation preparation failed", failure)
+	}
+	resultReservation := prepared.ResultBytes
+	if failure := opts.adapter.ClosePlan(caller, prepared); failure != nil {
+		t.Fatal("unused Scan reservation plan cleanup failed", failure)
+	}
 	stream, err := testutil.ExecuteEvents(caller, client, "records", command)
 	if err != nil {
 		t.Fatal(err)
@@ -369,8 +378,11 @@ func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions)
 	for {
 		snapshot := node.runtime.Snapshot()
 		if snapshot.Publishers == 1 && snapshot.Active == 0 && snapshot.WorkingBytes == 0 {
-			if snapshot.ResultBytes > execution.ScanResultBytes || snapshot.Retained != 1 {
-				t.Fatal("slow Scan retained more than one bounded output batch", snapshot)
+			if snapshot.ResultBytes != resultReservation || snapshot.Retained != 1 {
+				t.Fatal("slow Scan changed its single-plan reservation", snapshot, resultReservation)
+			}
+			if pages := opts.observation.snapshot(); len(pages) != 1 {
+				t.Fatal("slow Scan fetched another batch before releasing its bounded output", pages)
 			}
 			if stalledSince.IsZero() {
 				stalledSince = time.Now()
@@ -466,7 +478,16 @@ func assertScanRPCStallReleasesExecution(t *testing.T, opts scanRPCStallOptions)
 func TestRouteMongoScanSlowConsumerDoesNotBlockIndependentExecution(t *testing.T) {
 	backend := testmongo.Open(t)
 	seedScanRPCMongo(t, backend, 40, 128<<10)
-	config := mongodb.Config{Store: "records", URI: backend.URI}
+	proxy := testmongo.StartProxy(t, backend)
+	observation := &scanRPCObservation{}
+	monitor := &event.CommandMonitor{}
+	monitor.Started = func(_ context.Context, event *event.CommandStartedEvent) {
+		if event.CommandName == "find" {
+			observation.record(int(event.Command.Lookup("limit").AsInt64()))
+		}
+	}
+	proxy.Monitor = monitor
+	config := mongodb.Config{Store: "records", URI: proxy.URI()}
 	adapter, err := mongodb.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -478,19 +499,21 @@ func TestRouteMongoScanSlowConsumerDoesNotBlockIndependentExecution(t *testing.T
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/bson", Data: raw}
-	opts := scanRPCStallOptions{adapter: adapter, resource: backend.DB + "/records", readResource: backend.DB + "/records/s:record_0000", filter: document}
+	opts := scanRPCStallOptions{adapter: adapter, resource: backend.DB + "/records", readResource: backend.DB + "/records/s:record_0000", filter: document, observation: observation}
 	assertScanRPCStallReleasesExecution(t, opts)
 }
 
 func TestRouteSearchScanSlowConsumerDoesNotBlockIndependentExecution(t *testing.T) {
 	backend := testsearch.Open(t)
 	seedScanRPCSearch(t, backend, 40, 128<<10)
-	config := search.Config{Store: "records", URL: backend.URL}
+	observation := &scanRPCObservation{}
+	proxyURL := scanRPCSearchProxy(t, backend, observation)
+	config := search.Config{Store: "records", URL: proxyURL}
 	adapter, err := search.Open(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	document := &pb.Document{ContentType: "application/json", Data: []byte(`{"term":{"n":0}}`)}
-	opts := scanRPCStallOptions{adapter: adapter, resource: backend.Index, readResource: backend.Index + "/s:record_0000", filter: document}
+	opts := scanRPCStallOptions{adapter: adapter, resource: backend.Index, readResource: backend.Index + "/s:record_0000", filter: document, observation: observation}
 	assertScanRPCStallReleasesExecution(t, opts)
 }

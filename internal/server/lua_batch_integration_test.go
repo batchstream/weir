@@ -110,6 +110,8 @@ func startLuaRPCNode(t *testing.T, adapter execution.Adapter) *routeAcceptanceNo
 	t.Helper()
 	limits := store.DefaultLimits()
 	limits.BatchOperations = 32
+	// Every caller must reach its gated reply before the fixture releases it.
+	limits.MaxInFlight = 0
 
 	ingress := DefaultLimits()
 
