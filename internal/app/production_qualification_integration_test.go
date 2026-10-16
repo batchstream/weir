@@ -140,9 +140,9 @@ func TestProductionProcessQualification(t *testing.T) {
 		t.Fatal("formal qualification requires an exact clean source and SHA256 receipt", version, digest)
 	}
 	t.Logf("qualification=%t duration=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s engine=%s image=%s SHA256=%s version=%s", !smoke, duration, runtime.Version(), runtime.GOOS, runtime.GOARCH, engine, image, digest, strings.TrimSpace(version))
-	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native leases=1024/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
+	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node execution leases=1024/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
 	initial := process.sample(t)
-	native := qualificationNativeMemory(t, initial, process.capacity)
+	native := qualificationExecutionMemory(t, initial, process.capacity)
 	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
 		t.Fatal("CLI automatic memory management was not installed")
 	}
@@ -163,7 +163,7 @@ func TestProductionProcessQualification(t *testing.T) {
 		t.Fatal("real SDK Resolve initialization failed", err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	workload := qualificationWorkload{process: process, client: client, datasets: datasets, duration: duration, nativeRejections: native["budget_rejections_total"]}
+	workload := qualificationWorkload{process: process, client: client, datasets: datasets, duration: duration, executionRejections: native["budget_rejections_total"]}
 	runQualificationWorkload(t, workload)
 	for _, dataset := range datasets {
 		verifyQualificationOracle(t, dataset)
@@ -183,32 +183,32 @@ func qualificationGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name
 	return value
 }
 
-func qualificationNativeMemory(t *testing.T, metrics map[string]*dto.MetricFamily, capacity float64) map[string]float64 {
+func qualificationExecutionMemory(t *testing.T, metrics map[string]*dto.MetricFamily, capacity float64) map[string]float64 {
 	t.Helper()
-	values := make(map[string]float64, 13)
-	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
-		values[name] = qualificationGauge(t, metrics, "weir_native_memory_"+name, nil)
+	values := make(map[string]float64, 17)
+	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
+		values[name] = qualificationGauge(t, metrics, "weir_execution_memory_"+name, nil)
 	}
-	denials := metrics["weir_native_memory_budget_rejections_total"].GetMetric()
+	denials := metrics["weir_execution_memory_budget_rejections_total"].GetMetric()
 	if len(denials) != 1 || denials[0].Counter == nil || len(denials[0].Label) != 0 {
-		t.Fatal("Node Native memory denial counter is missing or labeled")
+		t.Fatal("Node execution memory denial counter is missing or labeled")
 	}
 	values["budget_rejections_total"] = denials[0].GetCounter().GetValue()
 	if value := values["budget_rejections_total"]; math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-		t.Fatal("Node Native memory denial counter is not finite and nonnegative", value)
+		t.Fatal("Node execution memory denial counter is not finite and nonnegative", value)
 	}
 	families := 0
 	for name := range metrics {
-		if strings.HasPrefix(name, "weir_native_memory_") {
+		if strings.HasPrefix(name, "weir_execution_memory_") {
 			families++
 		}
 	}
-	if families != 13 || values["budget_known"] != 1 || values["leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > capacity*.70*2/3 {
-		t.Fatal("default shared Native memory policy is missing or changed", families, values)
+	if families != 17 || values["budget_known"] != 1 || values["leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > capacity*.70*2/3 {
+		t.Fatal("default shared execution memory policy is missing or changed", families, values)
 	}
 	states := values["starting"] + values["settled"] + values["borrowed"] + values["waiting"] + values["terminal"]
-	if values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["leases"] > values["leases_limit"] || states != values["leases"] {
-		t.Fatal("Node Native memory ledger exceeded its bounded ownership", values)
+	if values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["input_used_bytes"] > values["input_reserved_bytes"] || values["input_reserved_bytes"] > values["resident_bytes"] || values["wire_bytes"] > values["used_bytes"] || values["wire_buffers"] > values["leases"] || values["leases"] > values["leases_limit"] || states != values["leases"] {
+		t.Fatal("Node execution memory ledger exceeded its bounded ownership", values)
 	}
 	return values
 }
@@ -273,16 +273,16 @@ func seedQualificationDataset(t *testing.T, dataset *qualificationDataset) {
 }
 
 type qualificationWorkload struct {
-	process          *memoryRecoveryCLI
-	client           *weirclient.Client
-	datasets         []*qualificationDataset
-	duration         time.Duration
-	ctx              context.Context
-	results          chan qualificationResult
-	tokens           chan struct{}
-	pending          *sync.WaitGroup
-	inFlight         *atomic.Int64
-	nativeRejections float64
+	process             *memoryRecoveryCLI
+	client              *weirclient.Client
+	datasets            []*qualificationDataset
+	duration            time.Duration
+	ctx                 context.Context
+	results             chan qualificationResult
+	tokens              chan struct{}
+	pending             *sync.WaitGroup
+	inFlight            *atomic.Int64
+	executionRejections float64
 }
 
 func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
@@ -387,9 +387,9 @@ func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
 			t.Logf("all 32 slow consumers canceled and joined at %s; %s", time.Since(measurement), result.message)
 		case <-ticker.C:
 			metrics := work.process.sample(t)
-			native := qualificationNativeMemory(t, metrics, work.process.capacity)
-			if native["budget_rejections_total"] != work.nativeRejections {
-				t.Fatal("normal workload increased Native memory budget rejections", native)
+			native := qualificationExecutionMemory(t, metrics, work.process.capacity)
+			if native["budget_rejections_total"] != work.executionRejections {
+				t.Fatal("normal workload increased Execution memory budget rejections", native)
 			}
 			for _, dataset := range work.datasets {
 				labels := map[string]string{"store": dataset.store}
@@ -402,7 +402,7 @@ func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
 			}
 			gc := metrics["go_gc_duration_seconds"].GetMetric()[0].GetSummary()
 			t.Logf("trend second=%d inflight=%d RSS=%.0f working=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f pending=%.0f active=%.0f paused=%.0f pause_bytes=%.0f working_bytes=%.0f wire_bytes=%.0f sessions=%.0f latch=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_pending_entries"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_store_paused_native_outputs"), testmetrics.Sum(metrics, "weir_store_paused_native_reserved_bytes"), testmetrics.Sum(metrics, "weir_store_working_reserved_bytes"), testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_latched"))
-			t.Logf("NativeMemory second=%d snapshot=%v", int(time.Since(measurement).Seconds()), native)
+			t.Logf("ExecutionMemory second=%d snapshot=%v", int(time.Since(measurement).Seconds()), native)
 			if !burst && !time.Now().Before(burstAt) {
 				burst = true
 				expected += 256
@@ -426,19 +426,19 @@ func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		metrics := work.process.sample(t)
-		native := qualificationNativeMemory(t, metrics, work.process.capacity)
-		if native["budget_rejections_total"] != work.nativeRejections {
-			t.Fatal("Native memory budget rejections changed during final recovery", native)
+		native := qualificationExecutionMemory(t, metrics, work.process.capacity)
+		if native["budget_rejections_total"] != work.executionRejections {
+			t.Fatal("Execution memory budget rejections changed during final recovery", native)
 		}
 		idle := testmetrics.Sum(metrics, "weir_memory_latched") == 0 && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= work.process.capacity*.70
-		for _, name := range []string{"used_bytes", "leases", "resident_bytes", "starting", "settled", "borrowed", "waiting", "terminal"} {
+		for _, name := range []string{"used_bytes", "leases", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "starting", "settled", "borrowed", "waiting", "terminal"} {
 			idle = idle && native[name] == 0
 		}
 		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
 		if idle {
-			t.Logf("final all queue/execution/publication/session/byte gauges=0; Node NativeMemory ownership=0; known memory recovered; NativeMemory=%v", native)
+			t.Logf("final all queue/execution/publication/session/byte gauges=0; Node ExecutionMemory ownership=0; known memory recovered; ExecutionMemory=%v", native)
 			break
 		}
 		if time.Now().After(deadline) {

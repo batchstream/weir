@@ -1,7 +1,9 @@
 # Complete-process production qualification
 
-Status: exploratory smoke passes; formal sustained and fault qualification is
-pending. The reproduced large Native output boundary must be corrected first.
+Status: the first formal sustained run failed at its 300-second mixed burst.
+PRs 79 and 80 corrected the Native ownership and transient admission boundaries.
+A separate proven typed large-read OOM must be corrected before the original
+600-second sustained and fault qualification gates are run again.
 
 ## Fixed acceptance workload
 
