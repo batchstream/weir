@@ -25,6 +25,7 @@ type luaMemoryCall struct {
 	mutation          *weirclient.MutationResult
 	err               error
 	started, finished time.Time
+	deadline          time.Time
 	returned          bool
 }
 
@@ -136,13 +137,13 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	callContext, stopCall := context.WithDeadline(t.Context(), deadline)
 	done := make(chan luaMemoryCall, 1)
 	go func() {
-		result := luaMemoryCall{started: time.Now()}
+		result := luaMemoryCall{started: started, deadline: deadline}
 		result.mutation, result.err = client.AtomicTransform(callContext, callOptions)
 		result.finished = time.Now()
 		result.returned = true
 		done <- result
 	}()
-	result := luaMemoryCall{started: started, err: fmt.Errorf("caller3s plus bounded1s join exhausted; no acknowledgement")}
+	result := luaMemoryCall{started: started, deadline: deadline, err: fmt.Errorf("caller3s plus bounded1s join exhausted; no acknowledgement")}
 	select {
 	case result = <-done:
 	case <-time.After(time.Until(deadline.Add(time.Second))):
@@ -200,27 +201,29 @@ func luaMemoryControl(t *testing.T, client *weirclient.Client, fixture *testmong
 	program := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n=current.n+1; return current end`)}
 	request := &weirclient.AtomicTransformRequest{Resource: fixture.DB + "/records/s:lua-control", Lua: program}
 	opts := weirclient.AtomicTransformOptions{StoreName: "mongo", Request: request}
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	started := time.Now()
+	deadline := started.Add(3 * time.Second)
+	ctx, cancel := context.WithDeadline(t.Context(), deadline)
 	defer cancel()
 	done := make(chan luaMemoryCall, 1)
 	go func() {
-		result := luaMemoryCall{started: time.Now()}
+		result := luaMemoryCall{started: started, deadline: deadline}
 		result.mutation, result.err = client.AtomicTransform(ctx, opts)
 		result.finished, result.returned = time.Now(), true
 		done <- result
 	}()
-	var call luaMemoryCall
+	call := luaMemoryCall{started: started, deadline: deadline}
 	select {
 	case call = <-done:
-	case <-time.After(4 * time.Second):
+	case <-time.After(time.Until(deadline.Add(time.Second))):
 		t.Error("normal Lua control caller3s plus bounded1s join exhausted")
-		return false
 	}
 	cancel()
 	mutation, err := call.mutation, call.err
-	if err != nil || mutation == nil || mutation.Failure != nil || mutation.Outcome != weirclient.MutationApplied {
-		t.Error("normal business Lua control lacked APPLIED", mutation, err)
-		return false
+	timely := call.returned && !call.finished.IsZero() && !call.finished.After(call.deadline)
+	valid := timely && err == nil && mutation != nil && mutation.Failure == nil && mutation.Outcome == weirclient.MutationApplied
+	if !valid {
+		t.Error("normal business Lua control lacked complete APPLIED within original3s caller deadline", mutation, err, call.returned, call.finished, call.deadline)
 	}
 	filter := bson.D{{Key: "_id", Value: "lua-control"}}
 	ctx, cancel = context.WithTimeout(t.Context(), 3*time.Second)
@@ -233,8 +236,8 @@ func luaMemoryControl(t *testing.T, client *weirclient.Client, fixture *testmong
 		t.Error("normal Lua control differs from independent small-document oracle", err)
 		return false
 	}
-	t.Logf("Lua_normal_control Transform_APPLIED=true ID_n_pad_valid=true bytes=%d SHA256=%x caller3s", len(raw), sha256.Sum256(raw))
-	return true
+	t.Logf("Lua_normal_control Transform_APPLIED=%t ID_n_pad_valid=true bytes=%d SHA256=%x caller3s", valid, len(raw), sha256.Sum256(raw))
+	return valid
 }
 
 func luaMemoryOutcome(t *testing.T, result luaMemoryCall) {
@@ -246,14 +249,15 @@ func luaMemoryOutcome(t *testing.T, result luaMemoryCall) {
 			failure = result.mutation.Failure.Code.String()
 		}
 	}
-	successfulKeep := outcome == "APPLIED" && failure == "" && result.err == nil
-	safeRejection := (outcome == "NOT_STARTED" || outcome == "NOT_APPLIED") && failure == "RESOURCE_EXHAUSTED" && result.err == nil
+	timely := result.returned && !result.finished.IsZero() && !result.deadline.IsZero() && !result.finished.After(result.deadline)
+	successfulKeep := timely && outcome == "APPLIED" && failure == "" && result.err == nil
+	safeRejection := timely && (outcome == "NOT_STARTED" || outcome == "NOT_APPLIED") && failure == "RESOURCE_EXHAUSTED" && result.err == nil
 	elapsed := time.Since(result.started)
 	if result.returned {
 		elapsed = result.finished.Sub(result.started)
 	}
-	t.Logf("Lua_probe_outcome outcome=%s failure=%s RPC=%s error=%v returned=%t started=%s finished=%s elapsed_or_observation_wait=%s confirmed_successful_Keep=%t safe_capacity_rejection=%t timeout_or_UNKNOWN_is_not_Keep=true", outcome, failure, status.Code(result.err), result.err, result.returned, result.started.UTC().Format(time.RFC3339Nano), result.finished.UTC().Format(time.RFC3339Nano), elapsed, successfulKeep, safeRejection)
+	t.Logf("Lua_probe_outcome outcome=%s failure=%s RPC=%s error=%v returned=%t started=%s finished=%s deadline=%s within_original_deadline=%t elapsed_or_observation_wait=%s confirmed_successful_Keep=%t safe_capacity_rejection=%t timeout_or_UNKNOWN_is_not_Keep=true", outcome, failure, status.Code(result.err), result.err, result.returned, result.started.UTC().Format(time.RFC3339Nano), result.finished.UTC().Format(time.RFC3339Nano), result.deadline.UTC().Format(time.RFC3339Nano), timely, elapsed, successfulKeep, safeRejection)
 	if !successfulKeep && !safeRejection {
-		t.Error("Lua allocation probe lacked complete Keep or explicit safe capacity outcome", outcome, failure, result.err)
+		t.Error("Lua allocation probe lacked complete Keep or explicit safe capacity outcome within original3s caller deadline", outcome, failure, result.err, result.returned, result.finished, result.deadline)
 	}
 }

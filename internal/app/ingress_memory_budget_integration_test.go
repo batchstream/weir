@@ -373,25 +373,25 @@ func ingressMemoryHealth(t *testing.T, client *weirclient.Client, dataset *nativ
 	t.Helper()
 	results := make(chan nativeBurstResult, 2)
 	started := time.Now()
+	deadline := started.Add(3 * time.Second)
+	ctx, cancel := context.WithDeadline(t.Context(), deadline)
+	defer cancel()
 	for _, kind := range []int{0, 2} {
 		go func() {
-			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-			defer cancel()
 			job := nativeBurstResult{kind: kind}
-			callStart := time.Now()
 			job.err = executeNativeBurstCall(ctx, client, dataset, job)
-			job.elapsed = time.Since(callStart)
+			job.elapsed = time.Since(started)
 			results <- job
 		}()
 	}
-	timer := time.NewTimer(time.Until(started.Add(4 * time.Second)))
+	timer := time.NewTimer(time.Until(deadline.Add(time.Second)))
 	defer timer.Stop()
 	for range 2 {
 		select {
 		case job := <-results:
 			t.Logf("ingress_health kind=%d caller3s elapsed=%s error=%v", job.kind, job.elapsed, job.err)
-			if job.err != nil {
-				t.Error("healthy small Read/Native failed during uploads", job.kind, job.err)
+			if job.err != nil || job.elapsed > 3*time.Second {
+				t.Error("healthy small Read/Native failed or exceeded original3s caller deadline during uploads", job.kind, job.elapsed, job.err)
 			}
 		case <-timer.C:
 			t.Error("health caller3s plus bounded1s join exhausted")
@@ -429,7 +429,7 @@ func ingressMemoryRecovery(t *testing.T, client *weirclient.Client, dataset *nat
 
 func ingressMemoryOracle(t *testing.T, fixture *testmongo.Fixture, documents []ingressMemoryDocument, results []ingressMemoryResult) {
 	t.Helper()
-	applied, denied, ambiguous, present := 0, 0, 0, 0
+	applied, denied, ambiguous, present, completedRPCs := 0, 0, 0, 0, 0
 	ids := make([]string, 0, len(documents))
 	for index, expected := range documents {
 		ids = append(ids, expected.id)
@@ -450,6 +450,11 @@ func ingressMemoryOracle(t *testing.T, fixture *testmongo.Fixture, documents []i
 			t.Error("independent per-ID ingress effect/hash oracle failed", expected.id, err)
 		}
 		result := results[index]
+		if result.Received && result.Error == "" && result.RPCCode == "OK" {
+			completedRPCs++
+		} else {
+			t.Error("ordinary Put lacked a complete successful RPC; business evidence retained", expected.id, result.Received, result.RPCCode, result.Error)
+		}
 		switch result.Outcome {
 		case "APPLIED":
 			applied++
@@ -478,7 +483,7 @@ func ingressMemoryOracle(t *testing.T, fixture *testmongo.Fixture, documents []i
 	if err != nil || count != int64(present) {
 		t.Error("independent cardinality differs from per-ID effects", count, present, err)
 	}
-	t.Logf("ingress_effect_summary offered=32 APPLIED=%d capacity_denied=%d ambiguous=%d independent_present=%d all_ordinary_writes_APPLIED=%t capacity_survival_does_not_imply_business_completeness=true", applied, denied, ambiguous, present, applied == 32)
+	t.Logf("ingress_effect_summary offered=32 APPLIED=%d capacity_denied=%d ambiguous=%d independent_present=%d completed_RPC=%d all_ordinary_writes_APPLIED=%t capacity_survival_does_not_imply_business_completeness=true", applied, denied, ambiguous, present, completedRPCs, applied == 32 && completedRPCs == 32)
 }
 
 func ingressMemoryMetrics(process *memoryRecoveryCLI) (map[string]*dto.MetricFamily, error) {
