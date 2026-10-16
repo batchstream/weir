@@ -7,13 +7,13 @@ Linux sustained-load boundaries.
 | Milestone | Result |
 | --- | --- |
 | Reclaimable file cache and baseline verification | [PR 75](https://github.com/batchstream/weir/pull/75) merged after independent review and Linux CI |
-| Native consumer progress and output ownership | Implemented in this change; evidence and acceptance below |
-| Automatic recovery after Go memory bursts with default configuration | Pending |
+| Native consumer progress and output ownership | [PR 76](https://github.com/batchstream/weir/pull/76) merged after new independent review, repeated race checks and Linux CI |
+| Automatic recovery after Go memory bursts with default configuration | Implemented and locally qualified below; awaiting this change's independent review and CI |
 | Linux complete-process sustained mixed workload and failure recovery | Pending |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
 historical baseline at revision `63bafdd`; its Native scheduling and cancellation
-findings are addressed by the current change.
+findings are addressed by PR 76.
 
 ## Native output progress and resource boundaries
 
@@ -109,3 +109,104 @@ GOWORK=off GOPROXY=off go test -race -count=5 \
 Whole backend fault suites run serially when sharing the same MongoDB fixture.
 The test only owns its loopback connections, records and indexes; it does not
 contact production services.
+
+## Automatic recovery after Go heap bursts
+
+The baseline found a different failure after a large allocation was released:
+Go live heap dropped to about 1.3 MiB, but resident memory remained about 243 MiB
+in a 256 MiB cgroup. Admission correctly remained closed because actual resident
+pressure was still high. The missing piece was a runtime budget that encouraged
+GC and page release before the process reached its recovery threshold.
+
+The CLI now explicitly manages the standard Go soft memory limit. It assigns
+80% of the recovery-watermark budget to Go, or 56% of detected capacity with the
+default 80/70 watermarks. The remaining space below recovery is for the binary,
+kernel buffers and other resident memory outside Go. The existing Guard sampler
+updates this limit after complete trusted capacity observations; there is no
+second timer and no periodic forced GC. Real process and cgroup observations
+continue to decide overload. Holding a genuinely large live working set must
+still close admission.
+
+The process policy is optional for embedded Nodes and explicit for the CLI.
+Any supplied `GOMEMLIMIT`, or an already finite runtime setting, takes priority.
+After observing an external change, automatic management yields permanently.
+Cleanup restores the prior value only when it still owns the current setting,
+after node shutdown. Unknown capacity samples cannot loosen a previous limit.
+Zero recovery watermarks are rejected because a running process cannot return
+to zero resident bytes to leave its overload latch.
+
+### Observed recovery and limits
+
+The native Linux arm64 service ran on Docker 29.7.2, Linux 7.0.12-linuxkit,
+Go 1.27.1, cgroup v2, two CPUs, and the cached image
+`sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b`.
+The host driver and real MongoDB 8.0.32 were outside the service cgroup.
+The qualified CLI SHA-256 was
+`dc48ac91a42903e289ef0b85ee64a496a50f6f0d26c4e1f8ec7e85a94465ffc6`.
+
+| Experiment | Automatic policy | Explicit off control |
+| --- | --- | --- |
+| 256 MiB, 224 MiB touched Go allocation, three fresh processes | Recovered in 210.6–217.2 ms after release | Still latched after 5.004 s in the control process |
+| 256 MiB CLI, one default Store, 14–15 live 12 MiB Native replies, three rounds | Recovered in 114.7, 123.3 and 774.1 ms | All three rounds still latched after 5 s |
+| 512 MiB CLI, three default Stores, 30–32 live replies in automatic rounds | Recovered in 124.7–134.5 ms, three rounds | One round naturally recovered in 2.848 s; two remained latched after 5 s |
+
+The live-allocation and live-reply stages remained overloaded while held; fresh
+point queries returned `RESOURCE_EXHAUSTED`. Releasing replies canceled their
+real SDK consumers. Recovery required a complete memory sample, working set at
+or below 70%, a successful healthy read, and zero queued work, active work,
+paused output, retained results, working bytes, RPC sessions and encoded output
+bytes. All six automatic CLI rounds then completed another three seconds of
+successful writes and value-checked reads. No test or production hook forced GC
+or `FreeOSMemory` inside these service processes. All containers exited zero,
+reported no OOM, and were removed.
+
+The off control is observational: spontaneous runtime GC is permitted. In one
+256 MiB control, live heap had fallen to 1.43 MB while RSS was 200.1 MB and cgroup
+working set 221.3 MB, still over recovery. This reproduces resident idle memory
+as a distinct issue from live object retention.
+
+The CLI also followed actual in-place container limit changes of
+512→256→512 MiB without restart. Its automatic Go limit changed
+300647710→150323855→300647710 bytes within 75 ms of each update; readiness
+remained healthy and shutdown exited zero. Unit/profile tests cover smallest
+visible capacity, unknown samples, external ownership, repeated cleanup, and
+successful or failed embedded assembly without global runtime changes.
+
+Across the CLI matrix, nineteen three-second steady stages offered 20 operations
+per second and completed 1140 successful puts/reads. Automatic stages used
+0.13–0.18 process CPU seconds per stage, compared with 0.13–0.19 for off.
+Combined put/read p99 observations ranged 35.8–86.9 ms before automatic bursts
+and 36.4–53.8 ms afterward. Sixty samples make nearest-rank p99 equal the maximum;
+the defaults include mutation batching waits. These short, deliberately low-load
+probes establish recovery and functional continuity, not maximum throughput or
+a statistical performance-regression claim. Sustained per-operation latency and
+capacity qualification remains the next milestone.
+
+Raw [CLI matrix](memory-recovery-results-2026-10-16/cli-final.txt),
+[machine-readable observations](memory-recovery-results-2026-10-16/summary.json),
+[heap auto](memory-recovery-results-2026-10-16/guard-auto.txt),
+[heap off](memory-recovery-results-2026-10-16/guard-off.txt),
+[dynamic CLI](memory-recovery-results-2026-10-16/dynamic-cli.json), and
+[heap fixture cleanup](memory-recovery-results-2026-10-16/guard-cleanup.json)
+retain the evidence. The initial CLI harness used TCP acceptance as readiness
+and hit an HTTP EOF before workload started; its
+[failed preflight](memory-recovery-results-2026-10-16/cli-first.txt) is preserved.
+It now requires `/readyz=200` before collecting metrics or starting workload.
+Full default/race suites, integration-tag vet, 38 script tests and the real
+1103-series diagnostics test also passed.
+
+To repeat the CLI matrix on the same owned Darwin arm64 + native Linux setup:
+
+```sh
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOWORK=off GOPROXY=off \
+  go build -o "$PWD/.testdata/weir-memory-recovery-linux" ./cmd/weir
+WEIR_INTEGRATION=1 WEIR_MEMORY_RECOVERY_INTEGRATION=1 \
+  WEIR_MEMORY_RECOVERY_BINARY="$PWD/.testdata/weir-memory-recovery-linux" \
+  GOWORK=off GOPROXY=off go test -tags integration -count=1 -v -timeout=300s \
+  -run '^TestCLIBusinessHeapRecovery$' ./internal/app
+```
+
+The owned Mongo fixture must already be available on `127.0.0.1:27028`; the
+service uses `host.docker.internal` with direct connection. The test creates
+unique records and containers and verifies their cleanup. It is skipped without
+the explicit opt-in and does not pull images or access production.

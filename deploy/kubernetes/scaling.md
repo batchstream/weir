@@ -16,10 +16,11 @@ completed throughput and latency together with backend CPU and memory.
 Use the container memory limit for the hard memory boundary; Weir detects the
 visible capacity and observes actual pressure automatically.
 Linux admission excludes reclaimable inactive file cache and exports both raw
-cgroup usage and working-set metrics. Configure a Go soft memory limit below
-the overload recovery watermark, leaving headroom for other resident memory,
-and verify release after allocation bursts. Low live heap alone does not imply
-low resident memory or guarantee overload recovery.
+cgroup usage and working-set metrics. The CLI automatically sets the standard
+Go soft limit below the overload recovery watermark, leaving headroom for other
+resident memory. Explicit `GOMEMLIMIT` takes precedence; verify any override
+under allocation bursts. The runtime-limit and automatic-management gauges show
+which policy is active. Low live heap alone does not imply low resident memory.
 
 The configured queue bounds waiting input. Reads and mutations form separate
 batches within that one queue. Reads use compatible reads already queued without

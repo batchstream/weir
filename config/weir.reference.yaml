@@ -139,10 +139,13 @@ overload:
     # Latch overload at this percentage. Default: 80; integer 1..100.
     high_watermark: 80
     # Resume when every trustworthy scope is below this percentage. Default: 70.
-    # Integer 0..high_watermark-1. Hysteresis avoids toggling on each sample.
+    # Integer 1..high_watermark-1. Hysteresis avoids toggling on each sample.
     low_watermark: 70
     # Process/container sampling cadence. Default: 100ms; positive duration.
     sample_interval: 100ms
+    # The CLI automatically gives Go 80% of this recovery-watermark budget
+    # (56% of capacity with defaults), leaving room for non-Go resident memory.
+    # Explicit GOMEMLIMIT takes precedence. The OS limit remains the hard boundary.
 
 # VM limits shared by every local Store.
 lua:

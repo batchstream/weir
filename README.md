@@ -207,12 +207,13 @@ startup working-set reservation can reject otherwise valid configuration.
 On Linux cgroup v2, container pressure excludes validated reclaimable
 `inactive_file` cache from `memory.current`; missing or inconsistent cache
 statistics retain the raw usage. Metrics expose both current and working-set
-bytes. Go idle heap can remain resident after objects are freed; configure and
-validate `GOMEMLIMIT` below the recovery watermark with room for other memory.
+bytes. To release idle Go heap after allocation bursts, the CLI automatically
+sets a standard Go soft limit at 80% of the recovery-watermark budget (56% of
+capacity by default). Explicit `GOMEMLIMIT` settings take precedence.
 Use container/OS memory limits for the hard boundary.
 The [local reliability verification](docs/production-reliability-2026-10-16.md)
 records the cache regression, real backend read/write observations, and the
-remaining Native, resident-heap and cleanup latency boundaries.
+original Native, resident-heap and cleanup latency boundaries.
 The [production reliability milestones](docs/production-readiness.md) track
 subsequent fixes, including bounded Native output progress and cancellation.
 
