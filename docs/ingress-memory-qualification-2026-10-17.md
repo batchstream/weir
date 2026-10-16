@@ -190,6 +190,55 @@ and [actual raw output](ingress-memory-results-2026-10-17/ingress-production-A-p
 preserve this first failure. The next repair must address rejection after receive
 capacity has been promised and must be tested as a new clean candidate.
 
+The independent [ledger audit](ingress-memory-results-2026-10-17/ingress-production-A-ledger-audit.json)
+identified two reachable rejection paths. The original message promise covered
+only payload length for raw storage, while every DATA buffer also charges its
+actual backing capacity and 512 bytes of owner metadata. A normally fragmented
+large body could need new credit near its tail. Separately, an observed 32 MiB
+input promise with two inputs held only 8,382,026 free bytes, less than the next
+12,586,203-byte input. That temporary exhaustion returned no wake channel even
+when the source was already owned on the same ledger. Both paths can reject
+before execution without an acknowledged mutation outcome. Asynchronous samples
+cannot assign these paths to every failed ID. Budget shrink alone does not
+invalidate a prepaid receive operation: it is checked only when a charge grows.
+
+The follow-up repair prepays payload plus an equal bounded fragmentation
+allowance, one maximum native DATA backing and its owner; materialization and
+decoded copies retain separate promises. A small independently delivered gRPC
+header followed by a larger backing is covered. An initial follow-up added an
+independent raw limit, but the full race suite rejected the unchanged 1200-record
+relative-metadata stream: legitimate subsequent messages can already be inside
+the native stream window. That attempt failed before clean-candidate runtime
+qualification, and subsequent checks were stopped. The simpler correction uses
+the greater of the prepaid raw promise and actual raw ownership. Additional real
+DATA owners must still pay the same finite Node ledger before queuing; they
+cannot consume the separate decode promise. No additional forward-buffer pool or
+per-RPC maximum-window promise is introduced. Live same-ledger decoded inputs
+may wait for existing leases to return temporary input credit, using the existing
+runtime notification loop. Unowned, foreign, closed and intrinsically impossible
+inputs retain immediate refusal. A completed receiver preserves its terminal RPC
+status; an outstanding receiver is still cancelled and joined for cleanup.
+
+Focused race tests passed five consecutive runs, including the unchanged
+64-session small-read boundary. The existing two-message wait unit fixture used
+24 MiB messages under a 192 MiB observed allowance. With the complete receive
+peak, 24 MiB no longer fits alone. It now uses 18 MiB under the same allowance to
+preserve the original property: either message fits alone, but both cannot fit
+together. The actual 32-by-12-MiB A profile and all runtime deadlines are unchanged.
+The focused successes did not override the full-suite failure above. The corrected
+R3 source then passed the complete offline race suite, nested gRPC receive race
+tests five times, Docker-observer integration race tests, ordinary and integration
+vet, and a Linux amd64 build. All 931 source/provenance hashes matched before and
+after, and an independent audit matched every current file and the pinned gRPC
+manifest. The actual clean Linux arm64 CLI acceptance is still pending.
+
+The Docker observer now queries the owned local Unix-socket Docker Engine API
+directly instead of spawning a CLI every sample. Its 300 ms timeout and sampling
+cadence are unchanged. Missing, malformed, oversized, redirected, incomplete or
+timed-out observations remain failures; this changes no business load, capacity,
+caller deadline, success criteria or retry policy. The original observer failure
+remains preserved.
+
 ## Required acceptance
 
 The repair must account for raw transport buffers before business admission,

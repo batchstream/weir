@@ -1,0 +1,22 @@
+ok  	github.com/batchstream/weir/cmd/weir	18.681s
+ok  	github.com/batchstream/weir/deploy/kubernetes	2.632s
+ok  	github.com/batchstream/weir/internal/api/peer/v1	3.139s
+ok  	github.com/batchstream/weir/internal/app	9.472s
+?   	github.com/batchstream/weir/internal/backend	[no test files]
+ok  	github.com/batchstream/weir/internal/backend/mongodb	10.524s
+ok  	github.com/batchstream/weir/internal/backend/search	60.749s
+ok  	github.com/batchstream/weir/internal/backend/targetcache	4.176s
+ok  	github.com/batchstream/weir/internal/directory	6.638s
+ok  	github.com/batchstream/weir/internal/execution	3.725s
+ok  	github.com/batchstream/weir/internal/luaengine	5.767s
+ok  	github.com/batchstream/weir/internal/overload	2.651s
+ok  	github.com/batchstream/weir/internal/protowire	1.565s
+ok  	github.com/batchstream/weir/internal/server	19.949s
+ok  	github.com/batchstream/weir/internal/store	3.682s
+ok  	github.com/batchstream/weir/internal/testutil	2.148s
+ok  	github.com/batchstream/weir/internal/testutil/testdns	1.530s
+?   	github.com/batchstream/weir/internal/testutil/testmetrics	[no test files]
+ok  	github.com/batchstream/weir/internal/testutil/testmongo	1.436s
+?   	github.com/batchstream/weir/internal/testutil/testrecords	[no test files]
+ok  	github.com/batchstream/weir/internal/testutil/testresource	1.733s
+ok  	github.com/batchstream/weir/internal/value	1.928s

@@ -14,6 +14,7 @@ type IngressMemory struct {
 	memory                                *ExecutionMemory
 	ctx                                   context.Context
 	fixed, raw, decoded, message, charged uint64
+	rawPromise                            uint64
 	decodeExtra                           uint64
 	buffers                               int
 	closed, retired                       bool
@@ -48,8 +49,8 @@ func (a *IngressMemory) resizeLocked(message, raw, decoded uint64, large bool) b
 	m := a.memory
 	next := a.fixed + raw + decoded
 	if message != 0 {
-		length := (message - 4096) / 3
-		next = a.fixed + max(length, raw) + 2*length + 4096 + a.decodeExtra + decoded
+		length := message - 4096
+		next = a.fixed + max(a.rawPromise, raw) + 2*length + 4096 + a.decodeExtra + decoded
 	}
 	if next > a.charged {
 		delta := next - a.charged
@@ -78,8 +79,14 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 	}
 	m := a.memory
 	// Raw backing storage, protobuf materialization and decoded field copies
-	// coexist. Fixed protobuf envelopes are validated before allocation.
-	target := uint64(length)*3 + 4096
+	// coexist. Promise payload plus an equal, bounded allowance for DATA owner
+	// metadata/padding. Another native maximum-sized frame and its owner cover
+	// a separately delivered gRPC header or a final frame shared with the next
+	// message. This is not a minimum-frame-size assumption or a per-message
+	// hard cap. Further real owners, including following messages already in
+	// the stream receive window, must pay the same Node ledger before enqueue.
+	// They never borrow the independently promised codec workspace below.
+	message := uint64(length) + 4096
 	m.mu.Lock()
 	if a.message != 0 || a.closed {
 		m.mu.Unlock()
@@ -97,6 +104,8 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 			m.mu.Unlock()
 			return execution.ErrExecutionMemory
 		}
+		a.rawPromise = max(2*uint64(length), a.raw) + (16 << 10) + 512
+		target := a.rawPromise + 2*uint64(length) + 4096
 		limit := m.residentLimitLocked()
 		if length > 64<<10 {
 			limit -= min(limit, uint64(1<<20))
@@ -106,7 +115,8 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 			m.mu.Unlock()
 			return execution.ErrExecutionMemory
 		}
-		if a.resizeLocked(target, a.raw, a.decoded, length > 64<<10) {
+		fits := a.resizeLocked(message, a.raw, a.decoded, length > 64<<10)
+		if fits {
 			m.ingressMessages++
 			m.mu.Unlock()
 			return nil
@@ -131,7 +141,8 @@ func (a *IngressMemory) Buffer(capacity int) (func(), error) {
 	// doubled backlog capacity. Small frames cannot hide this fixed overhead.
 	bytes := uint64(capacity) + 512
 	m.mu.Lock()
-	if a.closed || !a.resizeLocked(a.message, a.raw+bytes, a.decoded, false) {
+	fits := !a.closed && a.resizeLocked(a.message, a.raw+bytes, a.decoded, false)
+	if !fits {
 		m.rejections++
 		m.mu.Unlock()
 		return nil, execution.ErrExecutionMemory
@@ -165,12 +176,14 @@ func (a *IngressMemory) Decoded() int {
 	if a.message == 0 {
 		return 0
 	}
-	bytes := (a.message-4096)/3 + 4096 + a.decodeExtra
+	bytes := a.message + a.decodeExtra
 	m.ingressMessages--
-	if !a.resizeLocked(0, a.raw, a.decoded+bytes, false) {
+	fits := a.resizeLocked(0, a.raw, a.decoded+bytes, false)
+	if !fits {
 		panic("decoded ingress exceeds pre-reserved peak")
 	}
 	a.decodeExtra = 0
+	a.rawPromise = 0
 	return int(bytes)
 }
 func (a *IngressMemory) ReleaseMessage() {
@@ -181,6 +194,7 @@ func (a *IngressMemory) ReleaseMessage() {
 		m.ingressMessages--
 		a.resizeLocked(0, a.raw, a.decoded, false)
 		a.decodeExtra = 0
+		a.rawPromise = 0
 	}
 }
 func (a *IngressMemory) ReleaseDecoded(bytes int) {
@@ -231,11 +245,12 @@ func (a *IngressMemory) ReserveDecode(bytes int) error {
 	if a.message == 0 || bytes < 0 {
 		return execution.ErrExecutionMemory
 	}
-	base := (a.message-4096)/3 + 4096
+	base := a.message
 	extra := uint64(max(bytes, 0)) - min(uint64(max(bytes, 0)), base)
 	previous := a.decodeExtra
 	a.decodeExtra = extra
-	if !a.resizeLocked(a.message, a.raw, a.decoded, false) {
+	fits := a.resizeLocked(a.message, a.raw, a.decoded, false)
+	if !fits {
 		a.decodeExtra = previous
 		m.rejections++
 		return execution.ErrExecutionMemory

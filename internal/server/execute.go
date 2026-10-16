@@ -77,10 +77,17 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 	defer func() {
 		cancel()
 		session.Close()
-		// gRPC uses the tap context for native Recv. Cancel this RPC before
-		// joining its receiver, including handler failures with a live caller.
-		if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok {
-			state.cancel()
+		select {
+		case <-receiverDone:
+			// Preserve the receiver's terminal status for native WriteStatus.
+			// It no longer needs cancellation to unblock Recv.
+			return
+		default:
+			// gRPC uses the tap context for native Recv. Only an outstanding
+			// receiver needs that RPC context canceled before it can be joined.
+			if state, ok := stream.Context().Value(rpcKey).(*rpcState); ok {
+				state.cancel()
+			}
 		}
 		<-receiverDone
 	}()

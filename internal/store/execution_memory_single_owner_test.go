@@ -47,7 +47,7 @@ func singleOwnerPutPlan(t testing.TB) *execution.Plan {
 func TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise(t *testing.T) {
 	work := singleOwnerPutPlan(t)
 	memory := testExecutionMemory(singleOwnerBudget * 3 / 2)
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -108,7 +108,7 @@ func TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage(t 
 			memory := testExecutionMemory(singleOwnerBudget * 3 / 2)
 			work := plan(1, "typed_memory/records/s:item", true)
 			work.Bytes = 1247
-			lease, failure := memory.admit(work)
+			lease, failure, _ := memory.admit(work)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -253,7 +253,7 @@ func TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory(t *testing.
 			memory := testExecutionMemory(singleOwnerBudget * 3 / 2)
 			work := plan(1, "read", true)
 			work.Bytes = 1247
-			lease, failure := memory.admit(work)
+			lease, failure, _ := memory.admit(work)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -264,7 +264,7 @@ func TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory(t *testing.
 			requested := 16_777_664
 			switch mode {
 			case "second_input", "other_live_wire":
-				other, failure := memory.admit(work)
+				other, failure, _ := memory.admit(work)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -315,7 +315,7 @@ func TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak(t *testing
 			memory := testExecutionMemory(singleOwnerBudget * 3 / 2)
 			work := plan(1, "large", false)
 			work.Bytes = 16_778_415
-			lease, failure := memory.admit(work)
+			lease, failure, _ := memory.admit(work)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -325,7 +325,7 @@ func TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak(t *testing
 				working = int(memory.budget-memory.inputUsed) + 1
 			} else {
 				otherWork := plan(2, "other", false)
-				other, failure := memory.admit(otherWork)
+				other, failure, _ := memory.admit(otherWork)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -355,7 +355,7 @@ func TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease(t *
 	memory := testExecutionMemory(singleOwnerBudget * 3 / 2)
 	work := plan(1, "large", false)
 	work.Bytes = 16_778_415
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}

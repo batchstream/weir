@@ -216,8 +216,11 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 		r.metrics.rejections.WithLabelValues("capacity").Inc()
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), nil
 	}
-	lease, failure := r.memory.admit(plan)
+	lease, failure, wait := r.memory.admit(plan)
 	if failure != nil {
+		if wait {
+			return nil, failure, changed
+		}
 		return nil, failure, nil
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
@@ -501,6 +504,11 @@ func (r *Runtime) loop() {
 		case <-tick:
 		}
 		r.mu.Lock()
+		// Memory releases and trusted-capacity updates signal the same loop as
+		// dispatch. Broadcast them even if no Store queue item can be selected;
+		// Submit's already-owned input may be waiting only for that credit.
+		close(r.changed)
+		r.changed = make(chan struct{})
 		r.cancelQueuedLocked()
 		for t := r.queueHead; t != nil; t = t.queueNext {
 			t.blocked = false

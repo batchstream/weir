@@ -93,7 +93,7 @@ func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {
 func TestNativeOversizedTerminalUsesFixedFailureInsideFullSharedBudget(t *testing.T) {
 	memory := testExecutionMemory(768 << 20)
 	other := plan(0, "held", false)
-	lease, failure := memory.admit(other)
+	lease, failure, _ := memory.admit(other)
 	if failure != nil {
 		t.Fatal(failure)
 	}

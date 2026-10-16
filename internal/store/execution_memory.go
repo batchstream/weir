@@ -210,12 +210,12 @@ func (l *executionLease) reclaimUnusedInputLocked(additional, resident uint64) b
 	return true
 }
 
-func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Failure) {
+func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Failure, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.trusted {
 		m.rejections++
-		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "execution memory capacity is unknown")
+		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "execution memory capacity is unknown"), false
 	}
 	publication := nativeQueuedWindow
 	if plan.Command.GetNative() != nil {
@@ -238,8 +238,15 @@ func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Fail
 	peak := uint64(plan.WorkingBytes) + uint64(publication-nativeQueuedWindow)
 	native := plan.Command.GetNative() != nil
 	if len(m.leases) >= nativeCountLimit*execution.RecordStreamItems || native && m.nativeCount >= nativeCountLimit || m.budget == 0 || reserved > m.budget || (m.inputReserved == 0 && m.ingressReserved+m.ingressConnectionBytes > 0 && (used > m.budget || reserved > m.budget-used || resident > m.residentLimitLocked() || reserved > m.residentLimitLocked()-resident)) || bytes > reserved-m.inputUsed || (oversized && peak > m.budget-reserved) {
-		m.rejections++
-		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error())
+		// A decoded input already has a bounded same-Node owner. Temporary
+		// input-credit exhaustion may wait for an existing lease to release its
+		// real ownership. An input that cannot run alone, or an unowned source,
+		// must still fail promptly instead of creating an external input queue.
+		wait := credit != 0 && len(m.leases) != 0 && bytes <= m.residentLimitLocked() && bytes <= m.budget && peak <= m.budget-bytes
+		if !wait {
+			m.rejections++
+		}
+		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, errExecutionMemory.Error()), wait
 	}
 	if input != nil {
 		input.releaseLocked()
@@ -255,7 +262,7 @@ func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Fail
 		m.resident += reserved
 	}
 	m.inputUsed += bytes
-	return lease, nil
+	return lease, nil, false
 }
 
 // start is called before any command I/O. Existing initial invocations may
@@ -458,7 +465,7 @@ func (l *executionLease) reserveWire(bytes int) (*WireReservation, error) {
 // admission failure. It uses the same finite count/input promise and lifetime.
 func (m *ExecutionMemory) ReserveWire(bytes int) (*WireReservation, error) {
 	plan := &execution.Plan{Bytes: execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes}
-	lease, failure := m.admit(plan)
+	lease, failure, _ := m.admit(plan)
 	if failure != nil {
 		return nil, execution.ErrExecutionMemory
 	}

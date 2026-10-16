@@ -1,1058 +1,1215 @@
 {
   "created_at": "2026-10-16T19:24:23.828000+00:00",
-  "purpose": "original failure, causal diagnostics, implementation checks and failed clean-candidate A512; final qualification remains incomplete",
-  "original_files_preserved_without_normalization": true,
   "excluded": "service/host executables, CPU profile binaries and redundant public grpc module copies; hashes and source manifests retained",
-  "path_note": "Original receipts/recipes preserve original absolute paths; names in this index map them to this directory. Source copies ending go.txt are inert evidence.",
   "files": [
     {
+      "bytes": 1370,
       "name": "implementation-all-race-after-owned-queue.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/all-race-after-owned-queue.txt",
-      "sha256": "3e4009ca7f0b1769da7083909014a6d8777c5886811e198267ab6357ef7d2fe0",
-      "bytes": 1370
+      "sha256": "3e4009ca7f0b1769da7083909014a6d8777c5886811e198267ab6357ef7d2fe0"
     },
     {
+      "bytes": 1369,
       "name": "implementation-all-race-final-metadata.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/all-race-final-metadata.txt",
-      "sha256": "ebd62ccb3a499b6020db992e0fc90fd5ea59ee9c75ae4c86601db5ceaa9fe955",
-      "bytes": 1369
+      "sha256": "ebd62ccb3a499b6020db992e0fc90fd5ea59ee9c75ae4c86601db5ceaa9fe955"
     },
     {
+      "bytes": 1631,
       "name": "implementation-all-race.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/all-race.txt",
-      "sha256": "38146076883a313c15a0a22b41e389794f929030b2d46cb4cff2808127782bd9",
-      "bytes": 1631
+      "sha256": "38146076883a313c15a0a22b41e389794f929030b2d46cb4cff2808127782bd9"
     },
     {
+      "bytes": 111835,
       "name": "implementation-code-sources-before-final-checks.json",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/code-sources-before-final-checks.json",
-      "sha256": "11d7ddc47f48182021d9c4342a722914ac0f1bab9227f9bfda9bd89ba9bd4873",
-      "bytes": 111835
+      "sha256": "11d7ddc47f48182021d9c4342a722914ac0f1bab9227f9bfda9bd89ba9bd4873"
     },
     {
+      "bytes": 111835,
       "name": "implementation-code-sources-metadata-final-after.json",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/code-sources-metadata-final-after.json",
-      "sha256": "2cd8446907049a9ce305d0d67d55746c16a0d0570654eea5155cfbf8025a142b",
-      "bytes": 111835
+      "sha256": "2cd8446907049a9ce305d0d67d55746c16a0d0570654eea5155cfbf8025a142b"
     },
     {
+      "bytes": 111835,
       "name": "implementation-code-sources-metadata-final-before.json",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/code-sources-metadata-final-before.json",
-      "sha256": "2cd8446907049a9ce305d0d67d55746c16a0d0570654eea5155cfbf8025a142b",
-      "bytes": 111835
+      "sha256": "2cd8446907049a9ce305d0d67d55746c16a0d0570654eea5155cfbf8025a142b"
     },
     {
+      "bytes": 249,
       "name": "implementation-continuous-read-DIAGNOSTIC-overlay.json",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/continuous-read-DIAGNOSTIC-overlay.json",
-      "sha256": "a3f55a2ad4c783df554b698d96e163bc68f5eb813abbdc87b8a607e38fa77ab0",
-      "bytes": 249
+      "sha256": "a3f55a2ad4c783df554b698d96e163bc68f5eb813abbdc87b8a607e38fa77ab0"
     },
     {
+      "bytes": 8547,
       "name": "implementation-continuous-read-DIAGNOSTIC-stress20.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/continuous-read-DIAGNOSTIC-stress20.txt",
-      "sha256": "aa9054397e0f9bcabe97550e3cd0a61ceea4a4fd07cca70fd792b34876d2d069",
-      "bytes": 8547
+      "sha256": "aa9054397e0f9bcabe97550e3cd0a61ceea4a4fd07cca70fd792b34876d2d069"
     },
     {
+      "bytes": 12416,
       "name": "implementation-continuous-read-DIAGNOSTIC.go.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/continuous-read-DIAGNOSTIC.go.txt",
-      "sha256": "f6b59213b33b0c4bd35668a7dfd1efedf487005e48a9eafc4bcc0eb1aa789db2",
-      "bytes": 12416
+      "sha256": "f6b59213b33b0c4bd35668a7dfd1efedf487005e48a9eafc4bcc0eb1aa789db2"
     },
     {
+      "bytes": 177,
       "name": "implementation-continuous-read-DIAGNOSTIC.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/continuous-read-DIAGNOSTIC.txt",
-      "sha256": "596ba6ee5656344916c83c7aa0e0f20ffe548989c3a93f6a80c3c11d09180010",
-      "bytes": 177
+      "sha256": "596ba6ee5656344916c83c7aa0e0f20ffe548989c3a93f6a80c3c11d09180010"
     },
     {
+      "bytes": 2382,
       "name": "implementation-continuous-read-fixed-stress20.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/continuous-read-fixed-stress20.txt",
-      "sha256": "049500e969189746bd8e9ef2c09724c1bccf81bed2afdf07e7d662f5452b283b",
-      "bytes": 2382
+      "sha256": "049500e969189746bd8e9ef2c09724c1bccf81bed2afdf07e7d662f5452b283b"
     },
     {
+      "bytes": 2,
       "name": "implementation-integration-vet-final.exit",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/integration-vet-final.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 0,
       "name": "implementation-integration-vet-final.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/integration-vet-final.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 2,
       "name": "implementation-linux-build-final.exit",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/linux-build-final.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 0,
       "name": "implementation-linux-build-final.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/linux-build-final.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 0,
       "name": "implementation-linux-build.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/linux-build.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 1781,
       "name": "implementation-metadata-final-checks-receipt.json",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/metadata-final-checks-receipt.json",
-      "sha256": "87511f4c6e971c4cb3eef805c706649a526e424079be941ccb2242ed0068baef",
-      "bytes": 1781
+      "sha256": "87511f4c6e971c4cb3eef805c706649a526e424079be941ccb2242ed0068baef"
     },
     {
+      "bytes": 171,
       "name": "implementation-metadata-preallocation-race.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/metadata-preallocation-race.txt",
-      "sha256": "9b826c981e026a12921e6be198f765409cb2c95b792c79d00c6e911645612b92",
-      "bytes": 171
+      "sha256": "9b826c981e026a12921e6be198f765409cb2c95b792c79d00c6e911645612b92"
     },
     {
+      "bytes": 128,
       "name": "implementation-nested-race-metadata-final.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/nested-race-metadata-final.txt",
-      "sha256": "1684be793db49da2b90a51b47db4a429cc2e5d51d7ea990de56c3b92779b858d",
-      "bytes": 128
+      "sha256": "1684be793db49da2b90a51b47db4a429cc2e5d51d7ea990de56c3b92779b858d"
     },
     {
+      "bytes": 111,
       "name": "implementation-owned-queue-focused-race.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/owned-queue-focused-race.txt",
-      "sha256": "81958786ad2635e2d0c97b91acc1edd382aa7e4fcd66dc3588b5f49f4d5a6126",
-      "bytes": 111
+      "sha256": "81958786ad2635e2d0c97b91acc1edd382aa7e4fcd66dc3588b5f49f4d5a6126"
     },
     {
+      "bytes": 3817,
+      "name": "implementation-repair-r2-checks.py",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-checks.py",
+      "sha256": "01bf93c5c05a9caedc8ddf2cd3ad8f67e19b833b985fcaa880d33729a1bd2904"
+    },
+    {
+      "bytes": 1636,
+      "name": "implementation-repair-r2-final-all-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-final-all-race.txt",
+      "sha256": "e49154ee288a5152d0fa7987e1cbc92b9cf46df01278e238bb27388cdca76942"
+    },
+    {
+      "bytes": 927,
+      "name": "implementation-repair-r2-final-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-final-receipt.json",
+      "sha256": "0db614150cf22341bd3b239843d1312245d08292cc4f963433405024221e2a8d"
+    },
+    {
+      "bytes": 357,
+      "name": "implementation-repair-r2-focused-after-first.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-focused-after-first.txt",
+      "sha256": "d6e2dd29a6366fbee0c06d40abefc46dddaad9f826ada3896a587a5373b28d05"
+    },
+    {
+      "bytes": 2185,
+      "name": "implementation-repair-r2-focused-before.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-focused-before.txt",
+      "sha256": "7c97399da4d701b362c173ee9aff37b00a59ac5613cffa4bba623e88e8029401"
+    },
+    {
+      "bytes": 111,
+      "name": "implementation-repair-r2-focused-race-five.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-focused-race-five.txt",
+      "sha256": "3d40da7a17ac4967f2d87471ba5880ce30ea86d8e3b21cf5453d320aaa4d0e42"
+    },
+    {
+      "bytes": 357,
+      "name": "implementation-repair-r2-ingress-race-first.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-ingress-race-first.txt",
+      "sha256": "81403fc5c0b876e284ba996d0c764f6c6e65e1a485c958325ad4e7613ae3c2ac"
+    },
+    {
+      "bytes": 111,
+      "name": "implementation-repair-r2-ingress-server-race-first.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-ingress-server-race-first.txt",
+      "sha256": "57534b788eaa1edd5129ab2879b0f3ac808588038fe82389069a4eec2c133b71"
+    },
+    {
+      "bytes": 7825,
+      "name": "implementation-repair-r2-ingress_memory.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-source-snapshot.tar.gz::internal/store/ingress_memory.go",
+      "sha256": "471434860e9230830ae9ee46dde9c5dc0afda987ba67e43302ac2aebf7e21466"
+    },
+    {
+      "bytes": 8825,
+      "name": "implementation-repair-r2-ingress_progress_test.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-source-snapshot.tar.gz::internal/store/ingress_progress_test.go",
+      "sha256": "1ae4f530e1d078f57e5ffc44ae91c976e3e985c5ccb156bffec06725293caf72"
+    },
+    {
+      "bytes": 112385,
+      "name": "implementation-repair-r2-source-after.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-source-after.json",
+      "sha256": "d5da337c9971ad6d73696f368807408fcf2fc5a984d5718cc2afabc5490047bf"
+    },
+    {
+      "bytes": 112385,
+      "name": "implementation-repair-r2-source-before.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-source-before.json",
+      "sha256": "d5da337c9971ad6d73696f368807408fcf2fc5a984d5718cc2afabc5490047bf"
+    },
+    {
+      "bytes": 512,
+      "name": "implementation-repair-r2-source-reconstruction.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r2-source-reconstruction.json",
+      "sha256": "422361259f558ca6091c5e929002d6f2c19f735f9e3eb152b966da42412d8c92"
+    },
+    {
+      "bytes": 3817,
+      "name": "implementation-repair-r3-checks.py",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-checks.py",
+      "sha256": "644d1388fcb4c7c233719d5beaac8987891f317d248e240a8548ca26856ea805"
+    },
+    {
+      "bytes": 1370,
+      "name": "implementation-repair-r3-final-all-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-all-race.txt",
+      "sha256": "2ed04653ddbbbc850cd85e33cd4b9d57c3fe35e8202208b16bb8861ce8083f35"
+    },
+    {
+      "bytes": 0,
+      "name": "implementation-repair-r3-final-integration-vet.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-integration-vet.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "name": "implementation-repair-r3-final-linux-build.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-linux-build.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 128,
+      "name": "implementation-repair-r3-final-nested-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-nested-race.txt",
+      "sha256": "61c061b51bb7984d1b2ab2f90640e243d7fccb7e684e5e4cd33079019170d0d0"
+    },
+    {
+      "bytes": 53,
+      "name": "implementation-repair-r3-final-observer-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-observer-race.txt",
+      "sha256": "11d754b54aa01d905dec94d3bd53bf73ad6db8753c2f0c1926a2fb1c635c1fc1"
+    },
+    {
+      "bytes": 3888,
+      "name": "implementation-repair-r3-final-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-receipt.json",
+      "sha256": "e326fe92a8e5e8b7b9ae1f14db826441cbc79e4fe82d4b2ee402700bf451d82b"
+    },
+    {
+      "bytes": 0,
+      "name": "implementation-repair-r3-final-vet.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-final-vet.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 111,
+      "name": "implementation-repair-r3-focused-race-five.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-focused-race-five.txt",
+      "sha256": "0663d7cccdf96499ccebf075660e79f28a0cb5591aaa5c889df148ee8d47f0ac"
+    },
+    {
+      "bytes": 112385,
+      "name": "implementation-repair-r3-source-after.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-source-after.json",
+      "sha256": "2b553e6b41b516c68b21dcd6d7babaca5bb390d013f5a7927f6b136c317e8404"
+    },
+    {
+      "bytes": 112385,
+      "name": "implementation-repair-r3-source-before.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r3-source-before.json",
+      "sha256": "2b553e6b41b516c68b21dcd6d7babaca5bb390d013f5a7927f6b136c317e8404"
+    },
+    {
+      "bytes": 2,
       "name": "implementation-vet-final.exit",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/vet-final.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 0,
       "name": "implementation-vet-final.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/vet-final.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 0,
       "name": "implementation-vet.txt",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/vet.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 1034,
       "name": "ingress-BDP-DIAGNOSTIC-build-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-build-command.json",
-      "sha256": "89ac86c547d182c9d7b5e7e91dd409ce8c5cca15a248d00cbcd0e6d574670230",
-      "bytes": 1034
+      "sha256": "89ac86c547d182c9d7b5e7e91dd409ce8c5cca15a248d00cbcd0e6d574670230"
     },
     {
+      "bytes": 87925,
       "name": "ingress-BDP-DIAGNOSTIC-build-receipt.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-build-receipt.json",
-      "sha256": "3329d95f279ad00e11d3d4d8afc283e7bbb7ddfbabacbabec0f1d200f9c46894",
-      "bytes": 87925
+      "sha256": "3329d95f279ad00e11d3d4d8afc283e7bbb7ddfbabacbabec0f1d200f9c46894"
     },
     {
+      "bytes": 2,
       "name": "ingress-BDP-DIAGNOSTIC-build.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-build.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 8166,
       "name": "ingress-BDP-DIAGNOSTIC-build.py",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-build.py",
-      "sha256": "beddcb383fd34017db47a4aa047e37a480ef9679f5e938ef341ef97003338f59",
-      "bytes": 8166
+      "sha256": "beddcb383fd34017db47a4aa047e37a480ef9679f5e938ef341ef97003338f59"
     },
     {
+      "bytes": 0,
       "name": "ingress-BDP-DIAGNOSTIC-build.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-build.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 955,
       "name": "ingress-BDP-DIAGNOSTIC-relative-C0.diff",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-relative-C0.diff",
-      "sha256": "eb7a425f90a362ea3e49276927d03f881a4db97b253f026a82706f2c226f87e5",
-      "bytes": 955
+      "sha256": "eb7a425f90a362ea3e49276927d03f881a4db97b253f026a82706f2c226f87e5"
     },
     {
+      "bytes": 581,
       "name": "ingress-BDP-DIAGNOSTIC-root-review.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-root-review.json",
-      "sha256": "c3536eefa76154e2b78ebeff64943c84a734bbed387834766bd645d081f81eae",
-      "bytes": 581
+      "sha256": "c3536eefa76154e2b78ebeff64943c84a734bbed387834766bd645d081f81eae"
     },
     {
+      "bytes": 1999,
       "name": "ingress-BDP-DIAGNOSTIC-server-module-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-server-module-overlay.json",
-      "sha256": "caa5c003b71767da27467c8d4178506b5b69529edc01ef0719bcc2c1586ce7f1",
-      "bytes": 1999
+      "sha256": "caa5c003b71767da27467c8d4178506b5b69529edc01ef0719bcc2c1586ce7f1"
     },
     {
+      "bytes": 217967,
       "name": "ingress-BDP-DIAGNOSTIC-stage-comparison.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-stage-comparison.json",
-      "sha256": "fb3a04dd9864eaf5993b154740ca1a1c30c533082405b7a57c67b9740e81a1ce",
-      "bytes": 217967
+      "sha256": "fb3a04dd9864eaf5993b154740ca1a1c30c533082405b7a57c67b9740e81a1ce"
     },
     {
+      "bytes": 3846,
       "name": "ingress-BDP-DIAGNOSTIC-weir-server.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-weir-server.go.txt",
-      "sha256": "a6b2f1af9d39879d3f58600d5dd3722d4c81254aeeeab13b20c16b3f9c111cb6",
-      "bytes": 3846
+      "sha256": "a6b2f1af9d39879d3f58600d5dd3722d4c81254aeeeab13b20c16b3f9c111cb6"
     },
     {
+      "bytes": 1254,
       "name": "ingress-BDP-DIAGNOSTIC-weir-version.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-weir-version.go.txt",
-      "sha256": "3c245807d11d60eae1aa635b259d663b8948b0a9c45ee8fe552200c5e0490dbd",
-      "bytes": 1254
+      "sha256": "3c245807d11d60eae1aa635b259d663b8948b0a9c45ee8fe552200c5e0490dbd"
     },
     {
+      "bytes": 1576,
       "name": "ingress-BDP-DIAGNOSTIC.mod",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC.mod",
-      "sha256": "dfb1933a5826d65c28f8ddbbd438ff6ed3afaf2e5c13d6edd1069df82b8c9fae",
-      "bytes": 1576
+      "sha256": "dfb1933a5826d65c28f8ddbbd438ff6ed3afaf2e5c13d6edd1069df82b8c9fae"
     },
     {
+      "bytes": 11912,
       "name": "ingress-BDP-DIAGNOSTIC.sum",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC.sum",
-      "sha256": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f",
-      "bytes": 11912
+      "sha256": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f"
     },
     {
+      "bytes": 1019,
       "name": "ingress-DIAGNOSTIC-build-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build-command.json",
-      "sha256": "9f99149803c27f580bbee03e90a1ea11fa127ae4f5c86ae45d074ee217d51cc9",
-      "bytes": 1019
+      "sha256": "9f99149803c27f580bbee03e90a1ea11fa127ae4f5c86ae45d074ee217d51cc9"
     },
     {
+      "bytes": 90588,
       "name": "ingress-DIAGNOSTIC-build-receipt.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build-receipt.json",
-      "sha256": "714604291af193d48b5bbbc2cc095473a1800db92e71eca16c2dac3f002197bf",
-      "bytes": 90588
+      "sha256": "714604291af193d48b5bbbc2cc095473a1800db92e71eca16c2dac3f002197bf"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-build.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 4916,
       "name": "ingress-DIAGNOSTIC-build.py",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build.py",
-      "sha256": "e33c1a7c07a52fbb8e9ca35498ad5c86b7551fa40f8a311545191dc829ca0c9a",
-      "bytes": 4916
+      "sha256": "e33c1a7c07a52fbb8e9ca35498ad5c86b7551fa40f8a311545191dc829ca0c9a"
     },
     {
+      "bytes": 0,
       "name": "ingress-DIAGNOSTIC-build.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 2213,
       "name": "ingress-DIAGNOSTIC-driver-BDP-combined-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-combined-overlay.json",
-      "sha256": "206082f49ba30d8cdfdd7fdd1c77c7cfb46f2202c4177385e899799b9672b1f0",
-      "bytes": 2213
+      "sha256": "206082f49ba30d8cdfdd7fdd1c77c7cfb46f2202c4177385e899799b9672b1f0"
     },
     {
+      "bytes": 1040,
       "name": "ingress-DIAGNOSTIC-driver-BDP-compile-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-compile-command.json",
-      "sha256": "0829b5f7523e135da363bc55b868f74fe1816a82a460cf2091d14d81b7bfcef5",
-      "bytes": 1040
+      "sha256": "0829b5f7523e135da363bc55b868f74fe1816a82a460cf2091d14d81b7bfcef5"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-driver-BDP-compile.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-compile.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 71,
       "name": "ingress-DIAGNOSTIC-driver-BDP-compile.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-compile.txt",
-      "sha256": "6e44683f81e35351d3279643c8071aa45de6b122c0470ed92667d2f138e81b74",
-      "bytes": 71
+      "sha256": "6e44683f81e35351d3279643c8071aa45de6b122c0470ed92667d2f138e81b74"
     },
     {
+      "bytes": 6934,
       "name": "ingress-DIAGNOSTIC-driver-BDP-final-plan.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-final-plan.json",
-      "sha256": "6c250d63ce6cc72d8cf92d2a1539542fb39f542ca49760d69c824edcbb78398d",
-      "bytes": 6934
+      "sha256": "6c250d63ce6cc72d8cf92d2a1539542fb39f542ca49760d69c824edcbb78398d"
     },
     {
+      "bytes": 236,
       "name": "ingress-DIAGNOSTIC-driver-BDP-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-overlay.json",
-      "sha256": "7e5bad3eb3e5cd0d18567a5c92ec99bab770dddce8492aca87d855b79f6a4189",
-      "bytes": 236
+      "sha256": "7e5bad3eb3e5cd0d18567a5c92ec99bab770dddce8492aca87d855b79f6a4189"
     },
     {
+      "bytes": 1436,
       "name": "ingress-DIAGNOSTIC-driver-BDP-prepared.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-prepared.json",
-      "sha256": "55c5ec419c740ee65369ef4fda4c8f790203da95d429705c9903586b7cde3232",
-      "bytes": 1436
+      "sha256": "55c5ec419c740ee65369ef4fda4c8f790203da95d429705c9903586b7cde3232"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-driver-BDP-process.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-process.exit",
-      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "bytes": 2
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
     },
     {
+      "bytes": 598426,
       "name": "ingress-DIAGNOSTIC-driver-BDP-process.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-process.txt",
-      "sha256": "3d5b1b38e67d341f78f31185b6cbd57877196e3100e2c226aaeca18781390fc1",
-      "bytes": 598426
+      "sha256": "3d5b1b38e67d341f78f31185b6cbd57877196e3100e2c226aaeca18781390fc1"
     },
     {
+      "bytes": 1368,
       "name": "ingress-DIAGNOSTIC-driver-BDP-profile-commands.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-profile-commands.json",
-      "sha256": "3f038e1960b1f46bca55678f6f3a5c1402adf2871a7f330f00db80847e5eb918",
-      "bytes": 1368
+      "sha256": "3f038e1960b1f46bca55678f6f3a5c1402adf2871a7f330f00db80847e5eb918"
     },
     {
+      "bytes": 2824,
       "name": "ingress-DIAGNOSTIC-driver-BDP-profile-cumulative.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-profile-cumulative.txt",
-      "sha256": "d0c3aae24d3042d7f1318590afa51c8dcb7c024c590325863893b107c8a1b17e",
-      "bytes": 2824
+      "sha256": "d0c3aae24d3042d7f1318590afa51c8dcb7c024c590325863893b107c8a1b17e"
     },
     {
+      "bytes": 2163,
       "name": "ingress-DIAGNOSTIC-driver-BDP-profile-top.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-profile-top.txt",
-      "sha256": "afe9641e352ea93b3ece5d5ee67a40d2b7eec9d952e331bef8b8808f8fe884de",
-      "bytes": 2163
+      "sha256": "afe9641e352ea93b3ece5d5ee67a40d2b7eec9d952e331bef8b8808f8fe884de"
     },
     {
+      "bytes": 28087,
       "name": "ingress-DIAGNOSTIC-driver-BDP-run-manifest.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-run-manifest.json",
-      "sha256": "260903bb1f59374ef901267bba92074aef03f827579f1d4312fd68d615f3c5bc",
-      "bytes": 28087
+      "sha256": "260903bb1f59374ef901267bba92074aef03f827579f1d4312fd68d615f3c5bc"
     },
     {
+      "bytes": 609758,
       "name": "ingress-DIAGNOSTIC-driver-BDP-run-observations.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-run-observations.json",
-      "sha256": "388133985a25b33698f0585f12e74b31e84192eed7124113bc54e277f8073640",
-      "bytes": 609758
+      "sha256": "388133985a25b33698f0585f12e74b31e84192eed7124113bc54e277f8073640"
     },
     {
+      "bytes": 44113,
       "name": "ingress-DIAGNOSTIC-driver-BDP-run-source-after.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-run-source-after.json",
-      "sha256": "3e24c347a9765ac2eb872b40023dd18cbf1eee0f50f6625a01e4f96f1af6334e",
-      "bytes": 44113
+      "sha256": "3e24c347a9765ac2eb872b40023dd18cbf1eee0f50f6625a01e4f96f1af6334e"
     },
     {
+      "bytes": 44026,
       "name": "ingress-DIAGNOSTIC-driver-BDP-run-source-before.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-run-source-before.json",
-      "sha256": "46217021ed322bbb2cd0fc85514c2ad90fbaeb1ed876710ff5b6b369e8c793f0",
-      "bytes": 44026
+      "sha256": "46217021ed322bbb2cd0fc85514c2ad90fbaeb1ed876710ff5b6b369e8c793f0"
     },
     {
+      "bytes": 1130,
       "name": "ingress-DIAGNOSTIC-driver-BDP-run-start.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-run-start.json",
-      "sha256": "64fc280e9113fa29a4b8a495baf7fa4ccf15cc6e1837a58aef013708166430d0",
-      "bytes": 1130
+      "sha256": "64fc280e9113fa29a4b8a495baf7fa4ccf15cc6e1837a58aef013708166430d0"
     },
     {
+      "bytes": 38822,
       "name": "ingress-DIAGNOSTIC-driver-BDP-source.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-source.go.txt",
-      "sha256": "9b4cb2408fb6819257b974c70dce81642a37f22a5459f250a54c895bc53b857b",
-      "bytes": 38822
+      "sha256": "9b4cb2408fb6819257b974c70dce81642a37f22a5459f250a54c895bc53b857b"
     },
     {
+      "bytes": 2000,
       "name": "ingress-DIAGNOSTIC-driver-combined-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-combined-overlay.json",
-      "sha256": "4f24972ef031ceb6805542338b9321900d28fcf22f9f8e4bff01daad872c1fc6",
-      "bytes": 2000
+      "sha256": "4f24972ef031ceb6805542338b9321900d28fcf22f9f8e4bff01daad872c1fc6"
     },
     {
+      "bytes": 976,
       "name": "ingress-DIAGNOSTIC-driver-compile-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-command.json",
-      "sha256": "c444ebefc8342d9998db84ecb3c3d291f48e70cde713dfe120919ea167ab99e3",
-      "bytes": 976
+      "sha256": "c444ebefc8342d9998db84ecb3c3d291f48e70cde713dfe120919ea167ab99e3"
     },
     {
+      "bytes": 38807,
       "name": "ingress-DIAGNOSTIC-driver-compile-failed-source.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-failed-source.go.txt",
-      "sha256": "8ccc9dc4afe921be2622161b69a0b75a444741a9eabe739e21dd9d3f00630bb4",
-      "bytes": 38807
+      "sha256": "8ccc9dc4afe921be2622161b69a0b75a444741a9eabe739e21dd9d3f00630bb4"
     },
     {
+      "bytes": 1207,
       "name": "ingress-DIAGNOSTIC-driver-compile-r2-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-r2-command.json",
-      "sha256": "4029b9f883263f797bcba054d2d1f4489a40ea949f0a1a5bb1eec795735b41a8",
-      "bytes": 1207
+      "sha256": "4029b9f883263f797bcba054d2d1f4489a40ea949f0a1a5bb1eec795735b41a8"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-driver-compile-r2.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-r2.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 71,
       "name": "ingress-DIAGNOSTIC-driver-compile-r2.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-r2.txt",
-      "sha256": "7921fbb7b2bafe23e2595491f8b35541f1ef56f688a15a882b8edaed4d8b46cc",
-      "bytes": 71
+      "sha256": "7921fbb7b2bafe23e2595491f8b35541f1ef56f688a15a882b8edaed4d8b46cc"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-driver-compile.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile.exit",
-      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "bytes": 2
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
     },
     {
+      "bytes": 384,
       "name": "ingress-DIAGNOSTIC-driver-compile.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile.txt",
-      "sha256": "a6702ed3d5c5928b913aef3016e02d5d204a328f96ad54aae3a3a9f522a7ace6",
-      "bytes": 384
+      "sha256": "a6702ed3d5c5928b913aef3016e02d5d204a328f96ad54aae3a3a9f522a7ace6"
     },
     {
+      "bytes": 6618,
       "name": "ingress-DIAGNOSTIC-driver-final-plan.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-final-plan.json",
-      "sha256": "80699e8ed91673c3cf200628fb4c1a342aa1385b3f69703c076b3b91c09085cc",
-      "bytes": 6618
+      "sha256": "80699e8ed91673c3cf200628fb4c1a342aa1385b3f69703c076b3b91c09085cc"
     },
     {
+      "bytes": 1469,
       "name": "ingress-DIAGNOSTIC-driver-invariants.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-invariants.json",
-      "sha256": "4bba6423937415c028138a1795151b23b4b140d6717ea735102e4ea976c2e587",
-      "bytes": 1469
+      "sha256": "4bba6423937415c028138a1795151b23b4b140d6717ea735102e4ea976c2e587"
     },
     {
+      "bytes": 2133,
       "name": "ingress-DIAGNOSTIC-driver-manifest.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-manifest.json",
-      "sha256": "602ce5e57d16dbfdc60f678502f7f0213baa3136672a4bf1976d76e484ad9b29",
-      "bytes": 2133
+      "sha256": "602ce5e57d16dbfdc60f678502f7f0213baa3136672a4bf1976d76e484ad9b29"
     },
     {
+      "bytes": 232,
       "name": "ingress-DIAGNOSTIC-driver-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-overlay.json",
-      "sha256": "085aa834eb5214c6e24d9cf5f69905c446141044e5611d56b040cc5f8fdc1fc0",
-      "bytes": 232
+      "sha256": "085aa834eb5214c6e24d9cf5f69905c446141044e5611d56b040cc5f8fdc1fc0"
     },
     {
+      "bytes": 5651,
       "name": "ingress-DIAGNOSTIC-driver-plan.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-plan.json",
-      "sha256": "86ad2665d4f54016dd719d3ae18c692c4cf26e6e84ae03de987876442fc7847e",
-      "bytes": 5651
+      "sha256": "86ad2665d4f54016dd719d3ae18c692c4cf26e6e84ae03de987876442fc7847e"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-driver-process.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.exit",
-      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "bytes": 2
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
     },
     {
+      "bytes": 847843,
       "name": "ingress-DIAGNOSTIC-driver-process.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.txt",
-      "sha256": "29c49b2ef5ecf9d19557dd75b1366f70068a22234c39427c1954b20849f4519e",
-      "bytes": 847843
+      "sha256": "29c49b2ef5ecf9d19557dd75b1366f70068a22234c39427c1954b20849f4519e"
     },
     {
+      "bytes": 1350,
       "name": "ingress-DIAGNOSTIC-driver-profile-commands.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-profile-commands.json",
-      "sha256": "300c6bd4073e1d7ae7a49824bbe138ed873341530bbedfc8953000fbe2fea5d1",
-      "bytes": 1350
+      "sha256": "300c6bd4073e1d7ae7a49824bbe138ed873341530bbedfc8953000fbe2fea5d1"
     },
     {
+      "bytes": 3030,
       "name": "ingress-DIAGNOSTIC-driver-profile-cumulative.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-profile-cumulative.txt",
-      "sha256": "b45689bc9a62591e71d0c7f788b1973401b9d0b1662e41521e99d9f1ac6a9c12",
-      "bytes": 3030
+      "sha256": "b45689bc9a62591e71d0c7f788b1973401b9d0b1662e41521e99d9f1ac6a9c12"
     },
     {
+      "bytes": 2519,
       "name": "ingress-DIAGNOSTIC-driver-profile-top.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-profile-top.txt",
-      "sha256": "1b9dc97ea04c56ddf1fd9b4929679600f9408971dfc98cebf27b41dde1c63df8",
-      "bytes": 2519
+      "sha256": "1b9dc97ea04c56ddf1fd9b4929679600f9408971dfc98cebf27b41dde1c63df8"
     },
     {
+      "bytes": 2314,
       "name": "ingress-DIAGNOSTIC-driver-ready.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-ready.json",
-      "sha256": "df9091fc5aa4e40f3d46d7f5c499c351ab79e17ecbd621e2a87b25d37c7a93c1",
-      "bytes": 2314
+      "sha256": "df9091fc5aa4e40f3d46d7f5c499c351ab79e17ecbd621e2a87b25d37c7a93c1"
     },
     {
+      "bytes": 23790,
       "name": "ingress-DIAGNOSTIC-driver-run-manifest.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-manifest.json",
-      "sha256": "e2c5bbb3f164e0e53f859d6c57e24b4495409802cacb1051c91ceaf1f69ccd66",
-      "bytes": 23790
+      "sha256": "e2c5bbb3f164e0e53f859d6c57e24b4495409802cacb1051c91ceaf1f69ccd66"
     },
     {
+      "bytes": 942906,
       "name": "ingress-DIAGNOSTIC-driver-run-observations.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-observations.json",
-      "sha256": "e5bba2afdf1a308c2958b2e91046e69530c780a991328dcbeb14b4d52dbd9d81",
-      "bytes": 942906
+      "sha256": "e5bba2afdf1a308c2958b2e91046e69530c780a991328dcbeb14b4d52dbd9d81"
     },
     {
+      "bytes": 43717,
       "name": "ingress-DIAGNOSTIC-driver-run-source-after.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-source-after.json",
-      "sha256": "c018e94815a0ad0e4a3a28c38c80552832b46fe14d0f919cdb152e694af5a367",
-      "bytes": 43717
+      "sha256": "c018e94815a0ad0e4a3a28c38c80552832b46fe14d0f919cdb152e694af5a367"
     },
     {
+      "bytes": 43630,
       "name": "ingress-DIAGNOSTIC-driver-run-source-before.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-source-before.json",
-      "sha256": "dc39a31749e50a4d217d60560316f941ee8fececc2a5160ab72e5d830c970d04",
-      "bytes": 43630
+      "sha256": "dc39a31749e50a4d217d60560316f941ee8fececc2a5160ab72e5d830c970d04"
     },
     {
+      "bytes": 1114,
       "name": "ingress-DIAGNOSTIC-driver-run-start.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-start.json",
-      "sha256": "db39068dcfd2d4a390aa83aabaa3934e034cb6921c9bbb1d3181ac95e9ae6cb8",
-      "bytes": 1114
+      "sha256": "db39068dcfd2d4a390aa83aabaa3934e034cb6921c9bbb1d3181ac95e9ae6cb8"
     },
     {
+      "bytes": 9184,
       "name": "ingress-DIAGNOSTIC-driver-source-r2.diff",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source-r2.diff",
-      "sha256": "386eed8bc98ed76bfa24c5d91ba3dc778da67e923405933b7bbad73e14fe9d4f",
-      "bytes": 9184
+      "sha256": "386eed8bc98ed76bfa24c5d91ba3dc778da67e923405933b7bbad73e14fe9d4f"
     },
     {
+      "bytes": 9394,
       "name": "ingress-DIAGNOSTIC-driver-source.diff",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.diff",
-      "sha256": "0756906eb3b72d114d4aebdb0c5433fba0d890717126ca37e355b6f320822ed0",
-      "bytes": 9394
+      "sha256": "0756906eb3b72d114d4aebdb0c5433fba0d890717126ca37e355b6f320822ed0"
     },
     {
+      "bytes": 38824,
       "name": "ingress-DIAGNOSTIC-driver-source.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.go.txt",
-      "sha256": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72",
-      "bytes": 38824
+      "sha256": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72"
     },
     {
+      "bytes": 911,
       "name": "ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build-command.json",
-      "sha256": "88c5a8cdbbfe0d6e60a79edae8c5a66b29c9c8cbfba80264bc33f08da4bfa346",
-      "bytes": 911
+      "sha256": "88c5a8cdbbfe0d6e60a79edae8c5a66b29c9c8cbfba80264bc33f08da4bfa346"
     },
     {
+      "bytes": 89802,
       "name": "ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build-receipt.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build-receipt.json",
-      "sha256": "cfb9d9a0fff6e601ad28407e26b5723e4c41076350467377fee0065d5427be76",
-      "bytes": 89802
+      "sha256": "cfb9d9a0fff6e601ad28407e26b5723e4c41076350467377fee0065d5427be76"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build.exit",
-      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "bytes": 2
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
     },
     {
+      "bytes": 192,
       "name": "ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-build.txt",
-      "sha256": "3afe483e87d44b016b37260c0a1ecf9a26d6f481985ef015a9ab0f747c4b38b6",
-      "bytes": 192
+      "sha256": "3afe483e87d44b016b37260c0a1ecf9a26d6f481985ef015a9ab0f747c4b38b6"
     },
     {
+      "bytes": 1606,
       "name": "ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-first-GOMODCACHE-tooling-overlay.json",
-      "sha256": "f343f5319d3caf9a662b724a7221ba48c3a6bfe7535eb89517d2d300de2c4290",
-      "bytes": 1606
+      "sha256": "f343f5319d3caf9a662b724a7221ba48c3a6bfe7535eb89517d2d300de2c4290"
     },
     {
+      "bytes": 2,
       "name": "ingress-DIAGNOSTIC-gofmt.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-gofmt.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 0,
       "name": "ingress-DIAGNOSTIC-gofmt.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-gofmt.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 105850,
       "name": "ingress-DIAGNOSTIC-grpc-copy-manifest.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-copy-manifest.json",
-      "sha256": "d04d2bf972ab0fbc191b0ee35da3b8a69eae18c21fcc38009b19ce001e0c332c",
-      "bytes": 105850
+      "sha256": "d04d2bf972ab0fbc191b0ee35da3b8a69eae18c21fcc38009b19ce001e0c332c"
     },
     {
+      "bytes": 63438,
       "name": "ingress-DIAGNOSTIC-grpc-http2-client.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-http2-client.go.txt",
-      "sha256": "f39a329a7467da8f0b6a10965dcd33e4e66fbede3fa01f8e20543ac591cc6897",
-      "bytes": 63438
+      "sha256": "f39a329a7467da8f0b6a10965dcd33e4e66fbede3fa01f8e20543ac591cc6897"
     },
     {
+      "bytes": 3635,
       "name": "ingress-DIAGNOSTIC-grpc-proto.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-proto.go.txt",
-      "sha256": "12687e0e201ca795964f33987796b27ffffb604709b5cbc17464fec87f66ef2f",
-      "bytes": 3635
+      "sha256": "12687e0e201ca795964f33987796b27ffffb604709b5cbc17464fec87f66ef2f"
     },
     {
+      "bytes": 64014,
       "name": "ingress-DIAGNOSTIC-grpc-stream.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-stream.go.txt",
-      "sha256": "65c77ce5267be3d51491b01c3b48d9dfba33b43c5353b79fd1ff80c89de0f0af",
-      "bytes": 64014
+      "sha256": "65c77ce5267be3d51491b01c3b48d9dfba33b43c5353b79fd1ff80c89de0f0af"
     },
     {
+      "bytes": 31014,
       "name": "ingress-DIAGNOSTIC-grpc-transport.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-transport.go.txt",
-      "sha256": "b4f16fd0e2cd9f9a8626b1aee0f8cd6e1c7d6fadefbf77d17d152a9fe559cea1",
-      "bytes": 31014
+      "sha256": "b4f16fd0e2cd9f9a8626b1aee0f8cd6e1c7d6fadefbf77d17d152a9fe559cea1"
     },
     {
+      "bytes": 463,
       "name": "ingress-DIAGNOSTIC-modfile.diff",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-modfile.diff",
-      "sha256": "dfab4612a00616de67c196ada9fd256f95138699bb9879680ae9a2eeb7a63580",
-      "bytes": 463
+      "sha256": "dfab4612a00616de67c196ada9fd256f95138699bb9879680ae9a2eeb7a63580"
     },
     {
+      "bytes": 16120,
       "name": "ingress-DIAGNOSTIC-prepare.py",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-prepare.py",
-      "sha256": "28218631a9b7156edb81da620d87178069fc264f96d0046b9743a5deaca751f2",
-      "bytes": 16120
+      "sha256": "28218631a9b7156edb81da620d87178069fc264f96d0046b9743a5deaca751f2"
     },
     {
+      "bytes": 862,
       "name": "ingress-DIAGNOSTIC-root-preparation-review.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-root-preparation-review.json",
-      "sha256": "01e47d0ce2f363cf7f2105c6eb6db74b51a75d8b367fc8c013425c1d001ce0aa",
-      "bytes": 862
+      "sha256": "01e47d0ce2f363cf7f2105c6eb6db74b51a75d8b367fc8c013425c1d001ce0aa"
     },
     {
+      "bytes": 607,
       "name": "ingress-DIAGNOSTIC-root-run-authorization.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-root-run-authorization.json",
-      "sha256": "9e414988d69d2545e6606c5caaccb545346d3750d01f3aea34b1458726693fed",
-      "bytes": 607
+      "sha256": "9e414988d69d2545e6606c5caaccb545346d3750d01f3aea34b1458726693fed"
     },
     {
+      "bytes": 1790,
       "name": "ingress-DIAGNOSTIC-server-module-overlay.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-server-module-overlay.json",
-      "sha256": "8af076075d759a87bd53e1839167d761cdb49a36c1874d6b00579d2210af9afd",
-      "bytes": 1790
+      "sha256": "8af076075d759a87bd53e1839167d761cdb49a36c1874d6b00579d2210af9afd"
     },
     {
+      "bytes": 5982,
       "name": "ingress-DIAGNOSTIC-server-module-provenance.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-server-module-provenance.json",
-      "sha256": "2deccb2c5cdf0a527a0f063d889a1ef7f138d51093aba22c3fcfda321403a7a2",
-      "bytes": 5982
+      "sha256": "2deccb2c5cdf0a527a0f063d889a1ef7f138d51093aba22c3fcfda321403a7a2"
     },
     {
+      "bytes": 63093,
       "name": "ingress-DIAGNOSTIC-server-stage-analysis.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-server-stage-analysis.json",
-      "sha256": "b351c94af68cdf1ba0b59049b962758f1f7fd29cea7ed83508ada368fcb0f158",
-      "bytes": 63093
+      "sha256": "b351c94af68cdf1ba0b59049b962758f1f7fd29cea7ed83508ada368fcb0f158"
     },
     {
+      "bytes": 11875,
       "name": "ingress-DIAGNOSTIC-source.diff",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-source.diff",
-      "sha256": "37f33aad0f32a9b7e03eee90b5eb0a4baa51a002c9a54ec604cfc3f097955cb6",
-      "bytes": 11875
+      "sha256": "37f33aad0f32a9b7e03eee90b5eb0a4baa51a002c9a54ec604cfc3f097955cb6"
     },
     {
+      "bytes": 6982,
       "name": "ingress-DIAGNOSTIC-weir-codec.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-codec.go.txt",
-      "sha256": "3d3f55be496714117ab4ca672607e1abe70045a78938496d22b93b271e81defd",
-      "bytes": 6982
+      "sha256": "3d3f55be496714117ab4ca672607e1abe70045a78938496d22b93b271e81defd"
     },
     {
+      "bytes": 7242,
       "name": "ingress-DIAGNOSTIC-weir-main.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-main.go.txt",
-      "sha256": "38f1025c14b47dc2827c9e7e9d0fcb9718cb8c05efe31d7cfd89c3113bd2ad42",
-      "bytes": 7242
+      "sha256": "38f1025c14b47dc2827c9e7e9d0fcb9718cb8c05efe31d7cfd89c3113bd2ad42"
     },
     {
+      "bytes": 34157,
       "name": "ingress-DIAGNOSTIC-weir-runtime.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-runtime.go.txt",
-      "sha256": "018fac43b6dc2710df552c1bbb3a5e50b864b4c49bfd9e9765ea723f79638e22",
-      "bytes": 34157
+      "sha256": "018fac43b6dc2710df552c1bbb3a5e50b864b4c49bfd9e9765ea723f79638e22"
     },
     {
+      "bytes": 1256,
       "name": "ingress-DIAGNOSTIC-weir-version.go.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-version.go.txt",
-      "sha256": "cd7cb26bffe40d1f6c5bb18714558a9a9470f9ec5c6423e838eea98481d775b0",
-      "bytes": 1256
+      "sha256": "cd7cb26bffe40d1f6c5bb18714558a9a9470f9ec5c6423e838eea98481d775b0"
     },
     {
+      "bytes": 1576,
       "name": "ingress-DIAGNOSTIC.mod",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.mod",
-      "sha256": "dfb1933a5826d65c28f8ddbbd438ff6ed3afaf2e5c13d6edd1069df82b8c9fae",
-      "bytes": 1576
+      "sha256": "dfb1933a5826d65c28f8ddbbd438ff6ed3afaf2e5c13d6edd1069df82b8c9fae"
     },
     {
+      "bytes": 11912,
       "name": "ingress-DIAGNOSTIC.sum",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.sum",
-      "sha256": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f",
-      "bytes": 11912
+      "sha256": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f"
     },
     {
+      "bytes": 1126,
       "name": "ingress-memory-compile-manifest.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-compile-manifest.json",
-      "sha256": "e10074dde05e919575ce8aff482d575ef82eed67cbb024359b6d9b0fa5ecd29e",
-      "bytes": 1126
+      "sha256": "e10074dde05e919575ce8aff482d575ef82eed67cbb024359b6d9b0fa5ecd29e"
     },
     {
+      "bytes": 2,
       "name": "ingress-memory-compile.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-compile.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 71,
       "name": "ingress-memory-compile.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-compile.txt",
-      "sha256": "921cab23fa0d16ccf56ae37426e565e9152ca43e77ef2e8322a95bb4581d8d53",
-      "bytes": 71
+      "sha256": "921cab23fa0d16ccf56ae37426e565e9152ca43e77ef2e8322a95bb4581d8d53"
     },
     {
+      "bytes": 13778,
       "name": "ingress-memory-driver-runtime-dependencies.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-driver-runtime-dependencies.txt",
-      "sha256": "c668b4d40bd972108c2dd6c2744e07ec489b6ea4cb6baaf2239dce2f9bee09c6",
-      "bytes": 13778
+      "sha256": "c668b4d40bd972108c2dd6c2744e07ec489b6ea4cb6baaf2239dce2f9bee09c6"
     },
     {
+      "bytes": 1261,
       "name": "ingress-memory-driver-runtime-identity.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-driver-runtime-identity.json",
-      "sha256": "3b94cef30d68ef3a7ab7dc5cba1e80fcfd63195f7576bca46c955f7f26175dc3",
-      "bytes": 1261
+      "sha256": "3b94cef30d68ef3a7ab7dc5cba1e80fcfd63195f7576bca46c955f7f26175dc3"
     },
     {
+      "bytes": 1614,
       "name": "ingress-memory-main-A-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-command.json",
-      "sha256": "8f33455211622ab40d6c26d0e2c3e594ad68e84f0629ce4c79f92e93016f8b69",
-      "bytes": 1614
+      "sha256": "8f33455211622ab40d6c26d0e2c3e594ad68e84f0629ce4c79f92e93016f8b69"
     },
     {
+      "bytes": 10145,
       "name": "ingress-memory-main-A-manifest.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-manifest.json",
-      "sha256": "2a97c8b0435bec57056bc22106fa4707f4388f87b5cb2d1184c284d99f5655e8",
-      "bytes": 10145
+      "sha256": "2a97c8b0435bec57056bc22106fa4707f4388f87b5cb2d1184c284d99f5655e8"
     },
     {
+      "bytes": 884616,
       "name": "ingress-memory-main-A-observations.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-observations.json",
-      "sha256": "31b1ff0a6b5d6f0669a7fe67c208a15732c32f63d4ca5426410a72e19434cfc6",
-      "bytes": 884616
+      "sha256": "31b1ff0a6b5d6f0669a7fe67c208a15732c32f63d4ca5426410a72e19434cfc6"
     },
     {
+      "bytes": 2,
       "name": "ingress-memory-main-A-process.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-process.exit",
-      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "bytes": 2
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
     },
     {
+      "bytes": 696064,
       "name": "ingress-memory-main-A-process.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-process.txt",
-      "sha256": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2",
-      "bytes": 696064
+      "sha256": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2"
     },
     {
+      "bytes": 82589,
       "name": "ingress-memory-main-A-source-after.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-source-after.json",
-      "sha256": "0c2a23ea11f051c586492193310999cbac5989d4975b13578f8c7cc0cf16785f",
-      "bytes": 82589
+      "sha256": "0c2a23ea11f051c586492193310999cbac5989d4975b13578f8c7cc0cf16785f"
     },
     {
+      "bytes": 84196,
       "name": "ingress-memory-main-A-source-before.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-source-before.json",
-      "sha256": "7bb504c41b18f03473e18d3ed68e6de4d83736f1100ae9ef73d32a6ecfd936ca",
-      "bytes": 84196
+      "sha256": "7bb504c41b18f03473e18d3ed68e6de4d83736f1100ae9ef73d32a6ecfd936ca"
     },
     {
+      "bytes": 356,
       "name": "ingress-memory-main-A-start.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-start.json",
-      "sha256": "02306b4b8c3675a85c99621f50928aef7c7a09a66600fd92b264a135ca3f4300",
-      "bytes": 356
+      "sha256": "02306b4b8c3675a85c99621f50928aef7c7a09a66600fd92b264a135ca3f4300"
     },
     {
+      "bytes": 703,
       "name": "ingress-memory-test-draft.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-test-draft.json",
-      "sha256": "618ae1d225bc07b7bb7936169ea2184924a2740bb46df1236e5b73ae7db20618",
-      "bytes": 703
+      "sha256": "618ae1d225bc07b7bb7936169ea2184924a2740bb46df1236e5b73ae7db20618"
     },
     {
+      "bytes": 2,
       "name": "ingress-memory-wire-compile.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-wire-compile.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 71,
       "name": "ingress-memory-wire-compile.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-wire-compile.txt",
-      "sha256": "163a3f27ce324849ffe60d1ba5bd33b7ac83ab296fcc4ae6a1377dca78106e15",
-      "bytes": 71
+      "sha256": "163a3f27ce324849ffe60d1ba5bd33b7ac83ab296fcc4ae6a1377dca78106e15"
     },
     {
+      "bytes": 2,
       "name": "ingress-memory-wire-local.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-wire-local.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 764,
       "name": "ingress-memory-wire-local.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-wire-local.txt",
-      "sha256": "256960da947c8f511e67726bc1f99a7bfbc07e1792f72a498bd90b51627b02da",
-      "bytes": 764
+      "sha256": "256960da947c8f511e67726bc1f99a7bfbc07e1792f72a498bd90b51627b02da"
     },
     {
+      "bytes": 2347,
       "name": "ingress-memory-wire-validation.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-wire-validation.json",
-      "sha256": "c195c34a2d76a194c82f776e2c884260542cbd0480941102b66065dd11b40023",
-      "bytes": 2347
+      "sha256": "c195c34a2d76a194c82f776e2c884260542cbd0480941102b66065dd11b40023"
     },
     {
+      "bytes": 1604,
       "name": "ingress-production-A-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-command.json",
-      "sha256": "dcb7b89799ab6a97aaa6527729f29c3af28636a6a18adf69246180051ddb9172",
-      "bytes": 1604
+      "sha256": "dcb7b89799ab6a97aaa6527729f29c3af28636a6a18adf69246180051ddb9172"
     },
     {
+      "bytes": 2868,
       "name": "ingress-production-A-driver-buildinfo.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-driver-buildinfo.txt",
-      "sha256": "c1dc45af3704fe396d15b4a1f1296ab80bb782e0d4ab454c7d13a9bf5439f62d",
-      "bytes": 2868
+      "sha256": "c1dc45af3704fe396d15b4a1f1296ab80bb782e0d4ab454c7d13a9bf5439f62d"
     },
     {
+      "bytes": 27339,
+      "name": "ingress-production-A-ledger-audit.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-ledger-audit.json",
+      "sha256": "9ca373d1774adf6bbf4f312752aae0971fc761ea419a462020df787347583517"
+    },
+    {
+      "bytes": 693848,
       "name": "ingress-production-A-observations.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-observations.json",
-      "sha256": "22e326c542aed65f2b131d2aefaa00b2649b6e5af18973bcbaab00f381bf8cb8",
-      "bytes": 693848
+      "sha256": "22e326c542aed65f2b131d2aefaa00b2649b6e5af18973bcbaab00f381bf8cb8"
     },
     {
+      "bytes": 2,
       "name": "ingress-production-A-process.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-process.exit",
-      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
-      "bytes": 2
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
     },
     {
+      "bytes": 549590,
       "name": "ingress-production-A-process.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-process.txt",
-      "sha256": "29b137d244a7911ffe7a75b042cf8dec4e1827d28f50d01d9621be88bea0ab73",
-      "bytes": 549590
+      "sha256": "29b137d244a7911ffe7a75b042cf8dec4e1827d28f50d01d9621be88bea0ab73"
     },
     {
+      "bytes": 833,
       "name": "ingress-production-build-command.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build-command.json",
-      "sha256": "c252b069d391e05acefe9a7d46173e6c4cc80be6dce60c60c2703ae8c8bfa594",
-      "bytes": 833
+      "sha256": "c252b069d391e05acefe9a7d46173e6c4cc80be6dce60c60c2703ae8c8bfa594"
     },
     {
+      "bytes": 2,
       "name": "ingress-production-build.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 1992,
       "name": "ingress-production-build.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build.json",
-      "sha256": "29dd53545ecad4eb4c48a4fc0ad507e19dd4e208ad8d97197ad7eb7dc7d41360",
-      "bytes": 1992
+      "sha256": "29dd53545ecad4eb4c48a4fc0ad507e19dd4e208ad8d97197ad7eb7dc7d41360"
     },
     {
+      "bytes": 0,
       "name": "ingress-production-build.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-build.txt",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "bytes": 0
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
+      "bytes": 2828,
       "name": "ingress-production-buildinfo.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-buildinfo.txt",
-      "sha256": "2c2c4687ab21b72de26439a48b13c06ae273c62b2fe86145b89fbb81efb63c4c",
-      "bytes": 2828
+      "sha256": "2c2c4687ab21b72de26439a48b13c06ae273c62b2fe86145b89fbb81efb63c4c"
     },
     {
+      "bytes": 766,
       "name": "ingress-production-preflight-first-error.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-preflight-first-error.json",
-      "sha256": "bdaf4491354c47da8ba84edb73d77206c3e2b802154b823a2b095257dbeae9ee",
-      "bytes": 766
+      "sha256": "bdaf4491354c47da8ba84edb73d77206c3e2b802154b823a2b095257dbeae9ee"
     },
     {
+      "bytes": 468,
       "name": "ingress-production-root-source-audit.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-root-source-audit.json",
-      "sha256": "399ee787aa4e2097ad7a6025363eb2996013aed37ccf9a926060dc7b2d74c184",
-      "bytes": 468
+      "sha256": "399ee787aa4e2097ad7a6025363eb2996013aed37ccf9a926060dc7b2d74c184"
     },
     {
+      "bytes": 114451,
       "name": "ingress-production-source-after.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-source-after.json",
-      "sha256": "761a1b811745e4aa18b589f64c6febf4114a67fcd265cf1b18618675766bc0d3",
-      "bytes": 114451
+      "sha256": "761a1b811745e4aa18b589f64c6febf4114a67fcd265cf1b18618675766bc0d3"
     },
     {
+      "bytes": 113834,
       "name": "ingress-production-source-before.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-source-before.json",
-      "sha256": "3f0c31f453ff083333622ca2508458488bb79496d6ab9a2a664e76a50f024957",
-      "bytes": 113834
+      "sha256": "3f0c31f453ff083333622ca2508458488bb79496d6ab9a2a664e76a50f024957"
     },
     {
+      "bytes": 851,
       "name": "ingress-production-source-whitespace.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-source-whitespace.json",
-      "sha256": "03f51535cd4d45db5806ecd805acbdde1d105ddceca9a42ec1d4490c4f84234d",
-      "bytes": 851
+      "sha256": "03f51535cd4d45db5806ecd805acbdde1d105ddceca9a42ec1d4490c4f84234d"
     },
     {
+      "bytes": 1155,
+      "name": "ingress-production-v2-root-source-audit.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-root-source-audit.json",
+      "sha256": "bd9fcec537ecc87a3f7686c8cff5736035c97bab159376eaa1b3f944b75c3315"
+    },
+    {
+      "bytes": 31188,
       "name": "ingress-production-validation.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-validation.json",
-      "sha256": "e13e6cd11d39035aaae4315d410fe8107f3e16f5a92033acdeeed10691da869b",
-      "bytes": 31188
+      "sha256": "e13e6cd11d39035aaae4315d410fe8107f3e16f5a92033acdeeed10691da869b"
     },
     {
+      "bytes": 3672,
       "name": "ingress-support-audit-final.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-audit-final.json",
-      "sha256": "c403cdeffd69c732c00d8b9588fd780072e41bac6933d3825451cb39899548ce",
-      "bytes": 3672
+      "sha256": "c403cdeffd69c732c00d8b9588fd780072e41bac6933d3825451cb39899548ce"
     },
     {
+      "bytes": 676,
       "name": "ingress-support-package-actual-first.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-package-actual-first.json",
-      "sha256": "e57cc45ac573fbb35e84f982494ceb0fe91b909809da8d34e841ea85d051b2aa",
-      "bytes": 676
+      "sha256": "e57cc45ac573fbb35e84f982494ceb0fe91b909809da8d34e841ea85d051b2aa"
     },
     {
+      "bytes": 676,
       "name": "ingress-support-package-historical-failure.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-package-historical-failure.json",
-      "sha256": "12a9a854fc05d88fa07892f7a89f96b548eff30fabe9e1c7aa82b5b9ee5cfeb9",
-      "bytes": 676
+      "sha256": "12a9a854fc05d88fa07892f7a89f96b548eff30fabe9e1c7aa82b5b9ee5cfeb9"
     },
     {
+      "bytes": 2,
       "name": "ingress-support-python-first.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-first.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 6650,
       "name": "ingress-support-python-first.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-first.txt",
-      "sha256": "d826185f802e11fa69369025a30dcb507c8ca4c4a49c0da3200e785fa0100e68",
-      "bytes": 6650
+      "sha256": "d826185f802e11fa69369025a30dcb507c8ca4c4a49c0da3200e785fa0100e68"
     },
     {
+      "bytes": 7079,
       "name": "ingress-support-python-optimized-first.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-optimized-first.json",
-      "sha256": "65c10587333269b5f169f41446cb29401ba086aee4526e321841e00a30526c41",
-      "bytes": 7079
+      "sha256": "65c10587333269b5f169f41446cb29401ba086aee4526e321841e00a30526c41"
     },
     {
+      "bytes": 2,
       "name": "ingress-support-python-optimized-second.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-optimized-second.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 6651,
       "name": "ingress-support-python-optimized-second.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-optimized-second.txt",
-      "sha256": "193b69aa98feee5eb0b23feeb79a7fce2054dd7b5c7178a0b0c1e9b4740a2e67",
-      "bytes": 6651
+      "sha256": "193b69aa98feee5eb0b23feeb79a7fce2054dd7b5c7178a0b0c1e9b4740a2e67"
     },
     {
+      "bytes": 6981,
       "name": "ingress-support-python-optimized-third.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-optimized-third.json",
-      "sha256": "9b096ebf72aa59c568f4e3022e10a32f53b55218059b864352c634561ac6ff2f",
-      "bytes": 6981
+      "sha256": "9b096ebf72aa59c568f4e3022e10a32f53b55218059b864352c634561ac6ff2f"
     },
     {
+      "bytes": 2,
       "name": "ingress-support-python-second.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-second.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 6651,
       "name": "ingress-support-python-second.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-second.txt",
-      "sha256": "f3ea0097e25a10c6f912d469df5b1b9ecd2c379080cd6019133c4d669a35a66e",
-      "bytes": 6651
+      "sha256": "f3ea0097e25a10c6f912d469df5b1b9ecd2c379080cd6019133c4d669a35a66e"
     },
     {
+      "bytes": 2,
       "name": "ingress-support-python-third.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-third.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 6652,
       "name": "ingress-support-python-third.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-python-third.txt",
-      "sha256": "c2ff7365b32421d0c25b893e09a487d9577759e69d0510b7e14a01ead9da133f",
-      "bytes": 6652
+      "sha256": "c2ff7365b32421d0c25b893e09a487d9577759e69d0510b7e14a01ead9da133f"
     },
     {
+      "bytes": 1086,
       "name": "ingress-support-source-freeze.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-source-freeze.json",
-      "sha256": "2d8ca490a95574ef9dc4de039c59dbb94d174a1b3a6f2ccf73a2758e21b1e509",
-      "bytes": 1086
+      "sha256": "2d8ca490a95574ef9dc4de039c59dbb94d174a1b3a6f2ccf73a2758e21b1e509"
     },
     {
+      "bytes": 839,
       "name": "ingress-support-two-export-mock.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-two-export-mock.json",
-      "sha256": "6870bc9e93a7b7da097a2c2531401675e4263e9827637b986c70a33c445348ed",
-      "bytes": 839
+      "sha256": "6870bc9e93a7b7da097a2c2531401675e4263e9827637b986c70a33c445348ed"
     },
     {
+      "bytes": 153250,
       "name": "ingress-support-upstream-grpc-independent.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-upstream-grpc-independent.json",
-      "sha256": "6386b1ae70c6ff6c594c950a4375de22696a6a5fdd1ea7e59e76f41790c26306",
-      "bytes": 153250
+      "sha256": "6386b1ae70c6ff6c594c950a4375de22696a6a5fdd1ea7e59e76f41790c26306"
     },
     {
+      "bytes": 35188,
       "name": "original-ingress_memory_budget_integration_test.go.txt",
       "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
-      "sha256": "941d8dbb37b1449dfdb0a8f6c33e5402eafc70b6ca97ab2c100b8c8f8df35c07",
-      "bytes": 35188
+      "sha256": "941d8dbb37b1449dfdb0a8f6c33e5402eafc70b6ca97ab2c100b8c8f8df35c07"
     },
     {
+      "bytes": 4467,
       "name": "original-ingress_memory_wire_test.go.txt",
       "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
-      "sha256": "d16802f4d135c61e95543b96854f8023d7785e3db5fde4cc2d7c3638fdf7f3ab",
-      "bytes": 4467
+      "sha256": "d16802f4d135c61e95543b96854f8023d7785e3db5fde4cc2d7c3638fdf7f3ab"
     },
     {
+      "bytes": 12998,
       "name": "original-internal-app-lua_memory_budget_integration_test.go.txt",
-      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
       "original_repository_path": "internal/app/lua_memory_budget_integration_test.go",
-      "sha256": "c5ef3732d63e90e89e1a44f08c05eac85ced50a4ce445e1dcde730031b20592a",
-      "bytes": 12998
+      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+      "sha256": "c5ef3732d63e90e89e1a44f08c05eac85ced50a4ce445e1dcde730031b20592a"
     },
     {
+      "bytes": 38382,
       "name": "original-internal-app-production_fault_integration_test.go.txt",
-      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
       "original_repository_path": "internal/app/production_fault_integration_test.go",
-      "sha256": "40b655ff5501be0d7216c27f57af2b533978e1cc9a643236bd06f962ef7ee335",
-      "bytes": 38382
+      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+      "sha256": "40b655ff5501be0d7216c27f57af2b533978e1cc9a643236bd06f962ef7ee335"
     },
     {
+      "bytes": 38116,
       "name": "original-internal-app-production_qualification_integration_test.go.txt",
-      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
       "original_repository_path": "internal/app/production_qualification_integration_test.go",
-      "sha256": "9ab756bc53d8071e6e6300d3ac3a63e5fff99dd7daa5c70afae6477e3d8890de",
-      "bytes": 38116
+      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+      "sha256": "9ab756bc53d8071e6e6300d3ac3a63e5fff99dd7daa5c70afae6477e3d8890de"
     },
     {
+      "bytes": 11787,
       "name": "original-internal-testutil-testmongo-proxy.go.txt",
-      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
       "original_repository_path": "internal/testutil/testmongo/proxy.go",
-      "sha256": "dcfa15a00ca78e7bd3a4835c2b78a55d026860c3fff7d0f0ba7b2e9a6320a420",
-      "bytes": 11787
-    },
-    {
-      "name": "original-internal-testutil-testmongo-proxy_integration.go.txt",
       "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
-      "original_repository_path": "internal/testutil/testmongo/proxy_integration.go",
-      "sha256": "2e6657b50aac3c40cce6c333e1ab07ed3c863ee9f56289ca4c40e9f6af9559a8",
-      "bytes": 899
+      "sha256": "dcfa15a00ca78e7bd3a4835c2b78a55d026860c3fff7d0f0ba7b2e9a6320a420"
     },
     {
+      "bytes": 899,
+      "name": "original-internal-testutil-testmongo-proxy_integration.go.txt",
+      "original_repository_path": "internal/testutil/testmongo/proxy_integration.go",
+      "original_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+      "sha256": "2e6657b50aac3c40cce6c333e1ab07ed3c863ee9f56289ca4c40e9f6af9559a8"
+    },
+    {
+      "bytes": 41617,
       "name": "production-memory-main-build.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/production-memory-main-build.json",
-      "sha256": "4ded5bf62840a7aa154069e14ee3b3a75622522ba633aacd8156cd36ba6b681a",
-      "bytes": 41617
+      "sha256": "4ded5bf62840a7aa154069e14ee3b3a75622522ba633aacd8156cd36ba6b681a"
     },
     {
+      "bytes": 2,
       "name": "production-post81-driver-compile.exit",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/production-post81-driver-compile.exit",
-      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-      "bytes": 2
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
     },
     {
+      "bytes": 713,
       "name": "production-post81-driver-compile.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/production-post81-driver-compile.json",
-      "sha256": "b146dae634dd021ea219ef2072f8fa97efd8caca12589fb23e9423ffc7716121",
-      "bytes": 713
+      "sha256": "b146dae634dd021ea219ef2072f8fa97efd8caca12589fb23e9423ffc7716121"
     },
     {
+      "bytes": 71,
       "name": "production-post81-driver-compile.txt",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/production-post81-driver-compile.txt",
-      "sha256": "f872d1a23430ef629b3cff9d4cc2e3fe8fe3bcf263b89a64921555bb5c521876",
-      "bytes": 71
+      "sha256": "f872d1a23430ef629b3cff9d4cc2e3fe8fe3bcf263b89a64921555bb5c521876"
     }
-  ]
+  ],
+  "original_files_preserved_without_normalization": true,
+  "path_note": "Original receipts/recipes preserve original absolute paths; names in this index map them to this directory. Source copies ending go.txt are inert evidence.",
+  "purpose": "original failure, causal diagnostics, implementation checks and failed clean-candidate A512; final qualification remains incomplete",
+  "reconstruction_note": "The R2 931-file inert archive is retained locally at its receipt SHA; two reconstructed source files are also preserved here. The other 929 sources match the subsequent candidate inventory. The full archive is excluded as a redundant public dependency copy."
 }

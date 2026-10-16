@@ -1,0 +1,291 @@
+package store
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/overload"
+)
+
+func TestIngressCompleteDataPeakIsPaidBeforeBody(t *testing.T) {
+	for _, fragment := range []int{16 << 10, 1 << 10} {
+		memory := testExecutionMemory(192 << 20)
+		account, err := memory.NewIngress(t.Context(), 4096)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const length = (12 << 20) + 87
+		if err := account.ReserveMessage(length); err != nil {
+			t.Fatal(err)
+		}
+		before := memory.Snapshot()
+		other, err := memory.NewIngress(t.Context(), int(before.BudgetBytes-before.IOReserveBytes-before.UsedBytes))
+		if err != nil {
+			t.Fatal(err)
+		}
+		paid := memory.Snapshot().UsedBytes
+		releases := make([]func(), 0, (length+fragment-1)/fragment)
+		for remaining := length; remaining > 0; remaining -= min(remaining, fragment) {
+			release, err := account.Buffer(fragment)
+			if err != nil {
+				t.Fatalf("pre-paid body rejected at fragment=%d remaining=%d: %v; before=%+v current=%+v", fragment, remaining, err, before, memory.Snapshot())
+			}
+			releases = append(releases, release)
+			if memory.Snapshot().UsedBytes != paid {
+				t.Fatal("DATA borrowed capacity after body admission", memory.Snapshot())
+			}
+		}
+		decoded := account.Decoded()
+		account.ReleaseDecoded(decoded)
+		account.Close()
+		account.Retire()
+		if snapshot := memory.Snapshot(); snapshot.IngressBytes == 0 || snapshot.IngressBuffers != len(releases) {
+			t.Fatal("return discarded still-live backing owners", snapshot)
+		}
+		for _, release := range releases {
+			release()
+		}
+		other.Close()
+		other.Retire()
+		if snapshot := memory.Snapshot(); snapshot.UsedBytes != 0 || snapshot.IngressBytes != 0 {
+			t.Fatal(snapshot)
+		}
+	}
+}
+
+func TestIngressIndependentHeaderThenLargeBackingFitsPaidPeak(t *testing.T) {
+	memory := testExecutionMemory(192 << 20)
+	account, err := memory.NewIngress(t.Context(), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, err := account.Buffer(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := account.ReserveMessage(55); err != nil {
+		t.Fatal(err)
+	}
+	memory.mu.Lock()
+	memory.budget = memory.used + memory.reserve
+	memory.mu.Unlock()
+	body, err := account.Buffer(16 << 10)
+	if err != nil {
+		t.Fatal("separate header lost future DATA backing credit", err, memory.Snapshot())
+	}
+	decoded := account.Decoded()
+	account.ReleaseDecoded(decoded)
+	account.Close()
+	account.Retire()
+	header()
+	body()
+	if memory.Snapshot().UsedBytes != 0 {
+		t.Fatal(memory.Snapshot())
+	}
+}
+
+func TestIngressTinyFragmentsCannotBorrowDecodePromise(t *testing.T) {
+	memory := testExecutionMemory(192 << 20)
+	account, err := memory.NewIngress(t.Context(), 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const length = 4096
+	if err := account.ReserveMessage(length); err != nil {
+		t.Fatal(err)
+	}
+	paid := memory.Snapshot().UsedBytes
+	releases := make([]func(), 0)
+	for range length {
+		release, err := account.Buffer(1)
+		if err != nil {
+			break
+		}
+		releases = append(releases, release)
+		if memory.Snapshot().UsedBytes != paid {
+			t.Fatal("fragments borrowed unreserved future peak", memory.Snapshot())
+		}
+	}
+	if len(releases) == 0 || len(releases) == length {
+		t.Fatal("fragment ownership was not finitely bounded", len(releases))
+	}
+	short, err := memory.NewIngress(t.Context(), 4096)
+	if err != nil {
+		t.Fatal("fragment refusal blocked a fresh short RPC", err)
+	}
+	if err := short.ReserveMessage(32); err != nil {
+		t.Fatal(err)
+	}
+	short.ReleaseMessage()
+	short.Close()
+	short.Retire()
+	account.Close()
+	account.Retire()
+	for _, release := range releases {
+		release()
+	}
+	if snapshot := memory.Snapshot(); snapshot.UsedBytes != 0 || snapshot.IngressBuffers != 0 {
+		t.Fatal(snapshot)
+	}
+}
+
+func TestIngressInputCreditWaitsForActualLeaseRelease(t *testing.T) {
+	memory := testExecutionMemory(192 << 20)
+	limits := DefaultLimits()
+	runtime := newRuntime(nil, limits, memory)
+	defer memory.unregister(runtime.wake)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var held []*Ticket
+	for index := uint64(1); index <= 2; index++ {
+		work := plan(index, "held", false)
+		work.Bytes = 12 << 20
+		ticket, failure, _ := runtime.Submit(ctx, work, nil)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		held = append(held, ticket)
+		runtime.mu.Lock()
+		runtime.dequeueLocked(ticket)
+		runtime.mu.Unlock()
+	}
+	account, err := memory.NewIngress(ctx, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := account.ReserveMessage(12 << 20); err != nil {
+		t.Fatal(err)
+	}
+	input := account.Input(account.Decoded())
+	work := plan(3, "third", false)
+	work.Bytes = 12 << 20
+	input.Bind(work)
+	before := memory.Snapshot()
+	_, failure, changed := runtime.Submit(ctx, work, nil)
+	if failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || changed == nil || input.bytes == 0 || memory.Snapshot().UsedBytes != before.UsedBytes {
+		t.Fatal("temporary Q exhaustion rejected or erased owned source", failure, changed, before, memory.Snapshot())
+	}
+	held[0].executionLease.release()
+	next, failure, _ := runtime.Submit(ctx, work, nil)
+	if failure != nil || input.bytes != 0 {
+		t.Fatal("actual credit return did not exchange existing source", failure, memory.Snapshot())
+	}
+	for _, ticket := range append(held, next) {
+		ticket.stopWatch()
+		ticket.executionLease.release()
+	}
+	input.Release()
+	account.Close()
+	account.Retire()
+	if snapshot := memory.Snapshot(); snapshot.UsedBytes != 0 || snapshot.InputUsedBytes != 0 || snapshot.IngressReservedBytes != 0 {
+		t.Fatal(snapshot)
+	}
+}
+
+func TestIngressInputCreditWaitObservesMemoryOnlyWake(t *testing.T) {
+	// The Store loop must broadcast a memory-only signal even when its own
+	// queue has no dispatchable work. Otherwise a last owner or a trusted
+	// capacity update can return credit without waking Submit's waiter.
+	memory := testExecutionMemory(192 << 20)
+	runtime := newRuntime(nil, DefaultLimits(), memory)
+	go runtime.loop()
+	defer func() {
+		runtime.BeginDrain()
+		select {
+		case <-runtime.done:
+		case <-time.After(time.Second):
+			t.Error("runtime did not stop")
+		}
+	}()
+	runtime.mu.Lock()
+	changed := runtime.changed
+	runtime.mu.Unlock()
+	sample := overload.Snapshot{RecoveryAllowance: 384 << 20, RecoveryAllowanceKnown: true}
+	memory.ObserveMemory(sample)
+	select {
+	case <-changed:
+	case <-time.After(time.Second):
+		t.Fatal("memory-only credit signal did not wake Submit waiters")
+	}
+}
+
+func TestIngressInputCreditWaitRejectsUnownedAndImpossibleSources(t *testing.T) {
+	for _, scenario := range []string{"direct", "foreign", "closed", "impossible", "cancel", "drain"} {
+		t.Run(scenario, func(t *testing.T) {
+			memory := testExecutionMemory(192 << 20)
+			runtime := newRuntime(nil, DefaultLimits(), memory)
+			defer memory.unregister(runtime.wake)
+			var leases []*executionLease
+			for index := uint64(1); index <= 2; index++ {
+				work := plan(index, "held", false)
+				work.Bytes = 12 << 20
+				lease, failure, _ := memory.admit(work)
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				leases = append(leases, lease)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			work := plan(3, "waiting", false)
+			work.Bytes = 12 << 20
+			source := memory
+			if scenario == "foreign" {
+				source = testExecutionMemory(192 << 20)
+			}
+			account, err := source.NewIngress(ctx, 4096)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := account.ReserveMessage(12 << 20); err != nil {
+				t.Fatal(err)
+			}
+			input := account.Input(account.Decoded())
+			if scenario != "direct" {
+				input.Bind(work)
+			}
+			if scenario == "closed" {
+				input.Release()
+				account.Close()
+			}
+			if scenario == "impossible" {
+				work.WorkingBytes = int(memory.Snapshot().BudgetBytes)
+			}
+			if scenario == "cancel" || scenario == "drain" {
+				_, failure, changed := runtime.Submit(ctx, work, nil)
+				if failure == nil || changed == nil {
+					t.Fatal("live source did not enter bounded wait", failure, changed)
+				}
+				if scenario == "cancel" {
+					cancel()
+				} else {
+					runtime.BeginDrain()
+					select {
+					case <-changed:
+					default:
+						t.Fatal("Store drain lost a memory waiter")
+					}
+				}
+			}
+			before := source.Snapshot()
+			_, failure, changed := runtime.Submit(ctx, work, nil)
+			if failure == nil || scenario != "cancel" && scenario != "drain" && changed != nil {
+				t.Fatal("hard refusal became an unbounded wait", failure, changed)
+			}
+			if after := source.Snapshot(); after.IngressReservedBytes != before.IngressReservedBytes {
+				t.Fatal("failed/canceled admission dropped its live source", before, after)
+			}
+			input.Release()
+			account.Close()
+			account.Retire()
+			for _, lease := range leases {
+				lease.release()
+			}
+			if memory.Snapshot().UsedBytes != 0 || source.Snapshot().UsedBytes != 0 {
+				t.Fatal(memory.Snapshot(), source.Snapshot())
+			}
+		})
+	}
+}

@@ -25,7 +25,7 @@ func TestIngressOwnershipSurvivesCancellationAndTrustedShrink(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := memory.Snapshot()
-	if before.IngressBytes != 513 || before.IngressBuffers != 1 || before.IngressMessages != 1 || before.IngressReservedBytes != uint64((36<<20)+8192) || before.UsedBytes != before.IngressReservedBytes {
+	if before.IngressBytes != 513 || before.IngressBuffers != 1 || before.IngressMessages != 1 || before.IngressReservedBytes != uint64((48<<20)+(16<<10)+512+8192) || before.UsedBytes != before.IngressReservedBytes {
 		t.Fatal(before)
 	}
 	cancel()
@@ -54,7 +54,7 @@ func TestIngressWaitDoesNotBlockSmallMessageOrFinalFree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := large.ReserveMessage(24 << 20); err != nil {
+	if err := large.ReserveMessage(18 << 20); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -68,7 +68,7 @@ func TestIngressWaitDoesNotBlockSmallMessageOrFinalFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := make(chan error, 1)
-	go func() { result <- waiting.ReserveMessage(24 << 20) }()
+	go func() { result <- waiting.ReserveMessage(18 << 20) }()
 	deadline := time.Now().Add(time.Second)
 	for memory.Snapshot().IngressWaiting != 1 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
@@ -203,7 +203,7 @@ func TestIngressAdmissionTransfersTheSameSourceAtomically(t *testing.T) {
 	memory.budget = uint64(work.Bytes+nativeQueuedWindow) + 4096
 	memory.reserve = 0
 	memory.mu.Unlock()
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal("same source was charged twice", failure, before, memory.Snapshot())
 	}
@@ -238,7 +238,7 @@ func TestIngressFailedHandoffPreservesDecodedOwnership(t *testing.T) {
 	memory.mu.Lock()
 	memory.budget = 1
 	memory.mu.Unlock()
-	_, failure := memory.admit(work)
+	_, failure, _ := memory.admit(work)
 	after := memory.Snapshot()
 	if failure == nil || after.IngressReservedBytes != before.IngressReservedBytes || after.UsedBytes != before.UsedBytes || input.bytes == 0 {
 		t.Fatal("failed transfer erased original source", failure, before, after)
@@ -284,7 +284,7 @@ func TestIngressWaitingStopsOnHandlerCloseAndTrustedShrink(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := held.ReserveMessage(24 << 20); err != nil {
+		if err := held.ReserveMessage(18 << 20); err != nil {
 			t.Fatal(err)
 		}
 		account, err := memory.NewIngress(t.Context(), 4096)
@@ -292,7 +292,7 @@ func TestIngressWaitingStopsOnHandlerCloseAndTrustedShrink(t *testing.T) {
 			t.Fatal(err)
 		}
 		result := make(chan error, 1)
-		go func() { result <- account.ReserveMessage(24 << 20) }()
+		go func() { result <- account.ReserveMessage(18 << 20) }()
 		deadline := time.Now().Add(time.Second)
 		for memory.Snapshot().IngressWaiting != 1 && time.Now().Before(deadline) {
 			time.Sleep(time.Millisecond)

@@ -18,7 +18,7 @@ func TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck(t *testing.T) {
 	work.Bytes = 1 << 20
 	var leases []*executionLease
 	for {
-		lease, failure := memory.admit(work)
+		lease, failure, _ := memory.admit(work)
 		if failure != nil {
 			if failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 				t.Fatal(failure)
@@ -50,7 +50,7 @@ func TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck(t *testing.T) {
 func TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink(t *testing.T) {
 	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
-	first, failure := memory.admit(work)
+	first, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -60,7 +60,7 @@ func TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink(t *te
 		t.Fatal("could not consume non-input workspace")
 	}
 	before := memory.Snapshot()
-	second, failure := memory.admit(work)
+	second, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal("IO consumed the already promised input space", failure)
 	}
@@ -75,7 +75,7 @@ func TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink(t *te
 	if shrunk.InputReservedBytes != after.InputUsedBytes || shrunk.InputUsedBytes != after.InputUsedBytes || shrunk.UsedBytes != after.UsedBytes-(after.InputReservedBytes-after.InputUsedBytes) {
 		t.Fatal("shrink erased live inputs or actual IO", after, shrunk)
 	}
-	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("revoked input capacity was reused", failure)
 	}
 	sample.Unknown, sample.RecoveryAllowanceKnown, sample.RecoveryAllowance = true, false, 8<<30
@@ -93,7 +93,7 @@ func TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak(t *testing.T) {
 		work.WorkingBytes = 4096
 		normal := min(uint64(32<<20), (budget-min(budget, uint64(defaultNativeIOReserve)))/2)
 		work.Bytes = int(normal) + 2048
-		lease, failure := memory.admit(work)
+		lease, failure, _ := memory.admit(work)
 		peak := uint64(work.Bytes+nativeQueuedWindow+work.WorkingBytes) + uint64(2*protocol.NativeChunk+execution.ResultOverheadBytes-nativeQueuedWindow)
 		if peak > budget {
 			if failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || memory.Snapshot().UsedBytes != 0 {
@@ -107,7 +107,7 @@ func TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak(t *testing.T) {
 		if snapshot := memory.Snapshot(); snapshot.InputReservedBytes != uint64(work.Bytes+nativeQueuedWindow) || snapshot.InputUsedBytes != snapshot.InputReservedBytes {
 			t.Fatal("idle oversized input did not own its actual bytes", snapshot)
 		}
-		if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+		if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 			t.Fatal("oversized single-input exception multiplied across leases", failure)
 		}
 		if started, waiting := lease.start(work.WorkingBytes, defaultNativeIOReserve); !started || waiting {
@@ -118,7 +118,7 @@ func TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak(t *testing.T) {
 			t.Fatal(snapshot)
 		}
 		work.WorkingBytes = int(budget)
-		if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || memory.Snapshot().UsedBytes != 0 {
+		if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || memory.Snapshot().UsedBytes != 0 {
 			t.Fatal("oversized raw input bypassed its future dispatch cost", budget, failure, memory.Snapshot())
 		}
 	}
@@ -132,7 +132,7 @@ func TestNativeInputPromiseConcurrentAdmissionCannotOverdraw(t *testing.T) {
 	leases := make(chan *executionLease, nativeCountLimit)
 	for range nativeCountLimit {
 		group.Go(func() {
-			lease, _ := memory.admit(work)
+			lease, _, _ := memory.admit(work)
 			if lease != nil {
 				leases <- lease
 			}
