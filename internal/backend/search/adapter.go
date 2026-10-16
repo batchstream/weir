@@ -367,7 +367,7 @@ type getReply struct {
 	Status int             `json:"status"`
 }
 
-func readResult(work *execution.Plan, reply *getReply, failure *pb.Failure) *pb.Event {
+func readResult(reply *getReply, failure *pb.Failure) *pb.Event {
 	var read *pb.ReadResult
 	switch {
 	case failure != nil:

@@ -145,8 +145,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	return response.StatusCode, raw, nil
 }
 
-// Both execution paths use the configured backend credentials; Native requests
-// cannot supply Authorization or replayable request headers.
+// Backend authentication supplies defaults; Native may override end-to-end headers.
 func (a *Adapter) configureRequest(request *http.Request) {
 	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
 	// values. Keep the original request lifetime for our owned DNS/TLS I/O too.

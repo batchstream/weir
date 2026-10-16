@@ -113,6 +113,9 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 			if kind == wireMutationOptions && number == 1 && value != uint64(pb.MutationVisibility_APPLICATION_ACKNOWLEDGED) && value != uint64(pb.MutationVisibility_QUERY_VISIBLE) {
 				return invalidExecuteFraming()
 			}
+			if kind == wireProjection && number == 1 && value != uint64(pb.ProjectionMode_PROJECTION_MODE_UNSPECIFIED) && value != uint64(pb.ProjectionMode_INCLUDE) && value != uint64(pb.ProjectionMode_EXCLUDE) {
+				return invalidExecuteFraming()
+			}
 			remaining -= consumed
 			continue
 		}

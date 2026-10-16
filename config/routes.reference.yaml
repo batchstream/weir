@@ -92,7 +92,8 @@ stores:
       # Default: 20ms; nonnegative duration; 0s disables collection.
       # Full batches bypass collection.
       # Read, Scan, Native, drain and shorter caller deadlines bypass this wait.
-      # A mixed batch containing a Read also dispatches without collection.
+      # Reads and mutations form separate batches in the same queue; reads do not
+      # flush write collection. Both share the Store's max_in_flight budget.
       max_wait: 20ms
 
     # Retained fetch/publication batch size; total Scan output is not limited.

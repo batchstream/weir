@@ -41,17 +41,13 @@ func statusLabel(err error) string {
 }
 
 type transportMetrics struct {
-	rpcs, failures, watchdogs, forced *prometheus.CounterVec
+	rpcs, watchdogs, forced *prometheus.CounterVec
 }
 
 func newTransportMetrics() transportMetrics {
 	rpcOpts := prometheus.CounterOpts{
 		Name: "weir_rpc_completions_total",
 		Help: "gRPC handler/transport completion status; not client delivery acknowledgement.",
-	}
-	failureOpts := prometheus.CounterOpts{
-		Name: "weir_transport_failures_total",
-		Help: "At most one observed I/O failure per direction per admitted RPC, independent of execution evidence.",
 	}
 	watchOpts := prometheus.CounterOpts{
 		Name: "weir_watchdog_expirations_total",
@@ -63,16 +59,12 @@ func newTransportMetrics() transportMetrics {
 	}
 	m := transportMetrics{
 		rpcs:      prometheus.NewCounterVec(rpcOpts, []string{"method", "status"}),
-		failures:  prometheus.NewCounterVec(failureOpts, []string{"method", "phase"}),
 		watchdogs: prometheus.NewCounterVec(watchOpts, []string{"phase"}),
 		forced:    prometheus.NewCounterVec(forcedOpts, []string{"reason"}),
 	}
 	for _, method := range metricMethods {
 		for _, label := range metricStatuses {
 			m.rpcs.WithLabelValues(method, label)
-		}
-		for _, phase := range []string{"input", "output"} {
-			m.failures.WithLabelValues(method, phase)
 		}
 	}
 	for _, phase := range []string{"open", "input_or_result", "output"} {
@@ -88,7 +80,6 @@ func (s *Server) Describe(ch chan<- *prometheus.Desc) { prometheus.DescribeByCol
 
 func (s *Server) Collect(ch chan<- prometheus.Metric) {
 	s.metrics.rpcs.Collect(ch)
-	s.metrics.failures.Collect(ch)
 	s.metrics.watchdogs.Collect(ch)
 	s.metrics.forced.Collect(ch)
 }

@@ -126,7 +126,7 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	} {
 		desc := prometheus.NewDesc(
 			"weir_memory_"+name,
-			"Guard observation validity; unknown observations close new admission.",
+			"Guard observation validity; unknown observations alone do not latch overload; recovery requires complete observations.",
 			nil,
 			nil,
 		)

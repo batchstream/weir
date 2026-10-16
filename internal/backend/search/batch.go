@@ -11,8 +11,6 @@ import (
 	"github.com/batchstream/weir/internal/execution"
 )
 
-const batchBodyLimit = execution.BackendBatchBytes
-
 const getFramingLimit = 32 << 10
 
 type observedRecord struct {
@@ -401,7 +399,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				i := readPositions[offset]
 				work := works[i]
 				if work.Backend.(*plan).action == "read" {
-					batch.results[i] = readResult(work, record.reply, record.failure)
+					batch.results[i] = readResult(record.reply, record.failure)
 				} else if record.failure != nil {
 					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, record.failure)
 				} else {

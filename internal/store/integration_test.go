@@ -39,6 +39,9 @@ func setup(t *testing.T, manual bool) fixture {
 	cfg.URI = parsed.String()
 
 	l := DefaultLimits()
+	if manual {
+		l.BatchWait = 0
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
