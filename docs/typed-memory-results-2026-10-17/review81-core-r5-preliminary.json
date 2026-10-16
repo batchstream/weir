@@ -1,0 +1,28 @@
+{
+  "at_utc": "2026-10-16T18:24:52.120666+00:00",
+  "head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "phase": "preliminary read-only code review",
+  "decision": "PENDING_INDEPENDENT_VALIDATION",
+  "confirmed_new_findings": [],
+  "code_observations": [
+    "Native/typed result transitions check actual nonresident debt<=262656 and shared count<=2 before changing accounts. Resident ownership survives capacity shrink. The old unbounded12MiB borrowed state is rejected.",
+    "Default R48795648 minus2*W262656 leaves48270336. Maximum one-chunk Mongo short initial working48139264 plus publication129535 totals48268799, leaving1537 bytes. B is unchanged.",
+    "NativeEnd no longer re-enters settlement before adapter cleanup; the existing completeLocked/terminal path releases cleaned workspace and preserves attempted versus not-started evidence. Existing source/Ack versus wire ownership separation remains.",
+    "Search pure-read charge max(base,frame)+max(reply,sources+scratch) retains the64KiB floor until all mget groups and source validation finish. Each later group reserves previous sources plus its new scratch before IO. Mutation ACK workspace remains additive.",
+    "The HTTP response reaches EOF and Body.Close before header/trailer references and reader are cleared. Parser scratch replaces metadata scratch only after that lifetime boundary. inspect preserves actual memory-denial cause."
+  ],
+  "unchanged_process_driver_diff_exit": 0,
+  "source_files": 350,
+  "source_before": "review81-core-r5-source-before.json",
+  "raw_code_diff": "review81-core-r5-code-read.txt",
+  "old_before_artifacts": "The original failed probe, raw output, exit1, command and BLOCK report match archived evidence byte-for-byte; no old artifact was changed.",
+  "proposed_independent_validation": "A server-package review-only overlay should hold real encoded typed and Native wire owners against a full resident share, cancel an RPC without returning queued wire/Native counts, race connection retirement with final native buffer Free, and then require a healthy short Native through Runtime to complete exactly once after actual handoff retirement. Use the same finite B and no manual release of unrelated owners. Re-run full core race/vet including unchanged2048-small-read gate after the exclusive CPU window ends.",
+  "not_run": [
+    "go commands",
+    "tests",
+    "builds",
+    "database commands",
+    "container commands"
+  ],
+  "limitations": "No exact-head approval yet. r5 process qualification has exclusive CPU. All historical failures remain failures; formal600/ingress/Lua/fault gates remain separate."
+}

@@ -16,6 +16,7 @@ import (
 )
 
 const connectionTimeout = 2 * time.Second
+const responseReadBuffer = 4096
 
 var errTransport = errors.New("backend transport failed")
 var errResponse = errors.New("invalid or excessive backend response")
@@ -77,8 +78,10 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	_, standardTransport := transport.(*http.Transport)
 	var acquiring, connected atomic.Bool
 	header := &nativeHeaderMemory{}
+	defer header.finish()
 	if memory := searchMemory(ctx); memory != nil {
 		header.memory = memory.owner
+		header.records = memory
 		header.base = max(memory.base, memory.frame) + memory.sources
 		header.minimum = header.base + memory.reply
 	}
@@ -124,7 +127,6 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 		return 0, nil, err
 	}
 	response, err := client.Do(request)
-	header.finish()
 	if err != nil {
 		if errors.Is(err, execution.ErrExecutionMemory) {
 			return 0, nil, execution.ErrExecutionMemory
@@ -161,18 +163,34 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	if call.responseLimit > 0 {
 		reader = io.LimitReader(reader, int64(call.responseLimit)+1)
 	}
-	headerBytes := 8192
-	for name, values := range response.Header {
-		headerBytes += len(name) + 256 + cap(values)*16
-		for _, value := range values {
-			headerBytes += len(value)
-		}
+	headerBytes, err := headerWorking(response.Header)
+	if err != nil {
+		return response.StatusCode, nil, err
+	}
+	trailerBytes, err := headerWorking(response.Trailer)
+	if err != nil {
+		return response.StatusCode, nil, err
+	}
+	if trailerBytes > math.MaxInt-8192 || headerBytes > math.MaxInt-8192-trailerBytes {
+		return response.StatusCode, nil, execution.ErrExecutionMemory
+	}
+	headerBytes += 8192 + trailerBytes
+	bodyContext := ctx
+	if len(response.TransferEncoding) != 0 {
+		// Keep the same guard and its prefetched wire window through EOF.
+		// Body capacities and trailer parser work share one absolute budget.
+		header.mu.Lock()
+		header.trailer = trailerBytes
+		header.mu.Unlock()
+		bodyContext = request.Context()
+	} else {
+		header.finish()
 	}
 	length := response.ContentLength
 	if call.responseLimit > 0 && length > int64(call.responseLimit)+1 {
 		length = int64(call.responseLimit) + 1
 	}
-	raw, err = readResponseBody(ctx, reader, length, headerBytes)
+	raw, err = readResponseBody(bodyContext, reader, length, headerBytes)
 	if err == nil && call.responseLimit > 0 && len(raw) > call.responseLimit {
 		return response.StatusCode, nil, errResponseWindow
 	}
@@ -194,6 +212,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	_ = response.Body.Close()
 	response.Header, response.Trailer = nil, nil
 	response, reader = nil, nil
+	header.finish()
 	if err := reserveSearchScratch(ctx, cap(raw)+jsonDecodeWorking(raw)); err != nil {
 		return status, nil, err
 	}
@@ -207,6 +226,23 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 		return status, nil, errResponse
 	}
 	return status, raw, nil
+}
+
+func headerWorking(header http.Header) (int, error) {
+	working := 0
+	for name, values := range header {
+		if len(name) > math.MaxInt-256-working || cap(values) > (math.MaxInt-256-working-len(name))/16 {
+			return 0, execution.ErrExecutionMemory
+		}
+		working += len(name) + 256 + cap(values)*16
+		for _, value := range values {
+			if len(value) > math.MaxInt-working {
+				return 0, execution.ErrExecutionMemory
+			}
+			working += len(value)
+		}
+	}
+	return working, nil
 }
 
 // Backend authentication supplies defaults; Native may override end-to-end headers.
@@ -229,6 +265,7 @@ func newTransport(timeout, idleTimeout time.Duration) *http.Transport {
 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
 		DisableCompression: true, MaxConnsPerHost: 0,
 		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: idleTimeout,
+		ReadBufferSize:         responseReadBuffer,
 		MaxResponseHeaderBytes: math.MaxInt64,
 		TLSHandshakeTimeout:    timeout,
 	}

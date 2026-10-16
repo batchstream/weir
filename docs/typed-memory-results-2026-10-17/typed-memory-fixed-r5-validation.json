@@ -1,0 +1,171 @@
+{
+  "status": "PASS",
+  "scope": "Fifth clean artifact original goal8 typed-memory qualification and ordered fixed regressions only; not complete-production capacity certification.",
+  "source": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-fixed-r5-linux",
+  "binary_sha256": "4ed648826f424093481400ccd6fc320f31085c9695f16f3d9615ff4ad7841a7c",
+  "build_receipt": "typed-memory-fixed-r5-build.json",
+  "source_before": "typed-memory-fixed-r5-source-before.json",
+  "source_after": "typed-memory-fixed-r5-source-after.json",
+  "source_350_hashes_before_after": "clean identical",
+  "toolchain": "Go1.27.1 explicit GOROOT GOENVoff GOTOOLCHAINlocal GOWORKoff GOPROXYoff GOSUMDBoff; driver race CGO1, Linuxarm64 CLI CGO0",
+  "exclusive_sequential_no_retry_no_overlay_no_source_edits": true,
+  "groups": {
+    "process": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r5-process.txt",
+      "raw_sha256": "6388b981a2a9d7fb533341b7d835a9e831e4f5b20e717f89ccf7e22017c4e47a",
+      "manifest": "typed-memory-fixed-r5-process-validation.json",
+      "manifest_sha256": "10785f21bf4cab74f54cdf28a2467c35a91e4c98c7fe857929b752e42a9720b8",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-failfast",
+        "-count=1",
+        "-tags",
+        "integration",
+        "-run",
+        "^TestCLITypedMemoryBudget$",
+        "-timeout",
+        "5m",
+        "-v",
+        "./internal/app"
+      ],
+      "scope": "Original843-line seven-case complete Linux CLI typed-memory acceptance"
+    },
+    "burst": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r5-burst.txt",
+      "raw_sha256": "dcb195696e06e718d4cec0855de28198fe92b995fd800eddf50835bbef84dc1d",
+      "manifest": "typed-memory-fixed-r5-burst-validation.json",
+      "manifest_sha256": "88de73ac16c04197d3fc230f61958c6680703c8eb5ed3a431724b26494d1ddff",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-failfast",
+        "-count=1",
+        "-tags",
+        "integration",
+        "-run",
+        "^TestCLINativeSmallBurstPreservesAdmission$",
+        "-timeout",
+        "5m",
+        "-v",
+        "./internal/app"
+      ],
+      "scope": "Original10x256 real SDK mixed1KiB Linux CLI regression"
+    },
+    "diagnostics": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r5-diagnostics.txt",
+      "raw_sha256": "7916271b3998e896b867d49920792a0469d6a9c6142339f04302d7b0ea113843",
+      "manifest": "typed-memory-fixed-r5-diagnostics-validation.json",
+      "manifest_sha256": "6b535407c4e8a63933b1796aad798f256eacec003d6a1040efa3e0577b3a98fc",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-failfast",
+        "-count=1",
+        "-tags",
+        "integration",
+        "-run",
+        "^TestDiagnosticsMaximumStaticSeries$",
+        "-timeout",
+        "2m",
+        "-v",
+        "./internal/app"
+      ],
+      "scope": "Real Mongo in-process app maximum-series check; not Linux CLI execution"
+    },
+    "output": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r5-output.txt",
+      "raw_sha256": "624f053aad0a37a52b6a8a94556787499ac015411265a44681d67dbc4ed02124",
+      "manifest": "typed-memory-fixed-r5-output-validation.json",
+      "manifest_sha256": "a19db08c46b658f5fe03e1f44734e33eac6c1feb7e7ad070f17f9ec35edcaef7",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-failfast",
+        "-count=5",
+        "-tags",
+        "integration",
+        "-run",
+        "^TestCLILargeNativeOutputBudgetPreservesHealthyQueries$",
+        "-timeout",
+        "5m",
+        "-v",
+        "./internal/app"
+      ],
+      "scope": "Five fresh1GiB Linux CLI cases holding32 real8MiB Native replies, health progress and cancellation recovery"
+    },
+    "small": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r5-small.txt",
+      "raw_sha256": "dbb6b96bddaf0e4ef51bc3f2139f9444b6f5a3f1d42e664b4dda5680920357b6",
+      "manifest": "typed-memory-fixed-r5-small-validation.json",
+      "manifest_sha256": "8dafb4fb31630de8a3873fa6f05b3115955117cfe7a78f024f120af04c6e7630",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-failfast",
+        "-count=3",
+        "-tags",
+        "integration",
+        "-run",
+        "^Test(Mongo|Search)SlowNativeOutputAllowsHealthyQueries$",
+        "-timeout",
+        "3m",
+        "-v",
+        "./internal/server"
+      ],
+      "scope": "Real Mongo valid/early-invalid and Search small-reply in-process server regressions; not Linux CLI execution"
+    }
+  },
+  "metadata_limits": [
+    "Pressure outcomes remain aggregates only; no per-index/store/native mapping.",
+    "1GiB pressure health reached1.080499s within original3s gate; do not summarize all probes as low-ms.",
+    "Diagnostics/small are same-source race in-process tests, not Linux CLI/cgroup containment tests.",
+    "Slow8MiB Native output tests retain replies/cancellation/progress; no completed client-side whole8MiB hash claim."
+  ],
+  "cleanup": {
+    "CLI_Docker_noOOM_exit0_count": 13,
+    "owned_CLI_query": [
+      "docker",
+      "ps",
+      "-a",
+      "--filter",
+      "name=weir-memory-recovery-",
+      "--format",
+      "{{.ID}} {{.Names}} {{.Label \"weir.owner\"}} {{.Status}}"
+    ],
+    "query_actual_exit": 0,
+    "query_output": "",
+    "owned_CLI_remaining": 0,
+    "scope": "7typed+1burst+5output original selected Docker OOM/exit/owned stop/removal checks; all backend owned closes0; shared Mongo/ES fixtures preserved."
+  },
+  "preserved_r4_and_review_evidence_sha256": {
+    "typed-memory-fixed-r4-process.txt": "06188c715ef2be1b12b0f8a9df1759c9943e4417773ea907324d20fa4895a7d7",
+    "typed-memory-fixed-r4-burst.txt": "e6e876708f85bf78cf1bfa60a97b52aec2bee33bf94874ec97fe628c4fe8a938",
+    "typed-memory-fixed-r4-validation.json": "32338eb322129a0cb6e8ef6d92e10e8f9995a4d06389f3bbcc2119230a144294",
+    "review81-backend-typed7.txt": "71c57dce65e2d3dbcc5934252dadff22b23d89de3b88a360f74a238da7b2dd9a"
+  },
+  "not_run": [
+    "ingressA/B",
+    "Lua",
+    "formal600",
+    "fault",
+    "auto/off12+4 matrix"
+  ],
+  "at_utc": "2026-10-16T18:25:41.309977+00:00"
+}

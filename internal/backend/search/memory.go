@@ -88,6 +88,16 @@ func searchMemory(ctx context.Context) *recordMemory {
 }
 
 func reserveSearchScratch(ctx context.Context, bytes int) error {
+	headerKey := nativeHeaderKey{}
+	if header, _ := ctx.Value(headerKey).(*nativeHeaderMemory); header != nil {
+		header.mu.Lock()
+		if !header.completed && header.records != nil {
+			err := header.setBody(bytes)
+			header.mu.Unlock()
+			return err
+		}
+		header.mu.Unlock()
+	}
 	if memory := searchMemory(ctx); memory != nil {
 		return memory.set(memory.sources, memory.frame, bytes)
 	}

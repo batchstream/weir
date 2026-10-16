@@ -1,0 +1,161 @@
+package search
+
+import (
+    "context"
+    "io"
+    "net/http"
+    "net/http/httptest"
+    "strings"
+    "sync"
+    "sync/atomic"
+    "testing"
+    "time"
+)
+
+type review81TrailerOwner struct {
+    mu sync.Mutex
+    working, peak int
+    history []int
+}
+
+func (p *review81TrailerOwner) SetWorking(bytes int) error {
+    p.mu.Lock()
+    defer p.mu.Unlock()
+    p.working = bytes
+    p.peak = max(p.peak, bytes)
+    p.history = append(p.history, bytes)
+    return nil
+}
+
+func (p *review81TrailerOwner) ReserveResult(int) error { return nil }
+
+type review81TrailerStage struct {
+    label string
+    working, peak, names, populated, modeledBytes int
+}
+
+type review81TrailerTransport struct {
+    transport http.RoundTripper
+    owner *review81TrailerOwner
+    before, eof chan review81TrailerStage
+}
+
+func (p *review81TrailerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+    response, err := p.transport.RoundTrip(request)
+    if err != nil { return response, err }
+    body := &review81TrailerBody{ReadCloser: response.Body, response: response, observer: p}
+    response.Body = body
+    return response, nil
+}
+
+type review81TrailerBody struct {
+    io.ReadCloser
+    response *http.Response
+    observer *review81TrailerTransport
+    first sync.Once
+}
+
+func (b *review81TrailerBody) stage(label string) review81TrailerStage {
+    p := b.observer.owner
+    p.mu.Lock()
+    stage := review81TrailerStage{label: label, working: p.working, peak: p.peak, names: len(b.response.Trailer), modeledBytes: 8192}
+    p.mu.Unlock()
+    for name, values := range b.response.Trailer {
+        stage.modeledBytes += len(name) + 256 + cap(values)*16
+        for _, value := range values {
+            stage.populated++
+            stage.modeledBytes += len(value)
+        }
+    }
+    return stage
+}
+
+func (b *review81TrailerBody) Read(data []byte) (int, error) {
+    b.first.Do(func() { b.observer.before <- b.stage("before-first-body-read") })
+    n, err := b.ReadCloser.Read(data)
+    if err == io.EOF { b.observer.eof <- b.stage("after-body-EOF-trailer-parser") }
+    return n, err
+}
+
+func TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF(t *testing.T) {
+    const declared = 4096
+    const populated = 300
+    names := make([]string, declared)
+    for i := range names {
+        // All names are distinct, valid header tokens. Actual trailer bytes
+        // for the first300 values stay below Go's existing4KiB parser bound.
+        const digits = "0123456789abcdef"
+        names[i] = "X-" + string([]byte{digits[i>>12&15], digits[i>>8&15], digits[i>>4&15], digits[i&15]})
+    }
+    release := make(chan struct{})
+    var calls atomic.Int32
+    handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+        if request.URL.Path == "/" {
+            _, _ = io.WriteString(w, `{"version":{"build_flavor":"default"}}`)
+            return
+        }
+        if request.URL.Path != "/probe" { t.Error("unexpected path", request.URL.Path); return }
+        calls.Add(1)
+        w.Header()["Date"] = nil
+        w.Header().Set("Content-Type", "application/json")
+        w.Header().Set("Trailer", strings.Join(names, ", "))
+        w.WriteHeader(http.StatusOK)
+        w.(http.Flusher).Flush()
+        select {
+        case <-release:
+        case <-request.Context().Done(): return
+        }
+        _, _ = io.WriteString(w, `{}`)
+        for _, name := range names[:populated] { w.Header().Set(name, "v") }
+    })
+    server := httptest.NewServer(handler)
+    defer server.Close()
+    ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+    defer cancel()
+    config := Config{Store: "search", URL: server.URL}
+    adapter, err := Open(ctx, config)
+    if err != nil { t.Fatal(err) }
+    defer adapter.Close()
+    owner := &review81TrailerOwner{}
+    observer := &review81TrailerTransport{transport: adapter.client.Transport, owner: owner, before: make(chan review81TrailerStage, 1), eof: make(chan review81TrailerStage, 1)}
+    adapter.client.Transport = observer
+    memory := &recordMemory{owner: owner, reply: 64<<10}
+    ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
+    type result struct { status int; raw []byte; err error }
+    done := make(chan result, 1)
+    go func() {
+        call := exchange{path: "/probe", operation: "review-trailer"}
+        status, raw, requestErr := adapter.request(ctx, call)
+        outcome := result{status: status, raw: raw, err: requestErr}
+        done <- outcome
+    }()
+    var held review81TrailerStage
+    select {
+    case held = <-observer.before:
+    case <-ctx.Done(): close(release); t.Fatal("body never reached the observer", ctx.Err())
+    }
+    close(release)
+    var complete result
+    select {
+    case complete = <-done:
+    case <-ctx.Done(): t.Fatal("body did not complete", ctx.Err())
+    }
+    var ended review81TrailerStage
+    select {
+    case ended = <-observer.eof:
+    default: t.Fatal("complete body did not report EOF trailer state", complete.err)
+    }
+    owner.mu.Lock()
+    history := append([]int(nil), owner.history...)
+    owner.mu.Unlock()
+    t.Logf("head=a1fd658a571362f46e70a8c1172507faceca812e declared=%d populated=%d before=%+v EOF=%+v ownerHistory=%v calls=%d status=%d raw=%q err=%v", declared, populated, held, ended, history, calls.Load(), complete.status, complete.raw, complete.err)
+    if held.names != declared || held.populated != 0 || ended.names != declared || ended.populated != populated || calls.Load() != 1 || complete.status != http.StatusOK || string(complete.raw) != `{}` || complete.err != nil {
+        t.Fatal("real standard HTTP parser did not preserve the complete declared/actual trailer fixture")
+    }
+    if held.working < held.modeledBytes {
+        t.Error("declared Trailer map remains live before body IO after its shared-owner reservation shrank", held)
+    }
+    if ended.working < ended.modeledBytes {
+        t.Error("EOF Trailer map remains live after parser allocation without shared-owner reservation", ended)
+    }
+}

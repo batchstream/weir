@@ -38,13 +38,17 @@ const readMemoryIndex = "weir_typed_read_metadata_e141aab65f37417c99ee5376b110e9
 func TestReadNormalMetadataBudgetBeforeDispatch(t *testing.T) {
 	for _, spare := range []int{0, 32 << 10} {
 		t.Run(fmt.Sprintf("spare=%d", spare), func(t *testing.T) {
-			testReadMemoryQualification(t, spare, false)
+			testReadMemoryQualification(t, spare, false, false)
 		})
 	}
 }
 
 func TestReadMetadataRealCapacityPreservesFailureCause(t *testing.T) {
-	testReadMemoryQualification(t, 32<<10, true)
+	testReadMemoryQualification(t, 32<<10, true, false)
+}
+
+func TestReadNormalChunkedMetadataBudgetBeforeDispatch(t *testing.T) {
+	testReadMemoryQualification(t, 0, false, true)
 }
 
 func TestReadWorkspaceSubsequentGroupReservesRetainedSourcesBeforeIO(t *testing.T) {
@@ -130,7 +134,7 @@ func prepareReadMemoryPlan(t *testing.T, runtime *store.Runtime, id uint64, key 
 	return plan
 }
 
-func testReadMemoryQualification(t *testing.T, spare int, excessiveMetadata bool) {
+func testReadMemoryQualification(t *testing.T, spare int, excessiveMetadata, chunked bool) {
 	const natives = 4
 	const nativeWorking = 24 << 20
 	ctx, cancel := context.WithCancel(t.Context())
@@ -198,7 +202,11 @@ func testReadMemoryQualification(t *testing.T, spare int, excessiveMetadata bool
 				fmt.Fprintf(&reply, `{"_index":%q,"_id":%q,"_version":1,"found":true,"_seq_no":1,"_primary_term":1,"_source":%s}`, readMemoryIndex, id, source)
 			}
 			reply.WriteString(`]}`)
-			w.Header().Set("Content-Length", strconv.Itoa(reply.Len()))
+			if chunked {
+				w.(http.Flusher).Flush()
+			} else {
+				w.Header().Set("Content-Length", strconv.Itoa(reply.Len()))
+			}
 			_, _ = io.WriteString(w, reply.String())
 		default:
 			t.Error("unexpected owned mock path", request.URL.Path)

@@ -1,0 +1,37 @@
+{
+  "head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "before_status": "",
+  "start_utc": "2026-10-16T18:25:57.106594+00:00",
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-backend-r5-trailer-overlay.json",
+    "-run",
+    "^TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF$",
+    "-timeout",
+    "30s",
+    "-v",
+    "./internal/backend/search"
+  ],
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "probe_sha256": "cde0e875e8b1fff7d88d70c94fcf44becb39a19052bf72079743cdfb2501c879",
+  "overlay_sha256": "1426be49d74dc4e294e43a70f4e8d032c582a7bd3e510ba442c449465a04f7d4",
+  "scope": "Single independent real HTTP parser before probe; no DB/CLI; no retries",
+  "actual_exit": 1,
+  "elapsed_seconds": 2.7309342089865822,
+  "raw_sha256": "4a0fa38276ae078a2ac01420ba2983c39d3935a7800ed5f08f8a5eb71b157623",
+  "after_head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "after_status": ""
+}

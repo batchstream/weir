@@ -1,0 +1,30 @@
+{
+  "head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "files": [
+    {
+      "path": "internal/backend/search/memory.go",
+      "sha256": "58d100ec5c6ab6ddacd4aad4d381db501d3ea6561e53358f88bf5e038f83639b",
+      "bytes": 6920
+    },
+    {
+      "path": "internal/backend/search/native_memory.go",
+      "sha256": "258253f5be3b06507416960029fd4da0f77851c03753b83c05b47c42785c33c5",
+      "bytes": 4044
+    },
+    {
+      "path": "internal/backend/search/transport.go",
+      "sha256": "1694682ee6c5b19e1cf9415ea886872e75625ba2827e155fcab40a33e3bc487a",
+      "bytes": 10292
+    },
+    {
+      "path": "internal/backend/search/read_memory_test.go",
+      "sha256": "eca81e5c5be2d990533a4719192d8849cc476bcc4af434a26c796610e1edc232",
+      "bytes": 13676
+    },
+    {
+      "path": "internal/backend/search/trailer_memory_test.go",
+      "sha256": "a376a804e9ca95b04ff25543487a283e9430fb81027c6c482ed99c2121bbb092",
+      "bytes": 12973
+    }
+  ]
+}

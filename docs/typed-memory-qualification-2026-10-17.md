@@ -1,10 +1,9 @@
 # Typed execution, result and network memory qualification
 
-Status: PR 81 remains blocked. The fourth clean candidate passes the original
-Typed/Native health gate but fails two Search Reads in the small mixed burst.
-The read-workspace correction passes frozen backend/core race and vet checks;
-a fifth clean real-backend candidate and renewed independent review are next.
-Overall default production qualification remains incomplete.
+Status: PR 81 awaits a sixth clean candidate and renewed independent acceptance.
+The fifth candidate's original gates pass, but its independent HTTP Trailer
+finding blocks merge. The correction now passes focused and full backend race
+and vet checks. Overall production qualification remains incomplete.
 
 ## Preserved failure
 
@@ -492,3 +491,92 @@ preserve raw commands, actual exits, source hashes and all intermediate failures
 This proves a matching deterministic mechanism, not the uncaptured mutex-held
 instant in r4. No failed real burst was retried to select a pass. A new clean
 artifact and the unchanged five real-backend acceptance gates remain required.
+
+
+## Fifth clean candidate passes; independent Trailer finding blocks merge
+
+Clean source `a1fd658a571362f46e70a8c1172507faceca812e`, Linux CLI SHA256
+`4ed648826f424093481400ccd6fc320f31085c9695f16f3d9615ff4ad7841a7c`, passes
+all original gates without source edits, overlays or retries: typed seven cases
+31.161 s, mixed 10-by-256 burst 36.754 s, diagnostics 2.034 s, five output rounds
+17.446 s and small-query repetitions 2.793 s. All 350 source/module hashes are
+identical before and after. Thirteen CLIs have no OOM, exit zero, release their
+logical ownership within five seconds and are removed. CI run 38946883763 passes
+this exact head, but does not override independent blocking findings.
+
+All 2560 burst operations succeed with zero budget rejections; Mongo 421 and
+Search 431 ID/n/pad/cardinality oracles match. Pressure outcomes are aggregates:
+512 MiB 6 complete/26 capacity/0 deadline, 1 GiB 16/16/0 and cross-Store 19/13/0.
+The 1 GiB pressure healthy-query latency reaches 1.0805 s within its original
+3 s gate; it is not summarized as uniformly low latency. Diagnostics emits 1092
+fixed series. Diagnostics/small cases run in process; slow 8 MiB output verifies
+retention, progress and cancellation rather than completed whole-body hashes.
+The [r5 receipt](typed-memory-results-2026-10-17/typed-memory-fixed-r5-validation.json)
+retains scope, commands, exits, timing, hashes and prior failed candidates.
+
+Independent backend review then proves a separate HTTP Trailer gap on this
+head. One real loopback HTTP request declares 4096 short Trailer names in one
+header line, sends a complete `{}` body and populates 300 trailers within the
+standard 4 KiB EOF parser bound. Header accounting peaks at 273,600 bytes and
+then drops to 65,536 during body hold, while the still-live declared Trailer
+map models 1,081,344 bytes under the existing per-entry accounting policy.
+After EOF its 300 values model 1,086,444 bytes, still against 65,536 charged.
+The desired safety assertion exits 1. One request/no replay and clean connection
+release are preserved. Both preallocation and retained-map phases need fixing;
+post-Do counting alone would not cover the earlier parser allocation.
+
+
+The independent core reviewer also exercises real codec ownership under both
+bounded handoffs on this exact head: cancellation retains typed and Native
+wire credit; concurrent ConnEnd/non-final Free does not invalidate remaining
+buffer contents; a healthy short Native completes once an actual handoff is
+released. Concurrent final Free/ConnEnd returns every account exactly once.
+Race count5 passes in 1.889 s with all 350 source/module hashes unchanged.
+An initial control-fixture reservation was wrong by 512 bytes and correctly
+rejected before business execution; its original failing draft/exit are retained.
+The corrected control changes only its own unused wire amount, preserving B,
+handoffs and all cancellation/progress assertions. The
+[core ownership report](typed-memory-results-2026-10-17/review81-core-r5-ownership-report.json)
+is validation evidence, not final PR approval. The backend
+[blocking review](typed-memory-results-2026-10-17/review81-backend-r5-review-receipt.json)
+retains the independent Trailer failure. Both reviews await the corrected head.
+
+
+## Trailer parser and retained ownership correction
+
+The existing connection guard now approves comma-separated declaration entries
+before Go builds the Trailer map. It keeps the actual retained Header/Trailer
+capacities charged during chunked body reads. Body buffer capacities and parser
+work go through the same record-memory update, preserving retained sources and
+future mutation ACK promises. There is no second chunked parser or body copy.
+
+The transport's existing 4096-byte read buffer is made explicit. Go requires the
+complete EOF MIME block to fit in that buffer before parsing it. Any such block
+lies in two adjacent fixed 4096-byte wire intervals; the guard scans those
+intervals in place before passing their bytes to Go. Their maximum observed
+byte/line bound covers prefetched and undeclared trailers without precharging
+all ordinary chunked responses for a worst-case Trailer. Existing destination
+map growth and Go's temporary MIME map have separate conservative peak coverage.
+The historical maximum interval and extra old-map capacity remain conservative
+until complete EOF/body close. Header/Trailer references and the guard's owner
+are cleared before JSON parsing reuses that workspace. Cancellation and reused
+connections detach old owners; an already-finished or unowned guard cannot hide
+the context's actual memory owner.
+
+The unchanged independent before overlay now passes: a complete HTTP 200 `{}`
+with one request, 4096 declarations and 300 EOF fields retains sufficient charge
+through body hold and EOF. Additional focused cases cover no declarations,
+mixed declared/new keys, a net.Pipe-forced prefetched complete EOF block,
+37-byte fragmented cross-interval input, 12 MiB direct body scanning without
+copy allocations, bounded window/counter overflow, cancellation and reuse.
+Post-send budget denial preserves UNKNOWN with one write/no replay. The full
+shared-ledger zero/32 KiB-spare regressions now exercise actual chunked metadata
+and mget too: both return complete document hashes and zero rejections at the
+same fixed budgets. The initial read correction and all earlier failures remain.
+
+Focused race passes in 2.009 s. One final frozen full backend race passes MongoDB
+8.306 s and Search 56.916 s; backend vet passes. These are deterministic/offline
+checks, not the clean CLI real-backend qualification. The [final Trailer receipt](typed-memory-results-2026-10-17/typed-memory-search-trailer-final-receipt.json) records
+source hashes, exact commands, actual exits and preserved independent failures.
+A new clean Linux artifact, original process gates, fresh CI and both independent
+final-head reviews are still required before merge.
