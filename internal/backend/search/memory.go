@@ -14,18 +14,46 @@ type recordMemoryKey uint8
 
 const recordMemoryContextKey recordMemoryKey = 0
 
+// Empty index/ID strings are expanded by their worst JSON escaping below. The
+// longest supported action/result and normal optional metadata cover both
+// typeless Elasticsearch and OpenSearch replies. All per-item numeric evidence
+// is nonnegative; elapsed times are decoded as unconstrained int64 values.
+const bulkAckItemShape = `{"delete":{"_index":"","_id":"","_type":"_doc","status":404,"result":"not_found","_version":9223372036854775807,"_seq_no":9223372036854775807,"_primary_term":9223372036854775807,"forced_refresh":false,"_shards":{"total":9223372036854775807,"successful":9223372036854775807,"failed":9223372036854775807}}}`
+const bulkAckEnvelopeShape = `{"errors":false,"took":-9223372036854775808,"ingest_took":-9223372036854775808,"items":[]}`
+
+// jsonDecodeWorking contributes 3*wire + 1024 per structural node + 8192.
+// A chunked body retains less than 2*wire (or the minimum 4096), while its
+// old/new growth peak is less than 3*wire. Thus 5*wire covers both phases.
+// The outer shape has 9 nodes. Its fixed costs are charged once by IOReserve,
+// beside the existing 64 KiB normal header workspace.
+const bulkAckEnvelopeWorking = 8192 + 4096 + 5*len(bulkAckEnvelopeShape) + 9*1024
+
+func bulkAckWorking(id string) int {
+	// Each item has 28 nodes and at most one array separator. The physical
+	// index can be longer than the submitted alias; validIndex allows 255
+	// bytes. The ID is already checked to at most 512 bytes. Six bytes cover
+	// every escaped input byte without allocating a quoted string first.
+	wire := len(bulkAckItemShape) + 1 + 6*(255+len(id))
+	return 5*wire + 29*1024
+}
+
 // A batch retains pre-read sources and one framed request while its current
 // exchange owns scratch. Final read documents transfer to their Ticket.
 type recordMemory struct {
 	owner   execution.Memory
 	base    int
+	reply   int
 	sources int
 	frame   int
 	scratch int
 }
 
 func (m *recordMemory) set(sources, frame, scratch int) error {
-	if sources < 0 || frame < 0 || scratch < 0 || sources > math.MaxInt-max(m.base, frame) || scratch > math.MaxInt-max(m.base, frame)-sources {
+	if m.base < 0 || m.reply < 0 || sources < 0 || frame < 0 || scratch < 0 {
+		return execution.ErrExecutionMemory
+	}
+	scratch = max(m.reply, scratch)
+	if sources > math.MaxInt-max(m.base, frame) || scratch > math.MaxInt-max(m.base, frame)-sources {
 		return execution.ErrExecutionMemory
 	}
 	if m.owner != nil {

@@ -1,0 +1,24 @@
+{
+  "created_utc": "2026-10-16T17:27:37.202928+00:00",
+  "results": [
+    {
+      "kind": "race",
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-ack-full-race.txt",
+      "actual_exit": 1,
+      "sha256": "90def2d33c615f90b3432e7f93766e11f20904317c9c7a220164110d771af1b8"
+    },
+    {
+      "kind": "vet",
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-ack-full-vet.txt",
+      "actual_exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "source_before": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-ack-full-source-before.json",
+  "source_after": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-ack-full-source-after.json",
+  "frozen_source_receipt": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-ack-focused-final/receipt.json",
+  "production_unchanged_during_full": true,
+  "classification": "Mongo race PASS8.829s; Search55.565s FAIL only old IOReserve==64KiB declarations in batch_test.go109 and record_preflight_test.go47 (replace/program); actual mutation IOReserve is now64KiB+21954 for the pre-approved normal ACK fixed envelope; no race report. Vet actualexit0. No edits or reruns after full failure; root notified and owns next decision.",
+  "baseline_source": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "real_db_container_or_diagnostic_repeated": false
+}

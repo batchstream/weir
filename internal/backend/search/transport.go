@@ -80,6 +80,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	if memory := searchMemory(ctx); memory != nil {
 		header.memory = memory.owner
 		header.base = max(memory.base, memory.frame) + memory.sources
+		header.minimum = header.base + memory.reply
 	}
 	trace := &httptrace.ClientTrace{
 		GetConn: func(string) { acquiring.Store(true) },

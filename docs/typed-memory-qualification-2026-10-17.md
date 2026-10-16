@@ -184,3 +184,97 @@ An intermediate phase-test run incorrectly counted the driver's endSessions
 cleanup as business IO; its failed output is retained, and the corrected
 command-specific oracle passes. This does not convert either failed Linux
 process candidate into a pass.
+
+## Second clean candidate: typed acceptance passes, burst regression fails
+
+Clean source `21d92ef4c9daf5dc97437b095ab3c6cdba6566ef`, Linux CLI SHA256
+`3aec17a432d69a4409e3b0bddb1f86be8b003863255b91aed0ac7970bffe94a4`,
+passed all seven original typed-memory process cases in 30.606 seconds. This
+includes the original slow-reader pressure, unstalled 256/512/1024 MiB complete
+12 MiB and near-maximum Put/independent hash/Read/Delete/absence chains,
+cross-Store Typed/Native and Search large/many-field documents.
+
+The required subsequent 10-by-256 mixed small-call burst failed: 42 Search Put
+calls in the first round returned UNKNOWN / RESOURCE_EXHAUSTED in 33.015–46.883
+ms. The Node budget-rejection counter increased once; rounds 1–9 succeeded.
+Search's independent final enumeration found all 430 offered write IDs plus
+the seeded record, while only 388 writes had APPLIED acknowledgements. The
+42 UNKNOWN IDs existed, but the original oracle only content-checks APPLIED
+IDs, so their contents were not validated. This is neither replay evidence nor
+a claim that UNKNOWN writes succeeded correctly.
+
+All eight CLI processes survived without OOM and exited normally. Logical
+recovery succeeded, but business failures continue to block qualification.
+The [combined manifest](typed-memory-results-2026-10-17/typed-memory-fixed-r2-validation.json),
+[typed raw log](typed-memory-results-2026-10-17/typed-memory-fixed-r2-process.txt)
+and [failed burst log](typed-memory-results-2026-10-17/typed-memory-fixed-r2-burst.txt)
+preserve actual exits and unchanged source hashes. Diagnostics, five output
+rounds, three small-query repetitions and new ingress probes were not run.
+
+One diagnostic-only repeat of the original burst used numeric-denial overlays
+on clean21 and a test overlay changing only the expected dev identity. It
+passed 2560/2560 with no budget rejection or denial log; it did not reproduce
+the failure or identify its exact branch. No retries followed. Its
+[manifest](typed-memory-results-2026-10-17/typed-memory-r2-burst-causal-manifest.json)
+and original failed clean run are both retained. A deterministic shared-budget
+regression is being prepared to test the post-send normal-ACK reservation
+path. Production acceptance and PR review remain incomplete.
+
+## Deterministic normal-ACK competition and correction
+
+A real Search Adapter, HTTP transport, Runtime and shared ExecutionMemory test
+reproduced the same failure class at a fixed 135,268,088-byte Node budget. Four
+Native HTTP calls withheld headers while holding 100,663,296 bytes of initial
+working reservation. The input promise was 33,554,432 bytes; real wire was zero.
+A 42-item small write batch had a valid 7,166-byte success reply whose existing
+JSON-validation reservation required 1,111,034 bytes. At send, only 196,608 bytes
+remained. All 42 mock backend writes occurred once, then one budget rejection
+produced 42 UNKNOWN / RESOURCE_EXHAUSTED results. The
+[before receipt](typed-memory-results-2026-10-17/typed-memory-search-ack-before-21/receipt.json)
+retains both failed old-source runs and their actual exits. The test budget is
+calculated from the old known-input formula, so adding the correction cannot
+raise its acceptance budget. This deterministic failure establishes the
+mechanism; the original clean burst's precise rejection instant was not logged.
+
+Normal mutation ACK costs now enter each Plan before Runtime dispatch. A single
+fixed envelope cost is shared by the batch. Costs derive from supported normal
+reply syntax, optional _type/forced_refresh/ingest_took fields, bounded physical
+index and ID escaping, numeric evidence, parser nodes and chunked-buffer peaks.
+They are workspace reservations, not new response-size restrictions.
+
+Search keeps known input/frame/source ownership separate from this immutable
+reply-scratch promise. Working is actual held input/framing/sources plus the
+maximum of promised reply scratch and current scratch; it does not add both
+copies of the scratch promise. Header callbacks obey the same bound. Dynamic
+Lua/pre-read sources or frames cannot consume the promised ACK workspace.
+Existing cleanup releases it after validation. Runtime scheduling, budgets,
+count limits and mutation evidence remain unchanged; no retry is added.
+
+At the identical fixed budget, the corrected known-length and chunked cases
+retain all 42 tickets in the existing bounded queue with zero business HTTP and
+zero rejection. Releasing one Native allows all 42 writes to become APPLIED,
+each effect occurring once, while the other three Native calls remain held.
+Header/body gates, 1/42/128-item maximum shapes, cancellation/drain and dynamic
+source/frame accounting pass. Truly oversized unknown replies remain bounded
+and keep correct pre-send NOT_APPLIED versus post-send UNKNOWN evidence.
+
+The [focused receipt](typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/receipt.json)
+records the final passing race checks (3.160 seconds) and preserved intermediate
+failures: an early consumer-done ownership assertion, an insufficient framing
+fixture and a caught temporary compiler error. Full affected-package checks
+and a new clean Linux artifact's unchanged process gates remain pending.
+
+The combined frozen correction now passes all affected package race checks:
+Store 3.162 s, Server 20.511 s, Execution 2.249 s, App 8.179 s, CLI 18.590 s,
+Mongo 8.829 s and Search 55.713 s, plus vet. The first complete Search run
+failed two old assertions requiring exactly 64 KiB of mutation IOReserve;
+those assertions now check the exact known-input plus per-item ACK cost and
+shared envelope cost. Production code and the new ACK tests were unchanged
+by those two assertion updates. The failed run is retained.
+
+The [core receipt](typed-memory-results-2026-10-17/typed-memory-search-ack-core-receipt.json)
+and [final backend receipt](typed-memory-results-2026-10-17/typed-memory-search-ack-full-final-receipt.json)
+record unchanged source hashes and actual exits. The next acceptance step is
+a new clean Linux CLI running the unchanged seven typed-memory cases, mixed
+burst, diagnostics and slow-output regressions. No production qualification
+claim or PR approval follows from these unit checks alone.

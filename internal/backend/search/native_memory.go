@@ -21,6 +21,7 @@ type nativeHeaderMemory struct {
 	io        execution.NativeIO
 	memory    execution.Memory
 	base      int
+	minimum   int
 	bytes     int
 	lines     int
 	completed bool
@@ -43,7 +44,7 @@ func (m *nativeHeaderMemory) read(data []byte) error {
 	}
 	working := m.base + 8192 + m.bytes*8 + m.lines*512
 	if m.memory != nil {
-		return m.memory.SetWorking(working)
+		return m.memory.SetWorking(max(m.minimum, working))
 	}
 	return m.io.GrowIO(working)
 }

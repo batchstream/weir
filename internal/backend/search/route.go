@@ -53,6 +53,12 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 	work.IOReserve = 64 << 10
 	work.WorkingBytes = 2*record.Bytes() + execution.EntryOverheadBytes
 	native := work.Backend.(*plan)
+	if work.Command.GetMutate() != nil {
+		// The Runtime approves the whole normal ACK peak before it dispatches
+		// this mutation, allowing its existing queue to wait for initial IO.
+		work.WorkingBytes += bulkAckWorking(native.id)
+		work.IOReserve += bulkAckEnvelopeWorking
+	}
 	work.BatchKey = "records"
 	if native.waitUntilVisible {
 		work.BatchKey += "|visible"

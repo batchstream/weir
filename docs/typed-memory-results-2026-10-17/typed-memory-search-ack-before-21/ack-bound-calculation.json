@@ -1,0 +1,21 @@
+{
+  "normal_fixture": {
+    "item_wire": 168,
+    "item_nodes": 24
+  },
+  "normal_success_template": "{\"delete\":{\"_index\":\"\",\"_id\":\"\",\"_type\":\"_doc\",\"status\":404,\"result\":\"not_found\",\"_version\":9223372036854775807,\"_seq_no\":9223372036854775807,\"_primary_term\":9223372036854775807,\"forced_refresh\":false,\"_shards\":{\"total\":9223372036854775807,\"successful\":9223372036854775807,\"failed\":9223372036854775807}}}",
+  "outer_template": "{\"errors\":false,\"took\":9223372036854775807,\"ingest_took\":9223372036854775807,\"items\":[]}",
+  "per_item_bound_for_6byte_id": {
+    "wire_with_max255physical_index_and_6byte_id_6x_escape": 1871,
+    "nodes_including_separator": 29,
+    "ack_working_5xwire_plus_1024pernode": 39051
+  },
+  "fixed_outer_bound": 21944,
+  "42_ack_peak_plan_excluding_existing_64KiB_header_window": 1662086,
+  "notes": [
+    "5W covers jsonDecodeWorking 3W plus chunked raw capacity below 2W; fixed4096 covers the minimum body buffer",
+    "Use explicit supported normal metadata, including forced_refresh and optional typeless _type:_doc; no new protocol quota for additional fields",
+    "Physical index uses validated maximum255 bytes rather than alias length; actual ID bytes are known before IO and escaped at most6x",
+    "Current sample before has normal minimal ACK7166 bytes and actual jsonDecodeWorking1111034; no production source has changed"
+  ]
+}

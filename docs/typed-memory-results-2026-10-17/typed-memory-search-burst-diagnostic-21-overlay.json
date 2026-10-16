@@ -1,0 +1,6 @@
+{
+  "Replace": {
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/transport.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-burst-diagnostic-21/overlay/transport.go",
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/native_memory.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-burst-diagnostic-21/overlay/native_memory.go"
+  }
+}

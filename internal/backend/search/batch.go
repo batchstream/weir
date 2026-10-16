@@ -401,12 +401,23 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 	}
 	memory := &recordMemory{}
 	for _, work := range works {
-		memory.base += work.WorkingBytes
+		// Known input copies and the complete reply scratch are separate live
+		// allocations. Dynamic frames/sources must not consume the ACK promise.
+		memory.base += 2*work.Bytes + execution.EntryOverheadBytes
+		if work.Command.GetMutate() != nil {
+			memory.reply += bulkAckWorking(work.Backend.(*plan).id)
+		}
 		if memory.owner == nil {
 			memory.owner = work.Memory
 		}
 	}
-	memory.base += 64 << 10
+	if memory.reply != 0 {
+		// Exactly Runtime's sum(Plan.WorkingBytes) + max(IOReserve):
+		// sum(known input) + sum(item ACK) + one envelope/header window.
+		memory.reply += (64 << 10) + bulkAckEnvelopeWorking
+	} else {
+		memory.base += 64 << 10
+	}
 	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
 	works = append([]*execution.Plan(nil), works...)
 	readOnly := true
