@@ -118,11 +118,11 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	})
 	client, healthClient := openIngressMemoryClient(t, process), openIngressMemoryClient(t, process)
 	ingressMemoryEvents(t, process, "Lua_initial")
-	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second))
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
 	if t.Failed() || !luaMemoryControl(t, client, fixture) {
 		return
 	}
-	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second))
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
 	if t.Failed() {
 		return
 	}
@@ -189,7 +189,7 @@ func TestCLILuaMemoryBudget(t *testing.T) {
 	case <-time.After(time.Until(cancelledAt.Add(5 * time.Second))):
 		t.Error("independent unchanged oracle did not join within recovery window")
 	}
-	ingressMemoryIdle(t, process, cancelledAt.Add(5*time.Second))
+	ingressMemoryIdle(t, process, cancelledAt.Add(5*time.Second), 2)
 	ingressMemoryEvents(t, process, "Lua_after_probe")
 	stopMonitor()
 	monitor.Wait()

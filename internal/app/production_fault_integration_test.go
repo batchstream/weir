@@ -700,11 +700,26 @@ func processFaultIdle(t *testing.T, process *memoryRecoveryCLI, bound time.Durat
 	for {
 		metrics := process.sample(t)
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_execution_memory_used_bytes", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_resident_bytes", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_waiting", "weir_execution_memory_terminal"} {
+		for _, name := range []string{"weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_waiting", "weir_execution_memory_terminal", "weir_execution_memory_ingress_bytes", "weir_execution_memory_ingress_reserved_bytes", "weir_execution_memory_ingress_buffers", "weir_execution_memory_ingress_messages", "weir_execution_memory_ingress_waiting"} {
 			if metrics[name] == nil {
 				t.Fatal("missing cleanup gauge", name)
 			}
 			if value := testmetrics.Sum(metrics, name); value != 0 {
+				nonzero[name] = value
+			}
+		}
+		// This suite keeps its two Store SDK channels alive across every fault.
+		connectionBytes := float64(2 * qualificationIngressConnectionBytes)
+		for name, want := range map[string]float64{
+			"weir_execution_memory_ingress_connections":      2,
+			"weir_execution_memory_ingress_connection_bytes": connectionBytes,
+			"weir_execution_memory_used_bytes":               connectionBytes,
+			"weir_execution_memory_resident_bytes":           connectionBytes,
+		} {
+			if metrics[name] == nil {
+				t.Fatal("missing retained-connection cleanup gauge", name)
+			}
+			if value := testmetrics.Sum(metrics, name); value != want {
 				nonzero[name] = value
 			}
 		}

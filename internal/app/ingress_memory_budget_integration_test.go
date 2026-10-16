@@ -49,18 +49,19 @@ type ingressMemoryDocument struct {
 }
 
 type ingressMemoryResult struct {
-	Index                      int       `json:"index"`
-	ID                         string    `json:"id"`
-	Started                    time.Time `json:"started,omitzero"`
-	Finished                   time.Time `json:"finished,omitzero"`
-	Outcome, Failure, Error    string
-	RPCCode                    string
-	Received                   bool
-	TransportObserved          bool
-	DataWritten                int64
-	PrefixWritten, AllWritten  int64
-	TailReleased, PrefixHoldNs int64
-	FirstResponseHeaders       time.Time `json:"first_response_headers,omitzero"`
+	Index                     int       `json:"index"`
+	ID                        string    `json:"id"`
+	Started                   time.Time `json:"started,omitzero"`
+	Finished                  time.Time `json:"finished,omitzero"`
+	Outcome, Failure, Error   string
+	RPCCode                   string
+	Received                  bool
+	TransportObserved         bool
+	ResponseMessages          int
+	DataWritten               int64
+	PrefixWritten, AllWritten int64
+	CallerCanceled            bool
+	FirstResponseHeaders      time.Time `json:"first_response_headers,omitzero"`
 }
 
 // A uses the public SDK without retries. Explicit capacity rejection can satisfy
@@ -145,13 +146,15 @@ func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity
 	}
 	labels := map[string]string{"store": "mongo"}
 	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
-		if qualificationGauge(t, initial, name, labels) != want {
+		got := qualificationGauge(t, initial, name, labels)
+		if got != want {
 			t.Fatal("default Store policy changed", name, want)
 		}
 	}
 	qualificationExecutionMemory(t, initial, process.capacity)
-	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second))
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 0)
 	client, healthClient := openIngressMemoryClient(t, process), openIngressMemoryClient(t, process)
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
 	monitorContext, stopMonitor := context.WithCancel(context.Background())
 	var monitor sync.WaitGroup
 	monitor.Add(2)
@@ -163,21 +166,19 @@ func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity
 		ingressMemoryDocker(t, process)
 	})
 	ingressMemoryEvents(t, process, "initial")
-	results := make(chan ingressMemoryResult, 32)
-	release := make(chan struct{})
-	var uploads []*ingressMemoryUpload
 	if partial {
-		for index := range documents {
-			resource := dataset.root + "/s:" + documents[index].id
-			upload := newIngressMemoryUpload(t, process, documents[index], resource)
-			uploads = append(uploads, upload)
-			documents[index].raw = nil
-			t.Cleanup(func() { _ = upload.connection.Close() })
-		}
+		options := ingressMemoryPartialOptions{fixture: fixture, process: process, dataset: dataset, documents: documents, client: client, healthClient: healthClient}
+		runIngressMemoryPartial(t, options)
+		ingressMemoryEvents(t, process, "final")
+		stopMonitor()
+		monitor.Wait()
+		ingressMemoryDocker(t, process)
+		return
 	}
+	results := make(chan ingressMemoryResult, 32)
 	started := time.Now()
 	deadline := started.Add(5 * time.Second)
-	t.Logf("ingress_launch t0=%s common_deadline=%s fixed_tail_release=%s", started.UTC().Format(time.RFC3339Nano), deadline.UTC().Format(time.RFC3339Nano), started.Add(3*time.Second).UTC().Format(time.RFC3339Nano))
+	t.Logf("ingress_launch profile=ordinary_full_write t0=%s common_deadline=%s", started.UTC().Format(time.RFC3339Nano), deadline.UTC().Format(time.RFC3339Nano))
 	ctx, cancel := context.WithDeadline(t.Context(), deadline)
 	defer cancel()
 	barrier := make(chan struct{})
@@ -188,17 +189,11 @@ func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity
 		go func() {
 			defer calls.Done()
 			<-barrier
-			result := ingressMemoryResult{Index: index, ID: documents[index].id, Started: time.Now(), TransportObserved: partial}
-			var mutation *weirclient.MutationResult
-			var callErr error
-			if partial {
-				mutation, callErr = uploads[index].put(ctx, release, &result)
-			} else {
-				document := &pb.Document{ContentType: "application/bson", Data: documents[index].raw}
-				request := &weirclient.WriteRequest{Resource: dataset.root + "/s:" + documents[index].id, Document: document}
-				options := weirclient.WriteOptions{StoreName: "mongo", Request: request}
-				mutation, callErr = client.Put(ctx, options)
-			}
+			result := ingressMemoryResult{Index: index, ID: documents[index].id, Started: time.Now(), TransportObserved: false}
+			document := &pb.Document{ContentType: "application/bson", Data: documents[index].raw}
+			request := &weirclient.WriteRequest{Resource: dataset.root + "/s:" + documents[index].id, Document: document}
+			options := weirclient.WriteOptions{StoreName: "mongo", Request: request}
+			mutation, callErr := client.Put(ctx, options)
 			result.Finished, result.Received, result.RPCCode = time.Now(), true, status.Code(callErr).String()
 			if callErr != nil {
 				result.Error = callErr.Error()
@@ -216,43 +211,33 @@ func runIngressMemoryCase(t *testing.T, artifact ingressMemoryArtifact, capacity
 	healthDone := make(chan struct{})
 	go func() {
 		defer close(healthDone)
-		if partial {
-			condition := ingressMemoryIncompleteOptions{fixture: fixture, process: process, uploads: uploads, started: started}
-			if !ingressMemoryIncomplete(t, ctx, condition) {
-				return
-			}
-		} else {
-			timer := time.NewTimer(25 * time.Millisecond)
-			defer timer.Stop()
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-			}
-			pending := 32 - returned.Load()
-			t.Logf("ordinary_upload_health_start elapsed=%s calls_not_yet_returned=%d", time.Since(started), pending)
-			if pending == 0 {
-				t.Error("ordinary calls finished before health probe; concurrent-health condition not reached")
-			}
+		timer := time.NewTimer(25 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		pending := 32 - returned.Load()
+		t.Logf("ordinary_upload_health_start elapsed=%s calls_not_yet_returned=%d", time.Since(started), pending)
+		if pending == 0 {
+			t.Error("ordinary calls finished before health probe; concurrent-health condition not reached")
 		}
 		ingressMemoryHealth(t, healthClient, dataset)
-		if partial && time.Now().After(started.Add(3*time.Second)) {
-			t.Error("health did not finish within the original incomplete-body hold")
-		}
 	}()
-	var releasedAt atomic.Int64
-	if partial {
-		go func() {
-			timer := time.NewTimer(time.Until(started.Add(3 * time.Second)))
-			defer timer.Stop()
-			select {
-			case <-timer.C:
-				releasedAt.Store(time.Now().UnixNano())
-				close(release)
-			case <-ctx.Done():
-			}
-		}()
-	}
+	sameClientHealthDone := make(chan struct{})
+	go func() {
+		defer close(sameClientHealthDone)
+		timer := time.NewTimer(time.Until(started.Add(time.Second)))
+		defer timer.Stop()
+		select {
+		case <-t.Context().Done():
+			return
+		case <-timer.C:
+		}
+		t.Logf("same_SDK_health_start elapsed=%s original_upload_client=%p calls_not_yet_returned=%d TCP_connection_identity=not_observed", time.Since(started), client, 32-returned.Load())
+		ingressMemoryHealth(t, client, dataset)
+	}()
 	close(barrier)
 	joined := make(chan struct{})
 	go func() { calls.Wait(); close(joined) }()
@@ -282,39 +267,33 @@ collect:
 		cancelledAt = deadline
 	}
 	cancel()
-	for _, upload := range uploads {
-		_ = upload.connection.Close()
-	}
 	select {
 	case <-healthDone:
 	case <-time.After(time.Until(started.Add(7100 * time.Millisecond))):
 		t.Error("health did not join after common caller cancellation")
-		closeIngressMemoryClient(t, healthClient)
-	}
-	if received != 32 {
-		closeIngressMemoryClient(t, client)
 	}
 	select {
 	case <-joined:
 	case <-time.After(time.Until(deadline.Add(time.Second))):
 		t.Error("some SDK calls remain outside the bounded collection; unreturned IDs remain UNKNOWN")
 	}
-	ingressMemoryIdle(t, process, cancelledAt.Add(5*time.Second))
+	select {
+	case <-sameClientHealthDone:
+	case <-time.After(time.Until(deadline.Add(time.Second))):
+		t.Error("same-SDK health did not join within original common5s plus bounded1s")
+	}
+	ingressMemoryIdle(t, process, cancelledAt.Add(5*time.Second), 2)
 	ingressMemoryOracle(t, fixture, documents, collected)
 	for _, result := range collected {
-		if partial {
-			result.TailReleased = releasedAt.Load()
-			if result.PrefixWritten != 0 && result.TailReleased != 0 {
-				result.PrefixHoldNs = result.TailReleased - result.PrefixWritten
-			}
-		}
 		raw, _ := json.Marshal(result)
-		t.Logf("ingress_result %s SDK_send_end_and_first_response_unknown=%t", raw, !partial)
+		t.Logf("ingress_result %s SDK_send_end_and_first_response_unknown=true", raw)
 	}
-	if !t.Failed() {
-		ingressMemoryRecovery(t, healthClient, dataset)
-		ingressMemoryIdle(t, process, time.Now().Add(5*time.Second))
-	}
+	t.Logf("unconditional_same_SDK_recovery prior_failure=%t original_upload_client=%p TCP_connection_identity=not_observed", t.Failed(), client)
+	ingressMemoryRecovery(t, client, dataset)
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)
+	closeIngressMemoryClient(t, client)
+	closeIngressMemoryClient(t, healthClient)
+	ingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 0)
 	ingressMemoryEvents(t, process, "final")
 	stopMonitor()
 	monitor.Wait()
@@ -389,7 +368,7 @@ func ingressMemoryHealth(t *testing.T, client *weirclient.Client, dataset *nativ
 	for range 2 {
 		select {
 		case job := <-results:
-			t.Logf("ingress_health kind=%d caller3s elapsed=%s error=%v", job.kind, job.elapsed, job.err)
+			t.Logf("ingress_health SDK_client=%p kind=%d caller3s elapsed=%s error=%v", client, job.kind, job.elapsed, job.err)
 			if job.err != nil || job.elapsed > 3*time.Second {
 				t.Error("healthy small Read/Native failed or exceeded original3s caller deadline during uploads", job.kind, job.elapsed, job.err)
 			}
@@ -404,11 +383,10 @@ func ingressMemoryRecovery(t *testing.T, client *weirclient.Client, dataset *nat
 	t.Helper()
 	job := nativeBurstResult{kind: 1, sequence: 999999}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	err := executeNativeBurstCall(ctx, client, dataset, job)
+	putErr := executeNativeBurstCall(ctx, client, dataset, job)
 	cancel()
-	if err != nil {
-		t.Error("fresh small Put after recovery failed", err)
-		return
+	if putErr != nil {
+		t.Error("fresh small Put after recovery failed; still checking same-SDK Read", putErr)
 	}
 	request := &weirclient.ReadRequest{Resource: dataset.root + "/s:write-999999"}
 	opts := weirclient.ReadOneOptions{StoreName: "mongo", Request: request}
@@ -422,9 +400,10 @@ func ingressMemoryRecovery(t *testing.T, client *weirclient.Client, dataset *nat
 	}
 	err = bson.Unmarshal(result.Document.Data, &actual)
 	if err != nil || actual.N != 1000999 || actual.Pad != strings.Repeat("x", 1<<10) {
-		t.Error("recovered process changed acknowledged small document", err)
+		t.Error("recovered process changed small recovery document", err)
+		return
 	}
-	t.Log("same_running_process_and_SDK fresh small Put_APPLIED/Read_hash validated caller3s")
+	t.Logf("same_running_process_and_SDK fresh small Put_APPLIED=%t Read_n_pad_valid=true caller3s TCP_connection_identity=not_observed", putErr == nil)
 }
 
 func ingressMemoryOracle(t *testing.T, fixture *testmongo.Fixture, documents []ingressMemoryDocument, results []ingressMemoryResult) {
@@ -557,25 +536,29 @@ func ingressMemoryEvents(t *testing.T, process *memoryRecoveryCLI, phase string)
 	t.Logf("cgroup_memory_events phase=%s value=%q error=%v", phase, strings.TrimSpace(string(raw)), err)
 }
 
-func ingressMemoryIdle(t *testing.T, process *memoryRecoveryCLI, deadline time.Time) {
+func ingressMemoryIdle(t *testing.T, process *memoryRecoveryCLI, deadline time.Time, connections int) {
 	t.Helper()
 	for {
 		metrics, err := ingressMemoryMetrics(process)
 		idle := err == nil
-		for _, suffix := range []string{"used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "leases", "native_leases", "starting", "settled", "borrowed", "waiting", "terminal", "wire_bytes", "wire_buffers"} {
+		for _, suffix := range []string{"input_reserved_bytes", "input_used_bytes", "leases", "native_leases", "starting", "settled", "borrowed", "waiting", "terminal", "wire_bytes", "wire_buffers", "ingress_bytes", "ingress_reserved_bytes", "ingress_buffers", "ingress_messages", "ingress_waiting"} {
 			name := "weir_execution_memory_" + suffix
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
 		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_memory_unknown"} {
 			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 		}
+		for suffix, want := range map[string]float64{"used_bytes": float64(connections * qualificationIngressConnectionBytes), "resident_bytes": float64(connections * qualificationIngressConnectionBytes), "ingress_connections": float64(connections), "ingress_connection_bytes": float64(connections * qualificationIngressConnectionBytes)} {
+			name := "weir_execution_memory_" + suffix
+			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == want
+		}
 		idle = idle && metrics["weir_execution_memory_budget_known"] != nil && testmetrics.Sum(metrics, "weir_execution_memory_budget_known") == 1 && metrics["weir_memory_cgroup_valid"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_valid") == 1 && metrics["weir_memory_cgroup_limit_bytes"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_limit_bytes") == process.capacity && metrics["weir_memory_cgroup_working_set_bytes"] != nil && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= process.capacity*.70
 		if idle && time.Now().Before(deadline) {
-			t.Logf("ingress_final5s Node/Store/RPC/wire/Q/I ownership0 latch0 elapsed=%s", time.Since(deadline.Add(-5*time.Second)))
+			t.Logf("ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=%d connection_bytes=%d Node_used=resident=connection_bytes elapsed=%s", connections, connections*qualificationIngressConnectionBytes, time.Since(deadline.Add(-5*time.Second)))
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Error("fixed absolute5s ingress ownership recovery failed", err)
+			t.Error("fixed absolute5s ingress ownership recovery failed", "expected_connections", connections, "expected_used_resident_connection_bytes", connections*qualificationIngressConnectionBytes, err)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -599,16 +582,10 @@ func newIngressMemoryUpload(t *testing.T, process *memoryRecoveryCLI, document i
 	operation := &pb.Command_Mutate{Mutate: mutation}
 	command := &pb.Command{Operation: operation}
 	request := &pb.ExecuteRequest{StoreName: "mongo", Index: 1, Command: command}
-	if err := protocol.ValidateExecuteRequest(request); err != nil {
+	encoded, err := ingressMemoryRequestFrame(request)
+	if err != nil {
 		t.Fatal("synthetic upload is not a legal Put", err)
 	}
-	frame := make([]byte, 5, proto.Size(request)+5)
-	marshal := proto.MarshalOptions{}
-	encoded, err := marshal.MarshalAppend(frame, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	binary.BigEndian.PutUint32(encoded[1:5], uint32(len(encoded)-5))
 	decoded := &pb.ExecuteRequest{}
 	err = proto.Unmarshal(encoded[5:], decoded)
 	if err != nil || !proto.Equal(request, decoded) || protocol.ValidateExecuteRequest(decoded) != nil || decoded.StoreName != "mongo" || decoded.Index != 1 || len(encoded)-5 != int(binary.BigEndian.Uint32(encoded[1:5])) || decoded.Command.GetMutate().Resource != resource || sha256.Sum256(decoded.Command.GetMutate().GetPut().Data) != document.digest {
@@ -634,12 +611,11 @@ func newIngressMemoryUpload(t *testing.T, process *memoryRecoveryCLI, document i
 }
 
 type ingressMemoryBody struct {
-	frame   []byte
-	offset  int
-	ctx     context.Context
-	release <-chan struct{}
-	closed  chan struct{}
-	once    sync.Once
+	frame  []byte
+	offset int
+	ctx    context.Context
+	closed chan struct{}
+	once   sync.Once
 }
 
 func (body *ingressMemoryBody) Read(destination []byte) (int, error) {
@@ -653,12 +629,7 @@ func (body *ingressMemoryBody) Read(destination []byte) (int, error) {
 			return 0, body.ctx.Err()
 		case <-body.closed:
 			return 0, io.ErrClosedPipe
-		case <-body.release:
 		}
-		limit = len(body.frame)
-	}
-	if body.offset == len(body.frame) {
-		return 0, io.EOF
 	}
 	n := copy(destination, body.frame[body.offset:limit])
 	body.offset += n
@@ -670,60 +641,102 @@ func (body *ingressMemoryBody) Close() error {
 	return nil
 }
 
-func (upload *ingressMemoryUpload) put(ctx context.Context, release <-chan struct{}, result *ingressMemoryResult) (*pb.MutationResult, error) {
-	body := &ingressMemoryBody{frame: upload.frame, ctx: ctx, release: release, closed: make(chan struct{})}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+upload.address+pb.StoreService_Execute_FullMethodName, body)
-	if err != nil {
-		return nil, err
-	}
-	request.ContentLength = int64(len(upload.frame))
-	request.Header.Set("content-type", "application/grpc")
-	request.Header.Set("te", "trailers")
-	deadline, _ := ctx.Deadline()
-	remaining := max(int64(1), (time.Until(deadline).Nanoseconds()+999)/1000)
-	request.Header.Set("grpc-timeout", fmt.Sprintf("%du", remaining))
+func (upload *ingressMemoryUpload) put(ctx context.Context, result *ingressMemoryResult) (*pb.MutationResult, error) {
+	body := &ingressMemoryBody{frame: upload.frame, ctx: ctx, closed: make(chan struct{})}
 	defer func() {
 		result.DataWritten = upload.observer.written.Load()
 		result.PrefixWritten = upload.observer.prefixAt.Load()
 		result.AllWritten = upload.observer.allAt.Load()
 	}()
-	response, err := upload.connection.RoundTrip(request)
-	if err != nil {
-		return nil, err
+	options := ingressMemoryExchangeOptions{connection: upload.connection, address: upload.address, body: body, length: int64(len(upload.frame))}
+	exchange, err := ingressMemoryExchange(ctx, options)
+	result.FirstResponseHeaders = exchange.headers
+	result.ResponseMessages = len(exchange.messages)
+	var mutation *pb.MutationResult
+	if len(exchange.messages) == 1 {
+		mutation = exchange.messages[0].GetEvent().GetMutationResult()
 	}
-	result.FirstResponseHeaders = time.Now()
+	if err != nil {
+		return mutation, err
+	}
+	if mutation == nil {
+		return nil, fmt.Errorf("gRPC OK without exactly one mutation acknowledgement")
+	}
+	if upload.observer.invalid.Load() {
+		return mutation, fmt.Errorf("unexpected outgoing HTTP/2 framing; payload byte observation invalid")
+	}
+	return mutation, nil
+}
+
+type ingressMemoryExchangeOptions struct {
+	connection *http2.ClientConn
+	address    string
+	body       io.Reader
+	length     int64
+}
+
+type ingressMemoryExchangeResult struct {
+	messages []*pb.ExecuteResponse
+	headers  time.Time
+}
+
+// Reuse the official HTTP/2 transport and protobuf codec. The response bound is
+// only for this test's small health queries and mutation acknowledgements.
+func ingressMemoryExchange(ctx context.Context, options ingressMemoryExchangeOptions) (ingressMemoryExchangeResult, error) {
+	var result ingressMemoryExchangeResult
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+options.address+pb.StoreService_Execute_FullMethodName, options.body)
+	if err != nil {
+		return result, err
+	}
+	request.ContentLength = options.length
+	request.Header.Set("content-type", "application/grpc")
+	request.Header.Set("te", "trailers")
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return result, fmt.Errorf("qualification RPC requires an absolute deadline")
+	}
+	remaining := max(int64(1), (time.Until(deadline).Nanoseconds()+999)/1000)
+	request.Header.Set("grpc-timeout", fmt.Sprintf("%du", remaining))
+	response, err := options.connection.RoundTrip(request)
+	if err != nil {
+		return result, err
+	}
+	result.headers = time.Now()
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK || !strings.HasPrefix(response.Header.Get("content-type"), "application/grpc") {
-		return nil, fmt.Errorf("invalid gRPC HTTP response status=%d", response.StatusCode)
+		return result, fmt.Errorf("invalid gRPC HTTP response status=%d", response.StatusCode)
 	}
-	var header [5]byte
-	_, readErr := io.ReadFull(response.Body, header[:])
-	var mutation *pb.MutationResult
-	if readErr == nil {
-		length := binary.BigEndian.Uint32(header[1:])
-		if header[0] != 0 || length > 64<<10 {
-			return nil, fmt.Errorf("unexpected compressed/oversized mutation response")
+	total := 0
+	for {
+		var header [5]byte
+		_, readErr := io.ReadFull(response.Body, header[:])
+		if errors.Is(readErr, io.EOF) {
+			break
 		}
+		if readErr != nil {
+			return result, readErr
+		}
+		length := binary.BigEndian.Uint32(header[1:])
+		if header[0] != 0 || length > 64<<10 || total+5+int(length) > 64<<10 {
+			return result, fmt.Errorf("unexpected compressed/oversized qualification response")
+		}
+		total += 5 + int(length)
 		encoded := make([]byte, length)
 		_, err = io.ReadFull(response.Body, encoded)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		wire := &pb.ExecuteResponse{}
 		if err := proto.Unmarshal(encoded, wire); err != nil {
-			return nil, err
+			return result, err
 		}
 		if err := protocol.ValidateExecuteResponse(wire); err != nil {
-			return nil, err
+			return result, err
 		}
-		mutation = wire.GetEvent().GetMutationResult()
-		if wire.Index != 1 || mutation == nil {
-			return nil, fmt.Errorf("response is not one indexed mutation acknowledgement")
+		if wire.Index != 1 {
+			return result, fmt.Errorf("response differs from requested index1")
 		}
-		_, readErr = io.ReadFull(response.Body, header[:])
-	}
-	if !errors.Is(readErr, io.EOF) {
-		return mutation, fmt.Errorf("gRPC response did not end after one mutation: %v", readErr)
+		result.messages = append(result.messages, wire)
 	}
 	code := response.Trailer.Get("grpc-status")
 	message := response.Trailer.Get("grpc-message")
@@ -732,19 +745,27 @@ func (upload *ingressMemoryUpload) put(ctx context.Context, release <-chan struc
 	}
 	parsed, err := strconv.Atoi(code)
 	if err != nil || parsed < 0 || parsed > 16 {
-		return mutation, fmt.Errorf("missing/invalid final gRPC status")
+		return result, fmt.Errorf("missing/invalid final gRPC status")
 	}
 	if parsed != 0 {
 		message, _ = url.PathUnescape(message)
-		return mutation, status.Error(codes.Code(parsed), message)
+		return result, status.Error(codes.Code(parsed), message)
 	}
-	if mutation == nil {
-		return nil, fmt.Errorf("gRPC OK without mutation acknowledgement")
+	return result, nil
+}
+
+func ingressMemoryRequestFrame(request *pb.ExecuteRequest) ([]byte, error) {
+	if err := protocol.ValidateExecuteRequest(request); err != nil {
+		return nil, err
 	}
-	if upload.observer.invalid.Load() {
-		return mutation, fmt.Errorf("unexpected outgoing HTTP/2 framing; payload byte observation invalid")
+	frame := make([]byte, 5, proto.Size(request)+5)
+	marshal := proto.MarshalOptions{}
+	encoded, err := marshal.MarshalAppend(frame, request)
+	if err != nil {
+		return nil, err
 	}
-	return mutation, nil
+	binary.BigEndian.PutUint32(encoded[1:5], uint32(len(encoded)-5))
+	return encoded, nil
 }
 
 // Observe only successful socket writes. Keep nine header bytes and counters,
@@ -819,64 +840,4 @@ func (wire *ingressMemoryWire) observe(data []byte) {
 			wire.headerBytes = 0
 		}
 	}
-}
-
-type ingressMemoryIncompleteOptions struct {
-	fixture *testmongo.Fixture
-	process *memoryRecoveryCLI
-	uploads []*ingressMemoryUpload
-	started time.Time
-}
-
-func ingressMemoryIncomplete(t *testing.T, ctx context.Context, opts ingressMemoryIncompleteOptions) bool {
-	t.Helper()
-	holdDeadline := opts.started.Add(3 * time.Second)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	lastReady := 0
-	for time.Now().Before(holdDeadline) {
-		ready := 0
-		for _, upload := range opts.uploads {
-			if upload.observer.prefixAt.Load() != 0 && upload.observer.written.Load() == upload.observer.prefix && !upload.observer.invalid.Load() {
-				ready++
-			}
-		}
-		lastReady = ready
-		if ready == 32 {
-			metrics, err := ingressMemoryMetrics(opts.process)
-			valid := err == nil && metrics["weir_ingress_sessions"] != nil && testmetrics.Sum(metrics, "weir_ingress_sessions") >= 32
-			for _, suffix := range []string{"leases", "input_used_bytes", "wire_bytes", "wire_buffers"} {
-				name := "weir_execution_memory_" + suffix
-				if err != nil || metrics[name] == nil || testmetrics.Sum(metrics, name) != 0 {
-					valid = false
-				}
-			}
-			if !valid {
-				select {
-				case <-ctx.Done():
-					return false
-				case <-ticker.C:
-					continue
-				}
-			}
-			oracleCtx, cancel := context.WithDeadline(ctx, holdDeadline)
-			filter := bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: "hot"}}}}
-			count, countErr := opts.fixture.Admin.Database(opts.fixture.DB).Collection("records").CountDocuments(oracleCtx, filter)
-			cancel()
-			if countErr != nil || count != 0 || !time.Now().Before(holdDeadline) {
-				t.Error("incomplete-body backend zero-effect oracle failed or arrived after tail release", count, countErr)
-				return false
-			}
-			t.Logf("incomplete_body prefix_local_socket_written=32 server_active_RPC_at_least32=true execution_leases_input_wire0 backend_large_effects=%d elapsed=%s remaining_hold=%s server_receipt_unknown=true", count, time.Since(opts.started), time.Until(holdDeadline))
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			t.Error("incomplete upload common caller ended before condition", ctx.Err())
-			return false
-		case <-ticker.C:
-		}
-	}
-	t.Error("incomplete-body condition not reached before fixed3s tail release; requires32 local prefixes,32 active server RPCs,zero execution/DB effects; prefix_ready=", lastReady)
-	return false
 }
