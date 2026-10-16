@@ -5,13 +5,14 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	backendcfg "github.com/batchstream/weir/internal/backend"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	backendcfg "github.com/batchstream/weir/internal/backend"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
@@ -107,17 +108,6 @@ func TestNativeHTTPHostCannotSelectBackend(t *testing.T) {
 	}
 	if capture.head.Metadata.GetContentType() != "application/http" || !bytes.HasSuffix(capture.head.Metadata.Data, []byte("\r\n\r\n")) || bytes.Contains(capture.head.Metadata.Data, capture.body.Bytes()) {
 		t.Fatal("body entered metadata", capture.head)
-	}
-}
-
-func TestSearchScanProjectionAcceptsLiteralDollarField(t *testing.T) {
-	projection := &pb.Projection{Mode: pb.ProjectionMode_INCLUDE, Fields: []string{"$price"}}
-	request := &pb.ScanRequest{Resource: "records", Projection: projection}
-	config := Config{Store: "search"}
-	adapter := &Adapter{config: config}
-	work, failure := adapter.prepareScan(context.Background(), request)
-	if failure != nil || work == nil {
-		t.Fatal("adapter-independent business field rejected", failure)
 	}
 }
 

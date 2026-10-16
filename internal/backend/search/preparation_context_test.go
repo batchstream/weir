@@ -29,37 +29,29 @@ func TestSearchPreparationObservesInFlightCancellation(t *testing.T) {
 	cfg := Config{Store: "search"}
 	adapter := &Adapter{config: cfg, dialect: ElasticsearchProduct}
 	raw := []byte(`{"payload":"` + strings.Repeat("x", 4<<20) + `"}`)
-	for _, action := range []string{"put", "program", "expression", "scan"} {
+	for _, action := range []string{"put", "program", "expression"} {
 		t.Run(action, func(t *testing.T) {
 			inner, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			ctx := &checkpointCancelContext{Context: inner, cancel: cancel}
 			ctx.remaining.Store(20)
 			var failure *pb.Failure
-			if action == "scan" {
-				filter := &pb.Document{ContentType: "application/json", Data: raw}
-				request := &pb.ScanRequest{Resource: "records", Filter: filter}
-				operation := &pb.Command_Scan{Scan: request}
-				command := &pb.Command{Operation: operation}
-				_, failure = adapter.PrepareCommand(ctx, 1, command)
-			} else {
-				work := batchTestPlan(t, adapter, action, "records/s:item")
-				mutation := work.Command.GetMutate()
-				switch action {
-				case "put":
-					mutation.GetPut().Data = raw
-				case "program":
-					input := &pb.Document{ContentType: "application/json", Data: raw}
-					mutation.GetAtomicTransform().GetLua().Input = input
-				case "expression":
-					mutation.GetAtomicTransform().GetBackendExpression().Data = append(append([]byte(`{"doc":`), raw...), '}')
-				}
-				record, err := execution.NewRecord("search", 1, work.Command)
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, failure = adapter.PrepareRecord(ctx, record)
+			work := batchTestPlan(t, adapter, action, "records/s:item")
+			mutation := work.Command.GetMutate()
+			switch action {
+			case "put":
+				mutation.GetPut().Data = raw
+			case "program":
+				input := &pb.Document{ContentType: "application/json", Data: raw}
+				mutation.GetAtomicTransform().GetLua().Input = input
+			case "expression":
+				mutation.GetAtomicTransform().GetBackendExpression().Data = append(append([]byte(`{"doc":`), raw...), '}')
 			}
+			record, err := execution.NewRecord("search", 1, work.Command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, failure = adapter.PrepareRecord(ctx, record)
 			if !errors.Is(ctx.Err(), context.Canceled) || failure.GetCode() != pb.FailureCode_CANCELLED {
 				t.Fatal("cancellation became an argument error or was ignored", failure)
 			}

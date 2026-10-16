@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -130,28 +129,5 @@ func TestMongoStoredProgramCallerDeadlineDoesNotCancelBatch(t *testing.T) {
 	}
 	if t.Context().Err() != nil || batch.results[1] != nil || len(writes) != 1 || len(indexes) != 1 || indexes[0] != 1 || writes[0].Backend.(*plan).action != "create" {
 		t.Fatal("one caller's cancellation stopped its healthy batch peer", batch.results, writes, indexes)
-	}
-}
-
-func TestMongoCommandPreparationDeadlineAndLargeLogicalPage(t *testing.T) {
-	config := Config{Store: "mongo"}
-	adapter := &Adapter{config: config}
-	scan := &pb.ScanRequest{Resource: "db/records", PageSize: math.MaxUint32}
-	operation := &pb.Command_Scan{Scan: scan}
-	command := &pb.Command{Operation: operation}
-	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-	defer cancel()
-	work, failure := adapter.PrepareCommand(ctx, 1, command)
-	if work != nil || failure.GetCode() != pb.FailureCode_DEADLINE_EXCEEDED {
-		t.Fatal("expired preparation lost caller deadline", work, failure)
-	}
-	work, failure = adapter.PrepareCommand(t.Context(), 1, command)
-	if failure != nil {
-		t.Fatal("large logical page was rejected", failure)
-	}
-	find := scanFindCommand(work.Backend.(*scanPlan))
-	raw := bson.Raw(expressionBSON(t, find))
-	if raw.Lookup("limit").Int64() != int64(adapter.options().Scan.Documents) || raw.Lookup("batchSize").Int32() != int32(adapter.options().Scan.Documents) {
-		t.Fatal("large uint32 page wrapped before choosing the native batch", find)
 	}
 }

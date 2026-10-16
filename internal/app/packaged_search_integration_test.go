@@ -125,7 +125,7 @@ func TestPackagedSearchArtifacts(t *testing.T) {
 				n, _ := proxy.sockets()
 				return n == 0
 			})
-			t.Logf("%s exact artifact CRUD/Bulk/Native/Scan/expression/cancel/UNKNOWN; SIGTERM/Wait=%s; proxy=0", platform, elapsed)
+			t.Logf("%s exact artifact CRUD/Bulk/Native/expression/cancel/UNKNOWN; SIGTERM/Wait=%s; proxy=0", platform, elapsed)
 		})
 	}
 	t.Run("linux-startup-rejections", func(t *testing.T) {
@@ -320,8 +320,9 @@ func packagedSearchFaults(t *testing.T, client pb.StoreServiceClient, f *testsea
 	}
 	cancelled, stop := context.WithCancel(ctx)
 	stop()
-	scan := &pb.ScanRequest{Resource: root}
-	variant := &pb.Command_Scan{Scan: scan}
+	requestBody := &pb.Document{ContentType: "application/http", Data: []byte("GET /_search HTTP/1.1\r\nHost: ignored.invalid\r\n\r\n")}
+	native := &pb.NativeRequest{Resource: root, Request: requestBody}
+	variant := &pb.Command_Native{Native: native}
 	command := &pb.Command{Operation: variant}
 	stream, err := testutil.ExecuteEvents(cancelled, client, "search", command)
 	if err == nil {

@@ -352,32 +352,25 @@ func TestCollectionFlushesAtByteBoundary(t *testing.T) {
 	}
 }
 
-func TestStreamingCommandsBypassCollection(t *testing.T) {
-	for _, native := range []bool{false, true} {
-		limits := DefaultLimits()
-		limits.BatchWait = time.Hour
-		runtime := newRuntime(nil, limits)
-		session := runtime.NewSession()
-		work := plan(1, "stream", false)
-		if native {
-			request := &pb.NativeRequest{}
-			work.Command.Operation = &pb.Command_Native{Native: request}
-		} else {
-			request := &pb.ScanRequest{}
-			work.Command.Operation = &pb.Command_Scan{Scan: request}
-		}
-		ticket, failure, _ := runtime.Submit(context.Background(), work, session)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		selected, _ := runtime.selectLocked(time.Now())
-		if selected == nil || len(selected.items) != 1 || selected.items[0] != ticket {
-			t.Fatal("streaming command waited for collection", selected)
-		}
-		finish(runtime, selected)
-		ticket.Ack()
-		session.Close()
+func TestNativeBypassesCollection(t *testing.T) {
+	limits := DefaultLimits()
+	limits.BatchWait = time.Hour
+	runtime := newRuntime(nil, limits)
+	session := runtime.NewSession()
+	work := plan(1, "stream", false)
+	request := &pb.NativeRequest{}
+	work.Command.Operation = &pb.Command_Native{Native: request}
+	ticket, failure, _ := runtime.Submit(context.Background(), work, session)
+	if failure != nil {
+		t.Fatal(failure)
 	}
+	selected, _ := runtime.selectLocked(time.Now())
+	if selected == nil || len(selected.items) != 1 || selected.items[0] != ticket {
+		t.Fatal("Native command waited for collection", selected)
+	}
+	finish(runtime, selected)
+	ticket.Ack()
+	session.Close()
 }
 
 func TestCollectionTimerDispatchesAndDrainBypassesWait(t *testing.T) {

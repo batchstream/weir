@@ -46,13 +46,13 @@ func TestEffectiveConfigurationDefaultsAndRedaction(t *testing.T) {
 		if store.Queue.MaxOperations != 1024 || *store.Queue.MaxBytes != 32<<20 || store.Batching.MaxOperations != 128 || *store.Batching.MaxBytes != 4<<20 || store.Batching.MaxInFlight == nil || *store.Batching.MaxInFlight != 16 || store.Batching.MaxWait == nil || *store.Batching.MaxWait != Duration(20*time.Millisecond) {
 			t.Fatal("scheduler defaults missing", store.Name)
 		}
-		if store.Scan.MaxBatchDocuments != 128 || *store.Scan.MaxBatchBytes != 4<<20 || *store.Backend.ConnectTimeout != Duration(2*time.Second) || *store.Backend.MaxExchangeBytes != 32<<20 {
-			t.Fatal("backend and scan defaults missing", store.Name)
+		if *store.Backend.ConnectTimeout != Duration(2*time.Second) || *store.Backend.MaxExchangeBytes != 32<<20 {
+			t.Fatal("backend defaults missing", store.Name)
 		}
 		if store.Backend.MongoDB != nil && (store.Backend.MongoDB.MaxConnecting != 2 || *store.Backend.MongoDB.MetadataCacheEntries != 64 || store.Backend.MongoDB.RetryAttempts != 5 || *store.Backend.MongoDB.RetryBackoff != Duration(5*time.Millisecond)) {
 			t.Fatal("MongoDB defaults missing")
 		}
-		if store.Backend.Search != nil && (store.Backend.Search.RetryAttempts != 5 || *store.Backend.Search.PITKeepAlive != Duration(time.Minute) || *store.Backend.Search.IdleTimeout != Duration(30*time.Second)) {
+		if store.Backend.Search != nil && (store.Backend.Search.RetryAttempts != 5 || *store.Backend.Search.IdleTimeout != Duration(30*time.Second)) {
 			t.Fatal("ineffective Search cache setting was reported")
 		}
 	}

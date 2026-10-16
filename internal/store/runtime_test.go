@@ -254,9 +254,6 @@ func TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge(t *testing.T) 
 			t.Run(resource+fmt.Sprint(streaming), func(t *testing.T) {
 				runtime := newRuntime(nil, DefaultLimits())
 				work := plan(1, "command", false)
-				work.Command = nil
-				work.Command = scanCall()
-				work.Command = scanCall()
 				if streaming {
 					work.Command = nativeCall()
 				}

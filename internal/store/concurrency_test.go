@@ -17,7 +17,7 @@ type concurrencyAdapter struct {
 	finish  chan struct{}
 }
 
-func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	adapter.started <- plans
 	select {
 	case <-adapter.finish:
@@ -27,7 +27,7 @@ func (adapter *concurrencyAdapter) Execute(ctx context.Context, plans []*executi
 		result := execution.FailedEvent(work.Command, pb.MutationOutcome_APPLIED, nil)
 		_ = emit(work, result)
 	}
-	return false
+	return
 }
 
 func TestZeroInFlightBudgetDoesNotLimitIndependentBatches(t *testing.T) {
@@ -235,7 +235,7 @@ type canceledExecutionAdapter struct {
 	finish   chan struct{}
 }
 
-func (adapter *canceledExecutionAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (adapter *canceledExecutionAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	work := plans[0]
 	adapter.started <- work.Key
 	outcome := pb.MutationOutcome_APPLIED
@@ -249,7 +249,7 @@ func (adapter *canceledExecutionAdapter) Execute(ctx context.Context, plans []*e
 	}
 	result := execution.FailedEvent(work.Command, outcome, failure)
 	_ = emit(work, result)
-	return false
+	return
 }
 
 func TestCancellationRetainsCreditUntilAdapterStops(t *testing.T) {
@@ -370,7 +370,7 @@ func TestExecutionBudgetIsPerStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer busy.Close(context.Background())
-	otherAdapter := &nonScanContinuationAdapter{}
+	otherAdapter := &singleExecutionAdapter{}
 	other, err := New(otherAdapter, limits)
 	if err != nil {
 		t.Fatal(err)

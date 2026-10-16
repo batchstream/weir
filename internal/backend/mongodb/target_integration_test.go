@@ -96,7 +96,7 @@ func targetNative(t *testing.T, adapter *Adapter, database string, command bson.
 	return capture.body.Bytes()
 }
 
-func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
+func TestMongoResourceTargetsBulkLuaNative(t *testing.T) {
 	fixture := openTargetFixture(t)
 	adapter := fixture.adapter
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -181,32 +181,6 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		request := &pb.ScanRequest{Resource: targetResource(target)}
-		work, failure := adapter.prepareScan(request)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		seen := make(map[string]bool)
-		for pageNumber := 0; pageNumber < 5; pageNumber++ {
-			page := adapter.fetchScan(ctx, work)
-			if page.Failure != nil {
-				t.Fatal(target, page.Failure)
-			}
-			for _, document := range page.Documents {
-				raw := bson.Raw(document.Data)
-				id := raw.Lookup("_id").StringValue()
-				if seen[id] || raw.Lookup("n").Int32() != int32(i+11) {
-					t.Fatal("Scan target changed across pages", target, raw)
-				}
-				seen[id] = true
-			}
-			if page.Exhausted {
-				break
-			}
-		}
-		if failure := adapter.closeScan(ctx, work); failure != nil || len(seen) != 3 {
-			t.Fatal("Scan did not traverse target", target, failure, seen)
-		}
 		command := bson.D{{Key: "count", Value: target.collection}}
 		reply := targetNative(t, adapter, target.database, command)
 		if reply.Lookup("n").AsInt64() != 3 {
@@ -227,7 +201,7 @@ func TestMongoResourceTargetsBulkLuaScanNative(t *testing.T) {
 			t.Fatal("target effect crossed namespace", target, err, raw)
 		}
 	}
-	t.Log("one client/pool: 2 databases, 2 collections each, same id isolated across Bulk, Lua, Scan and Native")
+	t.Log("one client/pool: 2 databases, 2 collections each, same id isolated across Bulk, Lua and Native")
 }
 
 func TestMongoResourceTargetsConcurrent(t *testing.T) {
@@ -289,43 +263,27 @@ func TestMongoResourceTargetsRejectUnqualifiedCollections(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		for _, action := range []string{"read", "put", "program", "scan"} {
+		for _, action := range []string{"read", "put", "program"} {
 			t.Run(kind+"/"+action, func(t *testing.T) {
 				resource := targetResource(target)
-				switch action {
-				case "scan":
-					request := &pb.ScanRequest{Resource: resource}
-					work, failure := fixture.adapter.prepareScan(request)
-					if failure != nil {
-						t.Fatal(failure)
+				document := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: 1}}
+				opts := batchOperationOptions{
+					resource: resource + "/s:new",
+					action:   action,
+					document: document,
+					program:  `return function(current, incoming) return {n = 1} end`,
+				}
+				work, failure := prepareTestRecord(fixture.adapter, batchOperation(t, opts))
+				if failure != nil {
+					t.Fatal(failure)
+				}
+				results := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
+				if action == "read" {
+					if results[0].GetReadResult().GetFailure() == nil || results[0].GetReadResult().GetMissing() != nil {
+						t.Fatal("unqualified point read target accepted", results)
 					}
-					page := fixture.adapter.fetchScan(ctx, work)
-					if page.Failure == nil || len(page.Documents) != 0 || page.Exhausted {
-						t.Fatal("unqualified Scan target accepted", page)
-					}
-					if failure = fixture.adapter.closeScan(ctx, work); failure != nil {
-						t.Fatal(failure)
-					}
-				default:
-					document := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: 1}}
-					opts := batchOperationOptions{
-						resource: resource + "/s:new",
-						action:   action,
-						document: document,
-						program:  `return function(current, incoming) return {n = 1} end`,
-					}
-					work, failure := prepareTestRecord(fixture.adapter, batchOperation(t, opts))
-					if failure != nil {
-						t.Fatal(failure)
-					}
-					results := fixture.adapter.executeRecords(ctx, []*execution.Plan{work})
-					if action == "read" {
-						if results[0].GetReadResult().GetFailure() == nil || results[0].GetReadResult().GetMissing() != nil {
-							t.Fatal("unqualified point read target accepted", results)
-						}
-					} else if results[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutationResult().Failure == nil {
-						t.Fatal("unqualified mutation target attempted", results)
-					}
+				} else if results[0].GetMutationResult().Outcome != pb.MutationOutcome_NOT_STARTED || results[0].GetMutationResult().Failure == nil {
+					t.Fatal("unqualified mutation target attempted", results)
 				}
 			})
 		}

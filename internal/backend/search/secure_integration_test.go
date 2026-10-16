@@ -103,27 +103,7 @@ func TestSecureSearchQualification(t *testing.T) {
 			t.Fatal("native bulk", end, capture.body.String())
 		}
 		fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-		scan := scanWork(t, a, b.Index)
-		count := 0
-		exhausted := false
-		for step := 0; step < 12; step++ {
-			page := a.fetchScan(context.Background(), scan)
-			if page.Failure != nil {
-				t.Fatal("secure PIT", page.Failure)
-			}
-			count += len(page.Documents)
-			if page.Exhausted {
-				exhausted = true
-				break
-			}
-		}
-		if !exhausted || count != 5 {
-			t.Fatal("PIT completeness", count, exhausted)
-		}
-		if failure := a.closeScan(context.Background(), scan); failure != nil {
-			t.Fatal(failure)
-		}
-		t.Log("direct native TLS application account: Read CRUD/conflict Bulk PIT/Scan Native BackendExpression correctness passed")
+		t.Log("direct native TLS application account: Read CRUD/conflict Bulk Native BackendExpression correctness passed")
 	})
 	t.Run("actual-401-and-403", func(t *testing.T) {
 		wrong := *b

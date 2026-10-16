@@ -8,18 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
-func TestSearchScanAndNativeRequestTargets(t *testing.T) {
+func TestSearchNativeRequestTargets(t *testing.T) {
 	for _, dialect := range []string{ElasticsearchProduct, OpenSearchProduct} {
 		t.Run(dialect, func(t *testing.T) {
-			var nativeWrites, cleanups atomic.Int32
+			var nativeWrites atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/":
@@ -31,56 +29,6 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 					return
 				case "/_cluster/settings":
 					fmt.Fprint(w, `{"persistent":{"action.auto_create_index":"false"}}`)
-					return
-				case "/_search":
-					var body struct {
-						PIT   struct{ ID string }
-						After []int64 `json:"search_after"`
-						Sort  []string
-					}
-					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-						t.Error(err)
-						return
-					}
-					index := strings.TrimSuffix(body.PIT.ID, "-pit")
-					if index != "left" && index != "right" {
-						t.Error("PIT lost index identity", body.PIT.ID)
-					}
-					wantSort := "_shard_doc"
-					if len(body.Sort) != 1 || body.Sort[0] != wantSort {
-						t.Error("detected product selected wrong PIT sort", body.Sort)
-					}
-					fmt.Fprintf(w, `{"pit_id":%q,"took":1,"timed_out":false,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0},"hits":{"max_score":null,"hits":[`, body.PIT.ID)
-					if len(body.After) == 0 {
-						fmt.Fprintf(w, `{"_index":%q,"_id":"same","_score":null,"_source":{"target":%q},"sort":[0]}`, index, index)
-					}
-					fmt.Fprint(w, "]}}")
-					return
-				case "/_pit", "/_search/point_in_time":
-					if r.Method != http.MethodDelete {
-						t.Error("unscoped PIT open", r.URL.Path)
-						return
-					}
-					cleanups.Add(1)
-					var body struct {
-						ID  string
-						IDs []string `json:"pit_id"`
-					}
-					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-						t.Error(err)
-					}
-					if dialect == OpenSearchProduct {
-						if len(body.IDs) != 1 {
-							t.Error("wrong OpenSearch PIT cleanup identity", body.IDs)
-							return
-						}
-						fmt.Fprintf(w, `{"pits":[{"pit_id":%q,"successful":true}]}`, body.IDs[0])
-					} else {
-						if body.ID != "left-pit" && body.ID != "right-pit" {
-							t.Error("wrong Elasticsearch PIT cleanup identity", body.ID)
-						}
-						fmt.Fprint(w, `{"succeeded":true,"num_freed":1}`)
-					}
 					return
 				}
 				parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
@@ -94,18 +42,6 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 					return
 				}
 				switch parts[1] {
-				case "_pit", "_search":
-					if dialect == OpenSearchProduct {
-						if r.URL.Path != "/"+index+"/_search/point_in_time" {
-							t.Error("wrong OpenSearch PIT path", r.URL.Path)
-						}
-						fmt.Fprintf(w, `{"pit_id":%q,"creation_time":1,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}`, index+"-pit")
-					} else {
-						if r.URL.Path != "/"+index+"/_pit" {
-							t.Error("wrong Elasticsearch PIT path", r.URL.Path)
-						}
-						fmt.Fprintf(w, `{"id":%q,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}`, index+"-pit")
-					}
 				case "_doc":
 					fmt.Fprintf(w, `{"_index":%q,"_id":"same","_source":{"target":%q}}`, index, index)
 				case "_bulk":
@@ -133,47 +69,13 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 			})
 			server := httptest.NewServer(handler)
 			defer server.Close()
-			// These direct calls bypass Runtime permits: two Scan workers and
-			// one Native exchange need three execution slots in this fixture.
 			cfg := Config{Store: "search", URL: server.URL}
 			a, err := Open(context.Background(), cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer a.Close()
-			var scans sync.WaitGroup
-			scanContext, cancelScans := context.WithTimeout(context.Background(), 5*time.Second)
-			// Join even when a Native assertion calls Fatal. PIT cleanup needs
-			// the adapter and test server to remain open until the workers end.
-			defer func() {
-				cancelScans()
-				scans.Wait()
-			}()
 			for _, index := range []string{"left", "right"} {
-				request := &pb.ScanRequest{Resource: index}
-				work, failure := a.prepareScan(context.Background(), request)
-				if failure != nil {
-					t.Fatal(failure)
-				}
-				scans.Go(func() {
-					defer func() {
-						cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 2*time.Second)
-						defer cancelCleanup()
-						if failure := a.closeScan(cleanupContext, work); failure != nil {
-							t.Error(failure)
-						}
-					}()
-					for step := range 2 {
-						page := a.fetchScan(scanContext, work)
-						if page.Failure != nil || page.Exhausted != (step == 1) {
-							t.Error("Scan target/PIT failure", index, step, page)
-							return
-						}
-						if step == 0 && (len(page.Documents) != 1 || !strings.Contains(string(page.Documents[0].Data), `"target":"`+index+`"`)) {
-							t.Error("Scan returned another index's hit", index, page)
-						}
-					}
-				})
 				get := nativeRequest(t, index, "GET", "/_doc/same")
 				end, capture := runNative(t, a, get, nil)
 				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || !strings.Contains(capture.body.String(), `"target":"`+index+`"`) {
@@ -191,9 +93,8 @@ func TestSearchScanAndNativeRequestTargets(t *testing.T) {
 					t.Fatal("Native bulk target was restricted", end)
 				}
 			}
-			scans.Wait()
-			if nativeWrites.Load() != 4 || cleanups.Load() != 2 {
-				t.Fatal("request target operation/cleanup counts", nativeWrites.Load(), cleanups.Load())
+			if nativeWrites.Load() != 4 {
+				t.Fatal("request target operation/cleanup counts", nativeWrites.Load())
 			}
 		})
 	}

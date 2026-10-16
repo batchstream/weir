@@ -67,7 +67,7 @@ defaults and their calibration scope are described in [batching guidance](docs/b
 
 ## Build and run
 
-Requires Go **1.27.1**. Typed Read, Mutate and Scan require existing backend
+Requires Go **1.27.1**. Typed Read and Mutate require existing backend
 collections/indices; Native can provision them. MongoDB requires direct replica-set
 access and support for the native client `bulkWrite` command used by typed
 mutations. Lua transforms also require transactions.
@@ -153,7 +153,7 @@ writes until the oldest admission reaches that age. Reads combine compatible rea
 already queued without waiting for future arrivals. Read and mutation batches
 share the Store queue and execution budget, but reads do not flush write collection
 or wait for unrelated writes in the same batch.
-Full batches, Scan/Native commands and draining Stores bypass collection.
+Full batches, Native commands and draining Stores bypass collection.
 A caller deadline before the
 collection deadline also dispatches immediately. Collection uses the existing
 bounded queue and adds no per-request timer. Queued RPCs of the same kind combine by namespace, actual input bytes and
@@ -173,8 +173,8 @@ can occupy an empty queue alone. `batching.max_in_flight` optionally bounds simu
 adapter invocations per Store; omission selects its default of `16`, and
 explicit `0` leaves them unlimited. A positive budget keeps excess requests in the
 bounded queue, allowing natural batching while
-the backend is busy. Execution completion returns this credit before consumer Ack;
-Scan publication releases it between pages. Search visibility waits and Native
+the backend is busy. Execution completion returns this credit before consumer Ack.
+Search visibility waits and Native
 streaming still occupy credit, so a small budget can reduce throughput when waiting
 for refresh or a slow Native consumer. Select a budget with the actual workload;
 separate Stores have independent budgets. Backend pools, RPCs and connections have
@@ -184,8 +184,8 @@ Store settings are grouped by responsibility: `backend` holds connection establi
 and MongoDB target caching, native exchange chunk sizes, and the shared
 `authentication`/`tls` layout. MongoDB connection workers are under
 `backend.mongodb.max_connecting`. MongoDB target caching belongs to
-`backend.mongodb.metadata_cache_entries`. Store `queue`, `batching` and `scan` hold waiting
-work, request aggregation and Scan publication batches. Process `transport` owns
+`backend.mongodb.metadata_cache_entries`. Store `queue` and `batching` hold waiting
+work and request aggregation. Process `transport` owns
 Execute flow control and independent keepalive/progress settings; process `lua`
 sets VM execution policy for every Store. Business work
 has no default instruction budget or server-selection deadline; native exchanges
@@ -209,7 +209,7 @@ clients cannot treat Mutate or several RPCs as one application transaction.
 Business RPCs and backend execution inherit caller cancellation and deadlines.
 A shared batch uses the latest caller deadline; an unbounded caller keeps that
 batch unbounded, while individual plans retain their own contexts. Canceling
-all callers stops shared backend work. Scan and Native use the same caller
+all callers stops shared backend work. Native uses the same caller
 lifetime. Connection setup, stream stalls and cleanup retain their lifecycle
 timeouts. A sent write whose acknowledgement is lost remains `UNKNOWN` and is
 never replayed automatically.
@@ -242,7 +242,7 @@ repository and module `github.com/batchstream/weir-go` (package `weir`). It reso
 every requested Store before exposing business methods. It reuses round-robin
 channels, refreshes directory mappings and DNS,
 and drains retired connections without moving an active RPC to another instance.
-Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.15.0`.
+Install the versioned SDK with `go get github.com/batchstream/weir-go@v0.16.0`.
 Initialization accepts up to 16 Stores; each Store expands to at most 64 physical
 addresses. Refresh runs at the earlier of the configured interval and one third of
 the remaining ResolveStore TTL.
@@ -273,17 +273,16 @@ for _, result := range results {
 }
 ```
 
-The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/basic),
-[native](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/native) and
-[scan](https://github.com/batchstream/weir-go/tree/v0.15.0/examples/scan) examples
+The SDK [basic](https://github.com/batchstream/weir-go/tree/v0.16.0/examples/basic)
+and [native](https://github.com/batchstream/weir-go/tree/v0.16.0/examples/native) examples
 initialize through a seed. Read and Mutate accept batches for one Store and use
 one bidirectional Execute RPC, with indexed results in input order. There is no
 whole-call byte or item-count limit; each wire request carries one record.
 Resources are canonical relative paths. ReadStream and MutateStream accept an
 incremental producer and consumer so callers can avoid retaining the full input
 and output. The slice convenience methods accumulate results in client memory.
-The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform, Scan
-and Native methods. It pins public protocol v0.13.0. Advanced fixed-owner callers
+The SDK also provides ReadOne, Create, Put, Replace, Delete, AtomicTransform
+and Native methods. It pins public protocol v0.14.0. Advanced fixed-owner callers
 can use Dial and package-level business helpers.
 
 The SDK validates slice inputs before sending them. The server validates each
@@ -294,22 +293,11 @@ automatically. An APPLIED outcome that includes a Failure preserves application
 evidence while reporting a business failure. A later stream error does not revoke
 an already confirmed successful item.
 
-Scan and Native each send one command on a bidirectional Execute RPC and half-close
-its input before consuming the typed result events. Success requires a
-valid terminal Event and final gRPC OK. A scan checkpoint additionally requires
-the matching delivered document count. A later page can use another instance.
-MongoDB scans paginate by ascending `_id` without a retained cursor; Search
-continuations carry the backend PIT snapshot. Consumers must tolerate repeated
-documents when restarting an interrupted page. Scan fetches up to 128 documents
-per backend call by default and uses a 4 MiB publication window. A larger
-individual document is published alone. It releases the
-backend execution workspace before sending that batch, so a slow consumer does not
-block other database work. Both backends learn a smaller fetch capacity from
-large documents within each page.
-Scan accepts a native filter and explicit INCLUDE/EXCLUDE Projection. Internal
-MongoDB `_id` and Search PIT/sort metadata need not appear in the result. Search
-publishes business `_source` documents, consistent with Read. See the
-[payload contracts](docs/payloads.md) for projection, Lua and Native semantics.
+Native sends one command on a bidirectional Execute RPC and half-closes its input
+before consuming typed result events. Success requires a valid terminal Event and
+final gRPC OK. Queries, counts and traversal use Native with the backend's own
+request and response formats, including its pagination and cursor semantics. See
+the [payload contracts](docs/payloads.md) for Lua and Native semantics.
 
 ## Deployment
 
@@ -362,7 +350,7 @@ resolved count and byte aggregation bounds, including when configuration omits t
 
 Search exposes `weir_search_http_requests_total` and
 `weir_search_http_request_duration_seconds` by fixed operation, outcome and
-visibility labels. They cover Record/Scan exchanges and startup qualification;
+visibility labels. They cover record exchanges and startup qualification;
 Native relay is excluded. Bulk elapsed time includes `refresh=wait_for`, so it
 does not isolate refresh waiting. `weir_search_http_request_records` reports
 actual framed records per attempted mget/bulk request, including failures.

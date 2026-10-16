@@ -10,7 +10,7 @@ import (
 func BenchmarkValidateFrames(b *testing.B) {
 	read := wireMessage(3, wireMessage(1, wireMessage(1, []byte("records/s:record"))))
 	document := append(wireMessage(1, []byte("application/vnd.test")), wireMessage(2, bytes.Repeat([]byte("x"), 64<<10))...)
-	native := wireMessage(3, wireMessage(4, append(wireMessage(1, []byte("records")), wireMessage(2, document)...)))
+	native := wireMessage(3, wireMessage(3, append(wireMessage(1, []byte("records")), wireMessage(2, document)...)))
 	repeated := append(wireMessage(1, []byte("seed")), wireMessage(2, []byte("announcement"))...)
 	cases := []struct {
 		name     string

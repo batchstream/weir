@@ -46,11 +46,11 @@ func TestRecordStreamLongInputAndLargeResultsStayBounded(t *testing.T) {
 	}
 	for index := uint64(1); index <= count; index++ {
 		response, err := stream.Recv()
-		if err != nil || response.Index != index || len(response.Event.GetReadResult().GetDocument().GetData()) != (2 << 20) {
+		if err != nil || response.Index != index || len(response.Event.GetReadResult().GetDocument().GetData()) != (2<<20) {
 			t.Fatal("lost indexed large result", index, response, err)
 		}
 		snapshot := local.Snapshot()
-		if snapshot.ResultBytes > 2*(2 << 20)+1024 || snapshot.Retained > 2 || snapshot.Publishers != 0 {
+		if snapshot.ResultBytes > 2*(2<<20)+1024 || snapshot.Retained > 2 || snapshot.Publishers != 0 {
 			t.Fatal("logical stream accumulated result owners", snapshot)
 		}
 		if index < count {
@@ -324,17 +324,17 @@ type orderedRecordAdapter struct {
 	second chan struct{}
 }
 
-func (adapter *orderedRecordAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (adapter *orderedRecordAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	if plans[0].Key == "records/s:first" {
 		select {
 		case <-adapter.first:
 		case <-ctx.Done():
-			return false
+			return
 		}
 	} else {
 		close(adapter.second)
 	}
-	return adapter.peerAdapter.Execute(ctx, plans, emit)
+	adapter.peerAdapter.Execute(ctx, plans, emit)
 }
 func TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion(t *testing.T) {
 	gate := make(chan struct{})

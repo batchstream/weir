@@ -2,7 +2,6 @@ package search
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -72,17 +71,6 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				paths := map[string]int{}
 				escaped := "/" + url.PathEscape(index)
 				handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Path == "/_search" {
-						var request scanSearchRequest
-						if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.PIT.ID != "snapshot" {
-							t.Error("Scan fetch lost its qualified index PIT", request.PIT.ID, err)
-							w.WriteHeader(500)
-							return
-						}
-						paths["/_search"]++
-						_, _ = w.Write(scanBatchReply(nil))
-						return
-					}
 					if !strings.HasPrefix(r.URL.EscapedPath(), escaped) || strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")[0] != index {
 						t.Errorf("index was decoded twice or split: %s", r.RequestURI)
 						w.WriteHeader(500)
@@ -95,10 +83,6 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 						fmt.Fprintf(w, `{%q:{"settings":{"index.uuid":"test","index.number_of_shards":"1"},"mappings":{"_source":{"enabled":true}}}}`, index)
 					case "/_mget":
 						fmt.Fprintf(w, `{"docs":[{"_index":%q,"_id":"item","found":false}]}`, index)
-					case "/_pit":
-						fmt.Fprint(w, `{"id":"snapshot","_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}`)
-					case "/_search/point_in_time":
-						fmt.Fprint(w, `{"pit_id":"snapshot","creation_time":1,"_shards":{"total":1,"successful":1,"skipped":0,"failed":0}}`)
 					case "/_doc/item":
 						fmt.Fprint(w, `{"found":false}`)
 					default:
@@ -126,69 +110,13 @@ func TestSearchConcreteIndexRemainsOneHTTPPathSegment(t *testing.T) {
 				if observations[0].failure != nil || *observations[0].reply.Found {
 					t.Fatal("decoded index/read mismatch", observations[0].failure)
 				}
-				request := &pb.ScanRequest{Resource: resource}
-				scan, failure := adapter.prepareScan(context.Background(), request)
-				if failure != nil {
-					t.Fatal(failure)
-				}
-				page := adapter.fetchScan(context.Background(), scan)
-				if page.Failure != nil {
-					t.Fatal(page.Failure)
-				}
 				native := nativeRequest(t, resource, "GET", "/_doc/item")
 				end, _ := runNative(t, adapter, native, nil)
-				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || paths["/_mget"] != 1 || paths["/_doc/item"] != 1 || paths[""] != 1 || paths["/_search"] != 1 {
-					t.Fatal("typed operations did not share concrete index", end, paths)
+				if end.Completion != pb.NativeCompletion_RESPONSE_COMPLETE || paths["/_mget"] != 1 || paths["/_doc/item"] != 1 {
+					t.Fatal("read and Native did not share concrete index", end, paths)
 				}
 			})
 		}
-	}
-}
-
-func TestSearchScanProjectionPublishesSourceAndBindsCheckpoint(t *testing.T) {
-	for _, mode := range []pb.ProjectionMode{pb.ProjectionMode_INCLUDE, pb.ProjectionMode_EXCLUDE} {
-		t.Run(mode.String(), func(t *testing.T) {
-			calls := 0
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
-				var request struct {
-					Query  json.RawMessage
-					Source map[string][]string `json:"_source"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Error(err)
-				}
-				key := "includes"
-				if mode == pb.ProjectionMode_EXCLUDE {
-					key = "excludes"
-				}
-				if len(request.Source) != 1 || len(request.Source[key]) != 1 || request.Source[key][0] != "private" || string(request.Query) != `{"match_all":{}}` {
-					t.Error("native projection/filter envelope", request)
-				}
-				fields := scanTestReply()
-				raw, _ := json.Marshal(fields)
-				_, _ = w.Write(raw)
-			})
-			adapter := scanBatchAdapter(t, handler)
-			filter := &pb.Document{ContentType: "application/json", Data: []byte(`{"match_all":{}}`)}
-			projection := &pb.Projection{Mode: mode, Fields: []string{"private"}}
-			request := &pb.ScanRequest{Resource: "records", Filter: filter, Projection: projection, PageSize: 1}
-			work, failure := adapter.prepareScan(context.Background(), request)
-			if failure != nil {
-				t.Fatal(failure)
-			}
-			state := work.Backend.(*scanPlan)
-			state.opened, state.pit = true, "snapshot"
-			page := adapter.fetchScan(context.Background(), work)
-			if page.Failure != nil || len(page.Documents) != 1 || string(page.Documents[0].Data) != `{"n":9223372036854775807}` || !page.Complete || calls != 1 {
-				t.Fatal("hit metadata leaked or private cursor lost", page.Failure)
-			}
-			request.ContinuationToken = page.NextContinuationToken
-			projection.Fields = []string{"changed"}
-			if _, failure := adapter.prepareScan(context.Background(), request); failure.GetCode() != pb.FailureCode_INVALID_ARGUMENT {
-				t.Fatal("projection changed without invalidating token", failure)
-			}
-		})
 	}
 }
 
@@ -207,7 +135,7 @@ func TestSearchWarmReadClassifiesNativeTargetAndPermissionFailures(t *testing.T)
 				w.WriteHeader(item.status)
 				fmt.Fprintf(w, `{"error":{"type":%q},"status":%d}`, item.kind, item.status)
 			})
-			adapter := scanBatchAdapter(t, handler)
+			adapter := testHTTPAdapter(t, handler)
 
 			read := &pb.ReadRequest{Resource: "records/s:item"}
 			variant := &pb.Command_Read{Read: read}

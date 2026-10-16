@@ -14,7 +14,7 @@ type deadlineAdapter struct {
 	lifecycleAdapter
 }
 
-func (a *deadlineAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (a *deadlineAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	<-ctx.Done()
 	for _, plan := range plans {
 		failure := protocol.ContextFailure(ctx)
@@ -22,7 +22,7 @@ func (a *deadlineAdapter) Execute(ctx context.Context, plans []*execution.Plan, 
 		output := result
 		_ = emit(plan, output)
 	}
-	return false
+	return
 }
 
 func TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome(t *testing.T) {

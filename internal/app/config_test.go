@@ -64,7 +64,7 @@ func TestBatchByteConfigurationReachesSearchWithoutChangingReadBudget(t *testing
 			local := routing.Stores[0].Local
 			settings := local.backendOptions()
 			limits := local.runtimeLimits()
-			if settings.BatchBytes != tc.want || limits.BatchBytes != tc.want || settings.ExchangeBytes != 16<<20 || settings.Scan != backend.DefaultOptions().Scan {
+			if settings.BatchBytes != tc.want || limits.BatchBytes != tc.want || settings.ExchangeBytes != 16<<20 {
 				t.Fatal("batch bytes did not reach both collection and framing independently of reads", settings, limits)
 			}
 			if tc.batching == "" && settings.BatchBytes != backend.DefaultOptions().BatchBytes {

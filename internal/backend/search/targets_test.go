@@ -170,10 +170,6 @@ func TestSearchInvalidRequestTargetsArePure(t *testing.T) {
 		if _, failure := prepareTestRecord(a, op); failure == nil {
 			t.Error("record target accepted", resource)
 		}
-		scan := &pb.ScanRequest{Resource: resource}
-		if _, failure := a.prepareScan(context.Background(), scan); failure == nil {
-			t.Error("Scan target accepted", resource)
-		}
 		native := nativeRequest(t, "records", "GET", "/_doc/same")
 		native.Resource = resource
 		_, resourceErr := protocol.ParseRelativeResource(resource)
@@ -191,15 +187,6 @@ func TestSearchPlansRetainRequestTargets(t *testing.T) {
 	record.Command.GetRead().Resource = "right/s:same"
 	if record.Backend.(*plan).index != "left" {
 		t.Fatal("record target follows mutable request")
-	}
-	req := &pb.ScanRequest{Resource: "left"}
-	scan, failure := a.prepareScan(context.Background(), req)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	req.Resource = "right"
-	if scan.Backend.(*scanPlan).index != "left" {
-		t.Fatal("Scan target follows mutable request")
 	}
 	open := nativeRequest(t, "left", "GET", "/_doc/same")
 	native, failure := a.prepareNative(open)

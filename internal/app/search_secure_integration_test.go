@@ -164,31 +164,6 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	if err != nil || !strings.Contains(string(found.GetDocument().GetData()), "9007199254740995") {
 		t.Fatal("expression int64", err)
 	}
-	fixture.Admin.Do(t, "POST", "/"+b.Index+"/_refresh", "")
-	scanRequest := &pb.ScanRequest{Resource: root}
-	scanVariant := &pb.Command_Scan{Scan: scanRequest}
-	scanCall := &pb.Command{Operation: scanVariant}
-	scan, err := testutil.ExecuteEvents(ctx, client, "search", scanCall)
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := uint64(0)
-	for {
-		frame, err := scan.Recv()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if end := frame.GetScanEnd(); end != nil {
-			if end.Failure != nil || end.DocumentCount != count || count < 1 {
-				t.Fatal("Scan End", end)
-			}
-			break
-		}
-		count++
-	}
-	if _, err := scan.Recv(); err != io.EOF {
-		t.Fatal("Scan EOF", err)
-	}
 	body := []byte("{\"index\":{\"_id\":\"native-" + name + "\"}}\n{\"n\":9007199254740993}\n")
 	httpRequest, err := http.NewRequest(http.MethodPost, "http://ignored.invalid/_bulk", bytes.NewReader(body))
 	if err != nil {
@@ -225,7 +200,7 @@ func searchClientOperations(t *testing.T, client pb.StoreServiceClient, fixture 
 	if !strings.Contains(string(response), `"errors":false`) {
 		t.Fatal("Native operation failed")
 	}
-	t.Log("Read CRUD conflict/missing batch mutation Scan End/EOF Native bulk End/EOF BackendExpression; exact int64 preserved")
+	t.Log("Read CRUD conflict/missing batch mutation Native bulk End/EOF BackendExpression; exact int64 preserved")
 }
 
 func secureHTTPOpenCount(t *testing.T, b *testsearch.Backend) int {

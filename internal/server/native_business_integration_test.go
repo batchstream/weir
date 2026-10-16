@@ -56,7 +56,6 @@ func TestSDKMongoLargeNativeCursorAndTypedRecords(t *testing.T) {
 	defer cancel()
 	options := backend.DefaultOptions()
 	options.ExchangeBytes = 64 << 10
-	options.Scan.Bytes = 64 << 10
 	config := mongodb.Config{Store: "records", URI: fixture.URI, Options: &options}
 	adapter, err := mongodb.Open(ctx, config)
 	if err != nil {

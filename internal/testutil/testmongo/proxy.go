@@ -228,7 +228,7 @@ func (p *Proxy) relay(client net.Conn) {
 		}
 		if name == p.AlterCommand && p.AlterRemaining.Load() > 0 {
 			p.AlterRemaining.Add(-1)
-			response = alterScanReply(response, p.AlterMode)
+			response = alterCommandReply(response, p.AlterMode)
 		}
 		if _, err = client.Write(response); err != nil {
 			return
@@ -238,7 +238,7 @@ func (p *Proxy) relay(client net.Conn) {
 
 // Deliberate envelope faults after a real backend reply; this is not evidence
 // of real sharded MongoDB failure handling.
-func alterScanReply(message []byte, mode string) []byte {
+func alterCommandReply(message []byte, mode string) []byte {
 	if len(message) < 21 || binary.LittleEndian.Uint32(message[12:16]) != 2013 || message[20] != 0 {
 		return message
 	}

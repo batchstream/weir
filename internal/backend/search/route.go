@@ -19,19 +19,12 @@ func (a *Adapter) PrepareCommand(ctx context.Context, id uint64, input *pb.Comma
 	if err := protocol.ValidateCommand(input); err != nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, err.Error())
 	}
-	var failure *pb.Failure
-	var work *execution.Plan
-	switch {
-	case input.GetScan() != nil:
-		work, failure = a.prepareScan(ctx, input.GetScan())
-	case input.GetNative() != nil:
-		work, failure = a.prepareNative(input.GetNative())
+	if input.GetNative() == nil {
+		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Native operation required")
 	}
+	work, failure := a.prepareNative(input.GetNative())
 	if failure != nil {
 		return nil, failure
-	}
-	if work == nil {
-		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "missing operation")
 	}
 	if ctx.Err() != nil {
 		return nil, protocol.ContextFailure(ctx)
@@ -66,9 +59,9 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 	return work, nil
 }
 
-func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) bool {
+func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit execution.Emit) {
 	if len(works) == 0 {
-		return false
+		return
 	}
 	work := works[0]
 	if work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
@@ -76,31 +69,10 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 		for i, result := range results {
 			_ = emit(works[i], result)
 		}
-		return false
-	}
-	if work.Command.GetScan() != nil {
-		return a.streamScan(ctx, work, emit)
+		return
 	}
 	end := a.executeNative(ctx, work, emit)
 	value := &pb.Event_NativeEnd{NativeEnd: end}
 	event := &pb.Event{Value: value}
 	_ = emit(work, event)
-	return false
-}
-
-func (a *Adapter) streamScan(ctx context.Context, work *execution.Plan, emit execution.Emit) bool {
-	page := a.fetchScan(ctx, work)
-	state := work.Backend.(*scanPlan)
-	continuation, transferred := state.PublishPage(ctx, work, page, emit)
-	if transferred {
-		state.transferred = true
-	}
-	return continuation
-}
-
-func (a *Adapter) ClosePlan(ctx context.Context, work *execution.Plan) *pb.Failure {
-	if work.Command.GetScan() != nil {
-		return a.closeScan(ctx, work)
-	}
-	return nil
 }

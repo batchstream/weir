@@ -5,7 +5,7 @@ one scale change per minute. It is not applied by the integration fixture.
 Each Pod runs one Weir process, including Lua evaluation.
 
 Each Store defaults to 16 simultaneous adapter invocations, shared by reads,
-mutations, Scan fetches and Native streaming. `batching.max_in_flight` controls
+mutations and Native streaming. `batching.max_in_flight` controls
 this budget; explicit `0` removes the execution limit. Each Store and replica has
 its own budget, so their aggregate database demand can grow when scaling.
 Business connections, RPCs and backend pools have no additional concurrency cap.

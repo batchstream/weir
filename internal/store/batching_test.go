@@ -147,13 +147,13 @@ func TestMutationBatchRespectsBytesKeysAndSessionOrder(t *testing.T) {
 }
 
 type recordBatchAdapter struct {
-	scanTestAdapter
+	lifecycleAdapter
 	started chan []*execution.Plan
 	phases  chan *execution.Plan
 	gate    <-chan struct{}
 }
 
-func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	a.started <- plans
 	select {
 	case <-a.gate:
@@ -175,7 +175,7 @@ func (a *recordBatchAdapter) Execute(ctx context.Context, plans []*execution.Pla
 		output := result
 		_ = emit(plans[i], output)
 	}
-	return false
+	return
 }
 
 func TestDispatchContextsDoNotMutateReusablePlans(t *testing.T) {

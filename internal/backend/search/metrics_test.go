@@ -120,7 +120,6 @@ func TestSearchHTTPMetricsClassifyFailuresAndBoundLabels(t *testing.T) {
 		{name: "malformed json", operation: "bulk", outcome: "invalid_response", status: 200, body: `{`},
 		{name: "bulk item error is HTTP success", operation: "bulk", outcome: "success", status: 200, body: `{"errors":true,"items":[]}`},
 		{name: "unexpected encoding", operation: "refresh", outcome: "invalid_response", status: 200, body: `{}`, encoding: "gzip"},
-		{name: "search", operation: "search", outcome: "success", status: 200, body: `{}`},
 		{name: "bounded operation", operation: "caller-controlled-value", outcome: "success", status: 200, body: `{}`},
 	}
 	for _, tc := range cases {

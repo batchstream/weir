@@ -9,7 +9,7 @@ import (
 )
 
 func TestCanceledSingletonDoesNotRunOrPoisonPeer(t *testing.T) {
-	adapter := &scanTestAdapter{pages: 1}
+	adapter := &singleExecutionAdapter{}
 	limits := DefaultLimits()
 	runtime, err := New(adapter, limits)
 	if err != nil {
@@ -21,6 +21,7 @@ func TestCanceledSingletonDoesNotRunOrPoisonPeer(t *testing.T) {
 	canceled, stop := context.WithCancel(context.Background())
 	stop()
 	first := plan(1, "first", false)
+	first.Command = nativeCall()
 	if _, failure, _ := runtime.Submit(canceled, first, session); failure == nil {
 		t.Fatal("admitted canceled operation")
 	}
@@ -49,7 +50,7 @@ func nativeCall() *pb.Command {
 func TestBlockedNativeLeavesOtherExecutionCreditAvailable(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxInFlight = 2
-	adapter := &nonScanContinuationAdapter{}
+	adapter := &singleExecutionAdapter{}
 	runtime, err := New(adapter, limits)
 	if err != nil {
 		t.Fatal(err)
@@ -85,4 +86,17 @@ func TestBlockedNativeLeavesOtherExecutionCreditAvailable(t *testing.T) {
 	if snapshot := runtime.Snapshot(); snapshot.Active != 1 {
 		t.Fatal("Native output did not retain its own execution credit", snapshot)
 	}
+}
+
+func waitReleased(t *testing.T, runtime *Runtime) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := runtime.Snapshot()
+		if snapshot.Retained == 0 && snapshot.Publishers == 0 && snapshot.Active == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("reservations did not release", runtime.Snapshot())
 }

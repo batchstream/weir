@@ -33,12 +33,12 @@ func (m *searchMetrics) initialize() {
 		labels := []string{"operation", "outcome", "visibility"}
 		requestOptions := prometheus.CounterOpts{
 			Name: "weir_search_http_requests_total",
-			Help: "Completed Record/Scan and startup qualification HTTP exchange attempts, including failures; excludes Native relay and pre-dispatch rejection. Success describes HTTP status and valid JSON, not individual bulk items.",
+			Help: "Completed Record and startup qualification HTTP exchange attempts, including failures; excludes Native relay and pre-dispatch rejection. Success describes HTTP status and valid JSON, not individual bulk items.",
 		}
 		m.httpRequests = prometheus.NewCounterVec(requestOptions, labels)
 		durationOptions := prometheus.HistogramOpts{
 			Name:    "weir_search_http_request_duration_seconds",
-			Help:    "Record/Scan and startup qualification HTTP exchange elapsed time from dispatch through body consumption and JSON validation, including failures and bulk refresh=wait_for; excludes Native relay. Concurrent durations overlap and are not wall time or isolated refresh wait.",
+			Help:    "Record and startup qualification HTTP exchange elapsed time from dispatch through body consumption and JSON validation, including failures and bulk refresh=wait_for; excludes Native relay. Concurrent durations overlap and are not wall time or isolated refresh wait.",
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30},
 		}
 		m.httpDuration = prometheus.NewHistogramVec(durationOptions, labels)
@@ -50,7 +50,7 @@ func (m *searchMetrics) initialize() {
 		m.httpRecords = prometheus.NewHistogramVec(recordOptions, []string{"operation", "visibility"})
 		byteOptions := prometheus.HistogramOpts{
 			Name:    "weir_search_http_request_body_bytes",
-			Help:    "Framed body bytes in each attempted Record/Scan or startup qualification HTTP request, including failed exchanges; excludes headers and Native relay. Attempts do not prove delivery or acknowledgement.",
+			Help:    "Framed body bytes in each attempted Record or startup qualification HTTP request, including failed exchanges; excludes headers and Native relay. Attempts do not prove delivery or acknowledgement.",
 			Buckets: []float64{1024, 4096, 16384, 65536, 262144, 1 << 20, 4 << 20, 8 << 20, 16 << 20, 32 << 20},
 		}
 		m.httpBytes = prometheus.NewHistogramVec(byteOptions, []string{"operation", "visibility"})
@@ -66,7 +66,7 @@ func (m *searchMetrics) initialize() {
 func (m *searchMetrics) observeHTTP(observation httpObservation) {
 	operation := observation.call.operation
 	switch operation {
-	case "metadata", "mget", "bulk", "refresh", "search":
+	case "metadata", "mget", "bulk", "refresh":
 	default:
 		operation = "other"
 	}

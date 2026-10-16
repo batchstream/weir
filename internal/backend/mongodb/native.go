@@ -13,6 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Native retains the driver wire response while publishing copied output chunks.
+const nativeWorkingBytes = 24 << 20
+
 func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb.Failure) {
 	if f := protocol.ValidateNative(request); f != nil {
 		return nil, f
@@ -34,14 +37,14 @@ func (a *Adapter) prepareNative(request *pb.NativeRequest) (*execution.Plan, *pb
 		Key:          request.Resource,
 		Bytes:        proto.Size(request) + execution.EntryOverheadBytes,
 		ResultBytes:  protocol.NativeChunk + execution.ResultOverheadBytes,
-		WorkingBytes: scanPageBudget,
+		WorkingBytes: nativeWorkingBytes,
 	}
 	return p, nil
 }
 
 func (a *Adapter) nativeCommand(raw []byte) *pb.Failure {
 	command := bson.Raw(raw)
-	if !scanFraming(raw) || command.Validate() != nil {
+	if !bsonFraming(raw) || command.Validate() != nil {
 		return protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid ordered BSON command")
 	}
 	if len(raw) == 5 {
@@ -108,7 +111,7 @@ func (a *Adapter) executeNative(ctx context.Context, work *execution.Plan, emit 
 	if len(reply) == 0 {
 		return protocol.NativeFailure(true, failure)
 	}
-	if !scanFraming(reply) || bson.Raw(reply).Validate() != nil {
+	if !bsonFraming(reply) || bson.Raw(reply).Validate() != nil {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_INTERNAL, "invalid Native BSON reply"))
 	}
 	head := &pb.NativeHead{BodyContentType: "application/bson"}

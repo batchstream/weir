@@ -283,7 +283,7 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 	if read := op.GetRead(); read != nil {
 		native.action = "read"
 		// Estimate publication from the batching window; larger replies grow it.
-		work.ResultBytes += a.options().Scan.Bytes
+		work.ResultBytes += a.options().BatchBytes
 	} else {
 		mutation := op.GetMutate()
 		native.waitUntilVisible = mutation.GetOptions().GetVisibility() == pb.MutationVisibility_QUERY_VISIBLE

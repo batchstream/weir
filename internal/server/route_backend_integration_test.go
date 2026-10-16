@@ -71,7 +71,7 @@ func routeBackendMutation(key, kind, media string, raw []byte) *pb.MutateRequest
 	return mutation
 }
 
-func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
+func TestRouteMongo2MiBRecordLuaAndPartialBatch(t *testing.T) {
 	backend := testmongo.Open(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
@@ -125,16 +125,6 @@ func TestRouteMongo2MiBRecordLuaScanAndPartialBatch(t *testing.T) {
 	filter := bson.D{{Key: "_id", Value: "counter"}}
 	if err := backend.Admin.Database(backend.DB).Collection("records").FindOne(ctx, filter).Decode(&observed); err != nil || observed.N != 12 {
 		t.Fatal("ordered Lua increment lost", observed.N, err)
-	}
-	selector := filter
-	selectorRaw, _ := bson.Marshal(selector)
-	document := &pb.Document{ContentType: "application/bson", Data: selectorRaw}
-	scan := &pb.ScanRequest{Resource: backend.DB + "/records", Filter: document}
-	scanValue := &pb.Command_Scan{Scan: scan}
-	scanCommand := &pb.Command{Operation: scanValue}
-	events := routeBackendEvents(t, client, scanCommand)
-	if len(events) != 2 || events[1].GetScanEnd().Failure != nil {
-		t.Fatal("Scan failed", events)
 	}
 	newDoc := bson.D{{Key: "_id", Value: "new"}, {Key: "n", Value: 1}}
 	rawNew, _ := bson.Marshal(newDoc)

@@ -496,7 +496,7 @@ fixture replaces a component.
 | --- | --- | --- |
 | `store.TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners` | 32 prepared requests share one actual MongoDB `find`; duplicate ordinals do not mix caller results; more than 32 MiB of total result data is preserved and independently released | The scheduler is deliberately populated before dispatch and reads share one key. This proves the ideal queued mechanism, not naturally occurring batch size or network throughput |
 | `server.TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion` | Real gRPC streams publish indexes 1 then 2 even when backend work completes in the opposite order | The adapter is an in-memory fixture, not a database |
-| `server.TestRouteMongo2MiBRecordLuaScanAndPartialBatch` | Real MongoDB and gRPC preserve a 2 MiB BSON record; twelve same-resource Lua increments in one stream persist `n=12`; a rejected Create does not erase a peer's confirmed Put | Functional correctness, not Lua throughput or an application transaction across requests |
+| `server.TestRouteMongo2MiBRecordLuaAndPartialBatch` | Real MongoDB and gRPC preserve a 2 MiB BSON record; twelve same-resource Lua increments in one stream persist `n=12`; a rejected Create does not erase a peer's confirmed Put | Functional correctness, not Lua throughput or an application transaction across requests |
 | `server.TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed` | A wire proxy drops a real database acknowledgement after it is received; typed writes report `UNKNOWN`, Native reports an incomplete response, actual backend state changes once and the wire command is not replayed | Controlled acknowledgement loss, not every network or replica-set failure |
 | `mongodb.TestMongoMixedWriteLostReplyDoesNotReplayExpression` | A real mixed batch's acknowledgement is dropped; both results remain `UNKNOWN`; an independent database read sees `$inc` increment once and a peer Create persisted; exactly one `bulkWrite` was sent | Adapter-level real database evidence; no SDK in this particular test |
 | `mongodb.TestMongoLuaConflictRetriesStopAtAttemptBound` | A real external writer conflicts with each Lua transaction; configured three attempts produce exactly three reads, writes and confirmed aborts, no commit, and a final `NOT_APPLIED` conflict; a canceled caller starts no additional attempt | Deliberately induced conflicts and custom retry settings; this proves the configured bound, not throughput or every failure mode |
@@ -582,7 +582,7 @@ WEIR_INTEGRATION=1 GOPROXY=off go test -tags integration ./internal/server \
 WEIR_INTEGRATION=1 GOPROXY=off go test -race -tags integration ./internal/server \
   -run '^TestValueProofMongoReadPaths$' -count=1
 WEIR_INTEGRATION=1 GOPROXY=off go test -tags integration ./internal/server \
-  -run '^(TestRouteMongo2MiBRecordLuaScanAndPartialBatch|TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed|TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion)$' \
+  -run '^(TestRouteMongo2MiBRecordLuaAndPartialBatch|TestRouteMongoAppliedWriteAndNativeReplyLossAreNotReplayed|TestRecordStreamPublishesFIFOAfterOutOfOrderBackendCompletion)$' \
   -count=1 -v
 WEIR_INTEGRATION=1 GOPROXY=off go test -tags integration ./internal/store \
   -run '^TestNativeCoalescedRecordsKeepLargeResultsAndRetainedOwners$' -count=1 -v

@@ -2,11 +2,9 @@ package mongodb
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/execution"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
@@ -15,126 +13,10 @@ import (
 type recordCursor struct {
 	target      namespace
 	items       int
-	outputBytes int
-	limited     bool
 	session     *mongo.Session
 	cursor      int64
 	closed      bool
 	cursorKnown bool
-}
-
-// Parse the bounded command envelope and batch. Copy bounded documents unchanged
-// so one output frame cannot pin a much larger driver message after page release.
-// Never use Cursor.Next's false result as exhaustion evidence.
-func (a *Adapter) recordCursorReply(raw bson.Raw, n *recordCursor, first bool) *execution.ScanPage {
-	page := &execution.ScanPage{}
-	invalid := protocol.Fail(pb.FailureCode_INTERNAL, "incomplete or malformed cursor response")
-	page.Failure = invalid
-	fields, err := scanFields(raw)
-	if err != nil {
-		return page
-	}
-	cursor, ok := fields["cursor"].DocumentOK()
-	if !ok {
-		return page
-	}
-	values, err := scanFields(cursor)
-	if err != nil {
-		return page
-	}
-	id, ok := values["id"].Int64OK()
-	if !ok {
-		return page
-	}
-	// Retain the actual returned state even if later metadata invalidates the page.
-	n.cursor = id
-	n.cursorKnown = true
-	ns, ok := values["ns"].StringValueOK()
-	if !ok || ns != n.target.String() {
-		return page
-	}
-	good := fields["ok"]
-	if !scanOK(good) {
-		return page
-	}
-	for key := range fields {
-		if key != "ok" && key != "cursor" && key != "operationTime" && key != "$clusterTime" && key != "partialResultsReturned" {
-			return page
-		}
-	}
-	for _, envelope := range []map[string]bson.RawValue{fields, values} {
-		if partial, exists := envelope["partialResultsReturned"]; exists {
-			value, valid := partial.BooleanOK()
-			if !valid {
-				return page
-			}
-			if value {
-				page.Failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "partial cursor results")
-				return page
-			}
-		}
-		for _, key := range []string{"errmsg", "code", "writeConcernError", "writeErrors", "errors"} {
-			if _, exists := envelope[key]; exists {
-				return page
-			}
-		}
-	}
-	batchName := "nextBatch"
-	if first {
-		batchName = "firstBatch"
-	}
-	other := "firstBatch"
-	if first {
-		other = "nextBatch"
-	}
-	if _, exists := values[other]; exists {
-		return page
-	}
-	batch, ok := values[batchName].ArrayOK()
-	if !ok || !scanFraming(batch) {
-		return page
-	}
-	rest := batch[4 : len(batch)-1]
-	docs := make([]*pb.Document, 0, n.items)
-	items, outputBytes := 0, 0
-	n.limited = false
-	for len(rest) > 0 {
-		if items >= n.items {
-			page.Failure = protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "cursor batch exceeds item bound")
-			return page
-		}
-		element, tail, valid := bsoncore.ReadElement(rest)
-		if !valid {
-			return page
-		}
-		rest = tail
-		value, err := element.ValueErr()
-		if err != nil || value.Type != bsoncore.TypeEmbeddedDocument {
-			return page
-		}
-		key, err := element.KeyErr()
-		if err != nil || key != strconv.Itoa(items) {
-			return page
-		}
-		items++
-
-		if !validScanBSON(value.Data, 0) {
-			return page
-		}
-		if len(docs) > 0 && n.outputBytes > 0 && outputBytes+len(value.Data) > n.outputBytes {
-			n.limited = true
-		}
-		if n.limited {
-			continue
-		}
-		doc := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), value.Data...)}
-		docs = append(docs, doc)
-		outputBytes += len(value.Data)
-	}
-	page.Documents = docs
-	page.Exhausted = id == 0
-	page.Failure = nil
-	return page
 }
 
 func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *pb.Failure {
@@ -159,11 +41,11 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
 		command := bson.D{{Key: "killSessions", Value: bson.A{n.session.ID()}}}
 		raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
 		if err != nil {
-			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote Scan session cleanup unconfirmed")
+			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote record session cleanup unconfirmed")
 		}
-		fields, err := scanFields(raw)
-		if err != nil || !scanOK(fields["ok"]) {
-			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote Scan session cleanup unconfirmed")
+		fields, err := bsonFields(raw)
+		if err != nil || !bsonCommandOK(fields["ok"]) {
+			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote record session cleanup unconfirmed")
 		}
 		return nil
 	}
@@ -176,17 +58,17 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
 	if err != nil {
 		return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote cursor cleanup unconfirmed")
 	}
-	fields, err := scanFields(raw)
+	fields, err := bsonFields(raw)
 	if err != nil {
 		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup response")
 	}
-	if !scanOK(fields["ok"]) {
+	if !bsonCommandOK(fields["ok"]) {
 		return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup status")
 	}
 	confirmed := false
 	for _, key := range []string{"cursorsKilled", "cursorsNotFound", "cursorsAlive", "cursorsUnknown"} {
 		array, ok := fields[key].ArrayOK()
-		if !ok || !scanFraming(array) {
+		if !ok || !bsonFraming(array) {
 			return protocol.Fail(pb.FailureCode_INTERNAL, "invalid cursor cleanup envelope")
 		}
 		rest := array[4 : len(array)-1]

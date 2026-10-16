@@ -60,7 +60,7 @@ func TestLargeBatchSplitsConfiguredExchangesWithoutRejectingInputs(t *testing.T)
 			t.Error(err)
 		}
 	})
-	adapter := scanBatchAdapter(t, handler)
+	adapter := testHTTPAdapter(t, handler)
 	adapter.config.Options = &settings
 	source := []byte(`{"payload":"` + strings.Repeat("x", 1<<20) + `"}`)
 	var plans []*execution.Plan

@@ -22,13 +22,11 @@ func TestExecutionFrameShapesMatchPublicSchema(t *testing.T) {
 		{kind: wireCommand, message: &pb.Command{}},
 		{kind: wireRead, message: &pb.ReadRequest{}},
 		{kind: wireMutate, message: &pb.MutateRequest{}},
-		{kind: wireScan, message: &pb.ScanRequest{}},
 		{kind: wireNative, message: &pb.NativeRequest{}},
 		{kind: wireDocument, message: &pb.Document{}},
 		{kind: wireEmpty, message: &pb.Empty{}},
 		{kind: wireTransform, message: &pb.Transform{}},
 		{kind: wireLua, message: &pb.LuaTransform{}},
-		{kind: wireProjection, message: &pb.Projection{}},
 		{kind: wireMutationOptions, message: &pb.MutationOptions{}},
 	}
 	for _, item := range cases {
@@ -44,7 +42,7 @@ func TestExecutionFrameShapesMatchPublicSchema(t *testing.T) {
 				t.Fatalf("%s framing accepts undeclared field %d", descriptor.FullName(), shape.number)
 			}
 			scalar := field.Kind() == protoreflect.BoolKind || field.Kind() == protoreflect.EnumKind || field.Kind() == protoreflect.Uint32Kind || field.Kind() == protoreflect.Uint64Kind
-			if shape.scalar != scalar || shape.repeated != field.IsList() || (shape.nested != 0) != (field.Message() != nil) || shape.oneof != (field.ContainingOneof() != nil) {
+			if shape.scalar != scalar || field.IsList() || (shape.nested != 0) != (field.Message() != nil) || shape.oneof != (field.ContainingOneof() != nil) {
 				t.Fatalf("%s framing type differs from public schema", field.FullName())
 			}
 		}
@@ -108,7 +106,7 @@ func TestExecuteDecodeLargeNativeBeforeUnmarshal(t *testing.T) {
 	payload := bytes.Repeat([]byte{0xff}, (10<<20)+1)
 	document := append(wireMessage(1, []byte("application/bson")), wireMessage(2, payload)...)
 	native := wireMessage(2, document)
-	raw := wireMessage(3, wireMessage(4, native))
+	raw := wireMessage(3, wireMessage(3, native))
 	data := mem.BufferSlice{mem.SliceBuffer(raw)}
 	defer data.Free()
 	if err := ValidateExecuteFrame(data); err != nil {
@@ -119,8 +117,6 @@ func TestExecuteDecodeLargeNativeBeforeUnmarshal(t *testing.T) {
 func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 	resource := wireMessage(1, []byte("records"))
 	condition := append(wireMessage(1, []byte("application/json")), wireMessage(2, []byte(`{"match_all":{}}`))...)
-	projection := append([]byte{8, 1}, wireMessage(2, []byte("name"))...)
-	scan := append(append(append([]byte(nil), resource...), wireMessage(2, condition)...), wireMessage(3, projection)...)
 	opaque := append(wireMessage(1, []byte("application/vnd.test.native")), wireMessage(2, []byte{0xff, 0x12, 0x80})...)
 	native := append(append([]byte(nil), resource...), wireMessage(2, opaque)...)
 	input := wireMessage(2, condition)
@@ -133,8 +129,8 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 		payload []byte
 		valid   bool
 	}{
-		{name: "typed scan", kind: 3, payload: scan, valid: true},
-		{name: "opaque native document", kind: 4, payload: native, valid: true},
+		{name: "opaque native document", kind: 3, payload: native, valid: true},
+		{name: "unknown operation", kind: 4, payload: native},
 		{name: "typed Lua", kind: 2, payload: mutation, valid: true},
 		{name: "visible Lua", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 1})...), valid: true},
 		{name: "empty options", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, nil)...), valid: true},
@@ -147,11 +143,9 @@ func TestExecuteDecodeNestedRequestContracts(t *testing.T) {
 		{name: "invalid visibility enum", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, []byte{8, 2})...)},
 		{name: "negative visibility enum", kind: 2, payload: append(append([]byte(nil), mutation...), wireMessage(7, binary.AppendUvarint([]byte{8}, ^uint64(0)))...)},
 		{name: "unknown mutation option", kind: 2, payload: append(append([]byte(nil), mutation...), 0x40, 1)},
-		{name: "duplicate scan filter", kind: 3, payload: append(append([]byte(nil), scan...), wireMessage(2, condition)...)},
-		{name: "duplicate projection mode", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(3, append(projection, 8, 2))...)},
-		{name: "duplicate native document", kind: 4, payload: append(append([]byte(nil), native...), wireMessage(2, opaque)...)},
-		{name: "unknown native backend variant", kind: 4, payload: append(append([]byte(nil), native...), wireMessage(3, nil)...)},
-		{name: "duplicate native content type", kind: 4, payload: append(append([]byte(nil), resource...), wireMessage(2, append(opaque, wireMessage(1, []byte("application/http"))...))...)},
+		{name: "duplicate native document", kind: 3, payload: append(append([]byte(nil), native...), wireMessage(2, opaque)...)},
+		{name: "unknown native backend variant", kind: 3, payload: append(append([]byte(nil), native...), wireMessage(3, nil)...)},
+		{name: "duplicate native content type", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(2, append(opaque, wireMessage(1, []byte("application/http"))...))...)},
 		{name: "duplicate Lua input", kind: 2, payload: append(append([]byte(nil), resource...), wireMessage(6, wireMessage(1, append(lua, input...)))...)},
 		{name: "duplicate transform form", kind: 2, payload: append(append([]byte(nil), resource...), wireMessage(6, append(transform, wireMessage(2, condition)...))...)},
 		{name: "duplicate document content type", kind: 3, payload: append(append([]byte(nil), resource...), wireMessage(2, append(condition, wireMessage(1, []byte("application/bson"))...))...)},
@@ -178,7 +172,7 @@ func TestExecuteDecodeOpaqueNativeUsesBoundedAllocation(t *testing.T) {
 	payload := bytes.Repeat([]byte{0xff, 0x12, 0x80}, ((8<<20)-2)/3)
 	document := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, payload)...)
 	native := append(wireMessage(1, []byte("records")), wireMessage(2, document)...)
-	frame := wireMessage(3, wireMessage(4, native))
+	frame := wireMessage(3, wireMessage(3, native))
 	data := mem.BufferSlice{mem.SliceBuffer(frame)}
 	defer data.Free()
 	allocations := testing.AllocsPerRun(3, func() {
@@ -191,7 +185,7 @@ func TestExecuteDecodeOpaqueNativeUsesBoundedAllocation(t *testing.T) {
 	}
 	oversizedDocument := append(wireMessage(1, []byte("application/vnd.future.store")), wireMessage(2, make([]byte, (8<<20)+256))...)
 	native = append(wireMessage(1, []byte("records")), wireMessage(2, oversizedDocument)...)
-	frame = wireMessage(3, wireMessage(4, native))
+	frame = wireMessage(3, wireMessage(3, native))
 	oversized := mem.BufferSlice{mem.SliceBuffer(frame)}
 	defer oversized.Free()
 	if err := ValidateExecuteFrame(oversized); err != nil {

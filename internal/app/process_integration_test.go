@@ -229,8 +229,7 @@ func processPublicSmoke(t *testing.T, opts processSmokeOptions) {
 			t.Fatal("owned search index refresh", status)
 		}
 	}
-	processScanSmoke(t, ctx, opts)
-	t.Logf("three independent Weir processes, %s: batch reads and mutations, Native and Scan completed", opts.store)
+	t.Logf("three independent Weir processes, %s: batch reads and mutations, Native completed", opts.store)
 }
 
 func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
@@ -315,57 +314,6 @@ func processNativeSmoke(t *testing.T, ctx context.Context, opts processSmokeOpti
 	}
 }
 
-func processScanSmoke(t *testing.T, ctx context.Context, opts processSmokeOptions) {
-	t.Helper()
-	request := &pb.ScanRequest{Resource: opts.root}
-	scanVariant := &pb.Command_Scan{Scan: request}
-	scanCall := &pb.Command{Operation: scanVariant}
-	stream, err := testutil.ExecuteEvents(ctx, opts.client, opts.store, scanCall)
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := make(map[int32]bool)
-	values := map[int32]bool{1: true, 2: true, 3: true}
-	if opts.initialized {
-		values[7] = true
-	}
-	expectedDocuments := uint64(len(values))
-	for {
-		frame, err := stream.Recv()
-		if err != nil {
-			t.Fatal("Scan response", err)
-		}
-		if end := frame.GetScanEnd(); end != nil {
-			if end.Failure != nil || end.DocumentCount != expectedDocuments || len(seen) != int(expectedDocuments) {
-				t.Fatal("Scan terminal evidence", end, seen)
-			}
-			break
-		}
-		document := frame.GetDocument()
-		if document == nil {
-			t.Fatal("unexpected Scan frame", frame)
-		}
-		var n int32
-		if opts.store == "mongo" {
-			raw := bson.Raw(document.Data)
-			n = raw.Lookup("n").Int32()
-		} else {
-			var record struct{ N int32 }
-			if json.Unmarshal(document.Data, &record) != nil {
-				t.Fatal("invalid Scan document", string(document.Data))
-			}
-			n = record.N
-		}
-		if seen[n] || !values[n] {
-			t.Fatal("Scan repeated or changed records", n)
-		}
-		seen[n] = true
-	}
-	if _, err := stream.Recv(); err != io.EOF {
-		t.Fatal("Scan final status", err)
-	}
-}
-
 func TestIndependentWeirProcesses(t *testing.T) {
 	mongoFixture := testmongo.Open(t)
 	search := testsearch.Open(t)
@@ -440,7 +388,7 @@ func TestIndependentWeirProcesses(t *testing.T) {
 			}
 		} else {
 			// Each of the two Stores completes 2 SDK records, 4 direct/read-batch
-			// records, 2 creates and 2 readbacks. Native and Scan are commands.
+			// records, 2 creates and 2 readbacks. Native is a command.
 			const expectedRecords = 20
 			records := testmetrics.Sum(metrics, "weir_store_records_total")
 			if records != expectedRecords {

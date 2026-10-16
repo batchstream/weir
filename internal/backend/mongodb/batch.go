@@ -193,8 +193,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				valid = false
 				break
 			}
-			fields, parseErr := scanFields(raw)
-			valid = parseErr == nil && scanOK(fields["ok"])
+			fields, parseErr := bsonFields(raw)
+			valid = parseErr == nil && bsonCommandOK(fields["ok"])
 			for key := range fields {
 				if key != "ok" && key != "cursor" && key != "operationTime" && key != "$clusterTime" {
 					valid = false
@@ -216,7 +216,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 					break
 				}
 
-				if !validScanBSON(raw, 0) {
+				if !validBSONDocument(raw, 0) {
 					valid = false
 					break
 				}
@@ -431,14 +431,14 @@ func (a *Adapter) closeRecordCursor(state *recordCursor) {
 
 func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 
-	if !validScanBSON(raw, 0) {
+	if !validBSONDocument(raw, 0) {
 		return false
 	}
-	fields, err := scanFields(raw)
+	fields, err := bsonFields(raw)
 	if err != nil {
 		return false
 	}
-	if !scanOK(fields["ok"]) {
+	if !bsonCommandOK(fields["ok"]) {
 		if !first || !writeZero(fields["ok"]) || fields["cursor"].Type != 0 {
 			return false
 		}
@@ -478,7 +478,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 	}
 	if raw, exists := fields["opTime"]; exists {
 		doc, valid := raw.DocumentOK()
-		metadata, err := scanFields(doc)
+		metadata, err := bsonFields(doc)
 		_, _, validTimestamp := metadata["ts"].TimestampOK()
 		_, validTerm := writeCount(metadata["t"])
 		if !valid || err != nil || len(metadata) != 2 || !validTimestamp || !validTerm {
@@ -500,7 +500,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 		return false
 	}
 	for _, raw := range documents {
-		item, err := scanFields(raw)
+		item, err := bsonFields(raw)
 		index, valid := writeCount(item["idx"])
 		if err != nil || !valid || index < 0 || index >= int64(len(b.plans)) || b.results[index] != nil {
 			return false
@@ -510,7 +510,7 @@ func (b *writeBatch) reply(raw bson.Raw, first bool) bool {
 		count, valid := writeCount(item["n"])
 		if writeZero(item["ok"]) {
 			b.observed[0]++
-		} else if scanOK(item["ok"]) && valid && count >= 0 && count <= 1 {
+		} else if bsonCommandOK(item["ok"]) && valid && count >= 0 && count <= 1 {
 			switch native.action {
 			case "create":
 				b.observed[1] += count
@@ -547,7 +547,7 @@ func cursorDocuments(fields map[string]bson.RawValue, state *recordCursor, names
 	if !valid {
 		return nil, false
 	}
-	values, err := scanFields(cursor)
+	values, err := bsonFields(cursor)
 	if err != nil {
 		return nil, false
 	}
@@ -570,7 +570,7 @@ func cursorDocuments(fields map[string]bson.RawValue, state *recordCursor, names
 		}
 	}
 	batch, valid := values[batchName].ArrayOK()
-	if !valid || !scanFraming(batch) {
+	if !valid || !bsonFraming(batch) {
 		return nil, false
 	}
 	rest := batch[4 : len(batch)-1]
@@ -589,7 +589,7 @@ func cursorDocuments(fields map[string]bson.RawValue, state *recordCursor, names
 			return nil, false
 		}
 		value, err := element.ValueErr()
-		if err != nil || value.Type != bsoncore.TypeEmbeddedDocument || !scanFraming(value.Data) {
+		if err != nil || value.Type != bsoncore.TypeEmbeddedDocument || !bsonFraming(value.Data) {
 			return nil, false
 		}
 		documents = append(documents, value.Data)
@@ -600,7 +600,7 @@ func cursorDocuments(fields map[string]bson.RawValue, state *recordCursor, names
 func bulkItemReply(n *plan, fields map[string]bson.RawValue, concern bool) *pb.MutationResult {
 	unknown := protocol.Mutation(pb.MutationOutcome_UNKNOWN, protocol.Fail(pb.FailureCode_UNAVAILABLE, "write item acknowledgement unavailable or incomplete"))
 	count, valid := writeCount(fields["n"])
-	if !scanOK(fields["ok"]) {
+	if !bsonCommandOK(fields["ok"]) {
 		if !writeZero(fields["ok"]) || fields["n"].Type != 0 && (!valid || count != 0) {
 			return unknown
 		}

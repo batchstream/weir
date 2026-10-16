@@ -184,7 +184,7 @@ func TestMongoBulkItemEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fields, err := scanFields(expressionBSON(t, tc.doc))
+			fields, err := bsonFields(expressionBSON(t, tc.doc))
 			if err != nil {
 				t.Fatal(err)
 			}
