@@ -3,6 +3,7 @@ package execution
 import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"google.golang.org/protobuf/proto"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,30 @@ func TestRecordPreservesBorrowedRequestAndDecodedPath(t *testing.T) {
 		t.Fatal("metadata omitted from input charge", record.Bytes())
 	}
 }
+
+func TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree(t *testing.T) {
+	read := &pb.ReadRequest{Resource: strings.Repeat("segment/", 1_000_000) + "last"}
+	value := &pb.Command_Read{Read: read}
+	command := &pb.Command{Operation: value}
+	allocations := testing.AllocsPerRun(5, func() {
+		record, err := NewRecord("records", 1, command)
+		if err != nil || len(record.Segments()) != 4 || record.Command() != command {
+			t.Fatal("unsupported arity lost its original request or bounded marker", record, err)
+		}
+	})
+	if allocations > 4 {
+		t.Fatal("unsupported resource built a pre-admission segment tree", allocations)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	record, err := NewRecord("records", 1, command)
+	runtime.ReadMemStats(&after)
+	if err != nil || after.TotalAlloc-before.TotalAlloc >= 64<<10 {
+		t.Fatal("unsupported resource allocated a large segment backing array", err, after.TotalAlloc-before.TotalAlloc)
+	}
+	runtime.KeepAlive(record)
+	t.Logf("raw_resource_bytes=%d segments=1000001 preparation_allocations=%.0f allocated_bytes=%d", len(read.Resource), allocations, after.TotalAlloc-before.TotalAlloc)
+}
 func TestMutationRecordBorrowsDocumentWithoutCopy(t *testing.T) {
 	data := []byte(`{"id":"a"}`)
 	document := &pb.Document{ContentType: "application/json", Data: data}
@@ -37,14 +62,14 @@ func TestMutationRecordBorrowsDocumentWithoutCopy(t *testing.T) {
 		t.Fatal("record copied borrowed document")
 	}
 }
-func TestRecordDeepResourceChargesDecodedSegmentHeaders(t *testing.T) {
+func TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders(t *testing.T) {
 	read := &pb.ReadRequest{Resource: strings.Repeat("a/", 1500) + "a"}
 	command := &pb.Command{Operation: &pb.Command_Read{Read: read}}
 	record, err := NewRecord("mongo", 1, command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(record.Segments()) != 1501 || record.Bytes() < 24<<10 {
+	if len(record.Segments()) != 4 || record.Bytes() < proto.Size(command)+2*len(read.Resource)+16*4 {
 		t.Fatal("decoded path metadata was not charged", len(record.Segments()), record.Bytes())
 	}
 }

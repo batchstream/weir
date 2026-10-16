@@ -1,0 +1,6 @@
+=== RUN   TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF
+    review81_backend_r5_trailer_probe_test.go:151: head=a1fd658a571362f46e70a8c1172507faceca812e declared=4096 populated=300 before={label:before-first-body-read working:3306796 peak:3306796 names:4096 populated:0 modeledBytes:1081344} EOF={label:after-body-EOF-trailer-parser working:3457388 peak:3457388 names:4096 populated:300 modeledBytes:1086444} ownerHistory=[65536 300032 304008 598920 893832 1188744 1483656 1778568 2073480 2368392 2370240 3306796 3457388 65536] calls=1 status=200 raw="{}" err=<nil>
+2026/10/17 02:47:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF (0.01s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/search	2.036s

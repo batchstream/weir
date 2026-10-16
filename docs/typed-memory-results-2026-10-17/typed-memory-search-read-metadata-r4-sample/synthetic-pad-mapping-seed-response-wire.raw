@@ -1,0 +1,7 @@
+HTTP/1.1 201 Created
+Location: /weir_typed_read_metadata_e141aab65f37417c99ee5376b110e94b/_doc/hot
+X-elastic-product: Elasticsearch
+content-type: application/json
+content-length: 192
+
+{"_index":"weir_typed_read_metadata_e141aab65f37417c99ee5376b110e94b","_id":"hot","_version":1,"result":"created","_shards":{"total":1,"successful":1,"failed":0},"_seq_no":0,"_primary_term":1}

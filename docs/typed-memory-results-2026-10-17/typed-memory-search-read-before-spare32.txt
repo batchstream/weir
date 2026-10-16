@@ -1,0 +1,11 @@
+=== RUN   TestReadNormalMetadataBudgetBeforeDispatch
+=== RUN   TestReadNormalMetadataBudgetBeforeDispatch/spare=32768
+    read_memory_test.go:242: fixedB=134840310 spare=32768 knownInputs=6138 oldIO=65536 nativeWorking=100663296 publicationGrowth=518140 metadataWire=408 metadataDecode=30920 staging={BudgetBytes:134840310 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:28464 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:5 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:1 Borrowed:0 Known:true BudgetRejections:0} queued={BudgetBytes:134840310 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:35119 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:7 CountLimit:32768 Starting:4 Settled:0 Waiting:2 Terminal:1 Borrowed:0 Known:true BudgetRejections:0}
+    read_memory_test.go:268: complete reads: goodHash=0 unavailable=2 capacity=0 metadataAttempts=0 mgetAttempts=0 ledgerRejections=1 held={BudgetBytes:134840310 UsedBytes:134735868 IOReserveBytes:48795648 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:1}
+    read_memory_test.go:274: normal two-document read lost its admitted IO/result budget 0 2 0 0 0 {134840310 134735868 48795648 33554432 33554432 25132 0 0 4 1024 4 32768 4 0 0 0 0 true 1}
+2026/10/17 02:11:51 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+--- FAIL: TestReadNormalMetadataBudgetBeforeDispatch (0.02s)
+    --- FAIL: TestReadNormalMetadataBudgetBeforeDispatch/spare=32768 (0.02s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/backend/search	1.008s
+FAIL

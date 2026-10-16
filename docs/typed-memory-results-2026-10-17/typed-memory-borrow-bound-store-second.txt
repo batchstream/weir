@@ -1,0 +1,321 @@
+=== RUN   TestRecordActionsBatchSeparatelyByReadAndMutation
+--- PASS: TestRecordActionsBatchSeparatelyByReadAndMutation (0.00s)
+=== RUN   TestMutationBatchRespectsBytesKeysAndSessionOrder
+--- PASS: TestMutationBatchRespectsBytesKeysAndSessionOrder (0.00s)
+=== RUN   TestDispatchContextsDoNotMutateReusablePlans
+--- PASS: TestDispatchContextsDoNotMutateReusablePlans (0.00s)
+=== RUN   TestAbandonAndSessionCloseCancelFuturePhasesOnly
+=== RUN   TestAbandonAndSessionCloseCancelFuturePhasesOnly/abandon
+=== RUN   TestAbandonAndSessionCloseCancelFuturePhasesOnly/session_close
+--- PASS: TestAbandonAndSessionCloseCancelFuturePhasesOnly (0.00s)
+    --- PASS: TestAbandonAndSessionCloseCancelFuturePhasesOnly/abandon (0.00s)
+    --- PASS: TestAbandonAndSessionCloseCancelFuturePhasesOnly/session_close (0.00s)
+=== RUN   TestReadBypassesCollectionAndSharesReadyBatch
+=== RUN   TestReadBypassesCollectionAndSharesReadyBatch/single_read
+=== RUN   TestReadBypassesCollectionAndSharesReadyBatch/compatible_reads
+--- PASS: TestReadBypassesCollectionAndSharesReadyBatch (0.00s)
+    --- PASS: TestReadBypassesCollectionAndSharesReadyBatch/single_read (0.00s)
+    --- PASS: TestReadBypassesCollectionAndSharesReadyBatch/compatible_reads (0.00s)
+=== RUN   TestReadsPreserveWriteCollectionAndAggregation
+=== RUN   TestReadsPreserveWriteCollectionAndAggregation/write-first
+=== RUN   TestReadsPreserveWriteCollectionAndAggregation/read-first
+--- PASS: TestReadsPreserveWriteCollectionAndAggregation (0.00s)
+    --- PASS: TestReadsPreserveWriteCollectionAndAggregation/write-first (0.00s)
+    --- PASS: TestReadsPreserveWriteCollectionAndAggregation/read-first (0.00s)
+=== RUN   TestReadyWritesKeepProgressAheadOfLaterReads
+--- PASS: TestReadyWritesKeepProgressAheadOfLaterReads (0.00s)
+=== RUN   TestImmediateReadsRespectBatchCountAndByteBounds
+=== RUN   TestImmediateReadsRespectBatchCountAndByteBounds/count
+=== RUN   TestImmediateReadsRespectBatchCountAndByteBounds/bytes
+--- PASS: TestImmediateReadsRespectBatchCountAndByteBounds (0.00s)
+    --- PASS: TestImmediateReadsRespectBatchCountAndByteBounds/count (0.00s)
+    --- PASS: TestImmediateReadsRespectBatchCountAndByteBounds/bytes (0.00s)
+=== RUN   TestImmediateReadStillWaitsForExecutionCapacity
+--- PASS: TestImmediateReadStillWaitsForExecutionCapacity (0.00s)
+=== RUN   TestCollectionExpiresFromOldestAdmissionAndFullBatchBypassesWait
+--- PASS: TestCollectionExpiresFromOldestAdmissionAndFullBatchBypassesWait (0.00s)
+=== RUN   TestReadyNamespaceBypassesAnotherCollectingNamespace
+--- PASS: TestReadyNamespaceBypassesAnotherCollectingNamespace (0.00s)
+=== RUN   TestCollectionDoesNotConsumeShortCallerDeadline
+--- PASS: TestCollectionDoesNotConsumeShortCallerDeadline (0.00s)
+=== RUN   TestCollectionFlushesAtByteBoundary
+--- PASS: TestCollectionFlushesAtByteBoundary (0.00s)
+=== RUN   TestNativeBypassesCollection
+--- PASS: TestNativeBypassesCollection (0.00s)
+=== RUN   TestCollectionTimerDispatchesAndDrainBypassesWait
+=== RUN   TestCollectionTimerDispatchesAndDrainBypassesWait/timer
+=== RUN   TestCollectionTimerDispatchesAndDrainBypassesWait/drain
+--- PASS: TestCollectionTimerDispatchesAndDrainBypassesWait (0.03s)
+    --- PASS: TestCollectionTimerDispatchesAndDrainBypassesWait/timer (0.03s)
+    --- PASS: TestCollectionTimerDispatchesAndDrainBypassesWait/drain (0.00s)
+=== RUN   TestCollectionPreservesSameResourceOrderingAndCancellation
+--- PASS: TestCollectionPreservesSameResourceOrderingAndCancellation (0.00s)
+=== RUN   TestCollectionFixedArrivalTraces
+=== RUN   TestCollectionFixedArrivalTraces/sparse
+=== RUN   TestCollectionFixedArrivalTraces/burst
+--- PASS: TestCollectionFixedArrivalTraces (0.00s)
+    --- PASS: TestCollectionFixedArrivalTraces/sparse (0.00s)
+    --- PASS: TestCollectionFixedArrivalTraces/burst (0.00s)
+=== RUN   TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder
+=== RUN   TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder/expired=false
+=== RUN   TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder/expired=true
+--- PASS: TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder (0.00s)
+    --- PASS: TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder/expired=false (0.00s)
+    --- PASS: TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder/expired=true (0.00s)
+=== RUN   TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure
+--- PASS: TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure (0.00s)
+=== RUN   TestZeroInFlightBudgetDoesNotLimitIndependentBatches
+--- PASS: TestZeroInFlightBudgetDoesNotLimitIndependentBatches (0.00s)
+=== RUN   TestInFlightBatchesBoundExecutionAndReturnCreditBeforeAck
+--- PASS: TestInFlightBatchesBoundExecutionAndReturnCreditBeforeAck (0.00s)
+=== RUN   TestBusyBackendKeepsRequestsQueuedAndFormsFullBatches
+--- PASS: TestBusyBackendKeepsRequestsQueuedAndFormsFullBatches (0.02s)
+=== RUN   TestCancellationRetainsCreditUntilAdapterStops
+--- PASS: TestCancellationRetainsCreditUntilAdapterStops (0.04s)
+=== RUN   TestOldestBatchKeyKeepsProgressUnderInFlightLimit
+--- PASS: TestOldestBatchKeyKeepsProgressUnderInFlightLimit (0.00s)
+=== RUN   TestExecutionBudgetIsPerStore
+--- PASS: TestExecutionBudgetIsPerStore (0.04s)
+=== RUN   TestIndependentRPCsShareExecutionAndKeepResultsAndQuota
+--- PASS: TestIndependentRPCsShareExecutionAndKeepResultsAndQuota (0.01s)
+=== RUN   TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions
+=== RUN   TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions/false
+=== RUN   TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions/true
+--- PASS: TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions (0.01s)
+    --- PASS: TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions/false (0.00s)
+    --- PASS: TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions/true (0.00s)
+=== RUN   TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation
+=== RUN   TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation/false
+=== RUN   TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation/true
+--- PASS: TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation (0.00s)
+    --- PASS: TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation/false (0.00s)
+    --- PASS: TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation/true (0.00s)
+=== RUN   TestPreparedRecordBeyondBatchAndQueueWindows
+--- PASS: TestPreparedRecordBeyondBatchAndQueueWindows (0.00s)
+=== RUN   TestNativeLargeOutputCannotBorrowProtectedProgressMemory
+    execution_memory_borrow_bound_test.go:88: same500MB budget: rejected large reply unchanged={BudgetBytes:500000000 UsedBytes:499018802 IOReserveBytes:48795648 ResidentBytes:450881011 InputReservedBytes:33554432 InputUsedBytes:43022 WireBytes:0 WireCount:0 NativeCount:1 NativeCountLimit:1024 Count:14 CountLimit:32768 Starting:1 Settled:13 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:1} cleaned={BudgetBytes:500000000 UsedBytes:450881011 IOReserveBytes:48795648 ResidentBytes:450881011 InputReservedBytes:33554432 InputUsedBytes:46095 WireBytes:0 WireCount:0 NativeCount:2 NativeCountLimit:1024 Count:15 CountLimit:32768 Starting:0 Settled:13 Waiting:0 Terminal:2 Borrowed:0 Known:true BudgetRejections:1}
+--- PASS: TestNativeLargeOutputCannotBorrowProtectedProgressMemory (0.00s)
+=== RUN   TestSharedShortHandoffsPreserveBothOrdersAndRejectThird
+=== RUN   TestSharedShortHandoffsPreserveBothOrdersAndRejectThird/false
+=== RUN   TestSharedShortHandoffsPreserveBothOrdersAndRejectThird/true
+--- PASS: TestSharedShortHandoffsPreserveBothOrdersAndRejectThird (0.00s)
+    --- PASS: TestSharedShortHandoffsPreserveBothOrdersAndRejectThird/false (0.00s)
+    --- PASS: TestSharedShortHandoffsPreserveBothOrdersAndRejectThird/true (0.00s)
+=== RUN   TestNativeTerminalRetainsCanceledWireHandoffUntilRealFree
+--- PASS: TestNativeTerminalRetainsCanceledWireHandoffUntilRealFree (0.00s)
+=== RUN   TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull
+=== RUN   TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull/false
+=== RUN   TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull/true
+--- PASS: TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull (0.00s)
+    --- PASS: TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull/false (0.00s)
+    --- PASS: TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull/true (0.00s)
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge
+--- PASS: TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.01s)
+=== RUN   TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise
+    execution_memory_single_owner_test.go:75: SDK BSON=16777152 input=16780464 IO+working=81557342 before={BudgetBytes:113544396 UsedBytes:32374374 IOReserveBytes:48795648 ResidentBytes:32374374 InputReservedBytes:32374374 InputUsedBytes:16780464 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:0 Waiting:1 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:113544396 IOReserveBytes:48795648 ResidentBytes:31987054 InputReservedBytes:31987054 InputUsedBytes:16780464 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise (0.06s)
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/48003006
+    execution_memory_single_owner_test.go:135: working=48003006 next=33553791 revoked=1179417 before={BudgetBytes:113544396 UsedBytes:80377380 IOReserveBytes:48795648 ResidentBytes:32374374 InputReservedBytes:32374374 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:112751754 IOReserveBytes:48795648 ResidentBytes:64748748 InputReservedBytes:31194957 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/16780234
+    execution_memory_single_owner_test.go:135: working=16780234 next=33553791 revoked=1179417 before={BudgetBytes:113544396 UsedBytes:49154608 IOReserveBytes:48795648 ResidentBytes:32374374 InputReservedBytes:32374374 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:81528982 IOReserveBytes:48795648 ResidentBytes:64748748 InputReservedBytes:31194957 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/48003006 (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/16780234 (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime
+=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/0
+    execution_memory_single_owner_test.go:245: document=16777152 cap=16777152 max-index encoded=16777201 wrapper=49
+=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/4096
+    execution_memory_single_owner_test.go:245: document=16777152 cap=16781248 max-index encoded=16777201 wrapper=49
+--- PASS: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/0 (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/4096 (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/second_input
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/other_live_wire
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/same_live_wire
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/existing_result
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/extra_io
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/actual_peak
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/known_zero
+--- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/second_input (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/other_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/same_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/existing_result (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/extra_io (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/actual_peak (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/known_zero (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/second_input
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/other_live_wire
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/actual_peak
+--- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/second_input (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/other_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/actual_peak (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease
+--- PASS: TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease (0.00s)
+=== RUN   TestRuntimeOwnsAdapterExactlyOnce
+--- PASS: TestRuntimeOwnsAdapterExactlyOnce (0.00s)
+=== RUN   TestForcedCloseUsesConfiguredCleanupBudget
+--- PASS: TestForcedCloseUsesConfiguredCleanupBudget (0.05s)
+=== RUN   TestForcedCloseCancelsQueuedWorkBehindFullExecutionBudget
+--- PASS: TestForcedCloseCancelsQueuedWorkBehindFullExecutionBudget (0.02s)
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true
+--- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true (0.00s)
+=== RUN   TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity
+--- PASS: TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity (0.02s)
+=== RUN   TestLargeNativePublicationAccountingAndCancellation
+=== RUN   TestLargeNativePublicationAccountingAndCancellation/metadata
+=== RUN   TestLargeNativePublicationAccountingAndCancellation/failure
+--- PASS: TestLargeNativePublicationAccountingAndCancellation (0.01s)
+    --- PASS: TestLargeNativePublicationAccountingAndCancellation/metadata (0.00s)
+    --- PASS: TestLargeNativePublicationAccountingAndCancellation/failure (0.01s)
+=== RUN   TestNativeOversizedTerminalUsesFixedFailureInsideFullSharedBudget
+--- PASS: TestNativeOversizedTerminalUsesFixedFailureInsideFullSharedBudget (0.00s)
+=== RUN   TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake
+    native_admission_burst_test.go:108: transient initial IO: before={BudgetBytes:96330752 UsedBytes:71897087 IOReserveBytes:48795648 ResidentBytes:23767552 InputReservedBytes:23767552 InputUsedBytes:6146 WireBytes:0 WireCount:0 NativeCount:2 NativeCountLimit:1024 Count:2 CountLimit:32768 Starting:1 Settled:0 Waiting:1 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} admitted={BudgetBytes:96330752 UsedBytes:71897087 IOReserveBytes:48795648 ResidentBytes:23767552 InputReservedBytes:23767552 InputUsedBytes:9219 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:3 CountLimit:32768 Starting:1 Settled:0 Waiting:2 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    native_admission_burst_test.go:165: all admitted inputs completed/canceled and released: {BudgetBytes:96330752 UsedBytes:0 IOReserveBytes:48795648 ResidentBytes:0 InputReservedBytes:0 InputUsedBytes:0 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:0 CountLimit:32768 Starting:0 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake (0.00s)
+=== RUN   TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission
+    native_admission_burst_test.go:299: same-byte real IO completion: before={BudgetBytes:134217728 UsedBytes:85422080 IOReserveBytes:48795648 ResidentBytes:83324928 InputReservedBytes:33554432 InputUsedBytes:3073 WireBytes:0 WireCount:0 NativeCount:1 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:134217728 UsedBytes:85422080 IOReserveBytes:48795648 ResidentBytes:85422080 InputReservedBytes:33554432 InputUsedBytes:6146 WireBytes:0 WireCount:0 NativeCount:2 NativeCountLimit:1024 Count:2 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:1 Borrowed:0 Known:true BudgetRejections:1}
+--- PASS: TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission (0.00s)
+=== RUN   TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck
+--- PASS: TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck (0.00s)
+=== RUN   TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink
+--- PASS: TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink (0.00s)
+=== RUN   TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak
+--- PASS: TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak (0.00s)
+=== RUN   TestNativeInputPromiseConcurrentAdmissionCannotOverdraw
+--- PASS: TestNativeInputPromiseConcurrentAdmissionCannotOverdraw (0.00s)
+=== RUN   TestNativeQueueSaturationDoesNotCreateUnadmittedWaiters
+--- PASS: TestNativeQueueSaturationDoesNotCreateUnadmittedWaiters (0.00s)
+=== RUN   TestExecutionMemoryConservesOneLeaseAcrossEveryOwner
+--- PASS: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+=== RUN   TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit
+--- PASS: TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit (0.00s)
+=== RUN   TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit
+--- PASS: TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit (0.00s)
+=== RUN   TestNativeTerminalCannotGrowBeyondOwnedCapacity
+--- PASS: TestNativeTerminalCannotGrowBeyondOwnedCapacity (0.00s)
+=== RUN   TestNativeReadWorkspaceWaitsOnlyForConvergingIO
+--- PASS: TestNativeReadWorkspaceWaitsOnlyForConvergingIO (0.00s)
+=== RUN   TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases
+--- PASS: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (1.00s)
+=== RUN   TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores
+--- PASS: TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores (0.02s)
+=== RUN   TestNativeStartupCanBorrowReserveAfterSmallCapacityOutputsSettle
+--- PASS: TestNativeStartupCanBorrowReserveAfterSmallCapacityOutputsSettle (0.00s)
+=== RUN   TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative
+=== RUN   TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative/1
+=== RUN   TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative/16
+--- PASS: TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative (0.01s)
+    --- PASS: TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative/1 (0.01s)
+    --- PASS: TestManySlowNativeOutputsLeaveBackendCreditForReadsAndShortNative/16 (0.00s)
+=== RUN   TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy
+--- PASS: TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy (0.00s)
+=== RUN   TestNativeResumeSharesFIFOWithNewBackendExecutions
+--- PASS: TestNativeResumeSharesFIFOWithNewBackendExecutions (0.00s)
+=== RUN   TestDeliveredNativeEndCompletesWithoutReacquiringBusyBackendSlot
+--- PASS: TestDeliveredNativeEndCompletesWithoutReacquiringBusyBackendSlot (0.00s)
+=== RUN   TestNativeTerminalOutputUsesCurrentWorkingSetInsteadOfReleasedPeak
+--- PASS: TestNativeTerminalOutputUsesCurrentWorkingSetInsteadOfReleasedPeak (0.00s)
+=== RUN   TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge
+--- PASS: TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge (0.00s)
+=== RUN   TestCanceledSingletonDoesNotRunOrPoisonPeer
+--- PASS: TestCanceledSingletonDoesNotRunOrPoisonPeer (0.02s)
+=== RUN   TestBlockedNativeLeavesOtherExecutionCreditAvailable
+--- PASS: TestBlockedNativeLeavesOtherExecutionCreditAvailable (0.02s)
+=== RUN   TestReusablePlanResultReservationsRemainIndependent
+--- PASS: TestReusablePlanResultReservationsRemainIndependent (0.00s)
+=== RUN   TestReusablePlanConcurrentBatchesPreserveResultAccounting
+--- PASS: TestReusablePlanConcurrentBatchesPreserveResultAccounting (0.00s)
+=== RUN   TestSparseReadsBypassCollectingNamespacesInRunningScheduler
+--- PASS: TestSparseReadsBypassCollectingNamespacesInRunningScheduler (0.01s)
+=== RUN   TestSlowNativeConsumersUseBoundedOutputCapacity
+--- PASS: TestSlowNativeConsumersUseBoundedOutputCapacity (0.02s)
+=== RUN   TestQueueCountAndBytesReleaseAtDispatch
+=== RUN   TestQueueCountAndBytesReleaseAtDispatch/operations
+=== RUN   TestQueueCountAndBytesReleaseAtDispatch/bytes
+--- PASS: TestQueueCountAndBytesReleaseAtDispatch (0.00s)
+    --- PASS: TestQueueCountAndBytesReleaseAtDispatch/operations (0.00s)
+    --- PASS: TestQueueCountAndBytesReleaseAtDispatch/bytes (0.00s)
+=== RUN   TestBatchDeadlineComesOnlyFromInterestedCallers
+--- PASS: TestBatchDeadlineComesOnlyFromInterestedCallers (0.00s)
+=== RUN   TestAdmissionBoundsAndReservation
+--- PASS: TestAdmissionBoundsAndReservation (0.00s)
+=== RUN   TestSameStreamOrderIndependentReadAndCancellation
+--- PASS: TestSameStreamOrderIndependentReadAndCancellation (0.00s)
+=== RUN   TestDispatchedCancellationPreservesBackendOutcome
+--- PASS: TestDispatchedCancellationPreservesBackendOutcome (0.01s)
+=== RUN   TestMicrobatchDeadlinesAndBounds
+--- PASS: TestMicrobatchDeadlinesAndBounds (0.00s)
+=== RUN   TestShutdownPreservesSynchronousResultEvidenceUntilAck
+--- PASS: TestShutdownPreservesSynchronousResultEvidenceUntilAck (0.02s)
+=== RUN   TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge
+=== RUN   TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/inputfalse
+=== RUN   TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/inputtrue
+=== RUN   TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/resultfalse
+=== RUN   TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/resulttrue
+--- PASS: TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge (0.00s)
+    --- PASS: TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/inputfalse (0.00s)
+    --- PASS: TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/inputtrue (0.00s)
+    --- PASS: TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/resultfalse (0.00s)
+    --- PASS: TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge/resulttrue (0.00s)
+=== RUN   TestWaitingSelectionRefreshesAfterAdmissionAndFlushesOnDrain
+--- PASS: TestWaitingSelectionRefreshesAfterAdmissionAndFlushesOnDrain (0.00s)
+=== RUN   TestCachedOversizeSuccessorSurvivesEarlierAcknowledgements
+--- PASS: TestCachedOversizeSuccessorSurvivesEarlierAcknowledgements (0.00s)
+=== RUN   TestSelectionRoundRefillsInAdmissionOrder
+--- PASS: TestSelectionRoundRefillsInAdmissionOrder (0.00s)
+=== RUN   TestSelectionRoundCancellationRefreshesCachedGroups
+--- PASS: TestSelectionRoundCancellationRefreshesCachedGroups (0.00s)
+=== RUN   TestSelectionRoundSlotBoundPreservesOmittedOlderGroups
+=== RUN   TestSelectionRoundSlotBoundPreservesOmittedOlderGroups/slots=1
+=== RUN   TestSelectionRoundSlotBoundPreservesOmittedOlderGroups/slots=2
+--- PASS: TestSelectionRoundSlotBoundPreservesOmittedOlderGroups (0.00s)
+    --- PASS: TestSelectionRoundSlotBoundPreservesOmittedOlderGroups/slots=1 (0.00s)
+    --- PASS: TestSelectionRoundSlotBoundPreservesOmittedOlderGroups/slots=2 (0.00s)
+=== RUN   TestSelectionRoundSlotBoundDoesNotHideReadyReads
+--- PASS: TestSelectionRoundSlotBoundDoesNotHideReadyReads (0.00s)
+=== RUN   TestSelectionRoundPreservesSessionOrderUnderFragmentation
+--- PASS: TestSelectionRoundPreservesSessionOrderUnderFragmentation (0.03s)
+=== RUN   TestCommandCompletionReleasesReservations
+=== RUN   TestCommandCompletionReleasesReservations/record
+=== RUN   TestCommandCompletionReleasesReservations/native
+--- PASS: TestCommandCompletionReleasesReservations (0.00s)
+    --- PASS: TestCommandCompletionReleasesReservations/record (0.00s)
+    --- PASS: TestCommandCompletionReleasesReservations/native (0.00s)
+=== RUN   TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome
+--- PASS: TestRuntimePartiallyCanceledBatchPreservesEachCallOutcome (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/store	3.461s
+
+EXIT 0

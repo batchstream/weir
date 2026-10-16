@@ -1,0 +1,52 @@
+=== RUN   TestBulkNormalAcknowledgementReservedBeforeMutationIO
+=== RUN   TestBulkNormalAcknowledgementReservedBeforeMutationIO/chunked=false
+    bulk_ack_memory_test.go:248: initial barrier B=135268088 Q=33554432 nativeWorking=100663296 nativePublicationGrowth=518140 typedInitial=270076 headroom=262144 ACKbytes=8720 ACKdecode=1287728 sourceDecode=13312 snapshot={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    bulk_ack_memory_test.go:277: normal ACK reservation kept mutation before IO: runtime={Ready:0 ReadyBytes:0 Pending:42 PendingBytes:91518 Active:4 Retained:46 ResultBytes:285696 WorkingBytes:100663296 Publishers:0 Paused:0 PausedBytes:0 Draining:false Closed:false Overloaded:false} memory={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:202708 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:46 CountLimit:32768 Starting:4 Settled:0 Waiting:42 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    bulk_ack_memory_test.go:346: header/body gate chunked=false plannedTypedWorking=1932172 memory={BudgetBytes:135268088 UsedBytes:111372681 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:196425 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:45 CountLimit:32768 Starting:4 Settled:0 Waiting:41 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} runtimeWorking=77429644
+    bulk_ack_memory_test.go:376: normal ACK result: bulkCalls=1 backendApplied=42 SDKapplied=42 SDKunknownCapacity=0 rejections=0 beforeReply=&{BudgetBytes:135268088 UsedBytes:111372681 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:196425 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:45 CountLimit:32768 Starting:4 Settled:0 Waiting:41 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:135268088 UsedBytes:109440509 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:18849 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:3 CountLimit:32768 Starting:3 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+2026/10/17 01:23:36 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+=== RUN   TestBulkNormalAcknowledgementReservedBeforeMutationIO/chunked=true
+    bulk_ack_memory_test.go:248: initial barrier B=135268088 Q=33554432 nativeWorking=100663296 nativePublicationGrowth=518140 typedInitial=270076 headroom=262144 ACKbytes=8720 ACKdecode=1287728 sourceDecode=13312 snapshot={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    bulk_ack_memory_test.go:277: normal ACK reservation kept mutation before IO: runtime={Ready:0 ReadyBytes:0 Pending:42 PendingBytes:91518 Active:4 Retained:46 ResultBytes:285696 WorkingBytes:100663296 Publishers:0 Paused:0 PausedBytes:0 Draining:false Closed:false Overloaded:false} memory={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:202708 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:46 CountLimit:32768 Starting:4 Settled:0 Waiting:42 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    bulk_ack_memory_test.go:346: header/body gate chunked=true plannedTypedWorking=1932172 memory={BudgetBytes:135268088 UsedBytes:111372681 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:196425 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:45 CountLimit:32768 Starting:4 Settled:0 Waiting:41 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} runtimeWorking=77429644
+    bulk_ack_memory_test.go:376: normal ACK result: bulkCalls=1 backendApplied=42 SDKapplied=42 SDKunknownCapacity=0 rejections=0 beforeReply=&{BudgetBytes:135268088 UsedBytes:111372681 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:196425 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:45 CountLimit:32768 Starting:4 Settled:0 Waiting:41 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:135268088 UsedBytes:109440509 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:18849 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:3 CountLimit:32768 Starting:3 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+2026/10/17 01:23:37 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+--- PASS: TestBulkNormalAcknowledgementReservedBeforeMutationIO (0.61s)
+    --- PASS: TestBulkNormalAcknowledgementReservedBeforeMutationIO/chunked=false (0.31s)
+    --- PASS: TestBulkNormalAcknowledgementReservedBeforeMutationIO/chunked=true (0.30s)
+=== RUN   TestBulkNormalAcknowledgementQueuedCancellationAndDrain
+    bulk_ack_memory_test.go:248: initial barrier B=135268088 Q=33554432 nativeWorking=100663296 nativePublicationGrowth=518140 typedInitial=270076 headroom=262144 ACKbytes=8720 ACKdecode=1287728 sourceDecode=13312 snapshot={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    bulk_ack_memory_test.go:277: normal ACK reservation kept mutation before IO: runtime={Ready:0 ReadyBytes:0 Pending:42 PendingBytes:91518 Active:4 Retained:46 ResultBytes:285696 WorkingBytes:100663296 Publishers:0 Paused:0 PausedBytes:0 Draining:false Closed:false Overloaded:false} memory={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:202708 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:46 CountLimit:32768 Starting:4 Settled:0 Waiting:42 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+2026/10/17 01:23:37 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+    bulk_ack_memory_test.go:315: queued cancellation sent zero writes and drain released all shared ownership
+--- PASS: TestBulkNormalAcknowledgementQueuedCancellationAndDrain (0.26s)
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=1/chunked=false
+    bulk_ack_memory_test.go:447: items=1 chunked=false indexBytes=255 IDbytes=512 wire=3703 cap=3703 actualParserPeak=69084 normalReplyPromise=141721
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=1/chunked=true
+    bulk_ack_memory_test.go:447: items=1 chunked=true indexBytes=255 IDbytes=512 wire=3703 cap=4096 actualParserPeak=69477 normalReplyPromise=141721
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=42/chunked=false
+    bulk_ack_memory_test.go:447: items=42 chunked=false indexBytes=255 IDbytes=512 wire=151877 cap=151877 actualParserPeak=1879316 normalReplyPromise=2365192
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=42/chunked=true
+    bulk_ack_memory_test.go:447: items=42 chunked=true indexBytes=255 IDbytes=512 wire=151877 cap=262144 actualParserPeak=1989583 normalReplyPromise=2365192
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=128/chunked=false
+    bulk_ack_memory_test.go:447: items=128 chunked=false indexBytes=255 IDbytes=512 wire=462681 cap=462681 actualParserPeak=5676388 normalReplyPromise=7029058
+=== RUN   TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=128/chunked=true
+    bulk_ack_memory_test.go:447: items=128 chunked=true indexBytes=255 IDbytes=512 wire=462681 cap=524288 actualParserPeak=5737995 normalReplyPromise=7029058
+--- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak (0.43s)
+    --- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=1/chunked=false (0.00s)
+    --- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=1/chunked=true (0.00s)
+    --- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=42/chunked=false (0.07s)
+    --- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=42/chunked=true (0.05s)
+    --- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=128/chunked=false (0.15s)
+    --- PASS: TestBulkNormalAcknowledgementShapeBoundsCompleteParserPeak/items=128/chunked=true (0.15s)
+=== RUN   TestBulkReplyScratchFloorIncludesDynamicSourcesAndFramesOnce
+--- PASS: TestBulkReplyScratchFloorIncludesDynamicSourcesAndFramesOnce (0.00s)
+=== RUN   TestBulkOversizedUnknownErrorRetainsAttemptAndNeverReplays
+=== RUN   TestBulkOversizedUnknownErrorRetainsAttemptAndNeverReplays/chunked=false
+=== RUN   TestBulkOversizedUnknownErrorRetainsAttemptAndNeverReplays/chunked=true
+--- PASS: TestBulkOversizedUnknownErrorRetainsAttemptAndNeverReplays (0.01s)
+    --- PASS: TestBulkOversizedUnknownErrorRetainsAttemptAndNeverReplays/chunked=false (0.00s)
+    --- PASS: TestBulkOversizedUnknownErrorRetainsAttemptAndNeverReplays/chunked=true (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/search	3.269s

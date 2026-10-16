@@ -1,0 +1,89 @@
+{
+  "decision": "BLOCK",
+  "exact_head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "scope": "Independent backend re-review main8c1b..a1fd and single no-DB/no-CLI real HTTP parser before probe. No production edits, commits or retries. Original typed7/burst/small not repeated after P1.",
+  "finding": {
+    "priority": "P1",
+    "title": "Declared HTTP trailers lose live-map ownership before body IO and EOF parsing",
+    "location": "internal/backend/search/transport.go:164-175",
+    "related": [
+      "internal/backend/search/transport.go:127",
+      "internal/backend/search/transport.go:195",
+      "internal/backend/search/transport.go:249",
+      "internal/backend/search/native_memory.go:36-47"
+    ],
+    "trigger": "One valid chunked HTTP response declares4096 distinct short Trailer names in one header line, then gates body. Body{} completes with300 declared EOF trailer values below Go4KiB parser bound.",
+    "observed": "Header approval peak273600 drops to65536 before first body read while real Response.Trailer still has4096 entries. EOF has4096 entries/300 populated values with owner still65536. HTTP200, body{}, business request once.",
+    "modeled_retained_bytes": {
+      "before_body": 1081344,
+      "after_EOF": 1086444,
+      "method": "Existing header charge model8192+sum(len(name)+256+cap(values)*16+sum(len(value))). Conservative model, not measured physical heap bytes.",
+      "initial_header_peak_below_map_model": true
+    },
+    "root_cause": "Go fixTrailer deletes Trailer from Header and prebuilds Response.Trailer map. Header callback stops afterDo; body scratch counts only Header and shrinks working to64KiB. Trailer remains live untilEOF/line195 and EOF parsing can allocate more after header accounting stops.",
+    "minimal_fix_constraints": [
+      "Approve comma-expanded Trailer structure before parser allocation; newline count alone misses it.",
+      "Keep all live Header and Trailer ownership through body reads.",
+      "Approve bounded EOF parser workspace before it allocates, including unannounced trailers.",
+      "Do not silently drop declarations. Preserve pre-send NOT_APPLIED/post-send UNKNOWN and no replay.",
+      "Keep original budgets/deadlines/sizes fixed."
+    ],
+    "limits": "Only declared4096/300 declared EOF values independently tested. Unannounced trailers, mutation outcomes and cancellation-before-EOF not tested by this probe."
+  },
+  "probe": {
+    "actual_exit": 1,
+    "command": "review81-backend-r5-trailer-command.json",
+    "raw": "review81-backend-r5-trailer.txt",
+    "result": "review81-backend-r5-trailer-result.json",
+    "header_peak": 273600,
+    "before_body_working": 65536,
+    "EOF_working": 65536,
+    "owner_history": [
+      65536,
+      65536,
+      65536,
+      75144,
+      107912,
+      140680,
+      173448,
+      206216,
+      238984,
+      271752,
+      273600,
+      65536,
+      65536
+    ],
+    "declared_names": 4096,
+    "populated_at_body_start": 0,
+    "populated_at_EOF": 300,
+    "HTTP_status": 200,
+    "body": "{}",
+    "business_HTTP_calls": 1,
+    "replays_observed": 0,
+    "connections_closed": {
+      "owned": 0,
+      "peak": 1,
+      "acquired": 1,
+      "released": 1
+    },
+    "race_reports": 0,
+    "no_DB_CLI": true,
+    "no_retry": true
+  },
+  "other_static_review": "Reviewed pure-read floor/source retention, per-group preDo check, source capacity transfer, completed-body header release, immutable mutation ACK promise, memory-failure cause mapping and bounded two-slot handoffs. No additional confirmed finding. Mongo production code unchanged since prior review. Runtime reviewed separately by core reviewer.",
+  "source_hashes_count": 350,
+  "source_hashes_unchanged": true,
+  "source_after": "review81-backend-r5-source-after.json",
+  "documentation_packaging_only_after_probe": true,
+  "evidence_sha256": {
+    "review81-backend-r5-trailer-probe_test.go.txt": "cde0e875e8b1fff7d88d70c94fcf44becb39a19052bf72079743cdfb2501c879",
+    "review81-backend-r5-trailer-overlay.json": "1426be49d74dc4e294e43a70f4e8d032c582a7bd3e510ba442c449465a04f7d4",
+    "review81-backend-r5-trailer-plan.json": "c7f0960f57f8958eaa964221fd0824552ebd2c2f690f022951cf53ab6eb5a63b",
+    "review81-backend-r5-trailer-command.json": "feeaf048acaa90a27a5fe1873b22dbb95cb5193380bfe129f54366e5bd53993e",
+    "review81-backend-r5-trailer-result.json": "c7a7cd4533319aff4979c0be77765042c4cc32c0ee137992c3b38d2e4e152fa4",
+    "review81-backend-r5-trailer.txt": "4a0fa38276ae078a2ac01420ba2983c39d3935a7800ed5f08f8a5eb71b157623",
+    "review81-backend-r5-trailer.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "review81-backend-r5-source-after.json": "51bad305875a3b5fb93291948431c6c43157ee9c76e9bd820e9638022adafad3"
+  },
+  "at_utc": "2026-10-16T18:28:01.788106+00:00"
+}

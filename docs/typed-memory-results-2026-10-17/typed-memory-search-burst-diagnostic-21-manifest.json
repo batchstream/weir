@@ -1,0 +1,50 @@
+{
+  "base": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "scope": "DIAGNOSTIC ONLY: failure-only fixed phase and numeric memory observations; preserve original reservation expressions, allocation sequence, return values and mutation outcomes",
+  "production_untouched": true,
+  "not_compiled": true,
+  "no_tests_databases_containers_or_load": true,
+  "before_sha256": {
+    "internal/backend/search/transport.go": "69cf7eff6d39228d4902cb363840152882e4075d5a2ed96d82e510bfebcadcda",
+    "internal/backend/search/native_memory.go": "f61791d158aa8d406a466eeb953c9d85ddec384d520a06ca5feac2cd95314cd5"
+  },
+  "overlay_source_sha256": {
+    "internal/backend/search/transport.go": "bfb6c16a466be1cec9d0c926db18fc4b1228c7036c04588800d9cfa846ef908a",
+    "internal/backend/search/native_memory.go": "c11caa11f87742d54696802e1c5576c3a214b90568aeb8ea78e846b08d439d36"
+  },
+  "overlay_json": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-burst-diagnostic-21/overlay.json",
+  "overlay_json_sha256": "687fe40f1410450f6ae83d3f80d764d96aad95880342c5ff6dd79756553190a9",
+  "phases": [
+    "before_send",
+    "request_headers",
+    "header_set",
+    "header_grow_native",
+    "body_initial",
+    "body_grow",
+    "body_settle",
+    "request_body",
+    "json_validate"
+  ],
+  "numeric_fields": [
+    "records",
+    "status",
+    "content_length",
+    "header_bound",
+    "header_bytes",
+    "header_lines",
+    "raw_len",
+    "raw_cap",
+    "decode_bound",
+    "target_working",
+    "base",
+    "frame",
+    "sources",
+    "prior_scratch"
+  ],
+  "unknown_numeric_value": -1,
+  "correlation": "body/header helpers lack exchange metadata and use records/status=-1; their enclosing request denial logs actual record count/status, and the locked ledger diagnostic carries requested/old/delta and exact source caller lines",
+  "privacy": "No body, URI, resource/index/Store name, ID, headers or credentials are logged",
+  "timing_limit": "Failure-only logging and recomputing JSON decode-bound after its denial can change later interleavings; this is not clean-artifact qualification",
+  "original_failure_preserved": "typed-memory-fixed-r2-burst.txt for clean 21; earlier clean453 and diagnostic evidence are not changed",
+  "format_validation": "Go1.27.1 gofmt parsed/formatted both diagnostic copies; no compilation or tests performed"
+}

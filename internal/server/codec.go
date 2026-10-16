@@ -9,9 +9,13 @@ import (
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	peerpb "github.com/batchstream/weir/internal/api/peer/v1"
+	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/protowire"
+	"github.com/batchstream/weir/internal/store"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
 )
@@ -38,9 +42,19 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 	}
 	size := proto.Size(wire)
 
-	capacity := max(size, 1025)
+	capacity := max(size, execution.MinimumWireBytes)
+	var reservation *store.WireReservation
+	if reserved, ok := codec.admission.reservations.LoadAndDelete(value); ok {
+		reservation = reserved.(*store.WireReservation)
+	} else {
+		var err error
+		reservation, err = codec.admission.memory.ReserveWire(capacity)
+		if err != nil {
+			return nil, status.Error(codes.ResourceExhausted, execution.ErrExecutionMemory.Error())
+		}
+	}
 	codec.admission.wireBytes.Add(int64(capacity))
-	pool := &responseBufferOwner{admission: codec.admission, bytes: int64(capacity), message: value, done: make(chan struct{})}
+	pool := &responseBufferOwner{admission: codec.admission, reservation: reservation, bytes: int64(capacity), message: value, done: make(chan struct{})}
 	codec.admission.responses.Store(value, pool)
 	data := make([]byte, 0, capacity)
 	options := proto.MarshalOptions{}
@@ -96,15 +110,16 @@ func (connection *responseConnection) retire() {
 // Native Put reports the last gRPC buffer reference. A connection retirement
 // ends only queued-byte accounting, without freeing or reusing encoded data.
 type responseBufferOwner struct {
-	admission  *Admission
-	bytes      int64
-	released   bool
-	mu         sync.Mutex
-	message    any
-	timer      *time.Timer
-	cleanup    runtime.Cleanup
-	done       chan struct{}
-	connection *responseConnection
+	admission   *Admission
+	reservation *store.WireReservation
+	bytes       int64
+	released    bool
+	mu          sync.Mutex
+	message     any
+	timer       *time.Timer
+	cleanup     runtime.Cleanup
+	done        chan struct{}
+	connection  *responseConnection
 }
 
 func (*responseBufferOwner) Get(length int) *[]byte {
@@ -138,6 +153,7 @@ func (owner *responseBufferOwner) finish() {
 		owner.connection = nil
 	}
 	owner.admission.wireBytes.Add(-owner.bytes)
+	owner.reservation.Release()
 	owner.message = nil
 	if owner.done != nil {
 		close(owner.done)

@@ -1,0 +1,57 @@
+{
+  "head": "30a3d01790b7dacbd495b30f864de8b8b79e56dc",
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "commands": [
+    {
+      "name": "version",
+      "argv": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "version"
+      ],
+      "started_utc": "2026-10-16T17:39:03.862753+00:00",
+      "seconds": 0.011908084008609876,
+      "actual_exit": 0,
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-version.txt"
+    },
+    {
+      "name": "race",
+      "argv": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "test",
+        "-race",
+        "-count=1",
+        "-timeout=180s",
+        "./internal/store",
+        "./internal/server",
+        "./internal/execution"
+      ],
+      "started_utc": "2026-10-16T17:39:03.875053+00:00",
+      "seconds": 22.226847083016764,
+      "actual_exit": 0,
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-race.txt"
+    },
+    {
+      "name": "vet",
+      "argv": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "vet",
+        "./internal/store",
+        "./internal/server",
+        "./internal/execution"
+      ],
+      "started_utc": "2026-10-16T17:39:26.102368+00:00",
+      "seconds": 0.2555949160014279,
+      "actual_exit": 0,
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-vet.txt"
+    }
+  ]
+}

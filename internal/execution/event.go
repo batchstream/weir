@@ -12,6 +12,11 @@ import (
 const EntryOverheadBytes = 512
 const ResultOverheadBytes = 512
 
+// gRPC's native buffer invokes its owner only above its 1024-byte pooling
+// threshold. Smaller protobufs still allocate this much tracked capacity.
+const MinimumWireBytes = 1025
+const RecordStreamItems = 32
+
 // BackendBatchBytes bounds a native database exchange independently of stream length.
 const BackendBatchBytes = 32 << 20
 

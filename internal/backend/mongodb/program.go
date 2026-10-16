@@ -20,9 +20,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
-// Lua evaluates one document at a time; workspace bytes below are accounting only.
-const programWorkingBytes = 64 << 20
-
 var errProgramBatchBound = errors.New("program batch requires another native exchange")
 var errProgramReadEvidence = errors.New("program read acknowledgement incomplete")
 
@@ -119,7 +116,11 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			if programHasLabel(readErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
 				continue
 			}
-			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, readErr))
+			failure := backendFailure(ctx, readErr)
+			if errors.Is(readErr, execution.ErrExecutionMemory) {
+				failure = recordMemoryFailure()
+			}
+			batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
 			return
 		}
 		writes, writePositions := a.transformPrograms(txctx, batch, active, documents)
@@ -157,7 +158,11 @@ func (a *Adapter) runPrograms(ctx context.Context, batch *programBatch) {
 			if programHasLabel(writeErr, "TransientTransactionError") && pauseProgram(ctx, a.options().RetryBackoff) {
 				continue
 			}
-			batch.fail(pb.MutationOutcome_NOT_APPLIED, backendFailure(ctx, writeErr))
+			failure := backendFailure(ctx, writeErr)
+			if errors.Is(writeErr, execution.ErrExecutionMemory) {
+				failure = recordMemoryFailure()
+			}
+			batch.fail(pb.MutationOutcome_NOT_APPLIED, failure)
 			return
 		}
 		rejected, retry := false, false
@@ -323,6 +328,9 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 	documents := make([]bson.Raw, len(plans))
 	received := 0
 	for page := 0; page <= len(plans); page++ {
+		if err := reserveRecordWorking(ctx, plans, 0); err != nil {
+			return nil, err
+		}
 		raw, err := a.client.Database(target.database).RunCommand(ctx, command).Raw()
 		if err != nil {
 			return nil, err
@@ -347,7 +355,15 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 			if !validID || !found || documents[position] != nil {
 				return nil, errProgramReadEvidence
 			}
-			documents[position] = append(bson.Raw(nil), raw...)
+			if err := reserveRecordWorking(ctx, plans, len(raw)); err != nil {
+				return nil, err
+			}
+			if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
+				memory.held += len(raw)
+			}
+			document := make([]byte, len(raw))
+			copy(document, raw)
+			documents[position] = document
 			received++
 		}
 		if state.cursor == 0 {
@@ -366,6 +382,11 @@ func (a *Adapter) transformPrograms(ctx context.Context, batch *programBatch, po
 		raw := documents[i]
 		documents[i] = nil
 		write, result := transformProgram(ctx, work, raw)
+		bytes := len(raw)
+		raw = nil
+		if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
+			memory.held -= bytes
+		}
 		if result != nil {
 			batch.results[position] = result
 		} else {
@@ -391,6 +412,15 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 		defer cancel()
 		ctx = programContext
 	}
+	input := work.Command.GetMutate().GetAtomicTransform().GetLua().GetInput()
+	inputBytes := []byte(nil)
+	if input != nil {
+		inputBytes = input.Data
+	}
+	plans := []*execution.Plan{work}
+	if err := reserveRecordWorking(ctx, plans, bsonDecodeWorking(raw)+bsonDecodeWorking(inputBytes)); err != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+	}
 	native := work.Backend.(*plan)
 	missing := raw == nil
 	current := value.Value{Kind: value.Missing}
@@ -410,6 +440,13 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	}
 	program := *native.program
 	program.Current = current
+	if input != nil {
+		decoded, err := Decode(ctx, input.Data)
+		if err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input"))
+		}
+		program.Input = decoded
+	}
 	transformed, transformErr := luaengine.Evaluate(ctx, program)
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
@@ -447,6 +484,9 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			failure := protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "Lua replacement changes record identity")
 			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 		}
+		if err := reserveRecordWorking(ctx, plans, bsonDecodeWorking(raw)+bsonDecodeWorking(inputBytes)+4*bsonValueBytes(replacement)); err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
 		encoded, encodeErr := Encode(ctx, replacement)
 		if encodeErr != nil {
 			if failure := programCallerFailure(ctx, work); failure != nil {
@@ -459,6 +499,9 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 			return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
 		}
 		prepared.document = encoded
+		if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
+			memory.held += cap(encoded)
+		}
 		prepared.action = "replace"
 		if missing {
 			prepared.action = "create"
@@ -470,13 +513,20 @@ func transformProgram(ctx context.Context, work *execution.Plan, raw bson.Raw) (
 	if failure := programCallerFailure(ctx, work); failure != nil {
 		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, failure)
 	}
-	write := &execution.Plan{Command: work.Command, Backend: prepared}
+	write := &execution.Plan{Command: work.Command, Backend: prepared, Memory: work.Memory}
 	return write, nil
 }
 
 func (a *Adapter) writePrograms(ctx context.Context, plans []*execution.Plan) ([]*pb.MutationResult, bool, error) {
 	ctx, release := nativeAttemptContext(ctx)
 	defer release()
+	framing := 0
+	for _, work := range plans {
+		framing += 2*len(work.Backend.(*plan).document) + execution.EntryOverheadBytes
+	}
+	if err := reserveRecordWorking(ctx, plans, framing); err != nil {
+		return nil, true, err
+	}
 	target := plans[0].Backend.(*plan).target
 	ops := make(bson.A, len(plans))
 	for i, work := range plans {

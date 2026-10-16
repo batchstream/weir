@@ -179,7 +179,7 @@ func TestCLINativeSmallBurstPreservesAdmission(t *testing.T) {
 	for {
 		snapshot := nativeBurstSnapshot(t, process)
 		idle := true
-		for _, name := range []string{"used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "leases", "starting", "settled", "borrowed", "waiting", "terminal"} {
+		for _, name := range []string{"used_bytes", "resident_bytes", "wire_bytes", "wire_buffers", "input_reserved_bytes", "input_used_bytes", "leases", "native_leases", "starting", "settled", "borrowed", "waiting", "terminal"} {
 			idle = idle && snapshot[name] == 0
 		}
 		metrics := process.sample(t)
@@ -344,27 +344,27 @@ func executeNativeBurstCall(ctx context.Context, client *weirclient.Client, data
 func nativeBurstSnapshot(t *testing.T, process *memoryRecoveryCLI) map[string]float64 {
 	t.Helper()
 	metrics := process.sample(t)
-	values := make(map[string]float64, 15)
-	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
-		values[name] = nativeBurstGauge(t, metrics, "weir_native_memory_"+name, nil)
+	values := make(map[string]float64, 19)
+	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "wire_bytes", "wire_buffers", "input_reserved_bytes", "input_used_bytes", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "native_leases", "native_leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
+		values[name] = nativeBurstGauge(t, metrics, "weir_execution_memory_"+name, nil)
 	}
-	denials := metrics["weir_native_memory_budget_rejections_total"].GetMetric()
+	denials := metrics["weir_execution_memory_budget_rejections_total"].GetMetric()
 	if len(denials) != 1 || denials[0].Counter == nil || len(denials[0].Label) != 0 {
-		t.Fatal("missing unlabeled Node Native denial counter")
+		t.Fatal("missing unlabeled Node execution denial counter")
 	}
 	values["budget_rejections_total"] = denials[0].GetCounter().GetValue()
 	if value := values["budget_rejections_total"]; math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-		t.Fatal("invalid Node Native denial counter", value)
+		t.Fatal("invalid Node execution denial counter", value)
 	}
 	families := 0
 	for name := range metrics {
-		if strings.HasPrefix(name, "weir_native_memory_") {
+		if strings.HasPrefix(name, "weir_execution_memory_") {
 			families++
 		}
 	}
 	states := values["starting"] + values["settled"] + values["borrowed"] + values["waiting"] + values["terminal"]
-	if families != 15 || values["budget_known"] != 1 || values["leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > process.capacity*.70*2/3 || values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["input_used_bytes"] > values["input_reserved_bytes"] || values["input_reserved_bytes"] > values["resident_bytes"] || values["leases"] > 1024 || states != values["leases"] {
-		t.Error("Native ledger violated fixed shared bounds", families, values)
+	if families != 19 || values["budget_known"] != 1 || values["leases_limit"] != 32768 || values["native_leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > process.capacity*.70*2/3 || values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["wire_bytes"] > values["used_bytes"] || values["wire_buffers"] > values["leases"] || values["input_used_bytes"] > values["input_reserved_bytes"] || values["input_reserved_bytes"] > values["resident_bytes"] || values["leases"] > 32768 || values["native_leases"] > 1024 || values["native_leases"] > values["leases"] || states != values["leases"] {
+		t.Error("Execution ledger violated fixed shared bounds", families, values)
 	}
 	latched := nativeBurstGauge(t, metrics, "weir_memory_latched", nil)
 	if latched != 0 {

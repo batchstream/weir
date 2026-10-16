@@ -1,0 +1,25 @@
+{
+  "base": "30a3d01790b7dacbd495b30f864de8b8b79e56dc",
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=1",
+    "-timeout=60s",
+    "-overlay=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-before-overlay.json",
+    "-run",
+    "^TestReview81DesiredShortNativeProgressAfterLargeNativeBorrows$",
+    "-v",
+    "./internal/store"
+  ],
+  "actual_exit": 1,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-before-race.txt",
+  "source_sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+  "source_copy": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-before-ledger.go.txt",
+  "probe_sha256": "fb66229c67102fe436c9c4ba1910074f4fbcfdf3199a772919a268b1ad775c65",
+  "original_probe_byte_identical": true,
+  "production_unchanged": true,
+  "raw_sha256": "019324c7e8802a11efb29c66dca7fc536b31fce25ef8769c309fefce8920218e",
+  "scope": "Unchanged independent desired-progress probe before repair, fixed B500000000, no database/container/backend allocation. The large-reply-settle premise must become explicit safe failure under the new output contract; original source/evidence preserved.",
+  "at": "2026-10-16T17:48:56.270820+00:00"
+}

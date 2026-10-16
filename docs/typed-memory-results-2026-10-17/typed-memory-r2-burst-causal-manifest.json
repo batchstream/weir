@@ -1,0 +1,208 @@
+{
+  "scope": "DIAGNOSTIC ONLY NONQUAL, ONE original10x256; cannot replace original clean r2FAIL",
+  "status": "DIAGNOSTIC PASS; original failure not reproduced",
+  "actual_exit": 0,
+  "compile_actual_exit": 0,
+  "runs": 1,
+  "source_base": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "source_18_hashes_before_after": "clean identical",
+  "binary_sha256": "6eb6f184f41fd0fd8ce51603a852ca061ec600ead6309601c7344def6f68756b",
+  "runtime_identities": [
+    {
+      "product": "weir",
+      "version": "dev",
+      "revision": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "dev",
+      "dirty": "false"
+    }
+  ],
+  "runtime_logging_overlays": {
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/store/execution_memory.go": {
+      "original_sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+      "diagnostic_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-r2-burst-diagnostic-ledger.go",
+      "diagnostic_sha256": "56c2ce1923499d8364ff201c9b1322b36cc8dd91e2b4d85bf11f2e1e822380eb"
+    },
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/transport.go": {
+      "original_sha256": "69cf7eff6d39228d4902cb363840152882e4075d5a2ed96d82e510bfebcadcda",
+      "diagnostic_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-burst-diagnostic-21/overlay/transport.go",
+      "diagnostic_sha256": "bfb6c16a466be1cec9d0c926db18fc4b1228c7036c04588800d9cfa846ef908a"
+    },
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/native_memory.go": {
+      "original_sha256": "f61791d158aa8d406a466eeb953c9d85ddec384d520a06ca5feac2cd95314cd5",
+      "diagnostic_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-burst-diagnostic-21/overlay/native_memory.go",
+      "diagnostic_sha256": "c11caa11f87742d54696802e1c5576c3a214b90568aeb8ea78e846b08d439d36"
+    }
+  },
+  "driver_only_change": "expected state/version dev/dev; original10x256/1KiB/3s/all counters/oracles/absolutezero5s and failure behavior unchanged",
+  "driver_command": [
+    "go",
+    "test",
+    "-race",
+    "-count=1",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-burst-causal-driver.json",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLINativeSmallBurstPreservesAdmission$",
+    "-timeout",
+    "5m",
+    "-v",
+    "./internal/app"
+  ],
+  "toolchain": "Go1.27.1 explicit GOROOT GOENVoff GOTOOLCHAINlocal GOWORKoff GOPROXYoff GOSUMDBoff; race driver CGO1, Linux CLI arm64 CGO0",
+  "results": {
+    "offered": 2560,
+    "completed": 2560,
+    "business_failures": 0,
+    "Node_budget_rejection_total": 0,
+    "locked_denials": 0,
+    "Search_phase_denials": 0,
+    "rounds": [
+      {
+        "round": "0",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "33.818084ms",
+        "p99": "55.40775ms",
+        "max": "56.480459ms"
+      },
+      {
+        "round": "1",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "14.797334ms",
+        "p99": "38.662125ms",
+        "max": "52.493333ms"
+      },
+      {
+        "round": "2",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "35.319375ms",
+        "p99": "54.835125ms",
+        "max": "56.138458ms"
+      },
+      {
+        "round": "3",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "13.2555ms",
+        "p99": "44.076583ms",
+        "max": "44.601375ms"
+      },
+      {
+        "round": "4",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "27.440459ms",
+        "p99": "44.495667ms",
+        "max": "44.880625ms"
+      },
+      {
+        "round": "5",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "31.971958ms",
+        "p99": "42.565958ms",
+        "max": "43.232417ms"
+      },
+      {
+        "round": "6",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "22.249375ms",
+        "p99": "43.214833ms",
+        "max": "43.829416ms"
+      },
+      {
+        "round": "7",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "25.301708ms",
+        "p99": "45.695541ms",
+        "max": "45.910208ms"
+      },
+      {
+        "round": "8",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "33.694292ms",
+        "p99": "54.78425ms",
+        "max": "56.11975ms"
+      },
+      {
+        "round": "9",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "31.9685ms",
+        "p99": "44.062042ms",
+        "max": "44.779791ms"
+      }
+    ],
+    "final_independent_oracles": {
+      "Mongo": {
+        "expected": 421,
+        "seen": 421
+      },
+      "Search": {
+        "expected": 431,
+        "seen": 431
+      },
+      "scope": "All acknowledged IDs/n/pad checked by original real-backend oracle, no per-document hash recorded by this small-record harness"
+    },
+    "Node_Store_RPC_wire_QI_final_zero_within_original5s": true,
+    "race_reports": 0
+  },
+  "causal_limit": "No denial happened, so there are no locked values or Search phase logs to classify. Sampled metrics are not denial-instant evidence. Logging can perturb scheduling. No root-cause claim and no upgrade of original failure.",
+  "cleanup": {
+    "Docker_after_stop_noOOM_exit0": true,
+    "backend_connections_final_owned0": true,
+    "owner_container_query": [
+      "docker",
+      "ps",
+      "-a",
+      "--filter",
+      "name=weir-memory-recovery-",
+      "--format",
+      "{{.ID}} {{.Names}} {{.Label \"weir.owner\"}} {{.Status}}"
+    ],
+    "query_actual_exit": 0,
+    "query_output": "",
+    "remaining_owned_CLI": 0,
+    "scope": "Original helper performs selected Docker state/OOM/exit inspection and owned removal; no extra backend health/read probes after completion"
+  },
+  "no_dependents_no_ingress_no_retry_no_source_changes": true,
+  "artifacts_sha256": {
+    "typed-memory-r2-burst-diagnostic-build.json": "c3c3d03b53d942a3c19305d46e35b84fcce6db383c6482de00952e24cd438347",
+    "typed-memory-r2-burst-combined-overlay.json": "7ac5574dba20f6e5e8fa4e94379480619d788b6124d5ade6e71cb6637ab3b1e7",
+    "typed-memory-r2-burst-causal-compile.txt": "8224d9f3cbe4afb3a11e36e22c5e9114665934c621d5bbaa24151a1fa367f992",
+    "typed-memory-r2-burst-causal-compile.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "typed-memory-r2-burst-causal-process.txt": "9204707ae19d1113f0509186166b756e394bce67c7a6ab383f2cfbbd864a58cc",
+    "typed-memory-r2-burst-causal-process.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "typed-memory-r2-burst-causal-source-before.json": "af3e2f96b8c0f300938a347ed2af8ddbb5e2638c308b5b61be53172929fa1e18",
+    "typed-memory-r2-burst-causal-source-after.json": "c7176d45757ef1c2a2344685232a70ed752ccb90107a8b495b33e507296166cb",
+    "typed-memory-r2-burst-causal-observations.json": "9e35c23a6974324c5b9159a64127a890febea75b43edb9700a0cdcb3aefead4a",
+    "typed-memory-burst-causal-driver.go.txt": "9048f18634b16855883f88196664de7b19e0eee9365a49b21c7495ef30d3e5d8",
+    "typed-memory-burst-causal-driver.json": "42a6210215211c7b96ffb255294fb6585fa04021d893efbc2c26297cb7fa8ba3",
+    "typed-memory-burst-causal-driver-manifest.json": "50be068325e24b9746e98c377c6b27ee089c6faece47b07dfd836f3103be6594"
+  },
+  "original_r2_evidence_unchanged_sha256": {
+    "typed-memory-fixed-r2-process.txt": "fca4a8c6b2606bd76d09091044c342bdc57fcea3332706e1fb3bd1ae4a9e0fff",
+    "typed-memory-fixed-r2-burst.txt": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51",
+    "typed-memory-fixed-r2-validation.json": "684caa7123a8956279ca2186e3105a83f007cd5d14c35ec9193d7756079a38ec"
+  },
+  "at_utc": "2026-10-16T17:10:08.913898+00:00"
+}

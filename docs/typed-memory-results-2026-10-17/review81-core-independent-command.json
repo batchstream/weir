@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=5",
+    "-timeout=90s",
+    "-overlay=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-independent-overlay.json",
+    "-run",
+    "^TestReview81IndependentMixedOwnersKeepNativeCountUntilFinalWire$",
+    "-v",
+    "./internal/store"
+  ],
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "head": "30a3d01790b7dacbd495b30f864de8b8b79e56dc",
+  "environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "started_utc": "2026-10-16T17:40:42.312222+00:00",
+  "seconds": 4.891845083999215,
+  "actual_exit": 0,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-independent-race.txt",
+  "scope": "Independent review-only overlay; no source mutations, databases or containers."
+}

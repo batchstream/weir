@@ -1,0 +1,69 @@
+{
+  "status": "FAIL",
+  "scope": "Clean goal8 r2 original typed acceptance PASS, dependent small mixed burst BLOCKS qualification. New ingress A/B never run.",
+  "source": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "binary_receipt": "typed-memory-fixed-r2-build.json",
+  "binary_sha256": "3aec17a432d69a4409e3b0bddb1f86be8b003863255b91aed0ac7970bffe94a4",
+  "source_before": "typed-memory-fixed-r2-source-before.json",
+  "source_after": "typed-memory-fixed-r2-source-after.json",
+  "source_18_hashes_before_after": "clean identical",
+  "groups": {
+    "original_typed": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "manifest": "typed-memory-fixed-r2-process-validation.json",
+      "sha256": "ca886886bdea8eb10a019ce14eaa59fc6995e945d8a2e8591b751b3a6ebf1c06"
+    },
+    "small_mixed_burst": {
+      "status": "FAIL",
+      "actual_exit": 1,
+      "manifest": "typed-memory-fixed-r2-burst-validation.json",
+      "sha256": "40d31741fbf13936393cc47617f0cc72a9ff46f31ec391d9e3a15022d18bd5de"
+    },
+    "diagnostics_1092": {
+      "status": "NOT RUN",
+      "reason": "stopped after burst failure"
+    },
+    "large_native_output5": {
+      "status": "NOT RUN",
+      "reason": "stopped after burst failure"
+    },
+    "small_native_progress3": {
+      "status": "NOT RUN",
+      "reason": "stopped after burst failure"
+    },
+    "ingress_A_B": {
+      "status": "NOT RUN",
+      "reason": "explicitly excluded"
+    },
+    "formal600_fault_autooff_matrix": {
+      "status": "NOT RUN",
+      "reason": "outside this window"
+    }
+  },
+  "cleanup": {
+    "owned_container_query": [
+      "docker",
+      "ps",
+      "-a",
+      "--filter",
+      "name=weir-memory-recovery-",
+      "--format",
+      "{{.ID}} {{.Names}} {{.Label \"weir.owner\"}} {{.Status}}"
+    ],
+    "actual_exit": 0,
+    "raw_output": "",
+    "owned_CLI_remaining": 0,
+    "CLI_noOOM_exit0_count": 8,
+    "scope": "7typed +1burst helper shutdown/removal; all8 noOOM/exit0; final ledger0 is cleanup evidence only and cannot clear business FAIL",
+    "shared_DB_services": "preserved; no DB queries or extra health checks after burst failure"
+  },
+  "preserved_raw_sha256": {
+    "typed-memory-fixed-process.txt": "5bbd3193a9231a4307e1dc71b236f52f3eea3b73c1073ff3bbdca9d3aead43be",
+    "typed-memory-causal-process.txt": "e415eba528ad49b6c61db9e37afdcde0a31f3ad1642a834a068c99886233cbdf",
+    "typed-memory-fixed-r2-process.txt": "fca4a8c6b2606bd76d09091044c342bdc57fcea3332706e1fb3bd1ae4a9e0fff",
+    "typed-memory-fixed-r2-burst.txt": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51"
+  },
+  "no_retries_no_policy_edits_no_source_edits": true,
+  "at_utc": "2026-10-16T17:03:54.912358+00:00"
+}

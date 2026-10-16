@@ -1,0 +1,5 @@
+--- FAIL: TestMongoTerminalReplyReleasesSpeculativeWindowBeforeCopy (0.00s)
+    record_memory_test.go:67: returned reply retained a speculative message window or lost backing capacity raw_len 1340 raw_cap 1387 working_at_copy [48002808] expected 4231
+FAIL
+FAIL	github.com/batchstream/weir/internal/backend/mongodb	0.922s
+FAIL

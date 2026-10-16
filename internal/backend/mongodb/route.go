@@ -6,6 +6,7 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
+	"github.com/batchstream/weir/internal/value"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -51,12 +52,9 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 		return nil, failure
 	}
 	work.ID = record.Index()
-	operation := record.Command()
-	if operation.GetRead() != nil {
-		work.WorkingBytes = 6 * a.documentBytes()
-	} else {
-		work.WorkingBytes = 24 << 20
-	}
+	// One batch owns one driver reply, while known input/frame copies add up.
+	work.IOReserve = a.nativeReplyBytes()
+	work.WorkingBytes = 2*record.Bytes() + execution.EntryOverheadBytes
 	native := work.Backend.(*plan)
 	work.BatchKey = "records"
 	if native.action == "read" || native.program != nil {
@@ -64,7 +62,6 @@ func (a *Adapter) PrepareRecord(ctx context.Context, record *execution.Record) (
 	}
 	if native.program != nil {
 		work.BatchKey += "/lua"
-		work.WorkingBytes = programWorkingBytes
 	}
 	return work, nil
 }
@@ -76,6 +73,15 @@ func (a *Adapter) Execute(ctx context.Context, works []*execution.Plan, emit exe
 	work := works[0]
 	if work.Command.GetRead() != nil || work.Command.GetMutate() != nil {
 		results := a.executeRecords(ctx, works)
+		for _, entry := range works {
+			if program := entry.Backend.(*plan).program; program != nil {
+				program.Source = ""
+				program.Input = value.Value{Kind: value.Missing}
+			}
+		}
+		if work.Memory != nil {
+			_ = work.Memory.SetWorking(0)
+		}
 		for i, result := range results {
 			_ = emit(works[i], result)
 		}

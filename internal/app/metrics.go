@@ -83,40 +83,44 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	)
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ready)
 
-	native := store.NativeMemorySnapshot{}
-	if n.nativeMemory != nil {
-		native = n.nativeMemory.Snapshot()
+	reserved := store.ExecutionMemorySnapshot{}
+	if n.executionMemory != nil {
+		reserved = n.executionMemory.Snapshot()
 	}
-	nativeKnown := 0.0
-	if native.Known {
-		nativeKnown = 1
+	executionKnown := 0.0
+	if reserved.Known {
+		executionKnown = 1
 	}
 	for name, value := range map[string]float64{
-		"budget_bytes":         float64(native.BudgetBytes),
-		"used_bytes":           float64(native.UsedBytes),
-		"resident_bytes":       float64(native.ResidentBytes),
-		"input_reserved_bytes": float64(native.InputReservedBytes),
-		"input_used_bytes":     float64(native.InputUsedBytes),
-		"io_reserve_bytes":     float64(native.IOReserveBytes),
-		"budget_known":         nativeKnown,
-		"leases":               float64(native.Count),
-		"leases_limit":         float64(native.CountLimit),
-		"starting":             float64(native.Starting),
-		"settled":              float64(native.Settled),
-		"borrowed":             float64(native.Borrowed),
-		"waiting":              float64(native.Waiting),
-		"terminal":             float64(native.Terminal),
+		"budget_bytes":         float64(reserved.BudgetBytes),
+		"used_bytes":           float64(reserved.UsedBytes),
+		"resident_bytes":       float64(reserved.ResidentBytes),
+		"wire_bytes":           float64(reserved.WireBytes),
+		"wire_buffers":         float64(reserved.WireCount),
+		"input_reserved_bytes": float64(reserved.InputReservedBytes),
+		"input_used_bytes":     float64(reserved.InputUsedBytes),
+		"io_reserve_bytes":     float64(reserved.IOReserveBytes),
+		"budget_known":         executionKnown,
+		"leases":               float64(reserved.Count),
+		"leases_limit":         float64(reserved.CountLimit),
+		"native_leases":        float64(reserved.NativeCount),
+		"native_leases_limit":  float64(reserved.NativeCountLimit),
+		"starting":             float64(reserved.Starting),
+		"settled":              float64(reserved.Settled),
+		"borrowed":             float64(reserved.Borrowed),
+		"waiting":              float64(reserved.Waiting),
+		"terminal":             float64(reserved.Terminal),
 	} {
 		desc := prometheus.NewDesc(
-			"weir_native_memory_"+name,
-			"Node-shared Native input, execution and retained-response reservations; this budget is shared across Stores, not additive per Store. Actual RSS remains independently observed.",
+			"weir_execution_memory_"+name,
+			"Node-shared input, execution, retained-result and live encoded-response reservations across typed and Native operations. Actual RSS remains independently observed.",
 			nil,
 			nil,
 		)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
 	}
-	nativeRejections := prometheus.NewDesc("weir_native_memory_budget_rejections_total", "Native denials at the shared memory boundary, including incomplete HTTP exchanges after dispatch; cancellations are excluded.", nil, nil)
-	ch <- prometheus.MustNewConstMetric(nativeRejections, prometheus.CounterValue, float64(native.BudgetRejections))
+	executionRejections := prometheus.NewDesc("weir_execution_memory_budget_rejections_total", "Capacity denials at the shared execution memory boundary, including incomplete exchanges after dispatch; cancellations are excluded.", nil, nil)
+	ch <- prometheus.MustNewConstMetric(executionRejections, prometheus.CounterValue, float64(reserved.BudgetRejections))
 
 	memory := n.guard.Snapshot()
 	observed, latched := 0.0, 0.0

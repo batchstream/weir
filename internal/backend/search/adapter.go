@@ -19,7 +19,6 @@ import (
 	"github.com/batchstream/weir/internal/backend"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/luaengine"
-	"github.com/batchstream/weir/internal/value"
 )
 
 const ElasticsearchProduct = "elasticsearch"
@@ -55,7 +54,9 @@ type plan struct {
 	action           string
 	source           []byte
 	program          *luaengine.Program
+	input            *pb.Document
 	waitUntilVisible bool
+	validated        bool
 }
 
 type capabilities struct {
@@ -195,6 +196,9 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed")
 	}
+	if errors.Is(err, execution.ErrExecutionMemory) {
+		return caps, recordMemoryFailure()
+	}
 	if err != nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification response unavailable")
 	}
@@ -282,8 +286,6 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 	}
 	if read := op.GetRead(); read != nil {
 		native.action = "read"
-		// Estimate publication from the batching window; larger replies grow it.
-		work.ResultBytes += a.options().BatchBytes
 	} else {
 		mutation := op.GetMutate()
 		native.waitUntilVisible = mutation.GetOptions().GetVisibility() == pb.MutationVisibility_QUERY_VISIBLE
@@ -305,31 +307,16 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 				if program.Input != nil && program.Input.ContentType != "application/json" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "Search Lua input must use JSON")
 				}
-				input := value.Value{Kind: value.Missing}
-				if program.Input != nil {
-					if validateJSON(ctx, program.Input.Data) != nil {
-						if ctx.Err() != nil {
-							return nil, protocol.ContextFailure(ctx)
-						}
-						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
-					}
-					var err error
-					input, err = value.DecodeJSON(ctx, program.Input.Data)
-					if err != nil {
-						if ctx.Err() != nil {
-							return nil, protocol.ContextFailure(ctx)
-						}
-						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input")
-					}
-				}
+
 				native.action = "program"
 				settings := a.options().Lua
-				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input, Limits: &settings}
+				luaProgram := &luaengine.Program{Limits: &settings}
 				native.program = luaProgram
+				native.input = program.Input
 			} else {
 				expression := action.AtomicTransform.GetBackendExpression()
-				if f := prepareExpression(ctx, expression); f != nil {
-					return nil, f
+				if expression.ContentType != ExpressionContentType {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported Search expression profile")
 				}
 				native.action = "expression"
 				native.source = expression.Data
@@ -341,12 +328,7 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 			if document.ContentType != "application/json" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only JSON source is supported")
 			}
-			if !object(document.Data) || validateJSON(ctx, document.Data) != nil {
-				if ctx.Err() != nil {
-					return nil, protocol.ContextFailure(ctx)
-				}
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON source")
-			}
+
 			native.source = document.Data
 		}
 	}

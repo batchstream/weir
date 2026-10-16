@@ -1,0 +1,55 @@
+=== RUN   TestBulkReplyScratchFloorIncludesDynamicSourcesAndFramesOnce
+--- PASS: TestBulkReplyScratchFloorIncludesDynamicSourcesAndFramesOnce (0.00s)
+=== RUN   TestReadNormalMetadataBudgetBeforeDispatch
+=== RUN   TestReadNormalMetadataBudgetBeforeDispatch/spare=0
+    read_memory_test.go:320: fixedB=134807542 spare=0 knownInputs=6138 oldIO=65536 nativeWorking=100663296 publicationGrowth=518140 metadataWire=408 metadataDecode=30920 staging={BudgetBytes:134807542 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:28464 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:5 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:1 Borrowed:0 Known:true BudgetRejections:0} queued={BudgetBytes:134807542 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:35119 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:7 CountLimit:32768 Starting:4 Settled:0 Waiting:2 Terminal:1 Borrowed:0 Known:true BudgetRejections:0}
+    read_memory_test.go:346: complete reads: goodHash=2 unavailable=0 capacity=0 metadataAttempts=1 mgetAttempts=1 ledgerRejections=0 held={BudgetBytes:134807542 UsedBytes:134735868 IOReserveBytes:48795648 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+=== RUN   TestReadNormalMetadataBudgetBeforeDispatch/spare=32768
+    read_memory_test.go:320: fixedB=134840310 spare=32768 knownInputs=6138 oldIO=65536 nativeWorking=100663296 publicationGrowth=518140 metadataWire=408 metadataDecode=30920 staging={BudgetBytes:134840310 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:28464 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:5 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:1 Borrowed:0 Known:true BudgetRejections:0} queued={BudgetBytes:134840310 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:35119 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:7 CountLimit:32768 Starting:4 Settled:0 Waiting:2 Terminal:1 Borrowed:0 Known:true BudgetRejections:0}
+    read_memory_test.go:346: complete reads: goodHash=2 unavailable=0 capacity=0 metadataAttempts=1 mgetAttempts=1 ledgerRejections=0 held={BudgetBytes:134840310 UsedBytes:134735868 IOReserveBytes:48795648 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+--- PASS: TestReadNormalMetadataBudgetBeforeDispatch (0.03s)
+    --- PASS: TestReadNormalMetadataBudgetBeforeDispatch/spare=0 (0.02s)
+    --- PASS: TestReadNormalMetadataBudgetBeforeDispatch/spare=32768 (0.01s)
+=== RUN   TestReadNormalChunkedMetadataBudgetBeforeDispatch
+    read_memory_test.go:320: fixedB=134807542 spare=0 knownInputs=6138 oldIO=65536 nativeWorking=100663296 publicationGrowth=518140 metadataWire=408 metadataDecode=30920 staging={BudgetBytes:134807542 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:28464 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:5 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:1 Borrowed:0 Known:true BudgetRejections:0} queued={BudgetBytes:134807542 UsedBytes:134786729 IOReserveBytes:48795648 ResidentBytes:33605293 InputReservedBytes:33554432 InputUsedBytes:35119 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:7 CountLimit:32768 Starting:4 Settled:0 Waiting:2 Terminal:1 Borrowed:0 Known:true BudgetRejections:0}
+    read_memory_test.go:346: complete reads: goodHash=2 unavailable=0 capacity=0 metadataAttempts=1 mgetAttempts=1 ledgerRejections=0 held={BudgetBytes:134807542 UsedBytes:134735868 IOReserveBytes:48795648 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+--- PASS: TestReadNormalChunkedMetadataBudgetBeforeDispatch (0.01s)
+=== RUN   TestRecordResponseHeadersBindCurrentReusedExchange
+--- PASS: TestRecordResponseHeadersBindCurrentReusedExchange (0.00s)
+=== RUN   TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF
+    review81_backend_r5_trailer_probe_test.go:151: head=a1fd658a571362f46e70a8c1172507faceca812e declared=4096 populated=300 before={label:before-first-body-read working:3306796 peak:3306796 names:4096 populated:0 modeledBytes:1081344} EOF={label:after-body-EOF-trailer-parser working:3457388 peak:3457388 names:4096 populated:300 modeledBytes:1086444} ownerHistory=[65536 300032 304008 598920 893832 1188744 1483656 1778568 2073480 2368392 2370240 3306796 3457388 65536] calls=1 status=200 raw="{}" err=<nil>
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF (0.01s)
+=== RUN   TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse
+=== RUN   TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/single_line_declaration
+    trailer_memory_test.go:206: declaration=4096 populated=300 before={working:3306796 modeled:1085740 declared:4096 populated:0} EOF={working:3457388 modeled:1090840 declared:4096 populated:300} peak=3457388 nextPeak=65536
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/undeclared_EOF
+    trailer_memory_test.go:206: declaration=0 populated=300 before={working:65536 modeled:12588 declared:0 populated:0} EOF={working:205604 modeled:96288 declared:300 populated:300} peak=205604 nextPeak=65536
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/merge_new_EOF_keys
+    trailer_memory_test.go:206: declaration=32 populated=300 before={working:65536 modeled:20972 declared:32 populated:0} EOF={working:233388 modeled:96288 declared:300 populated:300} peak=233388 nextPeak=65536
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/cancel_before_EOF
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse (0.03s)
+    --- PASS: TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/single_line_declaration (0.01s)
+    --- PASS: TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/undeclared_EOF (0.00s)
+    --- PASS: TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/merge_new_EOF_keys (0.00s)
+    --- PASS: TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse/cancel_before_EOF (0.01s)
+=== RUN   TestTypedPrefetchedUndeclaredTrailersAreApprovedBeforeGoParser
+--- PASS: TestTypedPrefetchedUndeclaredTrailersAreApprovedBeforeGoParser (0.00s)
+=== RUN   TestTrailerWorkspaceBoundsDirectBodyReadsAndRejectsOverflow
+--- PASS: TestTrailerWorkspaceBoundsDirectBodyReadsAndRejectsOverflow (0.01s)
+=== RUN   TestTrailerWindowCoversCrossBlockFragmentedEOF
+--- PASS: TestTrailerWindowCoversCrossBlockFragmentedEOF (0.00s)
+=== RUN   TestFinishedOrUnownedBodyGuardPreservesContextMemoryOwner
+--- PASS: TestFinishedOrUnownedBodyGuardPreservesContextMemoryOwner (0.00s)
+=== RUN   TestTrailerCapacityAfterMutationSendRemainsUnknownWithoutReplay
+2026/10/17 02:38:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestTrailerCapacityAfterMutationSendRemainsUnknownWithoutReplay (0.01s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/search	2.009s

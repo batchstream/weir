@@ -1,0 +1,629 @@
+{
+  "status": "FAIL",
+  "blocking": true,
+  "scope": "Original10x256 mixed1KiB real SDK regression; all2560 results collected by unchanged harness after first business failure; no second test run",
+  "raw": "typed-memory-fixed-r2-burst.txt",
+  "raw_sha256": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51",
+  "actual_exit": 1,
+  "command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLINativeSmallBurstPreservesAdmission$",
+    "-timeout",
+    "5m",
+    "-v",
+    "./internal/app"
+  ],
+  "source": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "binary_sha256": "3aec17a432d69a4409e3b0bddb1f86be8b003863255b91aed0ac7970bffe94a4",
+  "runtime_identities": [
+    {
+      "product": "weir",
+      "version": "local-21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+      "revision": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    }
+  ],
+  "fixed_caller_seconds": 3,
+  "fixed_cleanup_seconds": 5,
+  "no_retry_or_overlay": true,
+  "business_failure_count": 42,
+  "classification": "All42 are round0 Search Put with UNKNOWN + RESOURCE_EXHAUSTED execution working memory capacity exhausted. No confirmed APPLIED or NOT_STARTED in these failure results.",
+  "first_failure": {
+    "round": "0",
+    "sequence": "199",
+    "backend": "search",
+    "method": "1",
+    "elapsed": "33.015ms",
+    "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+    "raw_line": 72,
+    "id": "write-199"
+  },
+  "failed_IDs_and_origins": [
+    {
+      "round": "0",
+      "sequence": "199",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "33.015ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 72,
+      "id": "write-199"
+    },
+    {
+      "round": "0",
+      "sequence": "109",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "38.976042ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 74,
+      "id": "write-109"
+    },
+    {
+      "round": "0",
+      "sequence": "181",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "38.850916ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 78,
+      "id": "write-181"
+    },
+    {
+      "round": "0",
+      "sequence": "235",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "36.461125ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 80,
+      "id": "write-235"
+    },
+    {
+      "round": "0",
+      "sequence": "223",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "38.934792ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 81,
+      "id": "write-223"
+    },
+    {
+      "round": "0",
+      "sequence": "247",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "33.911542ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 82,
+      "id": "write-247"
+    },
+    {
+      "round": "0",
+      "sequence": "217",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "36.622709ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 83,
+      "id": "write-217"
+    },
+    {
+      "round": "0",
+      "sequence": "121",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "40.007083ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 86,
+      "id": "write-121"
+    },
+    {
+      "round": "0",
+      "sequence": "1",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "44.239375ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 87,
+      "id": "write-1"
+    },
+    {
+      "round": "0",
+      "sequence": "73",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.397875ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 88,
+      "id": "write-73"
+    },
+    {
+      "round": "0",
+      "sequence": "67",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "43.658834ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 90,
+      "id": "write-67"
+    },
+    {
+      "round": "0",
+      "sequence": "43",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "42.810667ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 100,
+      "id": "write-43"
+    },
+    {
+      "round": "0",
+      "sequence": "19",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "44.841334ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 101,
+      "id": "write-19"
+    },
+    {
+      "round": "0",
+      "sequence": "31",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "42.711291ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 103,
+      "id": "write-31"
+    },
+    {
+      "round": "0",
+      "sequence": "241",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "35.584541ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 105,
+      "id": "write-241"
+    },
+    {
+      "round": "0",
+      "sequence": "175",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.397167ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 107,
+      "id": "write-175"
+    },
+    {
+      "round": "0",
+      "sequence": "115",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.542667ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 108,
+      "id": "write-115"
+    },
+    {
+      "round": "0",
+      "sequence": "127",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.456167ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 111,
+      "id": "write-127"
+    },
+    {
+      "round": "0",
+      "sequence": "13",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "43.435167ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 112,
+      "id": "write-13"
+    },
+    {
+      "round": "0",
+      "sequence": "187",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "38.622792ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 121,
+      "id": "write-187"
+    },
+    {
+      "round": "0",
+      "sequence": "193",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "37.50625ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 128,
+      "id": "write-193"
+    },
+    {
+      "round": "0",
+      "sequence": "103",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.364667ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 131,
+      "id": "write-103"
+    },
+    {
+      "round": "0",
+      "sequence": "163",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "37.534958ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 132,
+      "id": "write-163"
+    },
+    {
+      "round": "0",
+      "sequence": "79",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "42.035834ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 133,
+      "id": "write-79"
+    },
+    {
+      "round": "0",
+      "sequence": "211",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "38.11ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 134,
+      "id": "write-211"
+    },
+    {
+      "round": "0",
+      "sequence": "253",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "36.935041ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 135,
+      "id": "write-253"
+    },
+    {
+      "round": "0",
+      "sequence": "55",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "43.425333ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 136,
+      "id": "write-55"
+    },
+    {
+      "round": "0",
+      "sequence": "205",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "37.6095ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 139,
+      "id": "write-205"
+    },
+    {
+      "round": "0",
+      "sequence": "151",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "37.077625ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 140,
+      "id": "write-151"
+    },
+    {
+      "round": "0",
+      "sequence": "49",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "45.336292ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 145,
+      "id": "write-49"
+    },
+    {
+      "round": "0",
+      "sequence": "25",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "45.624125ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 146,
+      "id": "write-25"
+    },
+    {
+      "round": "0",
+      "sequence": "7",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "46.882708ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 151,
+      "id": "write-7"
+    },
+    {
+      "round": "0",
+      "sequence": "97",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "42.803042ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 153,
+      "id": "write-97"
+    },
+    {
+      "round": "0",
+      "sequence": "37",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "44.989958ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 157,
+      "id": "write-37"
+    },
+    {
+      "round": "0",
+      "sequence": "157",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "36.945917ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 164,
+      "id": "write-157"
+    },
+    {
+      "round": "0",
+      "sequence": "229",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.064041ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 165,
+      "id": "write-229"
+    },
+    {
+      "round": "0",
+      "sequence": "85",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "40.673875ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 167,
+      "id": "write-85"
+    },
+    {
+      "round": "0",
+      "sequence": "61",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "43.895875ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 168,
+      "id": "write-61"
+    },
+    {
+      "round": "0",
+      "sequence": "91",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "40.909959ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 169,
+      "id": "write-91"
+    },
+    {
+      "round": "0",
+      "sequence": "133",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "41.600833ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 172,
+      "id": "write-133"
+    },
+    {
+      "round": "0",
+      "sequence": "139",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "40.918125ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 176,
+      "id": "write-139"
+    },
+    {
+      "round": "0",
+      "sequence": "169",
+      "backend": "search",
+      "method": "1",
+      "elapsed": "40.282125ms",
+      "origin": "Put lacked APPLIED evidence: outcome:UNKNOWN  failure:{code:RESOURCE_EXHAUSTED  message:\"execution working memory capacity exhausted\"}",
+      "raw_line": 177,
+      "id": "write-169"
+    }
+  ],
+  "rounds": [
+    {
+      "round": "0",
+      "offered": "256",
+      "received": "256",
+      "completed": "214",
+      "p50": "39.849875ms",
+      "p99": "50.780708ms",
+      "max": "55.622667ms"
+    },
+    {
+      "round": "1",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "32.84675ms",
+      "p99": "49.306833ms",
+      "max": "49.585458ms"
+    },
+    {
+      "round": "2",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "14.786375ms",
+      "p99": "37.725584ms",
+      "max": "51.6675ms"
+    },
+    {
+      "round": "3",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "29.416958ms",
+      "p99": "72.396333ms",
+      "max": "73.346959ms"
+    },
+    {
+      "round": "4",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "24.424542ms",
+      "p99": "47.127875ms",
+      "max": "47.421875ms"
+    },
+    {
+      "round": "5",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "23.165625ms",
+      "p99": "41.740042ms",
+      "max": "42.253291ms"
+    },
+    {
+      "round": "6",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "37.167833ms",
+      "p99": "48.742ms",
+      "max": "49.509334ms"
+    },
+    {
+      "round": "7",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "27.1295ms",
+      "p99": "45.926708ms",
+      "max": "46.192875ms"
+    },
+    {
+      "round": "8",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "23.705666ms",
+      "p99": "36.691708ms",
+      "max": "37.349208ms"
+    },
+    {
+      "round": "9",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "27.242542ms",
+      "p99": "42.800375ms",
+      "max": "43.936166ms"
+    }
+  ],
+  "Node_budget_rejection_delta": 1,
+  "Search_independent_oracle": {
+    "planned_writes": 430,
+    "seeded_hot": 1,
+    "final_seen": 431,
+    "final_expected_acknowledged_plus_hot": 389,
+    "extra_IDs": [
+      "write-1",
+      "write-7",
+      "write-13",
+      "write-19",
+      "write-25",
+      "write-31",
+      "write-37",
+      "write-43",
+      "write-49",
+      "write-55",
+      "write-61",
+      "write-67",
+      "write-73",
+      "write-79",
+      "write-85",
+      "write-91",
+      "write-97",
+      "write-103",
+      "write-109",
+      "write-115",
+      "write-121",
+      "write-127",
+      "write-133",
+      "write-139",
+      "write-151",
+      "write-157",
+      "write-163",
+      "write-169",
+      "write-175",
+      "write-181",
+      "write-187",
+      "write-193",
+      "write-199",
+      "write-205",
+      "write-211",
+      "write-217",
+      "write-223",
+      "write-229",
+      "write-235",
+      "write-241",
+      "write-247",
+      "write-253"
+    ],
+    "all_extra_IDs_match_UNKNOWN_results": true,
+    "unknown_effect_scope": "ID existence/cardinality independently observed; old harness expected map only contains APPLIED, so raw does not preserve or validate full Source n/pad/hash for UNKNOWN IDs. No additional database reads performed after FAIL.",
+    "acknowledged_effect_scope": "Existing expected APPLIED IDs checked by the original independent oracle; unexpected UNKNOWN IDs are a separate blocking failure, not replay evidence"
+  },
+  "denial_cause_scope": "Counter transition and sampled Used/Resident/starting do not identify exact locked denial branch; no diagnostic instrumentation in this clean artifact. Subsequent root cause work required.",
+  "pre_denial_samples": [
+    "    native_burst_integration_test.go:157: burst_snapshot round=0 sample_lag=15.48875ms Native=map[borrowed:0 budget_bytes:4.98163165e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:3.3554432e+07 input_used_bytes:212694 io_reserve_bytes:4.840192e+07 leases:47 leases_limit:32768 native_leases:14 native_leases_limit:1024 resident_bytes:3.3554432e+07 settled:0 starting:1 terminal:0 used_bytes:8.1692307e+07 waiting:46 wire_buffers:0 wire_bytes:0]",
+    "    native_burst_integration_test.go:157: burst_snapshot round=0 sample_lag=25.888666ms Native=map[borrowed:0 budget_bytes:4.97098205e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:3.3554432e+07 input_used_bytes:840713 io_reserve_bytes:4.840192e+07 leases:165 leases_limit:32768 native_leases:69 native_leases_limit:1024 resident_bytes:3.7195441e+07 settled:17 starting:14 terminal:0 used_bytes:3.66375982e+08 waiting:134 wire_buffers:1 wire_bytes:1025]",
+    "    native_burst_integration_test.go:157: burst_snapshot round=0 sample_lag=33.687749ms Native=map[borrowed:0 budget_bytes:4.97098205e+08 budget_known:1 budget_rejections_total:1 input_reserved_bytes:3.3554432e+07 input_used_bytes:176494 io_reserve_bytes:4.840192e+07 leases:35 leases_limit:32768 native_leases:18 native_leases_limit:1024 resident_bytes:3.3946629e+07 settled:2 starting:10 terminal:6 used_bytes:4.67217511e+08 waiting:17 wire_buffers:2 wire_bytes:2317]"
+  ],
+  "Node_Store_RPC_wire_QI_final0": true,
+  "CLI_noOOM_exit0_count": 1,
+  "no_qualification_claim_from_cleanup": true,
+  "race_reports": 0
+}

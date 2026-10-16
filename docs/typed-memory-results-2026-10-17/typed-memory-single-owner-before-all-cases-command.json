@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "./internal/store",
+    "-run",
+    "^TestExecutionMemorySingleOwner",
+    "-count=1",
+    "-v"
+  ],
+  "exit_code": 1,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-all-cases.txt",
+  "test_source_sha256": "169de78f8ec145413bda87d06a04622f6e1adfb5cb13e44f33e0f5c271e56e9f",
+  "test_copy": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-all-cases-test.go.txt",
+  "ledger_sha256": "46a0360261e245d0f5b2f82856421d150781c67b3a6b82a334bfd790923691c8"
+}

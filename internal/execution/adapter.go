@@ -8,7 +8,16 @@ import (
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 )
 
-var ErrNativeMemory = errors.New("Native working memory capacity exhausted")
+var ErrExecutionMemory = errors.New("execution working memory capacity exhausted")
+
+// Memory reserves adapter allocations before use. SetWorking describes the
+// entire shared batch, not one record. ReserveResult describes this record's
+// retained allocation, excluding the wire publication reserved by the runtime.
+// Both may shrink after the corresponding references have actually been cleared.
+type Memory interface {
+	SetWorking(int) error
+	ReserveResult(int) error
+}
 
 // NativeIO is the runtime's serial Native lifecycle boundary. GrowIO reserves
 // total working bytes before allocation. EndIO transfers that reservation to
@@ -30,6 +39,7 @@ type Plan struct {
 	WorkingBytes int
 	IOReserve    int
 	NativeIO     NativeIO
+	Memory       Memory
 	Context      context.Context
 	Backend      any
 }

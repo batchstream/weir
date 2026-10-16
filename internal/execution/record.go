@@ -30,9 +30,16 @@ func NewRecord(store string, index uint64, command *pb.Command) (*Record, error)
 	if read := command.GetRead(); read != nil {
 		resource = read.Resource
 	}
-	parts := make([]string, 0, strings.Count(resource, "/")+1)
+	// Mongo accepts three segments and Search two. A fourth marker preserves
+	// the adapters' existing arity rejection without allocating a slice or
+	// decoding a tree proportional to an unsupported resource's slash count.
+	parts := make([]string, 0, 4)
 	remaining := resource
 	for {
+		if len(parts) == 3 {
+			parts = append(parts, "")
+			break
+		}
 		piece, rest, more := strings.Cut(remaining, "/")
 		// Public validation checks canonical spelling, UTF-8 and forbidden segments.
 		decoded, err := url.PathUnescape(piece)

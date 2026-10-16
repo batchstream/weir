@@ -14,16 +14,17 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
-func testNativeMemory(allowance uint64) *NativeMemory {
-	memory := NewNativeMemory()
+func testExecutionMemory(allowance uint64) *ExecutionMemory {
+	memory := NewExecutionMemory()
 	snapshot := overload.Snapshot{RecoveryAllowance: allowance, RecoveryAllowanceKnown: true}
 	memory.ObserveMemory(snapshot)
 	return memory
 }
 
-func TestNativeMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
-	memory := testNativeMemory(768 << 20)
+func TestExecutionMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
+	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
+	work.Command = nativeCall()
 	lease, failure := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
@@ -53,7 +54,7 @@ func TestNativeMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	lease.terminal(20)
-	if snapshot := memory.Snapshot(); snapshot.Terminal != 1 || snapshot.UsedBytes != reserved+publication || snapshot.InputUsedBytes != input {
+	if snapshot := memory.Snapshot(); snapshot.Terminal != 1 || snapshot.UsedBytes != reserved || snapshot.InputUsedBytes != input {
 		t.Fatal("terminal publication retained a cleaned response peak", snapshot)
 	}
 	lease.release()
@@ -63,8 +64,8 @@ func TestNativeMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 	}
 }
 
-func TestNativeMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) {
-	memory := NewNativeMemory()
+func TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) {
+	memory := NewExecutionMemory()
 	work := plan(1, "native", false)
 	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("initial unknown memory looked like actual overload", failure)
@@ -109,10 +110,11 @@ func TestNativeMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) {
 	}
 }
 
-func TestNativeMemoryCountIsSharedAndIndependentOfInputQueueLimit(t *testing.T) {
-	memory := testNativeMemory(3 << 30)
+func TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit(t *testing.T) {
+	memory := testExecutionMemory(3 << 30)
 	work := plan(1, "native", false)
-	leases := make([]*nativeLease, 0, nativeCountLimit)
+	work.Command = nativeCall()
+	leases := make([]*executionLease, 0, nativeCountLimit)
 	for range nativeCountLimit {
 		lease, failure := memory.admit(work)
 		if failure != nil {
@@ -140,7 +142,7 @@ func TestNativeMemoryCountIsSharedAndIndependentOfInputQueueLimit(t *testing.T) 
 }
 
 func TestNativeTerminalCannotGrowBeyondOwnedCapacity(t *testing.T) {
-	memory := testNativeMemory(768 << 20)
+	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
 	first, failure := memory.admit(work)
 	if failure != nil {
@@ -160,7 +162,7 @@ func TestNativeTerminalCannotGrowBeyondOwnedCapacity(t *testing.T) {
 	memory.budget = memory.used
 	memory.mu.Unlock()
 	before := memory.Snapshot()
-	if err := first.terminal(2 << 20); err != execution.ErrNativeMemory {
+	if err := first.terminal(2 << 20); err != execution.ErrExecutionMemory {
 		t.Fatal("oversized terminal bypassed the Node bound", err)
 	}
 	if after := memory.Snapshot(); after.UsedBytes != before.UsedBytes || after.UsedBytes > after.BudgetBytes {
@@ -177,7 +179,7 @@ func TestNativeTerminalCannotGrowBeyondOwnedCapacity(t *testing.T) {
 }
 
 func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
-	memory := testNativeMemory(96 << 20)
+	memory := testExecutionMemory(96 << 20)
 	work := plan(1, "native", false)
 	first, failure := memory.admit(work)
 	if failure != nil {
@@ -189,21 +191,23 @@ func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 		t.Fatal(failure)
 	}
 	defer second.release()
-	publication := uint64(first.publication - nativeQueuedWindow)
-	held := int((memory.budget - memory.inputReserved - 2*publication - (1 << 20)) / 2)
+	// Retain a genuinely small response; only the second initial estimate
+	// consumes the temporary workspace that will converge.
+	held := protocol.NativeChunk + execution.EntryOverheadBytes
 	if started, _ := first.start(held, defaultNativeIOReserve); !started {
 		t.Fatal("first response could not start")
 	}
 	if err := first.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
-	if started, _ := second.start(held, defaultNativeIOReserve); !started {
+	initial := int(memory.budget-memory.Snapshot().UsedBytes) - (1 << 20)
+	if started, _ := second.start(initial, defaultNativeIOReserve); !started {
 		t.Fatal("second initial IO could not start")
 	}
 	if started, waiting := first.beginRead(2 << 20); started || !waiting {
 		t.Fatal("initial IO convergence was mistaken for fixed output pressure", started, waiting)
 	}
-	if err := second.settle(1<<20, 1); err != nil {
+	if err := second.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
 	if started, waiting := first.beginRead(2 << 20); !started || waiting {
@@ -213,7 +217,7 @@ func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 	if started, waiting := second.beginRead(readWindow); started || !waiting {
 		t.Fatal("a real ongoing body read was mistaken for fixed output pressure", started, waiting)
 	}
-	if err := first.settle(1<<20, 1); err != nil {
+	if err := first.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
 	if started, waiting := second.beginRead(readWindow); !started || waiting {
@@ -248,8 +252,8 @@ func (a *nativeInitialIOAdapter) Execute(ctx context.Context, plans []*execution
 	_ = emit(work, event)
 }
 
-func TestNativeMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases(t *testing.T) {
-	memory := NewNativeMemory()
+func TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases(t *testing.T) {
+	memory := NewExecutionMemory()
 	memory.known, memory.trusted = true, true
 	memory.budget = memory.reserve + (1 << 20)
 	adapter := &nativeInitialIOAdapter{entered: make(chan struct{}, 1)}
@@ -311,10 +315,10 @@ func (a *nativeLargeHeldAdapter) Execute(ctx context.Context, works []*execution
 	a.singleExecutionAdapter.Execute(ctx, works, emit)
 }
 
-func TestNodeNativeMemorySharesThirtyTwoLargeOutputsAcrossStores(t *testing.T) {
+func TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores(t *testing.T) {
 	// A 1 GiB process with the default 70% recovery line has a 477.9 MiB
 	// Native budget. All Stores share it; the same capacity is never multiplied.
-	memory := testNativeMemory((1 << 30) * 70 / 100)
+	memory := testExecutionMemory((1 << 30) * 70 / 100)
 	limits := DefaultLimits()
 	limits.MaxInFlight = 1
 	var runtimes []*Runtime
@@ -418,9 +422,9 @@ complete:
 }
 
 func TestNativeStartupCanBorrowReserveAfterSmallCapacityOutputsSettle(t *testing.T) {
-	memory := testNativeMemory((256 << 20) * 70 / 100)
+	memory := testExecutionMemory((256 << 20) * 70 / 100)
 	work := plan(1, "native", false)
-	var leases []*nativeLease
+	var leases []*executionLease
 	for range 3 {
 		lease, failure := memory.admit(work)
 		if failure != nil {

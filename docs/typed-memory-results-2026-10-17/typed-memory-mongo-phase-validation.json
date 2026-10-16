@@ -1,0 +1,51 @@
+{
+  "base": "45356f57972ee9a4032a84a3c11808426a6baea4",
+  "scope": "Backend-owned terminal Mongo reply phase; production frozen; no database/container/load executed",
+  "production_sha256": {
+    "internal/backend/mongodb/batch.go": "e42c0988c7ad980f951d7d12e236d825432dca4c53825d41f246e11ab228af98",
+    "internal/backend/mongodb/target.go": "e20c76f8cc00c23d61a20f162181814857b749bc9acca42acc599369a3178f16",
+    "internal/backend/mongodb/record_cursor.go": "2e976828a6cb0df26dd80c55db8a51d01fa893f04cce0b1cde1fcd71b5b4724a"
+  },
+  "tests_sha256": {
+    "internal/backend/mongodb/record_memory_test.go": "c0daa894b077c0c6594f273cdaf8387ebe0be54b33fdbe1ef9d67b409156874f",
+    "internal/backend/mongodb/record_phase_test.go": "7d163222aab01294a47a39f4fd6b169eee744fe3b66f6900e2156ff715508ef3",
+    "internal/backend/mongodb/record_runtime_memory_test.go": "290d3cc44f8a37c7695038ad27cd726a7d5faaee07f0c32166bad8a39b1aede2"
+  },
+  "raw": {
+    "typed-memory-mongo-phase-before.txt": {
+      "sha256": "ad74c0cb2a4cc31713681096dadc0e5fdc4370fb10aa4c6ebea0f62b1a9a8c70",
+      "status": "historical FAIL: first new test used non-existent direct document field; retained"
+    },
+    "typed-memory-mongo-phase-before-lifecycle.txt": {
+      "sha256": "5446df800d0f6d58ab2c917ba28a3dd53f3a617ca51319bba9657135d7008f4e",
+      "status": "expected lifecycle regression FAIL with frozen 453 Mongo production overlay"
+    },
+    "typed-memory-mongo-phase-after-first.txt": {
+      "sha256": "2828a7c5c3c482320c98903fe6e2bed6c000ef87cf61ea3ba4981f55d9d4c5a2",
+      "status": "PASS: isolated terminal-capacity phase regression"
+    },
+    "typed-memory-mongo-phase-after-focused.txt": {
+      "sha256": "8367c7b9d774518d0c231da55fe6f89ae5e241061614d8cd87bccc4a42475175",
+      "status": "historical FAIL: monitors included Adapter.Close endSessions; Runtime direct wire and actual codec both PASS"
+    },
+    "typed-memory-mongo-phase-after-focused-second.txt": {
+      "sha256": "b601359459d2e0c8e496a8bcad0c1fb5011d6341f3d47f2eb531006bd2c4666e",
+      "status": "PASS: all targeted phase/cursor/restore/malformed/128small and Runtime/direct-wire/TCP+SDK+actual-codec tests, exit0"
+    }
+  },
+  "observed_capacity": {
+    "B": 113544396,
+    "RecoveryAllowance": 170316595,
+    "R": 48401920,
+    "D": 16777152,
+    "recordBytes": 1247,
+    "inputUsed": 3296
+  },
+  "before_lifecycle": {
+    "rawLength": 1340,
+    "rawCapacity": 1387,
+    "workingAtCopy": 48002808,
+    "expectedActualWorking": 4231
+  },
+  "validation_state": "Targeted PASS; unified final race/vet is awaiting parent coordination"
+}

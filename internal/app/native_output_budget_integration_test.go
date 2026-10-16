@@ -80,12 +80,12 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	}
 	t.Logf("qualification=%t binary_SHA256=%s version=%s capacity=1GiB CPUs=2 stores=1 slow_streams=32 response_pad=8MiB stream_window=64KiB conn_window=4MiB caller_probe_budget=3s", qualification, digest, version)
 	initial := nativeOutputBudgetSample(t, service, "initial")
-	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_native_memory_leases_limit": 1024, "weir_native_memory_budget_known": 1} {
+	for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_execution_memory_leases_limit": 32768, "weir_execution_memory_native_leases_limit": 1024, "weir_execution_memory_budget_known": 1} {
 		if testmetrics.Sum(initial, name) != want {
 			t.Fatal("focused test changed a default Store policy", name, want)
 		}
 	}
-	budget := testmetrics.Sum(initial, "weir_native_memory_budget_bytes")
+	budget := testmetrics.Sum(initial, "weir_execution_memory_budget_bytes")
 	if budget <= 0 || budget > service.capacity*.70*2/3 {
 		t.Fatal("shared Native budget exceeded its default recovery-capacity bound", budget)
 	}
@@ -150,7 +150,7 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 		for {
 			metrics := service.sample(t)
 			idle := true
-			for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_native_memory_used_bytes", "weir_native_memory_leases", "weir_native_memory_starting", "weir_native_memory_settled", "weir_native_memory_borrowed", "weir_native_memory_resident_bytes", "weir_native_memory_waiting", "weir_native_memory_terminal"} {
+			for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_execution_memory_used_bytes", "weir_execution_memory_input_reserved_bytes", "weir_execution_memory_input_used_bytes", "weir_execution_memory_wire_bytes", "weir_execution_memory_wire_buffers", "weir_execution_memory_leases", "weir_execution_memory_native_leases", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_resident_bytes", "weir_execution_memory_waiting", "weir_execution_memory_terminal"} {
 				idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
 			}
 			if idle || time.Now().After(deadline) {
@@ -194,7 +194,7 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 		t.Fatal("slow Native state did not become stable within 10s", ready.Load())
 	}
 	nativeOutputBudgetLog(t, saturated, fmt.Sprintf("stable_before_probes ready=%d consumed=%d", ready.Load(), consumed.Load()))
-	if testmetrics.Sum(saturated, "weir_native_memory_used_bytes") > testmetrics.Sum(saturated, "weir_native_memory_budget_bytes") || testmetrics.Sum(saturated, "weir_native_memory_leases") != 32 {
+	if testmetrics.Sum(saturated, "weir_execution_memory_used_bytes") > testmetrics.Sum(saturated, "weir_execution_memory_budget_bytes") || testmetrics.Sum(saturated, "weir_execution_memory_leases") != 32 {
 		t.Fatal("large replies escaped the one Node memory ledger")
 	}
 	if testmetrics.Sum(saturated, "weir_memory_latched") != 0 || testmetrics.Sum(saturated, "weir_memory_cgroup_working_set_bytes") >= service.capacity*.80 {
@@ -236,7 +236,7 @@ func TestCLILargeNativeOutputBudgetPreservesHealthyQueries(t *testing.T) {
 	if slowContext.Err() != nil || testmetrics.Sum(after, "weir_watchdog_expirations_total") != testmetrics.Sum(initial, "weir_watchdog_expirations_total") {
 		t.Error("healthy progress depended on slow-call expiry or watchdog release")
 	}
-	if testmetrics.Sum(after, "weir_native_memory_budget_rejections_total") != testmetrics.Sum(initial, "weir_native_memory_budget_rejections_total") {
+	if testmetrics.Sum(after, "weir_execution_memory_budget_rejections_total") != testmetrics.Sum(initial, "weir_execution_memory_budget_rejections_total") {
 		t.Error("the bounded 32-reply scenario unexpectedly rejected Native work")
 	}
 }
@@ -322,7 +322,7 @@ func nativeOutputBudgetSample(t *testing.T, service *memoryRecoveryCLI, phase st
 func nativeOutputBudgetLog(t *testing.T, metrics map[string]*dto.MetricFamily, phase string) {
 	t.Helper()
 	values := make(map[string]float64)
-	for _, name := range []string{"process_resident_memory_bytes", "process_cpu_seconds_total", "go_memstats_heap_alloc_bytes", "go_memstats_heap_idle_bytes", "go_memstats_heap_released_bytes", "go_memstats_last_gc_time_seconds", "weir_memory_cgroup_working_set_bytes", "weir_memory_cgroup_limit_bytes", "weir_memory_latched", "weir_memory_unknown", "weir_memory_go_runtime_limit_bytes", "weir_store_overloaded", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_watchdog_expirations_total", "weir_backend_connections_owned", "weir_native_memory_budget_bytes", "weir_native_memory_used_bytes", "weir_native_memory_io_reserve_bytes", "weir_native_memory_budget_known", "weir_native_memory_leases", "weir_native_memory_leases_limit", "weir_native_memory_starting", "weir_native_memory_settled", "weir_native_memory_borrowed", "weir_native_memory_resident_bytes", "weir_native_memory_waiting", "weir_native_memory_terminal", "weir_native_memory_budget_rejections_total"} {
+	for _, name := range []string{"process_resident_memory_bytes", "process_cpu_seconds_total", "go_memstats_heap_alloc_bytes", "go_memstats_heap_idle_bytes", "go_memstats_heap_released_bytes", "go_memstats_last_gc_time_seconds", "weir_memory_cgroup_working_set_bytes", "weir_memory_cgroup_limit_bytes", "weir_memory_latched", "weir_memory_unknown", "weir_memory_go_runtime_limit_bytes", "weir_store_overloaded", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_watchdog_expirations_total", "weir_backend_connections_owned", "weir_execution_memory_budget_bytes", "weir_execution_memory_used_bytes", "weir_execution_memory_io_reserve_bytes", "weir_execution_memory_budget_known", "weir_execution_memory_leases", "weir_execution_memory_leases_limit", "weir_execution_memory_starting", "weir_execution_memory_settled", "weir_execution_memory_borrowed", "weir_execution_memory_resident_bytes", "weir_execution_memory_waiting", "weir_execution_memory_terminal", "weir_execution_memory_budget_rejections_total"} {
 		values[name] = testmetrics.Sum(metrics, name)
 	}
 	gc := metrics["go_gc_duration_seconds"].GetMetric()

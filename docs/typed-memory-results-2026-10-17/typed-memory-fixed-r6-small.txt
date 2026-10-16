@@ -1,0 +1,47 @@
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response
+    native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.905792ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=mongo store=records owned=0 peak=6 dialing=0 closing=0 acquired=6 released=6
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response
+    native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=3.336375ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=mongo store=records owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries (0.15s)
+    --- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response (0.02s)
+    --- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response (0.02s)
+=== RUN   TestSearchSlowNativeOutputAllowsHealthyQueries
+    native_progress_integration_test.go:70: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    native_progress_integration_test.go:92: backend=application/http slow_Native=32 healthy_typed_and_Native=7.844625ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=search store=records owned=0 peak=34 acquired=34 released=34
+--- PASS: TestSearchSlowNativeOutputAllowsHealthyQueries (0.16s)
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response
+    native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.724167ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=mongo store=records owned=0 peak=7 dialing=0 closing=0 acquired=7 released=7
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response
+    native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.104417ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=mongo store=records owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries (0.15s)
+    --- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response (0.03s)
+    --- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response (0.02s)
+=== RUN   TestSearchSlowNativeOutputAllowsHealthyQueries
+    native_progress_integration_test.go:70: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    native_progress_integration_test.go:92: backend=application/http slow_Native=32 healthy_typed_and_Native=5.698916ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=search store=records owned=0 peak=34 acquired=34 released=34
+--- PASS: TestSearchSlowNativeOutputAllowsHealthyQueries (0.10s)
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response
+    native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=5.1625ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=mongo store=records owned=0 peak=6 dialing=0 closing=0 acquired=6 released=6
+=== RUN   TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response
+    native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.147209ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:11 INFO backend_connections_closed backend=mongo store=records owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries (0.15s)
+    --- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response (0.02s)
+    --- PASS: TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response (0.02s)
+=== RUN   TestSearchSlowNativeOutputAllowsHealthyQueries
+    native_progress_integration_test.go:70: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    native_progress_integration_test.go:92: backend=application/http slow_Native=32 healthy_typed_and_Native=7.093083ms; default Stall=30s; no watchdog release
+2026/10/17 02:46:12 INFO backend_connections_closed backend=search store=records owned=0 peak=34 acquired=34 released=34
+--- PASS: TestSearchSlowNativeOutputAllowsHealthyQueries (0.11s)
+PASS
+ok  	github.com/batchstream/weir/internal/server	2.818s

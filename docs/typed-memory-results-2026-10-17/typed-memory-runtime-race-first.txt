@@ -1,0 +1,3 @@
+ok  	github.com/batchstream/weir/internal/store	3.181s
+ok  	github.com/batchstream/weir/internal/server	20.062s
+ok  	github.com/batchstream/weir/internal/execution	2.889s

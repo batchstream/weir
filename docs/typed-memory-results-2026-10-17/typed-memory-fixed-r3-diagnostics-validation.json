@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "scope": "Real Mongo in-process app maximum-series check; not Linux CLI execution",
+  "raw": "typed-memory-fixed-r3-diagnostics.txt",
+  "raw_sha256": "0cc546ac3538ae2f1cd29da044583a7cf96982d6f2267709db585ad08686c9e6",
+  "actual_exit": 0,
+  "exit_file": "typed-memory-fixed-r3-diagnostics.exit",
+  "driver_command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestDiagnosticsMaximumStaticSeries$",
+    "-timeout",
+    "2m",
+    "-v",
+    "./internal/app"
+  ],
+  "runtime_identities": [],
+  "race_reports": 0,
+  "pass_lines": [
+    [
+      "TestDiagnosticsMaximumStaticSeries",
+      "0.26s"
+    ]
+  ],
+  "CLI_Docker_after_stop_noOOM_exit0_count": 0,
+  "backend_owned0_close_events": 16,
+  "exact_static_Weir_series": 1092,
+  "Stores": 16,
+  "listeners": [
+    "business",
+    "peer-directory"
+  ],
+  "synthetic_executions": 0,
+  "scope_limit": "Go/process collector series excluded; not Docker cgroup containment evidence",
+  "source": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+  "binary_sha256": null,
+  "source_348_hashes_before_after": "clean identical",
+  "no_source_edits_no_overlay_no_retries": true
+}

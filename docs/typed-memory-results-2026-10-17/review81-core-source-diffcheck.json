@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "git",
+    "diff",
+    "--check",
+    "8c1b1b3bd1bd1519079f69a163c1772d171791e8",
+    "HEAD",
+    "--",
+    "*.go",
+    "go.mod",
+    "go.sum",
+    "README.md",
+    "docs/production-readiness.md",
+    "docs/typed-memory-qualification-2026-10-17.md"
+  ],
+  "actual_exit": 0,
+  "output": "",
+  "note": "The separate unrestricted diff check returned2 only on raw preserved .diff/.patch context whitespace; its original output and exit are retained in review81-core-identity.*."
+}

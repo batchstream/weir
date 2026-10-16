@@ -1,0 +1,82 @@
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.01s)
+=== RUN   TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise
+    execution_memory_single_owner_test.go:75: SDK BSON=16777152 input=16780464 IO+working=81557342 before={BudgetBytes:113544396 UsedBytes:32571238 IOReserveBytes:48401920 ResidentBytes:32571238 InputReservedBytes:32571238 InputUsedBytes:16780464 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:0 Waiting:1 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:113544396 IOReserveBytes:48401920 ResidentBytes:31987054 InputReservedBytes:31987054 InputUsedBytes:16780464 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise (0.05s)
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/48003006
+    execution_memory_single_owner_test.go:135: working=48003006 next=33553791 revoked=982553 before={BudgetBytes:113544396 UsedBytes:80574244 IOReserveBytes:48401920 ResidentBytes:32571238 InputReservedBytes:32571238 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:113145482 IOReserveBytes:48401920 ResidentBytes:65142476 InputReservedBytes:31588685 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/16780234
+    execution_memory_single_owner_test.go:135: working=16780234 next=33553791 revoked=982553 before={BudgetBytes:113544396 UsedBytes:49351472 IOReserveBytes:48401920 ResidentBytes:32571238 InputReservedBytes:32571238 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:81922710 IOReserveBytes:48401920 ResidentBytes:65142476 InputReservedBytes:31588685 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/48003006 (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/16780234 (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime
+=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/0
+    execution_memory_single_owner_test.go:245: document=16777152 cap=16777152 max-index encoded=16777201 wrapper=49
+=== RUN   TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/4096
+    execution_memory_single_owner_test.go:245: document=16777152 cap=16781248 max-index encoded=16777201 wrapper=49
+--- PASS: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/0 (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerLargeReadCompletesThroughRuntime/4096 (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/second_input
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/other_live_wire
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/same_live_wire
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/existing_result
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/extra_io
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/actual_peak
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/known_zero
+--- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/second_input (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/other_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/same_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/existing_result (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/extra_io (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/actual_peak (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/known_zero (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/second_input
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/other_live_wire
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/actual_peak
+--- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/second_input (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/other_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/actual_peak (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease
+--- PASS: TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease (0.00s)
+=== RUN   TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake
+    native_admission_burst_test.go:108: transient initial IO: before={BudgetBytes:96330752 UsedBytes:72093951 IOReserveBytes:48401920 ResidentBytes:23964416 InputReservedBytes:23964416 InputUsedBytes:6146 WireBytes:0 WireCount:0 NativeCount:2 NativeCountLimit:1024 Count:2 CountLimit:32768 Starting:1 Settled:0 Waiting:1 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} admitted={BudgetBytes:96330752 UsedBytes:72093951 IOReserveBytes:48401920 ResidentBytes:23964416 InputReservedBytes:23964416 InputUsedBytes:9219 WireBytes:0 WireCount:0 NativeCount:3 NativeCountLimit:1024 Count:3 CountLimit:32768 Starting:1 Settled:0 Waiting:2 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    native_admission_burst_test.go:165: all admitted inputs completed/canceled and released: {BudgetBytes:96330752 UsedBytes:0 IOReserveBytes:48401920 ResidentBytes:0 InputReservedBytes:0 InputUsedBytes:0 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:0 CountLimit:32768 Starting:0 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake (0.00s)
+=== RUN   TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission
+    native_admission_burst_test.go:299: same-byte real IO completion: before={BudgetBytes:134217728 UsedBytes:134217728 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:3073 WireBytes:0 WireCount:0 NativeCount:1 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:0 Waiting:0 Terminal:0 Borrowed:1 Known:true BudgetRejections:0} after={BudgetBytes:134217728 UsedBytes:134217728 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:6146 WireBytes:0 WireCount:0 NativeCount:2 NativeCountLimit:1024 Count:2 CountLimit:32768 Starting:0 Settled:0 Waiting:0 Terminal:1 Borrowed:1 Known:true BudgetRejections:1}
+--- PASS: TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission (0.00s)
+=== RUN   TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck
+--- PASS: TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck (0.00s)
+=== RUN   TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink
+--- PASS: TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink (0.00s)
+=== RUN   TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak
+--- PASS: TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak (0.00s)
+=== RUN   TestNativeInputPromiseConcurrentAdmissionCannotOverdraw
+--- PASS: TestNativeInputPromiseConcurrentAdmissionCannotOverdraw (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/store	1.992s

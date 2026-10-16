@@ -1,0 +1,45 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=1",
+    "./internal/store",
+    "./internal/server",
+    "./internal/execution",
+    "./internal/app",
+    "./cmd/weir"
+  ],
+  "working_directory": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "started": "2026-10-16T16:57:45.148224+00:00",
+  "finished": "2026-10-16T16:58:07.572434+00:00",
+  "exit_code": 0,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-affected-race.txt",
+  "raw_sha256": "2726211e1245d4b0f086046e1895cdbe1531a99ccf1066afa5b432a9142e9adc",
+  "source_before": {
+    "internal/store/execution_memory.go": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+    "internal/store/execution_memory_single_owner_test.go": "14cc2f078c9494d3f7c6519ceccc35ae5c5c3909120358a69e9de392f23053ef",
+    "internal/store/runtime.go": "bbed7b4c743769bfdf754344fadf3318821e18b8f76f5e1f35e9275e0bb44fd5",
+    "internal/server/codec.go": "37a30a42f8e240144e850c52393da93b21526e4785777893e1cb8ce8cc52994e",
+    "internal/server/execute.go": "c8fb03525b21dd107b07d991a71dbc8940cd0af238b4950a1f47fd2a23bde106",
+    "internal/execution/adapter.go": "f3fecc6ba5370ee98879e1e681b109539c991c12190c0eb4e95141c39cf38875",
+    "internal/execution/event.go": "2dea383d46b3cfd2dd880e9f2fccb73f0c017b52edb363b68848ef48b069adc2"
+  },
+  "source_after": {
+    "internal/store/execution_memory.go": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+    "internal/store/execution_memory_single_owner_test.go": "14cc2f078c9494d3f7c6519ceccc35ae5c5c3909120358a69e9de392f23053ef",
+    "internal/store/runtime.go": "bbed7b4c743769bfdf754344fadf3318821e18b8f76f5e1f35e9275e0bb44fd5",
+    "internal/server/codec.go": "37a30a42f8e240144e850c52393da93b21526e4785777893e1cb8ce8cc52994e",
+    "internal/server/execute.go": "c8fb03525b21dd107b07d991a71dbc8940cd0af238b4950a1f47fd2a23bde106",
+    "internal/execution/adapter.go": "f3fecc6ba5370ee98879e1e681b109539c991c12190c0eb4e95141c39cf38875",
+    "internal/execution/event.go": "2dea383d46b3cfd2dd880e9f2fccb73f0c017b52edb363b68848ef48b069adc2"
+  },
+  "environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off"
+  }
+}

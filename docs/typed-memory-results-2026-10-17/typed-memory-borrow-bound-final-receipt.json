@@ -1,0 +1,116 @@
+{
+  "created_utc": "2026-10-16T17:58:19.372497+00:00",
+  "workdir": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "base_head": "30a3d01790b7dacbd495b30f864de8b8b79e56dc",
+  "scope": "P1 bounded Native/typed shared short handoffs and terminal lifecycle; no DB/CLI/process qualification",
+  "production_files": [
+    "internal/store/execution_memory.go",
+    "internal/store/runtime.go"
+  ],
+  "source_sha256": {
+    "internal/store/execution_memory.go": "fc3bf0ec936d739a0fef8ff2ff028a63ac59f0a71129afab79dbb3adf5b52e22",
+    "internal/store/runtime.go": "e0a898931a23522f77d815133cc7f4629ee9466767e759d8bbc2d1cbbeec35aa",
+    "internal/store/execution_memory_borrow_bound_test.go": "1a2b9c0032b083b0fe03f92759fc3cb4543d789c7be04fa1d2895d9c24b6823d",
+    "internal/store/execution_memory_single_owner_test.go": "5ce0fa07c6a739c065c69fe915e7adfaae444006eeef2e66254de570df2caba5",
+    "internal/store/native_admission_burst_test.go": "b6eadebf3151f4756a79b07526af8e22bb2f4eed1520da9040bc8c5fcba8270d",
+    "internal/store/native_memory_test.go": "6a0da6b069c6a20a466c831dd5d574aceb3979e0aad94d37041000664d4224f3",
+    "internal/store/native_progress_test.go": "de5bfbefae9177e052526e00ae3a3d2d8479f4fdab0d96c916bfdc50f1d78765",
+    "internal/store/native_read_capacity_test.go": "a81865f06502de5cf99a21978af0da6887d277b208eef9538a638d9a137cd1a7"
+  },
+  "constants": {
+    "native_chunk": 65536,
+    "borrow_window": 262656,
+    "borrow_limit": 2,
+    "default_native_io_reserve": 48139264,
+    "progress_reserve": 656384,
+    "total_io_reserve": 48795648,
+    "budget_unchanged": true
+  },
+  "before": {
+    "original_independent_proof": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-borrow-progress-race.txt",
+    "own_exact_before": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-before-race.txt",
+    "own_before_exit": 1,
+    "own_before_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-before-ledger.go.txt",
+    "own_before_source_sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+    "limitation": "Original proof assumes successful large borrowed reply; new contract atomically rejects that settlement, cleans attempted output with INCOMPLETE, then passes healthy Native at the same 500000000-byte budget. Original proof and all failed author iterations remain immutable."
+  },
+  "after": {
+    "focused_raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-focused-final.txt",
+    "focused_exit": 0,
+    "core_race_raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-core-race.txt",
+    "core_race_exit": 0,
+    "core_race_source_unchanged": true,
+    "core_vet_raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-core-vet.txt",
+    "core_vet_exit": 0,
+    "package_seconds": {
+      "store": 3.41,
+      "server": 20.086,
+      "execution": 1.662,
+      "app": 8.016,
+      "cmd/weir": 19.69
+    },
+    "original_2048_gate": {
+      "test": "TestContinuousReadsAcrossConcurrentSessions",
+      "sessions": 64,
+      "records_per_session": 32,
+      "rounds": 4,
+      "included_in": "full internal/server -race -count=1",
+      "file": "internal/server/route_acceptance_test.go",
+      "file_sha256": "c738aed13262fc9d0fefa2b7d4c6557acd81442d99a8ab0704d93e84377729c0",
+      "byte_identical_to_base": true
+    }
+  },
+  "raws": {
+    "typed-memory-borrow-bound-before-race.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-before-race.txt",
+      "sha256": "019324c7e8802a11efb29c66dca7fc536b31fce25ef8769c309fefce8920218e"
+    },
+    "typed-memory-borrow-bound-focused-first.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-focused-first.txt",
+      "sha256": "e3dcfa0c4b4d661f2ccfd5dfc5645ccaf9abe1928a8a326be159c350f926be50"
+    },
+    "typed-memory-borrow-bound-store-first.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-store-first.txt",
+      "sha256": "0964dfe87ac7ac2cbbb8f7210e7194d2d334bf6115d6f3f989297445bf0dd871"
+    },
+    "typed-memory-borrow-bound-store-second.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-store-second.txt",
+      "sha256": "0b0744c5b2c49119b2af64ddf1f5866a5ec8a498d9fd2f6f7d7e7b6d0e7d44cc"
+    },
+    "typed-memory-borrow-bound-runtime-first.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-runtime-first.txt",
+      "sha256": "1b4f7081ce90909f20757bc0fc4f8aeb64b537ca11dbcd6f8824173fe4dfc75e"
+    },
+    "typed-memory-borrow-bound-focused-final.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-focused-final.txt",
+      "sha256": "81a2d3b73ae765405dc2082ab7722cfeb9e0880b98fdca20460e82dc381b014b"
+    },
+    "typed-memory-borrow-bound-core-race.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-core-race.txt",
+      "sha256": "6abbe2a87b3d29a548cd67bb5140d4e388fdf88f715bc252d09cc5c11968c286"
+    },
+    "typed-memory-borrow-bound-core-vet.txt": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-core-vet.txt",
+      "sha256": "2a3954627795f50423fd88b74045fed1aa6fcc709aa93aa4113bc4d4ac5d9a30"
+    }
+  },
+  "old_fixture_changes": [
+    "R-derived Q/shortage expectations are formulas; original observed numbers retained in before copies.",
+    "Same-byte cross-Store convergence keeps constant Used at B-R with a resident-fit final reply; larger nonconverging pending peak is genuine pre-attempt rejection.",
+    "Old giant borrowed headers fixture becomes legal two short handoffs plus genuinely oversized read workspace, still fails attempted exchanges without circular wait.",
+    "Terminal releases unused chunk promise after adapter cleanup, retaining actual single wire until Free."
+  ],
+  "invariants": [
+    "B unchanged; Q/counts/config/typed7/burst/output process gates unchanged.",
+    "At most two shared owners each owe at most W=262656 nonresident output bytes.",
+    "Failed settlement leaves all ownership/state/preparing unchanged except rejection count.",
+    "Resident credit survives capacity shrink; physical Used is never invented or dropped.",
+    "Single wire per invocation; normal server joins Free before next emission; canceled wire stays counted until true Free/ConnEnd.",
+    "NativeEnd records evidence until Adapter returns; completeLocked reserves bounded terminal after real cleanup.",
+    "Source remained frozen across full core race and vet; no new real backend qualification claimed."
+  ],
+  "gofmt_clean": true,
+  "diff_check_clean": true,
+  "production_frozen": true,
+  "no_commit_push": true
+}

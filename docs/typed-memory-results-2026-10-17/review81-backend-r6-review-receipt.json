@@ -1,0 +1,628 @@
+{
+  "status": "PASS_INDEPENDENT_ACCEPTANCE",
+  "code_head": "365c84616848d16c103be2ea9fd37c064bae5539",
+  "review_decision": "No blocking findings on tested code. Formal APPROVE awaits final doc-only PR head,351 identical code hashes and CI at that exact final head.",
+  "scope": "Independent backend reviewer, own sequential exclusive CPU/DB/CLI window; original P1 fixture then unchanged typed7,10x256burst,count3small. No production overlay/test gate edits/retries. Not full production certification.",
+  "source": {
+    "count": 351,
+    "before": "review81-backend-r6-before.json",
+    "after": "review81-backend-r6-after.json",
+    "all_351_identical_to_clean_build": true,
+    "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-fixed-r6-linux",
+    "binary_sha256": "610dd8f981dae280ad71cb9fb1249563a981c343ee4fc12588baf39d8f540d21",
+    "Go": "1.27.1 explicit GOROOT/GOENVoff/GOTOOLCHAINlocal/GOPROXYoff/GOSUMDBoff/GOWORKoff; driver-race-CGO1, CLI-linuxarm64-CGO0"
+  },
+  "stages": {
+    "trailer": {
+      "actual_exit": 0,
+      "driver_elapsed_seconds": 2.812006541993469,
+      "raw": "review81-backend-r6-trailer.txt",
+      "raw_sha256": "da0faf7f0491516bb5cd1e50bc942f16bc2ac831a437f59a48f5e8537f2c06a9",
+      "command": "review81-backend-r6-trailer-command.json"
+    },
+    "typed7": {
+      "actual_exit": 0,
+      "driver_elapsed_seconds": 33.60883145799744,
+      "raw": "review81-backend-r6-typed7.txt",
+      "raw_sha256": "e6afb4ed0deff77658f6dc89535dde6a051f6c6208d4261282b9364b0de0982d",
+      "command": "review81-backend-r6-typed7-command.json"
+    },
+    "burst": {
+      "actual_exit": 0,
+      "driver_elapsed_seconds": 40.69385758298449,
+      "raw": "review81-backend-r6-burst.txt",
+      "raw_sha256": "b3b6c0f1cd5759e0809c9bc09abf8bb311318a4fcc545f761c744f47985780aa",
+      "command": "review81-backend-r6-burst-command.json"
+    },
+    "small": {
+      "actual_exit": 0,
+      "driver_elapsed_seconds": 4.35003383399453,
+      "raw": "review81-backend-r6-small.txt",
+      "raw_sha256": "d26c2041415e3427e51ab621ee20537dceede79581f1b364f98683aab811b14e",
+      "command": "review81-backend-r6-small-command.json"
+    }
+  },
+  "P1_original_fixture": {
+    "original_fixture_sha256": "cde0e875e8b1fff7d88d70c94fcf44becb39a19052bf72079743cdfb2501c879",
+    "original_failed_result": "review81-backend-r5-trailer.exit =1 retained; r5 raw/source unchanged",
+    "new_run_actual_exit": 0,
+    "unmodified_fixture_old_tLog_head_label": "Fixture prints a1fd constant; actual compiled/reviewed code is365c with351 matching hashes. Fixture was deliberately not edited to change this log label.",
+    "before_body_working": 3306796,
+    "before_body_modeled": 1081344,
+    "EOF_working": 3457388,
+    "EOF_modeled": 1086444,
+    "declared": 4096,
+    "populated": 300,
+    "HTTP_status": 200,
+    "complete_body": "{}",
+    "business_HTTP_calls": 1,
+    "backend_connections_closed": "owned0 acquired1 released1",
+    "evidence": [
+      {
+        "raw_line": 2,
+        "text": "review81_backend_r5_trailer_probe_test.go:151: head=a1fd658a571362f46e70a8c1172507faceca812e declared=4096 populated=300 before={label:before-first-body-read working:3306796 peak:3306796 names:4096 populated:0 modeledBytes:1081344} EOF={label:after-body-EOF-trailer-parser working:3457388 peak:3457388 names:4096 populated:300 modeledBytes:1086444} ownerHistory=[65536 300032 304008 598920 893832 1188744 1483656 1778568 2073480 2368392 2370240 3306796 3457388 65536] calls=1 status=200 raw=\"{}\" err=<nil>"
+      },
+      {
+        "raw_line": 3,
+        "text": "2026/10/17 02:47:41 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1"
+      },
+      {
+        "raw_line": 4,
+        "text": "--- PASS: TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF (0.01s)"
+      }
+    ]
+  },
+  "typed7": {
+    "seven_subcases": "all PASS",
+    "pass_lines": [
+      {
+        "raw_line": 175,
+        "text": "--- PASS: TestCLITypedMemoryBudget (31.01s)"
+      },
+      {
+        "raw_line": 176,
+        "text": "--- PASS: TestCLITypedMemoryBudget/original_pressure/512MiB (4.02s)"
+      },
+      {
+        "raw_line": 177,
+        "text": "--- PASS: TestCLITypedMemoryBudget/original_pressure/1024MiB (4.81s)"
+      },
+      {
+        "raw_line": 178,
+        "text": "--- PASS: TestCLITypedMemoryBudget/no_stall/256MiB (1.81s)"
+      },
+      {
+        "raw_line": 179,
+        "text": "--- PASS: TestCLITypedMemoryBudget/no_stall/512MiB (4.00s)"
+      },
+      {
+        "raw_line": 180,
+        "text": "--- PASS: TestCLITypedMemoryBudget/no_stall/1024MiB (2.19s)"
+      },
+      {
+        "raw_line": 181,
+        "text": "--- PASS: TestCLITypedMemoryBudget/cross_store_typed_native/1024MiB (5.39s)"
+      },
+      {
+        "raw_line": 182,
+        "text": "--- PASS: TestCLITypedMemoryBudget/search_no_stall/1024MiB (5.68s)"
+      }
+    ],
+    "pressure_32_result_aggregates": [
+      {
+        "raw_line": 35,
+        "text": "typed_memory_budget_integration_test.go:101: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=6 complete_RPC_OK=6 capacity_denied=26 caller_deadline=0; caller deadlines are not correctness passes"
+      },
+      {
+        "raw_line": 74,
+        "text": "typed_memory_budget_integration_test.go:101: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=16 complete_RPC_OK=16 capacity_denied=16 caller_deadline=0; caller deadlines are not correctness passes"
+      },
+      {
+        "raw_line": 152,
+        "text": "typed_memory_budget_integration_test.go:135: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=20 complete_RPC_OK=20 capacity_denied=12 caller_deadline=0; caller deadlines are not correctness passes"
+      }
+    ],
+    "pressure_limit": "Original harness provides aggregate outcomes, no per-ID/index outcomes. No deadline mapping inferred. All pressure caller_deadline counts0 in this run.",
+    "healthy_progress": [
+      {
+        "raw_line": 10,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=229.525208ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 11,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=229.815959ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 48,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=4.201791ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 49,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=5.839917ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 126,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=27.450708ms within_original_hold=true error=<nil>"
+      },
+      {
+        "raw_line": 129,
+        "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=319.775875ms within_original_hold=true error=<nil>"
+      }
+    ],
+    "Mongo_large_complete_Put_hash_Read_Delete_absent_Missing_chains": [
+      {
+        "raw_line": 86,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-256-12582912 exact_BSON_bytes=12582912 sha256=5b1771d1ef9f171a9a880c22e5798176cb22ec8c08c8a1e0d69f4b27e6b4132f Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 87,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-256-16777152 exact_BSON_bytes=16777152 sha256=b16b146bd020679f6d2a14cb5841a1ec12e4f4c6217d6478a6c1c65ab4743e8f Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 99,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-512-12582912 exact_BSON_bytes=12582912 sha256=68352185c5e143f294b7c43abdd55771e9c5c1610cb90403b7b48b5f48bdc5e0 Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 100,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-512-16777152 exact_BSON_bytes=16777152 sha256=484c3906d61c324ac4c27ff2f3efcfd01fc6c2720e57a87632b672eaf16e84fd Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 112,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-1024-12582912 exact_BSON_bytes=12582912 sha256=95d1b337eb482b475698dd33c6d9bf134af451cdc74aed3e71194d429e9a6fde Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      },
+      {
+        "raw_line": 113,
+        "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-1024-16777152 exact_BSON_bytes=16777152 sha256=35d80e694e14213c66f0314b24d49620641f88f44a1e18ab67682daf5a95a1e3 Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+      }
+    ],
+    "Search_large_and_manyfield_complete_Put_GET_Read_chains": [
+      {
+        "raw_line": 164,
+        "text": "typed_memory_budget_integration_test.go:138: Search_real_GET_oracle id=large12MiB bytes=12582946 ContentLength=12583063 TransferEncoding=[]; typed unknown-length coverage is a separate controlled backend test"
+      },
+      {
+        "raw_line": 165,
+        "text": "typed_memory_budget_integration_test.go:138: Search_business_success id=large12MiB bytes=12582946 sha256=c61cfa9fdde97c647823b52a71434c91f36e949306c781c8c0738ace6063c8cd Put_APPLIED=true independent_GET_hash=true SDK_Read_hash=true"
+      },
+      {
+        "raw_line": 166,
+        "text": "typed_memory_budget_integration_test.go:138: Search_real_GET_oracle id=manyfields12MiB bytes=12628007 ContentLength=12628129 TransferEncoding=[]; typed unknown-length coverage is a separate controlled backend test"
+      },
+      {
+        "raw_line": 167,
+        "text": "typed_memory_budget_integration_test.go:138: Search_business_success id=manyfields12MiB bytes=12628007 sha256=b173c530b5392f0916fbbf3c9907a51805c11e310e8d1eeb2730c36bf5a179d0 Put_APPLIED=true independent_GET_hash=true SDK_Read_hash=true"
+      }
+    ],
+    "Search_framing_limit": "Real ES large GETs ContentLength known. Unknown-length framing is covered by independent original P1 probe and focused authored tests, not represented as real ES chunked large-response evidence.",
+    "final_ownership": [
+      {
+        "raw_line": 37,
+        "text": "typed_memory_budget_integration_test.go:101: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.065708ms"
+      },
+      {
+        "raw_line": 76,
+        "text": "typed_memory_budget_integration_test.go:101: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.027375ms"
+      },
+      {
+        "raw_line": 89,
+        "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.122834ms"
+      },
+      {
+        "raw_line": 102,
+        "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=8.725375ms"
+      },
+      {
+        "raw_line": 115,
+        "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=8.762291ms"
+      },
+      {
+        "raw_line": 154,
+        "text": "typed_memory_budget_integration_test.go:135: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=15.270792ms"
+      },
+      {
+        "raw_line": 169,
+        "text": "typed_memory_budget_integration_test.go:138: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=15.014833ms"
+      }
+    ]
+  },
+  "burst": {
+    "offered": 2560,
+    "completed": 2560,
+    "business_failures": 0,
+    "budget_rejections": 0,
+    "retries": 0,
+    "rounds": [
+      {
+        "round": "0",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "35.232041ms",
+        "p99": "57.16825ms",
+        "max": "58.814584ms"
+      },
+      {
+        "round": "1",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "21.941333ms",
+        "p99": "38.850875ms",
+        "max": "39.377333ms"
+      },
+      {
+        "round": "2",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "24.424834ms",
+        "p99": "41.767709ms",
+        "max": "42.269875ms"
+      },
+      {
+        "round": "3",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "24.909875ms",
+        "p99": "37.36925ms",
+        "max": "37.761666ms"
+      },
+      {
+        "round": "4",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "34.01675ms",
+        "p99": "49.3455ms",
+        "max": "49.657333ms"
+      },
+      {
+        "round": "5",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "24.932667ms",
+        "p99": "52.934292ms",
+        "max": "53.799292ms"
+      },
+      {
+        "round": "6",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "22.997167ms",
+        "p99": "46.894333ms",
+        "max": "47.009917ms"
+      },
+      {
+        "round": "7",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "25.95925ms",
+        "p99": "40.805583ms",
+        "max": "42.562625ms"
+      },
+      {
+        "round": "8",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "32.700875ms",
+        "p99": "45.483833ms",
+        "max": "45.591542ms"
+      },
+      {
+        "round": "9",
+        "offered": "256",
+        "received": "256",
+        "completed": "256",
+        "p50": "29.610333ms",
+        "p99": "43.36275ms",
+        "max": "43.647ms"
+      }
+    ],
+    "independent_oracles": [
+      {
+        "raw_line": 277,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=43 seen=43 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 278,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=44 seen=44 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 528,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=85 seen=85 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 529,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=87 seen=87 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 757,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=127 seen=127 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 758,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=130 seen=130 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1014,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=169 seen=169 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1015,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=173 seen=173 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1289,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=211 seen=211 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1290,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=216 seen=216 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1541,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=253 seen=253 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1542,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=259 seen=259 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1716,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=295 seen=295 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1717,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=302 seen=302 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1966,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=337 seen=337 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 1967,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=345 seen=345 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2241,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=379 seen=379 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2242,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=388 seen=388 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2509,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=mongo expected=421 seen=421 every_ID_n_pad_checked=true"
+      },
+      {
+        "raw_line": 2510,
+        "text": "native_burst_integration_test.go:172: independent_oracle store=search expected=431 seen=431 every_ID_n_pad_checked=true"
+      }
+    ],
+    "final_Mongo": "421/421 everyID/n/pad and exact cardinality",
+    "final_Search": "431/431 everyID/n/pad and exact cardinality",
+    "hash_limit": "Original1KiB oracle validates fields/cardinality; no full serialized-document hashes claimed.",
+    "final_ownership": [
+      {
+        "raw_line": 2511,
+        "text": "native_burst_integration_test.go:193: final5s Node/Store/RPC/wire ownership0 Q=I=0 Native=map[borrowed:0 budget_bytes:4.89504221e+08 budget_known:1 budget_rejections_total:0 input_reserved_bytes:0 input_used_bytes:0 io_reserve_bytes:4.8795648e+07 leases:0 leases_limit:32768 native_leases:0 native_leases_limit:1024 resident_bytes:0 settled:0 starting:0 terminal:0 used_bytes:0 waiting:0 wire_buffers:0 wire_bytes:0]"
+      }
+    ]
+  },
+  "small": {
+    "original_count": 3,
+    "cases": "Mongo valid and early-invalid, Search healthy typed+Native progress",
+    "healthy_progress": [
+      {
+        "raw_line": 3,
+        "text": "native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.960875ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 6,
+        "text": "native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.170625ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 13,
+        "text": "native_progress_integration_test.go:92: backend=application/http slow_Native=32 healthy_typed_and_Native=6.447ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 18,
+        "text": "native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=5.165125ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 21,
+        "text": "native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.703833ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 28,
+        "text": "native_progress_integration_test.go:92: backend=application/http slow_Native=32 healthy_typed_and_Native=7.282833ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 33,
+        "text": "native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=5.319709ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 36,
+        "text": "native_progress_integration_test.go:64: backend=application/bson slow_Native=32 healthy_typed_and_Native=4.251709ms; default Stall=30s; no watchdog release"
+      },
+      {
+        "raw_line": 43,
+        "text": "native_progress_integration_test.go:92: backend=application/http slow_Native=32 healthy_typed_and_Native=5.98675ms; default Stall=30s; no watchdog release"
+      }
+    ],
+    "scope": "Real backends through in-process app/server; no Linux CLI/cgroup claim. No watchdog release."
+  },
+  "cleanup": {
+    "CLI_total": 8,
+    "typed_CLI_after_stop": [
+      {
+        "raw_line": 38,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176466935843000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 41,
+        "text": "2026/10/16 18:47:50 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=5 dialing=0 closing=0 acquired=5 released=5"
+      },
+      {
+        "raw_line": 42,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 77,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176470958756000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 80,
+        "text": "2026/10/16 18:47:55 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=7 dialing=0 closing=0 acquired=7 released=7"
+      },
+      {
+        "raw_line": 81,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 90,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176475764661000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 93,
+        "text": "2026/10/16 18:47:57 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+      },
+      {
+        "raw_line": 94,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 103,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176477569954000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 106,
+        "text": "2026/10/16 18:48:01 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+      },
+      {
+        "raw_line": 107,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 116,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176481574236000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 119,
+        "text": "2026/10/16 18:48:03 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+      },
+      {
+        "raw_line": 120,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 155,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176483766735000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 158,
+        "text": "2026/10/16 18:48:08 INFO backend_connections_closed backend=mongo store=sibling owned=0 peak=8 dialing=0 closing=0 acquired=8 released=8"
+      },
+      {
+        "raw_line": 159,
+        "text": "2026/10/16 18:48:08 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=5 dialing=0 closing=0 acquired=5 released=5"
+      },
+      {
+        "raw_line": 160,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      },
+      {
+        "raw_line": 170,
+        "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-8065-1792176489282476000 true false 0 error=<nil>"
+      },
+      {
+        "raw_line": 173,
+        "text": "2026/10/16 18:48:14 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1"
+      },
+      {
+        "raw_line": 174,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      }
+    ],
+    "burst_CLI_after_stop": [
+      {
+        "raw_line": 2514,
+        "text": "2026/10/16 18:48:55 INFO backend_connections_closed backend=search store=search owned=0 peak=47 acquired=425 released=425"
+      },
+      {
+        "raw_line": 2515,
+        "text": "2026/10/16 18:48:55 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=10 dialing=0 closing=0 acquired=10 released=10"
+      },
+      {
+        "raw_line": 2516,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      }
+    ],
+    "scope": "Unchanged harness asserts owner,after-stop Runningfalse/OOMfalse/Exit0 and removal. Eight CLI passed; no leftover owned memory-recovery containers. Shared fixtures preserved.",
+    "remaining_owned_CLI_query": "",
+    "fixed_recovery_bound_seconds": 5,
+    "exclusive_window_returned": true
+  },
+  "preserved_prior_evidence": {
+    "before_hashes": {
+      "review81-backend-r5-trailer-probe_test.go.txt": "cde0e875e8b1fff7d88d70c94fcf44becb39a19052bf72079743cdfb2501c879",
+      "review81-backend-r5-trailer.txt": "4a0fa38276ae078a2ac01420ba2983c39d3935a7800ed5f08f8a5eb71b157623",
+      "review81-backend-r5-trailer.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "review81-backend-r5-trailer-result.json": "c7a7cd4533319aff4979c0be77765042c4cc32c0ee137992c3b38d2e4e152fa4",
+      "review81-backend-typed7.txt": "71c57dce65e2d3dbcc5934252dadff22b23d89de3b88a360f74a238da7b2dd9a",
+      "review81-backend-typed7.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "typed-memory-fixed-process.txt": "5bbd3193a9231a4307e1dc71b236f52f3eea3b73c1073ff3bbdca9d3aead43be",
+      "typed-memory-fixed-r2-burst.txt": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51",
+      "typed-memory-fixed-r4-burst.txt": "e6e876708f85bf78cf1bfa60a97b52aec2bee33bf94874ec97fe628c4fe8a938"
+    },
+    "after_unchanged": {
+      "review81-backend-r5-trailer-probe_test.go.txt": true,
+      "review81-backend-r5-trailer.txt": true,
+      "review81-backend-r5-trailer.exit": true,
+      "review81-backend-r5-trailer-result.json": true,
+      "review81-backend-typed7.txt": true,
+      "review81-backend-typed7.exit": true,
+      "typed-memory-fixed-process.txt": true,
+      "typed-memory-fixed-r2-burst.txt": true,
+      "typed-memory-fixed-r4-burst.txt": true
+    }
+  },
+  "not_independently_run_this_round": [
+    "Full default/race/vet suites beyond selected tests",
+    "Authored trailer focused suite beyond original independent P1 probe",
+    "diagnostics maximum-series",
+    "five slow-Native CLI output rounds",
+    "ingress",
+    "Lua",
+    "formal600",
+    "fault qualification"
+  ],
+  "evidence_sha256": {
+    "review81-backend-r6-plan.json": "ed12f65cd5e8f23c5aca163a05ec984061d5c6c6927dd2d51baf8d0b89b91ab7",
+    "review81-backend-r6-before.json": "737b60e31edfaad1e43c1cf1360d77e93162e0473e486949760fcb329ea99176",
+    "review81-backend-r6-after.json": "d89b9cf949d20b6124b72df32a4c2bdc4b991c158d8ec389c8939369adc68c88",
+    "review81-backend-r6-trailer.txt": "da0faf7f0491516bb5cd1e50bc942f16bc2ac831a437f59a48f5e8537f2c06a9",
+    "review81-backend-r6-trailer.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "review81-backend-r6-trailer-command.json": "1ed6a6a0c2767648f97d2be857591b9c33be49c1fcc43f56763b83fb75f4786b",
+    "review81-backend-r6-trailer-result.json": "05f186ee7a13ad9c87739a6d39f6a5867ecb866aaaa415854d277a34259dae91",
+    "review81-backend-r6-typed7.txt": "e6afb4ed0deff77658f6dc89535dde6a051f6c6208d4261282b9364b0de0982d",
+    "review81-backend-r6-typed7.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "review81-backend-r6-typed7-command.json": "4f2b1346751cca60c60c39438a7063d838d42a4ebf10a9dd7a8dc082623f4f5e",
+    "review81-backend-r6-typed7-result.json": "5dafb74741fdda10ed7a554ecbade6aa45e6514f3bd1d08b814aa5f704bf2af3",
+    "review81-backend-r6-burst.txt": "b3b6c0f1cd5759e0809c9bc09abf8bb311318a4fcc545f761c744f47985780aa",
+    "review81-backend-r6-burst.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "review81-backend-r6-burst-command.json": "f7a6807768333ecf99f95db5f05e778b369b308e408e2280bf0099b4f4fbee28",
+    "review81-backend-r6-burst-result.json": "6c6eb7e9bfe5724ea83f30efc79126a589074b6a6bde0af52b8d1df39b32f723",
+    "review81-backend-r6-small.txt": "d26c2041415e3427e51ab621ee20537dceede79581f1b364f98683aab811b14e",
+    "review81-backend-r6-small.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "review81-backend-r6-small-command.json": "60120378de8eaabaec91992f467c0e8604869bca0bf818a9aa2bbdc301d710f2",
+    "review81-backend-r6-small-result.json": "993c85777372f3cdc4741f2d3d20adab9062fbe86c176ed2fa848847958d8209"
+  },
+  "at_utc": "2026-10-16T18:50:01.766148+00:00"
+}

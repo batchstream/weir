@@ -1,0 +1,105 @@
+ok  	github.com/batchstream/weir/internal/backend/mongodb	8.829s
+--- FAIL: TestMixedRecordBatchMergesReadsAndEveryMutation (0.00s)
+    batch_test.go:109: mutation result credits or batched pre-read working memory incorrect 512 41917
+2026/10/17 01:26:20 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+2026/10/17 01:26:21 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+2026/10/17 01:26:21 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+2026/10/17 01:26:34 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=2 released=2
+2026/10/17 01:26:34 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:34 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:34 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:36 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:36 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=4 released=4
+2026/10/17 01:26:36 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=2 released=2
+2026/10/17 01:26:36 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=2 released=2
+2026/10/17 01:26:36 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=2 released=2
+2026/10/17 01:26:36 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:38 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=2 released=2
+2026/10/17 01:26:38 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:38 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:38 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:40 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=3 acquired=3 released=3
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=3 acquired=3 released=3
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=2 released=2
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=17 released=17
+2026/10/17 01:26:45 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=4 released=4
+2026/10/17 01:27:08 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=2 released=2
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:10 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- FAIL: TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory (0.00s)
+    --- FAIL: TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory/replace (0.00s)
+        record_preflight_test.go:47: mutation declarations misplaced pre-read scratch 512 41881
+    --- FAIL: TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory/program (0.00s)
+        record_preflight_test.go:47: mutation declarations misplaced pre-read scratch 512 41941
+2026/10/17 01:27:14 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/17 01:27:14 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=7 released=7
+2026/10/17 01:27:14 INFO backend_connections_closed backend=search store=search owned=0 peak=2 acquired=7 released=7
+2026/10/17 01:27:14 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+FAIL
+FAIL	github.com/batchstream/weir/internal/backend/search	55.565s
+FAIL

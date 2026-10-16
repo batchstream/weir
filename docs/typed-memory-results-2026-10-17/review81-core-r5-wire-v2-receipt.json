@@ -1,0 +1,51 @@
+{
+  "head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "started_utc": "2026-10-16T18:27:35.216033+00:00",
+  "seconds": 3.239988582994556,
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "argv": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=5",
+    "-timeout=40s",
+    "-overlay=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-r5-wire-v2-overlay.json",
+    "-run",
+    "^TestReview81R5ActualCodecHandoffsKeepCanceledWireUntilRetirement$",
+    "-v",
+    "./internal/server"
+  ],
+  "environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "actual_exit": 0,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-core-r5-wire-v2-race.txt",
+  "raw_sha256": "29fac28a5d07b488d848d7cad58ea1559d2d6fa38a7b3c2d14245c10bc86390e",
+  "probe_sha256": "bc5e7c86beef32cb2eef2ef0c95d131fa460bb569b16eee51e98f5421596575c",
+  "core_head_diff_check": {
+    "argv": [
+      "git",
+      "diff",
+      "--exit-code",
+      "HEAD",
+      "--",
+      "internal/store",
+      "internal/server",
+      "internal/execution",
+      "go.mod",
+      "go.sum"
+    ],
+    "actual_exit": 0,
+    "output": ""
+  },
+  "core_source_unchanged": true,
+  "all_source_unchanged": true,
+  "head_unchanged": true,
+  "scope": "Independent review-only actual codec/Runtime/wire/ConnEnd overlay, no DB or CLI; fixed60000000B. Prior fixture512byte error retained. Not merge approval."
+}

@@ -1,0 +1,18 @@
+{
+  "stage": "only approved double64 floor plus cause mapping, after-first raw retained",
+  "files": [
+    {
+      "path": "internal/backend/search/adapter.go",
+      "sha256": "07bd714935f5c65ec07e02fe4e636a6b2bad38901e2d5ddd64988effa24ddaf1"
+    },
+    {
+      "path": "internal/backend/search/batch.go",
+      "sha256": "7c1e4ce2197ea8bf1e9a88d9ffddcdbe42a430b37939fdb829e8e0c88a715e8b"
+    },
+    {
+      "path": "internal/backend/search/read_memory_test.go",
+      "sha256": "2eb10d58ec12aefa0440d396336a8d9ee7ea9163f1528e3a87f43d1397ce3419"
+    }
+  ],
+  "patch": "diff --git a/internal/backend/search/adapter.go b/internal/backend/search/adapter.go\nindex 9e04763..513c201 100644\n--- a/internal/backend/search/adapter.go\n+++ b/internal/backend/search/adapter.go\n@@ -196,6 +196,9 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa\n \tif err == errTransport && ctx.Err() == nil {\n \t\treturn caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, \"index qualification transport failed\")\n \t}\n+\tif errors.Is(err, execution.ErrExecutionMemory) {\n+\t\treturn caps, recordMemoryFailure()\n+\t}\n \tif err != nil {\n \t\treturn caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, \"index qualification response unavailable\")\n \t}\ndiff --git a/internal/backend/search/batch.go b/internal/backend/search/batch.go\nindex 7412673..2932026 100644\n--- a/internal/backend/search/batch.go\n+++ b/internal/backend/search/batch.go\n@@ -414,10 +414,9 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [\n \tif memory.reply != 0 {\n \t\t// Exactly Runtime's sum(Plan.WorkingBytes) + max(IOReserve):\n \t\t// sum(known input) + sum(item ACK) + one envelope/header window.\n-\t\tmemory.reply += (64 << 10) + bulkAckEnvelopeWorking\n-\t} else {\n-\t\tmemory.base += 64 << 10\n+\t\tmemory.reply += bulkAckEnvelopeWorking\n \t}\n+\tmemory.reply += 64 << 10\n \tctx = context.WithValue(ctx, recordMemoryContextKey, memory)\n \tworks = append([]*execution.Plan(nil), works...)\n \treadOnly := true\n"
+}

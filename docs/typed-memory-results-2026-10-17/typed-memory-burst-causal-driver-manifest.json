@@ -1,0 +1,42 @@
+{
+  "scope": "DIAGNOSTIC ONLY NONQUAL; prepared source only, no build/test/backend access",
+  "base_source": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "base_source_status": "clean",
+  "original_test": "internal/app/native_burst_integration_test.go",
+  "original_test_sha256": "255d9ab935905ab2294ccf394a9a840061959d17a070a9f095fb818ddb392078",
+  "driver": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-burst-causal-driver.go.txt",
+  "driver_sha256": "9048f18634b16855883f88196664de7b19e0eee9365a49b21c7495ef30d3e5d8",
+  "overlay": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-burst-causal-driver.json",
+  "overlay_sha256": "42a6210215211c7b96ffb255294fb6585fa04021d893efbc2c26297cb7fa8ba3",
+  "changes": [
+    "two diagnostic-only file comments",
+    "expected identity state clean-commit replaced with dev plus version dev check"
+  ],
+  "otherwise_byte_identical": true,
+  "unchanged_gates": [
+    "original10x256",
+    "mixed1KiB Read/Put/Native",
+    "caller3s",
+    "default1GiB/2CPU",
+    "all original counters and Store policy checks",
+    "Node/Store/RPC/wire/QI cleanup5s",
+    "all original per-round backend oracles",
+    "all original failure behavior; no failfast alteration inside driver"
+  ],
+  "identity_kept": [
+    "base revision21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+    "dirty=false",
+    "target=linux/arm64",
+    "absolute binary path and exact SHA256 env check"
+  ],
+  "timing_snapshots": "none added",
+  "no_retries_no_policy_changes": true,
+  "binary_receipt": "pending root diagnostic CLI build; must never use clean-artifact qualification label",
+  "no_load": "not compiled or run; DB/Docker untouched",
+  "preserved_r2_evidence_sha256": {
+    "typed-memory-fixed-r2-process.txt": "fca4a8c6b2606bd76d09091044c342bdc57fcea3332706e1fb3bd1ae4a9e0fff",
+    "typed-memory-fixed-r2-burst.txt": "951b39b9f720a9d87183b62e1fe5a389583029a401e24b5697b7e519c4745d51",
+    "typed-memory-fixed-r2-validation.json": "684caa7123a8956279ca2186e3105a83f007cd5d14c35ec9193d7756079a38ec"
+  },
+  "at_utc": "2026-10-16T17:05:46.609083+00:00"
+}

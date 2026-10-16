@@ -1,0 +1,189 @@
+{
+  "source": "594bca890e0f517794e1175c8ffd46260dde117c",
+  "source_349_hashes_before_after": "clean identical",
+  "binary_sha256": "196c267d506999878086495b9fa74fb65af008a392bdd606bbbe93e9168060fd",
+  "runtime_identities": [
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    }
+  ],
+  "raw": "typed-memory-fixed-r4-burst.txt",
+  "raw_sha256": "e6e876708f85bf78cf1bfa60a97b52aec2bee33bf94874ec97fe628c4fe8a938",
+  "actual_exit": 1,
+  "CLI_Docker_after_stop_noOOM_exit0_count": 1,
+  "backend_owned0_close_events": 2,
+  "race_reports": 0,
+  "no_overlay_no_retries_no_source_edits": true,
+  "status": "FAIL",
+  "blocking": true,
+  "scope": "Original10x256 mixed1KiB SDK CLI regression failed; unchanged harness collected all2560 results within this single test invocation",
+  "command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLINativeSmallBurstPreservesAdmission$",
+    "-timeout",
+    "5m",
+    "-v",
+    "./internal/app"
+  ],
+  "offered": 2560,
+  "completed": 2558,
+  "business_failures": 2,
+  "failure_classification": "Two round5 Search Read calls, seq1313/1373, returned Failure UNAVAILABLE index qualification response unavailable. Neither failed operation was a mutation; no APPLIED/UNKNOWN mutation effect discrepancy observed in this run.",
+  "first_failure": {
+    "round": "5",
+    "sequence": "1313",
+    "backend": "search",
+    "method": "0",
+    "elapsed": "12.853083ms",
+    "origin": "Read missing document or failed: &{<nil> false code:UNAVAILABLE  message:\"index qualification response unavailable\"}",
+    "raw_line": 1294
+  },
+  "failures": [
+    {
+      "round": "5",
+      "sequence": "1313",
+      "backend": "search",
+      "method": "0",
+      "elapsed": "12.853083ms",
+      "origin": "Read missing document or failed: &{<nil> false code:UNAVAILABLE  message:\"index qualification response unavailable\"}",
+      "raw_line": 1294
+    },
+    {
+      "round": "5",
+      "sequence": "1373",
+      "backend": "search",
+      "method": "0",
+      "elapsed": "14.570583ms",
+      "origin": "Read missing document or failed: &{<nil> false code:UNAVAILABLE  message:\"index qualification response unavailable\"}",
+      "raw_line": 1297
+    }
+  ],
+  "rounds": [
+    {
+      "round": "0",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "35.72025ms",
+      "p99": "53.723875ms",
+      "max": "54.309875ms"
+    },
+    {
+      "round": "1",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "34.285959ms",
+      "p99": "45.269417ms",
+      "max": "45.488125ms"
+    },
+    {
+      "round": "2",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "27.30425ms",
+      "p99": "58.692292ms",
+      "max": "64.143542ms"
+    },
+    {
+      "round": "3",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "34.049208ms",
+      "p99": "48.184041ms",
+      "max": "48.280709ms"
+    },
+    {
+      "round": "4",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "29.439375ms",
+      "p99": "39.830625ms",
+      "max": "40.466083ms"
+    },
+    {
+      "round": "5",
+      "offered": "256",
+      "received": "256",
+      "completed": "254",
+      "p50": "23.691541ms",
+      "p99": "44.015208ms",
+      "max": "44.218291ms"
+    },
+    {
+      "round": "6",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "25.071542ms",
+      "p99": "55.275125ms",
+      "max": "57.03375ms"
+    },
+    {
+      "round": "7",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "23.627458ms",
+      "p99": "40.457041ms",
+      "max": "40.50375ms"
+    },
+    {
+      "round": "8",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "27.173417ms",
+      "p99": "41.844ms",
+      "max": "42.219583ms"
+    },
+    {
+      "round": "9",
+      "offered": "256",
+      "received": "256",
+      "completed": "256",
+      "p50": "26.869583ms",
+      "p99": "44.672792ms",
+      "max": "44.934791ms"
+    }
+  ],
+  "Node_budget_rejection_delta": 1,
+  "first_rejection_counter_transition_sample": [
+    {
+      "raw_line": 1295,
+      "text": "native_burst_integration_test.go:157: burst_snapshot round=5 sample_lag=25.710875ms Native=map[borrowed:0 budget_bytes:4.92133853e+08 budget_known:1 budget_rejections_total:1 input_reserved_bytes:3.3554432e+07 input_used_bytes:988341 io_reserve_bytes:4.8795648e+07 leases:208 leases_limit:32768 native_leases:73 native_leases_limit:1024 resident_bytes:3.389994e+07 settled:2 starting:13 terminal:5 used_bytes:4.72407555e+08 waiting:188 wire_buffers:0 wire_bytes:0]"
+    }
+  ],
+  "denial_cause_limit": "No diagnostic logging overlay: sampled counter/Used/Resident values are not exact locked denial cause or denial-time RSS.",
+  "fixed_caller_seconds": 3,
+  "fixed_cleanup_seconds": 5,
+  "Node_Store_RPC_wire_QI_final0": true,
+  "independent_oracle": {
+    "Mongo": {
+      "expected": 421,
+      "seen": 421
+    },
+    "Search": {
+      "expected": 431,
+      "seen": 431
+    },
+    "scope": "All planned writes have APPLIED and original full ID/n/pad/cardinality oracles match. Original1KiB harness does not log full-document hashes."
+  },
+  "cleanup_cannot_clear_business_failure": true
+}

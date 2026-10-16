@@ -1,0 +1,4 @@
+# github.com/batchstream/weir/internal/backend/search [github.com/batchstream/weir/internal/backend/search.test]
+internal/backend/search/program.go:90:81: memory.scratch undefined (type *recordMemory has no field or method scratch)
+FAIL	github.com/batchstream/weir/internal/backend/search [build failed]
+FAIL

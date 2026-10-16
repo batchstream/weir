@@ -1,0 +1,9 @@
+{
+  "Replace": {
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/adapter.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/internal/backend/search/adapter.go",
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/batch.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/internal/backend/search/batch.go",
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/memory.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/internal/backend/search/memory.go",
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/route.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/internal/backend/search/route.go",
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/backend/search/transport.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/internal/backend/search/transport.go"
+  }
+}

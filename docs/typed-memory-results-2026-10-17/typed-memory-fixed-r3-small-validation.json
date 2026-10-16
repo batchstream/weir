@@ -1,0 +1,125 @@
+{
+  "status": "PASS",
+  "scope": "Real Mongo valid/early-invalid and Search small-reply in-process server regressions; not Linux CLI execution",
+  "raw": "typed-memory-fixed-r3-small.txt",
+  "raw_sha256": "5c1b796bad296ad1c2cea806451c2ec7416ce69e7639c79a600500271ae42af5",
+  "actual_exit": 0,
+  "exit_file": "typed-memory-fixed-r3-small.exit",
+  "driver_command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=3",
+    "-tags",
+    "integration",
+    "-run",
+    "^Test(Mongo|Search)SlowNativeOutputAllowsHealthyQueries$",
+    "-timeout",
+    "3m",
+    "-v",
+    "./internal/server"
+  ],
+  "runtime_identities": [],
+  "race_reports": 0,
+  "pass_lines": [
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries",
+      "0.16s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response",
+      "0.03s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response",
+      "0.02s"
+    ],
+    [
+      "TestSearchSlowNativeOutputAllowsHealthyQueries",
+      "0.13s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries",
+      "0.37s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response",
+      "0.02s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response",
+      "0.13s"
+    ],
+    [
+      "TestSearchSlowNativeOutputAllowsHealthyQueries",
+      "0.23s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries",
+      "0.16s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response",
+      "0.02s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response",
+      "0.02s"
+    ],
+    [
+      "TestSearchSlowNativeOutputAllowsHealthyQueries",
+      "0.12s"
+    ]
+  ],
+  "CLI_Docker_after_stop_noOOM_exit0_count": 0,
+  "backend_owned0_close_events": 9,
+  "rounds": 3,
+  "Mongo_valid_cases": 3,
+  "Mongo_early_invalid_cases": 3,
+  "Search_cases": 3,
+  "healthy_progress": [
+    {
+      "backend": "application/bson",
+      "elapsed": "4.894ms;"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "3.992208ms;"
+    },
+    {
+      "backend": "application/http",
+      "elapsed": "7.123125ms;"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "3.623875ms;"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "4.558625ms;"
+    },
+    {
+      "backend": "application/http",
+      "elapsed": "7.715209ms;"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "3.82275ms;"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "3.158292ms;"
+    },
+    {
+      "backend": "application/http",
+      "elapsed": "8.466959ms;"
+    }
+  ],
+  "default_stall_seconds": 30,
+  "watchdog_release_needed": false,
+  "source": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+  "binary_sha256": null,
+  "source_348_hashes_before_after": "clean identical",
+  "no_source_edits_no_overlay_no_retries": true
+}
