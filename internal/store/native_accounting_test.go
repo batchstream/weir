@@ -115,8 +115,8 @@ func TestNativeOversizedTerminalUsesFixedFailureInsideFullSharedBudget(t *testin
 	work.Command = nativeCall()
 	// The other owner's actual response leaves only the fixed event windows
 	// and IO reserve. The terminal itself must not mint additional capacity.
-	room := uint64(work.Bytes + 2*protocol.NativeChunk + execution.ResultOverheadBytes)
-	if started, _ := lease.start(int(memory.budget-memory.used-room-1024), defaultNativeIOReserve); !started {
+	publication := uint64(max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow)
+	if started, _ := lease.start(int(memory.budget-memory.inputReserved-2*publication-1024), defaultNativeIOReserve); !started {
 		t.Fatal("could not fill the other owner's reservation")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)

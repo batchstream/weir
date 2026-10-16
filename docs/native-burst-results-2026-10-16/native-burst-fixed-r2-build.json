@@ -1,0 +1,43 @@
+{
+  "source": "94523988c6fdf0bfc15e117d2bcc23ed5e10785a",
+  "state": "clean-commit",
+  "working_tree_before_build": "clean",
+  "working_tree_after_build": "clean",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-burst-fixed-r2-linux",
+  "sha256": "d40e8a0aaaee8a2720ac54c154266b71fc67ae6dc8609dd62446fa93700b49bf",
+  "target": "linux/arm64",
+  "toolchain": "go1.27.1",
+  "build_exit": 0,
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "build",
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid= -X main.sourceRevision=94523988c6fdf0bfc15e117d2bcc23ed5e10785a",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-burst-fixed-r2-linux",
+    "./cmd/weir"
+  ],
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "0",
+    "GOOS": "linux",
+    "GOARCH": "arm64"
+  },
+  "source_files_sha256": {
+    "internal/store/native_memory.go": "579a6f01b2afa9b71d4af2ae5bcb0b169a4aad7d3a79561e6ca5f5e53c4e3555",
+    "internal/store/runtime.go": "609a812978be0993a50fd37141fd2dab85377a3387dfe2ba874c9680c03768a5",
+    "internal/app/metrics.go": "a3f6af6aaeaad99b5001dd1df7124e436b54d45f014ed9cb0c01995d0cb9f301",
+    "internal/app/native_burst_integration_test.go": "5ed0191879ffc7c989d42159d597a770aed54d1dc0ef122cde2ab378e653c17a",
+    "internal/app/native_output_budget_integration_test.go": "e49bf509d965f8c89071b25f3a3d0db36e60966a9287a321a499cff16247f4fe",
+    "internal/app/diagnostics_integration_test.go": "ab047e093198ea636b38b8dc91f6afd40d743b3545cc4c068dce4b8d4dd39281",
+    "internal/server/native_progress_integration_test.go": "50b5fde59c9ede2e6e2e6122c96f924f74622f26df0fe306af2b78643c5133e9",
+    "internal/app/memory_recovery_integration_test.go": "a55dc5822e8852e35a63506d67e2d939167edf22e33b36d5688e5d19d4fc54a9"
+  }
+}

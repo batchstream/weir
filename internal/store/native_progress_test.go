@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
@@ -91,7 +92,7 @@ func TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy(t *testing.
 	limits.QueueBytes = 1024
 	memory := NewNativeMemory()
 	memory.known, memory.trusted = true, true
-	memory.budget = memory.reserve + 2*(512+2*65536+execution.ResultOverheadBytes) + 4096
+	memory.budget = 128 << 20
 	adapter := &singleExecutionAdapter{}
 	runtime, err := New(adapter, limits, memory)
 	if err != nil {
@@ -114,7 +115,8 @@ func TestNativeHardCapacityRejectsBeforeBackendAndLeavesTypedHealthy(t *testing.
 		work.Command = nativeCall()
 		work.WorkingBytes = 4096
 		if index == 0 {
-			work.WorkingBytes = defaultNativeIOReserve + 4096
+			publication := max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow
+			work.WorkingBytes = int(memory.budget-memory.inputTargetLocked()) - publication
 		}
 		ticket, failure, _ := runtime.Submit(ctx, work, session)
 		if failure != nil {

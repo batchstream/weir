@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "/Users/liran/Projects/liran/go/weir/internal/app/native_burst_diagnostic_integration_test.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-burst-diagnostic-test.go.txt"
+  }
+}
