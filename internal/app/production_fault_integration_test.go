@@ -700,7 +700,7 @@ func processFaultIdle(t *testing.T, process *memoryRecoveryCLI, bound time.Durat
 	for {
 		metrics := process.sample(t)
 		nonzero := make(map[string]float64)
-		for _, name := range []string{"weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched"} {
+		for _, name := range []string{"weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes", "weir_memory_latched", "weir_native_memory_used_bytes", "weir_native_memory_resident_bytes", "weir_native_memory_leases", "weir_native_memory_starting", "weir_native_memory_settled", "weir_native_memory_borrowed", "weir_native_memory_waiting", "weir_native_memory_terminal"} {
 			if metrics[name] == nil {
 				t.Fatal("missing cleanup gauge", name)
 			}
