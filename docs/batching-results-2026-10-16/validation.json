@@ -1,0 +1,83 @@
+[
+  {
+    "name": "repository-race",
+    "env": {},
+    "argv": [
+      "go",
+      "test",
+      "-race",
+      "./..."
+    ],
+    "log": "final-race.txt",
+    "exit_code": 0
+  },
+  {
+    "name": "server-real-integration",
+    "env": {
+      "WEIR_INTEGRATION": "1",
+      "WEIR_SEARCH_INTEGRATION": "elasticsearch"
+    },
+    "argv": [
+      "go",
+      "test",
+      "-tags",
+      "integration",
+      "./internal/server",
+      "-run",
+      "TestRoute(Mongo|Search)Lua|TestRouteSearch(CollectionAcrossSkewedIndexesAndDocumentSizes|BoundedCollectionPreservesHotKeyIncrements)|TestValueProofMongoReadPaths",
+      "-count=1",
+      "-v"
+    ],
+    "log": "final-server-integration.txt",
+    "exit_code": 0
+  },
+  {
+    "name": "backend-real-integration-race",
+    "env": {
+      "WEIR_INTEGRATION": "1",
+      "WEIR_SEARCH_INTEGRATION": "elasticsearch"
+    },
+    "argv": [
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "integration",
+      "./internal/backend/mongodb",
+      "./internal/backend/search",
+      "-run",
+      "TestMongo(CrossNamespaceNativeBulkPersistsAndIsolatesFailure|LargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers|CallerCancellationBeforeWritePhaseDoesNotAffectPeers|MixedWriteLostReplyDoesNotReplayExpression|LuaBatchCommitReplyLossNeverReapplies|VisibleMutationsAreImmediatelyQueryableIncludingNoops)|TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed|TestSearch(CrossIndexPureReadsUseOneNativeExchange|EveryRecordActionSharesNativeBatch|MixedLuaConflictRereadsOnlyConditionalItem|SharedDeadlineCancellationAndDrain|VisibleMutationsReturnOnlyAfterExactSearchState|VisibleNoopsRefreshPreviouslyStaleSearchState|LuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay)",
+      "-count=1",
+      "-v"
+    ],
+    "log": "final-backend-integration-race.txt",
+    "exit_code": 0
+  },
+  {
+    "name": "baseline-ledger-regression-expected-failure",
+    "argv": [
+      "go",
+      "test",
+      "-race",
+      "./internal/store",
+      "-run",
+      "^TestReusablePlan",
+      "-count=1"
+    ],
+    "log": "baseline-plan-regression.txt",
+    "exit_code": 1,
+    "expected_failure": true,
+    "source": "30ac2d10e8ec85a94512036abada5041b39ea606 plus new plan_ownership_test.go"
+  },
+  {
+    "name": "restored-protocol",
+    "argv": [
+      "go",
+      "test",
+      "./..."
+    ],
+    "log": "restored-protocol-tests.txt",
+    "exit_code": 0,
+    "repository": "/Users/liran/Projects/liran/go/weir-protocol"
+  }
+]

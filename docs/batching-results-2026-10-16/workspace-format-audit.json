@@ -1,0 +1,14 @@
+{
+  "binary_identical": true,
+  "binary_sha256": "93cfc5a72ccd59c89f4905788c7d6f0ab667768f32e86a901028b88119ea7227",
+  "measured_source_tree_sha256": "61d1d980dd690ea4a3c3168aa184e847808d03ed323f825771061fe281ecabe5",
+  "workspace_source_tree_sha256": "a3af054602885d0b754a2f62c8eeb93112b192d38e3cbf92d24b67c217802c1e",
+  "change": "gofmt removed one trailing blank line from a test file; production sources and resulting executable are unchanged",
+  "files": [
+    {
+      "path": "internal/store/selection_cache_lifecycle_test.go",
+      "measured_sha256": "2fa14de015166788a91ee00814ce21a9d767056349cf2fd5456cbfb813a075f7",
+      "workspace_sha256": "99fe5fc1d6966f03b5745e28507eca215d5ab30f09707c49966ec7f951f13683"
+    }
+  ]
+}

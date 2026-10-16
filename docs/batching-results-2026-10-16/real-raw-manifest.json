@@ -1,0 +1,107 @@
+[
+  {
+    "path": "iteration6-real-mongo-mixed/mongo.json.gz",
+    "sha256": "25b453fffd48089bd7900a82577380ff8c076aea8badc9099371f61b982f19c0",
+    "uncompressed_sha256": "57ac054f0918347e9b0c131cc17b26f1cda0e9a8ccaade3cf1dedec6ea3c53d8",
+    "uncompressed_bytes": 2775257,
+    "bytes": 183093
+  },
+  {
+    "path": "iteration6-real-mongo-read/mongo.json.gz",
+    "sha256": "95ebc06de4e553d8765ccd3dfc44f05712e899bd89c3e54b3973ece08c50fd09",
+    "uncompressed_sha256": "2d9f0ed20ded0c67293f233e147409e163364de8577c6ce554b1aaac6552e3c2",
+    "uncompressed_bytes": 2771839,
+    "bytes": 169471
+  },
+  {
+    "path": "iteration6-real-mongo-write/mongo.json.gz",
+    "sha256": "f966c456bbf770a2faa79a009ab15879cf3f9fbb20bf50d3e5fb697c009b0797",
+    "uncompressed_sha256": "d33e01a7d0090a292caa129a90e48a99446a8acf83250a9a122993d0f28251d6",
+    "uncompressed_bytes": 2763951,
+    "bytes": 159923
+  },
+  {
+    "path": "iteration6-real-search-interrupted/search.json.gz",
+    "sha256": "cc7d6f4a8c08cf7a5d4e95f8546ec559dd2403b765f10eacc37d68bc325c9eb0",
+    "uncompressed_sha256": "25380eedf454a208ed8e64353964b4920f9622d8bdbe984666f04652ecd507e8",
+    "uncompressed_bytes": 2199653,
+    "bytes": 132737
+  },
+  {
+    "path": "real-mongo-baseline-mixed/mongo.json.gz",
+    "sha256": "8ac432f70b2ecb3d9005b44a81f2a2816eee0a2460010858a6af3091248acbb7",
+    "uncompressed_sha256": "acf0d7ff5e0c0b7ffa29ba4b6a9a735d91ce08be239f45da50419e8a28afcb50",
+    "uncompressed_bytes": 2775217,
+    "bytes": 183447
+  },
+  {
+    "path": "real-mongo-baseline-read/mongo.json.gz",
+    "sha256": "b9cbeffa9b0f88aa68df2db74c34018f96844662e0645216d1f49bad07b01065",
+    "uncompressed_sha256": "267f58fc57060b99543a08c253a2727fbe424eaa16e07bbdfd0de0643135f9c9",
+    "uncompressed_bytes": 2772084,
+    "bytes": 170305
+  },
+  {
+    "path": "real-mongo-baseline-write/mongo.json.gz",
+    "sha256": "2690a7b47b901a3d835b570fa301453b5b20107ab95f0c3aa9baeb500e13b3e8",
+    "uncompressed_sha256": "e7db307d13c2d20f96a321e52fe8a14cdfd8e18cedf1acf605a872d0d59752e7",
+    "uncompressed_bytes": 2764149,
+    "bytes": 160384
+  },
+  {
+    "path": "real-mongo-candidate-mixed/mongo.json.gz",
+    "sha256": "02eaa06008c85b3bc983b11d215c29d8850fecf3b97ff95d702314bcdf0f4119",
+    "uncompressed_sha256": "14d1b5032b0f482e2b160158dcbed2662b556737dda7b47a72ee33de3626e40f",
+    "uncompressed_bytes": 2775092,
+    "bytes": 183177
+  },
+  {
+    "path": "real-mongo-candidate-mixed-wait1ms/mongo.json.gz",
+    "sha256": "b9b2c11b9ba0cd894fe7aecbe70b6ef3c5257d4fe634606054ae2b4a9aeb3fe4",
+    "uncompressed_sha256": "482e262a15f99fd731697c93d7e498c043cbdc2e5f748cd1ba1b70d5b68a1fd1",
+    "uncompressed_bytes": 2775308,
+    "bytes": 182352
+  },
+  {
+    "path": "real-mongo-candidate-read/mongo.json.gz",
+    "sha256": "d4c3686f6317cf2636397126a84d50381e31b499e471017df02094ebb6f82ae5",
+    "uncompressed_sha256": "811d0e9fbc99a72d3386011e2610ebc26436d5a95bd9484c52182bc0c554fa44",
+    "uncompressed_bytes": 2771917,
+    "bytes": 169603
+  },
+  {
+    "path": "real-mongo-candidate-write/mongo.json.gz",
+    "sha256": "2e8022da383a8905aabbda95c2fc38686db23e5735b36ae5c9c9fcfd2912d872",
+    "uncompressed_sha256": "20d652a53b63258b6361018522f071e3eb09287012212b22bb54cc39ac2c57c8",
+    "uncompressed_bytes": 2763937,
+    "bytes": 159951
+  },
+  {
+    "path": "real-mongo-candidate-write-wait1ms/mongo.json.gz",
+    "sha256": "2740735f83c9f22562200dbe5c91d78577184181bbf49cddbbccba2b3cf1b0e4",
+    "uncompressed_sha256": "f3e7e70bb623a18d076fa661458189c6df6ea39e17487976dc421c99d40d126b",
+    "uncompressed_bytes": 2765609,
+    "bytes": 162404
+  },
+  {
+    "path": "real-search-baseline-read/search.json.gz",
+    "sha256": "725b84df4fbac7efbf9a8c7f4628a9385319dea9fc28e4fbc68a3b9802f6e251",
+    "uncompressed_sha256": "4df025a90980970b256e7156c5b734acfe1f7c93acd81e9a8d6ab0426005312e",
+    "uncompressed_bytes": 4179353,
+    "bytes": 254854
+  },
+  {
+    "path": "real-search-candidate-read/search.json.gz",
+    "sha256": "2cd35f7a95a5a8595b489d6eb3d5a41db1ed283b052d99b0d3f36d025001be50",
+    "uncompressed_sha256": "51da302f88b5232932cbd1f4204f3a1418ec36d92bfc547d1f92a61647481091",
+    "uncompressed_bytes": 4178916,
+    "bytes": 254189
+  },
+  {
+    "path": "real-search-candidate-write/search.json.gz",
+    "sha256": "5aa5ff8447970a25ef3b7f34346a126fc4680dd24cafe2330e3353168dc68517",
+    "uncompressed_sha256": "98e210816063eb1825923aebdd01604d25ae2128cdda7e38856b3182921b9733",
+    "uncompressed_bytes": 4187885,
+    "bytes": 249589
+  }
+]

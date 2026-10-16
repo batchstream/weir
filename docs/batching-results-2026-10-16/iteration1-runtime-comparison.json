@@ -1,0 +1,569 @@
+{
+  "BenchmarkRuntimeFragmented/cost/callers=256/fixed=0s": {
+    "after": {
+      "B/op": 1369.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.07256,
+      "mean-us": 739.7,
+      "ns/op": 2940.0,
+      "operations/s": 340135.0,
+      "ops/call": 13.78,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 2097.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1478.0,
+      "allocs/op": 15.0,
+      "calls/op": 0.0723,
+      "mean-us": 920.4,
+      "ns/op": 3666.0,
+      "operations/s": 272749.0,
+      "ops/call": 13.83,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "speedup": 1.2469387755102042
+  },
+  "BenchmarkRuntimeFragmented/cost/callers=256/fixed=2ms": {
+    "after": {
+      "B/op": 1387.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06792,
+      "mean-us": 36229.0,
+      "ns/op": 157028.0,
+      "operations/s": 6368.0,
+      "ops/call": 14.72,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1443.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.0666,
+      "mean-us": 36457.0,
+      "ns/op": 152445.0,
+      "operations/s": 6560.0,
+      "ops/call": 15.01,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "speedup": 0.9708141223221336
+  },
+  "BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=0": {
+    "after": {
+      "B/op": 1329.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06538,
+      "mean-us": 3823.0,
+      "ns/op": 15163.0,
+      "operations/s": 65950.0,
+      "ops/call": 15.29,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1340.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06512,
+      "mean-us": 3796.0,
+      "ns/op": 15086.0,
+      "operations/s": 66288.0,
+      "ops/call": 15.36,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 0.9949218492382774
+  },
+  "BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=1": {
+    "after": {
+      "B/op": 2582.0,
+      "allocs/op": 31.0,
+      "calls/op": 1.0,
+      "mean-us": 54212.0,
+      "ns/op": 240207.0,
+      "operations/s": 4163.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2541.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 53271.0,
+      "ns/op": 232282.0,
+      "operations/s": 4305.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "speedup": 0.9670076225921809
+  },
+  "BenchmarkRuntimeFragmented/mixed/callers=1": {
+    "after": {
+      "B/op": 2290.0,
+      "allocs/op": 29.0,
+      "calls/op": 1.0,
+      "mean-us": 281.3,
+      "ns/op": 281475.0,
+      "operations/s": 3553.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2547.0,
+      "allocs/op": 33.0,
+      "calls/op": 1.0,
+      "mean-us": 294.3,
+      "ns/op": 294530.0,
+      "operations/s": 3395.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 524.3,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "speedup": 1.0463806732391865
+  },
+  "BenchmarkRuntimeFragmented/mixed/callers=256": {
+    "after": {
+      "B/op": 1353.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.0669,
+      "mean-us": 3890.0,
+      "ns/op": 15525.0,
+      "operations/s": 64413.0,
+      "ops/call": 14.95,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1413.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06719,
+      "mean-us": 4197.0,
+      "ns/op": 16854.0,
+      "operations/s": 59334.0,
+      "ops/call": 14.88,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 1.0856038647342996
+  },
+  "BenchmarkRuntimeFragmented/mixed/callers=32": {
+    "after": {
+      "B/op": 1826.0,
+      "allocs/op": 22.0,
+      "calls/op": 0.5202,
+      "mean-us": 3839.0,
+      "ns/op": 121240.0,
+      "operations/s": 8248.0,
+      "ops/call": 1.922,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1926.0,
+      "allocs/op": 24.0,
+      "calls/op": 0.5206,
+      "mean-us": 3815.0,
+      "ns/op": 120659.0,
+      "operations/s": 8288.0,
+      "ops/call": 1.921,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 0.9952078521939954
+  },
+  "BenchmarkRuntimeFragmented/namespace/callers=256/ns=256": {
+    "after": {
+      "B/op": 49880.0,
+      "allocs/op": 453.0,
+      "calls/op": 1.0,
+      "mean-us": 54263.0,
+      "ns/op": 234976.0,
+      "operations/s": 4256.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2605.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 53315.0,
+      "ns/op": 231924.0,
+      "operations/s": 4312.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "speedup": 0.9870114394661582
+  },
+  "BenchmarkRuntimeFragmented/namespace/callers=256/ns=64": {
+    "after": {
+      "B/op": 8069.0,
+      "allocs/op": 106.0,
+      "calls/op": 0.3477,
+      "mean-us": 19411.0,
+      "ns/op": 81237.0,
+      "operations/s": 12310.0,
+      "ops/call": 2.876,
+      "p50-upper-us": 33554.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1665.0,
+      "allocs/op": 20.0,
+      "calls/op": 0.3431,
+      "mean-us": 19253.0,
+      "ns/op": 80217.0,
+      "operations/s": 12466.0,
+      "ops/call": 2.915,
+      "p50-upper-us": 33554.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "speedup": 0.9874441449093393
+  },
+  "BenchmarkRuntimeFragmented/namespace/callers=256/ns=8": {
+    "after": {
+      "B/op": 1480.0,
+      "allocs/op": 16.0,
+      "calls/op": 0.08106,
+      "mean-us": 5009.0,
+      "ns/op": 19809.0,
+      "operations/s": 50481.0,
+      "ops/call": 12.34,
+      "p50-upper-us": 8389.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1414.0,
+      "allocs/op": 15.0,
+      "calls/op": 0.0744,
+      "mean-us": 4579.0,
+      "ns/op": 18101.0,
+      "operations/s": 55245.0,
+      "ops/call": 13.44,
+      "p50-upper-us": 8389.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 0.9137765662072795
+  },
+  "BenchmarkRuntimeFragmented/payload/callers=256/bytes=64": {
+    "after": {
+      "B/op": 1355.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06666,
+      "mean-us": 3893.0,
+      "ns/op": 15480.0,
+      "operations/s": 64597.0,
+      "ops/call": 15.0,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1409.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06717,
+      "mean-us": 3895.0,
+      "ns/op": 15584.0,
+      "operations/s": 64169.0,
+      "ops/call": 14.89,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 1.0067183462532299
+  },
+  "BenchmarkRuntimeFragmented/payload/callers=256/bytes=65536": {
+    "after": {
+      "B/op": 1351.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.0669,
+      "mean-us": 3899.0,
+      "ns/op": 15527.0,
+      "operations/s": 64405.0,
+      "ops/call": 14.95,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1409.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06717,
+      "mean-us": 3911.0,
+      "ns/op": 15578.0,
+      "operations/s": 64192.0,
+      "ops/call": 14.89,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 1.0032846010175822
+  },
+  "BenchmarkRuntimeFragmented/read/callers=1": {
+    "after": {
+      "B/op": 2275.0,
+      "allocs/op": 29.0,
+      "calls/op": 1.0,
+      "mean-us": 249.3,
+      "ns/op": 249440.0,
+      "operations/s": 4009.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 524.3,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2489.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 240.5,
+      "ns/op": 240559.0,
+      "operations/s": 4157.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 262.1,
+      "p99-upper-us": 262.1,
+      "samples": 3
+    },
+    "speedup": 0.964396247594612
+  },
+  "BenchmarkRuntimeFragmented/read/callers=256": {
+    "after": {
+      "B/op": 1329.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06546,
+      "mean-us": 3823.0,
+      "ns/op": 15206.0,
+      "operations/s": 65762.0,
+      "ops/call": 15.28,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1408.0,
+      "allocs/op": 14.0,
+      "calls/op": 0.06516,
+      "mean-us": 3812.0,
+      "ns/op": 15174.0,
+      "operations/s": 65903.0,
+      "ops/call": 15.35,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 0.9978955675391293
+  },
+  "BenchmarkRuntimeFragmented/read/callers=32": {
+    "after": {
+      "B/op": 1763.0,
+      "allocs/op": 21.0,
+      "calls/op": 0.5116,
+      "mean-us": 3789.0,
+      "ns/op": 119196.0,
+      "operations/s": 8390.0,
+      "ops/call": 1.955,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1864.0,
+      "allocs/op": 23.0,
+      "calls/op": 0.5116,
+      "mean-us": 5400.0,
+      "ns/op": 169940.0,
+      "operations/s": 5884.0,
+      "ops/call": 1.955,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 16777.0,
+      "samples": 3
+    },
+    "speedup": 1.4257189838585187
+  },
+  "BenchmarkRuntimeFragmented/unbatched/callers=256": {
+    "after": {
+      "B/op": 2655.0,
+      "allocs/op": 33.0,
+      "calls/op": 1.0,
+      "mean-us": 53321.0,
+      "ns/op": 236161.0,
+      "operations/s": 4234.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2540.0,
+      "allocs/op": 32.0,
+      "calls/op": 1.0,
+      "mean-us": 52891.0,
+      "ns/op": 237218.0,
+      "operations/s": 4216.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 67109.0,
+      "p99-upper-us": 67109.0,
+      "samples": 3
+    },
+    "speedup": 1.0044757601805547
+  },
+  "BenchmarkRuntimeFragmented/window/callers=32/wait=0s": {
+    "after": {
+      "B/op": 1806.0,
+      "allocs/op": 22.0,
+      "calls/op": 0.5172,
+      "mean-us": 3915.0,
+      "ns/op": 123526.0,
+      "operations/s": 8095.0,
+      "ops/call": 1.933,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 1869.0,
+      "allocs/op": 23.0,
+      "calls/op": 0.5201,
+      "mean-us": 3865.0,
+      "ns/op": 121850.0,
+      "operations/s": 8207.0,
+      "ops/call": 1.923,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 8389.0,
+      "samples": 3
+    },
+    "speedup": 0.9864320062173145
+  },
+  "BenchmarkRuntimeFragmented/window/callers=32/wait=20ms": {
+    "after": {
+      "B/op": 2414.0,
+      "allocs/op": 27.0,
+      "calls/op": 0.6216,
+      "mean-us": 5159.0,
+      "ns/op": 222649.0,
+      "operations/s": 4491.0,
+      "ops/call": 1.609,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 3897.0,
+      "allocs/op": 39.0,
+      "calls/op": 0.6146,
+      "mean-us": 5037.0,
+      "ns/op": 206104.0,
+      "operations/s": 4852.0,
+      "ops/call": 1.627,
+      "p50-upper-us": 4194.0,
+      "p99-upper-us": 33554.0,
+      "samples": 3
+    },
+    "speedup": 0.925690211947954
+  },
+  "BenchmarkRuntimeFragmented/write/callers=1": {
+    "after": {
+      "B/op": 2550.0,
+      "allocs/op": 31.0,
+      "calls/op": 1.0,
+      "mean-us": 530.7,
+      "ns/op": 530798.0,
+      "operations/s": 1884.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 3125.0,
+      "allocs/op": 42.0,
+      "calls/op": 1.0,
+      "mean-us": 544.1,
+      "ns/op": 544250.0,
+      "operations/s": 1837.0,
+      "ops/call": 1.0,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "speedup": 1.0253429741634295
+  },
+  "BenchmarkRuntimeFragmented/write/callers=256": {
+    "after": {
+      "B/op": 1892.0,
+      "allocs/op": 15.0,
+      "calls/op": 0.01234,
+      "mean-us": 953.0,
+      "ns/op": 3813.0,
+      "operations/s": 262261.0,
+      "ops/call": 81.01,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 2097.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2154.0,
+      "allocs/op": 18.0,
+      "calls/op": 0.01334,
+      "mean-us": 1121.0,
+      "ns/op": 4509.0,
+      "operations/s": 221800.0,
+      "ops/call": 74.98,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "speedup": 1.1825334382376083
+  },
+  "BenchmarkRuntimeFragmented/write/callers=32": {
+    "after": {
+      "B/op": 1745.0,
+      "allocs/op": 16.0,
+      "calls/op": 0.0339,
+      "mean-us": 551.2,
+      "ns/op": 17308.0,
+      "operations/s": 57776.0,
+      "ops/call": 29.5,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 1049.0,
+      "samples": 3
+    },
+    "before": {
+      "B/op": 2317.0,
+      "allocs/op": 21.0,
+      "calls/op": 0.04102,
+      "mean-us": 606.8,
+      "ns/op": 19181.0,
+      "operations/s": 52134.0,
+      "ops/call": 24.38,
+      "p50-upper-us": 1049.0,
+      "p99-upper-us": 4194.0,
+      "samples": 3
+    },
+    "speedup": 1.1082158539403744
+  }
+}

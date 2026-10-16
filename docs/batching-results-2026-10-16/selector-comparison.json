@@ -1,0 +1,86 @@
+{
+  "BenchmarkSelectorDrain/namespaces=1": {
+    "after": {
+      "B/op": 127698.0,
+      "allocs/op": 546.0,
+      "batches/drain": 32.0,
+      "ns/op": 176107.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 175762.0,
+      "allocs/op": 769.0,
+      "batches/drain": 32.0,
+      "ns/op": 310558.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 1.7634619861788572
+  },
+  "BenchmarkSelectorDrain/namespaces=1024": {
+    "after": {
+      "B/op": 467606.0,
+      "allocs/op": 6465.0,
+      "batches/drain": 1024.0,
+      "ns/op": 922111.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 606378.0,
+      "allocs/op": 9217.0,
+      "batches/drain": 1024.0,
+      "ns/op": 9634808.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 10.448642300113544
+  },
+  "BenchmarkSelectorDrain/namespaces=64": {
+    "after": {
+      "B/op": 133298.0,
+      "allocs/op": 981.0,
+      "batches/drain": 64.0,
+      "ns/op": 214589.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 181394.0,
+      "allocs/op": 1345.0,
+      "batches/drain": 64.0,
+      "ns/op": 940490.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 4.382750280769285
+  },
+  "BenchmarkSelectorDrain/namespaces=8": {
+    "after": {
+      "B/op": 128146.0,
+      "allocs/op": 553.0,
+      "batches/drain": 32.0,
+      "ns/op": 181236.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "baseline_raw": "docs/batching-results-2026-10-16/paired-baseline-selector.txt",
+    "before": {
+      "B/op": 175762.0,
+      "allocs/op": 769.0,
+      "batches/drain": 32.0,
+      "ns/op": 396664.0,
+      "operations/drain": 1024.0,
+      "samples": 3
+    },
+    "candidate_raw": "docs/batching-results-2026-10-16/final-selector.txt",
+    "speedup": 2.1886600896069215
+  }
+}

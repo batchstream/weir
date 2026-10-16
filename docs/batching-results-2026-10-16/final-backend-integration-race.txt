@@ -1,0 +1,136 @@
+=== RUN   TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers
+2026/10/16 19:06:43 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoCallerCancellationBeforeWritePhaseDoesNotAffectPeers (0.15s)
+=== RUN   TestMongoMixedWriteLostReplyDoesNotReplayExpression
+2026/10/16 19:06:43 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=3 released=3
+--- PASS: TestMongoMixedWriteLostReplyDoesNotReplayExpression (0.57s)
+=== RUN   TestMongoLargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers
+    batch_integration_test.go:306: 40 MiB legal input: 4 bulk commands, maximum native command 15729942 bytes, all 40 records persisted
+2026/10/16 19:06:44 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoLargeBatchSplitsAtNativeBoundaryWithConfiguredConnectionWorkers (0.88s)
+=== RUN   TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed
+    integration_test.go:107: post-loss production Read recovered; SASL continuation commands=0 (excluded from business counts)
+2026/10/16 19:06:45 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=3 released=3
+--- PASS: TestAcknowledgedOrdinaryBatchReplyLostIsNotReplayed (0.56s)
+=== RUN   TestMongoCrossNamespaceNativeBulkPersistsAndIsolatesFailure
+    multi_namespace_integration_test.go:62: three namespace callers -> one native bulkWrite for two qualified collections; duplicate-key and missing-target failures isolated; persisted values independently verified
+2026/10/16 19:06:45 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoCrossNamespaceNativeBulkPersistsAndIsolatesFailure (0.18s)
+=== RUN   TestMongoLuaBatchCommitReplyLossNeverReapplies
+=== RUN   TestMongoLuaBatchCommitReplyLossNeverReapplies/once
+    program_batch_integration_test.go:311: once: find=1 bulkWrite=1 same-transaction commits=2 persisted increments=1 outcome=APPLIED
+2026/10/16 19:06:46 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=3 released=3
+=== RUN   TestMongoLuaBatchCommitReplyLossNeverReapplies/all
+    program_batch_integration_test.go:311: all: find=1 bulkWrite=1 same-transaction commits=2 persisted increments=1 outcome=UNKNOWN
+2026/10/16 19:06:47 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=4 released=4
+--- PASS: TestMongoLuaBatchCommitReplyLossNeverReapplies (1.74s)
+    --- PASS: TestMongoLuaBatchCommitReplyLossNeverReapplies/once (0.66s)
+    --- PASS: TestMongoLuaBatchCommitReplyLossNeverReapplies/all (1.08s)
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/put
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/create
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/replace
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/delete
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/delete_missing
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/expression
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/lua_write
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/lua_keep
+=== RUN   TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/lua_delete_missing
+2026/10/16 19:06:47 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+--- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops (0.21s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/put (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/create (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/replace (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/delete (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/delete_missing (0.00s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/expression (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/lua_write (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/lua_keep (0.01s)
+    --- PASS: TestMongoVisibleMutationsAreImmediatelyQueryableIncludingNoops/lua_delete_missing (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/mongodb	6.188s
+=== RUN   TestSearchEveryRecordActionSharesNativeBatch
+    batch_integration_test.go:20: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    batch_integration_test.go:134: elasticsearch ten mixed operations -> one qualification, one realtime _mget, one mixed _bulk; persisted Lua/Replace/update/noop and isolated missing update verified
+2026/10/16 19:06:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:43 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchEveryRecordActionSharesNativeBatch (0.15s)
+=== RUN   TestSearchMixedLuaConflictRereadsOnlyConditionalItem
+    batch_integration_test.go:138: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    batch_integration_test.go:207: elasticsearch Lua OCC conflict -> only Lua reread and rewritten, peer Put remained version 1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchMixedLuaConflictRereadsOnlyConditionalItem (0.15s)
+=== RUN   TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay
+=== RUN   TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay/conflict
+    lua_batch_integration_test.go:23: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    lua_batch_integration_test.go:155: elasticsearch mode=conflict: two Lua items shared _mget and native conditional _bulk; only confirmed conflicting item retried; business source stayed unchanged in shape
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay/lost_acknowledgement
+    lua_batch_integration_test.go:23: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    lua_batch_integration_test.go:155: elasticsearch mode=lost_acknowledgement: two Lua items shared _mget and native conditional _bulk; only confirmed conflicting item retried; business source stayed unchanged in shape
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay (0.34s)
+    --- PASS: TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay/conflict (0.18s)
+    --- PASS: TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay/lost_acknowledgement (0.15s)
+=== RUN   TestSearchCrossIndexPureReadsUseOneNativeExchange
+    read_coalescing_integration_test.go:20: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+    read_coalescing_integration_test.go:76: 128 calls across two concrete indexes -> one real-time native _mget, 126 unique records, exact sources and missing IDs verified
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchCrossIndexPureReadsUseOneNativeExchange (0.16s)
+=== RUN   TestSearchSharedDeadlineCancellationAndDrain
+=== RUN   TestSearchSharedDeadlineCancellationAndDrain/one_caller_expires
+    runtime_integration_test.go:26: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestSearchSharedDeadlineCancellationAndDrain/drain
+    runtime_integration_test.go:26: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestSearchSharedDeadlineCancellationAndDrain/cancel_all
+    runtime_integration_test.go:26: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+2026/10/16 19:06:44 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchSharedDeadlineCancellationAndDrain (0.30s)
+    --- PASS: TestSearchSharedDeadlineCancellationAndDrain/one_caller_expires (0.14s)
+    --- PASS: TestSearchSharedDeadlineCancellationAndDrain/drain (0.09s)
+    --- PASS: TestSearchSharedDeadlineCancellationAndDrain/cancel_all (0.07s)
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState
+    visibility_integration_test.go:49: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/put
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/create
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/replace
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/delete
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/expression
+=== RUN   TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/program
+2026/10/16 19:06:45 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState (0.93s)
+    --- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/put (0.11s)
+    --- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/create (0.11s)
+    --- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/replace (0.10s)
+    --- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/delete (0.11s)
+    --- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/expression (0.11s)
+    --- PASS: TestSearchVisibleMutationsReturnOnlyAfterExactSearchState/program (0.11s)
+=== RUN   TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState
+=== RUN   TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/lua_keep
+    visibility_integration_test.go:93: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/lua_delete_missing
+    visibility_integration_test.go:93: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/delete_missing
+    visibility_integration_test.go:93: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+=== RUN   TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/expression_noop
+    visibility_integration_test.go:93: actual backend profile=elasticsearch-8.19.22 build=3b2a41103de35e0af4064d647974032fcc1bcde9
+2026/10/16 19:06:46 INFO backend_connections_closed backend=search store=search owned=0 peak=1 acquired=1 released=1
+--- PASS: TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState (0.45s)
+    --- PASS: TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/lua_keep (0.08s)
+    --- PASS: TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/lua_delete_missing (0.09s)
+    --- PASS: TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/delete_missing (0.19s)
+    --- PASS: TestSearchVisibleNoopsRefreshPreviouslyStaleSearchState/expression_noop (0.09s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/search	4.989s

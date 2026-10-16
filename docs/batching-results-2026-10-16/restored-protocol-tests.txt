@@ -1,0 +1,4 @@
+ok  	github.com/batchstream/weir-protocol/api/netlimit	0.970s
+ok  	github.com/batchstream/weir-protocol/api/protocol	1.311s
+ok  	github.com/batchstream/weir-protocol/api/weir/v1	2.405s
+ok  	github.com/batchstream/weir-protocol/internal/testutil/testdns	1.887s

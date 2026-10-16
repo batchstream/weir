@@ -1,0 +1,54 @@
+Owned fixture logs: /var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-tests-1747705354
+single-request backend=search processes=4 workers=32 round=1 direct=3525.9 weir=2090.6 DB-CPU direct=100.9% weir=100.7%
+single-request backend=search processes=4 workers=32 round=2 direct=12382.1 weir=2923.5 DB-CPU direct=100.8% weir=100.9%
+single-request backend=search processes=4 workers=32 round=3 direct=12375.8 weir=7096.5 DB-CPU direct=100.4% weir=96.7%
+# Database saturation comparison
+
+Backend **search**. Started 2026-10-16T11:03:10.972129Z.
+
+independent OS client processes send one record per native call or streaming SDK RPC; native FindOne/ReplaceOne or single-ID mget/PUT; no client aggregation; worker-owned disjoint IDs; common phase barriers and unchanged pools across warmup and measurement; alternating AB/BA; latency is each business request including validation, queueing and any server aggregation; independent persisted postflight; Search uses explicit refresh_interval=1s, translog.durability=request, one primary and zero replicas; sustained database CPU requires >=5 intervals, >=80% measurement coverage, mean CPU>=threshold and CPU>=threshold during >=80% measurement duration in every round, plus <=10% next-level throughput gain.
+
+Warmup 2s and measurement 5s per path/stage, 3 paired rounds, requested writes 0%.
+
+Complete business-request budget for both paths: 10s.
+
+4 independent OS client processes. Each worker sends one business request containing one record, waits for its acknowledged result, and validates it. p50/p95/p99 describe individual requests; histograms are pooled rather than averaging process quantiles.
+
+| Batch | Workers | Round | Path | Read | Write | Success | Errors/unknown | Ops/s | p95 call ms | DB CPU budget % | Full CPU time % | Sampling coverage % | Verified |
+| ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | 32 | 1 | direct | 17636 | 0 | 17636 | 0 | 3525.9 | 73.727 | 100.9 | 85.3 | 85.3 | true |
+| 1 | 32 | 1 | weir | 10462 | 0 | 10462 | 0 | 2090.6 | 73.727 | 100.7 | 85.9 | 85.9 | true |
+| 1 | 32 | 2 | direct | 61926 | 0 | 61926 | 0 | 12382.1 | 4.095 | 100.8 | 82.5 | 82.5 | true |
+| 1 | 32 | 2 | weir | 14627 | 0 | 14627 | 0 | 2923.5 | 61.439 | 100.9 | 83.6 | 83.6 | true |
+| 1 | 32 | 3 | direct | 61898 | 0 | 61898 | 0 | 12375.8 | 3.583 | 100.4 | 83.1 | 83.1 | true |
+| 1 | 32 | 3 | weir | 35506 | 0 | 35506 | 0 | 7096.5 | 7.679 | 96.7 | 83.3 | 83.3 | true |
+| 1 | 256 | 1 |  | 0 | 0 | 0 | 0 | 0.0 | 0.000 | 0.0 | 0.0 | 0.0 | false |
+| 1 | 256 | 1 | weir | 0 | 0 | 0 | 0 | 0.0 | 0.000 | 61.8 | 0.0 | 59.5 | false |
+
+Measured Weir adapter and streaming RPC evidence (warmup, reset and postflight excluded):
+
+| Batch | Workers | Round | Adapter invocations | Mean adapter batch | Execute RPCs | Queue mean ms | Adapter mean ms | Rejections |
+| ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| 1 | 32 | 1 | 5476 | 1.911 | 10462 | 1.097 | 13.477 | 0 |
+| 1 | 32 | 2 | 7655 | 1.911 | 14627 | 0.855 | 9.675 | 0 |
+| 1 | 32 | 3 | 19137 | 1.855 | 35506 | 0.171 | 3.567 | 0 |
+| 1 | 256 | 1 | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
+
+Metrics unavailable (batch 1, workers 256, round 1): before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed before/after diagnostic observation failed.
+
+Aggregation evidence: the JSON records one business request per record, Execute RPC counts, adapter invocation counts, average adapter batch and its cumulative histogram, and RPCs per adapter invocation. An adapter invocation is not necessarily one physical database wire command. MongoDB physical find/update/bulkWrite/getMore/killCursors/commitTransaction/abortTransaction deltas come from owned serverStatus at timed boundaries; missing counters remain unavailable. Elasticsearch has no equivalent physical HTTP-command counter. Every child PID, configured native pool limit, final revision ranges, exit result and sampled CPU/RSS is retained; coordinator sampling CPU is excluded from business-client CPU.
+
+The JSON retains before/after raw public Weir metrics and their observed deltas, every resource sample, monitor failures, raw cumulative database/container I/O and network counters, CPU quota/host core denominator, and client/Weir cumulative CPU. Docker CPU uses cumulative Engine usage and read timestamps across each entire sampling interval, never CLI instantaneous percentages. Both interval endpoints must succeed; missing intervals reduce full-run coverage. Samples include monitoring traffic and background database work. Native ps CPU has platform-dependent clock resolution. Native databases share the host CPU budget with the client and Weir. Disk/network utilization or capacity is not inferred from byte counters. A plateau without sustained database CPU saturation is not a database-full-load result. Startup/discovery/reset/postflight and warmup are excluded from throughput; all in-flight completion and validation is included.
+
+Resource observation schema 2 additionally retains bounded Linux host CPU ticks (busy, idle, iowait and steal, without double-counted guest ticks), CPU/IO/memory pressure, the sampler's allowed CPU list and runtime parallelism, Docker cumulative throttling counters, fixed sampled Store queue/execution gauges, and projected Search write-pool/indexing-pressure/GC statistics. Host/device evidence includes other runner work; sampler affinity is not a promise that all child processes have that affinity. Missing or unsupported fields remain explicitly unavailable. Pure Search stages retain before/after effective index settings and owned-index indexing/refresh/merge/flush/translog statistics, with explicit 1s refresh and request durability. Lucene flush statistics are not counts or timings of per-request translog fsync. No added metric alone establishes database or storage capacity.
+
+Incomplete: weir single-request stage failed: context canceled context canceled context canceled context canceled signal: killed signal: killed signal: killed signal: killed 
+weir single-request stage failed: context canceled
+context canceled
+context canceled
+context canceled
+signal: killed
+signal: killed
+signal: killed
+signal: killed 
+saturation matrix workload failed or was incomplete

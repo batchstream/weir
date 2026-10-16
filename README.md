@@ -21,6 +21,9 @@ after transport failure and are never automatically replayed.
 
 See [architecture](docs/architecture.md), [discovery design](docs/discovery-design.md)
 and [payload contracts](docs/payloads.md) for the current contracts.
+The [2026-10-16 implementation study](docs/batching-performance-2026-10-16.md)
+retains scheduler iterations, fragmented-call benchmarks and current database
+validation separately from the historical default-selection results below.
 
 The [current default selection and confirmation](docs/value-proof.md#default-selection-and-independent-confirmation-2026-10-16)
 uses multiple OS client processes submitting native or Weir single-record calls.
@@ -156,8 +159,11 @@ or wait for unrelated writes in the same batch.
 Full batches, Native commands and draining Stores bypass collection.
 A caller deadline before the
 collection deadline also dispatches immediately. Collection uses the existing
-bounded queue and adds no per-request timer. Queued RPCs of the same kind combine by namespace, actual input bytes and
+bounded queue and adds no per-request timer. Queued RPCs of the same kind combine by backend compatibility, actual input bytes and
 `batching.max_operations`. Large client batches split into sequential bounded groups.
+Ordinary MongoDB mutations can share a native bulk across namespaces; Search
+bulks and multi-gets can span indexes and duplicate Search reads share one
+observation. MongoDB reads and Lua transactions retain their collection boundary.
 Lua transforms also combine compatible queued requests: MongoDB batches reads and
 writes in a short snapshot transaction, and Search batches real-time reads and
 version-conditional writes. Weir adds no revision fields to business documents.

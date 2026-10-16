@@ -1,0 +1,14 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/batchstream/weir/internal/store
+cpu: Apple M2
+BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=0-8         	   10000	     16884 ns/op	         0.06600 calls/op	      4194 mean-us	     59226 operations/s	        15.15 ops/call	      8389 p50-upper-us	      8389 p99-upper-us	    1132 B/op	      12 allocs/op
+BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=0-8         	   10000	     17040 ns/op	         0.06600 calls/op	      4223 mean-us	     58687 operations/s	        15.15 ops/call	      8389 p50-upper-us	      8389 p99-upper-us	    1128 B/op	      12 allocs/op
+BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=0-8         	   10000	     17314 ns/op	         0.06720 calls/op	      4269 mean-us	     57756 operations/s	        14.88 ops/call	      8389 p50-upper-us	      8389 p99-upper-us	    1130 B/op	      12 allocs/op
+BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=1-8         	     694	    257135 ns/op	         1.000 calls/op	     50276 mean-us	      3889 operations/s	         1.000 ops/call	     67109 p50-upper-us	     67109 p99-upper-us	    2136 B/op	      27 allocs/op
+BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=1-8         	     696	    257521 ns/op	         1.000 calls/op	     50564 mean-us	      3883 operations/s	         1.000 ops/call	     67109 p50-upper-us	     67109 p99-upper-us	    2142 B/op	      27 allocs/op
+BenchmarkRuntimeFragmented/hotkey/callers=256/writeEvery=1-8         	     690	    262133 ns/op	         1.000 calls/op	     51182 mean-us	      3815 operations/s	         1.000 ops/call	     67109 p50-upper-us	    134218 p99-upper-us	    2156 B/op	      27 allocs/op
+BenchmarkRuntimeFragmented/unbatched/callers=256-8                   	     705	    255709 ns/op	         1.000 calls/op	     49880 mean-us	      3911 operations/s	         1.000 ops/call	     67109 p50-upper-us	     67109 p99-upper-us	    2170 B/op	      27 allocs/op
+BenchmarkRuntimeFragmented/unbatched/callers=256-8                   	     700	    257132 ns/op	         1.000 calls/op	     51054 mean-us	      3889 operations/s	         1.000 ops/call	     67109 p50-upper-us	     67109 p99-upper-us	    2164 B/op	      27 allocs/op
+BenchmarkRuntimeFragmented/unbatched/callers=256-8                   	     682	    260757 ns/op	         1.000 calls/op	     51100 mean-us	      3835 operations/s	         1.000 ops/call	     67109 p50-upper-us	     67109 p99-upper-us	    2168 B/op	      27 allocs/op
+PASS

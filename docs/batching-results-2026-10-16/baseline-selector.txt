@@ -1,0 +1,18 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/batchstream/weir/internal/store
+cpu: Apple M2
+BenchmarkSelectorDrain/namespaces=1-8         	     576	    318280 ns/op	        32.00 batches/drain	      1024 operations/drain	  175762 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=1-8         	     564	    314274 ns/op	        32.00 batches/drain	      1024 operations/drain	  175762 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=1-8         	     572	    315009 ns/op	        32.00 batches/drain	      1024 operations/drain	  175761 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=8-8         	     453	    392742 ns/op	        32.00 batches/drain	      1024 operations/drain	  175763 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=8-8         	     470	    392887 ns/op	        32.00 batches/drain	      1024 operations/drain	  175773 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=8-8         	     452	    394118 ns/op	        32.00 batches/drain	      1024 operations/drain	  175761 B/op	     769 allocs/op
+BenchmarkSelectorDrain/namespaces=64-8        	     186	    947548 ns/op	        64.00 batches/drain	      1024 operations/drain	  181396 B/op	    1345 allocs/op
+BenchmarkSelectorDrain/namespaces=64-8        	     188	    959843 ns/op	        64.00 batches/drain	      1024 operations/drain	  181396 B/op	    1345 allocs/op
+BenchmarkSelectorDrain/namespaces=64-8        	     184	    973192 ns/op	        64.00 batches/drain	      1024 operations/drain	  181395 B/op	    1345 allocs/op
+BenchmarkSelectorDrain/namespaces=1024-8      	      16	  10045365 ns/op	      1024 batches/drain	      1024 operations/drain	  606382 B/op	    9217 allocs/op
+BenchmarkSelectorDrain/namespaces=1024-8      	      18	   9779090 ns/op	      1024 batches/drain	      1024 operations/drain	  606372 B/op	    9217 allocs/op
+BenchmarkSelectorDrain/namespaces=1024-8      	      18	   9795072 ns/op	      1024 batches/drain	      1024 operations/drain	  606372 B/op	    9217 allocs/op
+PASS
+ok  	github.com/batchstream/weir/internal/store	3.690s
