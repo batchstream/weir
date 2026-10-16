@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -153,14 +154,21 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		request.Body = &nativeHTTPBody{Reader: body}
 		defer request.Body.Close()
 	}
+	headerMemory := &nativeHeaderMemory{io: p.NativeIO}
+	headerKey := nativeHeaderKey{}
+	*request = *request.WithContext(context.WithValue(request.Context(), headerKey, headerMemory))
 	response, err := a.nativeClient.Do(request)
+	headerMemory.finish()
 	if err != nil {
+		if errors.Is(err, execution.ErrNativeMemory) {
+			return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error()))
+		}
 		return protocol.NativeFailure(true, nativeExchangeFailure(ctx, "Native HTTP exchange incomplete"))
 	}
 	defer response.Body.Close()
 	p.WorkingBytes += len(response.Status) + len(response.Proto)
 	for name, values := range response.Header {
-		p.WorkingBytes += len(name) + 64 + cap(values)*16
+		p.WorkingBytes += len(name) + 256 + cap(values)*16
 		for _, value := range values {
 			p.WorkingBytes += len(value)
 		}
@@ -191,6 +199,11 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 	head := &pb.NativeHead{Metadata: document, BodyContentType: contentType}
 	value := &pb.Event_Head{Head: head}
 	event := &pb.Event{Value: value}
+	if p.NativeIO != nil {
+		if err := p.NativeIO.EndIO(p.WorkingBytes, proto.Size(event)); err != nil {
+			return nativeMemoryFailure(err)
+		}
+	}
 	if err := emit(p, event); err != nil {
 		return protocol.NativeFailure(true, protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native output unavailable"))
 	}
@@ -199,7 +212,27 @@ func (a *Adapter) executeNative(ctx context.Context, p *execution.Plan, emit exe
 		if ctx.Err() != nil {
 			return protocol.NativeFailure(true, protocol.ContextFailure(ctx))
 		}
+		if p.NativeIO != nil {
+			// Go's chunked-body trailer parser is bounded by its 4 KiB bufio reader.
+			// Its map/strings, TLS record and fixed body buffer fit in this transient
+			// window, borrowed from the Node IO reserve only while actually reading.
+			if err := p.NativeIO.BeginIO(ctx, 2<<20); err != nil {
+				return nativeMemoryFailure(err)
+			}
+		}
 		n, err := response.Body.Read(buffer)
+		held := p.WorkingBytes
+		for name, values := range response.Trailer {
+			held += len(name) + 256 + cap(values)*16
+			for _, value := range values {
+				held += len(value)
+			}
+		}
+		if p.NativeIO != nil {
+			if budgetErr := p.NativeIO.EndIO(held, n); budgetErr != nil {
+				return nativeMemoryFailure(budgetErr)
+			}
+		}
 		if n > 0 {
 			value := &pb.Event_Chunk{Chunk: append([]byte(nil), buffer[:n]...)}
 			event := &pb.Event{Value: value}
@@ -251,4 +284,12 @@ func nativeExchangeFailure(ctx context.Context, message string) *pb.Failure {
 		return protocol.ContextFailure(ctx)
 	}
 	return protocol.Fail(pb.FailureCode_UNAVAILABLE, message)
+}
+
+func nativeMemoryFailure(err error) *pb.NativeEnd {
+	failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrNativeMemory.Error())
+	if !errors.Is(err, execution.ErrNativeMemory) {
+		failure = protocol.Fail(pb.FailureCode_UNAVAILABLE, "Native IO unavailable")
+	}
+	return protocol.NativeFailure(true, failure)
 }

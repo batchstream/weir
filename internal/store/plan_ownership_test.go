@@ -33,7 +33,7 @@ func TestReusablePlanResultReservationsRemainIndependent(t *testing.T) {
 		events = append(events, event)
 	}
 	adapter := &growingReadResultAdapter{events: events}
-	runtime := newRuntime(adapter, DefaultLimits())
+	runtime := newRuntime(adapter, DefaultLimits(), nil)
 	work := plan(1, "shared", true)
 	work.ResultBytes = execution.ResultOverheadBytes
 	estimate := work.ResultBytes
@@ -87,7 +87,7 @@ func TestReusablePlanConcurrentBatchesPreserveResultAccounting(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchOperations = 1
 	limits.MaxInFlight = 0
-	runtime := newRuntime(adapter, limits)
+	runtime := newRuntime(adapter, limits, nil)
 	work := plan(1, "shared", true)
 	work.ResultBytes = execution.ResultOverheadBytes
 	var tickets []*Ticket

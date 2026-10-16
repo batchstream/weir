@@ -11,7 +11,7 @@ func TestWaitingSelectionRefreshesAfterAdmissionAndFlushesOnDrain(t *testing.T) 
 	limits := DefaultLimits()
 	limits.BatchWait = time.Hour
 	limits.BatchOperations = 3
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	firstWork := plan(1, "first", false)
 	first, failure, _ := runtime.Submit(t.Context(), firstWork, nil)
 	if failure != nil {
@@ -66,7 +66,7 @@ func TestCachedOversizeSuccessorSurvivesEarlierAcknowledgements(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = 0
 	limits.BatchBytes = 1024
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	var tickets []*Ticket
 	for index, size := range []int{512, 2048, 512} {
 		work := plan(uint64(index), fmt.Sprint(index), false)

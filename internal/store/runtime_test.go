@@ -51,7 +51,7 @@ func TestAdmissionBoundsAndReservation(t *testing.T) {
 	l := DefaultLimits()
 	l.QueueBytes = 2 * l.BatchBytes
 	l.BatchOperations = 1
-	r := newRuntime(nil, l)
+	r := newRuntime(nil, l, nil)
 	defer func() {
 		for t := range r.live {
 			if t.stopWatch != nil {
@@ -97,7 +97,7 @@ func TestAdmissionBoundsAndReservation(t *testing.T) {
 func TestSameStreamOrderIndependentReadAndCancellation(t *testing.T) {
 	l := DefaultLimits()
 	l.BatchOperations = 1
-	r := newRuntime(nil, l)
+	r := newRuntime(nil, l, nil)
 	s := r.NewSession()
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -146,7 +146,7 @@ func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		l := DefaultLimits()
 		l.BatchOperations = 1
-		r := newRuntime(nil, l)
+		r := newRuntime(nil, l, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		p := plan(0, "a", false)
 		ticket, _, _ := r.Submit(ctx, p, nil)
@@ -173,7 +173,7 @@ func TestDispatchedCancellationPreservesBackendOutcome(t *testing.T) {
 func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 	l := DefaultLimits()
 	l.BatchOperations = 3
-	r := newRuntime(nil, l)
+	r := newRuntime(nil, l, nil)
 	short, stop := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer stop()
 	long, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -211,7 +211,7 @@ func TestMicrobatchDeadlinesAndBounds(t *testing.T) {
 func TestShutdownPreservesSynchronousResultEvidenceUntilAck(t *testing.T) {
 	limits := DefaultLimits()
 	adapter := &lifecycleAdapter{}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestCommandAdmissionRequiresNonzeroMetadataAndTerminalCharge(t *testing.T) 
 	for _, resource := range []string{"input", "result"} {
 		for _, streaming := range []bool{false, true} {
 			t.Run(resource+fmt.Sprint(streaming), func(t *testing.T) {
-				runtime := newRuntime(nil, DefaultLimits())
+				runtime := newRuntime(nil, DefaultLimits(), nil)
 				work := plan(1, "command", false)
 				if streaming {
 					work.Command = nativeCall()

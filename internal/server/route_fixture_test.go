@@ -117,7 +117,7 @@ func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	t.Helper()
 	adapter := newPeerAdapter(name)
 	limits := store.DefaultLimits()
-	local, err := store.New(adapter, limits)
+	local, err := store.New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -95,7 +95,7 @@ func openValueReadFixture(t *testing.T) *valueReadFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	local, err := store.New(adapter, store.DefaultLimits())
+	local, err := store.New(adapter, store.DefaultLimits(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

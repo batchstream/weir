@@ -88,6 +88,8 @@ func (d *connectionDialer) dial(ctx context.Context, network, address string) (n
 		return nil, err
 	}
 	conn := &searchConn{Conn: raw, raw: raw, owner: d}
+	headerKey := nativeHeaderKey{}
+	conn.header, _ = ctx.Value(headerKey).(*nativeHeaderMemory)
 	d.mu.Lock()
 	if d.closed || ctx.Err() != nil {
 		d.mu.Unlock()
@@ -137,10 +139,21 @@ func (d *connectionDialer) close() {
 
 type searchConn struct {
 	net.Conn
-	raw   net.Conn
-	owner *connectionDialer
-	once  sync.Once
-	err   error
+	raw    net.Conn
+	owner  *connectionDialer
+	header *nativeHeaderMemory
+	once   sync.Once
+	err    error
+}
+
+func (c *searchConn) Read(data []byte) (int, error) {
+	n, err := c.Conn.Read(data)
+	if n > 0 && c.header != nil {
+		if budgetErr := c.header.read(data[:n]); budgetErr != nil {
+			return 0, budgetErr
+		}
+	}
+	return n, err
 }
 
 func (c *searchConn) Close() error {

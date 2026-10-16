@@ -259,7 +259,7 @@ func TestMongoExpressionCancellationLedgerAndDrain(t *testing.T) {
 			a := testAdapter(t, opts)
 			limits := store.DefaultLimits()
 
-			runtime, err := store.New(a, limits)
+			runtime, err := store.New(a, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

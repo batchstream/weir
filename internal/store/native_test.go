@@ -11,7 +11,7 @@ import (
 func TestCanceledSingletonDoesNotRunOrPoisonPeer(t *testing.T) {
 	adapter := &singleExecutionAdapter{}
 	limits := DefaultLimits()
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestBlockedNativeLeavesOtherExecutionCreditAvailable(t *testing.T) {
 	limits := DefaultLimits()
 	limits.MaxInFlight = 2
 	adapter := &singleExecutionAdapter{}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

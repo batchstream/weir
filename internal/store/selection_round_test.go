@@ -15,7 +15,7 @@ func TestSelectionRoundRefillsInAdmissionOrder(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = 0
 	limits.BatchOperations = 2
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	var tickets []*Ticket
 	for index, group := range []string{"a", "a", "a", "b", "a", "c", "b"} {
 		work := plan(uint64(index), fmt.Sprint(index), false)
@@ -52,7 +52,7 @@ func TestSelectionRoundCancellationRefreshesCachedGroups(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = 0
 	limits.BatchOperations = 1
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	canceledContext, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var tickets []*Ticket
@@ -98,7 +98,7 @@ func TestSelectionRoundSlotBoundPreservesOmittedOlderGroups(t *testing.T) {
 			limits.BatchWait = 0
 			limits.BatchOperations = 2
 			limits.MaxInFlight = slots
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			var tickets []*Ticket
 			for index, group := range []string{"a", "a", "b", "c", "a", "b", "d", "a"} {
 				work := plan(uint64(index), "same-record", false)
@@ -127,7 +127,7 @@ func TestSelectionRoundSlotBoundDoesNotHideReadyReads(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchWait = time.Second
 	limits.MaxInFlight = 1
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	base := time.Now()
 	var tickets []*Ticket
 	for index := range 3 {
@@ -167,7 +167,7 @@ func TestSelectionRoundPreservesSessionOrderUnderFragmentation(t *testing.T) {
 	limits.BatchOperations = 7
 	limits.BatchWait = 0
 	limits.MaxInFlight = 4
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	var sessions []*Session
 	for range 8 {
 		session := runtime.NewSession()

@@ -22,7 +22,7 @@ func TestQueueCountAndBytesReleaseAtDispatch(t *testing.T) {
 			} else {
 				limits.QueueBytes = 2048
 			}
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			var tickets []*Ticket
@@ -77,7 +77,7 @@ func TestQueueCountAndBytesReleaseAtDispatch(t *testing.T) {
 func TestBatchDeadlineComesOnlyFromInterestedCallers(t *testing.T) {
 	limits := DefaultLimits()
 	limits.BatchOperations = 2
-	runtime := newRuntime(nil, limits)
+	runtime := newRuntime(nil, limits, nil)
 	bounded, stop := context.WithTimeout(t.Context(), 10*time.Second)
 	defer stop()
 	callers := []context.Context{bounded, t.Context()}

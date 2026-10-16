@@ -298,6 +298,9 @@ func (s *Server) sendEvent(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb
 			return status.FromContextError(stream.Context().Err()).Err()
 		}
 	}
+	if err == nil && stream.Context().Err() != nil {
+		return status.FromContextError(stream.Context().Err()).Err()
+	}
 	return err
 }
 
@@ -307,7 +310,7 @@ func (s *Server) submitPlan(ctx context.Context, runtime *store.Runtime, plan *e
 		if failure == nil {
 			return ticket, nil
 		}
-		if failure.Code != pb.FailureCode_RESOURCE_EXHAUSTED || runtime.Snapshot().Overloaded {
+		if failure.Code != pb.FailureCode_RESOURCE_EXHAUSTED || changed == nil || runtime.Snapshot().Overloaded {
 			return nil, failure
 		}
 		select {

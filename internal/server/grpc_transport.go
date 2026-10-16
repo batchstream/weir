@@ -16,7 +16,10 @@ import (
 
 type rpcContextKey uint8
 
-const rpcKey rpcContextKey = 0
+const (
+	rpcKey rpcContextKey = iota
+	responseConnectionKey
+)
 
 // rpcState checks ingress before gRPC reads DATA, tracks RPC lifetime and
 // cancels streams that stop making input progress.
@@ -157,7 +160,11 @@ func (transportStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 	switch value := event.(type) {
 	case *stats.OutPayload:
 		if value, ok := state.server.admission.responses.Load(value.Payload); ok {
-			value.(*responseBufferOwner).watch(ctx, state.server)
+			owner := value.(*responseBufferOwner)
+			if connection, ok := ctx.Value(responseConnectionKey).(*responseConnection); ok {
+				owner.attachConnection(connection)
+			}
+			owner.watch(ctx, state.server)
 		}
 	case *stats.InPayload:
 		state.decoded()
@@ -167,7 +174,17 @@ func (transportStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 }
 
 func (transportStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
-	return ctx
+	connection := &responseConnection{}
+	return context.WithValue(ctx, responseConnectionKey, connection)
 }
 
-func (transportStats) HandleConn(context.Context, stats.ConnStats) {}
+func (transportStats) HandleConn(ctx context.Context, event stats.ConnStats) {
+	if _, ended := event.(*stats.ConnEnd); !ended {
+		return
+	}
+	if connection, ok := ctx.Value(responseConnectionKey).(*responseConnection); ok {
+		// Native grpc Serve emits ConnEnd after HandleStreams has joined its
+		// loopy writer. RPC cancellation or raw socket Close is earlier.
+		connection.retire()
+	}
+}

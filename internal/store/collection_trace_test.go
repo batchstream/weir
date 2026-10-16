@@ -50,7 +50,7 @@ func TestCollectionFixedArrivalTraces(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BatchOperations = 3
 			limits.BatchWait = 10 * time.Millisecond
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			base := time.Now()
 			var tickets []*Ticket
 			var dispatched []uint64
@@ -102,7 +102,7 @@ func TestReadyOldestCandidatePreservesCrossNamespaceSessionOrder(t *testing.T) {
 			if expired {
 				limits.BatchWait = time.Second
 			}
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			session := runtime.NewSession()
 			defer session.Close()
 			base := time.Now().Add(-2 * time.Second)
@@ -154,7 +154,7 @@ func TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure(t *testing.T) {
 	limits.QueueOperations = 3
 	limits.BatchWait = time.Hour
 	adapter := &concurrencyAdapter{started: make(chan []*execution.Plan, 2), finish: make(chan struct{})}
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
