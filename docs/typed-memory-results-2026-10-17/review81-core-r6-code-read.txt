@@ -1,0 +1,315 @@
+["git", "diff", "a1fd658a571362f46e70a8c1172507faceca812e", "HEAD", "--", "internal/backend/search/memory.go", "internal/backend/search/native_memory.go", "internal/backend/search/transport.go"]
+actual_exit=0
+diff --git a/internal/backend/search/memory.go b/internal/backend/search/memory.go
+index c1bd47e..d649e53 100644
+--- a/internal/backend/search/memory.go
++++ b/internal/backend/search/memory.go
+@@ -88,6 +88,16 @@ func searchMemory(ctx context.Context) *recordMemory {
+ }
+ 
+ func reserveSearchScratch(ctx context.Context, bytes int) error {
++	headerKey := nativeHeaderKey{}
++	if header, _ := ctx.Value(headerKey).(*nativeHeaderMemory); header != nil {
++		header.mu.Lock()
++		if !header.completed && header.records != nil {
++			err := header.setBody(bytes)
++			header.mu.Unlock()
++			return err
++		}
++		header.mu.Unlock()
++	}
+ 	if memory := searchMemory(ctx); memory != nil {
+ 		return memory.set(memory.sources, memory.frame, bytes)
+ 	}
+diff --git a/internal/backend/search/native_memory.go b/internal/backend/search/native_memory.go
+index 843b4b6..4441dc0 100644
+--- a/internal/backend/search/native_memory.go
++++ b/internal/backend/search/native_memory.go
+@@ -12,19 +12,28 @@ type nativeHeaderKey struct{}
+ 
+ // Header bytes first enter net/http's existing 4 KiB read buffer. Before those
+ // bytes reach its parser, reserve the parser's expanding line buffers, strings,
+-// Header map and the eventual metadata copy. 512 bytes per line conservatively
++// Header map and the eventual metadata copy. 512 bytes per line/element conservatively
+ // exceeds Go's documented 200-byte MIME map-entry accounting; eight copies of
+ // wire bytes cover growing line/metadata buffers and encoded output. This is a
+ // memory bound, without imposing a new fixed HTTP header-size/count quota.
+ type nativeHeaderMemory struct {
+-	mu        sync.Mutex
+-	io        execution.NativeIO
+-	memory    execution.Memory
+-	base      int
+-	minimum   int
+-	bytes     int
+-	lines     int
+-	completed bool
++	mu            sync.Mutex
++	io            execution.NativeIO
++	memory        execution.Memory
++	base          int
++	minimum       int
++	bytes         int
++	lines         int
++	elements      int
++	completed     bool
++	records       *recordMemory
++	body          int
++	trailer       int
++	window        int
++	currentBytes  int
++	currentLines  int
++	previousBytes int
++	previousLines int
+ }
+ 
+ func (m *nativeHeaderMemory) read(data []byte) error {
+@@ -33,27 +42,74 @@ func (m *nativeHeaderMemory) read(data []byte) error {
+ 	if m.completed || m.io == nil && m.memory == nil {
+ 		return nil
+ 	}
++	// Go readTrailer first requires its complete MIME block to fit in the
++	// transport's 4 KiB bufio buffer. Any such block lies in two adjacent
++	// 4 KiB wire intervals, including bytes prefetched with the response head.
++	// Keep their largest parser bound until the response is released. Large
++	// direct body reads are scanned in place; body commas are not declarations.
++	// Before Do returns, read-ahead is conservatively charged as response head.
++	remaining := data
++	for len(remaining) != 0 {
++		count := min(responseReadBuffer-m.currentBytes, len(remaining))
++		m.currentBytes += count
++		m.currentLines += bytes.Count(remaining[:count], []byte{'\n'})
++		window := 8192 + 8*(m.previousBytes+m.currentBytes) + 512*(m.previousLines+m.currentLines)
++		m.window = max(m.window, window)
++		remaining = remaining[count:]
++		if m.currentBytes == responseReadBuffer {
++			m.previousBytes, m.previousLines = m.currentBytes, m.currentLines
++			m.currentBytes, m.currentLines = 0, 0
++		}
++	}
++	if m.body != 0 {
++		return m.setBody(m.body)
++	}
+ 	lines := bytes.Count(data, []byte{'\n'})
+-	if len(data) > (math.MaxInt-8192)/8-m.bytes || lines > (math.MaxInt-8192)/512-m.lines {
++	elements := bytes.Count(data, []byte{','})
++	if len(data) > math.MaxInt-m.bytes || lines > math.MaxInt-m.lines || elements > math.MaxInt-m.elements {
+ 		return execution.ErrExecutionMemory
+ 	}
+ 	m.bytes += len(data)
+ 	m.lines += lines
+-	if m.base > math.MaxInt-8192-m.lines*512 || m.bytes > (math.MaxInt-8192-m.lines*512-m.base)/8 {
++	m.elements += elements
++	if m.base > math.MaxInt-8192 || m.lines > (math.MaxInt-8192-m.base)/512 || m.elements > (math.MaxInt-8192-m.base)/512-m.lines {
+ 		return execution.ErrExecutionMemory
+ 	}
+-	working := m.base + 8192 + m.bytes*8 + m.lines*512
++	entries := m.lines + m.elements
++	if m.bytes > (math.MaxInt-8192-m.base-entries*512)/8 {
++		return execution.ErrExecutionMemory
++	}
++	// fixTrailer allocates a map entry for every comma-separated declaration,
++	// even when one physical Trailer line contains thousands of short names.
++	working := m.base + 8192 + m.bytes*8 + entries*512
+ 	if m.memory != nil {
+ 		return m.memory.SetWorking(max(m.minimum, working))
+ 	}
+ 	return m.io.GrowIO(working)
+ }
+ 
++// Called under mu by both raw connection reads and body buffer reservations.
++func (m *nativeHeaderMemory) setBody(scratch int) error {
++	if scratch < 0 || m.window > math.MaxInt-scratch || m.trailer > (math.MaxInt-scratch-m.window)/2 {
++		return execution.ErrExecutionMemory
++	}
++	// Declared trailers stay in scratch. Undeclared EOF keys can grow that
++	// destination map while Go also holds its temporary MIME map: the wire
++	// window covers new entries/strings; two existing map capacities cover
++	// destination growth without assuming a favorable map load factor.
++	if err := m.records.set(m.records.sources, m.records.frame, scratch+m.window+2*m.trailer); err != nil {
++		return err
++	}
++	m.body = scratch
++	return nil
++}
++
+ func (m *nativeHeaderMemory) finish() {
+ 	m.mu.Lock()
+ 	m.completed = true
+ 	// Detached HTTP transport contexts must not retain the Runtime or input.
+ 	m.io = nil
+ 	m.memory = nil
++	m.records = nil
+ 	m.mu.Unlock()
+ }
+diff --git a/internal/backend/search/transport.go b/internal/backend/search/transport.go
+index 59d7983..16f74be 100644
+--- a/internal/backend/search/transport.go
++++ b/internal/backend/search/transport.go
+@@ -16,6 +16,7 @@ import (
+ )
+ 
+ const connectionTimeout = 2 * time.Second
++const responseReadBuffer = 4096
+ 
+ var errTransport = errors.New("backend transport failed")
+ var errResponse = errors.New("invalid or excessive backend response")
+@@ -77,8 +78,10 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	_, standardTransport := transport.(*http.Transport)
+ 	var acquiring, connected atomic.Bool
+ 	header := &nativeHeaderMemory{}
++	defer header.finish()
+ 	if memory := searchMemory(ctx); memory != nil {
+ 		header.memory = memory.owner
++		header.records = memory
+ 		header.base = max(memory.base, memory.frame) + memory.sources
+ 		header.minimum = header.base + memory.reply
+ 	}
+@@ -124,7 +127,6 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 		return 0, nil, err
+ 	}
+ 	response, err := client.Do(request)
+-	header.finish()
+ 	if err != nil {
+ 		if errors.Is(err, execution.ErrExecutionMemory) {
+ 			return 0, nil, execution.ErrExecutionMemory
+@@ -161,18 +163,34 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	if call.responseLimit > 0 {
+ 		reader = io.LimitReader(reader, int64(call.responseLimit)+1)
+ 	}
+-	headerBytes := 8192
+-	for name, values := range response.Header {
+-		headerBytes += len(name) + 256 + cap(values)*16
+-		for _, value := range values {
+-			headerBytes += len(value)
+-		}
++	headerBytes, err := headerWorking(response.Header)
++	if err != nil {
++		return response.StatusCode, nil, err
++	}
++	trailerBytes, err := headerWorking(response.Trailer)
++	if err != nil {
++		return response.StatusCode, nil, err
++	}
++	if trailerBytes > math.MaxInt-8192 || headerBytes > math.MaxInt-8192-trailerBytes {
++		return response.StatusCode, nil, execution.ErrExecutionMemory
++	}
++	headerBytes += 8192 + trailerBytes
++	bodyContext := ctx
++	if len(response.TransferEncoding) != 0 {
++		// Keep the same guard and its prefetched wire window through EOF.
++		// Body capacities and trailer parser work share one absolute budget.
++		header.mu.Lock()
++		header.trailer = trailerBytes
++		header.mu.Unlock()
++		bodyContext = request.Context()
++	} else {
++		header.finish()
+ 	}
+ 	length := response.ContentLength
+ 	if call.responseLimit > 0 && length > int64(call.responseLimit)+1 {
+ 		length = int64(call.responseLimit) + 1
+ 	}
+-	raw, err = readResponseBody(ctx, reader, length, headerBytes)
++	raw, err = readResponseBody(bodyContext, reader, length, headerBytes)
+ 	if err == nil && call.responseLimit > 0 && len(raw) > call.responseLimit {
+ 		return response.StatusCode, nil, errResponseWindow
+ 	}
+@@ -194,6 +212,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	_ = response.Body.Close()
+ 	response.Header, response.Trailer = nil, nil
+ 	response, reader = nil, nil
++	header.finish()
+ 	if err := reserveSearchScratch(ctx, cap(raw)+jsonDecodeWorking(raw)); err != nil {
+ 		return status, nil, err
+ 	}
+@@ -209,6 +228,23 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	return status, raw, nil
+ }
+ 
++func headerWorking(header http.Header) (int, error) {
++	working := 0
++	for name, values := range header {
++		if len(name) > math.MaxInt-256-working || cap(values) > (math.MaxInt-256-working-len(name))/16 {
++			return 0, execution.ErrExecutionMemory
++		}
++		working += len(name) + 256 + cap(values)*16
++		for _, value := range values {
++			if len(value) > math.MaxInt-working {
++				return 0, execution.ErrExecutionMemory
++			}
++			working += len(value)
++		}
++	}
++	return working, nil
++}
++
+ // Backend authentication supplies defaults; Native may override end-to-end headers.
+ func (a *Adapter) configureRequest(request *http.Request) {
+ 	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
+@@ -229,6 +265,7 @@ func newTransport(timeout, idleTimeout time.Duration) *http.Transport {
+ 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
+ 		DisableCompression: true, MaxConnsPerHost: 0,
+ 		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: idleTimeout,
++		ReadBufferSize:         responseReadBuffer,
+ 		MaxResponseHeaderBytes: math.MaxInt64,
+ 		TLSHandshakeTimeout:    timeout,
+ 	}
+
+Local pinned Go1.27.1 transfer.go read-only excerpt:
+906: func seeUpcomingDoubleCRLF(r *bufio.Reader) bool {
+907: 	for peekSize := 4; ; peekSize++ {
+908: 		// This loop stops when Peek returns an error,
+909: 		// which it does when r's buffer has been filled.
+910: 		buf, err := r.Peek(peekSize)
+911: 		if bytes.HasSuffix(buf, doubleCRLF) {
+912: 			return true
+913: 		}
+914: 		if err != nil {
+915: 			break
+916: 		}
+917: 	}
+918: 	return false
+919: }
+920: 
+921: var errTrailerEOF = errors.New("http: unexpected EOF reading trailer")
+922: 
+923: func (b *body) readTrailer() error {
+924: 	// The common case, since nobody uses trailers.
+925: 	buf, err := b.r.Peek(2)
+926: 	if bytes.Equal(buf, singleCRLF) {
+927: 		b.r.Discard(2)
+928: 		return nil
+929: 	}
+930: 	if len(buf) < 2 {
+931: 		return errTrailerEOF
+932: 	}
+933: 	if err != nil {
+934: 		return err
+935: 	}
+936: 
+937: 	// Make sure there's a header terminator coming up, to prevent
+938: 	// a DoS with an unbounded size Trailer. It's not easy to
+939: 	// slip in a LimitReader here, as textproto.NewReader requires
+940: 	// a concrete *bufio.Reader. Also, we can't get all the way
+941: 	// back up to our conn's LimitedReader that *might* be backing
+942: 	// this bufio.Reader. Instead, a hack: we iteratively Peek up
+943: 	// to the bufio.Reader's max size, looking for a double CRLF.
+944: 	// This limits the trailer to the underlying buffer size, typically 4kB.
+945: 	if !seeUpcomingDoubleCRLF(b.r) {
+946: 		return errors.New("http: suspiciously long trailer after chunked body")
+947: 	}
+948: 
+949: 	hdr, err := readMIMEHeader(textproto.NewReader(b.r), math.MaxInt64, b.maxTrailerHeaders)
+950: 	if err != nil {
+951: 		if err == io.EOF {
+952: 			return errTrailerEOF
+953: 		}
+954: 		return err
+955: 	}
+956: 	switch rr := b.hdr.(type) {
+957: 	case *Request:
+958: 		mergeSetHeader(&rr.Trailer, Header(hdr))
+959: 	case *Response:
+960: 		mergeSetHeader(&rr.Trailer, Header(hdr))
+961: 	}
+962: 	return nil

@@ -1,9 +1,10 @@
 # Typed execution, result and network memory qualification
 
-Status: PR 81 awaits a sixth clean candidate and renewed independent acceptance.
-The fifth candidate's original gates pass, but its independent HTTP Trailer
-finding blocks merge. The correction now passes focused and full backend race
-and vet checks. Overall production qualification remains incomplete.
+Status: the sixth clean candidate passes the original real-backend acceptance
+and independent re-execution. Both independent reviewers report no blocking
+code findings. Exact final-head approval and CI gate merge of PR 81. Overall
+production qualification remains incomplete: ingress, Lua, sustained load and
+fault qualification have not run.
 
 ## Preserved failure
 
@@ -580,3 +581,69 @@ checks, not the clean CLI real-backend qualification. The [final Trailer receipt
 source hashes, exact commands, actual exits and preserved independent failures.
 A new clean Linux artifact, original process gates, fresh CI and both independent
 final-head reviews are still required before merge.
+
+
+## Sixth clean candidate: all unchanged original gates pass
+
+Clean source `365c84616848d16c103be2ea9fd37c064bae5539`, Linux/arm64 CLI SHA256
+`610dd8f981dae280ad71cb9fb1249563a981c343ee4fc12588baf39d8f540d21`, passes
+all five unchanged gates: typed seven cases 30.957 s, mixed 10-by-256 burst
+36.533 s, maximum diagnostics 2.071 s, five slow-output rounds 17.401 s and
+small-query repetitions 2.818 s. All 351 source/module hashes remain identical,
+with no overlays, retries or workload/timeout changes. Thirteen owned CLIs
+have no OOM, exit zero and are removed; resource ownership returns to zero
+within the original five seconds. CI run 38949438132 passes the code head.
+
+All 2560 burst operations succeed with no budget denials, complete Mongo 421
+and Search 431 ID/n/pad/cardinality oracles, per-round P99 38.496–63.653 ms and
+maximum 63.775 ms. Typed pressure outcomes remain aggregates only: 512 MiB
+6 complete/26 capacity/0 deadlines, 1 GiB 16/16/0 and cross-Store 20/12/0.
+The largest pressure healthy-query observation is 274.197 ms, within its
+original three seconds; different candidate timings do not prove a causal
+latency improvement. Original r5's 1.0805 s pressure tail remains recorded.
+
+Diagnostics emits 1092 fixed series. All five rounds retain 32 real 8 MiB
+Native replies, with healthy calls 2.394–5.757 ms and cleanup 12.176–14.325 ms.
+Small-query repeats measure 3.336–7.845 ms. Diagnostics and small-query checks
+run in process. The slow-output profile verifies retention, progress and
+cancellation, not completed whole-response client hashes. The
+[r6 receipt](typed-memory-results-2026-10-17/typed-memory-fixed-r6-validation.json)
+records exact commands, opt-ins, exits, source/binary hashes, cleanup and these
+scope limits. Every older failed candidate, independent failure and r5 pass
+remains preserved. Independent re-execution and final-head CI are pending.
+
+
+## Independent sixth-candidate acceptance
+
+A reviewer independently reruns the unchanged original Trailer failure fixture
+against clean source `365c84616848d16c103be2ea9fd37c064bae5539`. It passes in
+2.812 s: 4096 declared keys/300 EOF values remain charged, one complete HTTP 200
+`{}` is delivered, one business request occurs and the backend connection closes
+with owned zero. The original fixture's literal old-head label remains intact;
+execution head, binary and code hashes are separately audited rather than editing
+the historical failure source to match the correction.
+
+The reviewer then runs the unchanged seven typed scenarios (31.010 s), mixed
+10-by-256 burst (36.970 s) and count3 small-query regression. All pass once with
+no retries. The previously failed cross-Store healthy Read and short Native
+complete in 27.451 and 319.776 ms within the original hold. Large-document Mongo
+and Search business chains retain their full content and absence oracles.
+Burst receives all 2560 successes with zero capacity rejections and passes all
+20 independent ID/n/pad/cardinality checks, final Mongo 421 and Search 431.
+Per-round P99 is 37.369–57.168 ms. Small queries take 4.171–7.283 ms.
+
+Eight independently run CLIs have no OOM, exit zero and are removed, with all
+ownership returned within the original five seconds. All 351 code/module hashes
+and the binary are unchanged; every prior first-failure/source/exit hash remains
+preserved. The [independent receipt](typed-memory-results-2026-10-17/review81-backend-r6-review-receipt.json)
+records commands, actual exits, observations and their scope limits. No ingress,
+Lua, final sustained profile or fault test is represented as covered here.
+
+The other reviewer finds no new core/ownership blocker: Store, Runtime, server,
+execution and module files are byte-identical to the independently tested r5
+wire-ownership source. The [core review](typed-memory-results-2026-10-17/review81-core-r6-preliminary.json)
+checks the explicit 4096-byte buffer premise, actual preallocation/retention
+phases, shared record-memory update and close/clear/detach order. Final review
+approval is bound to the last documentation-only head after verifying all 351
+code hashes and that head's CI; the real CLI artifact remains the clean code
+head and SHA recorded above.
