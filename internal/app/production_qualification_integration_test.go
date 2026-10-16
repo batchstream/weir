@@ -1,0 +1,835 @@
+//go:build integration
+
+package app
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/netip"
+	"os"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	weirclient "github.com/batchstream/weir-go"
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/testutil/testmetrics"
+	"github.com/batchstream/weir/internal/testutil/testmongo"
+	"github.com/batchstream/weir/internal/testutil/testsearch"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type qualificationRecord struct {
+	N   int64  `json:"n" bson:"n"`
+	Pad string `json:"pad" bson:"pad"`
+}
+
+type qualificationDataset struct {
+	store, root, media string
+	mongo              *testmongo.Fixture
+	search             *testsearch.Backend
+	pads               []string
+	native             []*pb.NativeRequest
+	expected           map[string]qualificationRecord
+}
+
+type qualificationJob struct {
+	sequence, backend, kind, payload, counter int
+	scheduled                                 time.Time
+	phase                                     string
+}
+
+type qualificationResult struct {
+	job                   qualificationJob
+	latency, service, lag time.Duration
+	err                   error
+}
+
+type qualificationStats struct {
+	offered, completed       int
+	latencies, service, lags []time.Duration
+	payloads                 [3]int
+	maximum                  qualificationResult
+}
+
+type qualificationSlowResult struct {
+	message string
+	err     error
+}
+
+// The short opt-in is explicitly a smoke run. Only the default 600-second
+// measurement, following 30 seconds of warmup, is qualification evidence.
+func TestProductionProcessQualification(t *testing.T) {
+	if os.Getenv("WEIR_PRODUCTION_QUALIFICATION") != "1" {
+		t.Skip("requires explicit native Linux CLI production qualification")
+	}
+	duration := 600 * time.Second
+	smoke := os.Getenv("WEIR_PRODUCTION_QUALIFICATION_SMOKE") == "1"
+	if smoke {
+		duration = 120 * time.Second
+	}
+	binary := os.Getenv("WEIR_QUALIFICATION_BINARY")
+	raw, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal("explicit qualification binary unavailable", err)
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
+	engine := strings.TrimSpace(packagedDocker(t, "info", "--format", "{{.OSType}}/{{.Architecture}}/{{.CgroupVersion}} kernel={{.KernelVersion}}"))
+	if !strings.HasPrefix(engine, "linux/aarch64/2 ") {
+		t.Fatal("requires native Linux arm64 cgroup-v2", engine)
+	}
+	image := strings.TrimSpace(packagedDocker(t, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}} {{.Id}}", "busybox:1.37.0"))
+	if image != "linux/arm64 sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b" {
+		t.Fatal("qualification fixture image identity changed", image)
+	}
+	mongo := testmongo.Open(t)
+	search := testsearch.Open(t)
+	if os.Getenv("WEIR_SEARCH_INTEGRATION") != "elasticsearch" {
+		t.Fatal("this qualification requires the fixed Elasticsearch 8.19.22 fixture")
+	}
+	metadata := strings.Fields(packagedDocker(t, "inspect", "--type", "container", "--format", `{{.Id}} {{index .Config.Labels "weir.owner"}} {{.Config.Image}} {{(index .NetworkSettings.Networks "bridge").IPAddress}} {{.State.Running}}`, "weir-local-elasticsearch"))
+	if len(metadata) != 5 || len(metadata[0]) != 64 || metadata[1] != "weir-search-local" || metadata[2] != "docker.elastic.co/elasticsearch/elasticsearch@sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237" || metadata[4] != "true" {
+		t.Fatal("owned pinned Elasticsearch fixture identity mismatch", metadata)
+	}
+	bridgeIP, err := netip.ParseAddr(metadata[3])
+	if err != nil || !bridgeIP.Is4() || !bridgeIP.IsPrivate() {
+		t.Fatal("owned Elasticsearch fixture lacks its native private bridge address")
+	}
+	t.Logf("Search service_transport=http://%s:9200 host_oracle=%s container=%s image=%s", bridgeIP, search.URL, metadata[0], metadata[2])
+	t.Log("Search uses its Linux bridge: prior Desktop host-published hairpin independently produced TCP timeouts without Weir; direct bridge control had 0/1800 failures. Raw controls: native-http-diagnostic-probe.txt and native-http-diagnostic-network-probe.txt")
+	pads := []string{strings.Repeat("x", 1<<10), strings.Repeat("x", 256<<10), strings.Repeat("x", 2<<20), strings.Repeat("x", 8<<20)}
+	datasets := []*qualificationDataset{
+		{store: "mongo", root: mongo.DB + "/records", media: "application/bson", mongo: mongo, pads: pads, expected: make(map[string]qualificationRecord)},
+		{store: "search", root: search.Index, media: "application/json", search: search, pads: pads, expected: make(map[string]qualificationRecord)},
+	}
+	for _, dataset := range datasets {
+		seedQualificationDataset(t, dataset)
+	}
+	mongoBackend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+	searchBackend := &Search{URL: "http://" + bridgeIP.String() + ":9200"}
+	mongoLocal := &Local{Backend: BackendConfig{MongoDB: mongoBackend}}
+	searchLocal := &Local{Backend: BackendConfig{Search: searchBackend}}
+	mongoStore, searchStore := StoreConfig{Name: "mongo", Local: mongoLocal}, StoreConfig{Name: "search", Local: searchLocal}
+	cfg := DefaultConfig()
+	cfg.Routing.Stores = []StoreConfig{mongoStore, searchStore}
+	opts := memoryRecoveryOptions{binary: binary, capacityMiB: 1024, automatic: true, config: &cfg}
+	process := startMemoryRecoveryCLI(t, opts)
+	version := packagedDocker(t, "exec", process.name, "/weir", "version")
+	var identity map[string]string
+	if json.Unmarshal([]byte(version), &identity) != nil || identity["target"] != "linux/arm64" {
+		t.Fatal("unexpected service binary identity", version)
+	}
+	if !smoke && (identity["state"] != "clean-commit" || identity["dirty"] != "false" || identity["revision"] != os.Getenv("WEIR_QUALIFICATION_SOURCE") || len(identity["revision"]) != 40 || digest != os.Getenv("WEIR_QUALIFICATION_SHA256")) {
+		t.Fatal("formal qualification requires an exact clean source and SHA256 receipt", version, digest)
+	}
+	t.Logf("qualification=%t duration=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s engine=%s image=%s SHA256=%s version=%s", !smoke, duration, runtime.Version(), runtime.GOOS, runtime.GOARCH, engine, image, digest, strings.TrimSpace(version))
+	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, pause=1024 entries/32MiB, batching=128/4MiB/20ms, stall=30s unchanged")
+	initial := process.sample(t)
+	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
+		t.Fatal("CLI automatic memory management was not installed")
+	}
+	for _, dataset := range datasets {
+		labels := map[string]string{"store": dataset.store}
+		for name, want := range map[string]float64{"weir_store_active_executions_limit": 16, "weir_store_pending_entries_limit": 1024, "weir_store_pending_reserved_bytes_limit": 32 << 20, "weir_store_paused_native_reserved_bytes_limit": 32 << 20, "weir_store_batch_max_operations": 128, "weir_store_batch_max_bytes": 4 << 20, "weir_store_batch_max_wait_seconds": .02} {
+			metric := testmetrics.Sample(initial, name, labels)
+			if metric == nil || metric.GetGauge().GetValue() != want {
+				t.Fatal("qualification changed a default Store policy", dataset.store, name, want)
+			}
+		}
+	}
+	openContext, stop := context.WithTimeout(t.Context(), 3*time.Second)
+	openOptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{"mongo", "search"}}
+	client, err := weirclient.Open(openContext, openOptions)
+	stop()
+	if err != nil {
+		t.Fatal("real SDK Resolve initialization failed", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	workload := qualificationWorkload{process: process, client: client, datasets: datasets, duration: duration}
+	runQualificationWorkload(t, workload)
+	for _, dataset := range datasets {
+		verifyQualificationOracle(t, dataset)
+	}
+}
+
+func seedQualificationDataset(t *testing.T, dataset *qualificationDataset) {
+	t.Helper()
+	if dataset.search != nil {
+		status, _ := dataset.search.Do(t, http.MethodPut, "/"+dataset.root+"/_mapping", `{"properties":{"pad":{"type":"keyword","index":false,"doc_values":false}}}`)
+		if status != http.StatusOK {
+			t.Fatal("owned large-payload mapping failed", status)
+		}
+	}
+	for index := range 132 {
+		id, n, size := fmt.Sprintf("lua-%03d", index-4), int64(0), 0
+		if index < 4 {
+			id, n, size = fmt.Sprintf("hot-%d", index), 1, index
+		}
+		record := qualificationRecord{N: n, Pad: dataset.pads[size]}
+		if dataset.mongo != nil {
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: n}, {Key: "pad", Value: record.Pad}}
+			_, err := dataset.mongo.Admin.Database(dataset.mongo.DB).Collection("records").InsertOne(ctx, document)
+			cancel()
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			raw, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			status, _ := dataset.search.Do(t, http.MethodPut, "/"+dataset.root+"/_doc/"+id, string(raw))
+			if status != http.StatusCreated {
+				t.Fatal("owned Search seed failed", status)
+			}
+		}
+		dataset.expected[id] = record
+	}
+	for payload := range 4 {
+		id := fmt.Sprintf("hot-%d", payload)
+		var native *pb.NativeRequest
+		var err error
+		if dataset.mongo != nil {
+			filter := bson.D{{Key: "_id", Value: id}}
+			command := bson.D{{Key: "find", Value: "records"}, {Key: "filter", Value: filter}, {Key: "limit", Value: 1}, {Key: "singleBatch", Value: true}}
+			raw, marshalErr := bson.Marshal(command)
+			err = marshalErr
+			document := &pb.Document{ContentType: dataset.media, Data: raw}
+			native = &pb.NativeRequest{Resource: dataset.mongo.DB, Request: document}
+		} else {
+			request, requestErr := http.NewRequest(http.MethodGet, "http://weir.invalid/"+dataset.root+"/_doc/"+id, nil)
+			err = requestErr
+			if err == nil {
+				native, err = weirclient.NewHTTPNativeRequest("", request)
+			}
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		dataset.native = append(dataset.native, native)
+	}
+}
+
+type qualificationWorkload struct {
+	process  *memoryRecoveryCLI
+	client   *weirclient.Client
+	datasets []*qualificationDataset
+	duration time.Duration
+	ctx      context.Context
+	results  chan qualificationResult
+	tokens   chan struct{}
+	pending  *sync.WaitGroup
+	inFlight *atomic.Int64
+}
+
+func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	var pending sync.WaitGroup
+	defer func() { cancel(); pending.Wait() }()
+	results := make(chan qualificationResult, 512)
+	tokens := make(chan struct{}, 512)
+	var inFlight atomic.Int64
+	work.ctx, work.results, work.tokens, work.pending, work.inFlight = ctx, results, tokens, &pending, &inFlight
+	started := time.Now()
+	warmup := 30 * time.Second
+	measurement := started.Add(warmup)
+	total := int((warmup + work.duration).Seconds()) * 200
+	produceDone := make(chan struct{})
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		defer close(produceDone)
+		lua := [2]int{}
+		for sequence := range total {
+			job := qualificationJob{sequence: sequence, backend: (sequence / 20) % 2, scheduled: started.Add(time.Duration(sequence) * 5 * time.Millisecond), phase: "steady"}
+			if job.scheduled.Before(measurement) {
+				job.phase = "warmup"
+			}
+			position := sequence % 20
+			switch {
+			case position < 10:
+				job.kind = 0
+			case position < 14:
+				job.kind = 1
+			case position < 17:
+				job.kind = 2
+			case position < 19:
+				job.kind = 3
+				job.counter = lua[job.backend] % 128
+				lua[job.backend]++
+			default:
+				job.kind = 4
+			}
+			random := uint64(sequence+1) * 0x9e3779b97f4a7c15
+			random ^= random >> 32
+			if random%1000 == 0 {
+				job.payload = 2
+			} else if random%1000 < 11 {
+				job.payload = 1
+			}
+			if job.kind == 3 {
+				job.payload = 0
+			}
+			if remaining := time.Until(job.scheduled); remaining > 0 {
+				timer := time.NewTimer(remaining)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+			launchQualificationJob(work, job)
+		}
+	}()
+	slowEvents := make(chan qualificationSlowResult, 1)
+	pending.Add(1)
+	go func() {
+		defer pending.Done()
+		message, err := qualificationSlowConsumers(ctx, work, measurement)
+		result := qualificationSlowResult{message: message, err: err}
+		slowEvents <- result
+	}()
+	burstAt := measurement.Add(work.duration / 2)
+	burst := false
+	stats := make(map[string]*qualificationStats)
+	minutes := make(map[string]*qualificationStats)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	received, expected, slowFinished := 0, total, false
+	for received < expected || !slowFinished {
+		select {
+		case result := <-results:
+			received++
+			job := result.job
+			key := job.phase + "/" + work.datasets[job.backend].store + "/" + qualificationMethod(job.kind)
+			appendQualificationStats(stats, key, result)
+			minute := int(job.scheduled.Sub(measurement) / time.Minute)
+			appendQualificationStats(minutes, fmt.Sprintf("minute=%d/%s", minute, key), result)
+			if result.err != nil {
+				t.Logf("failed sequence=%d backend=%s method=%s payload=%d phase=%s scheduled=%s service=%s e2e=%s driver_lag=%s", job.sequence, work.datasets[job.backend].store, qualificationMethod(job.kind), job.payload, job.phase, job.scheduled.UTC().Format(time.RFC3339Nano), result.service, result.latency, result.lag)
+				reportQualificationStats(t, stats, false)
+				t.Fatal(result.err)
+			}
+			rememberQualificationMutation(work.datasets[job.backend], job)
+		case result := <-slowEvents:
+			slowFinished = true
+			if result.err != nil {
+				t.Fatal("continuous slow-consumer phase failed", result.err)
+			}
+			t.Logf("all 32 slow consumers canceled and joined at %s; %s", time.Since(measurement), result.message)
+		case <-ticker.C:
+			metrics := work.process.sample(t)
+			for _, dataset := range work.datasets {
+				labels := map[string]string{"store": dataset.store}
+				active := testmetrics.Sample(metrics, "weir_store_active_executions", labels).GetGauge().GetValue()
+				pausedBytes := testmetrics.Sample(metrics, "weir_store_paused_native_reserved_bytes", labels).GetGauge().GetValue()
+				if active > 16 || pausedBytes > 32<<20 {
+					t.Fatal("default resource bounds exceeded", dataset.store, active, pausedBytes)
+				}
+			}
+			gc := metrics["go_gc_duration_seconds"].GetMetric()[0].GetSummary()
+			t.Logf("trend second=%d inflight=%d RSS=%.0f working=%.0f heap=%.0f CPU=%.4f GC=%d GC_pause=%.6f pending=%.0f active=%.0f paused=%.0f pause_bytes=%.0f working_bytes=%.0f wire_bytes=%.0f sessions=%.0f latch=%.0f", int(time.Since(measurement).Seconds()), inFlight.Load(), testmetrics.Sum(metrics, "process_resident_memory_bytes"), testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes"), testmetrics.Sum(metrics, "go_memstats_heap_alloc_bytes"), testmetrics.Sum(metrics, "process_cpu_seconds_total"), gc.GetSampleCount(), gc.GetSampleSum(), testmetrics.Sum(metrics, "weir_store_pending_entries"), testmetrics.Sum(metrics, "weir_store_active_executions"), testmetrics.Sum(metrics, "weir_store_paused_native_outputs"), testmetrics.Sum(metrics, "weir_store_paused_native_reserved_bytes"), testmetrics.Sum(metrics, "weir_store_working_reserved_bytes"), testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes"), testmetrics.Sum(metrics, "weir_ingress_sessions"), testmetrics.Sum(metrics, "weir_memory_latched"))
+			if !burst && !time.Now().Before(burstAt) {
+				burst = true
+				expected += 256
+				for index := range 256 {
+					job := qualificationJob{sequence: total + index, backend: index % 2, kind: index % 3, scheduled: burstAt, phase: "burst"}
+					launchQualificationJob(work, job)
+				}
+				t.Log("offered burst=256 without changing the fixed steady arrival rate")
+			}
+		}
+	}
+	<-produceDone
+	if remaining := time.Until(measurement.Add(work.duration)); remaining > 0 {
+		time.Sleep(remaining)
+	}
+	reportQualificationStats(t, stats, true)
+	reportQualificationStats(t, minutes, false)
+	if err := work.client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		metrics := work.process.sample(t)
+		idle := testmetrics.Sum(metrics, "weir_memory_latched") == 0 && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= work.process.capacity*.70
+		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
+			idle = idle && metrics[name] != nil && testmetrics.Sum(metrics, name) == 0
+		}
+		if idle {
+			t.Log("final all queue/execution/publication/session/byte gauges=0; known memory recovered")
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fixed 5s final resource recovery bound exceeded")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func launchQualificationJob(work qualificationWorkload, job qualificationJob) {
+	ctx, results, tokens, pending, inFlight := work.ctx, work.results, work.tokens, work.pending, work.inFlight
+	select {
+	case tokens <- struct{}{}:
+	case <-ctx.Done():
+		return
+	default:
+		result := qualificationResult{job: job, err: fmt.Errorf("fixed arrival exceeded driver in-flight bound; offer was not hidden")}
+		results <- result
+		return
+	}
+	pending.Add(1)
+	inFlight.Add(1)
+	go func() {
+		defer pending.Done()
+		defer func() { <-tokens; inFlight.Add(-1) }()
+		started := time.Now()
+		call, cancel := context.WithTimeout(ctx, 3*time.Second)
+		err := executeQualificationJob(call, work.client, work.datasets[job.backend], job)
+		cancel()
+		result := qualificationResult{job: job, latency: time.Since(job.scheduled), service: time.Since(started), lag: started.Sub(job.scheduled), err: err}
+		select {
+		case results <- result:
+		case <-ctx.Done():
+		}
+	}()
+}
+
+func qualificationMethod(kind int) string {
+	return []string{"Read", "Put", "Native", "Lua", "Batch4"}[kind]
+}
+
+func executeQualificationJob(ctx context.Context, client *weirclient.Client, dataset *qualificationDataset, job qualificationJob) error {
+	id := fmt.Sprintf("hot-%d", job.payload)
+	switch job.kind {
+	case 0:
+		request := &weirclient.ReadRequest{Resource: dataset.root + "/s:" + id}
+		opts := weirclient.ReadOneOptions{StoreName: dataset.store, Request: request}
+		result, err := client.ReadOne(ctx, opts)
+		if err != nil {
+			return err
+		}
+		if result == nil || result.Failure != nil || result.Document == nil {
+			return fmt.Errorf("point read failed: %v", result)
+		}
+		want := qualificationRecord{N: 1, Pad: dataset.pads[job.payload]}
+		return validateQualificationDocument(result.Document.Data, dataset.media, want)
+	case 2:
+		var body []byte
+		consume := func(_ context.Context, _ *weirclient.NativeResponse, chunk []byte) error {
+			if len(body)+len(chunk) > 3<<20 {
+				return fmt.Errorf("normal Native response exceeded expected finite bound")
+			}
+			body = append(body, chunk...)
+			return nil
+		}
+		opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[job.payload], Consume: consume}
+		result, err := client.Native(ctx, opts)
+		if err != nil {
+			return err
+		}
+		if result == nil || result.Failure != nil || result.Completion != weirclient.NativeResponseComplete {
+			return fmt.Errorf("Native incomplete: %v", result)
+		}
+		var actual qualificationRecord
+		if dataset.mongo != nil {
+			var response struct {
+				Cursor struct {
+					Batch []qualificationRecord `bson:"firstBatch"`
+				} `bson:"cursor"`
+				OK float64 `bson:"ok"`
+			}
+			if err := bson.Unmarshal(body, &response); err != nil || response.OK != 1 || len(response.Cursor.Batch) != 1 {
+				return fmt.Errorf("invalid native Mongo reply: %v", err)
+			}
+			actual = response.Cursor.Batch[0]
+		} else {
+			var response struct {
+				Found  bool                `json:"found"`
+				Source qualificationRecord `json:"_source"`
+			}
+			metadata, err := weirclient.ParseHTTPNativeResponse(result.Response)
+			if err != nil || metadata.StatusCode != http.StatusOK {
+				return fmt.Errorf("invalid native HTTP status: %v", err)
+			}
+			if err := json.Unmarshal(body, &response); err != nil || !response.Found {
+				return fmt.Errorf("invalid native Search reply: %v", err)
+			}
+			actual = response.Source
+		}
+		if actual.N != 1 || actual.Pad != dataset.pads[job.payload] {
+			return fmt.Errorf("Native lost immutable document content")
+		}
+		return nil
+	case 3:
+		lua := &weirclient.LuaTransform{Source: []byte(`return function(current, incoming) current.n = current.n + 1; return current end`)}
+		request := &weirclient.AtomicTransformRequest{Resource: fmt.Sprintf("%s/s:lua-%03d", dataset.root, job.counter), Lua: lua}
+		opts := weirclient.AtomicTransformOptions{StoreName: dataset.store, Request: request}
+		result, err := client.AtomicTransform(ctx, opts)
+		return qualificationMutationEvidence(result, err)
+	default:
+		count := 1
+		if job.kind == 4 {
+			count = 4
+		}
+		requests := make([]*weirclient.MutateRequest, count)
+		for index := range count {
+			id := qualificationWriteID(job, index)
+			record := qualificationRecord{N: int64(job.sequence + 1000), Pad: dataset.pads[job.payload]}
+			var raw []byte
+			var err error
+			if dataset.mongo != nil {
+				document := bson.D{{Key: "_id", Value: id}, {Key: "n", Value: record.N}, {Key: "pad", Value: record.Pad}}
+				raw, err = bson.Marshal(document)
+			} else {
+				raw, err = json.Marshal(record)
+			}
+			if err != nil {
+				return err
+			}
+			document := &pb.Document{ContentType: dataset.media, Data: raw}
+			requests[index] = &weirclient.MutateRequest{Resource: dataset.root + "/s:" + id, Action: weirclient.MutationPut, Document: document}
+		}
+		if job.kind == 1 {
+			request := &weirclient.WriteRequest{Resource: requests[0].Resource, Document: requests[0].Document}
+			opts := weirclient.WriteOptions{StoreName: dataset.store, Request: request}
+			result, err := client.Put(ctx, opts)
+			return qualificationMutationEvidence(result, err)
+		}
+		opts := weirclient.MutateOptions{StoreName: dataset.store, Requests: requests}
+		results, err := client.Mutate(ctx, opts)
+		if err != nil {
+			return err
+		}
+		if len(results) != count {
+			return fmt.Errorf("bulk lost per-record results")
+		}
+		for _, result := range results {
+			if err := qualificationMutationEvidence(result, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func qualificationMutationEvidence(result *weirclient.MutationResult, err error) error {
+	if err != nil {
+		return err
+	}
+	if result == nil || result.Failure != nil || result.Outcome != weirclient.MutationApplied {
+		return fmt.Errorf("mutation lacked application evidence: %v", result)
+	}
+	return nil
+}
+
+func qualificationWriteID(job qualificationJob, index int) string {
+	return fmt.Sprintf("write-%09d-%d", job.sequence, index)
+}
+
+func rememberQualificationMutation(dataset *qualificationDataset, job qualificationJob) {
+	if job.kind == 3 {
+		id := fmt.Sprintf("lua-%03d", job.counter)
+		record := dataset.expected[id]
+		record.N++
+		dataset.expected[id] = record
+	} else if job.kind == 1 || job.kind == 4 {
+		count := 1
+		if job.kind == 4 {
+			count = 4
+		}
+		for index := range count {
+			dataset.expected[qualificationWriteID(job, index)] = qualificationRecord{N: int64(job.sequence + 1000), Pad: dataset.pads[job.payload]}
+		}
+	}
+}
+
+func validateQualificationDocument(raw []byte, media string, want qualificationRecord) error {
+	var actual qualificationRecord
+	var err error
+	if media == "application/bson" {
+		err = bson.Unmarshal(raw, &actual)
+	} else {
+		err = json.Unmarshal(raw, &actual)
+	}
+	if err != nil {
+		return err
+	}
+	if actual.N != want.N || actual.Pad != want.Pad {
+		return fmt.Errorf("document content differs from acknowledged effect")
+	}
+	return nil
+}
+
+func appendQualificationStats(stats map[string]*qualificationStats, key string, result qualificationResult) {
+	entry := stats[key]
+	if entry == nil {
+		entry = &qualificationStats{}
+		stats[key] = entry
+	}
+	entry.offered++
+	if result.err == nil {
+		entry.completed++
+	}
+	entry.latencies = append(entry.latencies, result.latency)
+	entry.service = append(entry.service, result.service)
+	entry.lags = append(entry.lags, result.lag)
+	entry.payloads[result.job.payload]++
+	if result.latency > entry.maximum.latency {
+		entry.maximum = result
+	}
+}
+
+func reportQualificationStats(t *testing.T, stats map[string]*qualificationStats, gate bool) {
+	t.Helper()
+	keys := make([]string, 0, len(stats))
+	for key := range stats {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		entry := stats[key]
+		slices.Sort(entry.latencies)
+		slices.Sort(entry.service)
+		slices.Sort(entry.lags)
+		n := len(entry.latencies)
+		p99 := entry.latencies[(n*99+99)/100-1]
+		recordsPerRPC := 1
+		if strings.HasSuffix(key, "/Batch4") {
+			recordsPerRPC = 4
+		}
+		job := entry.maximum.job
+		t.Logf("distribution %s offered=%d completed=%d records_per_RPC=%d payload_counts_1KiB_256KiB_2MiB=%v p50=%s p95=%s p99=%s max=%s service_p99=%s driver_lag_p99=%s driver_lag_max=%s max_sequence=%d max_payload=%d max_scheduled=%s", key, entry.offered, entry.completed, recordsPerRPC, entry.payloads, entry.latencies[(n*50+99)/100-1], entry.latencies[(n*95+99)/100-1], p99, entry.latencies[n-1], entry.service[(n*99+99)/100-1], entry.lags[(n*99+99)/100-1], entry.lags[n-1], job.sequence, job.payload, job.scheduled.UTC().Format(time.RFC3339Nano))
+		limit := 250 * time.Millisecond
+		if strings.HasSuffix(key, "/Read") {
+			limit = 100 * time.Millisecond
+		}
+		if strings.HasSuffix(key, "/Lua") || strings.HasSuffix(key, "/Batch4") {
+			limit = 500 * time.Millisecond
+		}
+		if gate && strings.HasPrefix(key, "steady/") && p99 > limit {
+			t.Errorf("predeclared local p99 gate failed for %s: %s > %s", key, p99, limit)
+		}
+		if gate && strings.HasPrefix(key, "steady/") && entry.latencies[n-1] > 3*time.Second {
+			t.Errorf("fixed end-to-end 3s budget exceeded for %s: %s", key, entry.latencies[n-1])
+		}
+	}
+}
+
+func qualificationSlowConsumers(ctx context.Context, work qualificationWorkload, measurement time.Time) (string, error) {
+	start := measurement.Add(work.duration / 4)
+	if remaining := time.Until(start); remaining > 0 {
+		timer := time.NewTimer(remaining)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
+	}
+	duration := min(120*time.Second, work.duration/2)
+	phase, cancel := context.WithTimeout(ctx, duration)
+	defer cancel()
+	connection, err := grpc.NewClient("passthrough:///"+work.process.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(4<<20))
+	if err != nil {
+		return "", err
+	}
+	defer connection.Close()
+	client := pb.NewStoreServiceClient(connection)
+	errors := make(chan error, 32)
+	progress := make([]atomic.Int64, 32)
+	callbacks := make([]atomic.Int64, 32)
+	lastProgress := make([]atomic.Int64, 32)
+	var offered, completed, maximumGap atomic.Int64
+	var pending sync.WaitGroup
+	for index := range 32 {
+		pending.Add(1)
+		go func() {
+			defer pending.Done()
+			dataset := work.datasets[index%2]
+			for phase.Err() == nil {
+				offered.Add(1)
+				consume := func(ctx context.Context, _ *weirclient.NativeResponse, chunk []byte) error {
+					progress[index].Add(int64(len(chunk)))
+					callbacks[index].Add(1)
+					previous := lastProgress[index].Swap(time.Now().UnixNano())
+					if previous != 0 {
+						gap := time.Now().UnixNano() - previous
+						for observed := maximumGap.Load(); gap > observed; observed = maximumGap.Load() {
+							if maximumGap.CompareAndSwap(observed, gap) {
+								break
+							}
+						}
+					}
+					timer := time.NewTimer(500 * time.Millisecond)
+					defer timer.Stop()
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-timer.C:
+						return nil
+					}
+				}
+				opts := weirclient.NativeOptions{StoreName: dataset.store, Request: dataset.native[3], Consume: consume}
+				result, err := weirclient.Native(phase, client, opts)
+				if phase.Err() != nil {
+					return
+				}
+				if err != nil || result == nil || result.Failure != nil || result.Completion != weirclient.NativeResponseComplete {
+					errors <- fmt.Errorf("slow stream %d failed: %v %v", index, result, err)
+					cancel()
+					return
+				}
+				completed.Add(1)
+			}
+		}()
+	}
+	monitor := time.NewTicker(time.Second)
+	defer monitor.Stop()
+	observing := true
+	for observing {
+		select {
+		case <-phase.Done():
+			observing = false
+		case <-monitor.C:
+			if time.Since(start) < 3*time.Second {
+				continue
+			}
+			for index := range lastProgress {
+				previous := lastProgress[index].Load()
+				if previous == 0 || time.Since(time.Unix(0, previous)) > 2*time.Second {
+					errors <- fmt.Errorf("slow stream %d lost continuous progress for over 2s", index)
+					cancel()
+					observing = false
+					break
+				}
+			}
+		}
+	}
+	pending.Wait()
+	select {
+	case err := <-errors:
+		return "", err
+	default:
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	minimumCallbacks, minimumBytes := int64(1<<62), int64(1<<62)
+	for index := range progress {
+		if callbacks[index].Load() < int64(duration/(500*time.Millisecond)-8) {
+			return "", fmt.Errorf("slow stream %d failed to demonstrate continued chunk delivery: callbacks=%d bytes=%d", index, callbacks[index].Load(), progress[index].Load())
+		}
+		minimumCallbacks = min(minimumCallbacks, callbacks[index].Load())
+		minimumBytes = min(minimumBytes, progress[index].Load())
+	}
+	message := fmt.Sprintf("slow_duration=%s offered=%d completed=%d canceled=%d minimum_callbacks_per_stream=%d minimum_bytes_per_stream=%d maximum_progress_gap=%s", duration, offered.Load(), completed.Load(), offered.Load()-completed.Load(), minimumCallbacks, minimumBytes, time.Duration(maximumGap.Load()))
+	return message, nil
+}
+
+func verifyQualificationOracle(t *testing.T, dataset *qualificationDataset) {
+	t.Helper()
+	seen := make(map[string]bool, len(dataset.expected))
+	if dataset.mongo != nil {
+		ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+		defer cancel()
+		filter := bson.D{}
+		cursor, err := dataset.mongo.Admin.Database(dataset.mongo.DB).Collection("records").Find(ctx, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cursor.Close(ctx)
+		for cursor.Next(ctx) {
+			id, valid := cursor.Current.Lookup("_id").StringValueOK()
+			if !valid {
+				t.Fatal("independent MongoDB oracle found an unexpected identity type")
+			}
+			want, exists := dataset.expected[id]
+			if !exists {
+				t.Fatal("unacknowledged MongoDB effect", id)
+			}
+			if err := validateQualificationDocument(cursor.Current, dataset.media, want); err != nil {
+				t.Fatal("independent MongoDB oracle", id, err)
+			}
+			seen[id] = true
+		}
+		if err := cursor.Err(); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		ids := make([]string, 0, len(dataset.expected))
+		for id := range dataset.expected {
+			ids = append(ids, id)
+		}
+		slices.Sort(ids)
+		for begin := 0; begin < len(ids); begin += 250 {
+			request := struct {
+				IDs []string `json:"ids"`
+			}{IDs: ids[begin:min(begin+250, len(ids))]}
+			raw, err := json.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			httpRequest, err := http.NewRequest(http.MethodPost, dataset.search.URL+"/"+dataset.root+"/_mget", bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			httpRequest.Header.Set("Content-Type", "application/json")
+			response, err := dataset.search.Client.Do(httpRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, readErr := io.ReadAll(io.LimitReader(response.Body, 64<<20))
+			_ = response.Body.Close()
+			if readErr != nil || response.StatusCode != http.StatusOK {
+				t.Fatal("independent Search oracle read failed", readErr, response.StatusCode)
+			}
+			var reply struct {
+				Docs []struct {
+					ID     string              `json:"_id"`
+					Found  bool                `json:"found"`
+					Source qualificationRecord `json:"_source"`
+				} `json:"docs"`
+			}
+			if err := json.Unmarshal(body, &reply); err != nil {
+				t.Fatal(err)
+			}
+			for _, document := range reply.Docs {
+				want, exists := dataset.expected[document.ID]
+				if !exists || !document.Found || document.Source != want {
+					t.Fatal("independent Search oracle differs", document.ID)
+				}
+				seen[document.ID] = true
+			}
+		}
+		status, _ := dataset.search.Do(t, http.MethodPost, "/"+dataset.root+"/_refresh", "")
+		if status != http.StatusOK {
+			t.Fatal("independent Search oracle refresh failed", status)
+		}
+		status, body := dataset.search.Do(t, http.MethodGet, "/"+dataset.root+"/_count", "")
+		var count struct {
+			Count int `json:"count"`
+		}
+		if status != http.StatusOK || json.Unmarshal(body, &count) != nil || count.Count != len(dataset.expected) {
+			t.Fatal("independent Search oracle found unacknowledged effects", count.Count, len(dataset.expected))
+		}
+	}
+	if len(seen) != len(dataset.expected) {
+		t.Fatal("independent oracle lost acknowledged effects", dataset.store, len(seen), len(dataset.expected))
+	}
+	t.Logf("independent oracle %s verified_all_documents=%d including every acknowledged write/bulk/Lua effect", dataset.store, len(seen))
+}

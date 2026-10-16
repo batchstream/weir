@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -97,9 +98,11 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 }
 
 type memoryRecoveryOptions struct {
-	binary      string
-	capacityMiB int
-	automatic   bool
+	binary          string
+	capacityMiB     int
+	sharedMemoryMiB int
+	automatic       bool
+	config          *Config
 }
 
 type memoryRecoveryCLI struct {
@@ -117,28 +120,46 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 	}
 	owner := fmt.Sprintf("weir-memory-recovery-%d-%d", os.Getpid(), time.Now().UnixNano())
 	cfg := DefaultConfig()
+	if opts.config != nil {
+		cfg = *opts.config
+	}
 	cfg.Basic.Listeners.Application = "0.0.0.0:7447"
 	cfg.Basic.Diagnostics.Address, cfg.Basic.Diagnostics.AllowIntranet = "0.0.0.0:7449", true
-	cfg.Basic.Discovery.Advertise = []string{"127.0.0.1:7447"}
+	reservation, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	applicationAddress := reservation.Addr().String()
+	if err := reservation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Basic.Discovery.Advertise = []string{applicationAddress}
 	stores := 1
 	if opts.capacityMiB == 512 {
 		stores = 3
 	}
-	for index := range stores {
-		backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
-		connection := BackendConfig{MongoDB: backend}
-		local := &Local{Backend: connection}
-		definition := StoreConfig{Name: fmt.Sprintf("mongo%d", index), Local: local}
-		cfg.Routing.Stores = append(cfg.Routing.Stores, definition)
+	if opts.config == nil {
+		for index := range stores {
+			backend := &Mongo{URI: "mongodb://host.docker.internal:27028/?directConnection=true&serverMonitoringMode=poll"}
+			connection := BackendConfig{MongoDB: backend}
+			local := &Local{Backend: connection}
+			definition := StoreConfig{Name: fmt.Sprintf("mongo%d", index), Local: local}
+			cfg.Routing.Stores = append(cfg.Routing.Stores, definition)
+		}
+	} else {
+		stores = len(cfg.Routing.Stores)
 	}
 	writeConfigFiles(t, filepath.Join(directory, "node.yaml"), cfg, 0644)
 	args := []string{"create", "--name", owner, "--label", "weir.owner=" + owner, "--platform=linux/arm64", "--pull=never",
 		"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65532:65532",
 		fmt.Sprintf("--memory=%dm", opts.capacityMiB), fmt.Sprintf("--memory-swap=%dm", opts.capacityMiB), "--cpus=2", "--pids-limit=96",
-		"--publish", "127.0.0.1::7447", "--publish", "127.0.0.1::7449",
+		"--publish", applicationAddress + ":7447", "--publish", "127.0.0.1::7449",
 		"--mount", "type=bind,src=" + directory + ",dst=/fixture,readonly", "--mount", "type=bind,src=" + opts.binary + ",dst=/weir,readonly"}
 	if !opts.automatic {
 		args = append(args, "--env=GOMEMLIMIT=off")
+	}
+	if opts.sharedMemoryMiB > 0 {
+		args = append(args, fmt.Sprintf("--shm-size=%dm", opts.sharedMemoryMiB))
 	}
 	args = append(args, "busybox:1.37.0", "/weir", "serve", "--config", "/fixture/node.yaml", "--routes", "/fixture/node-routing.yaml")
 	t.Cleanup(func() {
@@ -203,6 +224,9 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 	packagedDocker(t, "start", owner)
 	service := &memoryRecoveryCLI{name: owner, capacity: float64(opts.capacityMiB << 20), automatic: opts.automatic, stores: stores}
 	service.address = strings.TrimSpace(packagedDocker(t, "port", owner, "7447/tcp"))
+	if service.address != applicationAddress {
+		t.Fatal("Docker published address differs from the real advertised endpoint", service.address, applicationAddress)
+	}
 	service.diagnostic = strings.TrimSpace(packagedDocker(t, "port", owner, "7449/tcp"))
 	deadline := time.Now().Add(7 * time.Second)
 	probe := &http.Client{Timeout: 300 * time.Millisecond}
