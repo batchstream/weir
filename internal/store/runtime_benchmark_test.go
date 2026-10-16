@@ -148,7 +148,7 @@ func benchmarkRuntimeFragmented(b *testing.B, config fragmentedCase) {
 	limits := DefaultLimits()
 	limits.BatchOperations, limits.BatchWait = config.batchOperations, config.wait
 	limits.QueueOperations, limits.QueueBytes = 4096, 512<<20
-	runtime, err := New(adapter, limits)
+	runtime, err := New(adapter, limits, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

@@ -1,0 +1,34 @@
+{
+  "container": "4b458740e1496ca6532654811c8fd5d796de5d8582cf0fbc86a1d46a010b5ba7 weir-search-local opensearchproject/opensearch@sha256:d96afaf6cbd2a6a3695aeb2f1d48c9a16ad5c8918eb849e5cbf43475f0f8e146 true false",
+  "write_pool": {
+    "nodes": {
+      "F9i0lqkaQwul_dlSfzSQYA": {
+        "thread_pool": {
+          "write": {
+            "type": "fixed",
+            "size": 1,
+            "queue_size": 1
+          }
+        }
+      }
+    }
+  },
+  "identity": {
+    "name": "4b458740e149",
+    "cluster_name": "weir-local-opensearch-3.3",
+    "cluster_uuid": "PWJKpp6PSPKjfcPDLFwKgA",
+    "version": {
+      "distribution": "opensearch",
+      "number": "3.3.0",
+      "build_type": "tar",
+      "build_hash": "e972d15408320e6be84c64bb0fdc076ca7696ea2",
+      "build_date": "2025-10-11T23:24:18.278696323Z",
+      "build_snapshot": false,
+      "lucene_version": "10.3.1",
+      "minimum_wire_compatibility_version": "2.19.0",
+      "minimum_index_compatibility_version": "2.0.0"
+    },
+    "tagline": "The OpenSearch Project: https://opensearch.org/"
+  },
+  "oracle_scope": "Congestion test verifies first3 definitely rejected IDs return404; expression capacity currently only counters; supplement needs independent version oracle"
+}

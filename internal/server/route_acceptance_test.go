@@ -41,7 +41,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	if opts.store.BatchOperations == 0 {
 		opts.store = store.DefaultLimits()
 	}
-	local, err := store.New(opts.adapter, opts.store)
+	local, err := store.New(opts.adapter, opts.store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

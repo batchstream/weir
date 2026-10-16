@@ -9,22 +9,22 @@ Linux sustained-load boundaries.
 | Reclaimable file cache and baseline verification | [PR 75](https://github.com/batchstream/weir/pull/75) merged after independent review and Linux CI |
 | Native consumer progress and output ownership | [PR 76](https://github.com/batchstream/weir/pull/76) merged after new independent review, repeated race checks and Linux CI |
 | Automatic recovery after Go memory bursts with default configuration | [PR 77](https://github.com/batchstream/weir/pull/77) merged after new independent review and Linux CI; initial isolated-cgroup evidence below |
-| Recovery with shared cgroup memory outside the process | Corrected and qualified on clean Linux source; independent review and CI pending |
-| Healthy queries with a full Native output reservation | A further single-Store 32 x 8 MiB boundary is reproduced; correction pending |
+| Recovery with shared cgroup memory outside the process | [PR 78](https://github.com/batchstream/weir/pull/78) merged after new independent review and Linux CI |
+| Healthy queries with a full Native output reservation | [Shared Native memory ownership](native-memory-qualification-2026-10-16.md) qualified on clean Linux source; independent review/CI pending |
 | Linux complete-process sustained mixed workload and failure recovery | Pending |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
 historical baseline at revision `63bafdd`; its Native scheduling and cancellation
 findings are addressed by PR 76.
 
-## Native output progress and resource boundaries
+## Earlier PR 76 output reservation and its boundary
 
 The initial scheduler charged a backend execution slot while Native output
 waited for the client. Thirty-two small MongoDB requests with zero HTTP/2 output
 windows left sixteen running and sixteen queued, reaching the three-second
 probe deadline despite the backend having finished its replies.
 
-Native publication now borrows a bounded output reservation and releases its
+PR 76 made Native publication borrow a bounded output reservation and release its
 execution slot while waiting on the consumer. Further backend work joins FIFO
 with new requests before regaining the slot. The original batch remains owned
 by the Runtime throughout cancellation, draining and shutdown. A delivered
@@ -44,8 +44,9 @@ response can occupy an empty output budget alone. A full real output budget
 retains the original execution credit and backpressure. With finite execution
 limits this preserves bounded executing and paused work.
 
-The four new fixed-vocabulary gauges report paused output count, bytes and
-their limits. Existing active-execution metrics exclude paused output, while
+PR 76 added four fixed-vocabulary gauges for paused output count, bytes and
+their limits. The current shared account removes the two misleading per-Store
+output-limit gauges and exports thirteen fixed Node gauges/counters instead. Existing active-execution metrics exclude paused output, while
 retained working memory and backend connection ownership remain observable.
 Native invocation elapsed-time histograms still include consumer waits; inspect
 the pause gauges when distinguishing backend execution from output delay.
@@ -53,7 +54,7 @@ Paused HTTP responses can retain sockets. The process/cgroup Guard still
 controls overload admission, and OS/container limits remain the hard memory
 boundary. Output accounting does not replace actual resident-memory observation.
 
-## Cancellation and encoded output ownership
+## Earlier PR 76 cancellation correction
 
 The new real-backend regression also exposed a cancellation retention chain:
 an output watchdog timer retained the RPC context, which could retain orphaned

@@ -16,8 +16,9 @@ import (
 	"google.golang.org/protobuf/protoadapt"
 )
 
-// responseCodec keeps encoded output charged until the native transport drops
-// its final reference. A handler completion is earlier than that ownership end.
+// responseCodec counts encoded bytes queued by a live transport. Native Free or
+// final transport retirement ends that account; RSS still includes physical
+// storage awaiting Go collection after an orphaned transport reference.
 type responseCodec struct {
 	admission *Admission
 }
@@ -48,9 +49,9 @@ func (codec *responseCodec) Marshal(value any) (mem.BufferSlice, error) {
 		pool.Put(&data)
 		return nil, err
 	}
-	// A native stream can be orphaned on connection abort without calling Free.
-	// Its actual encoded storage must become unreachable before returning credit.
-	pool.cleanup = runtime.AddCleanup(&data, func(owner *responseBufferOwner) { owner.Put(nil) }, pool)
+	// A stream on a live connection can be orphaned without native Free. Keep
+	// cleanup as the fallback when its encoded storage becomes unreachable.
+	pool.cleanup = runtime.AddCleanup(&data, func(owner *responseBufferOwner) { owner.finish() }, pool)
 	buffer := mem.NewBuffer(&data, pool)
 	buffers := mem.BufferSlice{buffer}
 	return buffers, nil
@@ -72,17 +73,38 @@ func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
 	return encoding.GetCodecV2("proto").Unmarshal(data, value)
 }
 
-// gRPC's mem.BufferPool is the native buffer ownership seam. Marshal allocates
-// once after reserving bytes; Put is called after every transport reference ends.
+// responseConnection retains only account owners, never RPC contexts or encoded
+// buffers. The owner lock precedes this lock; retirement drops this lock before
+// ending individual accounts.
+type responseConnection struct {
+	mu     sync.Mutex
+	closed bool
+	owners map[*responseBufferOwner]struct{}
+}
+
+func (connection *responseConnection) retire() {
+	connection.mu.Lock()
+	connection.closed = true
+	owners := connection.owners
+	connection.owners = nil
+	connection.mu.Unlock()
+	for owner := range owners {
+		owner.finish()
+	}
+}
+
+// Native Put reports the last gRPC buffer reference. A connection retirement
+// ends only queued-byte accounting, without freeing or reusing encoded data.
 type responseBufferOwner struct {
-	admission *Admission
-	bytes     int64
-	released  bool
-	mu        sync.Mutex
-	message   any
-	timer     *time.Timer
-	cleanup   runtime.Cleanup
-	done      chan struct{}
+	admission  *Admission
+	bytes      int64
+	released   bool
+	mu         sync.Mutex
+	message    any
+	timer      *time.Timer
+	cleanup    runtime.Cleanup
+	done       chan struct{}
+	connection *responseConnection
 }
 
 func (*responseBufferOwner) Get(length int) *[]byte {
@@ -91,6 +113,10 @@ func (*responseBufferOwner) Get(length int) *[]byte {
 }
 
 func (owner *responseBufferOwner) Put(*[]byte) {
+	owner.finish()
+}
+
+func (owner *responseBufferOwner) finish() {
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
 	if owner.released {
@@ -105,11 +131,41 @@ func (owner *responseBufferOwner) Put(*[]byte) {
 	if owner.message != nil {
 		owner.admission.responses.CompareAndDelete(owner.message, owner)
 	}
+	if connection := owner.connection; connection != nil {
+		connection.mu.Lock()
+		delete(connection.owners, owner)
+		connection.mu.Unlock()
+		owner.connection = nil
+	}
 	owner.admission.wireBytes.Add(-owner.bytes)
 	owner.message = nil
 	if owner.done != nil {
 		close(owner.done)
 	}
+}
+
+func (owner *responseBufferOwner) attachConnection(connection *responseConnection) {
+	owner.mu.Lock()
+	if owner.released || owner.connection != nil {
+		owner.mu.Unlock()
+		return
+	}
+	connection.mu.Lock()
+	if connection.closed {
+		connection.mu.Unlock()
+		owner.mu.Unlock()
+		// OutPayload can arrive after ConnEnd when a successful enqueue races
+		// transport shutdown. The writer has already ended in this case.
+		owner.finish()
+		return
+	}
+	if connection.owners == nil {
+		connection.owners = make(map[*responseBufferOwner]struct{})
+	}
+	connection.owners[owner] = struct{}{}
+	owner.connection = connection
+	connection.mu.Unlock()
+	owner.mu.Unlock()
 }
 
 // The stats notification identifies the RPC after native write enqueue. The
@@ -132,13 +188,14 @@ func (owner *responseBufferOwner) watch(ctx context.Context, server *Server) {
 	})
 }
 
-// On cancellation the completed Send no longer needs the original document.
-// Its independent encoded copy remains charged until the transport frees it.
+// Cancellation detaches the original document and watchdog context. It does not
+// end queued-byte accounting on a still-live connection.
 func (owner *responseBufferOwner) detachMessage() {
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
 	// The watchdog's RPC context can reach the orphaned transport buffer.
-	// End that reference chain on cancellation; storage cleanup still owns credit.
+	// End that reference chain on cancellation; native Free, connection retirement
+	// or unreachable-storage cleanup still owns the queued-byte account.
 	if owner.timer != nil {
 		owner.timer.Stop()
 		owner.timer = nil

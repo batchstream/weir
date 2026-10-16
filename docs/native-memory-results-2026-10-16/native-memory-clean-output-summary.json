@@ -1,0 +1,65 @@
+{
+  "source": "adc4daab1dff2d369246801e416bb64183af63ae",
+  "sha256": "789e15b5688725ed313abc9e9fea239e8adc8b8d37173514feb32eac13ccde2b",
+  "rounds": 5,
+  "healthy": [
+    [
+      "typed_Read",
+      "4.254584ms",
+      "<nil>"
+    ],
+    [
+      "short_Native",
+      "4.460416ms",
+      "<nil>"
+    ],
+    [
+      "typed_Read",
+      "4.132625ms",
+      "<nil>"
+    ],
+    [
+      "short_Native",
+      "4.255ms",
+      "<nil>"
+    ],
+    [
+      "typed_Read",
+      "4.057208ms",
+      "<nil>"
+    ],
+    [
+      "short_Native",
+      "4.137375ms",
+      "<nil>"
+    ],
+    [
+      "typed_Read",
+      "3.929167ms",
+      "<nil>"
+    ],
+    [
+      "short_Native",
+      "4.132709ms",
+      "<nil>"
+    ],
+    [
+      "typed_Read",
+      "2.15975ms",
+      "<nil>"
+    ],
+    [
+      "short_Native",
+      "2.156791ms",
+      "<nil>"
+    ]
+  ],
+  "cancel_elapsed": [
+    "14.878833ms",
+    "13.522833ms",
+    "13.881583ms",
+    "13.5395ms",
+    "8.6265ms"
+  ],
+  "forced_GC": false
+}

@@ -1,0 +1,16 @@
+clean_artifact_source=adc4daab1dff2d369246801e416bb64183af63ae SHA256=789e15b5688725ed313abc9e9fea239e8adc8b8d37173514feb32eac13ccde2b shared_pressure_MiB=160 host_driver=race Go=1.27.1
+=== RUN   TestCLISharedMemoryRecoveryProbe
+    shared_pressure_integration_test.go:57: supplied CLI identity={"product":"weir","version":"local-adc4daab1dff2d369246801e416bb64183af63ae","revision":"adc4daab1dff2d369246801e416bb64183af63ae","go":"go1.27.1","target":"linux/arm64","state":"clean-commit","dirty":"false"}
+    shared_pressure_integration_test.go:116: live pressure kind=typed_Read response_document=12MiB requests=9 RSS=249171968 working_set=430678016 heap=227903064 latch=1
+    shared_pressure_integration_test.go:116: recovered=155.257083ms overload_rejections=1 RSS=166219776 working_set=350937088 heap=1482024
+    shared_pressure_integration_test.go:92: shared pressure final elapsed=3.245917375s shmem=167772160 RSS=166354944 working_set=350937088 heap_live=1745040 heap_idle=256024576 heap_released=112279552 GoLimit=154761297 recovery_allowance=193451622 recovery_known=1 latch=0 idle=true process_cpu_delta=0.5599999999999999 GC_cycles=87 GC_pause_sum=0.011081416 GC_CPU=unavailable_in_supplied_binary
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:21:27 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:21:27 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:21:27 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+--- PASS: TestCLISharedMemoryRecoveryProbe (4.62s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	6.669s
+{"go_test_exit": 0, "identity_valid": true, "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-clean-shared-160.txt", "size_MiB": 160}

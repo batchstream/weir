@@ -1,0 +1,15 @@
+clean_artifact_source=adc4daab1dff2d369246801e416bb64183af63ae SHA256=789e15b5688725ed313abc9e9fea239e8adc8b8d37173514feb32eac13ccde2b shared_pressure_MiB=368 host_driver=race Go=1.27.1
+=== RUN   TestCLISharedMemoryRecoveryProbe
+    shared_pressure_integration_test.go:57: supplied CLI identity={"product":"weir","version":"local-adc4daab1dff2d369246801e416bb64183af63ae","revision":"adc4daab1dff2d369246801e416bb64183af63ae","go":"go1.27.1","target":"linux/arm64","state":"clean-commit","dirty":"false"}
+    shared_pressure_integration_test.go:113: low positive/zero recovery allowance probe completed=28 rejected=0
+    shared_pressure_integration_test.go:92: shared pressure final elapsed=3.045743375s shmem=385875968 RSS=20512768 working_set=415264768 heap_live=2430272 heap_idle=3702784 heap_released=2760704 GoLimit=23876075 recovery_allowance=0 recovery_known=1 latch=0 idle=true process_cpu_delta=0.1 GC_cycles=1 GC_pause_sum=7.2249e-05 GC_CPU=unavailable_in_supplied_binary
+    memory_recovery_integration_test.go:187: CLI logs=Weir listening on [[::]:7447]; local execution and peer directory discovery
+        Diagnostics listening on [::]:7449
+        2026/10/16 14:21:49 INFO backend_connections_closed backend=mongo store=mongo0 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:21:49 INFO backend_connections_closed backend=mongo store=mongo1 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+        2026/10/16 14:21:49 INFO backend_connections_closed backend=mongo store=mongo2 owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2
+    memory_recovery_integration_test.go:201: CLI exit=false 0
+--- PASS: TestCLISharedMemoryRecoveryProbe (5.30s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	6.885s
+{"go_test_exit": 0, "identity_valid": true, "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-clean-shared-368.txt", "size_MiB": 368}

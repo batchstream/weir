@@ -88,7 +88,7 @@ func TestIndependentRPCsShareExecutionAndKeepResultsAndQuota(t *testing.T) {
 	adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 8)}
 	limits := DefaultLimits()
 	limits.BatchOperations = 32
-	runtime := newRuntime(adapter, limits)
+	runtime := newRuntime(adapter, limits, nil)
 	var tickets []*Ticket
 	for i := range 35 {
 		work := prepareCrossRecord(t, runtime, 1, fmt.Sprintf("records/s:%d", i))
@@ -133,7 +133,7 @@ func TestReadAggregationAllowsSharedResourceWithinAndAcrossSessions(t *testing.T
 	for _, shared := range []bool{false, true} {
 		t.Run(fmt.Sprint(shared), func(t *testing.T) {
 			adapter := &crossRequestAdapter{calls: make(chan crossRequestCall, 2)}
-			runtime := newRuntime(adapter, DefaultLimits())
+			runtime := newRuntime(adapter, DefaultLimits(), nil)
 			session := runtime.NewSession()
 			var sessions []*Session
 			for i := range 32 {
@@ -167,7 +167,7 @@ func TestPhysicalBatchSeparatesResourceIfEitherMemberIsMutation(t *testing.T) {
 		t.Run(fmt.Sprint(firstRead), func(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BatchWait = 0
-			runtime := newRuntime(nil, limits)
+			runtime := newRuntime(nil, limits, nil)
 			first := plan(1, "same", firstRead)
 			second := plan(2, "same", !firstRead)
 			firstTicket, failure, _ := runtime.Submit(t.Context(), first, nil)
@@ -205,7 +205,7 @@ func TestPreparedRecordBeyondBatchAndQueueWindows(t *testing.T) {
 	if err := limits.Validate(); err != nil {
 		t.Fatal("positive soft windows were rejected", err)
 	}
-	runtime := newRuntime(adapter, limits)
+	runtime := newRuntime(adapter, limits, nil)
 	work := prepareCrossRecord(t, runtime, 1, "records/s:a")
 	if work.Bytes <= execution.EntryOverheadBytes {
 		t.Fatal("record metadata floor was discounted", work.Bytes)

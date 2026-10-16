@@ -1,0 +1,15 @@
+{
+  "source": "adc4daab1dff2d369246801e416bb64183af63ae",
+  "state": "clean-commit",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-memory-clean-linux",
+  "sha256": "789e15b5688725ed313abc9e9fea239e8adc8b8d37173514feb32eac13ccde2b",
+  "target": "linux/arm64",
+  "toolchain": "go1.27.1",
+  "flags": [
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid= -X main.sourceRevision=adc4daab1dff2d369246801e416bb64183af63ae"
+  ],
+  "scope": "exact clean Native memory and transport qualification"
+}

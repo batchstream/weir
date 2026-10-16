@@ -26,7 +26,7 @@ func BenchmarkSelectorDrain(b *testing.B) {
 			batches := 0
 			for iteration := 0; iteration < b.N; iteration++ {
 				b.StopTimer()
-				runtime := newRuntime(nil, limits)
+				runtime := newRuntime(nil, limits, nil)
 				now := time.Now()
 				for _, work := range works {
 					ticket := &Ticket{runtime: runtime, ctx: b.Context(), plan: work, queuedAt: now}

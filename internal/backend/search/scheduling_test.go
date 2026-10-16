@@ -79,7 +79,7 @@ func TestSearchQueuedReadCompletesBeforeUnrelatedSlowWrite(t *testing.T) {
 	limits := store.DefaultLimits()
 	limits.MaxInFlight = 1
 	limits.BatchWait = 0
-	runtime, err := store.New(adapter, limits)
+	runtime, err := store.New(adapter, limits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

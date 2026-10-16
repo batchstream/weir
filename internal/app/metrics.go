@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/batchstream/weir/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
@@ -81,6 +82,39 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		nil,
 	)
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, ready)
+
+	native := store.NativeMemorySnapshot{}
+	if n.nativeMemory != nil {
+		native = n.nativeMemory.Snapshot()
+	}
+	nativeKnown := 0.0
+	if native.Known {
+		nativeKnown = 1
+	}
+	for name, value := range map[string]float64{
+		"budget_bytes":     float64(native.BudgetBytes),
+		"used_bytes":       float64(native.UsedBytes),
+		"resident_bytes":   float64(native.ResidentBytes),
+		"io_reserve_bytes": float64(native.IOReserveBytes),
+		"budget_known":     nativeKnown,
+		"leases":           float64(native.Count),
+		"leases_limit":     float64(native.CountLimit),
+		"starting":         float64(native.Starting),
+		"settled":          float64(native.Settled),
+		"borrowed":         float64(native.Borrowed),
+		"waiting":          float64(native.Waiting),
+		"terminal":         float64(native.Terminal),
+	} {
+		desc := prometheus.NewDesc(
+			"weir_native_memory_"+name,
+			"Node-shared Native input, execution and retained-response reservations; this budget is shared across Stores, not additive per Store. Actual RSS remains independently observed.",
+			nil,
+			nil,
+		)
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value)
+	}
+	nativeRejections := prometheus.NewDesc("weir_native_memory_budget_rejections_total", "Native denials at the shared memory boundary, including incomplete HTTP exchanges after dispatch; cancellations are excluded.", nil, nil)
+	ch <- prometheus.MustNewConstMetric(nativeRejections, prometheus.CounterValue, float64(native.BudgetRejections))
 
 	memory := n.guard.Snapshot()
 	observed, latched := 0.0, 0.0

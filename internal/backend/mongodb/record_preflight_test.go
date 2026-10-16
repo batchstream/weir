@@ -20,7 +20,7 @@ func TestMongoRecordPreflightBeforeAnyCommand(t *testing.T) {
 			monitor := &event.CommandMonitor{Started: func(context.Context, *event.CommandStartedEvent) { commands.Add(1) }}
 			adapter := batchMockAdapter(t, nil, monitor)
 			limits := store.DefaultLimits()
-			runtime, err := store.New(adapter, limits)
+			runtime, err := store.New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,0 +1,356 @@
+{
+  "qualification": true,
+  "completed_utc": "2026-10-16T15:09:11.214141+00:00",
+  "worktree": "/Users/liran/.codex/worktrees/native-output-memory/weir",
+  "source": "98ea9adfee65a315ed737c00dad4640364f18648",
+  "worktree_clean_at_start": true,
+  "production_and_test_sources_unchanged_at_end": true,
+  "other_agents_documentation_changes_at_end": [],
+  "binary_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-memory-search-p1-final-linux",
+  "binary_sha256": "1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214",
+  "binary_identity": "local-98ea9adfee65a315ed737c00dad4640364f18648 clean-commit dirty=false; verified inside all five owned Linux CLI containers",
+  "toolchain": "Go1.27.1 explicit GOROOT/bin/go; GOENV=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off",
+  "backend_identity": {
+    "mongo": "testmongo.Open verifies loopback27028 replica set weir_local and creates/drops unique owned DB",
+    "elasticsearch": {
+      "container_id": "0a8037715b19fd64c43641f9fc448bf917a608410b252b1ddb591c51bb91349b",
+      "owner": "weir-search-local",
+      "image_digest": "sha256:c2a3ed5f968be6d59c960aa0c60cfdaee667b6bc8211142021a41d0e85b43237",
+      "version": "8.19.22/default",
+      "build": "3b2a41103de35e0af4064d647974032fcc1bcde9",
+      "cluster": "weir-local-elasticsearch",
+      "initial_health": "green",
+      "endpoint": "http://127.0.0.1:19200",
+      "testsearch_Open_reverified_each_run": true
+    }
+  },
+  "focused": {
+    "result": "PASS",
+    "race_count": 5,
+    "timeout": "90s",
+    "elapsed": "17.937s",
+    "runtime": "real Linux arm64 CLI 1GiB/2CPU, one default Mongo Store,32x8MiB slow Native",
+    "steady_each_round": {
+      "ready": 32,
+      "active": 0,
+      "paused": 32,
+      "pending": 0,
+      "leases": 32,
+      "used_bytes": 272809856
+    },
+    "strict_caller_and_cleanup_bounds": "3s/5s unchanged",
+    "stream_and_connection_windows": "64KiB/4MiB",
+    "all_cancel_zero_metrics": [
+      "weir_store_pending_entries",
+      "weir_store_pending_reserved_bytes",
+      "weir_store_active_executions",
+      "weir_store_paused_native_outputs",
+      "weir_store_paused_native_reserved_bytes",
+      "weir_store_result_reserved_entries",
+      "weir_store_result_reserved_bytes",
+      "weir_store_retained_result_reserved_bytes",
+      "weir_store_working_reserved_bytes",
+      "weir_store_publishers",
+      "weir_ingress_sessions",
+      "weir_ingress_queued_response_bytes",
+      "weir_native_memory_used_bytes",
+      "weir_native_memory_leases",
+      "weir_native_memory_starting",
+      "weir_native_memory_settled",
+      "weir_native_memory_borrowed",
+      "weir_native_memory_resident_bytes",
+      "weir_native_memory_waiting",
+      "weir_native_memory_terminal"
+    ],
+    "forced_gc": false,
+    "summary": [
+      {
+        "probes": [
+          {
+            "method": "typed_Read",
+            "latency": "2.449417ms",
+            "error": "<nil>"
+          },
+          {
+            "method": "short_Native",
+            "latency": "2.558792ms",
+            "error": "<nil>"
+          }
+        ],
+        "cancel_phase": "after_cancel elapsed=8.637125ms",
+        "gc_before_after": [
+          6,
+          6
+        ],
+        "rss_before_after": [
+          303398912,
+          303398912
+        ],
+        "working_set_before_after": [
+          311308288,
+          311308288
+        ],
+        "steady_native_used_bytes": 272809856
+      },
+      {
+        "probes": [
+          {
+            "method": "typed_Read",
+            "latency": "3.275584ms",
+            "error": "<nil>"
+          },
+          {
+            "method": "short_Native",
+            "latency": "3.35625ms",
+            "error": "<nil>"
+          }
+        ],
+        "cancel_phase": "after_cancel elapsed=9.69325ms",
+        "gc_before_after": [
+          6,
+          6
+        ],
+        "rss_before_after": [
+          301260800,
+          301260800
+        ],
+        "working_set_before_after": [
+          309075968,
+          309075968
+        ],
+        "steady_native_used_bytes": 272809856
+      },
+      {
+        "probes": [
+          {
+            "method": "typed_Read",
+            "latency": "3.699834ms",
+            "error": "<nil>"
+          },
+          {
+            "method": "short_Native",
+            "latency": "3.814167ms",
+            "error": "<nil>"
+          }
+        ],
+        "cancel_phase": "after_cancel elapsed=13.745792ms",
+        "gc_before_after": [
+          6,
+          6
+        ],
+        "rss_before_after": [
+          301129728,
+          303308800
+        ],
+        "working_set_before_after": [
+          308903936,
+          311259136
+        ],
+        "steady_native_used_bytes": 272809856
+      },
+      {
+        "probes": [
+          {
+            "method": "short_Native",
+            "latency": "11.058917ms",
+            "error": "<nil>"
+          },
+          {
+            "method": "typed_Read",
+            "latency": "11.426ms",
+            "error": "<nil>"
+          }
+        ],
+        "cancel_phase": "after_cancel elapsed=11.228542ms",
+        "gc_before_after": [
+          6,
+          6
+        ],
+        "rss_before_after": [
+          303423488,
+          303423488
+        ],
+        "working_set_before_after": [
+          308961280,
+          308961280
+        ],
+        "steady_native_used_bytes": 272809856
+      },
+      {
+        "probes": [
+          {
+            "method": "typed_Read",
+            "latency": "4.849083ms",
+            "error": "<nil>"
+          },
+          {
+            "method": "short_Native",
+            "latency": "4.930625ms",
+            "error": "<nil>"
+          }
+        ],
+        "cancel_phase": "after_cancel elapsed=13.041458ms",
+        "gc_before_after": [
+          6,
+          6
+        ],
+        "rss_before_after": [
+          303063040,
+          303235072
+        ],
+        "working_set_before_after": [
+          311291904,
+          311291904
+        ],
+        "steady_native_used_bytes": 272809856
+      }
+    ],
+    "all_raw_metrics_json": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-output-results.json"
+  },
+  "diagnostics": {
+    "result": "PASS",
+    "race_count": 1,
+    "elapsed": "1.801s",
+    "exact_static_weir_series": 1086,
+    "runtime": "Darwin arm64 in-process test16realMongoStores; not a Linux CLI memory test"
+  },
+  "small_progress": {
+    "result": "PASS",
+    "race_count": 3,
+    "elapsed": "2.642s",
+    "runtime": "Darwin arm64 in-process server +realMongo/ES; HTTP2 zero stream window holds32slow each case",
+    "default_stall": "30s unchanged/no watchdog release",
+    "combined_healthy_typed_then_native": [
+      {
+        "backend": "application/bson",
+        "slow": 32,
+        "latency": "5.077875ms"
+      },
+      {
+        "backend": "application/bson",
+        "slow": 32,
+        "latency": "3.891625ms"
+      },
+      {
+        "backend": "application/http",
+        "slow": 32,
+        "latency": "7.938209ms"
+      },
+      {
+        "backend": "application/bson",
+        "slow": 32,
+        "latency": "5.5405ms"
+      },
+      {
+        "backend": "application/bson",
+        "slow": 32,
+        "latency": "4.318583ms"
+      },
+      {
+        "backend": "application/http",
+        "slow": 32,
+        "latency": "6.26725ms"
+      },
+      {
+        "backend": "application/bson",
+        "slow": 32,
+        "latency": "4.602417ms"
+      },
+      {
+        "backend": "application/bson",
+        "slow": 32,
+        "latency": "3.428542ms"
+      },
+      {
+        "backend": "application/http",
+        "slow": 32,
+        "latency": "6.897625ms"
+      }
+    ],
+    "mongo_valid_ms": [
+      5.077875,
+      5.5405,
+      4.602417
+    ],
+    "mongo_early_invalid_ms": [
+      3.891625,
+      4.318583,
+      3.428542
+    ],
+    "elasticsearch_ms": [
+      7.938209,
+      6.26725,
+      6.897625
+    ],
+    "closed_backend_owned_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "raw_artifacts": {
+    "output-repeat": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-output-repeat.txt",
+      "sha256": "784b9330d7488a9ce7efa4845961e5ec9e2e42c32e2acb605d32492f0b2a5538"
+    },
+    "diagnostics": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-diagnostics.txt",
+      "sha256": "b1b941679bd3830ae13bf6fa2c31c721df12abdd13bbfe961d3c2f9bebc265c7"
+    },
+    "small-progress": {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-small-progress.txt",
+      "sha256": "3162cf06ec93b240ec2778f7a7f02b237e0de42a7d3c0e4c97c503fd2c6f94ec"
+    }
+  },
+  "source_test_hashes": {
+    "internal/app/diagnostics_integration_test.go": "50fc6935b45c7c03278d96044b561ebdbbdb24d9beb49dc8a362cd1f14f31e1b",
+    "internal/app/native_output_budget_integration_test.go": "e49bf509d965f8c89071b25f3a3d0db36e60966a9287a321a499cff16247f4fe",
+    "internal/server/native_progress_integration_test.go": "50b5fde59c9ede2e6e2e6122c96f924f74622f26df0fe306af2b78643c5133e9"
+  },
+  "cleanup": {
+    "all_5_cli_exit_zero": true,
+    "all_no_oom": true,
+    "all_backend_owned_zero": true,
+    "owned_container_inventory": "docker ps -a --filter name=weir-memory-recovery- --format {{.ID}} {{.Names}} empty after all tests; shared ES preserved",
+    "db_returned_root": false,
+    "db_returned_to": "/root/fault_qualification",
+    "handoff_note": "All three test processes ended and CLI docker ps -a prefix inventory was empty before direct explicit handoff. Fault agent may now run recovery matrix; no further backend reads by this validator."
+  },
+  "limits": "Queued wire/Native ledger zero establishes ownership and accounting recovery. PhysicalRSS/WS remain allocated and counted by actual memory Guard; no immediate physicalGC claim. No source edits/commit/push.",
+  "sourcehashes_artifact": {
+    "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-sourcehashes.json",
+    "sha256": "f916d72525ce4db83dffa85b316218de7b507a2bb5dc7b2d7b5575a9e475c1d2",
+    "source_files_verified_unchanged": 22
+  },
+  "reproduction": {
+    "common_env": "GOROOT=/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64 GOENV=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off WEIR_INTEGRATION=1; explicit GOROOT/bin/go",
+    "focused": "WEIR_NATIVE_OUTPUT_BUDGET_INTEGRATION=1 WEIR_NATIVE_OUTPUT_BUDGET_QUALIFICATION=1 WEIR_NATIVE_OUTPUT_BUDGET_BINARY=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-memory-search-p1-final-linux WEIR_QUALIFICATION_SOURCE=98ea9adfee65a315ed737c00dad4640364f18648 WEIR_QUALIFICATION_SHA256=1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214 go test -tags integration -race -run ^TestCLILargeNativeOutputBudgetPreservesHealthyQueries$ -count=5 -timeout=90s -v ./internal/app",
+    "diagnostics": "go test -tags integration -race -run ^TestDiagnosticsMaximumStaticSeries$ -count=1 -timeout=40s -v ./internal/app",
+    "small_progress": "WEIR_SEARCH_INTEGRATION=elasticsearch go test -tags integration -race -run ^Test(Mongo|Search)SlowNativeOutputAllowsHealthyQueries$ -count=3 -timeout=60s -v ./internal/server"
+  },
+  "scope_history": {
+    "current_final_artifact": "PR79 Search P1 request parser correction included; production frozen at98ea9adfee65a315ed737c00dad4640364f18648",
+    "prior_7787_qualification": "historical only; all three specified groups rerun against current exact clean source/binary",
+    "changed_files_from_7787": [
+      "internal/backend/search/expression_integration_test.go",
+      "internal/backend/search/native.go",
+      "internal/backend/search/native_memory.go",
+      "internal/backend/search/native_memory_test.go",
+      "internal/backend/search/native_request_memory_test.go"
+    ],
+    "original_recovery_matrix_fail_preserved": "native-memory-final-recovery-matrix.txt",
+    "original_failure_cause": "unresolved; ten diagnostic repetitions did not reproduce; no claim that a successful rerun explains the old failure",
+    "this_scope": "Native32large-output five repeats,1086series,and small-progress cases; full12case recovery matrix+4shared cases delegated next to fault_qualification"
+  },
+  "build_receipt": {
+    "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-build.json",
+    "sha256": "d11b17f201fb05447b0b87496865cbb8ccbbf79cd5661a94b10de169d9391ffe",
+    "source_and_binary_match": true
+  }
+}

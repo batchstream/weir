@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -327,7 +328,12 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, resource stri
 			t.Fatal("safe business-pressure headroom exhausted before reaching overload", count, working, service.capacity)
 		}
 		before := testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes")
-		stream, err := blockedClient.Execute(ctx)
+		required := float64((count + 1) * (12 << 20))
+		maxWire := before
+		memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("before_read count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
+		streamContext, stopStream := context.WithCancel(ctx)
+		defer stopStream()
+		stream, err := blockedClient.Execute(streamContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -345,16 +351,27 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, resource stri
 		deadline := time.Now().Add(3 * time.Second)
 		for {
 			metrics = service.sample(t)
-			// A full encoded document is charged before DATA waits on flow
-			// control. A small admission failure cannot satisfy this check.
-			if testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes") >= before+float64(12<<20) {
+			wire := testmetrics.Sum(metrics, "weir_ingress_queued_response_bytes")
+			if wire > maxWire {
+				maxWire = wire
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("new_max count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
+			}
+			// Every preceding large message is still blocked on this dedicated
+			// static-window connection. Compare their cumulative ownership,
+			// because unrelated healthy-response bytes can be freed after before.
+			// Small failures and framing overhead cannot replace a 12 MiB reply.
+			if wire >= required {
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("threshold_satisfied count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
 				count++
 				break
 			}
 			if testmetrics.Sum(metrics, "weir_memory_latched") == 1 {
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("latched_before_threshold count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), false)
 				break
 			}
 			if time.Now().After(deadline) {
+				memoryRecoveryWireDiagnostic(t, metrics, fmt.Sprintf("threshold_timeout count=%d before=%.0f required=%.0f maxwire=%.0f", count, before, required, maxWire), true)
+				memoryRecoveryWireFailureReceive(t, stream, stopStream)
 				t.Fatal("typed business pressure did not retain its full response", count)
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -416,5 +433,58 @@ func memoryRecoveryBurst(t *testing.T, service *memoryRecoveryCLI, resource stri
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// Record owned response bytes without changing the three-second pressure bound.
+// Full metric families are emitted only after that assertion has failed.
+func memoryRecoveryWireDiagnostic(t *testing.T, metrics map[string]*dto.MetricFamily, phase string, full bool) {
+	t.Helper()
+	names := []string{"weir_ingress_queued_response_bytes", "process_resident_memory_bytes", "weir_memory_cgroup_working_set_bytes", "weir_memory_cgroup_limit_bytes", "weir_memory_latched", "weir_memory_unknown", "weir_store_active_executions", "weir_store_working_reserved_bytes", "weir_store_pending_entries", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_backend_connections_owned", "go_memstats_heap_alloc_bytes", "go_memstats_last_gc_time_seconds", "weir_watchdog_expirations_total"}
+	values := make(map[string]float64)
+	for _, name := range names {
+		values[name] = testmetrics.Sum(metrics, name)
+	}
+	gc := metrics["go_gc_duration_seconds"].GetMetric()
+	if len(gc) > 0 {
+		values["go_gc_cycles"] = float64(gc[0].GetSummary().GetSampleCount())
+	}
+	raw, err := json.Marshal(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("wire_threshold_diagnostic phase=%s metrics=%s", phase, raw)
+	if full {
+		raw, err = json.Marshal(metrics)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wire_threshold_diagnostic timeout_all_metric_families=%s", raw)
+	}
+}
+
+func memoryRecoveryWireFailureReceive(t *testing.T, stream grpc.BidiStreamingClient[pb.ExecuteRequest, pb.ExecuteResponse], cancel context.CancelFunc) {
+	t.Helper()
+	type receivedResponse struct {
+		response *pb.ExecuteResponse
+		err      error
+	}
+	received := make(chan receivedResponse, 1)
+	started := time.Now()
+	go func() {
+		response, err := stream.Recv()
+		result := receivedResponse{response: response, err: err}
+		received <- result
+	}()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case result := <-received:
+		response := result.response
+		read := response.GetEvent().GetReadResult()
+		t.Logf("wire_threshold_diagnostic failure_only_Recv elapsed=%s response_type=%T index=%d document_bytes=%d content_type=%s failure_code=%s transport_status=%s transport_error=%v", time.Since(started), response.GetEvent().GetValue(), response.GetIndex(), len(read.GetDocument().GetData()), read.GetDocument().GetContentType(), read.GetFailure().GetCode(), status.Code(result.err), result.err)
+	case <-timer.C:
+		cancel()
+		t.Logf("wire_threshold_diagnostic failure_only_Recv elapsed=%s timed_out_1s=true stream_canceled=true", time.Since(started))
 	}
 }

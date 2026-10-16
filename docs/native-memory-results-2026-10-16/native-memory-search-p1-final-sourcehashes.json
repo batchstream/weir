@@ -1,0 +1,37 @@
+{
+  "source": "98ea9adfee65a315ed737c00dad4640364f18648",
+  "captured_utc": "2026-10-16T15:07:37.010993+00:00",
+  "binary_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-memory-search-p1-final-linux",
+  "binary_sha256": "1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214",
+  "source_sha256": {
+    "internal/app/assembly.go": "c0b755744a57991cff7449bb01fcf5083f9b56e286f337490d61e9fd30073dcd",
+    "internal/app/diagnostics_integration_test.go": "50fc6935b45c7c03278d96044b561ebdbbdb24d9beb49dc8a362cd1f14f31e1b",
+    "internal/app/memory_recovery_integration_test.go": "a55dc5822e8852e35a63506d67e2d939167edf22e33b36d5688e5d19d4fc54a9",
+    "internal/app/metrics.go": "b3a497e22870b9f2ad8712e721a7fe270e4b0500c917a2bd12fd696656f21bbe",
+    "internal/app/native_output_budget_integration_test.go": "e49bf509d965f8c89071b25f3a3d0db36e60966a9287a321a499cff16247f4fe",
+    "internal/app/node.go": "53de1e3c9fe0cbdd49349b0fb7450d90825c50aebb89b671462a2a91df496ba5",
+    "internal/app/shared_pressure_integration_test.go": "e3c1db79588f1c4690eef6cd8aced3aaaf0826dd8cc9bb99a9a696c83a8285a8",
+    "internal/backend/mongodb/native.go": "a962997d736c07b0b4072ddd05d5a6327298a37c91230665dd8bfc314e6358f2",
+    "internal/backend/search/expression_integration_test.go": "ea6623b3d787338bc182b74ade88588f54d3c2e08a00db0b8a7bd27b13289da3",
+    "internal/backend/search/native.go": "53ce7078b4ce859b5b6948e387ef078a61179f24d1ea4f1144ba5e4a1ca3f629",
+    "internal/backend/search/native_memory.go": "02b7454737a22fa8d66e88d0856dee0122146e2bea7951756983c4c5e6960e60",
+    "internal/backend/search/native_memory_test.go": "e6ca550061aa2d08b39daf40c33e1bebf76e9e53d280c75a51d48d888caa85ac",
+    "internal/backend/search/native_request_memory_test.go": "c831db02b591e766b35b545893836b2f20291deb1e51a27c7f048d616eff4157",
+    "internal/execution/adapter.go": "f719e6eeecda4b83b9d226ddb6540f1ed46301ec1bb862cc62fc4298bf4b6267",
+    "internal/overload/guard.go": "5d78916a093df3228f6c1c82a3834db0c6092f27a9cb74a3d6fb29067f7081ac",
+    "internal/server/codec.go": "ab8b94c3fccca73ab02c143f07f7134f5160be660010f4bc851e9b926b2e0e19",
+    "internal/server/execute.go": "71ff7dbd3e86428235c45baec317a6320a77173abb7fd0111875c6e4dedb1a9f",
+    "internal/server/grpc_transport.go": "a6953826ef99fc211bd6de87baddd31bdff357a5f2b3bef62c9d96e70c563f79",
+    "internal/server/native_progress_integration_test.go": "50b5fde59c9ede2e6e2e6122c96f924f74622f26df0fe306af2b78643c5133e9",
+    "internal/server/wire_lifetime_test.go": "4aec6465abf00fd0c69a6fe45907185575b956c3bc6382e1e137d1549ea61451",
+    "internal/store/native_memory.go": "b11e75adfba27b131da65e0191e4fde22d21de89b3bbdd7eeb619ce802948cb1",
+    "internal/store/runtime.go": "621171a0bdd49d3d824c69b1c6fc87104bae75ae696af613286fb1816bf15de6"
+  },
+  "relative_to_7787_changed_source_files": [
+    "internal/backend/search/expression_integration_test.go",
+    "internal/backend/search/native.go",
+    "internal/backend/search/native_memory.go",
+    "internal/backend/search/native_memory_test.go",
+    "internal/backend/search/native_request_memory_test.go"
+  ]
+}

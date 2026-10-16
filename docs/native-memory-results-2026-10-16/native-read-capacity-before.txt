@@ -1,0 +1,5 @@
+--- FAIL: TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge (0.31s)
+    native_read_capacity_test.go:118: fast Native consumers cyclically waited for body-read quota with no converging IO {67108864 65276928 48139264 265216 2 1024 0 0 0 0 2 true 0} {0 0 0 0 0 2 1064 65011712 0 2 65014824 false false false} {67108864 65276928 48139264 265216 2 1024 0 0 0 0 2 true 0}
+FAIL
+FAIL	github.com/batchstream/weir/internal/store	0.817s
+FAIL

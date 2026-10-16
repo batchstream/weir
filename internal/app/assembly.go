@@ -44,6 +44,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		registry:        prometheus.NewRegistry(),
 	}
 	overloadTargets := []overload.Target{admission}
+	node.nativeMemory = store.NewNativeMemory()
 
 	drainOpts := prometheus.CounterOpts{
 		Name: "weir_node_drains_total",
@@ -70,7 +71,8 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		runtime, err := openLocal(ctx, definition, cfg.Basic.Lua.limits(), time.Duration(cfg.Basic.Lifecycle.CleanupTimeout))
+		options := localOptions{definition: definition, lua: cfg.Basic.Lua.limits(), cleanup: time.Duration(cfg.Basic.Lifecycle.CleanupTimeout), memory: node.nativeMemory}
+		runtime, err := openLocal(ctx, options)
 		if err != nil {
 			return nil, err
 		}
@@ -137,6 +139,7 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	}
 
 	node.guard = overload.New(overloadTargets, cfg.Basic.Overload.Memory.limits())
+	node.guard.ObserveMemory(node.nativeMemory)
 	if err := node.registerMetrics(); err != nil {
 		return nil, err
 	}
@@ -153,21 +156,28 @@ func Open(ctx context.Context, cfg Config) (*Node, error) {
 	return node, nil
 }
 
-func openLocal(ctx context.Context, definition StoreConfig, lua luaengine.Limits, cleanup time.Duration) (*store.Runtime, error) {
-	name, cfg := definition.Name, definition.Local
+type localOptions struct {
+	definition StoreConfig
+	lua        luaengine.Limits
+	cleanup    time.Duration
+	memory     *store.NativeMemory
+}
+
+func openLocal(ctx context.Context, options localOptions) (*store.Runtime, error) {
+	name, cfg := options.definition.Name, options.definition.Local
 	limits := cfg.runtimeLimits()
-	limits.CleanupTimeout = cleanup
+	limits.CleanupTimeout = options.cleanup
 	var adapter execution.Adapter
 	var err error
 	if cfg.Backend.MongoDB != nil {
 		config := cfg.mongoConfig(name)
-		config.Options.Lua = lua
-		config.Options.CleanupTimeout = cleanup
+		config.Options.Lua = options.lua
+		config.Options.CleanupTimeout = options.cleanup
 		adapter, err = mongodb.Open(ctx, config)
 	} else {
 		config := cfg.searchConfig(name)
-		config.Options.Lua = lua
-		config.Options.CleanupTimeout = cleanup
+		config.Options.Lua = options.lua
+		config.Options.CleanupTimeout = options.cleanup
 		adapter, err = search.Open(ctx, config)
 	}
 	if err != nil {
@@ -176,5 +186,5 @@ func openLocal(ctx context.Context, definition StoreConfig, lua luaengine.Limits
 		return nil, fmt.Errorf("local Store %q startup qualification failed: %w", name, err)
 	}
 
-	return store.New(adapter, limits)
+	return store.New(adapter, limits, options.memory)
 }

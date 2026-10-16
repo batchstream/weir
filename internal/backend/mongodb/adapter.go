@@ -41,6 +41,7 @@ type Config struct {
 
 type Adapter struct {
 	maxDocumentBytes int
+	maxMessageBytes  int
 	dialer           *connectionOwner
 	client           *mongo.Client
 	deployment       driver.Deployment
@@ -153,6 +154,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		SetName     string `bson:"setName"`
 		Msg         string `bson:"msg"`
 		MaxDocument int    `bson:"maxBsonObjectSize"`
+		MaxMessage  int    `bson:"maxMessageSizeBytes"`
 	}
 	if err := a.client.Database("admin").RunCommand(ctx, cmd).Decode(&hello); err != nil {
 		return mongoQualificationFailure("MongoDB replica-set qualification failed", err)
@@ -161,6 +163,7 @@ func (a *Adapter) qualify(ctx context.Context) error {
 		return fmt.Errorf("MongoDB requires a replica set and no mongos")
 	}
 	a.maxDocumentBytes = hello.MaxDocument
+	a.maxMessageBytes = hello.MaxMessage
 	return nil
 }
 

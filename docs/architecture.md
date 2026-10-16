@@ -175,15 +175,24 @@ participating caller contexts. Waiting work is bounded by queue count and bytes.
 
 The budget includes Search `refresh=wait_for`. It cannot distinguish waiting for
 visibility from database application; a small budget can therefore reduce
-visible-write throughput. Native publication can borrow a separately bounded
-pause reservation, release execution credit while waiting on the consumer, and
-fairly regain it through the same scheduler before continuing. Paused batches
-remain in the lifecycle set for cancellation and shutdown. The pause count and
-retained byte bounds separately reuse the Store queue configuration; charging
-includes input, actual response working memory and the current event. A single
-oversized stream may occupy an empty pause budget alone. When that budget is
-full, output retains its execution slot and backpressure. Abandoning callers
-cancels the invocation; retained credits return only when their owners stop.
+visible-write throughput. Native publication releases backend IO credit while
+retaining memory ownership. Further HTTP body reads rejoin the existing FIFO
+continuation scheduler. Paused invocations remain in the lifecycle set for
+cancellation and shutdown.
+
+One concrete Node-wide NativeMemory account is shared across Stores. It derives
+two thirds of the existing Guard's trusted remaining recovery allowance and
+limits invocations to 1024, independently of the input queue configuration. Each
+lease covers input, pre-dispatch working memory, retained reply/header bytes and
+a double-chunk publication window through terminal acknowledgement. A reserved
+IO portion within the total account protects subsequent execution. A reply that
+still borrows that portion stays explicitly Borrowed until actual release or
+promotion; classification never changes total owned bytes. Backend IO credits
+are released even when retained output is at the real memory bound. New work
+that cannot fit fails explicitly rather than blocking a slot behind its consumer.
+Unknown capacity preserves a prior trusted bound and shrinking capacity preserves
+already owned bytes. The existing actual RSS/cgroup Guard remains independent;
+this account is not a hard bound on every typed pipeline allocation.
 
 Metrics observe execution rather than control scheduling.
 Queue occupancy and capacity metrics describe waiting operations. Active execution

@@ -49,7 +49,7 @@ func setup(t *testing.T, manual bool) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := newRuntime(a, l)
+	r := newRuntime(a, l, nil)
 	if !manual {
 		go r.loop()
 	}

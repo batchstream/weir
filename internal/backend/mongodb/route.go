@@ -32,7 +32,7 @@ func (a *Adapter) PrepareCommand(ctx context.Context, id uint64, input *pb.Comma
 	work.Command = input
 	work.ID = id
 	work.Bytes = max(work.Bytes, 2*proto.Size(input)+4096)
-	work.WorkingBytes = max(work.WorkingBytes, 24<<20)
+	work.WorkingBytes = max(work.WorkingBytes, a.nativeReplyBytes()+2*len(input.GetNative().Request.Data)+8192)
 	return work, nil
 }
 

@@ -1,0 +1,2 @@
+4b458740e1496ca6532654811c8fd5d796de5d8582cf0fbc86a1d46a010b5ba7
+{"cluster_name": "weir-local-opensearch-3.3", "cluster_uuid": "PWJKpp6PSPKjfcPDLFwKgA", "name": "4b458740e149", "tagline": "The OpenSearch Project: https://opensearch.org/", "version": {"build_date": "2025-10-11T23:24:18.278696323Z", "build_hash": "e972d15408320e6be84c64bb0fdc076ca7696ea2", "build_snapshot": false, "build_type": "tar", "distribution": "opensearch", "lucene_version": "10.3.1", "minimum_index_compatibility_version": "2.0.0", "minimum_wire_compatibility_version": "2.19.0", "number": "3.3.0"}}

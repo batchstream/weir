@@ -108,17 +108,25 @@ for each Store. Omission selects the default of `16`; an explicit
 `0` always means unlimited. Positive integers retain excess work
 in the bounded queue for natural batching and admission backpressure. Execution
 completion returns the credit without waiting for consumer acknowledgement. The
-budget includes Search visibility waits. Native consumer waits can release
-execution credit by borrowing a bounded pause reservation, then fairly regain
-credit through the same scheduler before further backend work. The pause budget
-separately uses `queue.max_operations` and `queue.max_bytes`, charging retained
-input, actual response working memory and the current event; one oversized item
-can occupy an empty pause budget alone. If that output budget is full, the
-current Native execution retains its slot and applies backpressure. Observe
-`weir_store_paused_native_outputs` and `weir_store_paused_native_reserved_bytes`
-alongside their limits and active executions. Use the actual visibility and
-traffic pattern when evaluating `1`, `4` or `16`. A smaller budget
-does not by itself prove lower database load or higher throughput.
+budget includes Search visibility waits. Native output releases execution credit;
+further HTTP body reads fairly regain it through the same scheduler. Native
+memory is a Node-wide account, independent of each Store's queue configuration:
+1024 invocations share two thirds of the trusted remaining recovery allowance.
+It charges queued input, pre-dispatch reply work, retained responses and terminal
+publication. A protected IO portion lets subsequent work run while output waits.
+Actual budget exhaustion fails explicitly, with NOT_STARTED before dispatch or
+INCOMPLETE after an exchange began; commands are never replayed. Unknown samples
+retain a prior trusted bound; cold unknown capacity returns UNAVAILABLE, and a
+known zero or smaller allowance never discards existing ownership.
+Observe `weir_native_memory_used_bytes`, `budget_bytes`, `resident_bytes`,
+`io_reserve_bytes`, the lease states and `budget_rejections_total` under their
+common `weir_native_memory_` prefix. Store paused output count/bytes remain
+observations, with no per-Store output limit. Actual RSS/cgroup admission still
+protects the process; this Native account is not a hard bound on typed pipeline
+memory. MongoDB clients disable wire compression so reply memory can be reserved
+against the negotiated uncompressed maximum. Use the actual visibility and
+traffic pattern when evaluating execution concurrency `1`, `4` or `16`; a smaller
+budget does not by itself prove lower backend load or higher throughput.
 Diagnostics uses an independent HTTP listener; readiness describes node lifecycle,
 rather than backend health. Directory records carry Store names and public
 endpoints, without backend credentials.

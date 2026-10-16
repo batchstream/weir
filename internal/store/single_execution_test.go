@@ -42,7 +42,7 @@ func TestCommandCompletionReleasesReservations(t *testing.T) {
 			limits := DefaultLimits()
 			limits.BatchWait = 0
 			limits.MaxInFlight = 0
-			runtime := newRuntime(adapter, limits)
+			runtime := newRuntime(adapter, limits, nil)
 			work := plan(1, name, false)
 			var session *Session
 			if native {

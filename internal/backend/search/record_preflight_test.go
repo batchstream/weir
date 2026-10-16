@@ -31,7 +31,7 @@ func TestSearchMutationPlansSeparateResultsFromPreReadWorkingMemory(t *testing.T
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, transport: transport, ctx: lifetime, cancel: cancel}
 			limits := store.DefaultLimits()
 
-			runtime, err := store.New(adapter, limits)
+			runtime, err := store.New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +82,7 @@ func TestSearchRecordPreflightBeforeAnyCommand(t *testing.T) {
 			transport := client.Transport.(*http.Transport)
 			adapter := &Adapter{config: config, dialect: ElasticsearchProduct, client: client, transport: transport, ctx: lifetime, cancel: cancel}
 			limits := store.DefaultLimits()
-			runtime, err := store.New(adapter, limits)
+			runtime, err := store.New(adapter, limits, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
