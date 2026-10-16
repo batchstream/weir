@@ -456,7 +456,10 @@ func launchQualificationJob(work qualificationWorkload, job qualificationJob) {
 		return
 	default:
 		result := qualificationResult{job: job, err: fmt.Errorf("fixed arrival exceeded driver in-flight bound; offer was not hidden")}
-		results <- result
+		select {
+		case results <- result:
+		case <-ctx.Done():
+		}
 		return
 	}
 	pending.Add(1)
