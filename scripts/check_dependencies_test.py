@@ -65,6 +65,25 @@ class DependencyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'replacement hides'):
                 dependencies.check_modules([module])
 
+    def test_only_the_pinned_lua_allocation_patch_is_allowed(self):
+        directory = Path(__file__).resolve().parent.parent / 'third_party/golua'
+        replacement = dict(Path='./third_party/golua', Dir=str(directory))
+        module = dict(Path=dependencies.LUA, Version=dependencies.LUA_VERSION, Replace=replacement)
+        dependencies.check_modules([module])
+        variants = (
+            dict(Path=dependencies.LUA, Version='v1.1.0', Replace=replacement),
+            dict(Path=dependencies.LUA, Version=dependencies.LUA_VERSION,
+                 Replace=dict(Path='../golua', Dir=str(directory))),
+            dict(Path=dependencies.LUA, Version=dependencies.LUA_VERSION,
+                 Replace=dict(Path='./third_party/golua', Dir='/tmp/unrelated-lua')),
+            dict(Path=dependencies.LUA, Version=dependencies.LUA_VERSION,
+                 Replace=dict(Path='./third_party/golua', Dir=str(directory), Version='v1.1.1')),
+        )
+        for variant in variants:
+            with self.subTest(module=variant):
+                with self.assertRaisesRegex(ValueError, 'replacement hides'):
+                    dependencies.check_modules([variant])
+
     def test_the_patch_directory_cannot_escape_through_a_symlink(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'source'

@@ -254,9 +254,14 @@ document, contain UTF-8 text and permit one final LF/CRLF. URI userinfo is rejec
 backend configuration stay local and are never distributed in the Store directory.
 
 Application and peer listeners use plaintext gRPC on an isolated network. Peer
-metadata is not authentication. Lua programs must be trusted: a fresh restricted
-VM and optional stack/instruction limits do not impose a
-hard allocation limit on arbitrary Lua objects.
+metadata is not authentication. Lua uses a fresh restricted VM. Parsing,
+compilation, VM objects, library buffers and document conversion reserve new
+allocations on the shared Node execution-memory account before allocation.
+The reservation conservatively accumulates until evaluation and backend result
+processing finish; it is an allocation budget, not a measurement of live Go heap.
+Reusing existing capacity does not consume the budget again. Exhaustion before
+a write returns NOT_APPLIED/RESOURCE_EXHAUSTED and cannot be suppressed by Lua
+`pcall` or `xpcall`.
 Transforms use `function(current, incoming)` with ordinary Lua tables, precise
 64-bit integers and a fixed operation timestamp; see the [Lua guide](docs/lua.md)
 and [product example](examples/lua/product.lua).

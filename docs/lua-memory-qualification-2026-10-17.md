@@ -1,6 +1,7 @@
 # Lua memory qualification, 2026-10-17
 
-Status: **failed baseline; repair required**. The ingress objective was merged as
+Status: **failed baseline; allocation repair passes offline checks; constrained
+CLI qualification pending**. The ingress objective was merged as
 PR #82; it does not bound arbitrary allocations inside the existing Lua VM.
 Overall production-readiness acceptance is incomplete.
 
@@ -41,10 +42,19 @@ an OOM peak and must not be compared as one snapshot. Docker observations,
 rather than an inferred sampled peak, establish the OOM.
 
 The owned CLI container was removed. The fixture's original three-second
-MongoDB namespace Drop timed out; namespace cleanup remains unconfirmed. The
-suggested database name derived from a driver PID is not sufficient ownership
+MongoDB namespace Drop timed out; namespace cleanup was unconfirmed in the original run. The
+suggested database name derived from a driver PID was not sufficient ownership
 proof for deletion. No retry, diagnostic rerun or extra deletion was performed
 inside this baseline.
+
+A separate cleanup follow-up verified the exact local mongod executable, loopback
+port, replica set and fixture owner marker. A read-only driver then verified the
+one collection, three exact IDs, and complete raw BSON lengths and SHA256 hashes
+against the original seed/control records. Only that proven namespace was dropped;
+a subsequent independent database listing confirmed absence. The original Drop
+timeout and failed qualification remain unchanged. The
+[follow-up cleanup receipts](lua-memory-results-2026-10-17/cleanup-followup-index.json)
+record this later action separately.
 
 [Original validation receipt](lua-memory-results-2026-10-17/lua-production-baseline-validation.json)
 and [raw output](lua-memory-results-2026-10-17/lua-production-baseline-process.txt)
@@ -52,6 +62,46 @@ retain all failures and cleanup uncertainty. The evidence index records original
 paths, bytes and SHA256 hashes without normalization.
 
 ## Required repair and acceptance
+
+The repair retains Lua in the main process and pins a limited source patch of
+`iceisfun/golua v1.1.1`. One cumulative allocation budget covers parsing,
+compilation, the restricted VM, allowed helpers and document conversion. It
+reserves storage before allocation on the existing Node ledger. Protected Lua
+calls cannot catch capacity refusal, and backend result ownership retains the
+reservation through validation and encoding. Existing capacity is reusable;
+new backing blocks and temporary allocations remain charged for the evaluation.
+This is a conservative allocation budget, not a measurement of live Go heap.
+
+The frozen repair passed the complete default tests with and without race,
+integration-tag race compilation, both vet modes, six nested Lua package race
+checks, and the normal benchmark. The 1,052 recorded source/provenance hashes
+matched before and after the six root checks. Packaging script tests passed in
+normal and optimized Python modes. Four target builds record final compiler
+frames for the frontend, VM, allowed library code, Weir host wrappers, Node
+ledger and Go sort. These are supporting checks, not process qualification.
+
+The original cancellation test initially reached the standalone allocation
+budget before its scheduled cancellation. That first failure is preserved. Its
+fixture now supplies a finite test ledger with a larger limit so the existing
+script, cancellation timing, CANCELLED assertion, healthy peer assertion and
+completion bound continue to test cancellation independently of allocation
+refusal. Separate tests require allocation refusal to remain terminal.
+
+The unchanged normal benchmark has a cost for allocation checks: the median
+one-field evaluation changed from 13.063 to 20.283 microseconds, and the
+100-field evaluation from 50.080 to 68.157 microseconds. All three samples,
+including the original 106.388-microsecond outlier, are preserved. These
+microbenchmarks do not establish backend latency SLOs. Six allocation diagnostics
+reserved more than their measured Go allocations; the tiny case reserved
+533,425 bytes, below the one-MiB regression limit. These diagnostics can reveal
+omissions but cannot prove an upper bound for all programs.
+
+[Offline evidence](lua-memory-results-2026-10-17/offline-repair-index.json)
+records exact commands, source hashes and unmodified output. The original
+269-line CLI probe remains byte-for-byte unchanged. A separate opt-in probe adds
+both-backend checks for protected-call exhaustion, output-DAG expansion, long
+errors, compiler/comments, repeated existing-key updates and quoted controls.
+Neither probe has yet qualified this repair in a constrained process.
 
 Lua remains in the main Weir process. The repair must prevent this process-fatal
 allocation and cover the exposed VM, compiler and bridge allocation paths, with

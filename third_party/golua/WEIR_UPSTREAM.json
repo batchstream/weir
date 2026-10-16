@@ -1,0 +1,283 @@
+{
+  "module": "github.com/iceisfun/golua",
+  "version": "v1.1.1",
+  "upstreamGoSum": "h1:/n2DpH1KKOJmLYZ5IzcZmNOQ+uIc2jPam1gg40J+eGA=",
+  "files": {
+    "LICENSE": "3869b7b6ae21262fc8865fd47b6413a7f8e4a27a87ed241e9156d389c295ff51",
+    "ast/ast.go": "fa68d02e361522223fe7c5a3a637a4174fd02c3b9bf3379a146d79687bc67312",
+    "ast/dump.go": "2b5d2e6565a634ab25cc99646825e1032ee6568e6199c4695d1de869effc8caf",
+    "ast/expr.go": "9e72926a5ce2c05a9928964fb0ff95e513a5cb9f99efd948ee169ba587112275",
+    "ast/stmt.go": "789a801f27a6019c860d288ca2d1037cb29beaccfd61bbf1ac2795b28903488e",
+    "compiler/compile_control.go": "e02f11c3bfd44480bdd098763218798a5fae8efed7d7053453a52c3aa1506d61",
+    "compiler/compile_expr.go": "f6b16e585c904763c5237ba4286bf6f65f38c4d80c95365bd408f4cff84d797f",
+    "compiler/compile_stmt.go": "c8c2028e0b0322e44a91a2e05c6bc3ed74acf92f39863211bf8fb16512d6a313",
+    "compiler/compiler.go": "2a93fc631eda4754b8bb32966b1794d92569ce429d4fb9f2d89aad4309f9eff8",
+    "compiler/instruction.go": "5849d63fa6024826d1c5a8d0f949a370e3d1d315cf92b95019a4a6412bba582f",
+    "compiler/limits.go": "ef508c4c0aa79db8ec3ba880b5c69fbec3cd9b8ff8bd5f06b20064840e82ee11",
+    "compiler/opcode.go": "92e3a49aba5a43afcc63fdfdc98292654d99e541ab5a01031d1e5f3af9740af0",
+    "compiler/proto.go": "4e0fa78bcf369cd400d1175f5f19aaa3d34d6cbcdef2b308358adf7c54241808",
+    "compiler/undump.go": "1c7e43caa4e68cc005c6462b47c67ef207a6d3a3040cf6a12cd537969352f9b9",
+    "glob/err.go": "66cbd468742e6e3f7a6a1b0a567969317613ea178308cd09fc80ace3a4766fde",
+    "glob/glob.go": "289b9eca4902012a0d517e235d5e53250dd733ec85220e57d4ba15c286c1eab9",
+    "glob/has_pattern_characters.go": "90846c22f730fdc7828d92444a801506197286511459e4ba6cfb772514e74535",
+    "glob/named.go": "e8501b87dadd98fb11b708273ff7ed7ba268973f9ff32797f26995548e78cd35",
+    "go.mod": "d168f50fa41e90485dba8fcfdd38ed02b7f627c6b3dceba24c27a78788b8a76b",
+    "lexer/lexer.go": "3bc0ba5ac8fb86c31c9ec8bf9351b2a02e68b584a8880b5e70ed7b6732e2425a",
+    "lexer/lexer_literal.go": "052aa74e2bd7c0fed15dc93b3230b03d1f6cae25ba70ecf8d0c29f8dc79cf624",
+    "parser/parse_expr.go": "c4bc4d42c34d36d952a0fd1ed72750b910327b71236e4ee08f346b401ae827dd",
+    "parser/parser.go": "9cb464fc25a29901cd2978fdf682963839e6a1c9477095867ce6f0443c13cd42",
+    "stdlib/bit32.go": "87c3f4543b00758e8fe6ed7fac151fb8a5a40c51969b5a85fbc98db03c9a9f64",
+    "stdlib/chan.go": "19d90ad8572e7457765b96f212e12231abb77888502d688466111ef78f79053b",
+    "stdlib/coroutine.go": "6194b90bcb629590d170cf51ce6e9c611419af97333100b2519649ad97119141",
+    "stdlib/debug.go": "0c7ef533098c27a512c7dce0e7c01eb9af04e47bced9990fc8baf09716b4fa81",
+    "stdlib/exec.go": "176db353082124486f8bdbab6ae47fb5af9b35f3bc5b2ab158a89dda1d4ff686",
+    "stdlib/glob.go": "a081eb8e30e51c7a260e3ad4e2d1656fa8e3f05cb240e3bea6f4574b68b3e203",
+    "stdlib/globals.go": "9607e93368b8ca4757da2bca23084bc35c5c725e8436e2c6d462660cc79080a9",
+    "stdlib/helpers.go": "9ef702c6aa035433f5ce0dc6febfd373762b1e81ff8ac883146cfe95593e9917",
+    "stdlib/io.go": "b6ca29462633e36e84e282091765697ae6744254fa608be754f5e0fab072e593",
+    "stdlib/io_popen.go": "904a9ef21144749d508b2a99ed9cbcd22070380c0ecad9b9f9cf005a2bc32dfa",
+    "stdlib/io_read.go": "5ecbfd7594c304a7dbcf8b2be54d6140b5d46bc0d936f4302e98c20bb62bb3ed",
+    "stdlib/load.go": "bbb059a1fe2904672c74e5b5596dc178b6a5d3c741f907035663ea9b2a3eb135",
+    "stdlib/math.go": "41f23644fbe167189d7d3c91fa2e87539741a9e5a5c0d745193fc0b4fca17bf2",
+    "stdlib/os.go": "c7c098a49cb553a5dffa9fa7bcc1a86b855760744000ce9a6c67064e43eb190a",
+    "stdlib/package.go": "a401a8bf5a9048c85e48edcb2497f092f64855d6c6b50b175430733c2ae86adc",
+    "stdlib/pattern.go": "c81124906100e44c9499dde4640cefb1f387f852a19071e0d4483b8dd90f0be0",
+    "stdlib/stdlib.go": "fcd651728a86e7b0366f0ea3eac449878fecca31e5ea647f3bfb3f1ab030c1fd",
+    "stdlib/string.go": "3cb0a2d523e9a1459e9716cdc4bb9a3ea67c570d8a71cebfe1ffc6d533f20490",
+    "stdlib/string_dump.go": "20c91dd8409b866b7241a3236d6e8db6444a1158be4fcf6085f5783ac4ef4b5a",
+    "stdlib/string_format.go": "f4924f562d1dc62141ff2cbc92b9d4cf59bd9917dd080141f38d93b040794a54",
+    "stdlib/string_pack.go": "09ecb8bbb07dd811fe41a407e0e74873ffb09bd617126460641965384dae20c2",
+    "stdlib/table.go": "3ac66c35b2862e26ddaccb4958bd207a11de713dde598dc8815c2aebc213b872",
+    "stdlib/time.go": "1d1f168f37559a3047034beb4c13e2273ef48ae743f753ec24669f446a1e1391",
+    "stdlib/utf8.go": "74a9f8e95a069b1162f8e0245f758b45b05ea9abbda5afe2bd15de60f0528100",
+    "token/token.go": "6fadcf965df2486d29daa2ddf1e23cd512424acb4ecb10edeede77e07e3c2037",
+    "vm/chan_provider.go": "d4913c352abc79e3493f343f254b20d4bfd015899de047f14dd4cf2cffaf8ad8",
+    "vm/debug_provider.go": "7597403cfd21033c6e0181619713e589388a34be4e09384ea4d79d02572fa3ff",
+    "vm/default_os.go": "00824dec15ab3053c74e8c295c43b32e64badd0484bdec8368fcccfba4fbed94",
+    "vm/dir_code_provider.go": "e2c2d77b79a209bc034891fede7148922c6d605124dc37ac6be6ab88009e3a9b",
+    "vm/exec_provider.go": "ec3a2f60e93431743e0e0808d699eccfa0ae8af90dd9edbb0bb6cf59c4bc81e4",
+    "vm/exit_handler.go": "ecf5910611cccc21b8ededbd8d6793a7dffc562ebcb229e5e87d50b9fb596bee",
+    "vm/full_io.go": "a57647ed3a023e6ed743353bea68e12d82e9b59b37cd6f67f6edfe19ab1cf94a",
+    "vm/function.go": "0c62087e24643b8df5026647295f05c2a8cff63209236f8ed0d198bf999c2c26",
+    "vm/gc.go": "5996a1133b1f661aad892b044a9f53324f557ccb292bd7fca46404ae3d420a73",
+    "vm/io_provider.go": "31192c28b30702ff69bb5cca3b228c299b9811f9adf930d633b189ee98ce8780",
+    "vm/jailed_io.go": "e62faf4920d20b76fd58176568fabf5e60d6e695973885a4da505c13f51680b6",
+    "vm/lifecycle.go": "d22b91a62082662e033b40120aa219321cde5c1ad7d445cbf713bb95c148887f",
+    "vm/limits.go": "4f376cd40c91d27a6fb9109bf231a8460aab2e929e7b2d082ab4e432de66d7e7",
+    "vm/loader.go": "15944cbe1fc95b85ed77d53a261a151bae4971760afc4d5dbf8056416d0d33df",
+    "vm/loadlib_provider.go": "b07c65e5671d3f4ee836cd127131d265ca60e9114d3c631550231d10f3a3b3eb",
+    "vm/lua_table.go": "7e2c3f5303e7ff6f192ce5ddb9129b395e9384d49d36136dae0b2dba99edfb49",
+    "vm/metamethod.go": "53458c3474fe3d6a1407a16f076dfdecb3984ea3a0062509e6d0680175e0370d",
+    "vm/os_provider.go": "45f0abe4c063ea188317c77413fb053b25fef44ab09b37ad7504a8b165683a5b",
+    "vm/print_provider.go": "95fb7c3d616379e76157721fb774207d58cc2302edfd240228f3d4a3e7485f8b",
+    "vm/process_provider.go": "c01ba87ea9f564b1cab9c6fc30d0286d57655fff88affbb4c65f42c70e716751",
+    "vm/table.go": "7e7ca150e27fa4ce1861746d95e92d79ed9decabef0ef53c50962bf0549662ed",
+    "vm/time_provider.go": "5cfe8074f18f85ae77353d74f2b587e13ef32fedb3aedc88488529a1ea2378a3",
+    "vm/userdata.go": "7af187532bdc7769b4b053a65eafa4249a3b6c19b14c96b5700a4a51a261ee47",
+    "vm/value.go": "4d799294210166ff14b6b5639012fb05e819df3769c768639101523256c780c3",
+    "vm/vm.go": "880d7860c1aadbce33f6dc27a65c06a543908396d61c7c893f4fc74668174149",
+    "vm/vm_access.go": "23bc1eddae337385d583e833241cf810b0a6d2c9c1c62ea5a9033eefd9e3c879",
+    "vm/vm_arith.go": "950473a023ab9d99a86d3641d2289065ad7b03f48d5e6bada1968216e346af80",
+    "vm/vm_compare.go": "a097f445d9ad41a028edbe252f3fd6cebef9681d65a97e9e9c8f5eed54ff1ebe",
+    "vm/vm_debug.go": "1d477de419528651556ab482d45ecec3113a1a881d159073dd06c9dc5974a4b3",
+    "vm/vm_debug_name.go": "fe9947d85aa3ec44354b651b0e01989541e78c876ca73b6cbead41c9da2a56dc",
+    "vm/vm_error.go": "174f26c4ba2f47f86ffe3f07cb12c9ef94a7d9247344f6ca142a8fe4f035c41c",
+    "vm/vm_exec.go": "51ff1a7a6d6c278f2169961f4bdfdca0c0e555bd534f3199a1da79f4b5cc46fd",
+    "vm/vm_hook.go": "380cfa5f2f5f658bb92d0edf8504d759bbdea96ab1c75f1ee0716013e9588305",
+    "vm/vm_pow.go": "b5890f5d3ac37ec06ba9c8edc4d5f4365ebdbb659f19dd2ca26bb0e2bcab5d45",
+    "vm/vm_table.go": "83d0ae18c952b2d13e4b03ba9653ea53aea24470255750e9224fa9123bdfd6ff",
+    "vm/vm_upvalue.go": "9b80c9658062d326e61489a53aa012b85ce13150d7edd9c45aa4811c1aff77e3",
+    "vm/weak_ref.go": "728fad53cd9457131e6a3190d118908183e756ae8c615a8ddaf25be3fb0ac74f",
+    "vm/weak_store.go": "d8ae49c70f8e383373c42436df29f2e2210fcbd04eabc265d2270452d29a7789"
+  },
+  "patchedFiles": [
+    {
+      "path": "compiler/compile_control.go",
+      "upstream_sha256": "e02f11c3bfd44480bdd098763218798a5fae8efed7d7053453a52c3aa1506d61",
+      "sha256": "0e6ce33a3788bc16dab68ad4101a11d9ffb4537cf46397629fc0f312ab194b49"
+    },
+    {
+      "path": "compiler/compile_expr.go",
+      "upstream_sha256": "f6b16e585c904763c5237ba4286bf6f65f38c4d80c95365bd408f4cff84d797f",
+      "sha256": "c572d03fb8d648ac5fef3c83e01034bea490246e5b7cb306daca7095853532f5"
+    },
+    {
+      "path": "compiler/compile_stmt.go",
+      "upstream_sha256": "c8c2028e0b0322e44a91a2e05c6bc3ed74acf92f39863211bf8fb16512d6a313",
+      "sha256": "946a27f70a225a8a7533879eca746e1e90e86cb750461c4cf556bfa7a3181a41"
+    },
+    {
+      "path": "compiler/compiler.go",
+      "upstream_sha256": "2a93fc631eda4754b8bb32966b1794d92569ce429d4fb9f2d89aad4309f9eff8",
+      "sha256": "f0b034d4a511d25ec4d7390b2bc6e9bb14597087c5b7a194c42246d89b2202e7"
+    },
+    {
+      "path": "compiler/limits.go",
+      "upstream_sha256": "ef508c4c0aa79db8ec3ba880b5c69fbec3cd9b8ff8bd5f06b20064840e82ee11",
+      "sha256": "4bd5094a13eae3c445a047b245f9a242d09c78aabae279e2d3e47fba6c8be6ea"
+    },
+    {
+      "path": "lexer/lexer.go",
+      "upstream_sha256": "3bc0ba5ac8fb86c31c9ec8bf9351b2a02e68b584a8880b5e70ed7b6732e2425a",
+      "sha256": "95e4d0e2fdee33cb3fa730af46d1766e67dfd423d4448fed73517750c61ccbe1"
+    },
+    {
+      "path": "lexer/lexer_literal.go",
+      "upstream_sha256": "052aa74e2bd7c0fed15dc93b3230b03d1f6cae25ba70ecf8d0c29f8dc79cf624",
+      "sha256": "3faa2c1f5701ec720f4862efe4ebcb1ab1c35623c22f86bfe8638c7b5776037a"
+    },
+    {
+      "path": "parser/parse_expr.go",
+      "upstream_sha256": "c4bc4d42c34d36d952a0fd1ed72750b910327b71236e4ee08f346b401ae827dd",
+      "sha256": "425c8475ad5941aac70ae6c0386655e34f829a59f391e502bf720b3417b01ab9"
+    },
+    {
+      "path": "parser/parser.go",
+      "upstream_sha256": "9cb464fc25a29901cd2978fdf682963839e6a1c9477095867ce6f0443c13cd42",
+      "sha256": "0d64d77ec48d8a79fee17bd327bfa9af6501fb4dd3e471ed777ec803c60d4214"
+    },
+    {
+      "path": "stdlib/globals.go",
+      "upstream_sha256": "9607e93368b8ca4757da2bca23084bc35c5c725e8436e2c6d462660cc79080a9",
+      "sha256": "9ee4f2aa1df040afdfa55b686082e1be639fb27557d82af556e937755b448352"
+    },
+    {
+      "path": "stdlib/helpers.go",
+      "upstream_sha256": "9ef702c6aa035433f5ce0dc6febfd373762b1e81ff8ac883146cfe95593e9917",
+      "sha256": "36967e8240922a9d348a16da73322ecaad3a4ac8f7c75c4cce0179f0ed53e009"
+    },
+    {
+      "path": "stdlib/math.go",
+      "upstream_sha256": "41f23644fbe167189d7d3c91fa2e87539741a9e5a5c0d745193fc0b4fca17bf2",
+      "sha256": "42db203e9b12984b03bed26fb20d600cd21ed31a1411af6221c8f60d1a4bde78"
+    },
+    {
+      "path": "stdlib/string.go",
+      "upstream_sha256": "3cb0a2d523e9a1459e9716cdc4bb9a3ea67c570d8a71cebfe1ffc6d533f20490",
+      "sha256": "3b84074686f77ed8d286145d7f9eb14e31b29e344ff845d22ea0ee348bbd836c"
+    },
+    {
+      "path": "stdlib/string_format.go",
+      "upstream_sha256": "f4924f562d1dc62141ff2cbc92b9d4cf59bd9917dd080141f38d93b040794a54",
+      "sha256": "6e2b16c07734eb89eaa49f5d61066441066ecf1f112cc11a8f4303a77bba1d63"
+    },
+    {
+      "path": "vm/function.go",
+      "upstream_sha256": "0c62087e24643b8df5026647295f05c2a8cff63209236f8ed0d198bf999c2c26",
+      "sha256": "9de0272c9ea455c61fe908f5e4d73ca0093c0bbc0b58b4ea36d6f8d35e7e055a"
+    },
+    {
+      "path": "vm/lifecycle.go",
+      "upstream_sha256": "d22b91a62082662e033b40120aa219321cde5c1ad7d445cbf713bb95c148887f",
+      "sha256": "12cb8967d03658ec3cc81abc7a75397e6f9ad3b2c0fa2169226979ce6f04a800"
+    },
+    {
+      "path": "vm/table.go",
+      "upstream_sha256": "7e7ca150e27fa4ce1861746d95e92d79ed9decabef0ef53c50962bf0549662ed",
+      "sha256": "5d775f1ac2af514753ea3175a342da86cf95463e74954bd9e2c72e226462be21"
+    },
+    {
+      "path": "vm/value.go",
+      "upstream_sha256": "4d799294210166ff14b6b5639012fb05e819df3769c768639101523256c780c3",
+      "sha256": "c14549f0b805d3ee95ba7a16f77b29f2962493c3491042d92844393f98689f92"
+    },
+    {
+      "path": "vm/vm.go",
+      "upstream_sha256": "880d7860c1aadbce33f6dc27a65c06a543908396d61c7c893f4fc74668174149",
+      "sha256": "eae1d73ea98113f53bd939fce71221e03585cc8c460dfd92479631789896394f"
+    },
+    {
+      "path": "vm/vm_access.go",
+      "upstream_sha256": "23bc1eddae337385d583e833241cf810b0a6d2c9c1c62ea5a9033eefd9e3c879",
+      "sha256": "3567fee0c36dec52af3510481d1ed39b86d2bf03ad6bb0c2a4e493038c44f666"
+    },
+    {
+      "path": "vm/vm_compare.go",
+      "upstream_sha256": "a097f445d9ad41a028edbe252f3fd6cebef9681d65a97e9e9c8f5eed54ff1ebe",
+      "sha256": "7e68eb2bb0b26940031c8eb2ad6500899426a5b53587c88003c862624107b123"
+    },
+    {
+      "path": "vm/vm_error.go",
+      "upstream_sha256": "174f26c4ba2f47f86ffe3f07cb12c9ef94a7d9247344f6ca142a8fe4f035c41c",
+      "sha256": "42fe1edbf6673a8abff5c2c1c33dc3d1b5e53f9e5f320a8cd573a809562cf261"
+    },
+    {
+      "path": "vm/vm_exec.go",
+      "upstream_sha256": "51ff1a7a6d6c278f2169961f4bdfdca0c0e555bd534f3199a1da79f4b5cc46fd",
+      "sha256": "09e0134ddf12fecbcf25a563d95b7e0ed66662d8933898f4354e1fce31324148"
+    },
+    {
+      "path": "vm/vm_hook.go",
+      "upstream_sha256": "380cfa5f2f5f658bb92d0edf8504d759bbdea96ab1c75f1ee0716013e9588305",
+      "sha256": "2842c12cc7c97d933bc967d7337c7d41a20643bb7d5ceaddd1f82cb7e92451e7"
+    },
+    {
+      "path": "vm/vm_upvalue.go",
+      "upstream_sha256": "9b80c9658062d326e61489a53aa012b85ce13150d7edd9c45aa4811c1aff77e3",
+      "sha256": "b553c6a32ff7a13506b55584c13799ca46bc88f051f97e6e34464aa16a6a153f"
+    }
+  ],
+  "newFiles": [
+    {
+      "path": "WEIR_PATCH.diff",
+      "sha256": "1de0d6fe81ce70a83649839bc378aacfbd89e41d8b0e1c366f67efc72faeaa8a"
+    },
+    {
+      "path": "WEIR_PATCH.md",
+      "sha256": "953d6dcef1fb7df5c7040f675955cbe007bbd70cdb1ec68f1abd5d3130a3e684"
+    },
+    {
+      "path": "budget/budget.go",
+      "sha256": "684260c826e43f71108cc80a2d5216e8047f59c1e817bea87360bc9e7fdd5d9b"
+    },
+    {
+      "path": "budget/budget_test.go",
+      "sha256": "2bb76e996ceeceb0347dac6d19e00b1b1a0d2307fd82c80c2e693316d87e51a6"
+    },
+    {
+      "path": "budget/builder.go",
+      "sha256": "fcd2ca4cc6a7e06a688ae5f9904a31dd1073ef45525f71e544dfcb5306d420ba"
+    },
+    {
+      "path": "compiler/budget.go",
+      "sha256": "ae66586b355d119d4a741940534ff0040ff7ca9f84e98f82f720aa7c44fc68fc"
+    },
+    {
+      "path": "compiler/budget_test.go",
+      "sha256": "b9c8954722c46374768c06c78dc4faf9900805951d6169ad789cd09e0485cce7"
+    },
+    {
+      "path": "lexer/budget.go",
+      "sha256": "8b816ceeebefd2d2f3388412063ba0f4c99fd65d66bee6855a53df3a0a10f652"
+    },
+    {
+      "path": "lexer/budget_test.go",
+      "sha256": "2fce53e8a0f00454e58baeec2d4e00b59b80578b1299a3530cf64cf4beb658f6"
+    },
+    {
+      "path": "parser/budget.go",
+      "sha256": "70dbecc66c439b9e66b78edf5c191ad11088afae3bcb6f419020bcc9320db266"
+    },
+    {
+      "path": "parser/budget_test.go",
+      "sha256": "b554f4c9710dd1b049556a514effdcc6b74a4af32a2d813be546785868018cf1"
+    },
+    {
+      "path": "stdlib/memory.go",
+      "sha256": "c375b9df21f5b61f19f1aabaf6b0859694863f57a989b00d792cb2958b220035"
+    },
+    {
+      "path": "vm/memory.go",
+      "sha256": "7206e51b6c7be19b9acdcbae82bd1923ec7f9d6a54219c69841ccc6547872e11"
+    },
+    {
+      "path": "vm/memory_native_test.go",
+      "sha256": "dc2029a0bfad66101916ec3676731fd86fc7df06eb452192fc85c9f875c091d5"
+    },
+    {
+      "path": "vm/memory_test.go",
+      "sha256": "657c9f305c780c0478c19d8f3fed80616b89c13794234bbc0d2231a4c237d845"
+    }
+  ],
+  "scope": "Production packages reachable from Weir Lua 5.4 parser, compiler, VM and whitelisted standard-library template; examples, tools and upstream tests are omitted."
+}

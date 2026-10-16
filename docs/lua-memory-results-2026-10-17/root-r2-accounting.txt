@@ -1,0 +1,12 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/batchstream/weir/internal/luaengine
+cpu: Apple M2
+BenchmarkEvaluateAllocationAccounting/tiny-8         	       1	    630416 ns/op	    533425 reserved-B/op	   48808 B/op	     261 allocs/op
+BenchmarkEvaluateAllocationAccounting/format-8       	       1	    138917 ns/op	    729102 reserved-B/op	   89960 B/op	     374 allocs/op
+BenchmarkEvaluateAllocationAccounting/deep-8         	       1	   1432250 ns/op	   3218142 reserved-B/op	 1619000 B/op	    6397 allocs/op
+BenchmarkEvaluateAllocationAccounting/wide-8         	       1	   1068791 ns/op	   2234864 reserved-B/op	  930352 B/op	     337 allocs/op
+BenchmarkEvaluateAllocationAccounting/bytes-8        	       1	     69792 ns/op	    662789 reserved-B/op	   73120 B/op	     353 allocs/op
+BenchmarkEvaluateAllocationAccounting/shared_DAG-8   	       1	    674667 ns/op	   1413766 reserved-B/op	  319144 B/op	    2151 allocs/op
+PASS
+ok  	github.com/batchstream/weir/internal/luaengine	0.666s

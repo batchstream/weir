@@ -9,7 +9,6 @@ import (
 	"github.com/batchstream/weir-protocol/api/protocol"
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
 	"github.com/batchstream/weir/internal/execution"
-	"github.com/batchstream/weir/internal/value"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
@@ -36,16 +35,40 @@ func recordWorking(plans []*execution.Plan) int {
 }
 
 func reserveRecordWorking(ctx context.Context, plans []*execution.Plan, extra int) error {
+	var owner execution.Memory
+	working := 0
 	if memory, ok := ctx.Value(recordMemoryContextKey).(*recordMemory); ok {
-		if memory.owner != nil {
-			return memory.owner.SetWorking(memory.base + memory.held + extra)
+		owner = memory.owner
+		if owner != nil {
+			var err error
+			working, err = programWorking(memory.base, memory.held)
+			if err != nil {
+				return err
+			}
 		}
+	} else if len(plans) != 0 {
+		owner, working = plans[0].Memory, recordWorking(plans)
+	}
+	if owner == nil {
 		return nil
 	}
-	if len(plans) != 0 && plans[0].Memory != nil {
-		return plans[0].Memory.SetWorking(recordWorking(plans) + extra)
+	// A terminal driver reply replaces its speculative message window, so
+	// this existing adjustment may legitimately be negative.
+	if working < 0 || extra < -working || extra > math.MaxInt-working {
+		return execution.ErrExecutionMemory
 	}
-	return nil
+	return owner.SetWorking(working + extra)
+}
+
+func programWorking(parts ...int) (int, error) {
+	working := 0
+	for _, bytes := range parts {
+		if bytes < 0 || bytes > math.MaxInt-working {
+			return 0, execution.ErrExecutionMemory
+		}
+		working += bytes
+	}
+	return working, nil
 }
 
 func recordMemoryFailure() *pb.Failure {
@@ -213,15 +236,4 @@ func validRecordBSON(ctx context.Context, raw []byte, depth int, array bool) boo
 		}
 	}
 	return true
-}
-
-func bsonValueBytes(current value.Value) int {
-	bytes := len(current.Text) + len(current.Data) + 32
-	for _, field := range current.Fields {
-		bytes += len(field.Name) + bsonValueBytes(field.Value)
-	}
-	for _, item := range current.Items {
-		bytes += bsonValueBytes(item)
-	}
-	return bytes
 }

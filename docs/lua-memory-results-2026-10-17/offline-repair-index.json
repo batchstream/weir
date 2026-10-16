@@ -1,0 +1,137 @@
+{
+  "scope": "Frozen Lua allocation repair offline evidence; this is not actual CLI qualification. First root test failure is retained separately from passing r2. Compiler assembly logs remain local large diagnostic artifacts; exact commands and their complete hashes are in the copied frame receipt.",
+  "artifacts": [
+    {
+      "original_path": ".testdata/lua-offline/frames-r2-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/frames-r2-receipt.json",
+      "bytes": 1712571,
+      "sha256": "d4077a50889b854e9148070a33da87cd8f438949f330c4ff5c50a1b41e313502"
+    },
+    {
+      "original_path": ".testdata/lua-offline/frontend-r2-freeze.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/frontend-r2-freeze.json",
+      "bytes": 3096,
+      "sha256": "4bdc806b66674e0a4cf0c3cc1f9ba53debc88a611370fa946126ac6554d6bd1f"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-final-default-cgo0.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-final-default-cgo0.txt",
+      "bytes": 2238,
+      "sha256": "712031679afe5e2a49dfb752d19ebf0607918de553a8cd761c97f86ecfe296f5"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-final-global-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-final-global-receipt.json",
+      "bytes": 255981,
+      "sha256": "7d6275042a3dc87484d3368efd3e6c0f560a67a9bc5d1734f5c75d60d14cadbf"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-accounting-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-accounting-receipt.json",
+      "bytes": 25928,
+      "sha256": "81705564f017934abff28a53fae98a53a0e9f4107dae2bb8b3c0e3922f4d424a"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-accounting.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-accounting.txt",
+      "bytes": 985,
+      "sha256": "c5be14f1fb5334f13eb7a09d80cb526c5f849f79487a2206d42ff93f795b023b"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-default-cgo0.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-default-cgo0.txt",
+      "bytes": 1369,
+      "sha256": "2ba6e0b4673670ff93e546a21e8d29c5ea8a8ff8fc28237274ffc4f74d56a0ff"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-default-race.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-default-race.txt",
+      "bytes": 1369,
+      "sha256": "0d958463d91cc4614c66de0d1cf61d0ebf829173b2c7018aa35de33db2f600b0"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-format-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-format-receipt.json",
+      "bytes": 211,
+      "sha256": "36430293d1522d8628b5f46d3f45ef61163c505f760551313c1eeb8ec06cc209"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-global-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-global-receipt.json",
+      "bytes": 258659,
+      "sha256": "ace709681acd6285776d00eeb906642cb0cb73349d9ee0bab1e411096200a584"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-integration-compile.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-integration-compile.txt",
+      "bytes": 1864,
+      "sha256": "353304269abed4ab49dceccd445288149f9fd13823fb7ce1a8631eb286bcf35f"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-integration-vet.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-integration-vet.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-nested-receipt.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-nested-receipt.json",
+      "bytes": 23149,
+      "sha256": "dffb25ceefbbfe85da133622f82cb7f0930125411c9ec8107d65a9bfe0cc8697"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-nested.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-nested.txt",
+      "bytes": 276,
+      "sha256": "479efd9c1246e5a745bde00cac4cfafe68da0c53f670bec8809f6509344c89a5"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-normal-benchmark.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-normal-benchmark.txt",
+      "bytes": 775,
+      "sha256": "1663c426e3574b0e5817cbe80f8ac75a57178449cfbfe5400d79a309aefb284e"
+    },
+    {
+      "original_path": ".testdata/lua-offline/root-r2-vet.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/root-r2-vet.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "original_path": ".testdata/lua-offline/vm-native-stack-r2-source-freeze.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/vm-native-stack-r2-source-freeze.json",
+      "bytes": 3479,
+      "sha256": "ac83624dc1b8bfac9f195fcc76669110c8083d60695a026cf9ed3d7deb75689d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-normal-benchmark-before.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/lua-normal-benchmark-before.json",
+      "bytes": 4243,
+      "sha256": "0ee9219b6d8d5758313054f4234e4b18b9d663e18720e0154ed93c56b1d1256d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-packaging-python-normal.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/lua-packaging-python-normal.txt",
+      "bytes": 6653,
+      "sha256": "47024d753e5873275d925e022214dd679abd13d269106fed695bedd5bc03bb6d"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-packaging-python-optimized.txt",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/lua-packaging-python-optimized.txt",
+      "bytes": 6653,
+      "sha256": "a3ad432e83bb279849812fa235430553e609c4961f6d5f41477508fd83cedc43"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-root-support-checks.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/lua-root-support-checks.json",
+      "bytes": 2030,
+      "sha256": "b395178c4d24a55d25ae90369a8851daac126fbbdcf5608a1baf1a7f6b52b3ae"
+    },
+    {
+      "original_path": ".testdata/reliability-2026-10-16/lua-upstream-independent-verification.json",
+      "preserved_path": "docs/lua-memory-results-2026-10-17/lua-upstream-independent-verification.json",
+      "bytes": 533,
+      "sha256": "694e34c689fd3cfbcc9d03ec9bb4088f1bcd9e2045efb8380d9106c6c722e66e"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "time": "2026-10-16T21:45:43.760960+00:00",
+  "status": "source-frozen-root-r2-frame-and-tests-pending",
+  "scope": "frontend owned files only; no Go test/build or Lua/backend execution",
+  "previous_freeze_sha256": "b811357815928385668571f95e53cf066c5837eae4d6634c41d91db37fa03f2d",
+  "changes": [
+    "Restore parseSubExpr-equivalent grammar depth guard in parseField NAME non-record shortcut before recursive suffix parsing",
+    "Parser per syntax peak payload 16 KiB, compiler per guarded method remains 8 KiB; initial frontend fixed tail payload 32 KiB each",
+    "Regress bare table-call depth and sticky budget refusal; ordinary 150-level record table remains accepted"
+  ],
+  "files": {
+    "third_party/golua/compiler/budget.go": {
+      "sha256": "ae66586b355d119d4a741940534ff0040ff7ca9f84e98f82f720aa7c44fc68fc",
+      "bytes": 3894
+    },
+    "third_party/golua/compiler/budget_test.go": {
+      "sha256": "b9c8954722c46374768c06c78dc4faf9900805951d6169ad789cd09e0485cce7",
+      "bytes": 3926
+    },
+    "third_party/golua/compiler/compile_control.go": {
+      "sha256": "0e6ce33a3788bc16dab68ad4101a11d9ffb4537cf46397629fc0f312ab194b49",
+      "bytes": 21508
+    },
+    "third_party/golua/compiler/compile_expr.go": {
+      "sha256": "c572d03fb8d648ac5fef3c83e01034bea490246e5b7cb306daca7095853532f5",
+      "bytes": 54349
+    },
+    "third_party/golua/compiler/compile_stmt.go": {
+      "sha256": "946a27f70a225a8a7533879eca746e1e90e86cb750461c4cf556bfa7a3181a41",
+      "bytes": 47228
+    },
+    "third_party/golua/compiler/compiler.go": {
+      "sha256": "f0b034d4a511d25ec4d7390b2bc6e9bb14597087c5b7a194c42246d89b2202e7",
+      "bytes": 35364
+    },
+    "third_party/golua/compiler/limits.go": {
+      "sha256": "4bd5094a13eae3c445a047b245f9a242d09c78aabae279e2d3e47fba6c8be6ea",
+      "bytes": 1573
+    },
+    "third_party/golua/lexer/budget.go": {
+      "sha256": "8b816ceeebefd2d2f3388412063ba0f4c99fd65d66bee6855a53df3a0a10f652",
+      "bytes": 1345
+    },
+    "third_party/golua/lexer/budget_test.go": {
+      "sha256": "2fce53e8a0f00454e58baeec2d4e00b59b80578b1299a3530cf64cf4beb658f6",
+      "bytes": 2882
+    },
+    "third_party/golua/lexer/lexer.go": {
+      "sha256": "95e4d0e2fdee33cb3fa730af46d1766e67dfd423d4448fed73517750c61ccbe1",
+      "bytes": 14964
+    },
+    "third_party/golua/lexer/lexer_literal.go": {
+      "sha256": "3faa2c1f5701ec720f4862efe4ebcb1ab1c35623c22f86bfe8638c7b5776037a",
+      "bytes": 15377
+    },
+    "third_party/golua/parser/budget.go": {
+      "sha256": "70dbecc66c439b9e66b78edf5c191ad11088afae3bcb6f419020bcc9320db266",
+      "bytes": 2144
+    },
+    "third_party/golua/parser/budget_test.go": {
+      "sha256": "b554f4c9710dd1b049556a514effdcc6b74a4af32a2d813be546785868018cf1",
+      "bytes": 4197
+    },
+    "third_party/golua/parser/parse_expr.go": {
+      "sha256": "425c8475ad5941aac70ae6c0386655e34f829a59f391e502bf720b3417b01ab9",
+      "bytes": 13302
+    },
+    "third_party/golua/parser/parser.go": {
+      "sha256": "0d64d77ec48d8a79fee17bd327bfa9af6501fb4dd3e471ed777ec803c60d4214",
+      "bytes": 23441
+    }
+  }
+}

@@ -412,7 +412,7 @@ func bridgeState(t *testing.T) (*bridge, *vm.VM) {
 	t.Cleanup(func() { _ = state.Close(context.Background()) })
 	stdlib.Open(state)
 	module := vm.NewEmptyTable()
-	b := newBridge(t.Context())
+	b := newBridge(t.Context(), state)
 	b.install(state, module)
 	state.SetGlobal("weir", vm.NewTable(module))
 	return b, state

@@ -4,15 +4,20 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unsafe"
 
+	"github.com/iceisfun/golua/budget"
 	"github.com/iceisfun/golua/vm"
 )
 
 func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
+	scope := state.Budget()
+	// Native boxes and their captured values are fixed per fresh environment.
+	scope.RequireArray(128, len(standardLibraries.strings)+len(standardLibraries.tables)+12)
 	for _, entry := range standardLibraries.globals {
 		state.SetGlobal(entry.name, entry.value)
 	}
-	stringLibrary := copyLibrary(standardLibraries.strings)
+	stringLibrary := copyLibrary(state, standardLibraries.strings)
 	format := stringLibrary.GetString("format")
 	for _, entry := range standardLibraries.strings {
 		name := entry.name
@@ -35,10 +40,10 @@ func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
 		return luaFormat(state, format)
 	}))
 	state.SetGlobal("string", vm.NewTable(stringLibrary))
-	stringMeta := copyLibrary(standardLibraries.stringMeta)
+	stringMeta := copyLibrary(state, standardLibraries.stringMeta)
 	stringMeta.SetString(vm.MetaIndex, vm.NewTable(stringLibrary))
 	state.SetStringMeta(stringMeta)
-	unicodeLibrary := vm.NewEmptyTable()
+	unicodeLibrary := state.NewEmptyTable()
 	unicodeLibrary.SetString("upper", vm.NewNativeFunc(func(state *vm.VM) int {
 		return luaUnicodeCase(state, true)
 	}))
@@ -47,7 +52,7 @@ func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
 	}))
 	state.SetGlobal("utf8", vm.NewTable(unicodeLibrary))
 
-	tableLibrary := copyLibrary(standardLibraries.tables)
+	tableLibrary := copyLibrary(state, standardLibraries.tables)
 	for _, name := range []string{"insert", "remove"} {
 		function := tableLibrary.GetString(name).AsNativeFunc()
 		tableLibrary.SetString(name, vm.NewNativeFunc(func(state *vm.VM) int {
@@ -63,13 +68,14 @@ func installEnvironment(state *vm.VM, observedAt time.Time) *vm.Table {
 	tableLibrary.SetString("sort", vm.NewNativeFunc(luaSort))
 	tableLibrary.SetString("concat", vm.NewNativeFunc(luaConcat))
 	state.SetGlobal("table", vm.NewTable(tableLibrary))
-	mathLibrary := copyLibrary(standardLibraries.math)
+	mathLibrary := copyLibrary(state, standardLibraries.math)
 	state.SetGlobal("math", vm.NewTable(mathLibrary))
-	module := vm.NewEmptyTable()
+	module := state.NewEmptyTable()
 	module.SetString("keep", vm.NewNativeFunc(luaKeep))
 	module.SetString("delete", vm.NewNativeFunc(luaDelete))
 	module.SetString("reject", vm.NewNativeFunc(luaReject))
-	timeLibrary := vm.NewEmptyTable()
+	timeLibrary := state.NewEmptyTable()
+	scope.RequireAllocation(64)
 	stamp := observedAt.UTC().Format(time.RFC3339Nano)
 	timeLibrary.SetString("now", vm.NewNativeFunc(func(state *vm.VM) int {
 		if state.ArgCount() != 0 {
@@ -90,11 +96,14 @@ func luaFormat(state *vm.VM, format vm.Value) int {
 		panic("string.format requires a format string")
 	}
 	source := state.Get(1).AsString()
+	scope := state.Budget()
+	var argumentValue vm.Value
+	scope.RequireArray(unsafe.Sizeof(argumentValue), state.ArgCount()-1)
 	arguments := make([]vm.Value, state.ArgCount()-1)
 	for index := range arguments {
 		arguments[index] = state.Get(index + 2)
 	}
-	var output strings.Builder
+	output := budget.NewBuilder(scope)
 	argument := 0
 	for position := 0; position < len(source); {
 		if err := state.CheckInterrupt(); err != nil {
@@ -124,6 +133,7 @@ func luaFormat(state *vm.VM, format vm.Value) int {
 		}
 		position++
 		input := arguments[argument]
+		scope.RequireArray(unsafe.Sizeof(argumentValue), 2)
 		callArguments := []vm.Value{vm.NewString(source[start:position]), input}
 		parts, err := state.ProtectedCall(format, callArguments)
 		if err != nil {
@@ -146,6 +156,9 @@ func luaConcat(state *vm.VM) int {
 		if !state.Get(2).IsString() && !state.Get(2).IsNumber() {
 			panic("table.concat separator must be a string or number")
 		}
+		if state.Get(2).IsNumber() {
+			state.Budget().RequireAllocation(64)
+		}
 		separator = state.Get(2).String()
 	}
 	first, last := int64(1), int64(items.Len())
@@ -163,7 +176,7 @@ func luaConcat(state *vm.VM) int {
 			panic("table.concat end must be an integer")
 		}
 	}
-	var output strings.Builder
+	output := budget.NewBuilder(state.Budget())
 	for index := first; index <= last; index++ {
 		if err := state.CheckInterrupt(); err != nil {
 			panic(err)
@@ -174,6 +187,9 @@ func luaConcat(state *vm.VM) int {
 		}
 		if index != first {
 			output.WriteString(separator)
+		}
+		if item.IsNumber() {
+			state.Budget().RequireAllocation(64)
 		}
 		output.WriteString(item.String())
 		if index == last {
@@ -221,6 +237,8 @@ func (s luaArraySorter) Less(left, right int) bool {
 		}
 		return less
 	}
+	var argument vm.Value
+	s.state.Budget().RequireArray(unsafe.Sizeof(argument), 2)
 	arguments := []vm.Value{a, b}
 	results, err := s.state.ProtectedCall(s.compare, arguments)
 	if err != nil {
