@@ -1,0 +1,25 @@
+{
+  "created_utc": "2026-10-16T19:14:20.873158+00:00",
+  "status": "READY_DIAGNOSTIC_ONLY_NOT_RUNTIME_AUTHORIZED",
+  "compile_actual_exit": 0,
+  "compile_scope": "-race -tags integration -run ^$; no tests executed",
+  "driver_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+  "artifact_base": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+  "diagnostic_binary_sha256": "e5116920123a3c5b76ba4589b6cc2df4b772a9b593f472514f4f353307a00fae",
+  "permanent_sources_clean_unchanged": true,
+  "original_FAIL_raw_manifest_unchanged": true,
+  "DB_Docker_CLI_load_executed": false,
+  "source_map_conflicts": [],
+  "same_version_grpc_copy_verified_count": 930,
+  "files": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.go.txt": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-combined-overlay.json": "4f24972ef031ceb6805542338b9321900d28fcf22f9f8e4bff01daad872c1fc6",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-final-plan.json": "80699e8ed91673c3cf200628fb4c1a342aa1385b3f69703c076b3b91c09085cc",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-r2-command.json": "4029b9f883263f797bcba054d2d1f4489a40ea949f0a1a5bb1eec795735b41a8",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-r2.txt": "7921fbb7b2bafe23e2595491f8b35541f1ef56f688a15a882b8edaed4d8b46cc",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-r2.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.mod": "dfb1933a5826d65c28f8ddbbd438ff6ed3afaf2e5c13d6edd1069df82b8c9fae",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.sum": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build-receipt.json": "714604291af193d48b5bbbc2cc095473a1800db92e71eca16c2dac3f002197bf"
+  }
+}

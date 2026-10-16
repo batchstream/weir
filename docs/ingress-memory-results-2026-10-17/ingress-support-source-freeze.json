@@ -1,0 +1,19 @@
+{
+  "scope": "root support script freeze; runtime source not yet frozen",
+  "files": {
+    ".github/workflows/ci.yml": "e3261780d6e44fbf0469d18deb016426f371d5641ad90533a9921accece837cb",
+    "scripts/check_dependencies.py": "5935f55fc520eb9d433057e3629ada273e08c330462dbbd222feca3d16b2bf6b",
+    "scripts/check_dependencies_test.py": "980dbfc6dc1783738099b7ad96b4699b195430e240726eb260e588314ed40b05",
+    "scripts/ci-tools.py": "b0802deba6626cde6c4caa88b1e4ac3d3d931deece02947791b6c862501a2f21",
+    "scripts/ci_tools_test.py": "bc027eb1a43e93dd3914d7b84265c8e368efae0db772393d494bb53ec3f75af3",
+    "scripts/package.py": "b5c3981def8ed46c99c72df9ecce12c5a6cc8ba2d2a2eb493f92659bc0ec7037",
+    "scripts/package_test.py": "939f0272879ef83954706dac8e8f509772efa914ea43af4f4401d5e13a02f88c"
+  },
+  "checks": {
+    "normal_python": "45 tests PASS",
+    "optimized_python": "45 tests PASS",
+    "final_package_style_followup": "10 tests PASS",
+    "actual_module_guard": "PASS",
+    "actual_linux_binary_patch_parser": "PASS on author pre-final WIP binary; not release qualification"
+  }
+}

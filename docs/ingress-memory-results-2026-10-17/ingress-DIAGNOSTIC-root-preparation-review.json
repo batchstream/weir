@@ -1,0 +1,14 @@
+{
+  "purpose": "root independent diagnostic preparation review; not qualification or load permission",
+  "created_utc": "2026-10-16T19:12:48.201327+00:00",
+  "copied_grpc_files_verified": 930,
+  "mismatches": [],
+  "binary_sha256": "e5116920123a3c5b76ba4589b6cc2df4b772a9b593f472514f4f353307a00fae",
+  "binary_matches_build_receipt": true,
+  "build_exit": 0,
+  "overlay_review": "all8source diffs read; logging/counters/DIAGNOSTIC identity only; original stream read/flowcontrol/codec preserved",
+  "driver_review": "r2diff read; unchanged32x12MiB/5s/512MiB/2CPU; adds sameSDK health and unconditional recovery for diagnosis",
+  "original_A_raw_sha256": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2",
+  "original_A_raw_unchanged": true,
+  "awaiting": "final combined overlay/modfile purecompile then one explicit diagnostic authorization"
+}

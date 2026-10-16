@@ -1,0 +1,301 @@
+--- /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-v1.83.2/internal/transport/transport.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-transport.go.txt
+@@ -23,9 +23,11 @@
+ 
+ import (
+ 	"context"
++	"encoding/binary"
+ 	"errors"
+ 	"fmt"
+ 	"io"
++	"log"
+ 	"net"
+ 	"sync"
+ 	"sync/atomic"
+@@ -461,6 +463,18 @@
+ // unexpected end of the stream. The method returns any error encountered during
+ // the read process or nil if the header was successfully read.
+ func (s *Stream) ReadMessageHeader(header []byte) (err error) {
++	diagnosticHeader := header
++	_, diagnosticServer := s.readRequester.(*ServerStream)
++	diagnosticStarted := time.Now()
++	defer func() {
++		if diagnosticServer && len(diagnosticHeader) == 5 {
++			declared := uint32(0)
++			if err == nil {
++				declared = binary.BigEndian.Uint32(diagnosticHeader[1:])
++			}
++			log.Printf("INGRESS_DIAGNOSTIC phase=server_header_done at=%s remote=%s stream_id=%d declared_bytes=%d elapsed_ns=%d error_type=%T", time.Now().UTC().Format(time.RFC3339Nano), s.IngressDiagnosticRemoteAddr(), s.id, declared, time.Since(diagnosticStarted).Nanoseconds(), err)
++		}
++	}()
+ 	// Don't request a read if there was an error earlier
+ 	if er := s.trReader.er; er != nil {
+ 		return er
+@@ -493,6 +507,16 @@
+ 
+ // Read reads n bytes from the wire for this stream.
+ func (s *Stream) read(n int) (data mem.BufferSlice, err error) {
++	diagnosticRequested := n
++	diagnosticNext := 4 << 20
++	diagnosticStarted := time.Now()
++	_, diagnosticServer := s.readRequester.(*ServerStream)
++	if diagnosticServer {
++		log.Printf("INGRESS_DIAGNOSTIC phase=server_body_begin at=%s remote=%s stream_id=%d requested_bytes=%d", diagnosticStarted.UTC().Format(time.RFC3339Nano), s.IngressDiagnosticRemoteAddr(), s.id, diagnosticRequested)
++		defer func() {
++			log.Printf("INGRESS_DIAGNOSTIC phase=server_body_done at=%s remote=%s stream_id=%d requested_bytes=%d received_bytes=%d elapsed_ns=%d error_type=%T", time.Now().UTC().Format(time.RFC3339Nano), s.IngressDiagnosticRemoteAddr(), s.id, diagnosticRequested, diagnosticRequested-n, time.Since(diagnosticStarted).Nanoseconds(), err)
++		}()
++	}
+ 	// Don't request a read if there was an error earlier
+ 	if er := s.trReader.er; er != nil {
+ 		return nil, er
+@@ -512,6 +536,10 @@
+ 			bufLen = buf.Len()
+ 		}
+ 		n -= bufLen
++		if diagnosticServer && diagnosticRequested-n >= diagnosticNext {
++			log.Printf("INGRESS_DIAGNOSTIC phase=server_body_progress at=%s remote=%s stream_id=%d requested_bytes=%d received_bytes=%d", time.Now().UTC().Format(time.RFC3339Nano), s.IngressDiagnosticRemoteAddr(), s.id, diagnosticRequested, diagnosticRequested-n)
++			diagnosticNext += 4 << 20
++		}
+ 		if n == 0 {
+ 			err = nil
+ 		}
+@@ -870,3 +898,13 @@
+ 	}
+ 	return status.Errorf(codes.Internal, "Unexpected error from context packet: %v", err)
+ }
++
++// Diagnostic-only observations; not a supported grpc transport extension.
++func (s *Stream) IngressDiagnosticID() uint32 { return s.id }
++
++func (s *Stream) IngressDiagnosticRemoteAddr() string {
++	if remote, ok := peer.FromContext(s.ctx); ok && remote.Addr != nil {
++		return remote.Addr.String()
++	}
++	return "unknown"
++}
+--- /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-v1.83.2/encoding/proto/proto.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-proto.go.txt
+@@ -22,6 +22,8 @@
+ 
+ import (
+ 	"fmt"
++	"log"
++	"time"
+ 
+ 	"google.golang.org/grpc/encoding"
+ 	"google.golang.org/grpc/mem"
+@@ -41,6 +43,11 @@
+ type codecV2 struct{}
+ 
+ func (c *codecV2) Marshal(v any) (data mem.BufferSlice, err error) {
++	diagnosticStarted := time.Now()
++	log.Printf("INGRESS_DIAGNOSTIC phase=standard_proto_marshal_begin at=%s stream_id=0", diagnosticStarted.UTC().Format(time.RFC3339Nano))
++	defer func() {
++		log.Printf("INGRESS_DIAGNOSTIC phase=standard_proto_marshal_done at=%s stream_id=0 bytes=%d elapsed_ns=%d error_type=%T", time.Now().UTC().Format(time.RFC3339Nano), data.Len(), time.Since(diagnosticStarted).Nanoseconds(), err)
++	}()
+ 	vv := messageV2Of(v)
+ 	if vv == nil {
+ 		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
+--- /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-v1.83.2/stream.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-stream.go.txt
+@@ -23,6 +23,7 @@
+ 	"errors"
+ 	"fmt"
+ 	"io"
++	"log"
+ 	"math"
+ 	rand "math/rand/v2"
+ 	"strconv"
+@@ -969,8 +970,19 @@
+ 		cs.sentLast = true
+ 	}
+ 
++	diagnosticID := uint32(0)
++	diagnosticRemote := "unknown"
++	cs.mu.Lock()
++	if cs.attempt != nil && cs.attempt.transportStream != nil {
++		diagnosticID = cs.attempt.transportStream.IngressDiagnosticID()
++		diagnosticRemote = cs.attempt.transportStream.IngressDiagnosticRemoteAddr()
++	}
++	cs.mu.Unlock()
++	diagnosticStarted := time.Now()
++	log.Printf("INGRESS_DIAGNOSTIC phase=client_prepare_begin at=%s remote=%s stream_id=%d", diagnosticStarted.UTC().Format(time.RFC3339Nano), diagnosticRemote, diagnosticID)
+ 	// load hdr, payload, data
+ 	hdr, data, payload, pf, err := prepareMsg(m, cs.codec, cs.compressorV0, cs.compressorV1, cs.cc.dopts.copts.BufferPool)
++	log.Printf("INGRESS_DIAGNOSTIC phase=client_prepare_done at=%s remote=%s stream_id=%d bytes=%d elapsed_ns=%d error_type=%T", time.Now().UTC().Format(time.RFC3339Nano), diagnosticRemote, diagnosticID, data.Len(), time.Since(diagnosticStarted).Nanoseconds(), err)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -1153,6 +1165,7 @@
+ 		}
+ 		return io.EOF
+ 	}
++	log.Printf("INGRESS_DIAGNOSTIC phase=client_OutPayload_point at=%s remote=%s stream_id=%d bytes=%d payload_bytes=%d", time.Now().UTC().Format(time.RFC3339Nano), a.transportStream.IngressDiagnosticRemoteAddr(), a.transportStream.IngressDiagnosticID(), dataLength, payloadLength)
+ 	if a.statsHandler != nil {
+ 		a.statsHandler.HandleRPC(a.ctx, outPayload(true, m, dataLength, payloadLength, time.Now()))
+ 	}
+--- /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-v1.83.2/internal/transport/http2_client.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-grpc-http2-client.go.txt
+@@ -22,6 +22,7 @@
+ 	"context"
+ 	"fmt"
+ 	"io"
++	"log"
+ 	"math"
+ 	"net"
+ 	"net/http"
+@@ -914,6 +915,7 @@
+ 			return nil, &NewStreamError{Err: ErrConnClosing, AllowTransparentRetry: true}
+ 		}
+ 	}
++	log.Printf("INGRESS_DIAGNOSTIC phase=client_OutHeader_point at=%s remote=%s stream_id=%d", time.Now().UTC().Format(time.RFC3339Nano), t.remoteAddr.String(), s.id)
+ 	if s.statsHandler != nil {
+ 		header, ok := metadata.FromOutgoingContext(ctx)
+ 		if ok {
+--- /Users/liran/.codex/worktrees/native-burst-admission/weir/internal/server/codec.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-codec.go.txt
+@@ -3,6 +3,7 @@
+ import (
+ 	"context"
+ 	"fmt"
++	"log"
+ 	"runtime"
+ 	"sync"
+ 	"time"
+@@ -71,7 +72,12 @@
+ 	return buffers, nil
+ }
+ 
+-func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) error {
++func (*responseCodec) Unmarshal(data mem.BufferSlice, value any) (diagnosticErr error) {
++	diagnosticStarted := time.Now()
++	log.Printf("INGRESS_DIAGNOSTIC phase=weir_codec_begin at=%s stream_id=0 bytes=%d", diagnosticStarted.UTC().Format(time.RFC3339Nano), data.Len())
++	defer func() {
++		log.Printf("INGRESS_DIAGNOSTIC phase=weir_codec_done at=%s stream_id=0 bytes=%d elapsed_ns=%d error_type=%T", time.Now().UTC().Format(time.RFC3339Nano), data.Len(), time.Since(diagnosticStarted).Nanoseconds(), diagnosticErr)
++	}()
+ 	switch value.(type) {
+ 	case *pb.ExecuteRequest:
+ 		if err := protowire.ValidateExecuteFrame(data); err != nil {
+--- /Users/liran/.codex/worktrees/native-burst-admission/weir/internal/store/runtime.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-runtime.go.txt
+@@ -4,6 +4,7 @@
+ import (
+ 	"context"
+ 	"fmt"
++	"log"
+ 	"sync"
+ 	"time"
+ 
+@@ -163,6 +164,7 @@
+ func (r *Runtime) ExecutionMemory() *ExecutionMemory { return r.memory }
+ 
+ func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
++	log.Printf("INGRESS_DIAGNOSTIC phase=weir_prepare_record at=%s stream_id=0 bytes=%d", time.Now().UTC().Format(time.RFC3339Nano), record.Bytes())
+ 	plan, failure := r.adapter.PrepareRecord(ctx, record)
+ 	if failure != nil {
+ 		r.metrics.rejections.WithLabelValues("prepare").Inc()
+@@ -184,6 +186,11 @@
+ 	return plan, failure
+ }
+ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Session) (*Ticket, *pb.Failure, <-chan struct{}) {
++	diagnosticBytes := 0
++	if plan != nil {
++		diagnosticBytes = plan.Bytes
++	}
++	log.Printf("INGRESS_DIAGNOSTIC phase=weir_submit at=%s stream_id=0 bytes=%d", time.Now().UTC().Format(time.RFC3339Nano), diagnosticBytes)
+ 	r.mu.Lock()
+ 	defer r.mu.Unlock()
+ 	changed := r.changed
+--- /Users/liran/.codex/worktrees/native-burst-admission/weir/cmd/weir/version.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-version.go.txt
+@@ -47,5 +47,9 @@
+ 		identity.Dirty = "false"
+ 	}
+ 
++	identity.Version = "DIAGNOSTIC-ingress-stages"
++	identity.Revision = "0288974d8b64c199da4f0d7fb7f03d8a33978eee"
++	identity.State = "DIAGNOSTIC-overlay"
++	identity.Dirty = "true"
+ 	return json.NewEncoder(output).Encode(identity)
+ }
+--- /Users/liran/.codex/worktrees/native-burst-admission/weir/cmd/weir/main.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-main.go.txt
+@@ -5,8 +5,11 @@
+ 	"errors"
+ 	"fmt"
+ 	"io"
++	"log"
+ 	"os"
+ 	"os/signal"
++	"runtime/metrics"
++	"strings"
+ 	"syscall"
+ 	"time"
+ 
+@@ -167,6 +170,16 @@
+ }
+ 
+ func serve(ctx context.Context, cfg app.Config, output io.Writer) (resultErr error) {
++	diagnosticContext, diagnosticCancel := context.WithCancel(ctx)
++	diagnosticDone := make(chan struct{})
++	go func() {
++		defer close(diagnosticDone)
++		ingressDiagnosticRuntime(diagnosticContext)
++	}()
++	defer func() {
++		diagnosticCancel()
++		<-diagnosticDone
++	}()
+ 	// The CLI owns signals from before assembly until all owned resources close.
+ 	signals, cancelSignal := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+ 	defer cancelSignal()
+@@ -224,3 +237,49 @@
+ 		return err
+ 	}
+ }
++
++// Diagnostic runtime counters do not request a GC or change the GC policy.
++func ingressDiagnosticRuntime(ctx context.Context) {
++	names := []string{
++		"/cpu/classes/gc/mark/assist:cpu-seconds",
++		"/cpu/classes/gc/mark/dedicated:cpu-seconds",
++		"/cpu/classes/gc/mark/idle:cpu-seconds",
++		"/cpu/classes/gc/pause:cpu-seconds",
++		"/cpu/classes/gc/total:cpu-seconds",
++		"/cpu/classes/user:cpu-seconds",
++		"/cpu/classes/total:cpu-seconds",
++		"/gc/cycles/total:gc-cycles",
++		"/gc/gomemlimit:bytes",
++		"/gc/heap/goal:bytes",
++		"/gc/heap/live:bytes",
++		"/memory/classes/heap/objects:bytes",
++		"/sched/gomaxprocs:threads",
++	}
++	samples := make([]metrics.Sample, len(names))
++	for index, name := range names {
++		samples[index].Name = name
++	}
++	ticker := time.NewTicker(250 * time.Millisecond)
++	defer ticker.Stop()
++	for {
++		metrics.Read(samples)
++		var line strings.Builder
++		fmt.Fprintf(&line, "INGRESS_DIAGNOSTIC phase=cli_runtime at=%s stream_id=0", time.Now().UTC().Format(time.RFC3339Nano))
++		for _, sample := range samples {
++			switch sample.Value.Kind() {
++			case metrics.KindUint64:
++				fmt.Fprintf(&line, " %s=%d", sample.Name, sample.Value.Uint64())
++			case metrics.KindFloat64:
++				fmt.Fprintf(&line, " %s=%.9f", sample.Name, sample.Value.Float64())
++			default:
++				fmt.Fprintf(&line, " %s=unsupported", sample.Name)
++			}
++		}
++		log.Print(line.String())
++		select {
++		case <-ctx.Done():
++			return
++		case <-ticker.C:
++		}
++	}
++}

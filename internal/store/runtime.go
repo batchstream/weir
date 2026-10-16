@@ -207,6 +207,12 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid execution accounting"), changed
 	}
 	if !r.queueCapacityLocked(plan) {
+		// An already-accounted native receive source may wait for an actual
+		// queue vacancy. Direct callers without a live same-Node owner must not
+		// create an uncharged queue outside this bounded scheduler.
+		if r.memory.ownsIngress(plan) {
+			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
+		}
 		r.metrics.rejections.WithLabelValues("capacity").Inc()
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), nil
 	}

@@ -10,6 +10,8 @@ import subprocess
 SERVER = 'github.com/batchstream/weir'
 SDK = 'github.com/batchstream/weir-go'
 PROTOCOL = 'github.com/batchstream/weir-protocol'
+GRPC = 'google.golang.org/grpc'
+GRPC_VERSION = 'v1.83.2'
 STABLE_VERSION = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
 
 
@@ -42,9 +44,19 @@ def check_graph(raw):
             pending.extend(edges.get(target, ()))
 
 
-def check_modules(items):
+def check_modules(items, root=None):
+    root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
+    grpc_directory = root.resolve() / 'third_party/grpc'
     for module in items:
-        if module.get('Replace'):
+        replacement = module.get('Replace')
+        bounded_grpc = (
+            module['Path'] == GRPC and module.get('Version') == GRPC_VERSION
+            and replacement and replacement.get('Path') == './third_party/grpc'
+            and not replacement.get('Version')
+            and replacement.get('Dir')
+            and Path(replacement['Dir']).resolve() == grpc_directory
+        )
+        if replacement and not bounded_grpc:
             raise ValueError('module replacement hides the published dependency graph: ' + module['Path'])
         if module['Path'] in (SDK, PROTOCOL) and not STABLE_VERSION.fullmatch(module.get('Version', '')):
             raise ValueError('project dependency must use a stable release: ' + module['Path'])

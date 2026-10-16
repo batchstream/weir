@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=1",
+    "-tags=integration",
+    "-run",
+    "^$",
+    "-timeout=2m",
+    "./internal/app"
+  ],
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "source": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+  "exit": 0,
+  "elapsed_seconds": 6.724442165985238,
+  "scope": "integration-tag driver compilation only; run^$ no DB/CLI/probe",
+  "utc": "2026-10-16T18:56:01.710660+00:00"
+}

@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "/Users/liran/Projects/liran/go/weir/internal/app/ingress_memory_budget_integration_test.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.go.txt"
+  }
+}

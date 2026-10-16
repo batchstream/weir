@@ -100,6 +100,79 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'immutable full source SHA'):
                 package.source_files(root, 'HEAD')
 
+    def test_public_grpc_sources_require_a_pinned_manifest(self):
+        name = 'third_party/grpc/credentials/insecure/insecure.go'
+        self.assertTrue(package.allowed(name))
+        for refused in ('third_party/grpc/credentials/local.key',
+                        'third_party/grpc/credentials/.env.go',
+                        'third_party/grpc/credentials/source_test.go',
+                        'third_party/grpc/other/../credentials/source.go'):
+            self.assertFalse(package.allowed(refused), refused)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+
+            def git(*args):
+                return package.run(['git', *args], cwd=root)
+
+            git('init', '-q')
+            inputs = {'go.mod': 'fixture', 'go.sum': '', 'cmd/weir/main.go': 'fixture', name: '// public fixture Go source\n'}
+            for filename, content in inputs.items():
+                path = root / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            git('add', '.')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
+            revision = package.clean_head(root)
+            with self.assertRaisesRegex(ValueError, 'pinned upstream manifest'):
+                package.source_files(root, revision)
+            manifest = {'module': package.dependencies.GRPC, 'version': package.dependencies.GRPC_VERSION,
+                        'files': {'credentials/insecure/insecure.go': package.sha(inputs[name].encode())}}
+            manifest_path = root / 'third_party/grpc/WEIR_UPSTREAM.json'
+            manifest_path.write_text(json.dumps(manifest))
+            git('add', '.')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'pinned manifest')
+            selected = dict(package.source_files(root, package.clean_head(root)))
+            self.assertIn(name, selected)
+            self.assertIn('third_party/grpc/WEIR_UPSTREAM.json', selected)
+            (root / name).write_text('// changed fixture Go source\n')
+            git('add', '.')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'source changed')
+            with self.assertRaisesRegex(ValueError, 'differs from pinned upstream'):
+                package.source_files(root, package.clean_head(root))
+            manifest['files'] = {}
+            manifest_path.write_text(json.dumps(manifest))
+            git('add', '.')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'unlisted source')
+            with self.assertRaisesRegex(ValueError, 'unlisted credentials'):
+                package.source_files(root, package.clean_head(root))
+
+    def test_exported_grpc_inputs_match_the_complete_patch_manifest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp)
+            directory = source / 'third_party/grpc'
+            directory.mkdir(parents=True)
+            base = {'go.mod': package.sha(b'module google.golang.org/grpc\n'),
+                    'server.go': package.sha(b'upstream'), 'LICENSE': package.sha(b'license')}
+            patch = {'path': 'server.go', 'upstream_sha256': base['server.go'], 'sha256': package.sha(b'patched')}
+            addition = {'path': 'mem/receive_memory.go', 'sha256': package.sha(b'new source')}
+            manifest = {'module': package.dependencies.GRPC, 'version': package.dependencies.GRPC_VERSION,
+                        'files': base, 'patchedFiles': [patch], 'newFiles': [addition]}
+            (directory / 'WEIR_UPSTREAM.json').write_text(json.dumps(manifest))
+            inputs = {'third_party/grpc/' + name: digest for name, digest in base.items()}
+            inputs['third_party/grpc/server.go'] = patch['sha256']
+            inputs['third_party/grpc/mem/receive_memory.go'] = addition['sha256']
+            inputs['third_party/grpc/WEIR_UPSTREAM.json'] = package.sha(json.dumps(manifest).encode())
+            package.validate_grpc_inputs(source, inputs)
+            changed = dict(inputs)
+            changed['third_party/grpc/server.go'] = base['server.go']
+            missing = dict(inputs)
+            del missing['third_party/grpc/LICENSE']
+            extra = dict(inputs)
+            extra['third_party/grpc/unrecorded.go'] = package.sha(b'unrecorded source')
+            for invalid in (changed, missing, extra):
+                with self.assertRaisesRegex(ValueError, 'differ from the pinned patch manifest'):
+                    package.validate_grpc_inputs(source, invalid)
+
     def test_toolchain_drift_rejected(self):
         result = subprocess.CompletedProcess([], 0, b'go1.27.0\n', b'')
         with patch.object(subprocess, 'run', return_value=result):
@@ -107,16 +180,50 @@ class PackageTests(unittest.TestCase):
                 package.go_environment()
 
     def test_binary_target_and_linked_dependency_validation(self):
-        lines = 'binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n'
+        env = {}
+        lines = ('binary: go1.27.1\n\tdep\tgoogle.golang.org/grpc\tv1.83.2\n'
+                 '\t=>\t./third_party/grpc\t(devel)\n\tbuild\tGOOS=linux\n'
+                 '\tbuild\tGOARCH=arm64\n\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n')
         for extra, target, success in (('', ('linux', 'arm64'), True), ('', ('linux', 'amd64'), False), ('\tdep\tgithub.com/iceisfun/golua\tv1.1.1\th1:fixture\n', ('linux', 'arm64'), True)):
             result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
             with patch.object(subprocess, 'run', return_value=result):
                 if success:
-                    self.assertEqual(package.build_info(Path('binary'), target, {})['linked_modules'],
-                                     [['github.com/iceisfun/golua', 'v1.1.1', 'h1:fixture']] if extra else [])
+                    expected = [['google.golang.org/grpc', 'v1.83.2']]
+                    if extra:
+                        expected.append(['github.com/iceisfun/golua', 'v1.1.1', 'h1:fixture'])
+                    self.assertEqual(package.build_info(Path('binary'), target, env)['linked_modules'],
+                                     expected)
                 else:
                     with self.assertRaises(ValueError):
-                        package.build_info(Path('binary'), target, {})
+                        package.build_info(Path('binary'), target, env)
+
+    def test_binary_only_allows_the_exact_local_grpc_patch(self):
+        env = {}
+        lines = ('binary: go1.27.1\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=arm64\n'
+                 '\tbuild\tCGO_ENABLED=0\n\tbuild\t-trimpath=true\n\tbuild\tGOARM64=v8.0\n')
+        cases = (
+            ('google.golang.org/grpc', 'v1.83.2', './third_party/grpc', True),
+            ('google.golang.org/grpc', 'v1.83.1', './third_party/grpc', False),
+            ('github.com/batchstream/weir-protocol', 'v0.14.0', './third_party/grpc', False),
+            ('google.golang.org/grpc', 'v1.83.2', '../grpc', False),
+        )
+        for module, version, directory, success in cases:
+            extra = f'\tdep\t{module}\t{version}\n\t=>\t{directory}\t(devel)\n'
+            result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
+            with self.subTest(module=module, version=version, directory=directory):
+                with patch.object(subprocess, 'run', return_value=result):
+                    if success:
+                        info = package.build_info(Path('binary'), ('linux', 'arm64'), env)
+                        expected = {'module': module, 'version': version, 'path': directory}
+                        self.assertEqual(info['local_patches'], [expected])
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'replacement dependency refused'):
+                            package.build_info(Path('binary'), ('linux', 'arm64'), env)
+        for extra in ('', '\tdep\tgoogle.golang.org/grpc\tv1.83.2\th1:fixture\n'):
+            result = subprocess.CompletedProcess([], 0, (lines + extra).encode(), b'')
+            with patch.object(subprocess, 'run', return_value=result):
+                with self.assertRaisesRegex(ValueError, 'missing its pinned local gRPC receive patch'):
+                    package.build_info(Path('binary'), ('linux', 'arm64'), env)
 
     def test_oci_build_context_contains_only_built_binaries(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -140,7 +247,7 @@ class PackageTests(unittest.TestCase):
                 if args == ['go', 'mod', 'verify'] or args[:3] == ['go', 'tool', 'buildid']:
                     return b''
                 if args == ['go', 'list', '-m', '-json', 'all']:
-                    return b'{}'
+                    return b'{"Path":"github.com/batchstream/weir","Main":true}'
                 if args[:2] == ['go', 'build']:
                     binary = Path(args[args.index('-o') + 1])
                     binary.write_bytes(f'{args[-1]} {env["GOOS"]}/{env["GOARCH"]}'.encode())

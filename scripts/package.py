@@ -14,6 +14,8 @@ import tarfile
 import tempfile
 import time
 
+import check_dependencies as dependencies
+
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = tuple((system, arch) for system in ('linux', 'darwin') for arch in ('amd64', 'arm64'))
 GO = 'go1.27.1'
@@ -39,9 +41,21 @@ def secret_path(name):
                or p.lower().endswith(('.pem', '.key')) for p in parts)
 
 
+def public_grpc_source(name):
+    if not name.startswith('third_party/grpc/') or not name.endswith('.go') or name.endswith('_test.go'):
+        return False
+    parts = PurePosixPath(name).parts
+    # The pinned public library has packages named credentials; these are Go source.
+    return '..' not in parts and not secret_path('/'.join(part for part in parts if part != 'credentials'))
+
+
 def allowed(name):
     return (
         name in ('go.mod', 'go.sum', 'README.md', 'config/weir.reference.yaml', 'config/routes.reference.yaml')
+        or name in ('third_party/grpc/go.mod', 'third_party/grpc/go.sum', 'third_party/grpc/LICENSE',
+                    'third_party/grpc/AUTHORS', 'third_party/grpc/WEIR_UPSTREAM.json',
+                    'third_party/grpc/WEIR_PATCH.md', 'third_party/grpc/WEIR_PATCH.diff')
+        or public_grpc_source(name)
         or name.startswith('deploy/docker/')
         or (
             name.endswith('.go')
@@ -62,12 +76,27 @@ def source_files(root, revision):
         metadata, encoded = record.split(b'\t', 1)
         name = encoded.decode('utf-8')
         mode, kind, oid = metadata.decode().split()
-        if secret_path(name):
+        if secret_path(name) and not public_grpc_source(name):
             raise ValueError('tracked secret-style path refused: ' + name)
         if allowed(name):
             if mode not in ('100644', '100755') or kind != 'blob' or '..' in PurePosixPath(name).parts:
                 raise ValueError('non-regular build input refused: ' + name)
             files.append((name, oid))
+    public_packages = [name for name, _ in files if secret_path(name)]
+    if public_packages:
+        manifest_name = 'third_party/grpc/WEIR_UPSTREAM.json'
+        manifest_oid = dict(files).get(manifest_name)
+        if manifest_oid is None:
+            raise ValueError('public gRPC source requires its pinned upstream manifest')
+        manifest = json.loads(run(['git', 'cat-file', 'blob', manifest_oid], cwd=root))
+        if manifest.get('module') != dependencies.GRPC or manifest.get('version') != dependencies.GRPC_VERSION:
+            raise ValueError('unexpected public gRPC upstream manifest')
+        if any(name.removeprefix('third_party/grpc/') not in manifest.get('files', {}) for name in public_packages):
+            raise ValueError('unlisted credentials package source refused')
+        for name in public_packages:
+            expected = manifest['files'][name.removeprefix('third_party/grpc/')]
+            if sha(run(['git', 'cat-file', 'blob', dict(files)[name]], cwd=root)) != expected:
+                raise ValueError('public credentials source differs from pinned upstream: ' + name)
     if not {'go.mod', 'go.sum', 'cmd/weir/main.go'} <= {name for name, _ in files}:
         raise ValueError('missing required build inputs')
     return files
@@ -80,6 +109,32 @@ def clean_head(root):
     if not re.fullmatch('[0-9a-f]{40}', revision):
         raise ValueError('expected full source SHA')
     return revision
+
+
+def validate_grpc_inputs(source, inputs):
+    directory = source / 'third_party/grpc'
+    if not directory.is_dir():
+        return
+    manifest = json.loads((directory / 'WEIR_UPSTREAM.json').read_text())
+    if manifest.get('module') != dependencies.GRPC or manifest.get('version') != dependencies.GRPC_VERSION:
+        raise ValueError('unexpected public gRPC upstream manifest')
+    expected = dict(manifest['files'])
+    for record in manifest.get('patchedFiles', []):
+        name = record['path']
+        if name not in expected or record['upstream_sha256'] != manifest['files'].get(name):
+            raise ValueError('gRPC patch does not match its recorded upstream source')
+        expected[name] = record['sha256']
+    for record in manifest.get('newFiles', []):
+        name = record['path']
+        if name in expected:
+            raise ValueError('duplicate gRPC source in patch manifest')
+        expected[name] = record['sha256']
+    selected = {'third_party/grpc/' + name: digest for name, digest in expected.items()
+                if allowed('third_party/grpc/' + name)}
+    actual = {name: digest for name, digest in inputs.items()
+              if name.startswith('third_party/grpc/') and name != 'third_party/grpc/WEIR_UPSTREAM.json'}
+    if actual != selected:
+        raise ValueError('exported gRPC sources differ from the pinned patch manifest')
 
 
 def go_environment():
@@ -107,7 +162,7 @@ def build_info(binary, target, env):
     lines = run(['go', 'version', '-m', str(binary)], env=env).decode().splitlines()
     if not lines or not lines[0].endswith(': ' + GO):
         raise ValueError('unexpected binary compiler')
-    settings, modules = {}, []
+    settings, modules, local_patches = {}, [], []
     for line in lines[1:]:
         fields = line.strip().split('\t')
         if fields[0] == 'build':
@@ -116,13 +171,21 @@ def build_info(binary, target, env):
         elif fields[0] == 'dep':
             modules.append(fields[1:])
         elif fields[0] == '=>':
-            raise ValueError('replacement dependency refused')
+            if (not modules or modules[-1][:2] != [dependencies.GRPC, dependencies.GRPC_VERSION]
+                    or fields[1:] != ['./third_party/grpc', '(devel)'] or local_patches):
+                raise ValueError('replacement dependency refused')
+            replacement = {'module': dependencies.GRPC, 'version': dependencies.GRPC_VERSION,
+                           'path': './third_party/grpc'}
+            local_patches.append(replacement)
     system, arch = target
     required = {'GOOS': system, 'GOARCH': arch, 'CGO_ENABLED': '0', '-trimpath': 'true',
                 'GOAMD64' if arch == 'amd64' else 'GOARM64': 'v1' if arch == 'amd64' else 'v8.0'}
     if any(settings.get(k) != v for k, v in required.items()):
         raise ValueError('binary target/build settings mismatch')
-    result = {'go': GO, 'target': system + '/' + arch, 'settings': settings, 'linked_modules': modules}
+    if len(local_patches) != 1:
+        raise ValueError('server binary is missing its pinned local gRPC receive patch')
+    result = {'go': GO, 'target': system + '/' + arch, 'settings': settings,
+              'linked_modules': modules, 'local_patches': local_patches}
     return result
 
 
@@ -218,13 +281,16 @@ def build_once(opts):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(run(['git', 'cat-file', 'blob', oid]))
     original = {name: sha((source / name).read_bytes()) for name, _ in opts['files']}
+    validate_grpc_inputs(source, original)
     run(['go', 'mod', 'verify'], cwd=source, env=env)
     graph = json_stream(run(['go', 'list', '-m', '-json', 'all'], cwd=source, env=env))
+    dependencies.check_modules(graph, source)
     modules = []
     for module in graph:
+        item = {key: module[key] for key in ('Path', 'Version', 'Sum', 'GoModSum', 'GoVersion', 'Main') if key in module}
         if 'Replace' in module:
-            raise ValueError('module replacements refused')
-        modules.append({key: module[key] for key in ('Path', 'Version', 'Sum', 'GoModSum', 'GoVersion', 'Main') if key in module})
+            item['Replace'] = {'Path': module['Replace']['Path']}
+        modules.append(item)
     write_json(output / 'module-graph.json', modules)
     binary_hashes, artifact_hashes = {}, {}
     binary_name = 'weir'
@@ -250,6 +316,10 @@ def build_once(opts):
             'config/weir.reference.yaml': ((source / 'config/weir.reference.yaml').read_bytes(), 0o644),
             'config/routes.reference.yaml': ((source / 'config/routes.reference.yaml').read_bytes(), 0o644),
         }
+        grpc_source = source / 'third_party/grpc'
+        if grpc_source.is_dir():
+            for name in ('LICENSE', 'AUTHORS', 'WEIR_UPSTREAM.json', 'WEIR_PATCH.md', 'WEIR_PATCH.diff'):
+                members['licenses/grpc/' + name] = ((grpc_source / name).read_bytes(), 0o644)
         if system == 'darwin':
             for license_file in sorted((source / 'deploy/docker/licenses').glob('purego-*.txt')):
                 members['licenses/' + license_file.name] = (license_file.read_bytes(), 0o644)

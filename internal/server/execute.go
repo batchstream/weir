@@ -56,7 +56,7 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 			}
 			return status.Error(codes.InvalidArgument, "Native requires exactly one request")
 		}
-		return s.executeCommand(stream, runtime, request.Command)
+		return s.executeCommand(stream, runtime, request)
 	}
 	ctx, cancel := context.WithCancel(stream.Context())
 	session := runtime.NewSession()
@@ -186,10 +186,12 @@ func (s *Server) receiveRecords(ctx context.Context, input *recordInput) error {
 		if failure != nil {
 			return failureStatus(failure)
 		}
+		s.bindReceived(request, plan)
 		ticket, failure := s.submitPlan(ctx, input.runtime, plan, input.session)
 		if failure != nil {
 			return failureStatus(failure)
 		}
+		s.releaseReceived(request)
 		select {
 		case input.tickets <- ticket:
 		case <-ctx.Done():
@@ -233,7 +235,8 @@ func (s *Server) receiveFrame(stream grpc.BidiStreamingServer[pb.ExecuteRequest,
 	return stream.Recv()
 }
 
-func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], runtime *store.Runtime, command *pb.Command) error {
+func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.ExecuteResponse], runtime *store.Runtime, request *pb.ExecuteRequest) error {
+	command := request.Command
 	ctx := stream.Context()
 	plan, failure := runtime.PrepareCommand(ctx, 1, command)
 	if failure != nil {
@@ -241,10 +244,12 @@ func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteReques
 	}
 	session := runtime.NewSession()
 	defer session.Close()
+	s.bindReceived(request, plan)
 	ticket, failure := s.submitPlan(ctx, runtime, plan, session)
 	if failure != nil {
 		return s.sendEvent(stream, failedCommand(failure), 1, nil)
 	}
+	s.releaseReceived(request)
 	for {
 		select {
 		case <-ctx.Done():

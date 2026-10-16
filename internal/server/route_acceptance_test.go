@@ -49,6 +49,7 @@ func startRouteAcceptanceNode(t testing.TB, opts routeAcceptanceNodeOptions) *ro
 	if err != nil {
 		t.Fatal(err)
 	}
+	admission.SetExecutionMemory(local.ExecutionMemory())
 	config := Config{Stores: map[string]*store.Runtime{"records": local}, Limits: opts.limits, Admission: admission}
 	srv, err := New(config)
 	if err != nil {
