@@ -1,0 +1,43 @@
+{
+  "created_utc": "2026-10-16T18:20:02.081912+00:00",
+  "base_head": "594bca890e0f517794e1175c8ffd46260dde117c",
+  "workdir": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "scope": "One authorized full core cross-validation of frozen combined Search read fix; no integration tag, real DB, or CLI subprocess qualification.",
+  "race": {
+    "exit": 0,
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-core-race.txt",
+    "raw_sha256": "54098c18e11a65ecb4aefb291b2f16b20ac244532ad042ea11dbecc085058fce",
+    "command_receipt": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-core-race-receipt.json",
+    "command_receipt_sha256": "0d4df770ae7d01377a0076c7ffaf804ee277b7aaf470174c8ee0bffe8bcb69f8",
+    "package_seconds": {
+      "store": 4.16,
+      "server": 19.761,
+      "execution": 3.262,
+      "app": 8.01,
+      "cmd/weir": 19.829
+    }
+  },
+  "vet": {
+    "exit": 0,
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-core-vet.txt",
+    "raw_sha256": "2a3954627795f50423fd88b74045fed1aa6fcc709aa93aa4113bc4d4ac5d9a30",
+    "command_receipt": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-core-vet-receipt.json",
+    "command_receipt_sha256": "0ae4f9efdaea0255bea775a282e18dd8f2d38c1e6154f67ce4ca3f572d106ed8"
+  },
+  "all_internal_cmd_go_mod_sum_unchanged": true,
+  "source_count": 349,
+  "original_2048_gate": {
+    "test": "TestContinuousReadsAcrossConcurrentSessions",
+    "sessions": 64,
+    "records_per_session": 32,
+    "rounds": 4,
+    "file": "internal/server/route_acceptance_test.go",
+    "sha256": "c738aed13262fc9d0fefa2b7d4c6557acd81442d99a8ab0704d93e84377729c0",
+    "byte_identical_to_base": true,
+    "included_in": "Full internal/server -race -count=1 PASS"
+  },
+  "no_source_edits": true,
+  "no_retry": true,
+  "no_commit_push": true,
+  "freeze": true
+}

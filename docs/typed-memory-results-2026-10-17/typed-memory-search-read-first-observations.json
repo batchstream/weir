@@ -1,0 +1,49 @@
+{
+  "before": {
+    "base": "594bca890e0f517794e1175c8ffd46260dde117c",
+    "raw": "typed-memory-search-read-before-spare32.txt",
+    "actual_exit": 1,
+    "goodHash": 0,
+    "unavailable": 2,
+    "capacity": 0,
+    "metadata": 0,
+    "mget": 0,
+    "rejections": 1,
+    "raw_sha256": "082166b6cbd58c4fae434f499ab2e12e4fa4da0345edf8b0bc8a05157a8817fe"
+  },
+  "after_first": {
+    "raw": "typed-memory-search-read-after-floor-first.txt",
+    "actual_exit": 1,
+    "spare0": {
+      "goodHash": 0,
+      "capacity": 2,
+      "metadata": 1,
+      "mget": 1,
+      "rejections": 1
+    },
+    "spare32768": {
+      "goodHash": 2,
+      "capacity": 0,
+      "metadata": 1,
+      "mget": 1,
+      "rejections": 0
+    },
+    "excessive_metadata": {
+      "capacity": 2,
+      "metadata": 1,
+      "mget": 0,
+      "rejections": 1
+    },
+    "raw_sha256": "0acb5b7994f27da21e9d8d9266997abbbbad7db4d977c25c5ace4555b7ddc065"
+  },
+  "normal_mget": {
+    "raw_len_cap": 2395,
+    "json_structural_nodes": 40,
+    "json_decode_working": 56337,
+    "response_header_working": 9084,
+    "header_cap_decode": 67816,
+    "excess_over_65536": 2280,
+    "cap_decode_after_release_headers": 58732
+  },
+  "claim_limit": "Deterministic shared-ledger mechanism; live r4 mutex-held rejection phase was not captured."
+}

@@ -1,9 +1,10 @@
 # Typed execution, result and network memory qualification
 
-Status: PR 81 is blocked by independent review. Its first clean run passed,
-but the unchanged cross-Store pressure case subsequently rejected a healthy
-short Native. A correction and renewed qualification are required. Overall
-default-production qualification remains incomplete.
+Status: PR 81 remains blocked. The fourth clean candidate passes the original
+Typed/Native health gate but fails two Search Reads in the small mixed burst.
+The read-workspace correction passes frozen backend/core race and vet checks;
+a fifth clean real-backend candidate and renewed independent review are next.
+Overall default production qualification remains incomplete.
 
 ## Preserved failure
 
@@ -404,3 +405,90 @@ concurrency, data oracles and timing gates remain byte-identical. The
 [correction receipt](typed-memory-results-2026-10-17/typed-memory-borrow-bound-final-receipt.json)
 records exact commands, exits and source hashes. A new clean artifact, the
 original CLI gates, renewed independent review and fresh CI remain required.
+
+## Fourth clean candidate: health fixed, two Search Reads fail
+
+Clean source `594bca890e0f517794e1175c8ffd46260dde117c`, Linux CLI SHA256
+`196c267d506999878086495b9fa74fb65af008a392bdd606bbbe93e9168060fd`,
+passes all seven unchanged typed-memory cases (31.607 s). In the previously
+failed cross-Store pressure hold, healthy Read and short Native complete in
+39.653 and 43.040 ms. All seven CLI processes survive without OOM, exit zero
+and recover their logical ownership within the original five seconds.
+
+The cross-Store pressure aggregate is 12 full hash/EOF successes, 12 explicit
+capacity failures and 8 caller deadlines. The unchanged harness does not log
+a per-index/store/Native mapping for deadlines, so this is only the original
+survival/progress acceptance. It is not proof that all offered large responses
+completed correctly. Unstalled business chains retain separate content oracles.
+
+The following unchanged 10-by-256 burst fails in round 5. Search Read sequences
+1313 and 1373 return UNAVAILABLE, `index qualification response unavailable`,
+in 12.853 and 14.571 ms; the Node rejection counter rises once. All 2560 results
+are received, nine rounds are fully successful, and all planned Mongo 421/421
+and Search 431/431 ID/n/pad/cardinality oracles match. This failure involves
+Reads rather than a write UNKNOWN outcome. Ownership returns to zero, the
+eighth CLI has no OOM and exits zero, and all 349 source hashes remain unchanged.
+
+The first failure stops qualification. Diagnostics, output rounds and small-query
+repetitions are not run. The [combined manifest](typed-memory-results-2026-10-17/typed-memory-fixed-r4-validation.json)
+retains both original raw logs, exits, preserved earlier failures and scope.
+
+Read-only source analysis finds a separate deterministic planning defect: Runtime
+reserves known input plus one 64 KiB response workspace, but Search's read-only
+batch adds that 64 KiB to non-overlapping input base, then asks for another
+64 KiB scratch before HTTP send. A near-full budget can therefore deny the
+duplicate before sending metadata. The per-batch qualification map can share
+that one failure between two Reads, and inspect currently maps memory errors
+to generic UNAVAILABLE. A fixed-budget before/after regression is being built.
+This mechanism fits the observations but does not establish the live failure's
+mutex-held branch from periodic samples. No repeat of the failed burst is used
+to select a pass.
+
+
+## Read workspace correction awaiting clean process acceptance
+
+A fixed shared-ledger regression preserves the old planning formula and four
+24 MiB Native holds. With exactly 32 KiB spare, old source rejects both Reads
+before any metadata or mget request: two UNAVAILABLE results and one budget
+rejection. The fixed budget is 134,840,310 bytes; the zero-spare control is
+134,807,542 bytes. Neither budget, input, document size nor concurrency is
+raised after changing the plan.
+
+Pure reads now reuse their one 64 KiB reply workspace. Their live charge is
+`max(base, frame) + max(reply, sources + scratch)`; mutation accounting remains
+`max(base, frame) + sources + max(reply, scratch)` so future acknowledgement
+capacity stays protected. Every later mget group reserves its retained sources
+plus new IO scratch before sending. The read floor remains promised throughout
+metadata and all mget exchanges. After the entire mget and its correspondence
+validation return, the floor is dropped while actual source capacities stay
+charged through each Ticket's result handoff.
+
+Complete HTTP bodies reach EOF and close before header/trailer references are
+cleared and JSON parsing starts. A normal two-document mget has 2,395 raw bytes
+and 40 structural nodes: retaining headers during parsing previously charged
+67,816 bytes; the non-overlapping body/parser phase needs 58,732 bytes. The
+owned Elasticsearch 8.19.22 metadata sample is 408 bytes and 21 nodes, with a
+conservative 44,106-byte peak. Exactly one metadata sample was fetched from a
+new owned index; that index was deleted and its acknowledged cleanup retained.
+No shared business data was fetched. Real memory denial now retains its
+RESOURCE_EXHAUSTED cause instead of becoming generic qualification UNAVAILABLE.
+
+The original before failure and two intermediate zero-spare failures remain
+preserved. Final fixed-budget zero/32 KiB-spare tests both return complete
+1 KiB document hashes, one metadata request, one mget and zero rejections.
+Genuine oversized metadata still returns two capacity failures and one rejection,
+and insufficient later-group capacity sends no second request. Mutation ACK
+promises, one execution/no replay, cancellation and connection reuse also pass.
+
+The frozen focused suite passes in 8.167 s. Full backend race passes MongoDB
+8.914 s and Search 56.638 s; backend vet passes. Full core race passes Store
+4.160 s, Server 19.761 s, Execution 3.262 s, App 8.010 s and CLI 19.829 s; core
+vet passes. Source hashes are unchanged throughout, including the original
+2048-small-read gate. These checks run without integration tags or real DB.
+
+The [read correction receipt](typed-memory-results-2026-10-17/typed-memory-search-read-final-receipt.json)
+and [core receipt](typed-memory-results-2026-10-17/typed-memory-search-read-core-final-receipt.json)
+preserve raw commands, actual exits, source hashes and all intermediate failures.
+This proves a matching deterministic mechanism, not the uncaptured mutex-held
+instant in r4. No failed real burst was retried to select a pass. A new clean
+artifact and the unchanged five real-backend acceptance gates remain required.

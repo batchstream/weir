@@ -52,16 +52,33 @@ func (m *recordMemory) set(sources, frame, scratch int) error {
 	if m.base < 0 || m.reply < 0 || sources < 0 || frame < 0 || scratch < 0 {
 		return execution.ErrExecutionMemory
 	}
-	scratch = max(m.reply, scratch)
-	if sources > math.MaxInt-max(m.base, frame) || scratch > math.MaxInt-max(m.base, frame)-sources {
-		return execution.ErrExecutionMemory
+	held := max(m.base, frame)
+	workspace := 0
+	if m.reply == 64<<10 {
+		// Pure reads can reuse their completed parser workspace for retained
+		// sources. Keep the entire IO floor until all read exchanges finish;
+		// a later exchange still approves sources plus its new scratch first.
+		if sources > math.MaxInt-scratch {
+			return execution.ErrExecutionMemory
+		}
+		workspace = max(m.reply, sources+scratch)
+		if workspace > math.MaxInt-held {
+			return execution.ErrExecutionMemory
+		}
+	} else {
+		// Mutation sources cannot consume their future acknowledgement promise.
+		workspace = max(m.reply, scratch)
+		if sources > math.MaxInt-held || workspace > math.MaxInt-held-sources {
+			return execution.ErrExecutionMemory
+		}
+		workspace += sources
 	}
 	if m.owner != nil {
-		if err := m.owner.SetWorking(max(m.base, frame) + sources + scratch); err != nil {
+		if err := m.owner.SetWorking(held + workspace); err != nil {
 			return err
 		}
 	}
-	m.sources, m.frame, m.scratch = sources, frame, scratch
+	m.sources, m.frame, m.scratch = sources, frame, max(m.reply, scratch)
 	return nil
 }
 

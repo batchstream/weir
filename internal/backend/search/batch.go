@@ -414,10 +414,9 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 	if memory.reply != 0 {
 		// Exactly Runtime's sum(Plan.WorkingBytes) + max(IOReserve):
 		// sum(known input) + sum(item ACK) + one envelope/header window.
-		memory.reply += (64 << 10) + bulkAckEnvelopeWorking
-	} else {
-		memory.base += 64 << 10
+		memory.reply += bulkAckEnvelopeWorking
 	}
+	memory.reply += 64 << 10
 	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
 	works = append([]*execution.Plan(nil), works...)
 	readOnly := true
@@ -536,7 +535,14 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				}
 			}
 			observed := make(map[int]*getReply, len(readWorks))
-			for offset, record := range a.mget(ctx, readWorks) {
+			records := a.mget(ctx, readWorks)
+			if readOnly {
+				// All groups and their complete source validation have finished.
+				// Retain actual sources while their Tickets acquire ownership.
+				memory.reply = 0
+				_ = memory.set(memory.sources, memory.frame, 0)
+			}
+			for offset, record := range records {
 				i := readPositions[offset]
 				work := works[i]
 				if work.Backend.(*plan).action == "read" {

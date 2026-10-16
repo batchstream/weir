@@ -1,0 +1,158 @@
+{
+  "base": "594bca890e0f517794e1175c8ffd46260dde117c",
+  "scope": "Search adapter/batch/memory/transport only, new read_memory_test and captured owned metadata fixture; Runtime/ledger/limits/count/TTL/cache/retry/process gates unchanged.",
+  "frozen": true,
+  "source_before_after_identical": true,
+  "source_files": [
+    {
+      "path": "internal/backend/search/adapter.go",
+      "sha256": "07bd714935f5c65ec07e02fe4e636a6b2bad38901e2d5ddd64988effa24ddaf1",
+      "bytes": 11720
+    },
+    {
+      "path": "internal/backend/search/batch.go",
+      "sha256": "6dc0f7e804ff0765c3007acd29f570bd98964b7a63578fd08a1852ec322b413c",
+      "bytes": 21102
+    },
+    {
+      "path": "internal/backend/search/memory.go",
+      "sha256": "38bae16a74d4d2b991179058e411f6aca6e77c927573f0f0a3029ff2e69d900d",
+      "bytes": 6646
+    },
+    {
+      "path": "internal/backend/search/route.go",
+      "sha256": "01f158f4c3d9f4a05595e45cb8dcde2da5ed7d3e2cf105ec0a786b7dc8352fa9",
+      "bytes": 3180
+    },
+    {
+      "path": "internal/backend/search/transport.go",
+      "sha256": "01c4bce494fbbbf54cd09a4d0892fdec5c99b794489f8c69e7fe7b11c917a2df",
+      "bytes": 9117
+    },
+    {
+      "path": "internal/backend/search/read_memory_test.go",
+      "sha256": "28f6785045c76350fd5cb899ce8dd7f589754120998d13507d67824017828b16",
+      "bytes": 13468
+    },
+    {
+      "path": "internal/backend/search/testdata/read-memory-metadata-elasticsearch-8.19.22.json",
+      "sha256": "0277f387485c7d79b1cec1326c6bab5280fc812a0f4d04968f0bb0bee7e0bd64",
+      "bytes": 408
+    }
+  ],
+  "source_before": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-full-source-before.json",
+  "source_after": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-full-source-after.json",
+  "patch": {
+    "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-final.patch",
+    "sha256": "fe6bb0ef8cd83f7f67fe75aa84ff4048468d8c88d91268dd699def49e65aaecf",
+    "bytes": 20480
+  },
+  "baseline_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/manifest.json",
+  "baseline_exact_overlay": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-594/overlay-exact-before.json",
+  "raw_results": [
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-before-spare32.txt",
+      "actual_exit": 1,
+      "bytes": 1889,
+      "sha256": "082166b6cbd58c4fae434f499ab2e12e4fa4da0345edf8b0bc8a05157a8817fe",
+      "meaning": "Expected before FAIL at old duplicate IO reservation: metadata0/mget0, two UNAVAILABLE, one actual ledger rejection."
+    },
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-after-floor-first.txt",
+      "actual_exit": 1,
+      "bytes": 4885,
+      "sha256": "0acb5b7994f27da21e9d8d9266997abbbbad7db4d977c25c5ace4555b7ddc065",
+      "meaning": "Intermediate FAIL at zero spare; 32KiB full-content success and genuine metadata capacity-cause mapping pass. Normal full header+body+JSON sum exceeded old 64KiB before metadata cleanup."
+    },
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-after-header-only.txt",
+      "actual_exit": 1,
+      "bytes": 1877,
+      "sha256": "074dad9a0e04308ed2cefd387ca11c3018421ba80b3a004bdea5ebafec738b8e",
+      "meaning": "Intermediate FAIL at zero spare: actual sources were added outside the still-promised workspace. No budget or document-size change."
+    },
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-after-workspace-first.txt",
+      "actual_exit": 0,
+      "bytes": 4690,
+      "sha256": "55cccdf3667b25cd28510f4c69565bf75d0379ede969adeb6148e7db9200fe42",
+      "meaning": "PASS after actual-lifetime read workspace and final whole-mget ownership transition; both fixed zero/32KiB-spare cases hash complete; true excessive metadata remains resource failure."
+    },
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-focused-final.txt",
+      "actual_exit": 0,
+      "bytes": 15040,
+      "sha256": "8f9c245f27426be3936fdac0e6f16e0ca163e16760c1c27123ca13a636d60135",
+      "meaning": "PASS including later-group pre-IO actual-sources-plus-scratch and overflow, unchanged mutation ACK promise, cancellation/drain and no-replay regressions."
+    },
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-full-race.txt",
+      "actual_exit": 0,
+      "bytes": 130,
+      "sha256": "679dbc4fc3028b0d5be99916239e5b2dc1cdb4be346c14aa3ea56c2d5bb1a8d3",
+      "meaning": "Final frozen source PASS: MongoDB8.914s, Search56.638s race count1, no integration tags or real DB."
+    },
+    {
+      "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-full-vet.txt",
+      "actual_exit": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "meaning": "Final frozen source PASS: MongoDB/Search vet."
+    }
+  ],
+  "math": {
+    "fixed_B_zero_spare": 134807542,
+    "fixed_B_32768_spare": 134840310,
+    "input_window": 33554432,
+    "native_initial_working": 100663296,
+    "native_publication_growth": 518140,
+    "known_read_input_working": 6138,
+    "original_read_IO_reserve": 65536,
+    "initial_equality": "B = Q + 4*24MiB + 518140 + sum(2*record.Bytes+512) + 65536 + spare; B is frozen to old Plan math, never raised by new Plan declarations.",
+    "read_working": "max(base,frame)+max(reply,sources+scratch), with reply64KiB retained throughout every metadata and mget exchange; all sums checked before owner call.",
+    "mutation_working": "max(base,frame)+sources+max(reply,scratch); original ACK floor stays separate from source/frame allocations.",
+    "whole_batch_read_transition": "After a.mget returns with all group correspondence/source validation complete, reply becomes0; actual retained source capacities stay charged until each Ticket ReserveResult succeeds; final cleanup drops working.",
+    "later_group": "Request preDo scratch64KiB is added to still-live actual sources before HTTP; insufficient combined real peak is RESOURCE_EXHAUSTED with no later request sent.",
+    "normal_mget": {
+      "bytes_and_content_length_capacity": 2395,
+      "structural_nodes": 40,
+      "json_decode_working": 56337,
+      "retained_header_working": 9084,
+      "old_header_plus_cap_plus_decode": 67816,
+      "new_cap_plus_decode_after_close_and_clear": 58732
+    },
+    "normal_metadata": {
+      "body_bytes": 408,
+      "body_sha256": "0277f387485c7d79b1cec1326c6bab5280fc812a0f4d04968f0bb0bee7e0bd64",
+      "conservative_header_cap_decode_peak": 44106,
+      "initial_floor": 65536
+    }
+  },
+  "owned_sampling": {
+    "evidence": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-read-metadata-r4-sample/manifest.json",
+    "metadata_get_count": 1,
+    "index_created_seeded_and_deleted_only_owned": true,
+    "db_window_returned": true
+  },
+  "style_checks": [
+    {
+      "name": "diffcheck",
+      "actual_exit": 0,
+      "output": ""
+    },
+    {
+      "name": "gofmt",
+      "actual_exit": 0,
+      "output": ""
+    }
+  ],
+  "verification_limits": "The real r4 rejection mutex phase was not captured. The deterministic shared-ledger test proves a matching mechanism and complete fixed-budget regression, not an exact live instantaneous cause. No burst replay or further real DB validation was run.",
+  "toolchain": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off"
+  }
+}

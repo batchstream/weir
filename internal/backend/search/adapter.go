@@ -196,6 +196,9 @@ func (a *Adapter) inspect(ctx context.Context, target string, native bool) (capa
 	if err == errTransport && ctx.Err() == nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification transport failed")
 	}
+	if errors.Is(err, execution.ErrExecutionMemory) {
+		return caps, recordMemoryFailure()
+	}
 	if err != nil {
 		return caps, protocol.Fail(pb.FailureCode_UNAVAILABLE, "index qualification response unavailable")
 	}

@@ -149,7 +149,11 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 		// Protocol/header limits and cancellation are not affirmative congestion.
 		return 0, nil, errResponse
 	}
-	defer response.Body.Close()
+	defer func() {
+		if response != nil {
+			_ = response.Body.Close()
+		}
+	}()
 	if response.Header.Get("Content-Encoding") != "" {
 		return response.StatusCode, nil, errResponse
 	}
@@ -184,19 +188,25 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
 	if err != nil {
 		return response.StatusCode, nil, errResponse
 	}
-	if err := reserveSearchScratch(ctx, headerBytes+cap(raw)+jsonDecodeWorking(raw)); err != nil {
-		return response.StatusCode, nil, err
+	// The complete body has reached EOF. Release response metadata before its
+	// JSON validation allocates; the raw bytes remain covered by this exchange.
+	status = response.StatusCode
+	_ = response.Body.Close()
+	response.Header, response.Trailer = nil, nil
+	response, reader = nil, nil
+	if err := reserveSearchScratch(ctx, cap(raw)+jsonDecodeWorking(raw)); err != nil {
+		return status, nil, err
 	}
 	if err := validateJSON(ctx, raw); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return response.StatusCode, nil, errTimeout
+			return status, nil, errTimeout
 		}
 		if errors.Is(err, context.Canceled) {
-			return response.StatusCode, nil, errCanceled
+			return status, nil, errCanceled
 		}
-		return response.StatusCode, nil, errResponse
+		return status, nil, errResponse
 	}
-	return response.StatusCode, raw, nil
+	return status, raw, nil
 }
 
 // Backend authentication supplies defaults; Native may override end-to-end headers.
