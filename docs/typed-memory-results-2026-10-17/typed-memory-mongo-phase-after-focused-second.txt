@@ -1,0 +1,46 @@
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/missing_id
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/missing_namespace
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/missing_batch
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/unexpected_id
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/duplicate_id
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/partial
+=== RUN   TestMongoPointReadRejectsMalformedCursorEvidence/empty_live_cursor
+--- PASS: TestMongoPointReadRejectsMalformedCursorEvidence (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/missing_id (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/missing_namespace (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/missing_batch (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/unexpected_id (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/duplicate_id (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/partial (0.00s)
+    --- PASS: TestMongoPointReadRejectsMalformedCursorEvidence/empty_live_cursor (0.00s)
+=== RUN   TestMongoTerminalReplyReleasesSpeculativeWindowBeforeCopy
+--- PASS: TestMongoTerminalReplyReleasesSpeculativeWindowBeforeCopy (0.00s)
+=== RUN   TestMongoSmallReadBatchReservesOneReplyAndActualDocuments
+--- PASS: TestMongoSmallReadBatchReservesOneReplyAndActualDocuments (0.00s)
+=== RUN   TestMongoNonterminalReplyKeepsMessageWindowThroughGetMore
+--- PASS: TestMongoNonterminalReplyKeepsMessageWindowThroughGetMore (0.00s)
+=== RUN   TestMongoFollowingQualificationAndWriteRestoreMessageWindow
+=== RUN   TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=false/deny_restore=false
+=== RUN   TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=false/deny_restore=true
+=== RUN   TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=true/deny_restore=false
+=== RUN   TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=true/deny_restore=true
+--- PASS: TestMongoFollowingQualificationAndWriteRestoreMessageWindow (0.00s)
+    --- PASS: TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=false/deny_restore=false (0.00s)
+    --- PASS: TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=false/deny_restore=true (0.00s)
+    --- PASS: TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=true/deny_restore=false (0.00s)
+    --- PASS: TestMongoFollowingQualificationAndWriteRestoreMessageWindow/other_target=true/deny_restore=true (0.00s)
+=== RUN   TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO
+=== RUN   TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO/false
+=== RUN   TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO/true
+--- PASS: TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO (0.00s)
+    --- PASS: TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO/false (0.00s)
+    --- PASS: TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO/true (0.00s)
+=== RUN   TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget
+=== RUN   TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget/actual_codec=false
+=== RUN   TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget/actual_codec=true
+--- PASS: TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget (0.06s)
+    --- PASS: TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget/actual_codec=false (0.01s)
+    --- PASS: TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget/actual_codec=true (0.03s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/mongodb	1.093s

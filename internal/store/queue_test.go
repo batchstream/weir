@@ -45,10 +45,8 @@ func TestQueueCountAndBytesReleaseAtDispatch(t *testing.T) {
 			if batch == nil {
 				t.Fatal("nothing dispatched")
 			}
-			select {
-			case <-changed:
-			default:
-				t.Fatal("dispatch did not wake queue waiters")
+			if changed != nil {
+				t.Fatal("full input queue created an unowned admission waiter")
 			}
 			ticket, failure, _ := runtime.Submit(ctx, work, nil)
 			if failure != nil {

@@ -1,0 +1,77 @@
+{
+  "status": "FAIL",
+  "scope": "r4 original typed7PASS, subsequent fixed small burstBLOCKS qualification; review81 prior failure remains independent evidence.",
+  "source": "594bca890e0f517794e1175c8ffd46260dde117c",
+  "build_receipt": "typed-memory-fixed-r4-build.json",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-fixed-r4-linux",
+  "binary_sha256": "196c267d506999878086495b9fa74fb65af008a392bdd606bbbe93e9168060fd",
+  "source_before": "typed-memory-fixed-r4-source-before.json",
+  "source_after": "typed-memory-fixed-r4-source-after.json",
+  "source_349_hashes_before_after": "clean identical",
+  "toolchain": "ExplicitGo1.27.1 GOROOT/GOENVoff/GOTOOLCHAINlocal/GOWORKoff/GOPROXYoff/GOSUMDBoff; race driverCGO1, Linuxarm64 CLI CGO0",
+  "exclusive_sequential_window": true,
+  "groups": {
+    "process": {
+      "status": "PASS",
+      "actual_exit": 0,
+      "raw": "typed-memory-fixed-r4-process.txt",
+      "raw_sha256": "06188c715ef2be1b12b0f8a9df1759c9943e4417773ea907324d20fa4895a7d7",
+      "manifest": "typed-memory-fixed-r4-process-validation.json",
+      "manifest_sha256": "289b6d5d7a4fe76794afa28f13af39456d2ce43672661e2644499bd566339e1a"
+    },
+    "burst": {
+      "status": "FAIL",
+      "actual_exit": 1,
+      "raw": "typed-memory-fixed-r4-burst.txt",
+      "raw_sha256": "e6e876708f85bf78cf1bfa60a97b52aec2bee33bf94874ec97fe628c4fe8a938",
+      "manifest": "typed-memory-fixed-r4-burst-validation.json",
+      "manifest_sha256": "d8406ad33f12991f0346618548178b96fc6406d84cdc23895f999c9504437ed9"
+    },
+    "diagnostics": {
+      "status": "NOT RUN",
+      "reason": "stopped after first failing stage"
+    },
+    "output": {
+      "status": "NOT RUN",
+      "reason": "stopped after first failing stage"
+    },
+    "small": {
+      "status": "NOT RUN",
+      "reason": "stopped after first failing stage"
+    }
+  },
+  "metadata_limits": [
+    "Pressure results have aggregate counts only; no per-index/store/native deadline mapping was recorded.",
+    "Burst failing Read sequence/backend/method/origin retained exactly.",
+    "No retry, hidden success relabel, extra DB query, or diagnosis load after failure."
+  ],
+  "cleanup": {
+    "CLI_Docker_noOOM_exit0_count": 8,
+    "owned_CLI_query": [
+      "docker",
+      "ps",
+      "-a",
+      "--filter",
+      "name=weir-memory-recovery-",
+      "--format",
+      "{{.ID}} {{.Names}} {{.Label \"weir.owner\"}} {{.Status}}"
+    ],
+    "query_actual_exit": 0,
+    "query_output": "",
+    "remaining_owned_CLI": 0,
+    "scope": "7typed+1burst: selected independent Docker OOM/exit checks, owned stop/removal, backend owned0. Finalownership0 is cleanup evidence and cannot clear business failure. Shared fixture services preserved."
+  },
+  "prior_review_and_r3_r2_evidence_preserved_sha256": {
+    "review81-backend-typed7.txt": "71c57dce65e2d3dbcc5934252dadff22b23d89de3b88a360f74a238da7b2dd9a",
+    "typed-memory-fixed-r3-validation.json": "cee0a3b9242313fef4b42a5f82aa2e24a8ae8b132b542c29bb85fc3948057861",
+    "typed-memory-fixed-r2-validation.json": "684caa7123a8956279ca2186e3105a83f007cd5d14c35ec9193d7756079a38ec"
+  },
+  "not_run": [
+    "ingressA/B",
+    "Lua",
+    "formal600",
+    "fault",
+    "auto/offmatrix"
+  ],
+  "at_utc": "2026-10-16T18:02:26.833263+00:00"
+}

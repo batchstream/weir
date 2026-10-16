@@ -22,7 +22,7 @@ type Node struct {
 	registry        *prometheus.Registry
 	diagnostics     *diagnostics
 	guard           *overload.Guard
-	nativeMemory    *store.NativeMemory
+	executionMemory *store.ExecutionMemory
 	drains          prometheus.Counter
 	drainDuration   prometheus.Histogram
 	admission       *server.Admission

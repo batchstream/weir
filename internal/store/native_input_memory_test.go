@@ -13,10 +13,10 @@ import (
 )
 
 func TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck(t *testing.T) {
-	memory := testNativeMemory(768 << 20)
+	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
 	work.Bytes = 1 << 20
-	var leases []*nativeLease
+	var leases []*executionLease
 	for {
 		lease, failure := memory.admit(work)
 		if failure != nil {
@@ -48,7 +48,7 @@ func TestNativeInputPromiseIsSharedBoundedAndReleasedAtLastAck(t *testing.T) {
 }
 
 func TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink(t *testing.T) {
-	memory := testNativeMemory(768 << 20)
+	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
 	first, failure := memory.admit(work)
 	if failure != nil {
@@ -87,7 +87,7 @@ func TestNativeInputPromiseSurvivesConvergenceAndRevokesOnlyUnusedOnShrink(t *te
 
 func TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak(t *testing.T) {
 	for _, budget := range []uint64{0, 1 << 20, defaultNativeIOReserve + (16 << 10), 128 << 20} {
-		memory := NewNativeMemory()
+		memory := NewExecutionMemory()
 		memory.known, memory.trusted, memory.budget = true, true, budget
 		work := plan(1, "native", false)
 		work.WorkingBytes = 4096
@@ -125,11 +125,11 @@ func TestNativeInputPromiseSmallCapacityAndOversizedIdlePeak(t *testing.T) {
 }
 
 func TestNativeInputPromiseConcurrentAdmissionCannotOverdraw(t *testing.T) {
-	memory := testNativeMemory(768 << 20)
+	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
 	work.Bytes = 100 << 10
 	var group sync.WaitGroup
-	leases := make(chan *nativeLease, nativeCountLimit)
+	leases := make(chan *executionLease, nativeCountLimit)
 	for range nativeCountLimit {
 		group.Go(func() {
 			lease, _ := memory.admit(work)
@@ -153,7 +153,7 @@ func TestNativeInputPromiseConcurrentAdmissionCannotOverdraw(t *testing.T) {
 }
 
 func TestNativeQueueSaturationDoesNotCreateUnadmittedWaiters(t *testing.T) {
-	memory := testNativeMemory(768 << 20)
+	memory := testExecutionMemory(768 << 20)
 	limits := DefaultLimits()
 	limits.MaxInFlight, limits.QueueOperations = 1, 1
 	adapter := &nativeInitialIOAdapter{entered: make(chan struct{}, 1)}
@@ -192,7 +192,7 @@ func TestNativeQueueSaturationDoesNotCreateUnadmittedWaiters(t *testing.T) {
 		t.Fatal("rejected input retained a lease", before, after)
 	}
 	typed := plan(4, "typed", true)
-	if _, failure, changed := runtime.Submit(ctx, typed, nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || changed == nil {
-		t.Fatal("Native queue policy changed typed input backpressure", failure, changed)
+	if _, failure, changed := runtime.Submit(ctx, typed, nil); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || changed != nil {
+		t.Fatal("typed queue created an unowned input waiter", failure, changed)
 	}
 }

@@ -31,7 +31,7 @@ func (p *nativeMemoryProbe) EndIO(working, _ int) error {
 
 func (p *nativeMemoryProbe) GrowIO(working int) error {
 	if p.limit != 0 && working > p.limit {
-		return execution.ErrNativeMemory
+		return execution.ErrExecutionMemory
 	}
 	p.reserved = max(p.reserved, working)
 	return nil

@@ -1,0 +1,238 @@
+package server
+
+import (
+    "bytes"
+    "context"
+    "crypto/sha256"
+    "io"
+    "sync"
+    "sync/atomic"
+    "testing"
+    "time"
+
+    "github.com/batchstream/weir-protocol/api/protocol"
+    pb "github.com/batchstream/weir-protocol/api/weir/v1"
+    "github.com/batchstream/weir/internal/execution"
+    "github.com/batchstream/weir/internal/overload"
+    "github.com/batchstream/weir/internal/store"
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/mem"
+    "google.golang.org/grpc/stats"
+    "google.golang.org/grpc/status"
+    "google.golang.org/protobuf/proto"
+)
+
+type review81R5WireAdapter struct {
+    peerAdapter
+    nativeCalls atomic.Int32
+}
+
+func (*review81R5WireAdapter) PrepareCommand(_ context.Context, id uint64, command *pb.Command) (*execution.Plan, *pb.Failure) {
+    work := &execution.Plan{ID: id, Command: command, Bytes: execution.EntryOverheadBytes, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 48_139_264, IOReserve: 48_139_264}
+    return work, nil
+}
+
+func (*review81R5WireAdapter) PrepareRecord(_ context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
+    work := &execution.Plan{ID: record.Index(), Command: record.Command(), Bytes: record.Bytes(), ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 139_264, IOReserve: 48_000_000}
+    return work, nil
+}
+
+func (a *review81R5WireAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
+    work := plans[0]
+    if work.Command.GetNative() == nil {
+        if err := work.Memory.ReserveResult(protocol.NativeChunk + execution.ResultOverheadBytes); err != nil { return }
+        document := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("t"), protocol.NativeChunk)}
+        read := protocol.ReadDocument(document)
+        value := &pb.Event_ReadResult{ReadResult: read}
+        event := &pb.Event{Value: value}
+        _ = emit(work, event)
+        _ = work.Memory.SetWorking(0)
+        return
+    }
+    a.nativeCalls.Add(1)
+    metadata := &pb.Document{ContentType: "application/octet-stream", Data: bytes.Repeat([]byte("n"), protocol.NativeChunk)}
+    head := &pb.NativeHead{Metadata: metadata, BodyContentType: "application/octet-stream"}
+    value := &pb.Event_Head{Head: head}
+    event := &pb.Event{Value: value}
+    work.WorkingBytes = protocol.NativeChunk + execution.EntryOverheadBytes
+    err := emit(work, event)
+    end := &pb.NativeEnd{Completion: pb.NativeCompletion_RESPONSE_COMPLETE}
+    if err != nil {
+        failure := protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, execution.ErrExecutionMemory.Error())
+        if ctx.Err() != nil { failure = protocol.ContextFailure(ctx) }
+        end = protocol.NativeFailure(true, failure)
+    }
+    work.WorkingBytes = execution.EntryOverheadBytes
+    endValue := &pb.Event_NativeEnd{NativeEnd: end}
+    endEvent := &pb.Event{Value: endValue}
+    _ = emit(work, endEvent)
+}
+
+type review81R5Encoded struct {
+    buffers mem.BufferSlice
+    response *pb.ExecuteResponse
+}
+
+type review81R5WireStream struct {
+    grpc.ServerStream
+    fixture wireLifetimeFixture
+    encoded chan review81R5Encoded
+}
+
+func (s *review81R5WireStream) Context() context.Context { return s.fixture.rpc }
+func (*review81R5WireStream) Recv() (*pb.ExecuteRequest, error) { return nil, io.EOF }
+func (s *review81R5WireStream) Send(response *pb.ExecuteResponse) error {
+    codec := &responseCodec{admission: s.fixture.server.admission}
+    encoded, err := codec.Marshal(response)
+    if err != nil { return err }
+    payload := &stats.OutPayload{Payload: response}
+    s.fixture.stats.HandleRPC(s.fixture.rpc, payload)
+    item := review81R5Encoded{buffers: encoded, response: response}
+    s.encoded <- item
+    return nil
+}
+
+func review81R5NativeCommand(resource string) *pb.Command {
+    input := &pb.Document{ContentType: "application/octet-stream", Data: []byte("request")}
+    request := &pb.NativeRequest{Resource: resource, Request: input}
+    value := &pb.Command_Native{Native: request}
+    command := &pb.Command{Operation: value}
+    return command
+}
+
+// This is an independent review-only draft. The control protobuf fills the
+// resident share with a real codec-owned buffer; it is not a business workload
+// or an RSS measurement. The test never mutates ledger fields or frees another
+// owner's credits to obtain healthy progress.
+func TestReview81R5ActualCodecHandoffsKeepCanceledWireUntilRetirement(t *testing.T) {
+    memory := store.NewExecutionMemory()
+    sample := overload.Snapshot{RecoveryAllowanceKnown: true, RecoveryAllowance: 90_000_000}
+    memory.ObserveMemory(sample)
+    control := newWireLifetimeFixture(t)
+    control.server.admission.SetExecutionMemory(memory)
+    initial := memory.Snapshot()
+    residentLimit := initial.BudgetBytes - initial.IOReserveBytes
+    queuePromise := residentLimit / 2
+    wireBytes := int(residentLimit-queuePromise) + 1537
+    storage := make([]byte, wireBytes)
+    document := &pb.Document{ContentType: "application/octet-stream", Data: storage[:wireBytes-128]}
+    read := protocol.ReadDocument(document)
+    readValue := &pb.Event_ReadResult{ReadResult: read}
+    readEvent := &pb.Event{Value: readValue}
+    response := &pb.ExecuteResponse{Index: 1, Event: readEvent}
+    for tries := 0; proto.Size(response) != wireBytes && tries < 4; tries++ {
+        document.Data = storage[:len(document.Data)+wireBytes-proto.Size(response)]
+    }
+    if proto.Size(response) != wireBytes { t.Fatal("control protobuf length", proto.Size(response), wireBytes) }
+    codec := &responseCodec{admission: control.server.admission}
+    residentBuffer, err := codec.Marshal(response)
+    if err != nil { t.Fatal(err) }
+    defer func() { if residentBuffer != nil { residentBuffer.Free() } }()
+    payload := &stats.OutPayload{Payload: response}
+    control.stats.HandleRPC(control.rpc, payload)
+    floor := memory.Snapshot()
+    if floor.UsedBytes != residentLimit || floor.ResidentBytes != residentLimit || floor.Count != 1 || floor.WireCount != 1 { t.Fatal("resident control did not exactly fill its finite share", floor) }
+    adapter := &review81R5WireAdapter{}
+    limits := store.DefaultLimits()
+    runtime, err := store.New(adapter, limits, memory)
+    if err != nil { t.Fatal(err) }
+    t.Cleanup(func() {
+        closing, cancel := context.WithTimeout(context.Background(), time.Second)
+        defer cancel()
+        if err := runtime.Close(closing); err != nil { t.Error(err) }
+    })
+    native := newWireLifetimeFixture(t)
+    native.server.admission.SetExecutionMemory(memory)
+    nativeStream := &review81R5WireStream{fixture: native, encoded: make(chan review81R5Encoded, 2)}
+    nativeDone := make(chan error, 1)
+    nativeCommand := review81R5NativeCommand("held-native")
+    go func() { nativeDone <- native.server.executeCommand(nativeStream, runtime, nativeCommand) }()
+    var nativeOutput review81R5Encoded
+    select {
+    case nativeOutput = <-nativeStream.encoded:
+    case <-time.After(time.Second): t.Fatal("short Native did not reach actual codec", memory.Snapshot())
+    }
+    defer func() { if nativeOutput.buffers != nil { nativeOutput.buffers.Free() } }()
+    if nativeOutput.response.Event.GetHead() == nil { t.Fatal("Native output lost its actual head", nativeOutput.response) }
+    nativeHash := sha256.Sum256(nativeOutput.buffers.Materialize())
+    typed := newWireLifetimeFixture(t)
+    typed.server.admission.SetExecutionMemory(memory)
+    typedStream := &review81R5WireStream{fixture: typed, encoded: make(chan review81R5Encoded, 1)}
+    request := testRequest()
+    readOperation := &pb.Command_Read{Read: request}
+    readCommand := &pb.Command{Operation: readOperation}
+    record, err := execution.NewRecord("records", 1, readCommand)
+    if err != nil { t.Fatal(err) }
+    work, failure := runtime.PrepareRecord(typed.rpc, record)
+    if failure != nil { t.Fatal(failure) }
+    ticket, failure, _ := runtime.Submit(typed.rpc, work, nil)
+    if failure != nil { t.Fatal(failure) }
+    typedDone := make(chan error, 1)
+    go func() { typedDone <- typed.server.publishRecord(typedStream, ticket, 1) }()
+    var typedOutput review81R5Encoded
+    select {
+    case typedOutput = <-typedStream.encoded:
+    case <-time.After(time.Second): t.Fatal("typed result did not reach actual codec", memory.Snapshot())
+    }
+    defer func() { if typedOutput.buffers != nil { typedOutput.buffers.Free() } }()
+    if len(typedOutput.response.Event.GetReadResult().GetDocument().GetData()) != protocol.NativeChunk { t.Fatal("typed output changed document content") }
+    held := memory.Snapshot()
+    if held.Borrowed != 2 || held.WireCount != 3 || held.NativeCount != 1 || held.UsedBytes > held.BudgetBytes { t.Fatal("real encoded outputs did not occupy both bounded handoffs", held) }
+    native.cancel()
+    typed.cancel()
+    for _, done := range []chan error{nativeDone, typedDone} {
+        select {
+        case err := <-done: if status.Code(err) != codes.Canceled { t.Fatal("canceled publication changed status", err) }
+        case <-time.After(time.Second): t.Fatal("cancellation did not release source ownership")
+        }
+    }
+    deadline := time.Now().Add(time.Second)
+    for runtime.Snapshot().Retained != 0 && time.Now().Before(deadline) { time.Sleep(time.Millisecond) }
+    canceled := memory.Snapshot()
+    if runtime.Snapshot().Retained != 0 || canceled.Borrowed != 2 || canceled.WireCount != 3 || canceled.NativeCount != 1 || canceled.WireBytes != held.WireBytes { t.Fatal("RPC cancellation returned live encoded ownership", held, canceled, runtime.Snapshot()) }
+    nativeOutput.buffers.Ref()
+    var race sync.WaitGroup
+    race.Go(func() { nativeOutput.buffers.Free() })
+    race.Go(func() { end := &stats.ConnEnd{}; native.stats.HandleConn(native.connection, end) })
+    race.Wait()
+    if sha256.Sum256(nativeOutput.buffers.Materialize()) != nativeHash { t.Fatal("ConnEnd modified still-referenced encoded storage") }
+    nativeOutput.buffers.Free()
+    nativeOutput.buffers = nil
+    retired := memory.Snapshot()
+    if retired.Borrowed != 1 || retired.WireCount != 2 || retired.NativeCount != 0 { t.Fatal("Native retirement changed unrelated typed or resident ownership", retired) }
+    healthy := newWireLifetimeFixture(t)
+    healthy.server.admission.SetExecutionMemory(memory)
+    healthyStream := &review81R5WireStream{fixture: healthy, encoded: make(chan review81R5Encoded, 2)}
+    healthyDone := make(chan error, 1)
+    healthyCommand := review81R5NativeCommand("healthy-native")
+    go func() { healthyDone <- healthy.server.executeCommand(healthyStream, runtime, healthyCommand) }()
+    complete := false
+    for !complete {
+        select {
+        case output := <-healthyStream.encoded:
+            if end := output.response.Event.GetNativeEnd(); end != nil {
+                complete = end.Completion == pb.NativeCompletion_RESPONSE_COMPLETE && end.Failure == nil
+                if !complete { t.Fatal("healthy short Native lost completion evidence", end) }
+            }
+            output.buffers.Free()
+        case <-time.After(time.Second): t.Fatal("healthy short Native could not use the actually retired handoff", memory.Snapshot())
+        }
+    }
+    select {
+    case err := <-healthyDone: if err != nil { t.Fatal(err) }
+    case <-time.After(time.Second): t.Fatal("healthy publication did not finish after real final Free")
+    }
+    if adapter.nativeCalls.Load() != 2 { t.Fatal("Native calls were replayed or skipped", adapter.nativeCalls.Load()) }
+    race.Go(func() { typedOutput.buffers.Free() })
+    race.Go(func() { end := &stats.ConnEnd{}; typed.stats.HandleConn(typed.connection, end) })
+    race.Wait()
+    typedOutput.buffers = nil
+    after := memory.Snapshot()
+    if after.Borrowed != 0 || after.WireCount != 1 || after.NativeCount != 0 || after.UsedBytes != floor.UsedBytes || after.ResidentBytes != floor.ResidentBytes { t.Fatal("final Free/ConnEnd raced to return too much or too little ownership", floor, after) }
+    residentBuffer.Free()
+    residentBuffer = nil
+    final := memory.Snapshot()
+    if final.Count != 0 || final.UsedBytes != 0 || final.ResidentBytes != 0 || final.InputUsedBytes != 0 || final.InputReservedBytes != 0 || final.WireCount != 0 || final.Borrowed != 0 { t.Fatal("actual codec ownership did not return to zero", final) }
+    t.Logf("fixedB=%d floor=%+v held=%+v canceled=%+v retired=%+v final=%+v NativeCalls=%d", initial.BudgetBytes, floor, held, canceled, retired, final, adapter.nativeCalls.Load())
+}

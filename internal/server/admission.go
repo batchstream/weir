@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/batchstream/weir/internal/overload"
+	"github.com/batchstream/weir/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,6 +20,8 @@ type Admission struct {
 	activeRPCs        atomic.Int64
 	activeConnections atomic.Int64
 	responses         sync.Map
+	reservations      sync.Map
+	memory            *store.ExecutionMemory
 }
 
 func NewAdmission(l Limits) (*Admission, error) {
@@ -25,6 +29,9 @@ func NewAdmission(l Limits) (*Admission, error) {
 		return nil, err
 	}
 	a := &Admission{draining: make(chan struct{})}
+	a.memory = store.NewExecutionMemory()
+	guard := overload.New(nil, overload.DefaultLimits())
+	a.memory.ObserveMemory(guard.Snapshot())
 	opts := prometheus.CounterOpts{
 		Name: "weir_admission_rejections_total",
 		Help: "Process ingress rejection branches; no client-controlled label values.",
@@ -35,6 +42,10 @@ func NewAdmission(l Limits) (*Admission, error) {
 	}
 	return a, nil
 }
+
+// SetExecutionMemory binds all Node listeners to the same process ledger before
+// serving. Standalone servers use the admission's bounded default ledger.
+func (a *Admission) SetExecutionMemory(memory *store.ExecutionMemory) { a.memory = memory }
 
 func (a *Admission) SetOverloaded(value bool) { a.overloaded.Store(value) }
 

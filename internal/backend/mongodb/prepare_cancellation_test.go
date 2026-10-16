@@ -27,7 +27,7 @@ func (ctx *cancelDuringConversion) Err() error {
 	return ctx.Context.Err()
 }
 
-func TestMongoPreparationCancellationKeepsCallerFailure(t *testing.T) {
+func TestMongoAdmittedPreparationCancellationKeepsCallerFailure(t *testing.T) {
 	items := make(bson.A, 10000)
 	for i := range items {
 		items[i] = int32(i)
@@ -69,8 +69,16 @@ func TestMongoPreparationCancellationKeepsCallerFailure(t *testing.T) {
 			defer cancel()
 			ctx := &cancelDuringConversion{Context: base, cancel: cancel}
 			work, failure := adapter.PrepareRecord(ctx, record)
-			if work != nil || failure.GetCode() != pb.FailureCode_CANCELLED || ctx.Err() != context.Canceled {
-				t.Fatal("conversion cancellation was misreported as invalid data", work, failure)
+			if failure != nil || work == nil || ctx.Err() != nil {
+				t.Fatal("raw preparation materialized the payload", failure)
+			}
+			probe := &recordMemoryProbe{limit: 128 << 20}
+			work.Memory = probe
+			memory := &recordMemory{owner: probe, base: recordWorking([]*execution.Plan{work})}
+			admitted := context.WithValue(ctx, recordMemoryContextKey, memory)
+			failure = adapter.validateRecord(admitted, work)
+			if failure.GetCode() != pb.FailureCode_CANCELLED || ctx.Err() != context.Canceled || probe.peak == 0 {
+				t.Fatal("admitted conversion cancellation became invalid data or skipped memory", failure, probe.peak)
 			}
 		})
 	}

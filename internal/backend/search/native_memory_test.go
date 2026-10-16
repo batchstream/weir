@@ -32,7 +32,7 @@ func (p *nativeMemoryProbe) GrowIO(working int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.limit != 0 && working > p.limit {
-		return execution.ErrNativeMemory
+		return execution.ErrExecutionMemory
 	}
 	p.peak = max(p.peak, working)
 	return nil
@@ -130,7 +130,7 @@ func TestNativeHeaderMemoryReservesBeforeHTTPParser(t *testing.T) {
 func TestNativeHeaderMemoryDetachesFinishedExchange(t *testing.T) {
 	probe := &nativeMemoryProbe{limit: 8192}
 	memory := &nativeHeaderMemory{io: probe}
-	if !errors.Is(memory.read([]byte("header")), execution.ErrNativeMemory) {
+	if !errors.Is(memory.read([]byte("header")), execution.ErrExecutionMemory) {
 		t.Fatal("header bytes reached a parser without allocation credit")
 	}
 	memory.finish()
@@ -154,7 +154,7 @@ func TestNativeBodyWorkspaceExhaustionPreservesAttemptedExchange(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	probe := &nativeMemoryProbe{active: true, readErr: execution.ErrNativeMemory}
+	probe := &nativeMemoryProbe{active: true, readErr: execution.ErrExecutionMemory}
 	work.Command, work.NativeIO = testutil.NativeCommand(request), probe
 	capture := &nativeCapture{}
 	end := adapter.executeNative(t.Context(), work, capture.Emit)

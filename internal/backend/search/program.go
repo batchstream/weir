@@ -15,6 +15,13 @@ import (
 // evaluateProgram runs Lua in the main process. A returned write carries the
 // exact observed OCC condition; only a confirmed conflict permits reevaluation.
 func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *getReply) (*plan, *pb.MutationResult) {
+	inputBytes := []byte(nil)
+	if native.input != nil {
+		inputBytes = native.input.Data
+	}
+	if err := reserveSearchScratch(ctx, jsonDecodeWorking(current.Source)+jsonDecodeWorking(inputBytes)); err != nil {
+		return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+	}
 	currentValue := value.Value{Kind: value.Missing}
 	if *current.Found {
 		var err error
@@ -32,6 +39,13 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 	}
 	program := *native.program
 	program.Current = currentValue
+	if native.input != nil {
+		input, err := value.DecodeJSON(ctx, native.input.Data)
+		if err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid JSON transform input"))
+		}
+		program.Input = input
+	}
 	a.metrics.initialize()
 	started := time.Now()
 	transformed, err := luaengine.Evaluate(ctx, program)
@@ -52,6 +66,9 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 		}
 		next.action = "delete"
 	case "replace":
+		if err := reserveSearchScratch(ctx, jsonDecodeWorking(current.Source)+jsonDecodeWorking(inputBytes)+3*jsonValueBytes(transformed.Value)); err != nil {
+			return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+		}
 		source, err := value.EncodeJSON(ctx, transformed.Value)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -67,6 +84,11 @@ func (a *Adapter) evaluateProgram(ctx context.Context, native *plan, current *ge
 			}
 			if bytes.Equal(source, previous) {
 				return nil, protocol.Mutation(pb.MutationOutcome_APPLIED, nil)
+			}
+		}
+		if memory := searchMemory(ctx); memory != nil {
+			if err := memory.set(memory.sources+cap(source), memory.frame, max(0, memory.scratch-cap(source))); err != nil {
+				return nil, protocol.Mutation(pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
 			}
 		}
 		next.source = source

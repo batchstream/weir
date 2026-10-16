@@ -1,0 +1,76 @@
+--- FAIL: TestCollectionWaitOverlapsBusySlotAndPreservesBackpressure (0.00s)
+    collection_trace_test.go:216: queue cancellation did not wake admission waiters
+--- FAIL: TestBusyBackendKeepsRequestsQueuedAndFormsFullBatches (0.02s)
+    concurrency_test.go:214: dispatch did not wake capacity waiters
+--- FAIL: TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity (0.00s)
+    metrics_test.go:87: physical/rejection counts
+--- FAIL: TestNativeQueueSaturationDoesNotCreateUnadmittedWaiters (0.00s)
+    native_input_memory_test.go:196: Native queue policy changed typed input backpressure code:RESOURCE_EXHAUSTED message:"admission capacity exhausted" <nil>
+--- FAIL: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+    native_memory_test.go:41: initial response working reservation was not charged {536870912 83886080 48541184 33554432 33554432 3073 0 0 1 1024 1 0 0 0 0 true 0}
+--- FAIL: TestQueueCountAndBytesReleaseAtDispatch (0.00s)
+    --- FAIL: TestQueueCountAndBytesReleaseAtDispatch/operations (0.00s)
+        queue_test.go:51: dispatch did not wake queue waiters
+    --- FAIL: TestQueueCountAndBytesReleaseAtDispatch/bytes (0.00s)
+        queue_test.go:51: dispatch did not wake queue waiters
+FAIL
+FAIL	github.com/batchstream/weir/internal/store	1.927s
+--- FAIL: TestContinuousReadsAcrossConcurrentSessions (0.02s)
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+    route_acceptance_test.go:197: legitimate continuous session boundary rejected rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted
+FAIL
+FAIL	github.com/batchstream/weir/internal/server	16.573s
+FAIL

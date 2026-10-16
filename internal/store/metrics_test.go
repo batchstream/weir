@@ -83,7 +83,7 @@ func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 				t.Fatal(outcome, got)
 			}
 		}
-		if testmetrics.Sum(families, "weir_store_executions_total") != 1 || testmetrics.Sum(families, "weir_store_rejections_total") != 1 {
+		if testmetrics.Sum(families, "weir_store_executions_total") != 1 || testmetrics.Sum(families, "weir_store_rejections_total") != 6 {
 			t.Fatal("physical/rejection counts")
 		}
 		h := testmetrics.Sample(families, "weir_store_batch_operations", nil).GetHistogram()

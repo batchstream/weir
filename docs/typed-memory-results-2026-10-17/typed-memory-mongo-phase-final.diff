@@ -1,0 +1,539 @@
+diff --git a/internal/backend/mongodb/batch.go b/internal/backend/mongodb/batch.go
+index c7e1e0b..a6ccc7c 100644
+--- a/internal/backend/mongodb/batch.go
++++ b/internal/backend/mongodb/batch.go
+@@ -205,7 +205,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
+ 	stopped := false
+ 	if valid {
+ 		state.session = session
+-		defer a.closeRecordCursor(state)
++		defer a.closeRecordCursor(ctx, state)
+ 		ctx = mongo.NewSessionContext(ctx, session)
+ 		for page := 0; page < len(ids); page++ {
+ 			attempt := ctx
+@@ -242,6 +242,18 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
+ 				valid = false
+ 				break
+ 			}
++			if state.cursorKnown && state.cursor == 0 {
++				// The uncompressed driver reply is now one retained backing
++				// allocation. cap includes trailing bytes; 36 also covers the
++				// wire prefix before the returned OP_MSG or OP_REPLY document.
++				// Known frame and parser metadata charges remain in the base.
++				extra := cap(raw) + 36 - a.nativeReplyBytes()
++				if budgetErr := reserveRecordWorking(ctx, plans, extra); budgetErr != nil {
++					err = budgetErr
++					valid = false
++					break
++				}
++			}
+ 			for _, raw := range documents {
+ 				id, validID := rawRecordID(raw.Lookup("_id"))
+ 				matches, found := positions[id]
+@@ -275,6 +287,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
+ 				}
+ 				received++
+ 			}
++			clear(documents)
++			documents = nil
++			clear(fields)
++			fields = nil
++			raw = nil
+ 			if !valid || state.cursor == 0 {
+ 				break
+ 			}
+@@ -341,6 +358,15 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
+ 
+ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
+ 	results := make([]*pb.Event, len(plans))
++	if err := reserveRecordWorking(ctx, plans, 0); err != nil {
++		for i, work := range plans {
++			results[i] = unstarted(ctx, work)
++			if results[i] == nil {
++				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
++			}
++		}
++		return results
++	}
+ 	active := make([]*execution.Plan, 0, len(plans))
+ 	positions := make([]int, 0, len(plans))
+ 	ops := make(bson.A, 0, len(plans))
+@@ -424,7 +450,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
+ 	state.cursor.session = session
+ 	state.cursor.items = len(active)
+ 	state.cursor.target = namespace{database: "admin", collection: "$cmd.bulkWrite"}
+-	defer a.closeRecordCursor(&state.cursor)
++	defer a.closeRecordCursor(ctx, &state.cursor)
+ 	ctx = mongo.NewSessionContext(ctx, session)
+ 	raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
+ 	if err != nil && len(raw) == 0 {
+@@ -496,8 +522,8 @@ type writeBatch struct {
+ 	authorizationRejected bool
+ }
+ 
+-func (a *Adapter) closeRecordCursor(state *recordCursor) {
+-	ctx, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
++func (a *Adapter) closeRecordCursor(ctx context.Context, state *recordCursor) {
++	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.options().CleanupTimeout)
+ 	defer cancel()
+ 	_ = a.closeRecordCursorState(ctx, state)
+ }
+diff --git a/internal/backend/mongodb/record_cursor.go b/internal/backend/mongodb/record_cursor.go
+index 6e97c67..af734cb 100644
+--- a/internal/backend/mongodb/record_cursor.go
++++ b/internal/backend/mongodb/record_cursor.go
+@@ -34,6 +34,12 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
+ 	if n.session == nil {
+ 		return nil
+ 	}
++	if n.cursorKnown && n.cursor == 0 {
++		return nil
++	}
++	if err := reserveRecordWorking(ctx, nil, 0); err != nil {
++		return recordMemoryFailure()
++	}
+ 	if !n.cursorKnown {
+ 		// A lost find reply can hide a newly allocated cursor. The explicit
+ 		// session is still known and exclusively held, so target only that
+@@ -49,9 +55,6 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
+ 		}
+ 		return nil
+ 	}
+-	if n.cursor == 0 {
+-		return nil
+-	}
+ 	command := bson.D{{Key: "killCursors", Value: n.target.collection}, {Key: "cursors", Value: bson.A{n.cursor}}}
+ 	ctx = mongo.NewSessionContext(ctx, n.session)
+ 	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
+diff --git a/internal/backend/mongodb/record_memory_test.go b/internal/backend/mongodb/record_memory_test.go
+index 71f6b4d..3290f6a 100644
+--- a/internal/backend/mongodb/record_memory_test.go
++++ b/internal/backend/mongodb/record_memory_test.go
+@@ -17,17 +17,27 @@ import (
+ 	"go.mongodb.org/mongo-driver/v2/event"
+ )
+ 
+-type recordMemoryProbe struct{ limit, resultLimit, peak, result, calls int }
++type recordMemoryProbe struct {
++	limit, resultLimit, peak, result, calls, working int
++	resultWorking                                    []int
++	denyRestore, reduced                             bool
++}
+ 
+ func (p *recordMemoryProbe) SetWorking(bytes int) error {
+ 	if p.limit != 0 && bytes > p.limit {
+ 		return execution.ErrExecutionMemory
+ 	}
++	if p.denyRestore && p.reduced && bytes > p.working {
++		return execution.ErrExecutionMemory
++	}
++	p.reduced = p.reduced || bytes < p.working
+ 	p.peak = max(p.peak, bytes)
++	p.working = bytes
+ 	return nil
+ }
+ func (p *recordMemoryProbe) ReserveResult(bytes int) error {
+ 	p.calls++
++	p.resultWorking = append(p.resultWorking, p.working)
+ 	if p.resultLimit != 0 && bytes > p.resultLimit {
+ 		return execution.ErrExecutionMemory
+ 	}
+@@ -35,6 +45,34 @@ func (p *recordMemoryProbe) ReserveResult(bytes int) error {
+ 	return nil
+ }
+ 
++func TestMongoTerminalReplyReleasesSpeculativeWindowBeforeCopy(t *testing.T) {
++	document := bson.D{{Key: "_id", Value: "item"}, {Key: "pad", Value: strings.Repeat("x", 1234)}}
++	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
++	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
++	replyLength, replyCapacity := 0, 0
++	monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, event *event.CommandSucceededEvent) {
++		if event.CommandName == "find" {
++			replyLength, replyCapacity = len(event.Reply), cap(event.Reply)
++		}
++	}}
++	adapter := batchMockAdapter(t, responses, monitor)
++	opts := batchOperationOptions{resource: "db/records/s:item", action: "read"}
++	work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
++	if failure != nil {
++		t.Fatal(failure)
++	}
++	probe := &recordMemoryProbe{limit: 64 << 20}
++	work.Memory = probe
++	result := adapter.executeRecords(t.Context(), []*execution.Plan{work})[0].GetReadResult()
++	if result.GetDocument() == nil || !bytes.Equal(result.GetDocument().Data, expressionBSON(t, document)) {
++		t.Fatal("terminal response was not returned intact", result.GetFailure())
++	}
++	expected := work.WorkingBytes + replyCapacity + 36
++	if replyCapacity <= replyLength || len(probe.resultWorking) != 1 || probe.resultWorking[0] != expected {
++		t.Fatal("returned reply retained a speculative message window or lost backing capacity", "raw_len", replyLength, "raw_cap", replyCapacity, "working_at_copy", probe.resultWorking, "expected", expected)
++	}
++}
++
+ func TestMongoSmallReadBatchReservesOneReplyAndActualDocuments(t *testing.T) {
+ 	documents := make(bson.A, 128)
+ 	for i := range documents {
+diff --git a/internal/backend/mongodb/target.go b/internal/backend/mongodb/target.go
+index 6ffa63b..53cf10b 100644
+--- a/internal/backend/mongodb/target.go
++++ b/internal/backend/mongodb/target.go
+@@ -70,6 +70,9 @@ func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) *pb.Failu
+ }
+ 
+ func (a *Adapter) inspectTarget(ctx context.Context, target namespace) *pb.Failure {
++	if err := reserveRecordWorking(ctx, nil, 0); err != nil {
++		return recordMemoryFailure()
++	}
+ 	filter := bson.D{{Key: "name", Value: target.collection}}
+ 	specs, err := a.client.Database(target.database).ListCollectionSpecifications(ctx, filter)
+ 	if err != nil {
+diff --git a/internal/backend/mongodb/record_phase_test.go b/internal/backend/mongodb/record_phase_test.go
+new file mode 100644
+index 0000000..a94685c
+--- /dev/null
++++ b/internal/backend/mongodb/record_phase_test.go
+@@ -0,0 +1,171 @@
++package mongodb
++
++import (
++	"context"
++	"fmt"
++	"testing"
++
++	pb "github.com/batchstream/weir-protocol/api/weir/v1"
++	"github.com/batchstream/weir/internal/execution"
++	"go.mongodb.org/mongo-driver/v2/bson"
++	"go.mongodb.org/mongo-driver/v2/event"
++)
++
++func TestMongoNonterminalReplyKeepsMessageWindowThroughGetMore(t *testing.T) {
++	first := bson.D{{Key: "_id", Value: "a"}}
++	last := bson.D{{Key: "_id", Value: "b"}}
++	firstCursor := bson.D{{Key: "id", Value: int64(55)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{first}}}
++	lastCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "nextBatch", Value: bson.A{last}}}
++	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(firstCursor), readCursorResponse(lastCursor)}
++	probe := &recordMemoryProbe{limit: 64 << 20}
++	full, lastCapacity, finds, more := 0, 0, 0, 0
++	monitor := &event.CommandMonitor{
++		Started: func(_ context.Context, e *event.CommandStartedEvent) {
++			if e.CommandName == "endSessions" {
++				return
++			}
++			if probe.working != full {
++				t.Error("business IO lost its negotiated window", e.CommandName, probe.working, full)
++			}
++			if e.CommandName == "find" {
++				finds++
++			} else if e.CommandName == "getMore" {
++				more++
++			}
++		},
++		Succeeded: func(_ context.Context, e *event.CommandSucceededEvent) {
++			if e.CommandName == "getMore" {
++				lastCapacity = cap(e.Reply)
++			}
++		},
++	}
++	adapter := batchMockAdapter(t, responses, monitor)
++	plans := make([]*execution.Plan, 2)
++	for i, id := range []string{"a", "b"} {
++		opts := batchOperationOptions{resource: "db/records/s:" + id, action: "read"}
++		work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
++		if failure != nil {
++			t.Fatal(failure)
++		}
++		work.Memory = probe
++		plans[i] = work
++	}
++	full = recordWorking(plans)
++	results := adapter.executeRecords(t.Context(), plans)
++	for i, id := range []string{"a", "b"} {
++		if bson.Raw(results[i].GetReadResult().GetDocument().GetData()).Lookup("_id").StringValue() != id {
++			t.Fatal("cursor pages did not preserve complete records", i)
++		}
++	}
++	expected := full - adapter.nativeReplyBytes() + lastCapacity + 36
++	if finds != 1 || more != 1 || len(probe.resultWorking) != 2 || probe.resultWorking[0] != full || probe.resultWorking[1] != expected {
++		t.Fatal("nonterminal and terminal pages had the same speculative lifetime", finds, more, probe.resultWorking, expected)
++	}
++}
++
++func TestMongoFollowingQualificationAndWriteRestoreMessageWindow(t *testing.T) {
++	for _, otherTarget := range []bool{false, true} {
++		for _, deny := range []bool{false, true} {
++			t.Run(fmt.Sprintf("other_target=%v/deny_restore=%v", otherTarget, deny), func(t *testing.T) {
++				document := bson.D{{Key: "_id", Value: "a"}}
++				readCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
++				responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(readCursor)}
++				collection := "records"
++				if otherTarget {
++					collection = "other"
++					responses = append(responses, collectionQualificationResponse("db", collection))
++				}
++				item := bson.D{{Key: "ok", Value: 1}, {Key: "idx", Value: 0}, {Key: "n", Value: 1}}
++				writeCursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "admin.$cmd.bulkWrite"}, {Key: "firstBatch", Value: bson.A{item}}}
++				writeReply := bson.D{{Key: "ok", Value: 1}, {Key: "cursor", Value: writeCursor}, {Key: "nErrors", Value: 0}, {Key: "nInserted", Value: 1}, {Key: "nDeleted", Value: 0}, {Key: "nMatched", Value: 0}, {Key: "nModified", Value: 0}, {Key: "nUpserted", Value: 0}}
++				responses = append(responses, writeReply)
++				probe := &recordMemoryProbe{limit: 64 << 20, denyRestore: deny}
++				full, qualifications, writes := 0, 0, 0
++				monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
++					if e.CommandName == "endSessions" {
++						return
++					}
++					if probe.working != full {
++						t.Error("new IO started before restoring negotiated capacity", e.CommandName, probe.working, full)
++					}
++					if e.CommandName == "listCollections" {
++						qualifications++
++					} else if e.CommandName == "bulkWrite" {
++						writes++
++					}
++				}}
++				adapter := batchMockAdapter(t, responses, monitor)
++				readOptions := batchOperationOptions{resource: "db/records/s:a", action: "read"}
++				read, failure := prepareTestRecord(adapter, batchOperation(t, readOptions))
++				if failure != nil {
++					t.Fatal(failure)
++				}
++				writeOptions := batchOperationOptions{resource: "db/" + collection + "/s:a", action: "create", document: document}
++				write, failure := prepareTestRecord(adapter, batchOperation(t, writeOptions))
++				if failure != nil {
++					t.Fatal(failure)
++				}
++				read.Memory, write.Memory = probe, probe
++				plans := []*execution.Plan{read, write}
++				full = recordWorking(plans)
++				results := adapter.executeRecords(t.Context(), plans)
++				if results[0].GetReadResult().GetDocument() == nil {
++					t.Fatal("later budget denial erased the complete read", results[0])
++				}
++				result := results[1].GetMutationResult()
++				if deny {
++					if result.GetOutcome() != pb.MutationOutcome_NOT_STARTED || result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || writes != 0 || qualifications != 1 {
++						t.Fatal("unbudgeted IO or incorrect mutation evidence", result, qualifications, writes)
++					}
++				} else {
++					expectedQualifications := 1
++					if otherTarget {
++						expectedQualifications++
++					}
++					if result.GetOutcome() != pb.MutationOutcome_APPLIED || result.Failure != nil || writes != 1 || qualifications != expectedQualifications {
++						t.Fatal("restored capacity did not preserve normal mutation", result, qualifications, writes)
++					}
++				}
++			})
++		}
++	}
++}
++
++func TestMongoCursorCleanupRestoresBudgetAndSkipsUnapprovedIO(t *testing.T) {
++	for _, deny := range []bool{false, true} {
++		t.Run(fmt.Sprint(deny), func(t *testing.T) {
++			probe := &recordMemoryProbe{working: 1024, reduced: true, denyRestore: deny}
++			full, calls := 48_004_096, 0
++			monitor := &event.CommandMonitor{Started: func(_ context.Context, e *event.CommandStartedEvent) {
++				if e.CommandName == "endSessions" {
++					return
++				}
++				calls++
++				if e.CommandName != "killCursors" || probe.working != full {
++					t.Error("cleanup IO escaped the restored window", e.CommandName, probe.working)
++				}
++			}}
++			cleanup := bson.D{{Key: "ok", Value: 1}, {Key: "cursorsKilled", Value: bson.A{int64(55)}}, {Key: "cursorsNotFound", Value: bson.A{}}, {Key: "cursorsAlive", Value: bson.A{}}, {Key: "cursorsUnknown", Value: bson.A{}}}
++			responses := []bson.D{cleanup}
++			adapter := batchMockAdapter(t, responses, monitor)
++			session, err := adapter.client.StartSession()
++			if err != nil {
++				t.Fatal(err)
++			}
++			memory := &recordMemory{owner: probe, base: full}
++			ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
++			state := &recordCursor{target: namespace{database: "db", collection: "records"}, session: session, cursor: 55, cursorKnown: true}
++			failure := adapter.closeRecordCursorState(ctx, state)
++			if state.session != nil || state.cursor != 0 || !state.closed {
++				t.Fatal("local cursor ownership survived cleanup", state)
++			}
++			if deny {
++				if failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED || calls != 0 {
++					t.Fatal("unapproved cleanup IO was sent", failure, calls)
++				}
++			} else if failure != nil || calls != 1 {
++				t.Fatal("budgeted cleanup did not execute exactly once", failure, calls)
++			}
++		})
++	}
++}
+diff --git a/internal/backend/mongodb/record_runtime_memory_test.go b/internal/backend/mongodb/record_runtime_memory_test.go
+new file mode 100644
+index 0000000..d2d7586
+--- /dev/null
++++ b/internal/backend/mongodb/record_runtime_memory_test.go
+@@ -0,0 +1,167 @@
++package mongodb
++
++import (
++	"context"
++	"crypto/sha256"
++	"fmt"
++	"net"
++	"strings"
++	"testing"
++	"time"
++
++	weirclient "github.com/batchstream/weir-go"
++	"github.com/batchstream/weir-protocol/api/protocol"
++	pb "github.com/batchstream/weir-protocol/api/weir/v1"
++	"github.com/batchstream/weir/internal/execution"
++	"github.com/batchstream/weir/internal/overload"
++	"github.com/batchstream/weir/internal/server"
++	"github.com/batchstream/weir/internal/store"
++	"go.mongodb.org/mongo-driver/v2/bson"
++	"google.golang.org/grpc"
++	"google.golang.org/grpc/credentials/insecure"
++	"google.golang.org/protobuf/proto"
++)
++
++func TestMongoMaximumReadRunsThroughRuntimeAndActualCodecBudget(t *testing.T) {
++	const documentBytes = (16 << 20) - 64
++	const database = "capacity_fixture1"
++	document := bson.D{{Key: "_id", Value: "sdk-write-256-16777152"}, {Key: "n", Value: int64(256)}, {Key: "pad", Value: ""}}
++	document[2].Value = strings.Repeat("x", documentBytes-len(expressionBSON(t, document)))
++	expected := expressionBSON(t, document)
++	digest := sha256.Sum256(expected)
++	for _, realCodec := range []bool{false, true} {
++		t.Run(fmt.Sprintf("actual_codec=%v", realCodec), func(t *testing.T) {
++			cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: database + ".records"}, {Key: "firstBatch", Value: bson.A{document}}}
++			responses := []bson.D{collectionQualificationResponse(database, "records"), readCursorResponse(cursor)}
++			adapter := batchMockAdapter(t, responses, nil)
++			memory := store.NewExecutionMemory()
++			// This is the mutex-held denial's real trusted allowance, rather
++			// than an idealized fraction of the container limit.
++			sample := overload.Snapshot{RecoveryAllowance: 170_316_595, RecoveryAllowanceKnown: true}
++			memory.ObserveMemory(sample)
++			if snapshot := memory.Snapshot(); snapshot.BudgetBytes != 113_544_396 {
++				t.Fatal("fixture changed the observed capacity", snapshot)
++			}
++			limits := store.DefaultLimits()
++			runtime, err := store.New(adapter, limits, memory)
++			if err != nil {
++				t.Fatal(err)
++			}
++			t.Cleanup(func() {
++				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++				defer cancel()
++				if err := runtime.Close(ctx); err != nil {
++					t.Error(err)
++				}
++			})
++			resource := database + "/records/s:sdk-write-256-16777152"
++			if realCodec {
++				transportLimits := server.DefaultLimits()
++				admission, err := server.NewAdmission(transportLimits)
++				if err != nil {
++					t.Fatal(err)
++				}
++				admission.SetExecutionMemory(memory)
++				stores := map[string]*store.Runtime{"mongo": runtime}
++				config := server.Config{Stores: stores, Admission: admission, Limits: transportLimits}
++				front, err := server.New(config)
++				if err != nil {
++					t.Fatal(err)
++				}
++				listener, err := net.Listen("tcp", "127.0.0.1:0")
++				if err != nil {
++					t.Fatal(err)
++				}
++				done := make(chan error, 1)
++				go func() { done <- front.Serve(listener) }()
++				t.Cleanup(func() {
++					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
++					defer cancel()
++					if err := front.Shutdown(ctx); err != nil {
++						t.Error(err)
++					}
++					_ = listener.Close()
++					if err := <-done; err != nil {
++						t.Error(err)
++					}
++				})
++				connection, err := grpc.NewClient("passthrough:///"+listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithNoProxy(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(protocol.MaxTransportMessageBytes)))
++				if err != nil {
++					t.Fatal(err)
++				}
++				t.Cleanup(func() { _ = connection.Close() })
++				client := pb.NewStoreServiceClient(connection)
++				read := &weirclient.ReadRequest{Resource: resource}
++				options := weirclient.ReadOneOptions{StoreName: "mongo", Request: read}
++				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
++				defer cancel()
++				result, err := weirclient.ReadOne(ctx, client, options)
++				if err != nil || result == nil || result.Failure != nil || result.Document == nil || len(result.Document.Data) != documentBytes || sha256.Sum256(result.Document.Data) != digest {
++					var failure *pb.Failure
++					bytes := 0
++					if result != nil {
++						failure = result.Failure
++						bytes = len(result.Document.GetData())
++					}
++					t.Fatal("real codec lost a legal complete read at the observed capacity", err, failure, bytes)
++				}
++				// Closing the real connection also retires transport ownership
++				// when gRPC has finished delivery before native Free is observed.
++				_ = connection.Close()
++			} else {
++				read := &pb.ReadRequest{Resource: resource}
++				operation := &pb.Command_Read{Read: read}
++				command := &pb.Command{Operation: operation}
++				record, err := execution.NewRecord("mongo", 1, command)
++				if err != nil {
++					t.Fatal(err)
++				}
++				if record.Bytes() != 1247 {
++					t.Fatal("fixture changed the observed read input size", record.Bytes())
++				}
++				work, failure := runtime.PrepareRecord(t.Context(), record)
++				if failure != nil {
++					t.Fatal(failure)
++				}
++				ticket, failure, _ := runtime.Submit(t.Context(), work, nil)
++				if failure != nil {
++					t.Fatal(failure)
++				}
++				defer ticket.Ack()
++				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
++				defer cancel()
++				event, err := ticket.Wait(ctx)
++				raw := event.GetReadResult().GetDocument().GetData()
++				if err != nil || len(raw) != documentBytes || sha256.Sum256(raw) != digest {
++					t.Fatal("Runtime completion changed the read or its capacity decision", err, event.GetReadResult().GetFailure(), len(raw))
++				}
++				response := &pb.ExecuteResponse{Index: 1, Event: event}
++				wire, err := ticket.ReserveWire(max(proto.Size(response), execution.MinimumWireBytes))
++				if err != nil {
++					t.Fatal("real event/envelope size exceeded its future wire reservation", err, memory.Snapshot())
++				}
++				defer wire.Release()
++				ticket.Ack()
++				if snapshot := memory.Snapshot(); snapshot.Count != 1 || snapshot.WireCount != 1 || snapshot.WireBytes != uint64(proto.Size(response)) || snapshot.UsedBytes < snapshot.WireBytes {
++					t.Fatal("Ack erased the actual encoded buffer's lifetime", snapshot)
++				}
++				wire.Release()
++			}
++			deadline := time.NewTimer(time.Second)
++			defer deadline.Stop()
++			tick := time.NewTicker(time.Millisecond)
++			defer tick.Stop()
++			for {
++				snapshot := memory.Snapshot()
++				if snapshot.Count == 0 && snapshot.UsedBytes == 0 && snapshot.ResidentBytes == 0 && snapshot.InputUsedBytes == 0 && snapshot.InputReservedBytes == 0 && snapshot.WireBytes == 0 && snapshot.WireCount == 0 {
++					break
++				}
++				select {
++				case <-deadline.C:
++					t.Fatal("completed maximum read retained input/result/wire ownership", snapshot)
++				case <-tick.C:
++				}
++			}
++		})
++	}
++}

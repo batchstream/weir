@@ -1,0 +1,39 @@
+=== RUN   TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise
+    execution_memory_single_owner_test.go:73: SDK BSON=16777152 input=16780464 IO+working=81557342 before={BudgetBytes:113544396 UsedBytes:32571238 IOReserveBytes:48401920 ResidentBytes:32571238 InputReservedBytes:32571238 InputUsedBytes:16780464 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:0 Waiting:1 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:113544396 IOReserveBytes:48401920 ResidentBytes:31987054 InputReservedBytes:31987054 InputUsedBytes:16780464 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise (0.05s)
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/48003006
+    execution_memory_single_owner_test.go:133: working=48003006 next=33553279 revoked=982041 before={BudgetBytes:113544396 UsedBytes:80574244 IOReserveBytes:48401920 ResidentBytes:32571238 InputReservedBytes:32571238 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:113145482 IOReserveBytes:48401920 ResidentBytes:65142476 InputReservedBytes:31589197 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/16780234
+    execution_memory_single_owner_test.go:133: working=16780234 next=33553279 revoked=982041 before={BudgetBytes:113544396 UsedBytes:49351472 IOReserveBytes:48401920 ResidentBytes:32571238 InputReservedBytes:32571238 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:1 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:113544396 UsedBytes:81922710 IOReserveBytes:48401920 ResidentBytes:65142476 InputReservedBytes:31589197 InputUsedBytes:3296 WireBytes:0 WireCount:0 NativeCount:0 NativeCountLimit:1024 Count:1 CountLimit:32768 Starting:0 Settled:1 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+--- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/48003006 (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage/16780234 (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/second_input
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/other_live_wire
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/same_live_wire
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/existing_result
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/extra_io
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/actual_peak
+=== RUN   TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/known_zero
+--- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/second_input (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/other_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/same_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/existing_result (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/extra_io (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/actual_peak (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerDoesNotRevokeSharedOrActualMemory/known_zero (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/second_input
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/other_live_wire
+=== RUN   TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/actual_peak
+--- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/second_input (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/other_live_wire (0.00s)
+    --- PASS: TestExecutionMemorySingleOwnerStartRequiresSoleWaitingActualPeak/actual_peak (0.00s)
+=== RUN   TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease
+--- PASS: TestExecutionMemorySingleOwnerRevokedPromiseReturnsOnlyAfterRealRelease (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/store	1.936s

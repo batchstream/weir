@@ -1,0 +1,678 @@
+diff --git a/internal/backend/search/memory.go b/internal/backend/search/memory.go
+index c1bd47e..d649e53 100644
+--- a/internal/backend/search/memory.go
++++ b/internal/backend/search/memory.go
+@@ -88,6 +88,16 @@ func searchMemory(ctx context.Context) *recordMemory {
+ }
+ 
+ func reserveSearchScratch(ctx context.Context, bytes int) error {
++	headerKey := nativeHeaderKey{}
++	if header, _ := ctx.Value(headerKey).(*nativeHeaderMemory); header != nil {
++		header.mu.Lock()
++		if !header.completed && header.records != nil {
++			err := header.setBody(bytes)
++			header.mu.Unlock()
++			return err
++		}
++		header.mu.Unlock()
++	}
+ 	if memory := searchMemory(ctx); memory != nil {
+ 		return memory.set(memory.sources, memory.frame, bytes)
+ 	}
+diff --git a/internal/backend/search/native_memory.go b/internal/backend/search/native_memory.go
+index 843b4b6..4441dc0 100644
+--- a/internal/backend/search/native_memory.go
++++ b/internal/backend/search/native_memory.go
+@@ -12,19 +12,28 @@ type nativeHeaderKey struct{}
+ 
+ // Header bytes first enter net/http's existing 4 KiB read buffer. Before those
+ // bytes reach its parser, reserve the parser's expanding line buffers, strings,
+-// Header map and the eventual metadata copy. 512 bytes per line conservatively
++// Header map and the eventual metadata copy. 512 bytes per line/element conservatively
+ // exceeds Go's documented 200-byte MIME map-entry accounting; eight copies of
+ // wire bytes cover growing line/metadata buffers and encoded output. This is a
+ // memory bound, without imposing a new fixed HTTP header-size/count quota.
+ type nativeHeaderMemory struct {
+-	mu        sync.Mutex
+-	io        execution.NativeIO
+-	memory    execution.Memory
+-	base      int
+-	minimum   int
+-	bytes     int
+-	lines     int
+-	completed bool
++	mu            sync.Mutex
++	io            execution.NativeIO
++	memory        execution.Memory
++	base          int
++	minimum       int
++	bytes         int
++	lines         int
++	elements      int
++	completed     bool
++	records       *recordMemory
++	body          int
++	trailer       int
++	window        int
++	currentBytes  int
++	currentLines  int
++	previousBytes int
++	previousLines int
+ }
+ 
+ func (m *nativeHeaderMemory) read(data []byte) error {
+@@ -33,27 +42,74 @@ func (m *nativeHeaderMemory) read(data []byte) error {
+ 	if m.completed || m.io == nil && m.memory == nil {
+ 		return nil
+ 	}
++	// Go readTrailer first requires its complete MIME block to fit in the
++	// transport's 4 KiB bufio buffer. Any such block lies in two adjacent
++	// 4 KiB wire intervals, including bytes prefetched with the response head.
++	// Keep their largest parser bound until the response is released. Large
++	// direct body reads are scanned in place; body commas are not declarations.
++	// Before Do returns, read-ahead is conservatively charged as response head.
++	remaining := data
++	for len(remaining) != 0 {
++		count := min(responseReadBuffer-m.currentBytes, len(remaining))
++		m.currentBytes += count
++		m.currentLines += bytes.Count(remaining[:count], []byte{'\n'})
++		window := 8192 + 8*(m.previousBytes+m.currentBytes) + 512*(m.previousLines+m.currentLines)
++		m.window = max(m.window, window)
++		remaining = remaining[count:]
++		if m.currentBytes == responseReadBuffer {
++			m.previousBytes, m.previousLines = m.currentBytes, m.currentLines
++			m.currentBytes, m.currentLines = 0, 0
++		}
++	}
++	if m.body != 0 {
++		return m.setBody(m.body)
++	}
+ 	lines := bytes.Count(data, []byte{'\n'})
+-	if len(data) > (math.MaxInt-8192)/8-m.bytes || lines > (math.MaxInt-8192)/512-m.lines {
++	elements := bytes.Count(data, []byte{','})
++	if len(data) > math.MaxInt-m.bytes || lines > math.MaxInt-m.lines || elements > math.MaxInt-m.elements {
+ 		return execution.ErrExecutionMemory
+ 	}
+ 	m.bytes += len(data)
+ 	m.lines += lines
+-	if m.base > math.MaxInt-8192-m.lines*512 || m.bytes > (math.MaxInt-8192-m.lines*512-m.base)/8 {
++	m.elements += elements
++	if m.base > math.MaxInt-8192 || m.lines > (math.MaxInt-8192-m.base)/512 || m.elements > (math.MaxInt-8192-m.base)/512-m.lines {
+ 		return execution.ErrExecutionMemory
+ 	}
+-	working := m.base + 8192 + m.bytes*8 + m.lines*512
++	entries := m.lines + m.elements
++	if m.bytes > (math.MaxInt-8192-m.base-entries*512)/8 {
++		return execution.ErrExecutionMemory
++	}
++	// fixTrailer allocates a map entry for every comma-separated declaration,
++	// even when one physical Trailer line contains thousands of short names.
++	working := m.base + 8192 + m.bytes*8 + entries*512
+ 	if m.memory != nil {
+ 		return m.memory.SetWorking(max(m.minimum, working))
+ 	}
+ 	return m.io.GrowIO(working)
+ }
+ 
++// Called under mu by both raw connection reads and body buffer reservations.
++func (m *nativeHeaderMemory) setBody(scratch int) error {
++	if scratch < 0 || m.window > math.MaxInt-scratch || m.trailer > (math.MaxInt-scratch-m.window)/2 {
++		return execution.ErrExecutionMemory
++	}
++	// Declared trailers stay in scratch. Undeclared EOF keys can grow that
++	// destination map while Go also holds its temporary MIME map: the wire
++	// window covers new entries/strings; two existing map capacities cover
++	// destination growth without assuming a favorable map load factor.
++	if err := m.records.set(m.records.sources, m.records.frame, scratch+m.window+2*m.trailer); err != nil {
++		return err
++	}
++	m.body = scratch
++	return nil
++}
++
+ func (m *nativeHeaderMemory) finish() {
+ 	m.mu.Lock()
+ 	m.completed = true
+ 	// Detached HTTP transport contexts must not retain the Runtime or input.
+ 	m.io = nil
+ 	m.memory = nil
++	m.records = nil
+ 	m.mu.Unlock()
+ }
+diff --git a/internal/backend/search/read_memory_test.go b/internal/backend/search/read_memory_test.go
+index 2b14b1e..d964258 100644
+--- a/internal/backend/search/read_memory_test.go
++++ b/internal/backend/search/read_memory_test.go
+@@ -38,13 +38,17 @@ const readMemoryIndex = "weir_typed_read_metadata_e141aab65f37417c99ee5376b110e9
+ func TestReadNormalMetadataBudgetBeforeDispatch(t *testing.T) {
+ 	for _, spare := range []int{0, 32 << 10} {
+ 		t.Run(fmt.Sprintf("spare=%d", spare), func(t *testing.T) {
+-			testReadMemoryQualification(t, spare, false)
++			testReadMemoryQualification(t, spare, false, false)
+ 		})
+ 	}
+ }
+ 
+ func TestReadMetadataRealCapacityPreservesFailureCause(t *testing.T) {
+-	testReadMemoryQualification(t, 32<<10, true)
++	testReadMemoryQualification(t, 32<<10, true, false)
++}
++
++func TestReadNormalChunkedMetadataBudgetBeforeDispatch(t *testing.T) {
++	testReadMemoryQualification(t, 0, false, true)
+ }
+ 
+ func TestReadWorkspaceSubsequentGroupReservesRetainedSourcesBeforeIO(t *testing.T) {
+@@ -130,7 +134,7 @@ func prepareReadMemoryPlan(t *testing.T, runtime *store.Runtime, id uint64, key
+ 	return plan
+ }
+ 
+-func testReadMemoryQualification(t *testing.T, spare int, excessiveMetadata bool) {
++func testReadMemoryQualification(t *testing.T, spare int, excessiveMetadata, chunked bool) {
+ 	const natives = 4
+ 	const nativeWorking = 24 << 20
+ 	ctx, cancel := context.WithCancel(t.Context())
+@@ -198,7 +202,11 @@ func testReadMemoryQualification(t *testing.T, spare int, excessiveMetadata bool
+ 				fmt.Fprintf(&reply, `{"_index":%q,"_id":%q,"_version":1,"found":true,"_seq_no":1,"_primary_term":1,"_source":%s}`, readMemoryIndex, id, source)
+ 			}
+ 			reply.WriteString(`]}`)
+-			w.Header().Set("Content-Length", strconv.Itoa(reply.Len()))
++			if chunked {
++				w.(http.Flusher).Flush()
++			} else {
++				w.Header().Set("Content-Length", strconv.Itoa(reply.Len()))
++			}
+ 			_, _ = io.WriteString(w, reply.String())
+ 		default:
+ 			t.Error("unexpected owned mock path", request.URL.Path)
+diff --git a/internal/backend/search/transport.go b/internal/backend/search/transport.go
+index 59d7983..16f74be 100644
+--- a/internal/backend/search/transport.go
++++ b/internal/backend/search/transport.go
+@@ -16,6 +16,7 @@ import (
+ )
+ 
+ const connectionTimeout = 2 * time.Second
++const responseReadBuffer = 4096
+ 
+ var errTransport = errors.New("backend transport failed")
+ var errResponse = errors.New("invalid or excessive backend response")
+@@ -77,8 +78,10 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	_, standardTransport := transport.(*http.Transport)
+ 	var acquiring, connected atomic.Bool
+ 	header := &nativeHeaderMemory{}
++	defer header.finish()
+ 	if memory := searchMemory(ctx); memory != nil {
+ 		header.memory = memory.owner
++		header.records = memory
+ 		header.base = max(memory.base, memory.frame) + memory.sources
+ 		header.minimum = header.base + memory.reply
+ 	}
+@@ -124,7 +127,6 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 		return 0, nil, err
+ 	}
+ 	response, err := client.Do(request)
+-	header.finish()
+ 	if err != nil {
+ 		if errors.Is(err, execution.ErrExecutionMemory) {
+ 			return 0, nil, execution.ErrExecutionMemory
+@@ -161,18 +163,34 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	if call.responseLimit > 0 {
+ 		reader = io.LimitReader(reader, int64(call.responseLimit)+1)
+ 	}
+-	headerBytes := 8192
+-	for name, values := range response.Header {
+-		headerBytes += len(name) + 256 + cap(values)*16
+-		for _, value := range values {
+-			headerBytes += len(value)
+-		}
++	headerBytes, err := headerWorking(response.Header)
++	if err != nil {
++		return response.StatusCode, nil, err
++	}
++	trailerBytes, err := headerWorking(response.Trailer)
++	if err != nil {
++		return response.StatusCode, nil, err
++	}
++	if trailerBytes > math.MaxInt-8192 || headerBytes > math.MaxInt-8192-trailerBytes {
++		return response.StatusCode, nil, execution.ErrExecutionMemory
++	}
++	headerBytes += 8192 + trailerBytes
++	bodyContext := ctx
++	if len(response.TransferEncoding) != 0 {
++		// Keep the same guard and its prefetched wire window through EOF.
++		// Body capacities and trailer parser work share one absolute budget.
++		header.mu.Lock()
++		header.trailer = trailerBytes
++		header.mu.Unlock()
++		bodyContext = request.Context()
++	} else {
++		header.finish()
+ 	}
+ 	length := response.ContentLength
+ 	if call.responseLimit > 0 && length > int64(call.responseLimit)+1 {
+ 		length = int64(call.responseLimit) + 1
+ 	}
+-	raw, err = readResponseBody(ctx, reader, length, headerBytes)
++	raw, err = readResponseBody(bodyContext, reader, length, headerBytes)
+ 	if err == nil && call.responseLimit > 0 && len(raw) > call.responseLimit {
+ 		return response.StatusCode, nil, errResponseWindow
+ 	}
+@@ -194,6 +212,7 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	_ = response.Body.Close()
+ 	response.Header, response.Trailer = nil, nil
+ 	response, reader = nil, nil
++	header.finish()
+ 	if err := reserveSearchScratch(ctx, cap(raw)+jsonDecodeWorking(raw)); err != nil {
+ 		return status, nil, err
+ 	}
+@@ -209,6 +228,23 @@ func (a *Adapter) request(ctx context.Context, call exchange) (status int, raw [
+ 	return status, raw, nil
+ }
+ 
++func headerWorking(header http.Header) (int, error) {
++	working := 0
++	for name, values := range header {
++		if len(name) > math.MaxInt-256-working || cap(values) > (math.MaxInt-256-working-len(name))/16 {
++			return 0, execution.ErrExecutionMemory
++		}
++		working += len(name) + 256 + cap(values)*16
++		for _, value := range values {
++			if len(value) > math.MaxInt-working {
++				return 0, execution.ErrExecutionMemory
++			}
++			working += len(value)
++		}
++	}
++	return working, nil
++}
++
+ // Backend authentication supplies defaults; Native may override end-to-end headers.
+ func (a *Adapter) configureRequest(request *http.Request) {
+ 	// Go 1.27 Transport detaches dial cancellation using WithoutCancel, retaining
+@@ -229,6 +265,7 @@ func newTransport(timeout, idleTimeout time.Duration) *http.Transport {
+ 		Proxy: nil, DialContext: dialer.DialContext, Protocols: protocols,
+ 		DisableCompression: true, MaxConnsPerHost: 0,
+ 		MaxIdleConnsPerHost: math.MaxInt, IdleConnTimeout: idleTimeout,
++		ReadBufferSize:         responseReadBuffer,
+ 		MaxResponseHeaderBytes: math.MaxInt64,
+ 		TLSHandshakeTimeout:    timeout,
+ 	}
+diff --git a/internal/backend/search/trailer_memory_test.go b/internal/backend/search/trailer_memory_test.go
+new file mode 100644
+index 0000000..142ecec
+--- /dev/null
++++ b/internal/backend/search/trailer_memory_test.go
+@@ -0,0 +1,372 @@
++package search
++
++import (
++	"bufio"
++	"bytes"
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"math"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	pb "github.com/batchstream/weir-protocol/api/weir/v1"
++	"github.com/batchstream/weir/internal/execution"
++)
++
++type trailerMemoryStage struct {
++	working, modeled, declared, populated int
++}
++
++type trailerMemoryTransport struct {
++	transport http.RoundTripper
++	owner     *recordMemoryProbe
++	before    chan trailerMemoryStage
++	eof       chan trailerMemoryStage
++	guard     *nativeHeaderMemory
++}
++
++func (t *trailerMemoryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
++	key := nativeHeaderKey{}
++	t.guard, _ = request.Context().Value(key).(*nativeHeaderMemory)
++	response, err := t.transport.RoundTrip(request)
++	if err != nil {
++		return response, err
++	}
++	body := &trailerMemoryBody{ReadCloser: response.Body, response: response, observer: t}
++	response.Body = body
++	return response, nil
++}
++
++type trailerMemoryBody struct {
++	io.ReadCloser
++	response *http.Response
++	observer *trailerMemoryTransport
++	first    sync.Once
++}
++
++func (b *trailerMemoryBody) stage() trailerMemoryStage {
++	owner := b.observer.owner
++	owner.mu.Lock()
++	stage := trailerMemoryStage{working: owner.working, modeled: 8192 + 4096, declared: len(b.response.Trailer)}
++	owner.mu.Unlock()
++	for _, fields := range []http.Header{b.response.Header, b.response.Trailer} {
++		for name, values := range fields {
++			stage.modeled += len(name) + 256 + cap(values)*16
++			for _, value := range values {
++				stage.modeled += len(value)
++			}
++		}
++	}
++	for _, values := range b.response.Trailer {
++		stage.populated += len(values)
++	}
++	return stage
++}
++
++func (b *trailerMemoryBody) Read(raw []byte) (int, error) {
++	b.first.Do(func() { b.observer.before <- b.stage() })
++	n, err := b.ReadCloser.Read(raw)
++	if err == io.EOF {
++		b.observer.eof <- b.stage()
++	}
++	return n, err
++}
++
++func TestTypedTrailersStayBudgetedThroughEOFAndConnectionReuse(t *testing.T) {
++	for _, test := range []struct {
++		name                string
++		declared, populated int
++		cancel              bool
++	}{
++		{name: "single line declaration", declared: 4096, populated: 300},
++		{name: "undeclared EOF", populated: 300},
++		{name: "merge new EOF keys", declared: 32, populated: 300},
++		{name: "cancel before EOF", declared: 4096, cancel: true},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
++			defer cancel()
++			names := make([]string, max(test.declared, test.populated))
++			for i := range names {
++				names[i] = fmt.Sprintf("X-%04x", i)
++			}
++			release := make(chan struct{})
++			remotes := make(chan string, 2)
++			var calls atomic.Int32
++			handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
++				w.Header()["Date"] = nil
++				w.Header().Set("Content-Type", "application/json")
++				if request.URL.Path == "/" {
++					_, _ = io.WriteString(w, `{"version":{"build_flavor":"default"}}`)
++					return
++				}
++				remotes <- request.RemoteAddr
++				if request.URL.Path == "/next" {
++					_, _ = io.WriteString(w, `{}`)
++					return
++				}
++				calls.Add(1)
++				if test.declared != 0 {
++					w.Header().Set("Trailer", strings.Join(names[:test.declared], ", "))
++				}
++				w.(http.Flusher).Flush()
++				select {
++				case <-release:
++				case <-ctx.Done():
++					return
++				}
++				if ctx.Err() != nil {
++					return
++				}
++				_, _ = io.WriteString(w, `{}`)
++				for i, name := range names[:test.populated] {
++					if i < test.declared {
++						w.Header().Set(name, "v")
++					} else {
++						w.Header().Set(http.TrailerPrefix+name, "v")
++					}
++				}
++			})
++			server := httptest.NewServer(handler)
++			defer server.Close()
++			defer cancel()
++			config := Config{Store: "search", URL: server.URL}
++			adapter, err := Open(ctx, config)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer adapter.Close()
++			transport := adapter.client.Transport
++			owner := &recordMemoryProbe{}
++			observer := &trailerMemoryTransport{transport: transport, owner: owner, before: make(chan trailerMemoryStage, 1), eof: make(chan trailerMemoryStage, 1)}
++			adapter.client.Transport = observer
++			memory := &recordMemory{owner: owner, reply: 64 << 10}
++			requestContext := context.WithValue(ctx, recordMemoryContextKey, memory)
++			done := make(chan error, 1)
++			go func() {
++				call := exchange{path: "/probe"}
++				status, raw, err := adapter.request(requestContext, call)
++				if !test.cancel && (status != 200 || string(raw) != `{}` || err != nil) {
++					t.Error("complete trailer response was shortened or lost", status, string(raw), err)
++				}
++				done <- err
++			}()
++			var before trailerMemoryStage
++			select {
++			case before = <-observer.before:
++			case <-ctx.Done():
++				t.Fatal("real response did not reach its body", ctx.Err())
++			}
++			if before.declared != test.declared || before.populated != 0 || before.working < before.modeled {
++				t.Error("declared map or body capacity lost allocation credit", before)
++			}
++			if test.cancel {
++				cancel()
++			}
++			close(release)
++			select {
++			case err := <-done:
++				if test.cancel && err == nil {
++					t.Error("cancelled body completed")
++				}
++			case <-time.After(time.Second):
++				t.Fatal("trailer body did not leave IO after cancellation or EOF")
++			}
++			observer.guard.mu.Lock()
++			detached := observer.guard.completed && observer.guard.records == nil && observer.guard.memory == nil && observer.guard.io == nil
++			observer.guard.mu.Unlock()
++			if calls.Load() != 1 || !detached {
++				t.Fatal("exchange replayed or retained owner/context after release", calls.Load(), detached)
++			}
++			if test.cancel {
++				return
++			}
++			end := <-observer.eof
++			if end.declared != max(test.declared, test.populated) || end.populated != test.populated || end.working < end.modeled {
++				t.Fatal("EOF parser/merged map escaped its shared reservation", end)
++			}
++			oldPeak := owner.peak
++			adapter.client.Transport = transport
++			next := &recordMemoryProbe{limit: 64 << 10}
++			nextMemory := &recordMemory{owner: next, reply: 64 << 10}
++			nextContext := context.WithValue(ctx, recordMemoryContextKey, nextMemory)
++			call := exchange{path: "/next"}
++			status, raw, err := adapter.request(nextContext, call)
++			if status != 200 || string(raw) != `{}` || err != nil || owner.peak != oldPeak || <-remotes != <-remotes {
++				t.Fatal("reused connection retained trailer credits or the previous owner", status, string(raw), err)
++			}
++			t.Logf("declaration=%d populated=%d before=%+v EOF=%+v peak=%d nextPeak=%d", test.declared, test.populated, before, end, oldPeak, next.peak)
++		})
++	}
++}
++
++func TestTypedPrefetchedUndeclaredTrailersAreApprovedBeforeGoParser(t *testing.T) {
++	var wire strings.Builder
++	wire.WriteString("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n")
++	for i := range 300 {
++		fmt.Fprintf(&wire, "X-%04x: v\r\n", i)
++	}
++	wire.WriteString("\r\n")
++	if wire.Len() >= 4096 {
++		t.Fatal("prefetch fixture exceeds the actual bufio read")
++	}
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	owner := &recordMemoryProbe{}
++	memory := &recordMemory{owner: owner, reply: 64 << 10}
++	guard := &nativeHeaderMemory{memory: owner, records: memory}
++	key := nativeHeaderKey{}
++	ctx := context.WithValue(t.Context(), key, guard)
++	connection := &searchConn{Conn: client, header: guard}
++	written := make(chan error, 1)
++	go func() {
++		_, err := io.WriteString(server, wire.String())
++		written <- err
++	}()
++	reader := bufio.NewReader(connection)
++	response, err := http.ReadResponse(reader, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer response.Body.Close()
++	if reader.Buffered() != wire.Len()-len("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n") {
++		t.Fatal("EOF trailer was not already buffered before body setup", reader.Buffered())
++	}
++	raw, err := readResponseBody(ctx, response.Body, -1, 8192)
++	if err != nil || string(raw) != `{}` || len(response.Trailer) != 300 || owner.working < 8192+300*279 {
++		t.Fatal("prefetched undeclared EOF nodes bypassed reservation", len(raw), err, len(response.Trailer), owner.working)
++	}
++	if err := <-written; err != nil {
++		t.Fatal(err)
++	}
++	guard.finish()
++}
++
++func TestTrailerWorkspaceBoundsDirectBodyReadsAndRejectsOverflow(t *testing.T) {
++	owner := &recordMemoryProbe{}
++	memory := &recordMemory{owner: owner, reply: 64 << 10}
++	guard := &nativeHeaderMemory{memory: owner, records: memory}
++	key := nativeHeaderKey{}
++	ctx := context.WithValue(t.Context(), key, guard)
++	if err := guard.read([]byte("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")); err != nil {
++		t.Fatal(err)
++	}
++	if err := reserveSearchScratch(ctx, 8192+4096); err != nil {
++		t.Fatal(err)
++	}
++	declarations := guard.elements
++	body := bytes.Repeat([]byte{','}, 12<<20)
++	allocations := testing.AllocsPerRun(1, func() {
++		if err := guard.read(body); err != nil {
++			t.Fatal(err)
++		}
++	})
++	if allocations != 0 || guard.elements != declarations || guard.window > 8192+8*8192+512*8192 || guard.currentBytes >= 4096 || guard.previousBytes > 4096 {
++		t.Fatal("direct body was copied, accumulated, or treated as trailer declarations", allocations, guard)
++	}
++	guard.trailer = math.MaxInt
++	if err := reserveSearchScratch(ctx, 4096); !errors.Is(err, execution.ErrExecutionMemory) {
++		t.Fatal("trailer growth arithmetic overflow was not rejected", err)
++	}
++	guard.finish()
++}
++
++func TestTrailerWindowCoversCrossBlockFragmentedEOF(t *testing.T) {
++	var trailer strings.Builder
++	for i := range 300 {
++		fmt.Fprintf(&trailer, "X-%04x: v\r\n", i)
++	}
++	trailer.WriteString("\r\n")
++	raw := []byte(trailer.String())
++	for _, prefix := range []int{0, 4000, 4095, 4096, 7000} {
++		owner := &recordMemoryProbe{}
++		memory := &recordMemory{owner: owner, reply: 64 << 10}
++		guard := &nativeHeaderMemory{memory: owner, records: memory}
++		key := nativeHeaderKey{}
++		ctx := context.WithValue(t.Context(), key, guard)
++		if err := reserveSearchScratch(ctx, 8192+4096); err != nil {
++			t.Fatal(err)
++		}
++		if err := guard.read(bytes.Repeat([]byte{'x'}, prefix)); err != nil {
++			t.Fatal(err)
++		}
++		for offset := 0; offset < len(raw); offset += 37 {
++			if err := guard.read(raw[offset:min(len(raw), offset+37)]); err != nil {
++				t.Fatal(err)
++			}
++		}
++		want := 8192 + 8*len(raw) + 512*bytes.Count(raw, []byte{'\n'})
++		if guard.window < want || owner.working < 8192+4096+want {
++			t.Fatal("two-interval window lost prefetched or fragmented EOF bytes", prefix, guard.window, want, owner.working)
++		}
++		guard.finish()
++	}
++}
++
++func TestFinishedOrUnownedBodyGuardPreservesContextMemoryOwner(t *testing.T) {
++	for _, finished := range []bool{false, true} {
++		owner := &recordMemoryProbe{limit: 128 << 10}
++		memory := &recordMemory{owner: owner, reply: 64 << 10}
++		guard := &nativeHeaderMemory{}
++		if finished {
++			guard.finish()
++		}
++		ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
++		key := nativeHeaderKey{}
++		ctx = context.WithValue(ctx, key, guard)
++		if err := reserveSearchScratch(ctx, 128<<10); err != nil || owner.working != 128<<10 {
++			t.Fatal("unowned body guard hid the context's actual owner", finished, err, owner.working)
++		}
++		if err := reserveSearchScratch(ctx, 256<<10); !errors.Is(err, execution.ErrExecutionMemory) {
++			t.Fatal("unowned body guard bypassed the context's capacity failure", finished, err)
++		}
++	}
++}
++
++func TestTrailerCapacityAfterMutationSendRemainsUnknownWithoutReplay(t *testing.T) {
++	var applied atomic.Int32
++	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
++		if request.URL.Path == "/" {
++			_, _ = io.WriteString(w, `{"version":{"build_flavor":"default"}}`)
++			return
++		}
++		applied.Add(1)
++		names := make([]string, 4096)
++		for i := range names {
++			names[i] = fmt.Sprintf("X-%04x", i)
++		}
++		w.Header().Set("Trailer", strings.Join(names, ", "))
++		w.(http.Flusher).Flush()
++		_, _ = io.WriteString(w, bulkAckMemoryReply([]string{"item"}))
++	})
++	server := httptest.NewServer(handler)
++	defer server.Close()
++	config := Config{Store: "search", URL: server.URL}
++	adapter, err := Open(t.Context(), config)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer adapter.Close()
++	work := batchTestPlan(t, adapter, "put", "records/s:item")
++	reply := work.IOReserve + bulkAckWorking(work.Backend.(*plan).id)
++	base := 2*work.Bytes + execution.EntryOverheadBytes
++	owner := &recordMemoryProbe{limit: base + reply}
++	memory := &recordMemory{owner: owner, base: base, reply: reply}
++	ctx := context.WithValue(t.Context(), recordMemoryContextKey, memory)
++	call := exchange{path: "/_bulk", body: []byte("{}\n"), mutation: true}
++	status, raw, err := adapter.request(ctx, call)
++	response := bulkResponse{works: []*execution.Plan{work}, status: status, raw: raw, err: err}
++	result := adapter.bulkResults(ctx, response)[0].GetMutationResult()
++	if !errors.Is(err, execution.ErrExecutionMemory) || raw != nil || applied.Load() != 1 || result.Outcome != pb.MutationOutcome_UNKNOWN || result.GetFailure().GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
++		t.Fatal("post-send trailer capacity changed mutation evidence or replayed", err, applied.Load(), result)
++	}
++}

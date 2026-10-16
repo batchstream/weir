@@ -105,8 +105,12 @@ func TestMixedRecordBatchMergesReadsAndEveryMutation(t *testing.T) {
 		works[i] = batchTestPlan(t, a, action, "records/s:"+ids[i])
 		works[i].ID = uint64(100 + i)
 		if action == "replace" || action == "program" {
-			if works[i].ResultBytes != execution.ResultOverheadBytes || works[i].WorkingBytes < 3*execution.BackendBatchBytes {
-				t.Fatal("mutation result credits or batched pre-read working memory incorrect", works[i].ResultBytes, works[i].WorkingBytes)
+			native := works[i].Backend.(*plan)
+			knownWorking := 2*works[i].Bytes + execution.EntryOverheadBytes
+			wantWorking := knownWorking + bulkAckWorking(native.id)
+			wantIO := (64 << 10) + bulkAckEnvelopeWorking
+			if works[i].ResultBytes != execution.ResultOverheadBytes || works[i].WorkingBytes != wantWorking || works[i].IOReserve != wantIO {
+				t.Fatal("mutation result credits or known input/ACK working memory incorrect", works[i].ResultBytes, works[i].WorkingBytes, wantWorking, works[i].IOReserve, wantIO)
 			}
 		}
 	}

@@ -1,0 +1,80 @@
+package store
+
+import (
+    "sync"
+    "testing"
+
+    pb "github.com/batchstream/weir-protocol/api/weir/v1"
+    "github.com/batchstream/weir/internal/execution"
+    "github.com/batchstream/weir/internal/overload"
+)
+
+func TestReview81IndependentMixedOwnersKeepNativeCountUntilFinalWire(t *testing.T) {
+    memory := testExecutionMemory(768 << 20)
+    typedPlan := plan(1, "typed", true)
+    nativePlan := plan(2, "native", false)
+    nativePlan.Command = nativeCall()
+    typed := make([]*executionLease, 0, 2049)
+    natives := make([]*executionLease, 0, 1024)
+    wires := make([]*WireReservation, 0, 1024)
+    for range 2048 {
+        lease, failure := memory.admit(typedPlan)
+        if failure != nil { t.Fatal("typed admission", failure) }
+        typed = append(typed, lease)
+    }
+    for range 1024 {
+        lease, failure := memory.admit(nativePlan)
+        if failure != nil { t.Fatal("Native admission", failure) }
+        if err := lease.terminal(128); err != nil { t.Fatal(err) }
+        wire, err := lease.reserveWire(execution.MinimumWireBytes)
+        if err != nil { t.Fatal(err) }
+        lease.release()
+        natives = append(natives, lease)
+        wires = append(wires, wire)
+    }
+    before := memory.Snapshot()
+    if before.Count != 3072 || before.CountLimit != 32768 || before.NativeCount != 1024 || before.NativeCountLimit != 1024 || before.WireCount != 1024 || before.WireBytes != 1024*execution.MinimumWireBytes {
+        t.Fatal("mixed live-owner bounds", before)
+    }
+    if lease, failure := memory.admit(nativePlan); lease != nil || failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+        t.Fatal("Ack prematurely returned Native entry while actual wire remains", lease, failure)
+    }
+    extra, failure := memory.admit(typedPlan)
+    if failure != nil { t.Fatal("Native limit incorrectly blocked typed progress", failure) }
+    typed = append(typed, extra)
+    var group sync.WaitGroup
+    start := make(chan struct{})
+    for i, wire := range wires {
+        lease := natives[i]
+        group.Go(func() {
+            <-start
+            lease.release()
+            wire.Release()
+            wire.Release()
+        })
+    }
+    group.Go(func() {
+        <-start
+        for range 100 {
+            sample := overload.Snapshot{RecoveryAllowanceKnown: true}
+            memory.ObserveMemory(sample)
+            sample.Unknown = true
+            memory.ObserveMemory(sample)
+            sample.Unknown = false
+            sample.RecoveryAllowance = 768 << 20
+            memory.ObserveMemory(sample)
+        }
+    })
+    close(start)
+    group.Wait()
+    after := memory.Snapshot()
+    if after.Count != 2049 || after.NativeCount != 0 || after.WireCount != 0 || after.WireBytes != 0 || after.InputUsedBytes != uint64(2049*(typedPlan.Bytes+nativeQueuedWindow)) || after.UsedBytes != after.InputReservedBytes || after.ResidentBytes != after.InputReservedBytes {
+        t.Fatal("other typed owners changed during wire retirement/budget changes", before, after)
+    }
+    for _, lease := range typed { lease.release() }
+    done := memory.Snapshot()
+    if done.Count != 0 || done.NativeCount != 0 || done.WireCount != 0 || done.WireBytes != 0 || done.UsedBytes != 0 || done.ResidentBytes != 0 || done.InputReservedBytes != 0 || done.InputUsedBytes != 0 {
+        t.Fatal("mixed owner cleanup", done)
+    }
+    t.Logf("before=%+v after-wire=%+v final=%+v", before, after, done)
+}

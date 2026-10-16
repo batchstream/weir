@@ -1,0 +1,358 @@
+{
+  "source": "594bca890e0f517794e1175c8ffd46260dde117c",
+  "source_349_hashes_before_after": "clean identical",
+  "binary_sha256": "196c267d506999878086495b9fa74fb65af008a392bdd606bbbe93e9168060fd",
+  "runtime_identities": [
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    },
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    },
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    },
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    },
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    },
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    },
+    {
+      "product": "weir",
+      "version": "local-594bca890e0f517794e1175c8ffd46260dde117c",
+      "revision": "594bca890e0f517794e1175c8ffd46260dde117c",
+      "go": "go1.27.1",
+      "target": "linux/arm64",
+      "state": "clean-commit",
+      "dirty": "false"
+    }
+  ],
+  "raw": "typed-memory-fixed-r4-process.txt",
+  "raw_sha256": "06188c715ef2be1b12b0f8a9df1759c9943e4417773ea907324d20fa4895a7d7",
+  "actual_exit": 0,
+  "CLI_Docker_after_stop_noOOM_exit0_count": 7,
+  "backend_owned0_close_events": 8,
+  "race_reports": 0,
+  "no_overlay_no_retries_no_source_edits": true,
+  "status": "PASS",
+  "scope": "Original unchanged843-line seven-case Linux CLI acceptance; pressure is survival/cancellation coverage, not universal full completion",
+  "command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLITypedMemoryBudget$",
+    "-timeout",
+    "5m",
+    "-v",
+    "./internal/app"
+  ],
+  "subcases": {
+    "original_pressure/512MiB": {
+      "evidence": [
+        {
+          "raw_line": 11,
+          "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=356.321ms within_original_hold=true error=<nil>"
+        },
+        {
+          "raw_line": 12,
+          "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=356.80025ms within_original_hold=true error=<nil>"
+        },
+        {
+          "raw_line": 34,
+          "text": "typed_memory_budget_integration_test.go:101: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=6 complete_RPC_OK=6 capacity_denied=26 caller_deadline=0; caller deadlines are not correctness passes"
+        },
+        {
+          "raw_line": 36,
+          "text": "typed_memory_budget_integration_test.go:101: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=8.709458ms"
+        },
+        {
+          "raw_line": 37,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173600386609000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 41,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "aggregate_pressure_counts": {
+        "received": 32,
+        "payload_validated": 6,
+        "complete_RPC_OK": 6,
+        "capacity_denied": 26,
+        "caller_deadline": 0
+      },
+      "ownership0_elapsed": "8.709458ms",
+      "result": "PASS"
+    },
+    "original_pressure/1024MiB": {
+      "evidence": [
+        {
+          "raw_line": 49,
+          "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=233.113791ms within_original_hold=true error=<nil>"
+        },
+        {
+          "raw_line": 50,
+          "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=233.392666ms within_original_hold=true error=<nil>"
+        },
+        {
+          "raw_line": 72,
+          "text": "typed_memory_budget_integration_test.go:101: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=16 complete_RPC_OK=16 capacity_denied=16 caller_deadline=0; caller deadlines are not correctness passes"
+        },
+        {
+          "raw_line": 74,
+          "text": "typed_memory_budget_integration_test.go:101: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=16.29125ms"
+        },
+        {
+          "raw_line": 75,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173604460742000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 79,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "aggregate_pressure_counts": {
+        "received": 32,
+        "payload_validated": 16,
+        "complete_RPC_OK": 16,
+        "capacity_denied": 16,
+        "caller_deadline": 0
+      },
+      "ownership0_elapsed": "16.29125ms",
+      "result": "PASS"
+    },
+    "no_stall/256MiB": {
+      "evidence": [
+        {
+          "raw_line": 82,
+          "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-large-00 bytes=12582962 sha256=643ad446df048cf1d7ca7fd8431913617682c162cf08e7c7032c654448f37092 elapsed=133.503625ms"
+        },
+        {
+          "raw_line": 83,
+          "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-near16MiB bytes=16777152 sha256=8198972ae1b85be3dcc5421d7c2baca1088c2088100cb2725f64bc29816dffcf elapsed=180.014625ms"
+        },
+        {
+          "raw_line": 84,
+          "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-256-12582912 exact_BSON_bytes=12582912 sha256=5b1771d1ef9f171a9a880c22e5798176cb22ec8c08c8a1e0d69f4b27e6b4132f Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+        },
+        {
+          "raw_line": 85,
+          "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-256-16777152 exact_BSON_bytes=16777152 sha256=b16b146bd020679f6d2a14cb5841a1ec12e4f4c6217d6478a6c1c65ab4743e8f Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+        },
+        {
+          "raw_line": 87,
+          "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=8.908583ms"
+        },
+        {
+          "raw_line": 88,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173609397782000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 92,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "ownership0_elapsed": "8.908583ms",
+      "result": "PASS"
+    },
+    "no_stall/512MiB": {
+      "evidence": [
+        {
+          "raw_line": 95,
+          "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-large-00 bytes=12582962 sha256=643ad446df048cf1d7ca7fd8431913617682c162cf08e7c7032c654448f37092 elapsed=146.562541ms"
+        },
+        {
+          "raw_line": 96,
+          "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-near16MiB bytes=16777152 sha256=8198972ae1b85be3dcc5421d7c2baca1088c2088100cb2725f64bc29816dffcf elapsed=152.840209ms"
+        },
+        {
+          "raw_line": 97,
+          "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-512-12582912 exact_BSON_bytes=12582912 sha256=68352185c5e143f294b7c43abdd55771e9c5c1610cb90403b7b48b5f48bdc5e0 Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+        },
+        {
+          "raw_line": 98,
+          "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-512-16777152 exact_BSON_bytes=16777152 sha256=484c3906d61c324ac4c27ff2f3efcfd01fc6c2720e57a87632b672eaf16e84fd Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+        },
+        {
+          "raw_line": 100,
+          "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=9.203625ms"
+        },
+        {
+          "raw_line": 101,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173611323796000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 105,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "ownership0_elapsed": "9.203625ms",
+      "result": "PASS"
+    },
+    "no_stall/1024MiB": {
+      "evidence": [
+        {
+          "raw_line": 108,
+          "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-large-00 bytes=12582962 sha256=643ad446df048cf1d7ca7fd8431913617682c162cf08e7c7032c654448f37092 elapsed=131.19875ms"
+        },
+        {
+          "raw_line": 109,
+          "text": "typed_memory_budget_integration_test.go:122: no_stall_success id=typed-near16MiB bytes=16777152 sha256=8198972ae1b85be3dcc5421d7c2baca1088c2088100cb2725f64bc29816dffcf elapsed=146.747708ms"
+        },
+        {
+          "raw_line": 110,
+          "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-1024-12582912 exact_BSON_bytes=12582912 sha256=95d1b337eb482b475698dd33c6d9bf134af451cdc74aed3e71194d429e9a6fde Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+        },
+        {
+          "raw_line": 111,
+          "text": "typed_memory_budget_integration_test.go:125: business_success id=sdk-write-1024-16777152 exact_BSON_bytes=16777152 sha256=35d80e694e14213c66f0314b24d49620641f88f44a1e18ab67682daf5a95a1e3 Put_APPLIED=true independent_hash=true SDK_Read_hash=true Delete_APPLIED=true independent_absent=true SDK_Missing=true caller_per_step=5s"
+        },
+        {
+          "raw_line": 113,
+          "text": "typed_memory_budget_integration_test.go:128: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=8.98ms"
+        },
+        {
+          "raw_line": 114,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173613166766000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 118,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "ownership0_elapsed": "8.98ms",
+      "result": "PASS"
+    },
+    "cross_store_typed_native/1024MiB": {
+      "evidence": [
+        {
+          "raw_line": 124,
+          "text": "typed_memory_budget_integration_test.go:314: pressure_health native=false latency=39.653167ms within_original_hold=true error=<nil>"
+        },
+        {
+          "raw_line": 125,
+          "text": "typed_memory_budget_integration_test.go:314: pressure_health native=true latency=43.04ms within_original_hold=true error=<nil>"
+        },
+        {
+          "raw_line": 149,
+          "text": "typed_memory_budget_integration_test.go:135: pressure_survival received=32 sent_terminal_evidence=32 validated_full_documents=12 complete_RPC_OK=12 capacity_denied=12 caller_deadline=8; caller deadlines are not correctness passes"
+        },
+        {
+          "raw_line": 151,
+          "text": "typed_memory_budget_integration_test.go:135: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=17.815125ms"
+        },
+        {
+          "raw_line": 152,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173614892831000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 157,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "aggregate_pressure_counts": {
+        "received": 32,
+        "payload_validated": 12,
+        "complete_RPC_OK": 12,
+        "capacity_denied": 12,
+        "caller_deadline": 8
+      },
+      "ownership0_elapsed": "17.815125ms",
+      "result": "PASS"
+    },
+    "search_no_stall/1024MiB": {
+      "evidence": [
+        {
+          "raw_line": 161,
+          "text": "typed_memory_budget_integration_test.go:138: Search_real_GET_oracle id=large12MiB bytes=12582946 ContentLength=12583064 TransferEncoding=[]; typed unknown-length coverage is a separate controlled backend test"
+        },
+        {
+          "raw_line": 162,
+          "text": "typed_memory_budget_integration_test.go:138: Search_business_success id=large12MiB bytes=12582946 sha256=c61cfa9fdde97c647823b52a71434c91f36e949306c781c8c0738ace6063c8cd Put_APPLIED=true independent_GET_hash=true SDK_Read_hash=true"
+        },
+        {
+          "raw_line": 163,
+          "text": "typed_memory_budget_integration_test.go:138: Search_real_GET_oracle id=manyfields12MiB bytes=12628007 ContentLength=12628130 TransferEncoding=[]; typed unknown-length coverage is a separate controlled backend test"
+        },
+        {
+          "raw_line": 164,
+          "text": "typed_memory_budget_integration_test.go:138: Search_business_success id=manyfields12MiB bytes=12628007 sha256=b173c530b5392f0916fbbf3c9907a51805c11e310e8d1eeb2730c36bf5a179d0 Put_APPLIED=true independent_GET_hash=true SDK_Read_hash=true"
+        },
+        {
+          "raw_line": 166,
+          "text": "typed_memory_budget_integration_test.go:138: final5s all execution/Store/RPC/wire/input ownership0, latch0; elapsed=15.706541ms"
+        },
+        {
+          "raw_line": 167,
+          "text": "typed_memory_budget_integration_test.go:167: independent_Docker_before_cleanup=weir-memory-recovery-23169-1792173620807424000 true false 0 error=<nil>"
+        },
+        {
+          "raw_line": 171,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "ownership0_elapsed": "15.706541ms",
+      "result": "PASS"
+    }
+  },
+  "independent_pre_stop_Docker_noOOM_running_checks": 7,
+  "Mongo_large_RW_Delete_cycles": 6,
+  "Mongo_seeded_legal_Reads": 6,
+  "Search_large_business_cycles": 2,
+  "original_bounds": {
+    "pressure_noRecv_seconds": 3,
+    "common_caller_seconds": 5,
+    "health_caller_seconds": 3,
+    "health_must_finish_in_hold": true,
+    "no_stall_each_step_seconds": 5,
+    "absolute_recovery_seconds": 5
+  },
+  "metadata_limit": "Pressure harness logs aggregate counts only. It does not retain per-index/store/Native mappings of the8 cross-store deadlines. Do not label them business correctness or infer all8 were Native.",
+  "payload_validation_scope": "Every observed full success is ID/len/hash checked by original code; raw has aggregate counts plus named no-stall hashes, not a per-index pressure validation table.",
+  "Search_framing_scope": "Actual independent GET responses had Content-Length, no TransferEncoding; unknown-length coverage is separate controlled backend testing"
+}

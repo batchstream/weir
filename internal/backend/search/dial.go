@@ -139,17 +139,21 @@ func (d *connectionDialer) close() {
 
 type searchConn struct {
 	net.Conn
-	raw    net.Conn
-	owner  *connectionDialer
-	header *nativeHeaderMemory
-	once   sync.Once
-	err    error
+	raw      net.Conn
+	owner    *connectionDialer
+	header   *nativeHeaderMemory
+	headerMu sync.Mutex
+	once     sync.Once
+	err      error
 }
 
 func (c *searchConn) Read(data []byte) (int, error) {
 	n, err := c.Conn.Read(data)
-	if n > 0 && c.header != nil {
-		if budgetErr := c.header.read(data[:n]); budgetErr != nil {
+	c.headerMu.Lock()
+	header := c.header
+	c.headerMu.Unlock()
+	if n > 0 && header != nil {
+		if budgetErr := header.read(data[:n]); budgetErr != nil {
 			return 0, budgetErr
 		}
 	}
@@ -166,4 +170,10 @@ func (c *searchConn) Close() error {
 		c.owner.mu.Unlock()
 	})
 	return c.err
+}
+
+func (c *searchConn) setHeader(header *nativeHeaderMemory) {
+	c.headerMu.Lock()
+	c.header = header
+	c.headerMu.Unlock()
 }

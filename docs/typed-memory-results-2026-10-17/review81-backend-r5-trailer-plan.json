@@ -1,0 +1,23 @@
+{
+  "state": "INERT_NOT_EXECUTED",
+  "head": "a1fd658a571362f46e70a8c1172507faceca812e",
+  "purpose": "Real Go HTTP parser parses4096 declared trailers, with body gated until observer confirms Trailer map is live; EOF populates300 valid trailers below4KiB. Capture owner history before body and afterEOF. No DB, CLI, modules, source edits or production.",
+  "probe": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-backend-r5-trailer-probe_test.go.txt",
+  "overlay": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-backend-r5-trailer-overlay.json",
+  "planned_command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/review81-backend-r5-trailer-overlay.json",
+    "-run",
+    "^TestReview81DeclaredTrailerBackingStaysChargedThroughBodyEOF$",
+    "-timeout",
+    "30s",
+    "-v",
+    "./internal/backend/search"
+  ],
+  "execution_condition": "Wait for root to release r5 CPU/DB qualification window. Stop on the first failing probe; no retries."
+}

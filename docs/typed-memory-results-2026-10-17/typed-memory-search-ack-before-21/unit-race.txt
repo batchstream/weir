@@ -1,0 +1,9 @@
+=== RUN   TestBulkNormalAcknowledgementReservedBeforeMutationIO
+    bulk_ack_memory_test.go:219: initial barrier B=135268088 Q=33554432 nativeWorking=100663296 nativePublicationGrowth=518140 typedInitial=270076 headroom=262144 ACKbytes=7166 ACKdecode=1111034 sourceDecode=13312 snapshot={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:0}
+    bulk_ack_memory_test.go:280: normal ACK result: bulkCalls=1 backendApplied=42 SDKapplied=0 SDKunknownCapacity=42 rejections=1 beforeReply=&{BudgetBytes:135268088 UsedBytes:135071480 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:202708 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:46 CountLimit:32768 Starting:5 Settled:0 Waiting:41 Terminal:0 Borrowed:0 Known:true BudgetRejections:0} after={BudgetBytes:135268088 UsedBytes:134735868 IOReserveBytes:48401920 ResidentBytes:33554432 InputReservedBytes:33554432 InputUsedBytes:25132 WireBytes:0 WireCount:0 NativeCount:4 NativeCountLimit:1024 Count:4 CountLimit:32768 Starting:4 Settled:0 Waiting:0 Terminal:0 Borrowed:0 Known:true BudgetRejections:1}
+    bulk_ack_memory_test.go:285: normal acknowledgement was not promised before mutation IO: want 42 APPLIED and no hard capacity denial; got applied=0 UNKNOWN_RESOURCE_EXHAUSTED=42 ledgerRejections=1
+2026/10/17 01:14:40 INFO backend_connections_closed backend=search store=search owned=0 peak=5 acquired=5 released=5
+--- FAIL: TestBulkNormalAcknowledgementReservedBeforeMutationIO (0.03s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/backend/search	0.991s
+FAIL

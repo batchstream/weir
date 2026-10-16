@@ -1,0 +1,5 @@
+=== RUN   TestCLINativeSmallBurstPreservesAdmission
+    native_burst_integration_test.go:53: requires explicit clean Linux CLI Native burst qualification
+--- SKIP: TestCLINativeSmallBurstPreservesAdmission (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/app	2.044s

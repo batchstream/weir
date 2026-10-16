@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+X-elastic-product: Elasticsearch
+content-type: application/json
+content-length: 116
+
+{"acknowledged":true,"shards_acknowledged":true,"index":"weir_typed_read_metadata_e141aab65f37417c99ee5376b110e94b"}

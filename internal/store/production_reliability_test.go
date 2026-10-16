@@ -107,7 +107,7 @@ func TestSlowNativeConsumersUseBoundedOutputCapacity(t *testing.T) {
 		t.Fatal("bounded Native output consumed every backend slot", event, err)
 	}
 	ticket.Ack()
-	if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Paused != limits.MaxInFlight || snapshot.Pending != 0 || runtime.nativeMemory.Snapshot().UsedBytes > runtime.nativeMemory.Snapshot().BudgetBytes {
+	if snapshot := runtime.Snapshot(); snapshot.Active != 0 || snapshot.Paused != limits.MaxInFlight || snapshot.Pending != 0 || runtime.memory.Snapshot().UsedBytes > runtime.memory.Snapshot().BudgetBytes {
 		t.Fatal("stalled Native output escaped its separate bounds", snapshot)
 	}
 	for _, session := range sessions {

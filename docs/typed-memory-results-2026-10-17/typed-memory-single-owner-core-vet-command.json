@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "vet",
+    "./internal/store",
+    "./internal/server",
+    "./internal/execution",
+    "./internal/app",
+    "./cmd/weir"
+  ],
+  "working_directory": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "finished": "2026-10-16T16:58:14.109891+00:00",
+  "exit_code": 0,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-vet.txt",
+  "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

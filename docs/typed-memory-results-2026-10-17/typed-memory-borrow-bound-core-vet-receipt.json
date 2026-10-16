@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "vet",
+    "./internal/store",
+    "./internal/server",
+    "./internal/execution",
+    "./internal/app",
+    "./cmd/weir"
+  ],
+  "workdir": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "head": "30a3d01790b7dacbd495b30f864de8b8b79e56dc",
+  "environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off"
+  },
+  "exit": 0,
+  "elapsed_seconds": 0.9557340145111084,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-borrow-bound-core-vet.txt",
+  "raw_sha256": "2a3954627795f50423fd88b74045fed1aa6fcc709aa93aa4113bc4d4ac5d9a30"
+}

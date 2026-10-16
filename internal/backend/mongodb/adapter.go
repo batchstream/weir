@@ -53,11 +53,12 @@ type Adapter struct {
 }
 
 type plan struct {
-	target   namespace
-	id       any
-	document bson.Raw
-	action   string
-	program  *luaengine.Program
+	target    namespace
+	id        any
+	document  bson.Raw
+	action    string
+	program   *luaengine.Program
+	validated bool
 }
 
 func (a *Adapter) options() backend.Options {
@@ -219,7 +220,6 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 	p := &execution.Plan{Command: op, Key: record.Key(), Backend: native, ResultBytes: execution.ResultOverheadBytes}
 	if r := op.GetRead(); r != nil {
 		native.action = "read"
-		p.ResultBytes += a.documentBytes()
 	} else {
 		// Both visibility choices use primary reads and majority-acknowledged
 		// writes. MongoDB has no separate search refresh stage to wait for.
@@ -242,24 +242,15 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 				if program.Input != nil && program.Input.ContentType != "application/bson" {
 					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "MongoDB Lua input must use BSON")
 				}
-				input := value.Value{Kind: value.Missing}
-				if program.Input != nil {
-					input, err = Decode(ctx, program.Input.Data)
-					if err != nil {
-						if ctx.Err() != nil {
-							return nil, protocol.ContextFailure(ctx)
-						}
-						return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON transform input")
-					}
-				}
+
 				native.action = "program"
 				settings := a.options().Lua
-				luaProgram := &luaengine.Program{Source: string(program.Source), Input: input, Limits: &settings}
+				luaProgram := &luaengine.Program{Limits: &settings}
 				native.program = luaProgram
 			} else {
 				expression := v.AtomicTransform.GetBackendExpression()
-				if f := a.prepareExpression(ctx, expression); f != nil {
-					return nil, f
+				if expression.ContentType != ExpressionContentType {
+					return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "unsupported MongoDB expression profile")
 				}
 				native.action = "expression"
 				native.document = expression.Data
@@ -269,16 +260,8 @@ func (a *Adapter) prepareRecord(ctx context.Context, record *execution.Record) (
 			if d.ContentType != "application/bson" {
 				return nil, protocol.Fail(pb.FailureCode_UNSUPPORTED, "only raw BSON is supported")
 			}
-			doc, err := Decode(ctx, d.Data)
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil, protocol.ContextFailure(ctx)
-				}
+			if !validBSONDocument(d.Data, 0) {
 				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid BSON document")
-			}
-			got, err := doc.Lookup("_id")
-			if err != nil || len(doc.Fields) == 0 || doc.Fields[0].Name != "_id" || !equalID(got, id) {
-				return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "explicit first _id must match resource")
 			}
 			native.document = d.Data
 		}

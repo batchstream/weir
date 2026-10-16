@@ -208,10 +208,8 @@ func TestBusyBackendKeepsRequestsQueuedAndFormsFullBatches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("drain did not execute accepted waiting work")
 	}
-	select {
-	case <-changed:
-	default:
-		t.Fatal("dispatch did not wake capacity waiters")
+	if changed != nil {
+		t.Fatal("full input queue created an unowned admission waiter")
 	}
 	close(adapter.finish)
 	for _, ticket := range tickets {

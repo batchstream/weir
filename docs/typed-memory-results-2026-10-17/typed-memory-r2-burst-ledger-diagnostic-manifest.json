@@ -1,0 +1,47 @@
+{
+  "created": "2026-10-16T17:06:17.104875+00:00",
+  "scope": "DIAGNOSTIC ONLY. Complete ledger copied directly from clean21; no compilation/test/DB run; production file unchanged; parent combines Search transport diagnostic overlay before build.",
+  "base_commit": "21d92ef4c9daf5dc97437b095ab3c6cdba6566ef",
+  "production_source": "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/store/execution_memory.go",
+  "production_source_sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+  "committed_source_exact_match": true,
+  "source_copy": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-r2-burst-before-21-ledger.go.txt",
+  "source_copy_sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+  "diagnostic_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-r2-burst-diagnostic-ledger.go",
+  "diagnostic_source_sha256": "56c2ce1923499d8364ff201c9b1322b36cc8dd91e2b4d85bf11f2e1e822380eb",
+  "overlay": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-r2-burst-ledger-overlay.json",
+  "overlay_sha256": "5972731b532e92d33802b551d2da76f638f0bce02e3a08dfa1f83c6d74e9d237",
+  "replacement_map": {
+    "Replace": {
+      "/Users/liran/.codex/worktrees/native-burst-admission/weir/internal/store/execution_memory.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-r2-burst-diagnostic-ledger.go"
+    }
+  },
+  "stages": [
+    "unknown",
+    "admit",
+    "start",
+    "grow",
+    "set_working_invalid",
+    "set_working",
+    "result_invalid",
+    "result",
+    "wire_state",
+    "wire",
+    "read",
+    "settle",
+    "terminal"
+  ],
+  "logging_contract": [
+    "All memory/unknown rejection counter sites are instrumented once under the existing mutex. Policy, counters, timeouts, wake logic, lease ownership and thresholds are unchanged.",
+    "Non-counted invalid SetWorking/ReserveResult and wire-state hard errors are also logged; invalid negative-input branches briefly acquire only the same ledger mutex for a consistent diagnostic snapshot.",
+    "ReserveWire admission aliases are already recorded by admit/unknown and are not double-logged as a second independent rejection.",
+    "SetWorking old_working/new_working and need are exact locked values; new_working represents requested at other stages and is interpreted by stage.",
+    "Global native/typed preparing Working, total result/window/extra, actual wire bytes/count and resident ownership are recorded to distinguish initial conservative reservations from retained pressure.",
+    "Callers are bounded to 12 program counters, symbolized only as function@basename:line; no stack arguments, request IDs, resource paths, payloads or credentials are read/logged.",
+    "Only hard rejection paths log; converging waits and successful reserve/shrink paths do not log.",
+    "Any binary built with this overlay is diagnostic-only even if embedded VCS metadata still reports clean."
+  ],
+  "production_after_sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+  "not_compiled": true,
+  "not_run": true
+}

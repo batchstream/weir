@@ -1,0 +1,9 @@
+=== RUN   TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise
+    execution_memory_single_owner_test.go:59: one legal SDK-shaped Put was excluded by unused queue capacity {113544396 32571238 48401920 32571238 32571238 16780464 0 0 0 1024 1 32768 0 0 1 0 0 true 0} {113544396 32571238 48401920 32571238 32571238 16780464 0 0 0 1024 1 32768 0 0 1 0 0 true 1} 81557342
+--- FAIL: TestExecutionMemorySingleOwnerLargePutReclaimsOnlyUnusedInputPromise (0.06s)
+=== RUN   TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage
+    execution_memory_single_owner_test.go:124: first result was denied solely by unused input promise execution working memory capacity exhausted {113544396 80574244 48401920 32571238 32571238 3296 0 0 0 1024 1 32768 1 0 0 0 0 true 0} {113544396 80574244 48401920 32571238 32571238 3296 0 0 0 1024 1 32768 1 0 0 0 0 true 1}
+--- FAIL: TestExecutionMemorySingleOwnerFirstResultReclaimsExactDiagnosticShortage (0.00s)
+FAIL
+FAIL	github.com/batchstream/weir/internal/store	0.729s
+FAIL

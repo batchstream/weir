@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-count=1",
+    "-v",
+    "-overlay=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-search-ack-before-21/overlay.json",
+    "-run",
+    "^TestBulkNormalAcknowledgementReservedBeforeMutationIO$",
+    "./internal/backend/search"
+  ],
+  "test_sha256": "a755f76253422607f8f38a2f713cc1ea5e9a6fa0214ad3d22ed741733e3b5438"
+}

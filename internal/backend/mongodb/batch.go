@@ -18,18 +18,41 @@ import (
 // budget controls retained framing, and does not reject the whole batch.
 func (a *Adapter) executeRecords(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
+	memory := &recordMemory{base: recordWorking(plans)}
+	if len(plans) != 0 {
+		memory.owner = plans[0].Memory
+	}
+	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
+	active := make([]*execution.Plan, 0, len(plans))
+	positions := make([]int, 0, len(plans))
+	for i, work := range plans {
+		if failure := a.validateRecord(ctx, work); failure != nil {
+			results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			continue
+		}
+		active = append(active, work)
+		positions = append(positions, i)
+	}
+	if err := reserveRecordWorking(ctx, active, 0); err != nil {
+		for i, work := range active {
+			results[positions[i]] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+		}
+		return results
+	}
 	limit := a.options().ExchangeBytes
-	for start := 0; start < len(plans); {
+	for start := 0; start < len(active); {
 		end, bytes := start, 0
-		for end < len(plans) {
-			charge := proto.Size(plans[end].Command) + execution.EntryOverheadBytes
+		for end < len(active) {
+			charge := proto.Size(active[end].Command) + execution.EntryOverheadBytes
 			if end > start && charge > limit-bytes {
 				break
 			}
 			bytes += charge
 			end++
 		}
-		copy(results[start:end], a.executeRecordChunk(ctx, plans[start:end]))
+		for i, event := range a.executeRecordChunk(ctx, active[start:end]) {
+			results[positions[start+i]] = event
+		}
 		start = end
 	}
 	return results
@@ -182,13 +205,18 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 	stopped := false
 	if valid {
 		state.session = session
-		defer a.closeRecordCursor(state)
+		defer a.closeRecordCursor(ctx, state)
 		ctx = mongo.NewSessionContext(ctx, session)
 		for page := 0; page < len(ids); page++ {
 			attempt := ctx
 			var release context.CancelFunc
 			if page != 0 {
 				attempt, release = nativeAttemptContext(ctx)
+			}
+			if budgetErr := reserveRecordWorking(ctx, plans, 0); budgetErr != nil {
+				err = budgetErr
+				valid = false
+				break
 			}
 			raw, readErr := a.client.Database(target.database).RunCommand(attempt, command).Raw()
 			if release != nil {
@@ -214,6 +242,18 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				valid = false
 				break
 			}
+			if state.cursorKnown && state.cursor == 0 {
+				// The uncompressed driver reply is now one retained backing
+				// allocation. cap includes trailing bytes; 36 also covers the
+				// wire prefix before the returned OP_MSG or OP_REPLY document.
+				// Known frame and parser metadata charges remain in the base.
+				extra := cap(raw) + 36 - a.nativeReplyBytes()
+				if budgetErr := reserveRecordWorking(ctx, plans, extra); budgetErr != nil {
+					err = budgetErr
+					valid = false
+					break
+				}
+			}
 			for _, raw := range documents {
 				id, validID := rawRecordID(raw.Lookup("_id"))
 				matches, found := positions[id]
@@ -229,8 +269,16 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				var document *pb.ReadResult
 				for _, i := range matches {
 					// Duplicate reads share immutable bytes; every RPC reserves its own output.
+					if plans[i].Memory != nil {
+						if err := plans[i].Memory.ReserveResult(len(raw) + execution.ResultOverheadBytes); err != nil {
+							results[i] = execution.FailedEvent(plans[i].Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+							continue
+						}
+					}
 					if document == nil {
-						d := &pb.Document{ContentType: "application/bson", Data: append([]byte(nil), raw...)}
+						data := make([]byte, len(raw))
+						copy(data, raw)
+						d := &pb.Document{ContentType: "application/bson", Data: data}
 						document = protocol.ReadDocument(d)
 					}
 					value := &pb.Event_ReadResult{ReadResult: document}
@@ -239,6 +287,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				}
 				received++
 			}
+			clear(documents)
+			documents = nil
+			clear(fields)
+			fields = nil
+			raw = nil
 			if !valid || state.cursor == 0 {
 				break
 			}
@@ -274,6 +327,8 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 			failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "point read acknowledgement unavailable or incomplete")
 			if stopped && p.Context != nil && p.Context.Err() != nil {
 				failure = protocol.ContextFailure(p.Context)
+			} else if errors.Is(err, execution.ErrExecutionMemory) {
+				failure = recordMemoryFailure()
 			} else if err != nil {
 				failure = backendFailure(ctx, err)
 			}
@@ -303,6 +358,15 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 
 func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
+	if err := reserveRecordWorking(ctx, plans, 0); err != nil {
+		for i, work := range plans {
+			results[i] = unstarted(ctx, work)
+			if results[i] == nil {
+				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+			}
+		}
+		return results
+	}
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
@@ -386,7 +450,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	state.cursor.session = session
 	state.cursor.items = len(active)
 	state.cursor.target = namespace{database: "admin", collection: "$cmd.bulkWrite"}
-	defer a.closeRecordCursor(&state.cursor)
+	defer a.closeRecordCursor(ctx, &state.cursor)
 	ctx = mongo.NewSessionContext(ctx, session)
 	raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
 	if err != nil && len(raw) == 0 {
@@ -458,8 +522,8 @@ type writeBatch struct {
 	authorizationRejected bool
 }
 
-func (a *Adapter) closeRecordCursor(state *recordCursor) {
-	ctx, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
+func (a *Adapter) closeRecordCursor(ctx context.Context, state *recordCursor) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.options().CleanupTimeout)
 	defer cancel()
 	_ = a.closeRecordCursorState(ctx, state)
 }

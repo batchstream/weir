@@ -1,0 +1,375 @@
+["git", "rev-parse", "HEAD"]
+actual_exit=0
+30a3d01790b7dacbd495b30f864de8b8b79e56dc
+
+["git", "status", "--porcelain"]
+actual_exit=0
+
+["git", "diff", "--exit-code", "007bc59ed4c6de59a92e05a667da9b6a8efd6f64", "HEAD", "--", "*.go", "go.mod", "go.sum"]
+actual_exit=0
+
+["git", "diff", "--check", "8c1b1b3bd1bd1519079f69a163c1772d171791e8", "HEAD"]
+actual_exit=2
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:6: space before tab in indent.
++ 	stopped := false
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:7: space before tab in indent.
++ 	if valid {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:8: space before tab in indent.
++ 		state.session = session
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:11: space before tab in indent.
++ 		ctx = mongo.NewSessionContext(ctx, session)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:12: space before tab in indent.
++ 		for page := 0; page < len(ids); page++ {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:13: space before tab in indent.
++ 			attempt := ctx
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:15: space before tab in indent.
++ 				valid = false
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:16: space before tab in indent.
++ 				break
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:17: space before tab in indent.
++ 			}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:30: space before tab in indent.
++ 			for _, raw := range documents {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:31: space before tab in indent.
++ 				id, validID := rawRecordID(raw.Lookup("_id"))
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:32: space before tab in indent.
++ 				matches, found := positions[id]
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:34: space before tab in indent.
++ 				}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:35: space before tab in indent.
++ 				received++
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:36: space before tab in indent.
++ 			}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:42: space before tab in indent.
++ 			if !valid || state.cursor == 0 {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:43: space before tab in indent.
++ 				break
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:44: space before tab in indent.
++ 			}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:46: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:48: space before tab in indent.
++ 	results := make([]*pb.Event, len(plans))
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:58: space before tab in indent.
++ 	active := make([]*execution.Plan, 0, len(plans))
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:59: space before tab in indent.
++ 	positions := make([]int, 0, len(plans))
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:60: space before tab in indent.
++ 	ops := make(bson.A, 0, len(plans))
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:62: space before tab in indent.
++ 	state.cursor.session = session
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:63: space before tab in indent.
++ 	state.cursor.items = len(active)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:64: space before tab in indent.
++ 	state.cursor.target = namespace{database: "admin", collection: "$cmd.bulkWrite"}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:67: space before tab in indent.
++ 	ctx = mongo.NewSessionContext(ctx, session)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:68: space before tab in indent.
++ 	raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:69: space before tab in indent.
++ 	if err != nil && len(raw) == 0 {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:71: space before tab in indent.
++ 	authorizationRejected bool
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:73: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:78: space before tab in indent.
++ 	defer cancel()
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:79: space before tab in indent.
++ 	_ = a.closeRecordCursorState(ctx, state)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:86: space before tab in indent.
++ 	if n.session == nil {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:87: space before tab in indent.
++ 		return nil
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:88: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:95: space before tab in indent.
++ 	if !n.cursorKnown {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:96: space before tab in indent.
++ 		// A lost find reply can hide a newly allocated cursor. The explicit
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:97: space before tab in indent.
++ 		// session is still known and exclusively held, so target only that
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:99: space before tab in indent.
++ 		}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:100: space before tab in indent.
++ 		return nil
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:101: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:105: space before tab in indent.
++ 	command := bson.D{{Key: "killCursors", Value: n.target.collection}, {Key: "cursors", Value: bson.A{n.cursor}}}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:106: space before tab in indent.
++ 	ctx = mongo.NewSessionContext(ctx, n.session)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:107: space before tab in indent.
++ 	raw, err := a.client.Database(n.target.database).RunCommand(ctx, command).Raw()
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:113: space before tab in indent.
++ 	"go.mongodb.org/mongo-driver/v2/event"
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:115: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:122: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:124: space before tab in indent.
++ 	if p.limit != 0 && bytes > p.limit {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:125: space before tab in indent.
++ 		return execution.ErrExecutionMemory
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:126: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:131: space before tab in indent.
++ 	p.peak = max(p.peak, bytes)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:133: space before tab in indent.
++ 	return nil
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:136: space before tab in indent.
++ 	p.calls++
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:138: space before tab in indent.
++ 	if p.resultLimit != 0 && bytes > p.resultLimit {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:139: space before tab in indent.
++ 		return execution.ErrExecutionMemory
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:140: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:142: space before tab in indent.
++ 	return nil
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:144: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:174: space before tab in indent.
++ 	documents := make(bson.A, 128)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:175: space before tab in indent.
++ 	for i := range documents {
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:182: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:187: space before tab in indent.
++ 	filter := bson.D{{Key: "name", Value: target.collection}}
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:188: space before tab in indent.
++ 	specs, err := a.client.Database(target.database).ListCollectionSpecifications(ctx, filter)
+docs/typed-memory-results-2026-10-17/typed-memory-mongo-phase-final.diff:189: space before tab in indent.
++ 	if err != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:6: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:7: space before tab in indent.
++ 	memory := &recordMemory{}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:8: space before tab in indent.
++ 	for _, work := range works {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:16: space before tab in indent.
++ 		if memory.owner == nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:17: space before tab in indent.
++ 			memory.owner = work.Memory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:18: space before tab in indent.
++ 		}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:19: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:28: space before tab in indent.
++ 	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:29: space before tab in indent.
++ 	works = append([]*execution.Plan(nil), works...)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:30: space before tab in indent.
++ 	readOnly := true
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:36: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:38: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:65: space before tab in indent.
++ 	owner   execution.Memory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:66: space before tab in indent.
++ 	base    int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:68: space before tab in indent.
++ 	sources int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:69: space before tab in indent.
++ 	frame   int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:70: space before tab in indent.
++ 	scratch int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:72: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:80: space before tab in indent.
++ 		return execution.ErrExecutionMemory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:81: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:82: space before tab in indent.
++ 	if m.owner != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:88: space before tab in indent.
++ 	io        execution.NativeIO
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:89: space before tab in indent.
++ 	memory    execution.Memory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:90: space before tab in indent.
++ 	base      int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:92: space before tab in indent.
++ 	bytes     int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:93: space before tab in indent.
++ 	lines     int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:94: space before tab in indent.
++ 	completed bool
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:96: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:97: space before tab in indent.
++ 	working := m.base + 8192 + m.bytes*8 + m.lines*512
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:98: space before tab in indent.
++ 	if m.memory != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:101: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:102: space before tab in indent.
++ 	return m.io.GrowIO(working)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:109: space before tab in indent.
++ 	work.IOReserve = 64 << 10
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:110: space before tab in indent.
++ 	work.WorkingBytes = 2*record.Bytes() + execution.EntryOverheadBytes
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:111: space before tab in indent.
++ 	native := work.Backend.(*plan)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:118: space before tab in indent.
++ 	work.BatchKey = "records"
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:119: space before tab in indent.
++ 	if native.waitUntilVisible {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:120: space before tab in indent.
++ 		work.BatchKey += "|visible"
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:126: space before tab in indent.
++ 	if memory := searchMemory(ctx); memory != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:127: space before tab in indent.
++ 		header.memory = memory.owner
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:128: space before tab in indent.
++ 		header.base = max(memory.base, memory.frame) + memory.sources
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:130: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:131: space before tab in indent.
++ 	trace := &httptrace.ClientTrace{
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-focused-final/search-ack.patch:132: space before tab in indent.
++ 		GetConn: func(string) { acquiring.Store(true) },
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:6: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:7: space before tab in indent.
++ 	memory := &recordMemory{}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:8: space before tab in indent.
++ 	for _, work := range works {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:16: space before tab in indent.
++ 		if memory.owner == nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:17: space before tab in indent.
++ 			memory.owner = work.Memory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:18: space before tab in indent.
++ 		}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:19: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:28: space before tab in indent.
++ 	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:29: space before tab in indent.
++ 	works = append([]*execution.Plan(nil), works...)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:30: space before tab in indent.
++ 	readOnly := true
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:36: space before tab in indent.
++ 		works[i] = batchTestPlan(t, a, action, "records/s:"+ids[i])
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:37: space before tab in indent.
++ 		works[i].ID = uint64(100 + i)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:38: space before tab in indent.
++ 		if action == "replace" || action == "program" {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:47: space before tab in indent.
++ 			}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:48: space before tab in indent.
++ 		}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:49: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:55: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:57: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:84: space before tab in indent.
++ 	owner   execution.Memory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:85: space before tab in indent.
++ 	base    int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:87: space before tab in indent.
++ 	sources int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:88: space before tab in indent.
++ 	frame   int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:89: space before tab in indent.
++ 	scratch int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:91: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:99: space before tab in indent.
++ 		return execution.ErrExecutionMemory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:100: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:101: space before tab in indent.
++ 	if m.owner != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:107: space before tab in indent.
++ 	io        execution.NativeIO
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:108: space before tab in indent.
++ 	memory    execution.Memory
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:109: space before tab in indent.
++ 	base      int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:111: space before tab in indent.
++ 	bytes     int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:112: space before tab in indent.
++ 	lines     int
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:113: space before tab in indent.
++ 	completed bool
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:115: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:116: space before tab in indent.
++ 	working := m.base + 8192 + m.bytes*8 + m.lines*512
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:117: space before tab in indent.
++ 	if m.memory != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:120: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:121: space before tab in indent.
++ 	return m.io.GrowIO(working)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:128: space before tab in indent.
++ 				}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:129: space before tab in indent.
++ 			})
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:130: space before tab in indent.
++ 			work := batchTestPlan(t, adapter, action, "records/s:record")
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:139: space before tab in indent.
++ 			}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:140: space before tab in indent.
++ 			record, err := execution.NewRecord("search", 1, work.Command)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:141: space before tab in indent.
++ 			if err != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:147: space before tab in indent.
++ 	work.IOReserve = 64 << 10
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:148: space before tab in indent.
++ 	work.WorkingBytes = 2*record.Bytes() + execution.EntryOverheadBytes
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:149: space before tab in indent.
++ 	native := work.Backend.(*plan)
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:156: space before tab in indent.
++ 	work.BatchKey = "records"
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:157: space before tab in indent.
++ 	if native.waitUntilVisible {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:158: space before tab in indent.
++ 		work.BatchKey += "|visible"
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:164: space before tab in indent.
++ 	if memory := searchMemory(ctx); memory != nil {
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:165: space before tab in indent.
++ 		header.memory = memory.owner
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:166: space before tab in indent.
++ 		header.base = max(memory.base, memory.frame) + memory.sources
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:168: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:169: space before tab in indent.
++ 	trace := &httptrace.ClientTrace{
+docs/typed-memory-results-2026-10-17/typed-memory-search-ack-full-final.patch:170: space before tab in indent.
++ 		GetConn: func(string) { acquiring.Store(true) },
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:6: space before tab in indent.
++ 	}
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:8: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:37: space before tab in indent.
++ 	m.mu.Lock()
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:38: space before tab in indent.
++ 	defer m.mu.Unlock()
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:40: space before tab in indent.
++ 	m.reserve = max(m.reserve, ioReserve)
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:41: space before tab in indent.
++ 	m.resizeInputLocked()
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:42: space before tab in indent.
++ 	additional := uint64(working) + uint64(l.publication-l.window)
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:46: space before tab in indent.
++ 	if m.used <= m.budget && additional <= m.budget-m.used {
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:47: space before tab in indent.
++ 		l.working = working
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:48: space before tab in indent.
++ 		l.window = l.publication
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:50: space before tab in indent.
++ 	// slow output must not consume the workspace protected for fresh IO.
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:51: space before tab in indent.
++ 	result := max(0, bytes-2*execution.ResultOverheadBytes)
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:52: space before tab in indent.
++ 	window := max(nativeQueuedWindow, max(bytes, execution.MinimumWireBytes)+2*execution.ResultOverheadBytes)
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:64: space before tab in indent.
++ 	return l.resizeResultLocked(result, window)
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:66: trailing whitespace.
++ 
+docs/typed-memory-results-2026-10-17/typed-memory-single-owner-runtime.diff:66: new blank line at EOF.
+
+Identity-script first actual_exit=1 because unrestricted git diff --check includes raw preserved patch context. All source identity comparisons are true.

@@ -1,0 +1,5 @@
+# github.com/batchstream/weir/internal/store
+internal/store/runtime.go:435:20: t.executionLease.markTerminal undefined (type *executionLease has no field or method markTerminal)
+FAIL	github.com/batchstream/weir/internal/backend/mongodb [build failed]
+FAIL	github.com/batchstream/weir/internal/backend/search [build failed]
+FAIL

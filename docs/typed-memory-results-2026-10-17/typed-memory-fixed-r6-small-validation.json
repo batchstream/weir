@@ -1,0 +1,140 @@
+{
+  "status": "PASS",
+  "scope": "Real Mongo valid/early-invalid and Search small-reply in-process server regressions; not Linux CLI execution",
+  "raw": "typed-memory-fixed-r6-small.txt",
+  "raw_sha256": "83f1bf95ef2eae3e143db3e6c7f24c8e058fb6e0c6da7ff2d270293aa64d8b3e",
+  "actual_exit": 0,
+  "exit_file": "typed-memory-fixed-r6-small.exit",
+  "driver_command": [
+    "go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=3",
+    "-tags",
+    "integration",
+    "-run",
+    "^Test(Mongo|Search)SlowNativeOutputAllowsHealthyQueries$",
+    "-timeout",
+    "3m",
+    "-v",
+    "./internal/server"
+  ],
+  "runtime_identities": [],
+  "race_reports": 0,
+  "pass_lines": [
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries",
+      "0.15s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response",
+      "0.02s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response",
+      "0.02s"
+    ],
+    [
+      "TestSearchSlowNativeOutputAllowsHealthyQueries",
+      "0.16s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries",
+      "0.15s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response",
+      "0.03s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response",
+      "0.02s"
+    ],
+    [
+      "TestSearchSlowNativeOutputAllowsHealthyQueries",
+      "0.10s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries",
+      "0.15s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/valid_response",
+      "0.02s"
+    ],
+    [
+      "TestMongoSlowNativeOutputAllowsHealthyQueries/early_invalid_response",
+      "0.02s"
+    ],
+    [
+      "TestSearchSlowNativeOutputAllowsHealthyQueries",
+      "0.11s"
+    ]
+  ],
+  "CLI_Docker_after_stop_noOOM_exit0_count": 0,
+  "backend_owned0_close_events": 9,
+  "rounds": 3,
+  "Mongo_valid_cases": 3,
+  "Mongo_early_invalid_cases": 3,
+  "Search_cases": 3,
+  "healthy_progress": [
+    {
+      "backend": "application/bson",
+      "elapsed": "4.905792ms"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "3.336375ms"
+    },
+    {
+      "backend": "application/http",
+      "elapsed": "7.844625ms"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "4.724167ms"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "4.104417ms"
+    },
+    {
+      "backend": "application/http",
+      "elapsed": "5.698916ms"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "5.1625ms"
+    },
+    {
+      "backend": "application/bson",
+      "elapsed": "4.147209ms"
+    },
+    {
+      "backend": "application/http",
+      "elapsed": "7.093083ms"
+    }
+  ],
+  "default_stall_seconds": 30,
+  "watchdog_release_needed": false,
+  "source": "365c84616848d16c103be2ea9fd37c064bae5539",
+  "binary_sha256": null,
+  "no_source_edits_no_overlay_no_retries": true,
+  "driver_environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "CGO_ENABLED": "1",
+    "WEIR_INTEGRATION": "1",
+    "WEIR_SEARCH_INTEGRATION": "elasticsearch"
+  },
+  "driver_environment_unset": [
+    "WEIR_MONGO_PROFILE"
+  ],
+  "driver_go_executable": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+  "source_351_hashes_before_after": "clean identical"
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 
 	"github.com/batchstream/weir-protocol/api/protocol"
@@ -155,6 +156,8 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 		}
 		failure := protocol.Fail(pb.FailureCode_UNAVAILABLE, "record response unavailable or incomplete")
 		switch {
+		case errors.Is(err, execution.ErrExecutionMemory):
+			failure = recordMemoryFailure()
 		case ctx.Err() != nil:
 			failure = protocol.ContextFailure(ctx)
 		case err == nil && (status == 429 || status == 503):
@@ -172,8 +175,27 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 		var envelope struct {
 			Docs []getReply `json:"docs"`
 		}
+		if err := reserveSearchScratch(ctx, cap(raw)+jsonDecodeWorking(raw)); err != nil {
+			for _, i := range indexes {
+				observed[i].failure = recordMemoryFailure()
+			}
+			continue
+		}
 		if json.Unmarshal(raw, &envelope) != nil || len(envelope.Docs) != len(group) {
 			continue
+		}
+		raw = nil
+		if memory := searchMemory(ctx); memory != nil {
+			bytes := 0
+			for _, reply := range envelope.Docs {
+				bytes += cap(reply.Source)
+			}
+			if err := memory.set(memory.sources+bytes, memory.frame, 0); err != nil {
+				for _, i := range indexes {
+					observed[i].failure = recordMemoryFailure()
+				}
+				continue
+			}
 		}
 		corresponds := true
 		for i, reply := range envelope.Docs {
@@ -188,6 +210,14 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 		for i := range envelope.Docs {
 			reply := &envelope.Docs[i]
 			observation := observedRecord{reply: reply}
+			if reply.Found != nil && *reply.Found && len(reply.Source) != 0 {
+				if err := reserveSearchScratch(ctx, jsonDecodeWorking(reply.Source)); err != nil {
+					observation.reply = nil
+					observation.failure = recordMemoryFailure()
+					observed[indexes[i]] = observation
+					continue
+				}
+			}
 			switch {
 			case reply.Error != nil:
 				observation.reply = nil
@@ -214,6 +244,9 @@ func (a *Adapter) mgetUnique(ctx context.Context, works []*execution.Plan) []obs
 				}
 			}
 			observed[indexes[i]] = observation
+			if memory := searchMemory(ctx); memory != nil {
+				_ = memory.set(memory.sources, memory.frame, 0)
+			}
 		}
 	}
 	return observed
@@ -269,6 +302,14 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 		metadata["if_seq_no"] = *current.Seq
 		metadata["if_primary_term"] = *current.Term
 	}
+	upper := 6*(len(native.index)+len(native.id)) + len(native.source) + 2048
+	if memory := searchMemory(b.ctx); memory != nil {
+		peak := b.request.Cap() + upper + 2*(b.request.Len()+upper)
+		if err := memory.set(memory.sources, peak, 0); err != nil {
+			b.results[position] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, recordMemoryFailure())
+			return
+		}
+	}
 	header := map[string]any{action: metadata}
 	encoded, _ := json.Marshal(header)
 	var entry bytes.Buffer
@@ -289,8 +330,15 @@ func (b *recordBatch) appendWrite(work *execution.Plan, position int, current *g
 	b.request.Write(entry.Bytes())
 	pending := recordWrite{work: work, position: position, start: start, end: b.request.Len()}
 	b.pending = append(b.pending, pending)
+	if memory := searchMemory(b.ctx); memory != nil {
+		_ = memory.set(memory.sources, b.request.Cap(), 0)
+	}
 	if native.program != nil {
+		bytes := cap(native.source)
 		native.source = nil
+		if memory := searchMemory(b.ctx); memory != nil {
+			_ = memory.set(max(0, memory.sources-bytes), memory.frame, 0)
+		}
 	}
 	if b.request.Len() >= window {
 		b.flush()
@@ -351,6 +399,25 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 	if len(works) == 0 {
 		return nil
 	}
+	memory := &recordMemory{}
+	for _, work := range works {
+		// Known input copies and the complete reply scratch are separate live
+		// allocations. Dynamic frames/sources must not consume the ACK promise.
+		memory.base += 2*work.Bytes + execution.EntryOverheadBytes
+		if work.Command.GetMutate() != nil {
+			memory.reply += bulkAckWorking(work.Backend.(*plan).id)
+		}
+		if memory.owner == nil {
+			memory.owner = work.Memory
+		}
+	}
+	if memory.reply != 0 {
+		// Exactly Runtime's sum(Plan.WorkingBytes) + max(IOReserve):
+		// sum(known input) + sum(item ACK) + one envelope/header window.
+		memory.reply += bulkAckEnvelopeWorking
+	}
+	memory.reply += 64 << 10
+	ctx = context.WithValue(ctx, recordMemoryContextKey, memory)
 	works = append([]*execution.Plan(nil), works...)
 	readOnly := true
 	for _, work := range works {
@@ -365,6 +432,10 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 	}
 	positions := make([]int, 0, len(works))
 	for i, work := range works {
+		if failure := a.validateRecord(ctx, work); failure != nil {
+			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
+			continue
+		}
 		if failure := batch.callerFailure(work); failure != nil {
 			batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, failure)
 			continue
@@ -464,16 +535,36 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				}
 			}
 			observed := make(map[int]*getReply, len(readWorks))
-			for offset, record := range a.mget(ctx, readWorks) {
+			records := a.mget(ctx, readWorks)
+			if readOnly {
+				// All groups and their complete source validation have finished.
+				// Retain actual sources while their Tickets acquire ownership.
+				memory.reply = 0
+				_ = memory.set(memory.sources, memory.frame, 0)
+			}
+			for offset, record := range records {
 				i := readPositions[offset]
 				work := works[i]
 				if work.Backend.(*plan).action == "read" {
+					if record.failure == nil && record.reply != nil && record.reply.Found != nil && *record.reply.Found && work.Memory != nil {
+						if err := work.Memory.ReserveResult(cap(record.reply.Source) + execution.ResultOverheadBytes); err != nil {
+							record.reply = nil
+							record.failure = recordMemoryFailure()
+						}
+					}
 					batch.results[i] = readResult(record.reply, record.failure)
 				} else if record.failure != nil {
 					batch.results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_APPLIED, record.failure)
 				} else {
 					observed[i] = record.reply
 				}
+			}
+			if memory := searchMemory(ctx); memory != nil {
+				bytes := 0
+				for _, reply := range observed {
+					bytes += cap(reply.Source)
+				}
+				_ = memory.set(bytes, memory.frame, 0)
 			}
 			for _, i := range chunk {
 				work := works[i]
@@ -519,6 +610,11 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 					work = &copy
 				}
 				batch.appendWrite(work, i, current)
+				if memory := searchMemory(ctx); memory != nil && current != nil {
+					bytes := cap(current.Source)
+					current = nil
+					_ = memory.set(max(0, memory.sources-bytes), memory.frame, 0)
+				}
 			}
 			start = end
 		}

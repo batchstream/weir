@@ -50,7 +50,7 @@ func TestNativeTransientAdmissionWaitsForOtherStoreIOWithoutLostWake(t *testing.
 	work := plan(1, "initial", false)
 	work.Command, work.WorkingBytes = nativeCall(), initialWorking
 	input := work.Bytes + max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes)
-	memory := NewNativeMemory()
+	memory := NewExecutionMemory()
 	memory.known, memory.trusted = true, true
 	memory.budget = 2*uint64(initialWorking+input) + 64<<10
 	release := make(chan struct{})
@@ -199,7 +199,7 @@ func (a *nativeSameBytesIOAdapter) Execute(ctx context.Context, works []*executi
 }
 
 func TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission(t *testing.T) {
-	memory := testNativeMemory(192 << 20)
+	memory := testExecutionMemory(192 << 20)
 	finish := make(chan struct{})
 	adapter := &nativeSameBytesIOAdapter{reading: make(chan struct{}), finish: finish, extra: 2 << 20}
 	limits := DefaultLimits()
@@ -229,7 +229,7 @@ func TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission(t *testi
 	work := plan(1, "held", false)
 	work.Command = nativeCall()
 	publication := max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow
-	work.WorkingBytes = int(memory.budget-memory.inputTargetLocked()) - publication - adapter.extra
+	work.WorkingBytes = int(memory.residentLimitLocked()-memory.inputTargetLocked()) - publication - adapter.extra
 	if _, failure, _ := first.Submit(ctx, work, session); failure != nil {
 		t.Fatal(failure)
 	}
@@ -248,13 +248,13 @@ func TestNativeSameByteIOConvergenceWakesOtherStoreWithoutNewSubmission(t *testi
 		t.Fatal("real body read did not acquire workspace")
 	}
 	before := memory.Snapshot()
-	if before.UsedBytes != before.BudgetBytes {
-		t.Fatal("test did not fill the actual budget", before)
+	if before.UsedBytes != before.BudgetBytes-before.IOReserveBytes {
+		t.Fatal("test did not fill the resident share with a real body read", before)
 	}
 	shortSession := second.NewSession()
 	defer shortSession.Close()
 	short := plan(2, "short", false)
-	short.Command, short.WorkingBytes = nativeCall(), 4096
+	short.Command, short.WorkingBytes = nativeCall(), int(memory.reserve)+4096
 	ticket, failure, _ := second.Submit(ctx, short, shortSession)
 	if failure != nil {
 		t.Fatal("IO spent promised input capacity", failure)

@@ -23,7 +23,7 @@ import (
 func TestSubmitPlanDefinitiveCapacityRejectionDoesNotWait(t *testing.T) {
 	fixture := newWireLifetimeFixture(t)
 	adapter := &nativeStallAdapter{chunks: 1}
-	memory := store.NewNativeMemory()
+	memory := store.NewExecutionMemory()
 	sample := overload.Snapshot{RecoveryAllowanceKnown: true, RecoveryAllowance: 1}
 	memory.ObserveMemory(sample)
 	limits := store.DefaultLimits()
@@ -320,7 +320,7 @@ func TestSendEventConnectionRetirementReportsCancellation(t *testing.T) {
 			value := &pb.Event_Head{Head: head}
 			event := &pb.Event{Value: value}
 			result := make(chan error, 1)
-			go func() { result <- fixture.server.sendEvent(stream, event, 1) }()
+			go func() { result <- fixture.server.sendEvent(stream, event, 1, nil) }()
 			if !duringSend {
 				select {
 				case <-stream.waiting:

@@ -1,0 +1,269 @@
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:40: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.01s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:40: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.01s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:40: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.00s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:40: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.01s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+=== RUN   TestRecordPreservesBorrowedRequestAndDecodedPath
+--- PASS: TestRecordPreservesBorrowedRequestAndDecodedPath (0.00s)
+=== RUN   TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree
+    record_test.go:40: raw_resource_bytes=8000004 segments=1000001 preparation_allocations=2
+--- PASS: TestRecordUnsupportedMillionSegmentPathDoesNotAllocateSegmentTree (0.01s)
+=== RUN   TestMutationRecordBorrowsDocumentWithoutCopy
+--- PASS: TestMutationRecordBorrowsDocumentWithoutCopy (0.00s)
+=== RUN   TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders
+--- PASS: TestRecordDeepUnsupportedResourceChargesOnlyItsBoundedSegmentHeaders (0.00s)
+PASS
+ok  	github.com/batchstream/weir/internal/execution	1.926s
+=== RUN   TestRecordActionsBatchSeparatelyByReadAndMutation
+--- PASS: TestRecordActionsBatchSeparatelyByReadAndMutation (0.00s)
+=== RUN   TestPreparedRecordBeyondBatchAndQueueWindows
+--- PASS: TestPreparedRecordBeyondBatchAndQueueWindows (0.00s)
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge
+--- PASS: TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.00s)
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true
+--- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true (0.00s)
+=== RUN   TestExecutionMemoryConservesOneLeaseAcrossEveryOwner
+--- PASS: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+=== RUN   TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit
+--- PASS: TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit (0.00s)
+=== RUN   TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit
+--- PASS: TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit (0.00s)
+=== RUN   TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases
+--- PASS: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (1.00s)
+=== RUN   TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores
+--- PASS: TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores (0.02s)
+=== RUN   TestRecordActionsBatchSeparatelyByReadAndMutation
+--- PASS: TestRecordActionsBatchSeparatelyByReadAndMutation (0.00s)
+=== RUN   TestPreparedRecordBeyondBatchAndQueueWindows
+--- PASS: TestPreparedRecordBeyondBatchAndQueueWindows (0.00s)
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge
+--- PASS: TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.01s)
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true
+--- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true (0.00s)
+=== RUN   TestExecutionMemoryConservesOneLeaseAcrossEveryOwner
+--- PASS: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+=== RUN   TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit
+--- PASS: TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit (0.00s)
+=== RUN   TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit
+--- PASS: TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit (0.00s)
+=== RUN   TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases
+--- PASS: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (1.00s)
+=== RUN   TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores
+--- PASS: TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores (0.01s)
+=== RUN   TestRecordActionsBatchSeparatelyByReadAndMutation
+--- PASS: TestRecordActionsBatchSeparatelyByReadAndMutation (0.00s)
+=== RUN   TestPreparedRecordBeyondBatchAndQueueWindows
+--- PASS: TestPreparedRecordBeyondBatchAndQueueWindows (0.00s)
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge
+--- PASS: TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.00s)
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true
+--- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true (0.00s)
+=== RUN   TestExecutionMemoryConservesOneLeaseAcrossEveryOwner
+--- PASS: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+=== RUN   TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit
+--- PASS: TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit (0.00s)
+=== RUN   TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit
+--- PASS: TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit (0.00s)
+=== RUN   TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases
+--- PASS: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (1.00s)
+=== RUN   TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores
+--- PASS: TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores (0.02s)
+=== RUN   TestRecordActionsBatchSeparatelyByReadAndMutation
+--- PASS: TestRecordActionsBatchSeparatelyByReadAndMutation (0.00s)
+=== RUN   TestPreparedRecordBeyondBatchAndQueueWindows
+--- PASS: TestPreparedRecordBeyondBatchAndQueueWindows (0.00s)
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge
+--- PASS: TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.01s)
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true
+--- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true (0.00s)
+=== RUN   TestExecutionMemoryConservesOneLeaseAcrossEveryOwner
+--- PASS: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+=== RUN   TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit
+--- PASS: TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit (0.00s)
+=== RUN   TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit
+--- PASS: TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit (0.00s)
+=== RUN   TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases
+--- PASS: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (1.00s)
+=== RUN   TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores
+--- PASS: TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores (0.02s)
+=== RUN   TestRecordActionsBatchSeparatelyByReadAndMutation
+--- PASS: TestRecordActionsBatchSeparatelyByReadAndMutation (0.00s)
+=== RUN   TestPreparedRecordBeyondBatchAndQueueWindows
+--- PASS: TestPreparedRecordBeyondBatchAndQueueWindows (0.00s)
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512
+=== RUN   TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024
+--- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/256 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/512 (0.00s)
+    --- PASS: TestExecutionMemoryLegalDocumentAndWireFitSmallDefaultCapacity/1024 (0.00s)
+=== RUN   TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge
+--- PASS: TestExecutionMemoryNativePublicationTransfersToWireWithoutDoubleCharge (0.00s)
+=== RUN   TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget
+--- PASS: TestExecutionMemoryFixedTerminalFitsActualMinimumWireAtFullBudget (0.00s)
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024
+=== RUN   TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192
+--- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/1024 (0.00s)
+    --- PASS: TestExecutionMemoryFullResidentAndSlowBorrowedWireLeaveShortIOProgress/8192 (0.00s)
+=== RUN   TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength
+--- PASS: TestExecutionMemoryReadyResultRetainsActualCapacityBeyondEncodedLength (0.00s)
+=== RUN   TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch
+--- PASS: TestExecutionMemoryOneDriverMessagePreserves128SmallReadBatch (0.00s)
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false
+=== RUN   TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true
+--- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=false/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=false (0.00s)
+    --- PASS: TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose/session=true/close=true (0.00s)
+=== RUN   TestExecutionMemoryConservesOneLeaseAcrossEveryOwner
+--- PASS: TestExecutionMemoryConservesOneLeaseAcrossEveryOwner (0.00s)
+=== RUN   TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit
+--- PASS: TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit (0.00s)
+=== RUN   TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit
+--- PASS: TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit (0.00s)
+=== RUN   TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases
+--- PASS: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (1.00s)
+=== RUN   TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores
+--- PASS: TestNodeExecutionMemorySharesThirtyTwoLargeOutputsAcrossStores (0.01s)
+PASS
+ok  	github.com/batchstream/weir/internal/store	7.330s

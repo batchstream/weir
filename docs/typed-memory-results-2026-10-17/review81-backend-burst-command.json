@@ -1,0 +1,33 @@
+{
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLINativeSmallBurstPreservesAdmission$",
+    "-timeout",
+    "5m",
+    "-v",
+    "./internal/app"
+  ],
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1",
+    "WEIR_INTEGRATION": "1",
+    "WEIR_SEARCH_INTEGRATION": "elasticsearch",
+    "WEIR_NATIVE_BURST_INTEGRATION": "1",
+    "WEIR_NATIVE_BURST_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-fixed-r3-linux",
+    "WEIR_NATIVE_BURST_SOURCE": "007bc59ed4c6de59a92e05a667da9b6a8efd6f64",
+    "WEIR_NATIVE_BURST_SHA256": "adc3f4a07ac381a78fddfb3c04b7a3d60a4f1176b28616259f2317f9e0c1cdf4"
+  },
+  "start_utc": "2026-10-16T17:39:25.045706+00:00"
+}

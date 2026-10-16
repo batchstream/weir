@@ -1,0 +1,8 @@
+# github.com/batchstream/weir/internal/backend/search [github.com/batchstream/weir/internal/backend/search.test]
+internal/backend/search/batch.go:503:27: undefined: observed
+internal/backend/search/route.go:71:33: plan (local variable) is not a type
+# github.com/batchstream/weir/internal/backend/mongodb [github.com/batchstream/weir/internal/backend/mongodb.test]
+internal/backend/mongodb/route.go:77:33: plan (local variable) is not a type
+FAIL	github.com/batchstream/weir/internal/backend/mongodb [build failed]
+FAIL	github.com/batchstream/weir/internal/backend/search [build failed]
+FAIL
