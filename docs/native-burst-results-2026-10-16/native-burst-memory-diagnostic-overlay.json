@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "/Users/liran/Projects/liran/go/weir/internal/store/native_memory.go": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-burst-memory-diagnostic.go.txt"
+  }
+}

@@ -203,8 +203,12 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "invalid execution accounting"), changed
 	}
 	if !r.queueCapacityLocked(plan) {
-		if session == nil {
+		if session == nil || singleton {
 			r.metrics.rejections.WithLabelValues("capacity").Inc()
+		}
+		if singleton {
+			// Native callers must wait only after their input has a bounded lease.
+			return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), nil
 		}
 		return nil, protocol.Fail(pb.FailureCode_RESOURCE_EXHAUSTED, "admission capacity exhausted"), changed
 	}
@@ -380,7 +384,7 @@ func (r *Runtime) completeLocked(t *Ticket, event *pb.Event) {
 			end := protocol.NativeFailure(started, failure)
 			value := &pb.Event_NativeEnd{NativeEnd: end}
 			event = &pb.Event{Value: value}
-			// Every admitted lease already owns a two-chunk publication window;
+			// Every admitted lease already owns a fixed terminal window;
 			// this fixed failure fits without borrowing further capacity.
 			_ = t.nativeLease.terminal(proto.Size(event))
 		}
@@ -843,6 +847,7 @@ func (b *batch) GrowIO(working int) error {
 	m := b.native.nativeLease.memory
 	m.mu.Lock()
 	m.reserve = max(m.reserve, uint64(b.native.plan.IOReserve))
+	m.resizeInputLocked()
 	m.mu.Unlock()
 	return b.native.nativeLease.grow(working)
 }

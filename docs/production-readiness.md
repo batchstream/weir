@@ -10,8 +10,10 @@ Linux sustained-load boundaries.
 | Native consumer progress and output ownership | [PR 76](https://github.com/batchstream/weir/pull/76) merged after new independent review, repeated race checks and Linux CI |
 | Automatic recovery after Go memory bursts with default configuration | [PR 77](https://github.com/batchstream/weir/pull/77) merged after new independent review and Linux CI; initial isolated-cgroup evidence below |
 | Recovery with shared cgroup memory outside the process | [PR 78](https://github.com/batchstream/weir/pull/78) merged after new independent review and Linux CI |
-| Healthy queries with a full Native output reservation | [Shared Native memory ownership](native-memory-qualification-2026-10-16.md) qualified on clean Linux source; independent review/CI pending |
-| Linux complete-process sustained mixed workload and failure recovery | Pending |
+| Healthy queries with a full Native output reservation | [PR 79](https://github.com/batchstream/weir/pull/79) merged after independent exact-head review and CI; clean Linux focused ownership qualification passed |
+| Short Native mixed bursts with transient IO reservations | [Correction and causal evidence](native-burst-admission-2026-10-16.md); clean acceptance/review pending |
+| Typed large-result memory safety | Confirmed 512 MiB OOM; separate correction pending |
+| Linux complete-process sustained mixed workload and failure recovery | First formal run failed at the 256-request burst; original gates remain pending |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
 historical baseline at revision `63bafdd`; its Native scheduling and cancellation
