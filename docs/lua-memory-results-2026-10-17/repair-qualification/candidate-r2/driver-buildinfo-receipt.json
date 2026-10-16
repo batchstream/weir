@@ -1,0 +1,36 @@
+{
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "version",
+    "-m",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/app-race.test"
+  ],
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "elapsed_seconds": 0.01508891599951312,
+  "env": {
+    "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/docker-client",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "GOAMD64": "v1",
+    "GOARM64": "v8.0",
+    "GOENV": "off",
+    "GOEXPERIMENT": "",
+    "GOFLAGS": "",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "MONGOSH_DISABLE_TELEMETRY": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "finished_utc": "2026-10-16T22:04:33.841356+00:00",
+  "pid": 2710,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r2/driver-buildinfo-process.txt",
+  "raw_bytes": 2801,
+  "raw_sha256": "b7cd5c02348940ab27a50c81b488cba1c1ac9c242c122be0fdab3f904f0c2548",
+  "retry": false,
+  "started_utc": "2026-10-16T22:04:33.826129+00:00",
+  "timed_out": false,
+  "timeout_seconds": 30
+}

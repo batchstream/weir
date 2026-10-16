@@ -1,0 +1,128 @@
+{
+  "driver_pid": 95323,
+  "mongo_database": "weir_test_95323_1",
+  "search_index": "weir_search_95323_1",
+  "log_sha256": "a865318413b152ff0a5cde0dee1527de3b09dcbec881c8631082c4cbd209bb35",
+  "expected_logged_records": {
+    "mongo": {
+      "lua-path-increment": {
+        "bytes": 1078,
+        "sha256": "101e9ccb767692b92c0c761985577695b8e37367707b7cb6e4536cdbdfb995d0",
+        "raw_line": 243
+      },
+      "write-2000000": {
+        "bytes": 1073,
+        "sha256": "6d6cd376044bf08c0bf011b764d9043e79b7799476646b7780a4fa336ba8b610",
+        "raw_line": 500
+      },
+      "lua-path-pcall-concat": {
+        "bytes": 1081,
+        "sha256": "7f54f8b75435a3da2bb0eed0943a3815748f912b6fd45385ce0e64b937547be0",
+        "raw_line": 759
+      },
+      "write-2000001": {
+        "bytes": 1073,
+        "sha256": "df3d792a5255ac7b5e3bf9afbe98d9f1b56f873fb38b43b9b7c62d2998a8065b",
+        "raw_line": 1014
+      },
+      "lua-path-shared-dag": {
+        "bytes": 1079,
+        "sha256": "098ebedf3d94fe3ebb67487753802dbc301cad91e82a1eb5e5812f07b575b88b",
+        "raw_line": 1263
+      },
+      "write-2000002": {
+        "bytes": 1073,
+        "sha256": "78b2ea1ee0703cf6ee445478c0f5367e30d91f93cca4ebb3d79560735ae7cf46",
+        "raw_line": 1519
+      },
+      "lua-path-large-error": {
+        "bytes": 1080,
+        "sha256": "03311ad4bd1ae1ae59780cfe7393303b902d9a79bc64e843d643c99a2b745280",
+        "raw_line": 1779
+      },
+      "write-2000003": {
+        "bytes": 1073,
+        "sha256": "e0ca174f88e15f3995ed41f531f21f81189dd192a72933c00ab11522b2f26555",
+        "raw_line": 2034
+      },
+      "lua-path-same-key-comments": {
+        "bytes": 1086,
+        "sha256": "a4f0b4966478d0e0125288db3136fbfd91350a9c81379ecff7974628c82168e0",
+        "raw_line": 2259
+      },
+      "write-2000004": {
+        "bytes": 1073,
+        "sha256": "219b239df170fa1ae5ec0c0d2a0bf35e2921a48077ead7a2ad8a04046ce4a961",
+        "raw_line": 2516
+      },
+      "lua-path-control-quote": {
+        "bytes": 1082,
+        "sha256": "43ba1c97102f802595293f98a34b405e9c6b91b1e66ca78868d92b2e8fa459dc",
+        "raw_line": 2774
+      },
+      "write-2000005": {
+        "bytes": 1073,
+        "sha256": "b9cd275a5ef95ba5213e3daaee473463b5954ef43effa39f8b5ca92f796f6967",
+        "raw_line": 3029
+      }
+    },
+    "search": {
+      "lua-path-increment": {
+        "bytes": 1040,
+        "sha256": "d162c4c2548915ef0d86bfd8e0468cb32c0f3be81076da87927c4eab73f21ccf",
+        "raw_line": 3274
+      },
+      "write-2000000": {
+        "bytes": 1046,
+        "sha256": "017d70e64f3fa49db6f3eb15ecb3874785b11291d0f4aab6eeeb60be59e44af2",
+        "raw_line": 3530
+      },
+      "lua-path-pcall-concat": {
+        "bytes": 1040,
+        "sha256": "5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901",
+        "raw_line": 3787
+      },
+      "write-2000001": {
+        "bytes": 1046,
+        "sha256": "faea609b4f64fa3752d159fe12def58ffed64385f390442162fd9b5e666fd449",
+        "raw_line": 4044
+      },
+      "lua-path-shared-dag": {
+        "bytes": 1040,
+        "sha256": "5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901",
+        "raw_line": 4308
+      },
+      "write-2000002": {
+        "bytes": 1046,
+        "sha256": "c50fe3261479a38dc163575bb060881b516a95ca87a99ea71ad2d318954619a7",
+        "raw_line": 4564
+      },
+      "lua-path-large-error": {
+        "bytes": 1040,
+        "sha256": "5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901",
+        "raw_line": 4807
+      },
+      "write-2000003": {
+        "bytes": 1046,
+        "sha256": "29e92a133d1a92858c6db0207659184b575d6b8977758960e4d747bc7fc02a1e",
+        "raw_line": 5063
+      },
+      "lua-path-same-key-comments": {
+        "bytes": 1040,
+        "sha256": "5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901",
+        "raw_line": 5323
+      },
+      "write-2000004": {
+        "bytes": 1046,
+        "sha256": "e790a6bc749c63e3a8ea3c5c38ee1b16ef1a2bdc1f01dbfa61b93f38282fd8bb",
+        "raw_line": 5579
+      },
+      "lua-path-control-quote": {
+        "bytes": 1040,
+        "sha256": "5132f082e37b2e214de0878e83b2e3286abcec006ef89f7f82c0b0c03eaf5901",
+        "raw_line": 5839
+      }
+    }
+  },
+  "scope": "read-only audit only; no writes, drops, retries, or original-result changes"
+}

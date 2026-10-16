@@ -1,0 +1,245 @@
+{
+  "action": "read-only pinned public SDK connection topology verification",
+  "module": "github.com/batchstream/weir-go",
+  "version": "v0.16.0",
+  "go_sum": "h1:ZW/vbUz/kh7RlaCNjoxGFJ7Fe5YfUMHgtEptkoHzyeo=",
+  "sources": {
+    "discovery.go": {
+      "sha256": "8a698dfa9a703c6996b9506218dea2be6528dfb00324453a590f1d1d11314724",
+      "download_zip_entry_equals_module_cache": true,
+      "path": "/Users/liran/go/pkg/mod/github.com/batchstream/weir-go@v0.16.0/discovery.go",
+      "line_evidence": [
+        {
+          "line": 132,
+          "text": "\tclient := &Client{options: options, stores: make(map[string]*storeChannel), ctx: lifetime, cancel: cancel, done: make(chan struct{})}"
+        },
+        {
+          "line": 153,
+          "text": "\t_ = seedChannel.connection.Close()"
+        },
+        {
+          "line": 154,
+          "text": "\tfor _, store := range options.Stores {"
+        },
+        {
+          "line": 155,
+          "text": "\t\tentry := client.stores[store]"
+        },
+        {
+          "line": 156,
+          "text": "\t\tchannel, channelErr := client.newChannel(ctx, entry.endpoints)"
+        },
+        {
+          "line": 171,
+          "text": "\t\tentry.channel = channel"
+        },
+        {
+          "line": 243,
+          "text": ""
+        },
+        {
+          "line": 256,
+          "text": "\tconnection, err := grpc.NewClient(\"weir-discovery:///replicas\", options...)"
+        },
+        {
+          "line": 260,
+          "text": "\tchannel := &addressChannel{connection: connection, resolver: builder, addresses: addresses}"
+        },
+        {
+          "line": 261,
+          "text": "\tconnection.Connect()"
+        },
+        {
+          "line": 579,
+          "text": ""
+        },
+        {
+          "line": 580,
+          "text": "func (c *Client) closeChannels() {"
+        },
+        {
+          "line": 582,
+          "text": "\t\tif entry.channel != nil {"
+        },
+        {
+          "line": 583,
+          "text": "\t\t\t_ = entry.channel.connection.Close()"
+        },
+        {
+          "line": 589,
+          "text": "func (c *Client) Close() error {"
+        },
+        {
+          "line": 595,
+          "text": "\t\tc.closeChannels()"
+        },
+        {
+          "line": 596,
+          "text": "\t\t<-c.done"
+        },
+        {
+          "line": 597,
+          "text": "\t})"
+        }
+      ]
+    },
+    "connection.go": {
+      "sha256": "2bcb8d4a771c569edb496af21876bc0de7ea47d6c02e8e10c1d331ae9f00d452",
+      "download_zip_entry_equals_module_cache": true
+    }
+  },
+  "source_evidence": {
+    "discovery.go:132": "Every Open constructs an independent Client and stores map",
+    "discovery.go:153": "Initialization seed connection is explicitly closed before business channels",
+    "discovery.go:154-171": "For every requested Store, calls newChannel and assigns its distinct channel to entry.channel",
+    "discovery.go:243-261": "Every newChannel creates its own grpc.ClientConn and calls Connect",
+    "discovery.go:579-603": "closeChannels closes every Store channel; Close joins refresh and closes channels"
+  },
+  "supplement": {
+    "clients": 2,
+    "stores_per_client": 2,
+    "stores": [
+      "mongo",
+      "search"
+    ],
+    "steady_business_connections": 4,
+    "bytes_per_connection": 524288,
+    "steady_connection_bytes": 2097152,
+    "correction_only_lines": [
+      109,
+      127,
+      130
+    ],
+    "final_after_close_line136_expected_connections": 0
+  },
+  "scope": "no tracked source changes; no Go/test/Docker/database execution",
+  "created_utc": "2026-10-16T22:00:28.958009+00:00",
+  "qualification_source": "2f5d131de72c7548fb4a792aed4708466d559359",
+  "pins": {
+    "go.mod": {
+      "sha256": "7394f9bf87788cb0b0eb4ccad78d581c0d357d27041a17349b7bd6b1bf0071ea",
+      "lines": [
+        {
+          "line": 6,
+          "text": "\tgithub.com/batchstream/weir-go v0.16.0"
+        }
+      ]
+    },
+    "go.sum": {
+      "sha256": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f",
+      "lines": [
+        {
+          "line": 1,
+          "text": "github.com/batchstream/weir-go v0.16.0 h1:ZW/vbUz/kh7RlaCNjoxGFJ7Fe5YfUMHgtEptkoHzyeo="
+        },
+        {
+          "line": 2,
+          "text": "github.com/batchstream/weir-go v0.16.0/go.mod h1:tOcVoJfowWZhUG5kh8Ktl/6nzee0Cosl83ulno3pAnU="
+        }
+      ]
+    },
+    "public_module_cache_ziphash": {
+      "path": "/Users/liran/go/pkg/mod/cache/download/github.com/batchstream/weir-go/@v/v0.16.0.ziphash",
+      "value": "h1:ZW/vbUz/kh7RlaCNjoxGFJ7Fe5YfUMHgtEptkoHzyeo=",
+      "sha256": "3b731b0018e97a7899eef5ecc198d4123633d8cbd50e4be4c9dd9708f95c97cd",
+      "matches_go_sum": true
+    }
+  },
+  "harness": {
+    "path": "internal/app/lua_memory_paths_integration_test.go",
+    "sha256": "a12c37954a9272a27d6e298bb092859bdc18fd45a034b62e73fb5aa496a6ed61",
+    "line_evidence": [
+      {
+        "line": 108,
+        "text": "\tclient, healthClient := luaMemoryPathsClient(t, process), luaMemoryPathsClient(t, process)"
+      },
+      {
+        "line": 109,
+        "text": "\tingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)"
+      },
+      {
+        "line": 127,
+        "text": "\t\t\tingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)"
+      },
+      {
+        "line": 130,
+        "text": "\t\t\tingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 2)"
+      },
+      {
+        "line": 133,
+        "text": "\t}"
+      },
+      {
+        "line": 134,
+        "text": "\tcloseIngressMemoryClient(t, client)"
+      },
+      {
+        "line": 136,
+        "text": "\tingressMemoryIdle(t, process, time.Now().Add(5*time.Second), 0)"
+      },
+      {
+        "line": 160,
+        "text": "\toptions := weirclient.OpenOptions{Seed: process.address, Stores: []string{\"mongo\", \"search\"}}"
+      }
+    ],
+    "original_budget_probe_sha256": "36cd530f20b03a2e72f6c913bf583910cde2b163b594556480592261ca252012",
+    "original_probe_unchanged": true
+  },
+  "actual_observation": {
+    "raw_log": ".testdata/reliability-2026-10-16/lua-repair-candidate-r1/paths-process.txt",
+    "raw_line": 4,
+    "at": "2026-10-16T21:58:15.522737Z",
+    "raw_line_sha256": "77b645efc14abba28e9aaf97314ae8a3914547befe1f2fc45913b381d111be94",
+    "metrics": {
+      "weir_execution_memory_input_reserved_bytes": 0,
+      "weir_execution_memory_input_used_bytes": 0,
+      "weir_execution_memory_leases": 0,
+      "weir_execution_memory_native_leases": 0,
+      "weir_execution_memory_starting": 0,
+      "weir_execution_memory_settled": 0,
+      "weir_execution_memory_borrowed": 0,
+      "weir_execution_memory_waiting": 0,
+      "weir_execution_memory_terminal": 0,
+      "weir_execution_memory_wire_bytes": 0,
+      "weir_execution_memory_wire_buffers": 0,
+      "weir_execution_memory_ingress_bytes": 0,
+      "weir_execution_memory_ingress_reserved_bytes": 0,
+      "weir_execution_memory_ingress_buffers": 0,
+      "weir_execution_memory_ingress_messages": 0,
+      "weir_execution_memory_ingress_waiting": 0,
+      "weir_store_pending_entries": 0,
+      "weir_store_pending_reserved_bytes": 0,
+      "weir_store_active_executions": 0,
+      "weir_store_paused_native_outputs": 0,
+      "weir_store_paused_native_reserved_bytes": 0,
+      "weir_store_result_reserved_entries": 0,
+      "weir_store_result_reserved_bytes": 0,
+      "weir_store_retained_result_reserved_bytes": 0,
+      "weir_store_working_reserved_bytes": 0,
+      "weir_store_publishers": 0,
+      "weir_ingress_sessions": 0,
+      "weir_ingress_queued_response_bytes": 0,
+      "weir_memory_latched": 0,
+      "weir_memory_unknown": 0,
+      "weir_execution_memory_ingress_connections": 4,
+      "weir_execution_memory_ingress_connection_bytes": 2097152,
+      "weir_execution_memory_used_bytes": 2097152,
+      "weir_execution_memory_resident_bytes": 2097152,
+      "weir_memory_cgroup_limit_bytes": 536870912,
+      "weir_memory_cgroup_valid": 1
+    },
+    "steady_connection_floor_matches_source": true,
+    "source_bound_temporary_and_latch_zero": true,
+    "qualification_status": "first failed run retained; this observation does not make it PASS"
+  },
+  "proposed_only_tracked_change": {
+    "file": "internal/app/lua_memory_paths_integration_test.go",
+    "lines109_127_130": "expected live connection count 2 -> 4",
+    "line136": "expected final connection count 0 unchanged",
+    "capacity": "512 MiB unchanged",
+    "CPUs": "2 unchanged",
+    "caller": "3 s unchanged",
+    "Lua_cases": "all 12 and exact outcomes unchanged",
+    "original269line_probe": "unchanged"
+  }
+}

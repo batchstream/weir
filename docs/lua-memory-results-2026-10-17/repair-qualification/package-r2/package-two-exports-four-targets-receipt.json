@@ -1,0 +1,36 @@
+{
+  "args": [
+    "python3",
+    "scripts/package.py",
+    "--output",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-package-r2/artifacts"
+  ],
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "elapsed_seconds": 136.62376279197633,
+  "env": {
+    "DOCKER_CONFIG": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-package-r2/docker-client",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+    "GOAMD64": "v1",
+    "GOARM64": "v8.0",
+    "GOENV": "off",
+    "GOEXPERIMENT": "",
+    "GOFLAGS": "",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "MONGOSH_DISABLE_TELEMETRY": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "exit_code": 0,
+  "finished_utc": "2026-10-16T22:04:18.008489+00:00",
+  "pid": 95654,
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-package-r2/package-two-exports-four-targets-process.txt",
+  "raw_bytes": 325,
+  "raw_sha256": "adb8572267a54c6950eff570b46e4a9c97197c87a24c5efe1eed77988f3ed137",
+  "retry": false,
+  "started_utc": "2026-10-16T22:02:01.382881+00:00",
+  "timed_out": false,
+  "timeout_seconds": 900
+}

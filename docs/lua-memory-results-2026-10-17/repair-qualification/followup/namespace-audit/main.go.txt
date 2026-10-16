@@ -1,0 +1,172 @@
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+type expectedRecord struct {
+	Bytes int `json:"bytes"`
+	SHA256 string `json:"sha256"`
+	RawLine int `json:"raw_line"`
+}
+
+type auditInput struct {
+	DriverPID int `json:"driver_pid"`
+	MongoDatabase string `json:"mongo_database"`
+	SearchIndex string `json:"search_index"`
+	LogSHA256 string `json:"log_sha256"`
+	Records map[string]map[string]expectedRecord `json:"expected_logged_records"`
+}
+
+func must(err error) {
+	if err != nil { panic(err) }
+}
+
+func expectedHot(mongoBackend bool) expectedRecord {
+	pad := strings.Repeat("x", 1<<10)
+	var raw []byte
+	var err error
+	if mongoBackend {
+		document := bson.D{{Key: "_id", Value: "hot"}, {Key: "n", Value: int64(1)}, {Key: "pad", Value: pad}}
+		raw, err = bson.Marshal(document)
+	} else {
+		document := struct { N int64 `json:"n"`; Pad string `json:"pad"` }{N: 1, Pad: pad}
+		raw, err = json.Marshal(document)
+	}
+	must(err)
+	result := expectedRecord{Bytes: len(raw), SHA256: fmt.Sprintf("%x", sha256.Sum256(raw))}
+	return result
+}
+
+func compare(raw []byte, id string, expected expectedRecord) map[string]any {
+	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
+	valid := len(raw) == expected.Bytes && digest == expected.SHA256
+	record := map[string]any{"id": id, "bytes": len(raw), "expected_bytes": expected.Bytes,
+		"sha256": digest, "expected_sha256": expected.SHA256, "full_raw_equal": valid,
+		"logged_raw_line": expected.RawLine, "seed_hot": id == "hot"}
+	return record
+}
+
+func mongoAudit(input auditInput) map[string]any {
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	opts := options.Client().ApplyURI("mongodb://127.0.0.1:27028/?directConnection=true&serverMonitoringMode=poll").SetRetryReads(false).SetRetryWrites(false).SetMaxAdaptiveRetries(0).SetServerSelectionTimeout(time.Second)
+	client, err := mongo.Connect(opts)
+	must(err)
+	defer func() { cleanup, stop := context.WithTimeout(context.Background(), time.Second); defer stop(); must(client.Disconnect(cleanup)) }()
+	helloCommand := bson.D{{Key: "hello", Value: 1}}
+	var hello struct { Set string `bson:"setName"` }
+	must(client.Database("admin").RunCommand(ctx, helloCommand).Decode(&hello))
+	if hello.Set != "weir_local" { panic("wrong replica set") }
+	database := client.Database(input.MongoDatabase)
+	filter := bson.D{}
+	collections, err := database.ListCollectionNames(ctx, filter)
+	must(err)
+	sort.Strings(collections)
+	findOptions := options.Find().SetLimit(100).SetBatchSize(100)
+	cursor, err := database.Collection("records").Find(ctx, filter, findOptions)
+	must(err)
+	defer cursor.Close(ctx)
+	expected := input.Records["mongo"]
+	expected["hot"] = expectedHot(true)
+	verified := len(collections) == 1 && collections[0] == "records"
+	seen := make(map[string]bool)
+	records := make([]map[string]any, 0, len(expected))
+	for cursor.Next(ctx) {
+		raw := cursor.Current
+		id, idOK := raw.Lookup("_id").StringValueOK()
+		want, exists := expected[id]
+		record := compare(raw, id, want)
+		valid := idOK && exists && !seen[id] && record["full_raw_equal"] == true
+		verified = verified && valid
+		record["expected_unique_id"] = exists && !seen[id]
+		records = append(records, record)
+		seen[id] = true
+	}
+	must(cursor.Err())
+	count, err := database.Collection("records").CountDocuments(ctx, filter)
+	must(err)
+	verified = verified && len(seen) == len(expected) && count == int64(len(expected))
+	report := map[string]any{"database": input.MongoDatabase, "replica_set": hello.Set,
+		"collections": collections, "expected_count": len(expected), "actual_count": count,
+		"records": records, "no_extra_or_missing_ids": len(seen) == len(expected), "ownership_verified": verified}
+	return report
+}
+
+func get(client *http.Client, resource string) []byte {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:19200"+resource, nil)
+	must(err)
+	response, err := client.Do(request)
+	must(err)
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, (2<<20)+1))
+	must(err)
+	if response.StatusCode != http.StatusOK || len(raw) > 2<<20 { panic("bounded read-only Search request failed") }
+	return raw
+}
+
+func searchAudit(input auditInput) map[string]any {
+	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 1, MaxIdleConnsPerHost: 1, DisableCompression: true}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 3*time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var identity struct { ClusterName string `json:"cluster_name"`; Version struct { Number string `json:"number"` } `json:"version"` }
+	must(json.Unmarshal(get(client, "/"), &identity))
+	if identity.ClusterName != "weir-local-elasticsearch" || identity.Version.Number != "8.19.22" { panic("wrong Search identity") }
+	var listing struct { Hits struct { Total struct { Value int `json:"value"`; Relation string `json:"relation"` } `json:"total"`; Hits []struct { ID string `json:"_id"` } `json:"hits"` } `json:"hits"` }
+	must(json.Unmarshal(get(client, "/"+input.SearchIndex+"/_search?size=100&track_total_hits=true"), &listing))
+	expected := input.Records["search"]
+	expected["hot"] = expectedHot(false)
+	verified := listing.Hits.Total.Relation == "eq" && listing.Hits.Total.Value == len(expected) && len(listing.Hits.Hits) == len(expected)
+	seen := make(map[string]bool)
+	records := make([]map[string]any, 0, len(expected))
+	for _, hit := range listing.Hits.Hits {
+		var actual struct { ID string `json:"_id"`; Found bool `json:"found"`; Source json.RawMessage `json:"_source"` }
+		must(json.Unmarshal(get(client, "/"+input.SearchIndex+"/_doc/"+hit.ID), &actual))
+		want, exists := expected[hit.ID]
+		record := compare(actual.Source, hit.ID, want)
+		valid := exists && !seen[hit.ID] && actual.ID == hit.ID && actual.Found && record["full_raw_equal"] == true
+		verified = verified && valid
+		record["expected_unique_id"] = exists && !seen[hit.ID]
+		records = append(records, record)
+		seen[hit.ID] = true
+	}
+	verified = verified && len(seen) == len(expected)
+	report := map[string]any{"index": input.SearchIndex, "cluster": identity.ClusterName,
+		"version": identity.Version.Number, "expected_count": len(expected), "actual_count": listing.Hits.Total.Value,
+		"records": records, "no_extra_or_missing_ids": len(seen) == len(expected), "ownership_verified": verified}
+	return report
+}
+
+func main() {
+	if len(os.Args) != 2 { panic("requires exact owned audit input") }
+	raw, err := os.ReadFile(os.Args[1])
+	must(err)
+	var input auditInput
+	must(json.Unmarshal(raw, &input))
+	if input.DriverPID != 95323 || input.MongoDatabase != "weir_test_95323_1" || input.SearchIndex != "weir_search_95323_1" || len(input.Records["mongo"]) != 12 || len(input.Records["search"]) != 11 { panic("refused unexpected namespace/input") }
+	mongoReport := mongoAudit(input)
+	searchReport := searchAudit(input)
+	verified := mongoReport["ownership_verified"] == true && searchReport["ownership_verified"] == true
+	report := map[string]any{"at": time.Now().UTC().Format(time.RFC3339Nano),
+		"action": "read-only exact local namespace ownership and full raw hash audit; no mutation",
+		"original_qualification": "FAIL driver timeout2m; unchanged", "failed_log_sha256": input.LogSHA256,
+		"input_sha256": fmt.Sprintf("%x", sha256.Sum256(raw)), "mongo": mongoReport, "search": searchReport,
+		"both_namespace_ownership_verified": verified}
+	must(json.NewEncoder(os.Stdout).Encode(report))
+	if !verified { os.Exit(1) }
+}

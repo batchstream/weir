@@ -1,7 +1,7 @@
 # Lua memory qualification, 2026-10-17
 
-Status: **failed baseline; allocation repair passes offline checks; constrained
-CLI qualification pending**. The ingress objective was merged as
+Status: **allocation repair passes offline, constrained CLI and shipping-artifact
+qualification**. The original OOM baseline remains failed. The ingress objective was merged as
 PR #82; it does not bound arbitrary allocations inside the existing Lua VM.
 Overall production-readiness acceptance is incomplete.
 
@@ -61,7 +61,7 @@ and [raw output](lua-memory-results-2026-10-17/lua-production-baseline-process.t
 retain all failures and cleanup uncertainty. The evidence index records original
 paths, bytes and SHA256 hashes without normalization.
 
-## Required repair and acceptance
+## Allocation repair
 
 The repair retains Lua in the main process and pins a limited source patch of
 `iceisfun/golua v1.1.1`. One cumulative allocation budget covers parsing,
@@ -101,19 +101,59 @@ records exact commands, source hashes and unmodified output. The original
 269-line CLI probe remains byte-for-byte unchanged. A separate opt-in probe adds
 both-backend checks for protected-call exhaustion, output-DAG expansion, long
 errors, compiler/comments, repeated existing-key updates and quoted controls.
-Neither probe has yet qualified this repair in a constrained process.
+The final static stack audit covers all four release targets and the restricted
+Weir call graph. It checks guarded parser/compiler recursion, all nine native or
+closure VM entries, nested Lua comparators through Go sort, and the host/ledger
+tail. Its limits and compiler-frame evidence are preserved; it does not claim
+that this library is an arbitrary Go heap sandbox.
 
-Lua remains in the main Weir process. The repair must prevent this process-fatal
-allocation and cover the exposed VM, compiler and bridge allocation paths, with
-real ownership on the existing Node memory budget. Sampling, garbage collection,
-or a process-wide soft heap limit alone does not prevent a single oversized
-allocation. Existing Lua 5.4 behavior, safe helper whitelist, CPU/cancellation
-limits, normal atomic-transform semantics and backend failure evidence must be
-preserved.
+## Constrained process and shipping artifact
 
-The fixed allocation profile must finish within the original caller budget with
-a confirmed Keep or an explicit safe NOT_STARTED/NOT_APPLIED capacity result.
-The process must survive, the independent target must remain unchanged, fresh
-healthy operations and original-SDK read/write recovery must pass, and closing
-the SDKs must return all execution, RPC, wire, ingress and connection owners to
-zero. Final 600-second sustained load and fault qualification remain pending.
+The clean qualified source is
+`a01d523e6fab728d0e48f3ff84d908710559aa65`. Complete source/provenance inventories
+matched before and after the actual runs. Both probes ran in separate owned
+512 MiB, two-CPU Linux arm64 CLI processes using automatic memory management,
+default Store policy, original three-second callers and no retries.
+
+The original unchanged 96-byte string-doubling probe returned
+NOT_APPLIED/RESOURCE_EXHAUSTED in 33.395 ms on the candidate. Normal control
+transforms, complete independent BSON hashes, fresh health requests and the same
+original SDK's Put/Read recovery all passed. All temporary Node/Store/RPC/ingress/
+wire/Q/I owners and connections returned to zero, the process exited normally
+without OOM, and independent checks confirmed fixture/container absence.
+
+The separate supplement passed all six fixed cases on each of MongoDB and
+Elasticsearch. It verifies precise timely outcomes, full raw document hashes,
+same-SDK Put/Read recovery, independent health and final complete backend contents.
+Capacity exhaustion through pcall and shared-output expansion returned safe
+NOT_APPLIED/RESOURCE_EXHAUSTED; long errors returned bounded INVALID_ARGUMENT;
+ordinary transforms, reused table keys, long comments and control quoting passed.
+
+The first supplement retained an incorrect two-connection idle expectation and
+timed out while waiting after otherwise successful operations. Public pinned SDK
+source independently establishes four channels: two SDKs each open both Stores.
+Only those three live-connection expectations changed to a named four-channel
+constant; the final closed-SDK zero-owner assertion is unchanged. The first
+failure remains preserved. Exact container ownership and every BSON/JSON record
+hash were independently audited before separate cleanup, with absence confirmed.
+
+Two independent clean exports reproduced all four platform binaries and archives,
+including both patched dependencies' licenses and provenance. The actual shipping
+Linux arm64 CLI SHA256 is
+`24cb1abf6d5ea9c8623c470cf2ffacccb517e6e1e8a4ab16898ad46807524126`.
+The candidate CLI includes Go VCS metadata; clean exported release builds use
+their recorded source revision and intentionally have different bytes. The exact
+shipping archive binary therefore ran both probes separately, using the same
+verified race driver and strict assertions. Both passed: its original allocation
+probe safely rejected in 31.496 ms, final owners/connections reached zero within
+15 ms, no OOM occurred, and both CLI processes exited zero. All owned namespaces
+and containers were independently absent after cleanup.
+
+[Repair qualification evidence](lua-memory-results-2026-10-17/repair-qualification/evidence-index.json)
+preserves the first failed supplement, cleanup, corrected candidate, reproducible
+packages and exact shipping artifact runs. Large raw logs are gzip-compressed
+without changing their decompressed bytes; the index records both hashes.
+
+Final 600-second sustained load, latency SLOs and fault qualification remain
+pending. Passing this allocation objective does not complete overall production
+readiness acceptance.

@@ -1,0 +1,54 @@
+{
+  "created_utc": "2026-10-16T22:01:09.889902+00:00",
+  "scope": "read-only after original timeout exit2; original qualification remains FAIL",
+  "driver_PID": 95323,
+  "driver_exit": 2,
+  "driver_process_absent": true,
+  "source": "2f5d131de72c7548fb4a792aed4708466d559359",
+  "CLI_sha256": "71680b988bf93fe87f36cd38cb04c0f36fb7902275534183a1e76a5e5dd762cf",
+  "CLI_actual_sha256": "71680b988bf93fe87f36cd38cb04c0f36fb7902275534183a1e76a5e5dd762cf",
+  "container_ID": "508d384867808261cdddc05914c19d711057d422fde6ad19e58c8724e469a1dc",
+  "container_name": "/weir-memory-recovery-95323-1792187895247551000",
+  "owner_label": "weir-memory-recovery-95323-1792187895247551000",
+  "configured_image": "busybox:1.37.0",
+  "actual_image_ID": "sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b",
+  "state": {
+    "Status": "running",
+    "Running": true,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 46619,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-16T21:58:15.318138836Z",
+    "FinishedAt": "0001-01-01T00:00:00Z"
+  },
+  "binary_mount": {
+    "Type": "bind",
+    "Source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/lua-repair-candidate-r1/weir-linux-arm64",
+    "Destination": "/weir",
+    "Mode": "",
+    "RW": false,
+    "Propagation": "rprivate"
+  },
+  "HostConfig": {
+    "Memory": 536870912,
+    "MemorySwap": 536870912,
+    "NanoCpus": 2000000000,
+    "PidsLimit": 96,
+    "ReadonlyRootfs": true
+  },
+  "process": {
+    "Path": "/weir",
+    "Args": [
+      "serve",
+      "--config",
+      "/fixture/node.yaml",
+      "--routes",
+      "/fixture/node-routing.yaml"
+    ]
+  },
+  "exact_owned_CLI_verified": true
+}
