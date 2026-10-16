@@ -140,7 +140,7 @@ func TestProductionProcessQualification(t *testing.T) {
 		t.Fatal("formal qualification requires an exact clean source and SHA256 receipt", version, digest)
 	}
 	t.Logf("qualification=%t duration=%s warmup=30s fixed_arrival=200RPC/s capacity=1073741824 CPUs=2 driver=%s/%s/%s engine=%s image=%s SHA256=%s version=%s", !smoke, duration, runtime.Version(), runtime.GOOS, runtime.GOARCH, engine, image, digest, strings.TrimSpace(version))
-	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node execution leases=1024/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
+	t.Log("driver_inflight_limit=512; service MaxInFlight=16/store, queue=1024 entries/32MiB, Node Native invocations=1024/total leases=32768/shared observed byte budget, batching=128/4MiB/20ms, stall=30s unchanged")
 	initial := process.sample(t)
 	native := qualificationExecutionMemory(t, initial, process.capacity)
 	if testmetrics.Sum(initial, "weir_memory_go_runtime_managed") != 1 {
@@ -185,8 +185,8 @@ func qualificationGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name
 
 func qualificationExecutionMemory(t *testing.T, metrics map[string]*dto.MetricFamily, capacity float64) map[string]float64 {
 	t.Helper()
-	values := make(map[string]float64, 17)
-	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
+	values := make(map[string]float64, 19)
+	for _, name := range []string{"budget_bytes", "used_bytes", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "io_reserve_bytes", "budget_known", "leases", "leases_limit", "native_leases", "native_leases_limit", "starting", "settled", "borrowed", "waiting", "terminal"} {
 		values[name] = qualificationGauge(t, metrics, "weir_execution_memory_"+name, nil)
 	}
 	denials := metrics["weir_execution_memory_budget_rejections_total"].GetMetric()
@@ -203,11 +203,11 @@ func qualificationExecutionMemory(t *testing.T, metrics map[string]*dto.MetricFa
 			families++
 		}
 	}
-	if families != 17 || values["budget_known"] != 1 || values["leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > capacity*.70*2/3 {
+	if families != 19 || values["budget_known"] != 1 || values["leases_limit"] != 32768 || values["native_leases_limit"] != 1024 || values["budget_bytes"] <= 0 || values["budget_bytes"] > capacity*.70*2/3 {
 		t.Fatal("default shared execution memory policy is missing or changed", families, values)
 	}
 	states := values["starting"] + values["settled"] + values["borrowed"] + values["waiting"] + values["terminal"]
-	if values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["input_used_bytes"] > values["input_reserved_bytes"] || values["input_reserved_bytes"] > values["resident_bytes"] || values["wire_bytes"] > values["used_bytes"] || values["wire_buffers"] > values["leases"] || values["leases"] > values["leases_limit"] || states != values["leases"] {
+	if values["used_bytes"] > values["budget_bytes"] || values["resident_bytes"] > values["used_bytes"] || values["input_used_bytes"] > values["input_reserved_bytes"] || values["input_reserved_bytes"] > values["resident_bytes"] || values["wire_bytes"] > values["used_bytes"] || values["wire_buffers"] > values["leases"] || values["leases"] > values["leases_limit"] || values["native_leases"] > values["native_leases_limit"] || values["native_leases"] > values["leases"] || states != values["leases"] {
 		t.Fatal("Node execution memory ledger exceeded its bounded ownership", values)
 	}
 	return values
@@ -431,7 +431,7 @@ func runQualificationWorkload(t *testing.T, work qualificationWorkload) {
 			t.Fatal("Execution memory budget rejections changed during final recovery", native)
 		}
 		idle := testmetrics.Sum(metrics, "weir_memory_latched") == 0 && testmetrics.Sum(metrics, "weir_memory_cgroup_working_set_bytes") <= work.process.capacity*.70
-		for _, name := range []string{"used_bytes", "leases", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "starting", "settled", "borrowed", "waiting", "terminal"} {
+		for _, name := range []string{"used_bytes", "leases", "native_leases", "resident_bytes", "input_reserved_bytes", "input_used_bytes", "wire_bytes", "wire_buffers", "starting", "settled", "borrowed", "waiting", "terminal"} {
 			idle = idle && native[name] == 0
 		}
 		for _, name := range []string{"weir_store_pending_entries", "weir_store_pending_reserved_bytes", "weir_store_active_executions", "weir_store_paused_native_outputs", "weir_store_paused_native_reserved_bytes", "weir_store_result_reserved_entries", "weir_store_result_reserved_bytes", "weir_store_retained_result_reserved_bytes", "weir_store_working_reserved_bytes", "weir_store_publishers", "weir_ingress_sessions", "weir_ingress_queued_response_bytes"} {
