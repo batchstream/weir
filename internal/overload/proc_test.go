@@ -123,6 +123,58 @@ func TestVisibleAncestorPressureAndRecovery(t *testing.T) {
 	}
 }
 
+func TestReclaimableCacheAndResidentPressureUseIndependentLevels(t *testing.T) {
+	f := fixture(t)
+	f.level(t, "a/leaf", "1000", "950")
+	f.level(t, "a", "2000", "1900")
+	f.write(t, filepath.Join(f.mount, "a/leaf", "memory.stat"), "anon 50\nfile 900\ninactive_file 900\nshmem 0\n")
+	f.write(t, filepath.Join(f.mount, "a", "memory.stat"), "anon 100\nfile 1800\ninactive_file 1800\nshmem 0\n")
+	guard := &Guard{processBudget: 1 << 20}
+	guard.sample(f.profile.observe(DefaultLimits()))
+	snapshot := guard.Snapshot()
+	if snapshot.Unknown || snapshot.Latched || snapshot.Cgroup.Current != 950 || snapshot.Cgroup.WorkingSet != 50 {
+		t.Fatal("reclaimable cache became pressure", snapshot)
+	}
+	// An ancestor's anonymous or shared-memory usage is real pressure even
+	// when the leaf is quiet and the ancestor has substantial file pages.
+	f.write(t, filepath.Join(f.mount, "a", "memory.stat"), "anon 800\nfile 1100\ninactive_file 100\nshmem 1000\n")
+	guard.sample(f.profile.observe(DefaultLimits()))
+	snapshot = guard.Snapshot()
+	if snapshot.Unknown || !snapshot.Latched || snapshot.Cgroup.Scope != "ancestor" || snapshot.Cgroup.Current != 1900 || snapshot.Cgroup.WorkingSet != 1800 {
+		t.Fatal("ancestor resident pressure was ignored", snapshot)
+	}
+	f.write(t, filepath.Join(f.mount, "a", "memory.stat"), "anon 100\nfile 1800\ninactive_file 1800\nshmem 0\n")
+	guard.sample(f.profile.observe(DefaultLimits()))
+	if snapshot := guard.Snapshot(); snapshot.Unknown || snapshot.Latched {
+		t.Fatal("reclaimable cache prevented recovery", snapshot)
+	}
+}
+
+func TestMemoryStatMissingInvalidAndInconsistentRemainConservative(t *testing.T) {
+	for _, raw := range []string{
+		"", "anon 10\n", "inactive_file bad\n", "inactive_file -1\n", "inactive_file 18446744073709551616\n",
+		"inactive_file 1\ninactive_file 1\n", "inactive_file 1 extra\n", "inactive_file 900\n",
+		"inactive_file 850\nanon bad\n", strings.Repeat("x", maxMemoryStatBytes+1),
+	} {
+		t.Run(fmt.Sprintf("%q", raw[:min(len(raw), 40)]), func(t *testing.T) {
+			f := fixture(t)
+			f.level(t, "a", "1000", "850")
+			if raw != "" {
+				f.write(t, filepath.Join(f.mount, "a", "memory.stat"), raw)
+			}
+			guard := &Guard{processBudget: 1 << 20}
+			guard.sample(f.profile.observe(DefaultLimits()))
+			snapshot := guard.Snapshot()
+			if snapshot.Unknown || !snapshot.Latched || snapshot.Cgroup.WorkingSet != 850 || snapshot.Cgroup.Current != 850 {
+				t.Fatal("invalid optional breakdown removed real pressure", snapshot)
+			}
+		})
+	}
+	if inactive, err := parseInactiveFile("file 900\ninactive_file 800\nanon 50\n"); err != nil || inactive != 800 {
+		t.Fatal(inactive, err)
+	}
+}
+
 func TestProfileFailureAndDynamicChanges(t *testing.T) {
 	for _, failure := range []string{"permission", "current_missing", "current_malformed", "current_overflow", "max_partial", "rss_missing", "rss_overflow", "oversized", "escape"} {
 		t.Run(failure, func(t *testing.T) {

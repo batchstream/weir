@@ -15,13 +15,14 @@ const maxLevels = 32
 const maxMountBytes = 128 << 10
 
 const maxCgroupBytes = 16 << 10
+const maxMemoryStatBytes = 16 << 10
 
 var errProfile = errors.New("unsupported memory profile")
 
 type memoryLevel struct {
-	name           string
-	limit          uint64
-	finite, absent bool
+	name                       string
+	current, workingSet, limit uint64
+	finite, absent             bool
 }
 
 // Linux parsing is kept portable so offline race tests can exercise real owned
@@ -83,7 +84,7 @@ func (p *memoryProfile) cgroupObservation(limits Limits) (CgroupSnapshot, bool, 
 	snapshot.Levels = len(names)
 	high, low := false, true
 	for i, name := range names {
-		level, current, err := readLevel(root, name)
+		level, err := readLevel(root, name)
 		// Only the visible top ancestor may lack both memory interfaces.
 		if err != nil || level.absent && (i == 0 || name != ".") {
 			return snapshot, false, false
@@ -95,16 +96,16 @@ func (p *memoryProfile) cgroupObservation(limits Limits) (CgroupSnapshot, bool, 
 		}
 		levels = append(levels, level)
 		if i == 0 {
-			snapshot.Current, snapshot.Scope = current, "leaf"
+			snapshot.Current, snapshot.WorkingSet, snapshot.Scope = level.current, level.workingSet, "leaf"
 		}
 		if !level.finite {
 			continue
 		}
 		snapshot.Capacity = smallerBudget(snapshot.Capacity, level.limit)
-		high = high || level.limit == 0 || current >= watermark(level.limit, limits.HighWatermark, true)
-		low = low && level.limit != 0 && current <= watermark(level.limit, limits.LowWatermark, false)
-		if !snapshot.Finite || pressureGreater(current, level.limit, snapshot) {
-			snapshot.Current, snapshot.Limit, snapshot.Finite = current, level.limit, true
+		high = high || level.limit == 0 || level.workingSet >= watermark(level.limit, limits.HighWatermark, true)
+		low = low && level.limit != 0 && level.workingSet <= watermark(level.limit, limits.LowWatermark, false)
+		if !snapshot.Finite || pressureGreater(level.workingSet, level.limit, snapshot) {
+			snapshot.Current, snapshot.WorkingSet, snapshot.Limit, snapshot.Finite = level.current, level.workingSet, level.limit, true
 			snapshot.Scope = "leaf"
 			if i != 0 {
 				snapshot.Scope = "ancestor"
@@ -117,47 +118,88 @@ func (p *memoryProfile) cgroupObservation(limits Limits) (CgroupSnapshot, bool, 
 	return snapshot, high, low
 }
 
-func pressureGreater(current, limit uint64, previous CgroupSnapshot) bool {
+func pressureGreater(workingSet, limit uint64, previous CgroupSnapshot) bool {
 	if previous.Limit == 0 {
 		return false
 	}
 	if limit == 0 {
 		return true
 	}
-	a, b := bits.Mul64(current, previous.Limit)
-	c, d := bits.Mul64(previous.Current, limit)
+	a, b := bits.Mul64(workingSet, previous.Limit)
+	c, d := bits.Mul64(previous.WorkingSet, limit)
 	return a > c || a == c && b > d
 }
 
-func readLevel(root *os.Root, name string) (memoryLevel, uint64, error) {
+func readLevel(root *os.Root, name string) (memoryLevel, error) {
 	level := memoryLevel{name: name}
-	rawMax, maxErr := readRootFile(root, path.Join(name, "memory.max"))
-	rawCurrent, currentErr := readRootFile(root, path.Join(name, "memory.current"))
+	rawMax, maxErr := readRootFile(root, path.Join(name, "memory.max"), 64)
+	rawCurrent, currentErr := readRootFile(root, path.Join(name, "memory.current"), 64)
 	if errors.Is(maxErr, os.ErrNotExist) && errors.Is(currentErr, os.ErrNotExist) {
 		level.absent = true
-		return level, 0, nil
+		return level, nil
 	}
 	if maxErr != nil || currentErr != nil {
-		return level, 0, errProfile
+		return level, errProfile
 	}
 	if strings.TrimSpace(rawMax) != "max" {
 		n, err := parseNumber(rawMax)
 		if err != nil {
-			return level, 0, err
+			return level, err
 		}
 		level.limit, level.finite = n, true
 	}
 	current, err := parseNumber(rawCurrent)
-	return level, current, err
+	if err != nil {
+		return level, err
+	}
+	level.current, level.workingSet = current, current
+	// Inactive file pages are reclaimable cache, not live workload. Keep raw
+	// accounting if the optional breakdown is unavailable or inconsistent.
+	rawStat, err := readRootFile(root, path.Join(name, "memory.stat"), maxMemoryStatBytes)
+	if err == nil {
+		inactive, err := parseInactiveFile(rawStat)
+		if err == nil && inactive <= current {
+			level.workingSet -= inactive
+		}
+	}
+	return level, nil
 }
 
-func readRootFile(root *os.Root, name string) (string, error) {
+func parseInactiveFile(raw string) (uint64, error) {
+	if len(raw) > maxMemoryStatBytes {
+		return 0, errProfile
+	}
+	var inactive uint64
+	found := false
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			return 0, errProfile
+		}
+		n, err := parseNumber(fields[1])
+		if err != nil {
+			return 0, err
+		}
+		if fields[0] == "inactive_file" {
+			if found {
+				return 0, errProfile
+			}
+			inactive, found = n, true
+		}
+	}
+	if !found {
+		return 0, errProfile
+	}
+	return inactive, nil
+}
+
+func readRootFile(root *os.Root, name string, limit int64) (string, error) {
 	file, err := root.Open(name)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	return readBounded(file, 64)
+	return readBounded(file, limit)
 }
 
 func readFile(name string, limit int64) (string, error) {

@@ -138,13 +138,14 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for name, value := range map[string]float64{
-		"current_bytes": float64(memory.Cgroup.Current),
-		"limit_bytes":   float64(memory.Cgroup.Limit),
-		"levels":        float64(memory.Cgroup.Levels),
+		"current_bytes":     float64(memory.Cgroup.Current),
+		"working_set_bytes": float64(memory.Cgroup.WorkingSet),
+		"limit_bytes":       float64(memory.Cgroup.Limit),
+		"levels":            float64(memory.Cgroup.Levels),
 	} {
 		desc := prometheus.NewDesc(
 			"weir_memory_cgroup_"+name,
-			"Most pressured visible finite cgroup current/max pair; unlimited reports leaf current with finite=0. Values require cgroup_valid=1. Never added to process RSS.",
+			"Visible finite cgroup with greatest working-set/max pressure; current includes file cache, working set excludes validated inactive_file. Missing breakdown uses current. Unlimited reports leaf usage with finite=0. Values require cgroup_valid=1. Never added to process RSS.",
 			nil,
 			nil,
 		)

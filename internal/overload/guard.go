@@ -50,16 +50,17 @@ type Snapshot struct {
 	Cgroup            CgroupSnapshot
 }
 
-// Cgroup is the most pressured finite visible level, with its own current/max
-// pair (never leaf usage divided by an ancestor limit). With no finite level it
-// reports the leaf current and Finite=false. Paths never leave the sampler.
+// Cgroup is the most pressured finite visible level, with its own working-set/max
+// pair (never leaf usage divided by an ancestor limit). Current remains the raw
+// charge, including reclaimable file cache. With no finite level it reports the
+// leaf usage and Finite=false. Paths never leave the sampler.
 type CgroupSnapshot struct {
-	Current, Limit uint64
-	Capacity       uint64
-	Levels         int
-	Finite, Valid  bool
-	State          string // not_applicable, v2, unknown
-	Scope          string // none, leaf, ancestor
+	Current, WorkingSet, Limit uint64
+	Capacity                   uint64
+	Levels                     int
+	Finite, Valid              bool
+	State                      string // not_applicable, v2, unknown
+	Scope                      string // none, leaf, ancestor
 }
 
 type observation struct {
