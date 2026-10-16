@@ -1,0 +1,22 @@
+--- /Users/liran/.codex/worktrees/native-burst-admission/weir/internal/server/server.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-weir-server.go.txt
+@@ -106,8 +106,6 @@
+ 		grpc.MaxRecvMsgSize(receiveBytes),
+ 		grpc.MaxSendMsgSize(sendBytes),
+ 		grpc.MaxHeaderListSize(^uint32(0)),
+-		grpc.InitialWindowSize(64 << 10),
+-		grpc.InitialConnWindowSize(64 << 10),
+ 		grpc.InTapHandle(s.admitRPC),
+ 		grpc.StatsHandler(statistics),
+ 		grpc.ForceServerCodecV2(codec),
+--- original-DIAGNOSTIC-effective-version.go
++++ /Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC-weir-version.go.txt
+@@ -47,7 +47,7 @@
+ 		identity.Dirty = "false"
+ 	}
+ 
+-	identity.Version = "DIAGNOSTIC-ingress-stages"
++	identity.Version = "DIAGNOSTIC-flow-control"
+ 	identity.Revision = "0288974d8b64c199da4f0d7fb7f03d8a33978eee"
+ 	identity.State = "DIAGNOSTIC-overlay"
+ 	identity.Dirty = "true"

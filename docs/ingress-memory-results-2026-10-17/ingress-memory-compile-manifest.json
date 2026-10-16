@@ -1,0 +1,34 @@
+{
+  "scope": "OFFLINE COMPILE ONLY; no tests, DB, Docker or load",
+  "source": "/Users/liran/Projects/liran/go/weir/internal/app/ingress_memory_budget_integration_test.go",
+  "source_sha256": "56b3025addfc40b65f44e48533814b2210d4318416b00673aade3ebb21023a3f",
+  "source_lines": 873,
+  "primary_base": "fcd583919f32ccab2b6bc96791b1871241941d13",
+  "source_status": "?? internal/app/ingress_memory_budget_integration_test.go\n",
+  "command": [
+    "go",
+    "test",
+    "-race",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^$",
+    "./internal/app"
+  ],
+  "environment": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "actual_exit": 0,
+  "artifacts_sha256": {
+    "ingress-memory-compile.txt": "921cab23fa0d16ccf56ae37426e565e9152ca43e77ef2e8322a95bb4581d8d53",
+    "ingress-memory-compile.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "at_utc": "2026-10-16T16:56:17.045732+00:00"
+}

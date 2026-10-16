@@ -1,0 +1,1 @@
+ok  	github.com/batchstream/weir/internal/app	2.048s [no tests to run]

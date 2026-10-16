@@ -102,12 +102,12 @@ func New(cfg Config) (*Server, error) {
 	codec := &responseCodec{admission: s.admission}
 	keepaliveParameters := keepalive.ServerParameters{Time: l.KeepaliveInterval, Timeout: l.KeepaliveTimeout, MaxConnectionIdle: l.Idle}
 	receiveBytes, sendBytes := protocol.MaxTransportMessageBytes, protocol.MaxTransportMessageBytes
+	receiveBudget := receiveMemory{admission: s.admission}
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(receiveBytes),
 		grpc.MaxSendMsgSize(sendBytes),
-		grpc.MaxHeaderListSize(^uint32(0)),
-		grpc.InitialWindowSize(64 << 10),
-		grpc.InitialConnWindowSize(64 << 10),
+		grpc.MaxHeaderListSize(64 << 10),
+		grpc.ReceiveMemory(receiveBudget),
 		grpc.InTapHandle(s.admitRPC),
 		grpc.StatsHandler(statistics),
 		grpc.ForceServerCodecV2(codec),

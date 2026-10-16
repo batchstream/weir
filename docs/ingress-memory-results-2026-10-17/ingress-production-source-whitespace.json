@@ -1,0 +1,9 @@
+{
+  "scope": "source whitespace check preserves unchanged upstream source and raw evidence",
+  "source": "ff4b3dbf588ba3d0c621472186126cad2a2479da",
+  "initial_exit": 2,
+  "initial_output": "third_party/grpc/benchmark/benchmain/main.go:37: space before tab in indent.\n+\t  \tgo run benchmark/benchresult/main.go curPerf\nthird_party/grpc/benchmark/benchmain/main.go:39: space before tab in indent.\n+\t  \tgo run benchmark/benchresult/main.go basePerf curPerf\n",
+  "unchanged_upstream_file_sha256": "e1f43ec459a899bbf9899d4e28832870226f0436b5b1f659f12d906ef7346c48",
+  "resolution": "Kept byte-exact public upstream comments; no source normalization. Source diff check excludes this one unchanged public file, upstream LICENSE/AUTHORS, raw WEIR_PATCH.diff and immutable evidence snapshots. Remaining staged source/docs passed.",
+  "final_exit": 0
+}

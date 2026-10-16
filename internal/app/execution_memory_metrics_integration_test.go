@@ -7,11 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/batchstream/weir/internal/store"
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 	dto "github.com/prometheus/client_model/go"
 )
 
-const qualificationIngressConnectionBytes = 512 << 10
+const qualificationIngressConnectionBytes = store.IngressConnectionBytes
 
 func qualificationGauge(t *testing.T, metrics map[string]*dto.MetricFamily, name string, labels map[string]string) float64 {
 	t.Helper()

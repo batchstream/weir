@@ -1,0 +1,775 @@
+{
+  "created_utc": "2026-10-16T19:17:08.351702+00:00",
+  "classification": "DIAGNOSTIC_ONLY_NOT_QUALIFICATION",
+  "status": "FAIL",
+  "actual_exit": 1,
+  "runtime_run_count": 1,
+  "retry": false,
+  "original_A_FAIL_preserved": {
+    "raw_sha256": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2",
+    "manifest_sha256": "2a97c8b0435bec57056bc22106fa4707f4388f87b5cb2d1184c284d99f5655e8"
+  },
+  "identity": {
+    "artifact_base": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+    "driver_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+    "original_source_sha256": "941d8dbb37b1449dfdb0a8f6c33e5402eafc70b6ca97ab2c100b8c8f8df35c07",
+    "diagnostic_binary_sha256": "e5116920123a3c5b76ba4589b6cc2df4b772a9b593f472514f4f353307a00fae",
+    "runtime_version": [
+      {
+        "raw_line": 6,
+        "text": "ingress_memory_budget_integration_test.go:84: ingress profile_partial=false capacity=512MiB CPUs=2 records=32 exact_BSON_bytes=12582912 common_caller=5s retries=0 version={\"product\":\"weir\",\"version\":\"DIAGNOSTIC-ingress-stages\",\"revision\":\"0288974d8b64c199da4f0d7fb7f03d8a33978eee\",\"go\":\"go1.27.1\",\"target\":\"linux/arm64\",\"state\":\"DIAGNOSTIC-overlay\",\"dirty\":\"true\"}"
+      }
+    ],
+    "source351_overlay9_modsum_before_after_unchanged": true,
+    "permanent_trees_clean": true
+  },
+  "fixed_profile": {
+    "MiB": 512,
+    "CPUs": 2,
+    "records": 32,
+    "exact_BSON_bytes": 12582912,
+    "original_common_seconds": 5,
+    "caller_health_seconds": 3,
+    "final_ownership_seconds": 5,
+    "additional_work": "oneRead+oneNative through sameSDKClient at t0+1s; unconditional smallPut/Read recovery after fail",
+    "default_service_limits_unchanged": true,
+    "no_codec_replacement_or_validation_bypass": true
+  },
+  "outcomes": {
+    "SDK_returned": 32,
+    "rpc_codes": {
+      "DeadlineExceeded": 32
+    },
+    "mutation_outcomes": {
+      "": 32
+    },
+    "summary": [
+      {
+        "raw_line": 587,
+        "text": "ingress_memory_budget_integration_test.go:84: ingress_effect_summary offered=32 APPLIED=0 capacity_denied=0 ambiguous=32 independent_present=0 completed_RPC=0 all_ordinary_writes_APPLIED=false capacity_survival_does_not_imply_business_completeness=true"
+      }
+    ],
+    "perID_absent": 32,
+    "perID_present": 0,
+    "health": [
+      {
+        "raw_line": 126,
+        "text": "ingress_memory_budget_integration_test.go:251: DIAGNOSTIC ingress_health client_instance=0xc0003a4cf0 kind=0 caller3s elapsed=112.971459ms error=<nil>"
+      },
+      {
+        "raw_line": 127,
+        "text": "ingress_memory_budget_integration_test.go:251: DIAGNOSTIC ingress_health client_instance=0xc0003a4cf0 kind=2 caller3s elapsed=113.505209ms error=<nil>"
+      },
+      {
+        "raw_line": 287,
+        "text": "ingress_memory_budget_integration_test.go:267: DIAGNOSTIC ingress_health client_instance=0xc0002703f0 kind=0 caller3s elapsed=15.956792ms error=<nil>"
+      },
+      {
+        "raw_line": 288,
+        "text": "ingress_memory_budget_integration_test.go:267: DIAGNOSTIC ingress_health client_instance=0xc0002703f0 kind=2 caller3s elapsed=16.648625ms error=<nil>"
+      }
+    ],
+    "sameSDK_recovery_attempted_even_after_failure": true,
+    "sameSDK_recovery": [
+      {
+        "raw_line": 620,
+        "text": "ingress_memory_budget_integration_test.go:84: DIAGNOSTIC unconditional_recovery prior_failure=true original32Put_client_instance=0xc0002703f0 TCP_connection_identity=unproven_until_streamID_remoteAddr_trace_correlated"
+      },
+      {
+        "raw_line": 635,
+        "text": "ingress_memory_budget_integration_test.go:84: same_running_process_and_SDK fresh small Put_APPLIED/Read_hash validated caller3s"
+      }
+    ],
+    "ownership": [
+      {
+        "raw_line": 7,
+        "text": "ingress_memory_budget_integration_test.go:84: ingress_final5s Node/Store/RPC/wire/Q/I ownership0 latch0 elapsed=8.642875ms"
+      },
+      {
+        "raw_line": 489,
+        "text": "ingress_memory_budget_integration_test.go:84: ingress_final5s Node/Store/RPC/wire/Q/I ownership0 latch0 elapsed=33.693208ms"
+      },
+      {
+        "raw_line": 637,
+        "text": "ingress_memory_budget_integration_test.go:84: ingress_final5s Node/Store/RPC/wire/Q/I ownership0 latch0 elapsed=7.906583ms"
+      }
+    ]
+  },
+  "lifecycle": {
+    "valid_docker_samples": 52,
+    "unknown_docker_samples": 0,
+    "cgroup_events": [
+      {
+        "raw_line": 21,
+        "text": "ingress_memory_budget_integration_test.go:84: cgroup_memory_events phase=initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+      },
+      {
+        "raw_line": 639,
+        "text": "ingress_memory_budget_integration_test.go:84: cgroup_memory_events phase=final value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+      }
+    ],
+    "CLI_exit": [
+      {
+        "raw_line": 884,
+        "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+      }
+    ],
+    "backend_cleanup": [
+      {
+        "raw_line": 883,
+        "text": "2026/10/16 19:15:16 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+      }
+    ],
+    "owned_cli_after": "",
+    "noOOM": true,
+    "normal_exit0": true,
+    "removed": true
+  },
+  "scrapes": {
+    "successful": 198,
+    "failed": 0,
+    "ranges": {
+      "go_gc_cycles": {
+        "min": 0,
+        "max": 411,
+        "first": 0,
+        "last": 411
+      },
+      "go_gc_pause_seconds": {
+        "min": 0,
+        "max": 0.01295729,
+        "first": 0,
+        "last": 0.01295729
+      },
+      "go_memstats_alloc_bytes": {
+        "min": 1493840,
+        "max": 322833608,
+        "first": 1863856,
+        "last": 1598024
+      },
+      "go_memstats_alloc_bytes_total": {
+        "min": 1863856,
+        "max": 388589264,
+        "first": 1863856,
+        "last": 388589264
+      },
+      "go_memstats_buck_hash_sys_bytes": {
+        "min": 1445410,
+        "max": 1445410,
+        "first": 1445410,
+        "last": 1445410
+      },
+      "go_memstats_frees_total": {
+        "min": 2942,
+        "max": 869960,
+        "first": 2942,
+        "last": 869960
+      },
+      "go_memstats_gc_sys_bytes": {
+        "min": 1671968,
+        "max": 4517184,
+        "first": 1671968,
+        "last": 4455744
+      },
+      "go_memstats_heap_alloc_bytes": {
+        "min": 1493840,
+        "max": 322833608,
+        "first": 1863856,
+        "last": 1598024
+      },
+      "go_memstats_heap_idle_bytes": {
+        "min": 1417216,
+        "max": 326926336,
+        "first": 3760128,
+        "last": 326893568
+      },
+      "go_memstats_heap_inuse_bytes": {
+        "min": 3235840,
+        "max": 325156864,
+        "first": 3940352,
+        "last": 3670016
+      },
+      "go_memstats_heap_objects": {
+        "min": 7718,
+        "max": 165129,
+        "first": 14315,
+        "last": 9965
+      },
+      "go_memstats_heap_released_bytes": {
+        "min": 1400832,
+        "max": 74547200,
+        "first": 3760128,
+        "last": 74547200
+      },
+      "go_memstats_heap_sys_bytes": {
+        "min": 7405568,
+        "max": 330563584,
+        "first": 7700480,
+        "last": 330563584
+      },
+      "go_memstats_last_gc_time_seconds": {
+        "min": 0,
+        "max": 1792178116.7530289,
+        "first": 0,
+        "last": 1792178116.7530289
+      },
+      "go_memstats_mallocs_total": {
+        "min": 17257,
+        "max": 879925,
+        "first": 17257,
+        "last": 879925
+      },
+      "go_memstats_mcache_inuse_bytes": {
+        "min": 4592,
+        "max": 4592,
+        "first": 4592,
+        "last": 4592
+      },
+      "go_memstats_mcache_sys_bytes": {
+        "min": 16072,
+        "max": 16072,
+        "first": 16072,
+        "last": 16072
+      },
+      "go_memstats_mspan_inuse_bytes": {
+        "min": 64000,
+        "max": 3224640,
+        "first": 64000,
+        "last": 88960
+      },
+      "go_memstats_mspan_sys_bytes": {
+        "min": 65280,
+        "max": 3231360,
+        "first": 65280,
+        "last": 3231360
+      },
+      "go_memstats_next_gc_bytes": {
+        "min": 4194304,
+        "max": 322812392,
+        "first": 4194304,
+        "last": 4194304
+      },
+      "go_memstats_other_sys_bytes": {
+        "min": 449902,
+        "max": 1017582,
+        "first": 498190,
+        "last": 897198
+      },
+      "go_memstats_stack_inuse_bytes": {
+        "min": 688128,
+        "max": 1081344,
+        "first": 688128,
+        "last": 786432
+      },
+      "go_memstats_stack_sys_bytes": {
+        "min": 688128,
+        "max": 1081344,
+        "first": 688128,
+        "last": 786432
+      },
+      "go_memstats_sys_bytes": {
+        "min": 12085528,
+        "max": 341395800,
+        "first": 12085528,
+        "last": 341395800
+      },
+      "process_cpu_seconds_total": {
+        "min": 0.03,
+        "max": 3.68,
+        "first": 0.03,
+        "last": 3.68
+      },
+      "process_resident_memory_bytes": {
+        "min": 17784832,
+        "max": 349126656,
+        "first": 17784832,
+        "last": 279855104
+      },
+      "weir_execution_memory_borrowed": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_budget_bytes": {
+        "min": 235166105,
+        "max": 246290841,
+        "first": 245359684,
+        "last": 241637785
+      },
+      "weir_execution_memory_budget_known": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_execution_memory_budget_rejections_total": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_input_reserved_bytes": {
+        "min": 0,
+        "max": 33554432,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_input_used_bytes": {
+        "min": 0,
+        "max": 9618,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_io_reserve_bytes": {
+        "min": 48795648,
+        "max": 48795648,
+        "first": 48795648,
+        "last": 48795648
+      },
+      "weir_execution_memory_leases": {
+        "min": 0,
+        "max": 2,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_leases_limit": {
+        "min": 32768,
+        "max": 32768,
+        "first": 32768,
+        "last": 32768
+      },
+      "weir_execution_memory_native_leases": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_native_leases_limit": {
+        "min": 1024,
+        "max": 1024,
+        "first": 1024,
+        "last": 1024
+      },
+      "weir_execution_memory_resident_bytes": {
+        "min": 0,
+        "max": 33554432,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_settled": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_starting": {
+        "min": 0,
+        "max": 2,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_terminal": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_used_bytes": {
+        "min": 0,
+        "max": 129695199,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_waiting": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_wire_buffers": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_execution_memory_wire_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_ingress_connections": {
+        "min": 2,
+        "max": 2,
+        "first": 2,
+        "last": 2
+      },
+      "weir_ingress_queued_response_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_ingress_sessions": {
+        "min": 0,
+        "max": 34,
+        "first": 0,
+        "last": 0
+      },
+      "weir_memory_budget_bytes": {
+        "min": 536870912,
+        "max": 536870912,
+        "first": 536870912,
+        "last": 536870912
+      },
+      "weir_memory_cgroup_current_bytes": {
+        "min": 26054656,
+        "max": 370704384,
+        "first": 26054656,
+        "last": 306102272
+      },
+      "weir_memory_cgroup_finite": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_levels": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_limit_bytes": {
+        "min": 536870912,
+        "max": 536870912,
+        "first": 536870912,
+        "last": 536870912
+      },
+      "weir_memory_cgroup_scope": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_state": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_valid": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_cgroup_working_set_bytes": {
+        "min": 26001408,
+        "max": 370651136,
+        "first": 26001408,
+        "last": 306049024
+      },
+      "weir_memory_go_runtime_limit_bytes": {
+        "min": 282199326,
+        "max": 295549009,
+        "first": 294431620,
+        "last": 289965342
+      },
+      "weir_memory_go_runtime_managed": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_latched": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_memory_process_valid": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_recovery_allowance_bytes": {
+        "min": 352749158,
+        "max": 369436262,
+        "first": 368039526,
+        "last": 362456678
+      },
+      "weir_memory_recovery_allowance_known": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_sample_bytes": {
+        "min": 18231296,
+        "max": 347590656,
+        "first": 18231296,
+        "last": 292696064
+      },
+      "weir_memory_sample_observed": {
+        "min": 1,
+        "max": 1,
+        "first": 1,
+        "last": 1
+      },
+      "weir_memory_unknown": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_active_executions": {
+        "min": 0,
+        "max": 2,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_active_executions_limit": {
+        "min": 16,
+        "max": 16,
+        "first": 16,
+        "last": 16
+      },
+      "weir_store_batch_max_bytes": {
+        "min": 4194304,
+        "max": 4194304,
+        "first": 4194304,
+        "last": 4194304
+      },
+      "weir_store_batch_max_operations": {
+        "min": 128,
+        "max": 128,
+        "first": 128,
+        "last": 128
+      },
+      "weir_store_batch_max_wait_seconds": {
+        "min": 0.02,
+        "max": 0.02,
+        "first": 0.02,
+        "last": 0.02
+      },
+      "weir_store_batch_operations": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_closed": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_draining": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_execution_seconds": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_executions_total": {
+        "min": 0,
+        "max": 6,
+        "first": 0,
+        "last": 6
+      },
+      "weir_store_overloaded": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_paused_native_outputs": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_paused_native_reserved_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_pending_entries": {
+        "min": 0,
+        "max": 1,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_pending_entries_limit": {
+        "min": 1024,
+        "max": 1024,
+        "first": 1024,
+        "last": 1024
+      },
+      "weir_store_pending_reserved_bytes": {
+        "min": 0,
+        "max": 2314,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_pending_reserved_bytes_limit": {
+        "min": 33554432,
+        "max": 33554432,
+        "first": 33554432,
+        "last": 33554432
+      },
+      "weir_store_publishers": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_queue_wait_seconds": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_records_total": {
+        "min": 0,
+        "max": 4,
+        "first": 0,
+        "last": 4
+      },
+      "weir_store_rejections_total": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_result_reserved_bytes": {
+        "min": 0,
+        "max": 66560,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_result_reserved_entries": {
+        "min": 0,
+        "max": 2,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_retained_result_reserved_bytes": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_retained_results": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "weir_store_working_reserved_bytes": {
+        "min": 0,
+        "max": 96011232,
+        "first": 0,
+        "last": 0
+      }
+    }
+  },
+  "host_CPU_profile": {
+    "duration_seconds": 7.53,
+    "samples_CPU_seconds": 5.7,
+    "top_flat": "runtime._ExternalCode 3.08s54.04%; attribution unresolved in this-race macOS profile",
+    "scope": "entire host Go test including fixture generation/observers/SDK/recovery, not CLIcgroup CPU; cumulative entries overlap and are not additive",
+    "host_runtime_before_after": [
+      {
+        "raw_line": 3,
+        "text": "ingress_memory_budget_integration_test.go:76: DIAGNOSTIC host_runtime phase=before_profile at=2026-10-16T19:15:09.67619Z GOMAXPROCS=8 NumCPU=8 NumGoroutine=3 HeapAlloc=2021768 TotalAlloc=3162576 Sys=13207816 NumGC=1 PauseTotalNs=59958 runtime_metrics={\"/cpu/classes/gc/mark/assist:cpu-seconds\":0.000167833,\"/cpu/classes/gc/total:cpu-seconds\":0.001173746,\"/cpu/classes/total:cpu-seconds\":0.152255664,\"/cpu/classes/user:cpu-seconds\":0.021197667,\"/gc/cycles/total:gc-cycles\":1,\"/gc/gomemlimit:bytes\":9223372036854775807,\"/gc/heap/goal:bytes\":4427210} metrics_error=<nil> CPU_metrics_are_Go_runtime_estimates_not_OS_process_CPU=true"
+      },
+      {
+        "raw_line": 886,
+        "text": "ingress_memory_budget_integration_test.go:89: DIAGNOSTIC host_runtime phase=after_profile_and_subcase_cleanup at=2026-10-16T19:15:17.160147Z GOMAXPROCS=8 NumCPU=8 NumGoroutine=3 HeapAlloc=950995128 TotalAlloc=2493326680 Sys=1032976888 NumGC=17 PauseTotalNs=116451251 runtime_metrics={\"/cpu/classes/gc/mark/assist:cpu-seconds\":0.038812334,\"/cpu/classes/gc/total:cpu-seconds\":0.44298037,\"/cpu/classes/total:cpu-seconds\":17.950128,\"/cpu/classes/user:cpu-seconds\":3.183382834,\"/gc/cycles/total:gc-cycles\":17,\"/gc/gomemlimit:bytes\":9223372036854775807,\"/gc/heap/goal:bytes\":1342497674} metrics_error=<nil> CPU_metrics_are_Go_runtime_estimates_not_OS_process_CPU=true"
+      }
+    ]
+  },
+  "trace_analysis": "ingress_design_audit is independently parsing stage/streamID/remoteAddr; do not infer wire completion solely from SendMsg return or codec.Marshal.",
+  "limits": [
+    "Diagnostic instrumentation/extra requests/profile change timing/workload; cannot replace original cleanA FAIL.",
+    "Same SDK client instance alone is not proof same TCP connection; correlate remoteAddr/streamID.",
+    "Successful scrape extrema are sampled, not instantaneous allocation/denial causes.",
+    "Absent32ID observations establish the original oracle time only; they do not manufacture mutation acknowledgements."
+  ],
+  "not_run": [
+    "1024MiB",
+    "B",
+    "Lua",
+    "formal600",
+    "retries"
+  ],
+  "evidence_files": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-source.go.txt": {
+      "sha256": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72",
+      "bytes": 38824
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-combined-overlay.json": {
+      "sha256": "4f24972ef031ceb6805542338b9321900d28fcf22f9f8e4bff01daad872c1fc6",
+      "bytes": 2000
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-final-plan.json": {
+      "sha256": "80699e8ed91673c3cf200628fb4c1a342aa1385b3f69703c076b3b91c09085cc",
+      "bytes": 6618
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.txt": {
+      "sha256": "29c49b2ef5ecf9d19557dd75b1366f70068a22234c39427c1954b20849f4519e",
+      "bytes": 847843
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.exit": {
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-host-cpu.pprof": {
+      "sha256": "48729c4e4ba0824d875999d075de66a13636f932bdb735b40d9d4934ec5881c5",
+      "bytes": 15808
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-host.test": {
+      "sha256": "6f0efa264bb9889bd191a0bcbbad6c3c25485a90faf5bee3d365f208fd92563b",
+      "bytes": 41623346
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-profile-top.txt": {
+      "sha256": "1b9dc97ea04c56ddf1fd9b4929679600f9408971dfc98cebf27b41dde1c63df8",
+      "bytes": 2519
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-profile-cumulative.txt": {
+      "sha256": "b45689bc9a62591e71d0c7f788b1973401b9d0b1662e41521e99d9f1ac6a9c12",
+      "bytes": 3030
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-profile-commands.json": {
+      "sha256": "300c6bd4073e1d7ae7a49824bbe138ed873341530bbedfc8953000fbe2fea5d1",
+      "bytes": 1350
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-source-before.json": {
+      "sha256": "dc39a31749e50a4d217d60560316f941ee8fececc2a5160ab72e5d830c970d04",
+      "bytes": 43630
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-source-after.json": {
+      "sha256": "c018e94815a0ad0e4a3a28c38c80552832b46fe14d0f919cdb152e694af5a367",
+      "bytes": 43717
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-start.json": {
+      "sha256": "db39068dcfd2d4a390aa83aabaa3934e034cb6921c9bbb1d3181ac95e9ae6cb8",
+      "bytes": 1114
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-run-observations.json": {
+      "sha256": "e5bba2afdf1a308c2958b2e91046e69530c780a991328dcbeb14b4d52dbd9d81",
+      "bytes": 942906
+    }
+  },
+  "exclusive_window": "RETURNED to root after all lifecycle cleanup; only offline raw/profile processing afterward"
+}

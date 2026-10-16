@@ -1,0 +1,257 @@
+{
+  "created_utc": "2026-10-16T19:02:08.572930+00:00",
+  "status": "FAIL",
+  "actual_exit": 1,
+  "test": "TestCLIIngressConcurrentPut",
+  "run_count": 1,
+  "overlay": false,
+  "retry": false,
+  "gate_changes": false,
+  "driver_revision": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+  "driver_test_sha256": "941d8dbb37b1449dfdb0a8f6c33e5402eafc70b6ca97ab2c100b8c8f8df35c07",
+  "artifact_source": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-production-memory-main-linux",
+  "binary_sha256": "58723c2fc4db3fb98840f46513be198d16c2670412cf2e0694f28c3adec886ad",
+  "build_receipt": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/production-memory-main-build.json",
+  "build_receipt_sha256": "4ded5bf62840a7aa154069e14ee3b3a75622522ba633aacd8156cd36ba6b681a",
+  "source_identity": {
+    "artifact_source_count": 351,
+    "artifact_all_match_receipt": true,
+    "artifact_clean_before_and_after": true,
+    "driver_clean_before_and_after": true,
+    "all_hashes_unchanged": true,
+    "driver_helper_differences_from_artifact": {
+      "internal/testutil/testmongo/proxy.go": {
+        "receipt": "4d94f6276425e7b693e5440e385a7e52f8a570a806b06baadfdb9bb6f302387b",
+        "actual": "dcfa15a00ca78e7bd3a4835c2b78a55d026860c3fff7d0f0ba7b2e9a6320a420"
+      },
+      "internal/testutil/testmongo/proxy_integration.go": {
+        "receipt": "f61a86879357e25506d485f1653c0ae4fe9e85440c73768e8151357690ef7ac4",
+        "actual": "2e6657b50aac3c40cce6c333e1ab07ed3c863ee9f56289ca4c40e9f6af9559a8"
+      }
+    },
+    "driver_difference_scope": "Two committed test-only proxy control helpers; root reviewed and authorized. A uses plain testmongo.Open/direct URI, no Proxy/fault enabled."
+  },
+  "cases": [
+    {
+      "capacity_MiB": 512,
+      "CPUs": 2,
+      "status": "FAIL",
+      "records": 32,
+      "exact_BSON_bytes": 12582912,
+      "common_caller_seconds": 5,
+      "full_successful_RPC": 0,
+      "APPLIED": 0,
+      "explicit_capacity_denied": 0,
+      "unconfirmed": 32,
+      "SDK_returned": 32,
+      "rpc_counts": {
+        "DeadlineExceeded": 32
+      },
+      "outcome_counts": {
+        "": 32
+      },
+      "backend_per_ID_observations": {
+        "absent": 32,
+        "present": 0,
+        "cardinality_assertion": 0,
+        "assertion_scope": "32 independently selected IDs plus CountDocuments; no full-body hash success is claimed for absent documents"
+      },
+      "health_evidence": [
+        {
+          "line": 13,
+          "message": "ingress_memory_budget_integration_test.go:238: ingress_health kind=2 caller3s elapsed=15.327167ms error=<nil>"
+        },
+        {
+          "line": 14,
+          "message": "ingress_memory_budget_integration_test.go:238: ingress_health kind=0 caller3s elapsed=15.765667ms error=<nil>"
+        }
+      ],
+      "final_ownership_evidence": [
+        {
+          "line": 5,
+          "message": "ingress_memory_budget_integration_test.go:75: ingress_final5s Node/Store/RPC/wire/Q/I ownership0 latch0 elapsed=8.026084ms"
+        },
+        {
+          "line": 238,
+          "message": "ingress_memory_budget_integration_test.go:75: ingress_final5s Node/Store/RPC/wire/Q/I ownership0 latch0 elapsed=29.471ms"
+        }
+      ],
+      "same_SDK_recovery": "NOT_RUN: guarded by !t.Failed(); earlier observer/business failures retained",
+      "Docker": {
+        "valid_running_noOOM_exit0_observations": 49,
+        "unknown_observations": 1,
+        "unknown_scope": "one 300ms docker inspect subprocess timeout (signal:killed); service kill is not established by this observer timeout",
+        "cgroup_memory_events": [
+          {
+            "raw_line": 7,
+            "evidence": "phase=initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          },
+          {
+            "raw_line": 372,
+            "evidence": "phase=final value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+          }
+        ],
+        "helper_exit": [
+          {
+            "line": 379,
+            "message": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+          }
+        ],
+        "backend_connection_cleanup": [
+          {
+            "line": 378,
+            "message": "2026/10/16 19:00:35 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+          }
+        ],
+        "owned_cli_after": "",
+        "noOOM_proven_for_profile": true,
+        "normal_stop_exit0": true,
+        "owned_container_absence_independent_selected_ps": true
+      },
+      "scrapes": {
+        "total": 183,
+        "successful": 181,
+        "failed": 2,
+        "peak_samples": {
+          "process_resident_memory_bytes": {
+            "bytes": 335814656,
+            "at": "2026-10-16T19:00:34.869267Z",
+            "raw_line": 237
+          },
+          "weir_memory_cgroup_working_set_bytes": {
+            "bytes": 354668544,
+            "at": "2026-10-16T19:00:34.844121Z",
+            "raw_line": 236
+          },
+          "weir_memory_cgroup_current_bytes": {
+            "bytes": 354721792,
+            "at": "2026-10-16T19:00:34.844121Z",
+            "raw_line": 236
+          },
+          "go_memstats_heap_alloc_bytes": {
+            "bytes": 310728008,
+            "at": "2026-10-16T19:00:34.869267Z",
+            "raw_line": 237
+          }
+        },
+        "go_GC_cycles_first_last": {
+          "min": 0,
+          "max": 327,
+          "first": 0,
+          "last": 327
+        },
+        "process_CPU_seconds_first_last": {
+          "min": 0.04,
+          "max": 3.06,
+          "first": 0.04,
+          "last": 3.06
+        },
+        "execution_memory_used_bytes": {
+          "min": 0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "execution_memory_input_reserved_bytes": {
+          "min": 0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "execution_memory_input_used_bytes": {
+          "min": 0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "execution_memory_leases": {
+          "min": 0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "execution_memory_budget_rejections": {
+          "min": 0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "memory_latched": {
+          "min": 0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "ingress_sessions": {
+          "min": 0,
+          "max": 32,
+          "first": 0,
+          "last": 0
+        }
+      },
+      "failure_evidence": [
+        {
+          "line": 336,
+          "message": "ingress_memory_budget_integration_test.go:75: ingress_effect_summary offered=32 APPLIED=0 capacity_denied=0 ambiguous=32 independent_present=0 completed_RPC=0 all_ordinary_writes_APPLIED=false capacity_survival_does_not_imply_business_completeness=true"
+        },
+        {
+          "line": 125,
+          "message": "ingress_memory_budget_integration_test.go:516: independent Docker ownership/state unknown signal: killed"
+        }
+      ]
+    },
+    {
+      "capacity_MiB": 1024,
+      "status": "NOT_RUN: first512MiB failure stops parent loop"
+    }
+  ],
+  "not_run": [
+    "TestCLIIngressPartialUploads (B)",
+    "Lua real probe",
+    "formal600",
+    "fault suite",
+    "additional diagnostics/retries"
+  ],
+  "limits": [
+    "Only successful scrapes contribute numeric extrema; missing scrapes are not zero.",
+    "Scraped RSS/WS/ledger values are samples, not instant allocation or denial causes.",
+    "A uses public SDK; send-end, first-response timing, successful DATA bytes and server full-message receipt are unobserved.",
+    "Docker inspect signal:killed is observer subprocess timeout, not proof service killed.",
+    "All 32 public SDK calls returned DeadlineExceeded with empty mutation outcome; Received=true in this harness means SDK function returned, not server acknowledgement.",
+    "Process survival and fast sampled ownership return do not satisfy the ordinary Put business gate.",
+    "No full-message receive, SDK send completion, instantaneous heap allocation cause, or server-side reject branch was instrumented.",
+    "No additional DB query was sent after original test completed."
+  ],
+  "evidence_files": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-source-before.json": {
+      "sha256": "7bb504c41b18f03473e18d3ed68e6de4d83736f1100ae9ef73d32a6ecfd936ca",
+      "bytes": 84196
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-source-after.json": {
+      "sha256": "0c2a23ea11f051c586492193310999cbac5989d4975b13578f8c7cc0cf16785f",
+      "bytes": 82589
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-command.json": {
+      "sha256": "8f33455211622ab40d6c26d0e2c3e594ad68e84f0629ce4c79f92e93016f8b69",
+      "bytes": 1614
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-start.json": {
+      "sha256": "02306b4b8c3675a85c99621f50928aef7c7a09a66600fd92b264a135ca3f4300",
+      "bytes": 356
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-process.txt": {
+      "sha256": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2",
+      "bytes": 696064
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-process.exit": {
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-observations.json": {
+      "sha256": "31b1ff0a6b5d6f0669a7fe67c208a15732c32f63d4ca5426410a72e19434cfc6",
+      "bytes": 884616
+    }
+  },
+  "exclusive_window": "RETURNED to root after original cleanup; only local metadata/raw processing followed"
+}

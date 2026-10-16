@@ -1,0 +1,620 @@
+{
+  "created_utc": "2026-10-16T20:36:09.379117+00:00",
+  "status": "FAIL",
+  "absolute_evidence_directory": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16",
+  "prefix": "ingress-production-v2-",
+  "actual_service_target": "linux/arm64",
+  "source": "262f3f37b669ebd751a43269c7a3bfd90086857f",
+  "driver_source": "262f3f37b669ebd751a43269c7a3bfd90086857f",
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "source931_before_after_clean_identical": true,
+  "grpc_pin564_manifest_sha256": "43e88ff7f4928ddaaadb1a7379b77c23f603208a7402bc3a3327c187d6043987",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-weir-linux",
+  "binary_sha256": "466dc0730c9f81143cad8125745d5e6e915604f25864e865abc8adc4b8b9d10b",
+  "driver_binaries": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-A-driver.test": "af72c7f296d51b0fe7292bb3934232a172fdd474a48701a97f361b1cc5d07462",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-driver.test": "af72c7f296d51b0fe7292bb3934232a172fdd474a48701a97f361b1cc5d07462"
+  },
+  "build_actual_exit": 0,
+  "build_seconds": 1.9651473330159206,
+  "runtime_tests_once_no_retry": true,
+  "no_overlay_diagnostic_modfile_profile": true,
+  "A": {
+    "actual_exit": 0,
+    "512MiB": {
+      "status": "PASS_BOUNDED_CAPACITY_OUTCOMES",
+      "runtime_identity": {
+        "line": 4,
+        "text": "ingress_memory_budget_integration_test.go:77: ingress profile_partial=false capacity=512MiB CPUs=2 records=32 exact_BSON_bytes=12582912 common_caller=5s retries=0 version={\"product\":\"weir\",\"version\":\"local-262f3f37b669ebd751a43269c7a3bfd90086857f\",\"revision\":\"262f3f37b669ebd751a43269c7a3bfd90086857f\",\"go\":\"go1.27.1\",\"target\":\"linux/arm64\",\"state\":\"clean-commit\",\"dirty\":\"false\"}"
+      },
+      "results": 32,
+      "rpc_counts": {
+        "OK": 32
+      },
+      "outcome_counts": {
+        "NOT_STARTED": 20,
+        "APPLIED": 12
+      },
+      "failure_counts": {
+        "RESOURCE_EXHAUSTED": 20,
+        "": 12
+      },
+      "errors": {
+        "": 32
+      },
+      "latencies": {
+        "APPLIED": {
+          "count": 12,
+          "min_seconds": 0.762943,
+          "max_seconds": 2.918275
+        },
+        "NOT_STARTED": {
+          "count": 20,
+          "min_seconds": 1.186878,
+          "max_seconds": 2.438216
+        }
+      },
+      "effects_summary": [
+        {
+          "raw_line": 200,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_effect_summary offered=32 APPLIED=12 capacity_denied=20 ambiguous=0 independent_present=12 completed_RPC=32 all_ordinary_writes_APPLIED=false capacity_survival_does_not_imply_business_completeness=true"
+        }
+      ],
+      "formation": [],
+      "health": [
+        {
+          "raw_line": 11,
+          "text": "ingress_memory_budget_integration_test.go:227: ingress_health SDK_client=0xc00038e750 kind=2 caller3s elapsed=27.50925ms error=<nil>"
+        },
+        {
+          "raw_line": 12,
+          "text": "ingress_memory_budget_integration_test.go:227: ingress_health SDK_client=0xc00038e750 kind=0 caller3s elapsed=39.659542ms error=<nil>"
+        },
+        {
+          "raw_line": 53,
+          "text": "ingress_memory_budget_integration_test.go:240: ingress_health SDK_client=0xc000228c60 kind=0 caller3s elapsed=6.854416ms error=<nil>"
+        },
+        {
+          "raw_line": 54,
+          "text": "ingress_memory_budget_integration_test.go:240: ingress_health SDK_client=0xc000228c60 kind=2 caller3s elapsed=7.443958ms error=<nil>"
+        }
+      ],
+      "health_failures": [],
+      "ownership": [
+        {
+          "raw_line": 5,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=8.327ms"
+        },
+        {
+          "raw_line": 6,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=9.169083ms"
+        },
+        {
+          "raw_line": 151,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=8.019083ms"
+        },
+        {
+          "raw_line": 237,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=8.409541ms"
+        },
+        {
+          "raw_line": 239,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=8.098791ms"
+        }
+      ],
+      "sameSDK_recovery": [
+        {
+          "raw_line": 236,
+          "text": "ingress_memory_budget_integration_test.go:77: same_running_process_and_SDK fresh small Put_APPLIED=true Read_n_pad_valid=true caller3s TCP_connection_identity=not_observed"
+        }
+      ],
+      "cgroup_events": [
+        {
+          "raw_line": 8,
+          "text": "ingress_memory_budget_integration_test.go:77: cgroup_memory_events phase=initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+        },
+        {
+          "raw_line": 242,
+          "text": "ingress_memory_budget_integration_test.go:77: cgroup_memory_events phase=final value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+        }
+      ],
+      "valid_Docker_observations": 34,
+      "unknown_Docker_observations": 0,
+      "CLI_exit": [
+        {
+          "raw_line": 248,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "backend_cleanup": [
+        {
+          "raw_line": 247,
+          "text": "2026/10/16 20:33:11 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+        }
+      ],
+      "scrapes_ok": 125,
+      "scrapes_failed": 0,
+      "sample_peaks": {
+        "process_resident_memory_bytes": {
+          "value": 284700672,
+          "at": "2026-10-16T20:33:10.690521Z",
+          "raw_line": 139
+        },
+        "weir_memory_cgroup_working_set_bytes": {
+          "value": 315002880,
+          "at": "2026-10-16T20:33:10.767444Z",
+          "raw_line": 143
+        },
+        "weir_execution_memory_used_bytes": {
+          "value": 245993198,
+          "at": "2026-10-16T20:33:08.965433Z",
+          "raw_line": 50
+        },
+        "weir_execution_memory_ingress_bytes": {
+          "value": 37680645,
+          "at": "2026-10-16T20:33:08.640554Z",
+          "raw_line": 33
+        },
+        "weir_execution_memory_ingress_reserved_bytes": {
+          "value": 172492546,
+          "at": "2026-10-16T20:33:09.89152Z",
+          "raw_line": 99
+        }
+      },
+      "memory_latch_range": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "budget_rejections_range": {
+        "min": 0,
+        "max": 20,
+        "first": 0,
+        "last": 20
+      }
+    },
+    "1024MiB": {
+      "status": "PASS_BOUNDED_CAPACITY_OUTCOMES",
+      "runtime_identity": {
+        "line": 250,
+        "text": "ingress_memory_budget_integration_test.go:77: ingress profile_partial=false capacity=1024MiB CPUs=2 records=32 exact_BSON_bytes=12582912 common_caller=5s retries=0 version={\"product\":\"weir\",\"version\":\"local-262f3f37b669ebd751a43269c7a3bfd90086857f\",\"revision\":\"262f3f37b669ebd751a43269c7a3bfd90086857f\",\"go\":\"go1.27.1\",\"target\":\"linux/arm64\",\"state\":\"clean-commit\",\"dirty\":\"false\"}"
+      },
+      "results": 32,
+      "rpc_counts": {
+        "OK": 32
+      },
+      "outcome_counts": {
+        "APPLIED": 21,
+        "NOT_STARTED": 11
+      },
+      "failure_counts": {
+        "": 21,
+        "RESOURCE_EXHAUSTED": 11
+      },
+      "errors": {
+        "": 32
+      },
+      "latencies": {
+        "APPLIED": {
+          "count": 21,
+          "min_seconds": 0.954291,
+          "max_seconds": 2.666167
+        },
+        "NOT_STARTED": {
+          "count": 11,
+          "min_seconds": 1.056779,
+          "max_seconds": 2.127832
+        }
+      },
+      "effects_summary": [
+        {
+          "raw_line": 450,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_effect_summary offered=32 APPLIED=21 capacity_denied=11 ambiguous=0 independent_present=21 completed_RPC=32 all_ordinary_writes_APPLIED=false capacity_survival_does_not_imply_business_completeness=true"
+        }
+      ],
+      "formation": [],
+      "health": [
+        {
+          "raw_line": 257,
+          "text": "ingress_memory_budget_integration_test.go:227: ingress_health SDK_client=0xc012f1a480 kind=0 caller3s elapsed=39.024542ms error=<nil>"
+        },
+        {
+          "raw_line": 258,
+          "text": "ingress_memory_budget_integration_test.go:227: ingress_health SDK_client=0xc012f1a480 kind=2 caller3s elapsed=39.485417ms error=<nil>"
+        },
+        {
+          "raw_line": 301,
+          "text": "ingress_memory_budget_integration_test.go:240: ingress_health SDK_client=0xc00971e120 kind=0 caller3s elapsed=57.014917ms error=<nil>"
+        },
+        {
+          "raw_line": 302,
+          "text": "ingress_memory_budget_integration_test.go:240: ingress_health SDK_client=0xc00971e120 kind=2 caller3s elapsed=58.763417ms error=<nil>"
+        }
+      ],
+      "health_failures": [],
+      "ownership": [
+        {
+          "raw_line": 251,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=9.109667ms"
+        },
+        {
+          "raw_line": 252,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=9.132208ms"
+        },
+        {
+          "raw_line": 387,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=8.379834ms"
+        },
+        {
+          "raw_line": 488,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=8.6995ms"
+        },
+        {
+          "raw_line": 489,
+          "text": "ingress_memory_budget_integration_test.go:77: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=11.534459ms"
+        }
+      ],
+      "sameSDK_recovery": [
+        {
+          "raw_line": 486,
+          "text": "ingress_memory_budget_integration_test.go:77: same_running_process_and_SDK fresh small Put_APPLIED=true Read_n_pad_valid=true caller3s TCP_connection_identity=not_observed"
+        }
+      ],
+      "cgroup_events": [
+        {
+          "raw_line": 254,
+          "text": "ingress_memory_budget_integration_test.go:77: cgroup_memory_events phase=initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+        },
+        {
+          "raw_line": 493,
+          "text": "ingress_memory_budget_integration_test.go:77: cgroup_memory_events phase=final value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+        }
+      ],
+      "valid_Docker_observations": 35,
+      "unknown_Docker_observations": 0,
+      "CLI_exit": [
+        {
+          "raw_line": 499,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "backend_cleanup": [
+        {
+          "raw_line": 498,
+          "text": "2026/10/16 20:33:17 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=3 dialing=0 closing=0 acquired=3 released=3"
+        }
+      ],
+      "scrapes_ok": 128,
+      "scrapes_failed": 1,
+      "sample_peaks": {
+        "process_resident_memory_bytes": {
+          "value": 480694272,
+          "at": "2026-10-16T20:33:16.171442Z",
+          "raw_line": 382
+        },
+        "weir_memory_cgroup_working_set_bytes": {
+          "value": 535494656,
+          "at": "2026-10-16T20:33:16.196956Z",
+          "raw_line": 384
+        },
+        "weir_execution_memory_used_bytes": {
+          "value": 486901444,
+          "at": "2026-10-16T20:33:14.428991Z",
+          "raw_line": 292
+        },
+        "weir_execution_memory_ingress_bytes": {
+          "value": 103116802,
+          "at": "2026-10-16T20:33:14.344399Z",
+          "raw_line": 288
+        },
+        "weir_execution_memory_ingress_reserved_bytes": {
+          "value": 404718530,
+          "at": "2026-10-16T20:33:13.875015Z",
+          "raw_line": 264
+        }
+      },
+      "memory_latch_range": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "budget_rejections_range": {
+        "min": 0,
+        "max": 11,
+        "first": 0,
+        "last": 11
+      }
+    },
+    "business_scope": "12APPLIED+20NOT_STARTED at512;21APPLIED+11NOT_STARTED at1024. All64 RPCsOK with unambiguous per-record outcome;33 APPLIED completeID/n/BSONlen/hash verified,31 provenNotStarted absent; not64 successful large writes."
+  },
+  "B": {
+    "actual_exit": 1,
+    "512MiB": {
+      "status": "FAIL_HEALTH_MEMORY_CAPACITY",
+      "runtime_identity": {
+        "line": 4,
+        "text": "ingress_memory_budget_integration_test.go:92: ingress profile_partial=true capacity=512MiB CPUs=2 records=32 exact_BSON_bytes=12582912 common_caller=5s retries=0 version={\"product\":\"weir\",\"version\":\"local-262f3f37b669ebd751a43269c7a3bfd90086857f\",\"revision\":\"262f3f37b669ebd751a43269c7a3bfd90086857f\",\"go\":\"go1.27.1\",\"target\":\"linux/arm64\",\"state\":\"clean-commit\",\"dirty\":\"false\"}"
+      },
+      "results": 32,
+      "rpc_counts": {
+        "Unknown": 32
+      },
+      "outcome_counts": {
+        "": 32
+      },
+      "failure_counts": {
+        "": 32
+      },
+      "errors": {
+        "context canceled": 32
+      },
+      "latencies": {
+        "NO_MUTATION_OUTCOME": {
+          "count": 32,
+          "min_seconds": 3.000731,
+          "max_seconds": 3.003361
+        }
+      },
+      "effects_summary": [
+        {
+          "raw_line": 375,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_partial_effect_summary offered=32 complete_frames=0 mutation_acknowledgements=0 independent_count=0 error=<nil> acceptance=explicit_caller_cancellation_and_independent_absence"
+        }
+      ],
+      "formation": [
+        {
+          "raw_line": 129,
+          "text": "ingress_memory_partial_integration_test.go:86: incomplete_body launched=32 returned=0 active_server_RPC_at_least32=true selected_upload=17 selected_stream=1 local_prefix_written=true all32_prefixes_not_required=true selected_connection=0xc004236380 local=127.0.0.1:56214 remote=127.0.0.1:56150 elapsed=231.26425ms remaining_hold=2.768735667s Node_used=1.71152904e+08 resident=1.71152904e+08 budget=2.45436142e+08 ingress_bytes=3.9023602e+07 ingress_reserved_bytes=1.53327112e+08 connection_bytes=1.7825792e+07 connections=34 ingress_buffers=2393 ingress_messages=3 ingress_waiting=29 execution_input_wire0=true backend_large_effects=0 selected_stream_budget_assignment=not_observed"
+        }
+      ],
+      "health": [
+        {
+          "raw_line": 130,
+          "text": "ingress_memory_partial_integration_test.go:94: ingress_health SDK_client=0xc0002350e0 kind=2 caller3s elapsed=1.671916ms error=rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted"
+        },
+        {
+          "raw_line": 133,
+          "text": "ingress_memory_partial_integration_test.go:94: ingress_health SDK_client=0xc0002350e0 kind=0 caller3s elapsed=1.682125ms error=rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted"
+        },
+        {
+          "raw_line": 131,
+          "text": "ingress_memory_partial_integration_test.go:98: ingress_same_TCP_health connection=0xc004236380 local=127.0.0.1:56214 remote=127.0.0.1:56150 large_stream1_incomplete=true kind=2 caller3s elapsed=1.790083ms error=rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted"
+        },
+        {
+          "raw_line": 136,
+          "text": "ingress_memory_partial_integration_test.go:98: ingress_same_TCP_health connection=0xc004236380 local=127.0.0.1:56214 remote=127.0.0.1:56150 large_stream1_incomplete=true kind=0 caller3s elapsed=3.188791ms error=<nil>"
+        }
+      ],
+      "health_failures": [
+        {
+          "raw_line": 132,
+          "text": "ingress_memory_partial_integration_test.go:94: healthy small Read/Native failed or exceeded original3s caller deadline during uploads 2 1.671916ms rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted"
+        },
+        {
+          "raw_line": 134,
+          "text": "ingress_memory_partial_integration_test.go:94: healthy small Read/Native failed or exceeded original3s caller deadline during uploads 0 1.682125ms rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted"
+        },
+        {
+          "raw_line": 135,
+          "text": "ingress_memory_partial_integration_test.go:98: same-TCP small Read/Native failed or exceeded original3s during incomplete stream1 2 1.790083ms rpc error: code = ResourceExhausted desc = execution working memory capacity exhausted"
+        }
+      ],
+      "ownership": [
+        {
+          "raw_line": 5,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=9.201208ms"
+        },
+        {
+          "raw_line": 6,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=9.078209ms"
+        },
+        {
+          "raw_line": 116,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=34 connection_bytes=17825792 Node_used=resident=connection_bytes elapsed=9.361541ms"
+        },
+        {
+          "raw_line": 308,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=34 connection_bytes=17825792 Node_used=resident=connection_bytes elapsed=14.372ms"
+        },
+        {
+          "raw_line": 342,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=9.580041ms"
+        },
+        {
+          "raw_line": 381,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=2 connection_bytes=1048576 Node_used=resident=connection_bytes elapsed=8.581167ms"
+        },
+        {
+          "raw_line": 382,
+          "text": "ingress_memory_budget_integration_test.go:92: ingress_final5s temporary_Node/Store/RPC/ingress/wire/Q/I_ownership0 latch0 connections=0 connection_bytes=0 Node_used=resident=connection_bytes elapsed=8.724792ms"
+        }
+      ],
+      "sameSDK_recovery": [
+        {
+          "raw_line": 379,
+          "text": "ingress_memory_budget_integration_test.go:92: same_running_process_and_SDK fresh small Put_APPLIED=true Read_n_pad_valid=true caller3s TCP_connection_identity=not_observed"
+        }
+      ],
+      "cgroup_events": [
+        {
+          "raw_line": 8,
+          "text": "ingress_memory_budget_integration_test.go:92: cgroup_memory_events phase=initial value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+        },
+        {
+          "raw_line": 385,
+          "text": "ingress_memory_budget_integration_test.go:92: cgroup_memory_events phase=final value=\"low 0\\nhigh 0\\nmax 0\\noom 0\\noom_kill 0\\noom_group_kill 0\\nsock_throttled 0\" error=<nil>"
+        }
+      ],
+      "valid_Docker_observations": 48,
+      "unknown_Docker_observations": 0,
+      "CLI_exit": [
+        {
+          "raw_line": 392,
+          "text": "memory_recovery_integration_test.go:202: CLI exit=false 0"
+        }
+      ],
+      "backend_cleanup": [
+        {
+          "raw_line": 391,
+          "text": "2026/10/16 20:34:16 INFO backend_connections_closed backend=mongo store=mongo owned=0 peak=2 dialing=0 closing=0 acquired=2 released=2"
+        }
+      ],
+      "scrapes_ok": 187,
+      "scrapes_failed": 0,
+      "sample_peaks": {
+        "process_resident_memory_bytes": {
+          "value": 88489984,
+          "at": "2026-10-16T20:34:16.137415Z",
+          "raw_line": 380
+        },
+        "weir_memory_cgroup_working_set_bytes": {
+          "value": 95703040,
+          "at": "2026-10-16T20:34:16.137415Z",
+          "raw_line": 380
+        },
+        "weir_execution_memory_used_bytes": {
+          "value": 244643380,
+          "at": "2026-10-16T20:34:13.310895Z",
+          "raw_line": 137
+        },
+        "weir_execution_memory_ingress_bytes": {
+          "value": 40885011,
+          "at": "2026-10-16T20:34:13.310895Z",
+          "raw_line": 137
+        },
+        "weir_execution_memory_ingress_reserved_bytes": {
+          "value": 153336732,
+          "at": "2026-10-16T20:34:13.310895Z",
+          "raw_line": 137
+        }
+      },
+      "memory_latch_range": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      },
+      "budget_rejections_range": {
+        "min": 0,
+        "max": 0,
+        "first": 0,
+        "last": 0
+      }
+    },
+    "1024MiB": "NOT_RUN: first512failure stops parentloop",
+    "partial_cancel_scope": "32RPCs launched with at least1localprefix and real boundedingress owners/waiters, not32fullyreceivedprefixes. Final16KiB neverreleased; fixed3s cancel, caller5s.32explicit cancellations/no mutationACK/DB32IDsabsent+cardinality0.",
+    "blocking": "IndependentRead+Native and sameTCPNative returned memoryResourceExhausted in1.672/1.682/1.790ms; sameTCPRead succeeded3.189ms. No healthy-probe timeout or Dockerobserver failure caused thisFAIL."
+  },
+  "NativeSmallBurst10x256": "NOT_RUN: B512failed",
+  "lifecycle_scope": {
+    "CLI_cases": 3,
+    "all_noOOM": true,
+    "all_normal_exit0": true,
+    "all_owned_containers_removed": true,
+    "independent_selected_Docker_ps_after": "",
+    "sameSDK_recovery_success_all3": true,
+    "persistent_connections_are_legitimate_charged_owners": "A connections2 retain1MiB until close;B connections34retain17MiB during cancellation ownershipcheck,then2retain1MiB,thenall0.",
+    "all_cgroup_final_max_oom_kill_zero": true
+  },
+  "scope_limits": [
+    "FormalA uses publicSDK; sendcompletion/firstresponse unobserved. SameSDK itself does not prove sameTCP.",
+    "B sameTCP health uses the same officialHTTP2 ClientConn as selected incomplete stream1; actuallocal/remote endpoints are logged.",
+    "SocketWriteprefix observations prove bytes handed to localtransport, not serverreceivedprefix. Formation also requires serverRPC/ledger and independentDB0.",
+    "SampleRSS/WS/Used peaks are at different times; sampledlowRSS alone cannot identify instantaneous memorydenial branch.",
+    "Finaleffectoracle validates confirmedcontent/cardinality; it is not a physicalbackend-attemptcount.",
+    "A capacities passed explicitcapacity semantics; B512 remainsblocking regardless of successfulcancellation/recovery/noOOM.",
+    "Prior offlineamd64build not used. Actualnewarm64build+runtimeversionchecked."
+  ],
+  "original_failures_preserved": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-validation.json": "e13e6cd11d39035aaae4315d410fe8107f3e16f5a92033acdeeed10691da869b",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-A-process.txt": "29b137d244a7911ffe7a75b042cf8dec4e1827d28f50d01d9621be88bea0ab73",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-process.txt": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.txt": "29c49b2ef5ecf9d19557dd75b1366f70068a22234c39427c1954b20849f4519e",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-process.txt": "3d5b1b38e67d341f78f31185b6cbd57877196e3100e2c226aaeca18781390fc1"
+  },
+  "evidence_files": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-A-command.json": {
+      "sha256": "c75916985a81173418cb481e470fa94cf64ed9ae1cbe2ea88aa12473fa83d34f",
+      "bytes": 1589
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-A-driver-buildinfo.txt": {
+      "sha256": "9f74801272c1b3a9649dad59be10615c86dfeafed49fb37e6db61851365d798a",
+      "bytes": 2871
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-A-driver.test": {
+      "sha256": "af72c7f296d51b0fe7292bb3934232a172fdd474a48701a97f361b1cc5d07462",
+      "bytes": 41434850
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-A-process.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-A-process.txt": {
+      "sha256": "35cb295a06e615834c2f275969043464ea1816b61299aef77d55db9b9c9cd022",
+      "bytes": 1057281
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-command.json": {
+      "sha256": "ecfc343b7712a872a013970683bdce842ad909f98782480520782887f6bdf910",
+      "bytes": 1624
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-driver-buildinfo.txt": {
+      "sha256": "57616933fc60f13b6af311b30b998c3bca300ec40fe6d84175aec13e15236eb7",
+      "bytes": 2871
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-driver.test": {
+      "sha256": "af72c7f296d51b0fe7292bb3934232a172fdd474a48701a97f361b1cc5d07462",
+      "bytes": 41434850
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-process.exit": {
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-B-process.txt": {
+      "sha256": "429a6e6a6058d523edca7bd0574c875582456f643dca4246334a18008554c8fc",
+      "bytes": 781163
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-build-command.json": {
+      "sha256": "6ac014f4613a0a1e144c414fea72d9edc96fcb4c228ef5d85c01631b525cad22",
+      "bytes": 836
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-build.exit": {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "bytes": 2
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-build.json": {
+      "sha256": "db32b9898d7bd96a1ceb3886262d4ea7314f7989cdfbc6ceca4268c4ed34116c",
+      "bytes": 2239
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-build.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-buildinfo.txt": {
+      "sha256": "4170a5f418d3ea2f9119ab95b4e817452785b712d0eb3f25e535bf95ec5ae0d1",
+      "bytes": 2831
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-observations.json": {
+      "sha256": "6159a54513e543650d0c39d7a79e8728ac87b273b9206900c24f6c5368d1df49",
+      "bytes": 4500420
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-root-source-audit.json": {
+      "sha256": "bd9fcec537ecc87a3f7686c8cff5736035c97bab159376eaa1b3f944b75c3315",
+      "bytes": 1155
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-source-after.json": {
+      "sha256": "97a25bfe705926945ad08baf8701148a2cf0a5a540b7c1d1ad0c4c8959f03475",
+      "bytes": 115953
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-source-before.json": {
+      "sha256": "5fdd9a2cedd6de142cdb28c08cbb326ea1cb1bd31de9e6d92d5e57fad53a02ff",
+      "bytes": 114638
+    },
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-weir-linux": {
+      "sha256": "466dc0730c9f81143cad8125745d5e6e915604f25864e865abc8adc4b8b9d10b",
+      "bytes": 29580938
+    }
+  },
+  "exclusive_window": "RETURNED to root aftercleanup/sourceafter. Onlyoffline rawprocessing continued."
+}

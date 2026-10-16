@@ -1,0 +1,20 @@
+{
+  "args": [
+    "python3",
+    "scripts/package.py",
+    "--output",
+    "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-release-M3-e264138"
+  ],
+  "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+  "environment": {
+    "GOENV": "off",
+    "GOPROXY": "off",
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off"
+  },
+  "scope": "Actual two independent clean exports, separate fresh caches, four targets each. No OCI or publishing.",
+  "source": "e264138ea0820a9664f3e5b6b7ee51925f3473fa",
+  "started_at": "2026-10-16T20:51:32.982699+00:00"
+}

@@ -1,0 +1,112 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "all-race",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "test",
+        "-race",
+        "./...",
+        "-count=1"
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+      "started": "2026-10-16T20:26:41.521714+00:00",
+      "log": ".testdata/ingress-offline/repair-r3-final-all-race.txt",
+      "exit": 0,
+      "elapsed_seconds": 64.37799604199245
+    },
+    {
+      "name": "nested-race",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "test",
+        "-mod=readonly",
+        "-race",
+        "./",
+        "./mem",
+        "./internal/transport",
+        "-run",
+        "^TestReceive",
+        "-count=5"
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir/third_party/grpc",
+      "started": "2026-10-16T20:27:45.901157+00:00",
+      "log": ".testdata/ingress-offline/repair-r3-final-nested-race.txt",
+      "exit": 0,
+      "elapsed_seconds": 3.525292417005403
+    },
+    {
+      "name": "observer-race",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "test",
+        "-race",
+        "-tags",
+        "integration",
+        "./internal/app",
+        "-run",
+        "^TestIngressMemoryDockerInspect",
+        "-count=1"
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+      "started": "2026-10-16T20:27:49.427009+00:00",
+      "log": ".testdata/ingress-offline/repair-r3-final-observer-race.txt",
+      "exit": 0,
+      "elapsed_seconds": 4.363629750005202
+    },
+    {
+      "name": "vet",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "vet",
+        "./..."
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+      "started": "2026-10-16T20:27:53.791176+00:00",
+      "log": ".testdata/ingress-offline/repair-r3-final-vet.txt",
+      "exit": 0,
+      "elapsed_seconds": 0.8645431670011021
+    },
+    {
+      "name": "integration-vet",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "vet",
+        "-tags",
+        "integration",
+        "./internal/store",
+        "./internal/server",
+        "./internal/protowire",
+        "./internal/app"
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+      "started": "2026-10-16T20:27:54.656197+00:00",
+      "log": ".testdata/ingress-offline/repair-r3-final-integration-vet.txt",
+      "exit": 0,
+      "elapsed_seconds": 0.6430124169855844
+    },
+    {
+      "name": "linux-build",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "build",
+        "-trimpath",
+        "-o",
+        "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/weir-linux-repair-r3",
+        "./cmd/weir"
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+      "started": "2026-10-16T20:27:55.299684+00:00",
+      "log": ".testdata/ingress-offline/repair-r3-final-linux-build.txt",
+      "exit": 0,
+      "elapsed_seconds": 9.3468131669797
+    }
+  ],
+  "qualification_profiles_unchanged": true,
+  "unit_fixture_note": "Wait-only fixture uses 18MiB instead of 24MiB under unchanged 192MiB allowance: the complete prepaid receive peak changed from 3N to 4N+frame slack; both individual messages fit and two cannot coexist. Formal A32x12MiB/512MiB/2CPU/5s is unchanged.",
+  "source_files": 931,
+  "source_unchanged": true,
+  "changed_during_checks": [],
+  "binary_sha256": "493856007006682ea028d9369ad9708ca6a716df751980b74eb758b4e4df677c"
+}

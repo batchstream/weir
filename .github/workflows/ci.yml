@@ -42,6 +42,9 @@ jobs:
           CGO_ENABLED=0 timeout 12m go test -count=1 -timeout=180s ./...
       - name: Native CGO1 race tests
         run: CGO_ENABLED=1 timeout 12m go test -race -count=1 -timeout=180s ./...
+      - name: Native receive ownership patch race tests
+        working-directory: third_party/grpc
+        run: CGO_ENABLED=1 timeout 3m go test -race -count=1 -timeout=120s -run '^TestReceive' ./ ./mem ./internal/transport
       - name: Static vet and offline script tests
         run: |
           CGO_ENABLED=0 go vet ./...

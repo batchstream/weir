@@ -1,0 +1,34 @@
+{
+  "driver_source": "f2f69bf907ad70afd1cf2dfe583842fa2b50d559",
+  "artifact_source": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+  "artifact_sha256": "58723c2fc4db3fb98840f46513be198d16c2670412cf2e0694f28c3adec886ad",
+  "artifact_source_hash_count": 351,
+  "driver_artifact_differences": [
+    "internal/testutil/testmongo/proxy.go",
+    "internal/testutil/testmongo/proxy_integration.go"
+  ],
+  "difference_scope": "Only committed testmongo fault proxy helpers; ingressA plain direct testmongo.Open does not enable Proxy/fault. Added integration-only driver tests/docs are separately versioned. Runtime production inputs unchanged.",
+  "cmd_weir_dependency_query": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "list",
+    "-deps",
+    "-f",
+    "{{.ImportPath}}",
+    "./cmd/weir"
+  ],
+  "query_env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "0",
+    "GOOS": "linux",
+    "GOARCH": "arm64"
+  },
+  "query_exit": 0,
+  "runtime_dependency_count": 452,
+  "testutil_dependencies": [],
+  "utc": "2026-10-16T19:02:25.393515+00:00"
+}

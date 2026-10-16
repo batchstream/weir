@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-10-16T19:19:04.119439+00:00",
+  "purpose": "root independent BDP causal comparison preparation review",
+  "binary_sha256": "8810fdd392cac309d3aeaac33c1b688be2b94932066ff7630b3aa36c4ffc5db3",
+  "driver_sha256": "9b4cb2408fb6819257b974c70dce81642a37f22a5459f250a54c895bc53b857b",
+  "union_map_sources": 10,
+  "conflicts": [],
+  "diff_review": "only two static window options removed and versionliteral; driver only versionliteral; tracing unchanged",
+  "load_gate": "purecompilePASS + exact above sources/modfile => one DIAGNOSTIC A512; no retry/followups"
+}

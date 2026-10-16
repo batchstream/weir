@@ -1,0 +1,34 @@
+{
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1"
+  },
+  "unset_env": [
+    "WEIR_INTEGRATION",
+    "WEIR_INGRESS_MEMORY_INTEGRATION",
+    "WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION",
+    "WEIR_INGRESS_DIAGNOSTIC",
+    "WEIR_MONGO_PROFILE"
+  ],
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-overlay.json",
+    "-race",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^$",
+    "./internal/app"
+  ],
+  "started_utc": "2026-10-16T19:09:42.440869+00:00",
+  "scope": "compile-only; no DB/Docker/CLI/test bodies; DIAGNOSTIC driver-only overlay"
+}

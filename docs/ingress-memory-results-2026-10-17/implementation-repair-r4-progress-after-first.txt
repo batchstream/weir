@@ -1,0 +1,1 @@
+ok  	github.com/batchstream/weir/internal/store	1.921s

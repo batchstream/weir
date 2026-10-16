@@ -1,0 +1,3 @@
+ok  	google.golang.org/grpc	2.498s
+ok  	google.golang.org/grpc/mem	3.020s
+ok  	google.golang.org/grpc/internal/transport	1.859s

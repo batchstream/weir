@@ -27,7 +27,7 @@ func borrowBoundFixture(t testing.TB) (*ExecutionMemory, *executionLease) {
 	})
 	work := plan(1, "large-native", false)
 	work.Command = nativeCall()
-	large, failure := memory.admit(work)
+	large, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -37,7 +37,7 @@ func borrowBoundFixture(t testing.TB) (*ExecutionMemory, *executionLease) {
 	}
 	for index := range 13 {
 		work := plan(uint64(index+2), "retained-typed", true)
-		lease, failure := memory.admit(work)
+		lease, failure, _ := memory.admit(work)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -73,7 +73,7 @@ func TestNativeLargeOutputCannotBorrowProtectedProgressMemory(t *testing.T) {
 	}
 	shortPlan := plan(100, "healthy-short-native", false)
 	shortPlan.Command = nativeCall()
-	short, failure := memory.admit(shortPlan)
+	short, failure, _ := memory.admit(shortPlan)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -98,7 +98,7 @@ func fullResidentBorrowMemory(t testing.TB) *ExecutionMemory {
 		t.Fatal("fixture no longer has an exact legal result boundary", remaining)
 	}
 	work := plan(50, "resident-tail", true)
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -132,7 +132,7 @@ func TestSharedShortHandoffsPreserveBothOrdersAndRejectThird(t *testing.T) {
 					work.Command = nativeCall()
 					work.ResultBytes = execution.ResultOverheadBytes
 				}
-				lease, failure := memory.admit(work)
+				lease, failure, _ := memory.admit(work)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -171,7 +171,7 @@ func TestSharedShortHandoffsPreserveBothOrdersAndRejectThird(t *testing.T) {
 				t.Fatal("both handoffs were not actually held", snapshot)
 			}
 			work := plan(200, "third", true)
-			third, failure := memory.admit(work)
+			third, failure, _ := memory.admit(work)
 			if failure != nil {
 				t.Fatal(failure)
 			}
@@ -203,7 +203,7 @@ func TestNativeTerminalRetainsCanceledWireHandoffUntilRealFree(t *testing.T) {
 	memory := fullResidentBorrowMemory(t)
 	work := plan(100, "short-native", false)
 	work.Command = nativeCall()
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -249,7 +249,7 @@ func TestNativeFixedTerminalPreservesEvidenceWithBothHandoffsFull(t *testing.T) 
 			memory := fullResidentBorrowMemory(t)
 			for index := range executionBorrowLimit {
 				work := plan(uint64(100+index), "slow", true)
-				lease, failure := memory.admit(work)
+				lease, failure, _ := memory.admit(work)
 				if failure != nil {
 					t.Fatal(failure)
 				}
@@ -309,7 +309,7 @@ func TestNativeResidentCreditSurvivesShrinkWithoutBorrowingLargeReply(t *testing
 	memory := testExecutionMemory(750_000_000)
 	work := plan(1, "resident-large", false)
 	work.Command = nativeCall()
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}

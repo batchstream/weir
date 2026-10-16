@@ -1,0 +1,30 @@
+{
+  "started_utc": "2026-10-16T19:20:33.988732+00:00",
+  "purpose": "ONE BDP DIAGNOSTIC ONLY NOT QUALIFICATION",
+  "actual_argv": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-modfile",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-BDP-DIAGNOSTIC.mod",
+    "-mod=readonly",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-combined-overlay.json",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLIIngressConcurrentPutDIAGNOSTIC$",
+    "-timeout",
+    "5m",
+    "-cpuprofile",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-host-cpu.pprof",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-host.test",
+    "-v",
+    "./internal/app"
+  ],
+  "plan": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-BDP-final-plan.json",
+  "no_retry": true
+}

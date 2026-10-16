@@ -1,0 +1,49 @@
+{
+  "created_UTC": "2026-10-16T19:57:56.490375+00:00",
+  "scope": "Read-only release/CI support audit; not final independent PR approval and not production qualification",
+  "status": "No remaining support-script blocker found in inspected snapshot; final author manifest freeze still must be rechecked",
+  "findings_resolved": [
+    {
+      "path": "scripts/package.py",
+      "issue": "Public credentials source path membership did not enforce pinned content hash",
+      "current_fix": "source_files hashes each selected public credentials git blob against manifest.files before export"
+    },
+    {
+      "path": "scripts/package.py",
+      "issue": "build_info accepted empty or published/unpatched grpc dependencies",
+      "current_fix": "exactly one pinned local grpc replacement now mandatory"
+    },
+    {
+      "path": "third_party/grpc/WEIR_UPSTREAM.json",
+      "issue": "WEIR_PATCH.diff exported but not in recorded newFiles",
+      "current_fix": "actual561 release whitelist hashes matched updated manifest71a01b1...; subsequent author source changes require another freeze check"
+    }
+  ],
+  "verified": [
+    "Selected-module replacement whitelist rejects SDK/protocol/arbitrary replacement; fixed root-relative directory rejects symlink escape",
+    "Both root/nested go.mod andgo.sum copied for module prewarming, downloaded separately, original files checked unchanged; reviewed source, no actual network prewarming run",
+    "Release whitelist includes public grpc non-test Go plus module files, LICENSE, AUTHORS, upstream manifest and patch metadata",
+    "Current validate_grpc_inputs full set/hash comparison precedes any Go command",
+    "Mock two different export roots gave equal receipts, graph, linked metadata and four archives; no temporary export path appears in JSON",
+    "Original tracked sources not modified by this audit; no actual secrets, Go compiler, DB, Docker or load run"
+  ],
+  "limitations": [
+    "Final transport author is still modifying ingress metadata ownership and will regenerate patch/manifest; this support audit does not approve that future snapshot",
+    "Two-export verification mocked Go andgit blobs; actual compiler/linker reproducibility and OCI need release qualification",
+    "Root independently runs Python suite; this audit does not claim an independently executed45-test suite"
+  ],
+  "inspected_script_SHA256": {
+    "scripts/package.py": "b5c3981def8ed46c99c72df9ecce12c5a6cc8ba2d2a2eb493f92659bc0ec7037",
+    "scripts/package_test.py": "7deedc533108d494953b25bba8b09b9383d60eb458e91f6e9f13998087af2dfb",
+    "scripts/check_dependencies.py": "5935f55fc520eb9d433057e3629ada273e08c330462dbbd222feca3d16b2bf6b",
+    "scripts/check_dependencies_test.py": "980dbfc6dc1783738099b7ad96b4699b195430e240726eb260e588314ed40b05",
+    "scripts/ci-tools.py": "b0802deba6626cde6c4caa88b1e4ac3d3d931deece02947791b6c862501a2f21",
+    "scripts/ci_tools_test.py": "bc027eb1a43e93dd3914d7b84265c8e368efae0db772393d494bb53ec3f75af3",
+    ".github/workflows/ci.yml": "e3261780d6e44fbf0469d18deb016426f371d5641ad90533a9921accece837cb"
+  },
+  "evidence": {
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-package-historical-failure.json": "12a9a854fc05d88fa07892f7a89f96b548eff30fabe9e1c7aa82b5b9ee5cfeb9",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-package-actual-first.json": "e57cc45ac573fbb35e84f982494ceb0fe91b909809da8d34e841ea85d051b2aa",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-support-two-export-mock.json": "6870bc9e93a7b7da097a2c2531401675e4263e9827637b986c70a33c445348ed"
+  }
+}

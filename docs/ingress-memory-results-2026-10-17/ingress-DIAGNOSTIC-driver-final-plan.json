@@ -1,0 +1,120 @@
+{
+  "status": "FINAL_PREPARED_NOT_RUNTIME_AUTHORIZED",
+  "scope": "DIAGNOSTIC ONLY NOT QUALIFICATION; no runtime load until root gives unique explicit authorization after authorreceipt/overlay merge",
+  "cwd": "/Users/liran/Projects/liran/go/weir",
+  "env": {
+    "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+    "GOENV": "off",
+    "GOTOOLCHAIN": "local",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOWORK": "off",
+    "CGO_ENABLED": "1",
+    "WEIR_INTEGRATION": "1",
+    "WEIR_INGRESS_MEMORY_INTEGRATION": "1",
+    "WEIR_INGRESS_DIAGNOSTIC": "1",
+    "WEIR_INGRESS_MEMORY_BINARY": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-weir-linux",
+    "WEIR_INGRESS_MEMORY_SOURCE": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+    "WEIR_INGRESS_MEMORY_SHA256": "e5116920123a3c5b76ba4589b6cc2df4b772a9b593f472514f4f353307a00fae"
+  },
+  "unset_env": [
+    "WEIR_MONGO_PROFILE",
+    "WEIR_INGRESS_MEMORY_PARTIAL_INTEGRATION"
+  ],
+  "args": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "test",
+    "-modfile",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.mod",
+    "-mod=readonly",
+    "-overlay",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-combined-overlay.json",
+    "-race",
+    "-failfast",
+    "-count=1",
+    "-tags",
+    "integration",
+    "-run",
+    "^TestCLIIngressConcurrentPutDIAGNOSTIC$",
+    "-timeout",
+    "5m",
+    "-cpuprofile",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-host-cpu.pprof",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-host.test",
+    "-v",
+    "./internal/app"
+  ],
+  "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.txt",
+  "exit": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-process.exit",
+  "profile": {
+    "capacity_MiB": 512,
+    "CPUs": 2,
+    "records": 32,
+    "exact_BSON_bytes": 12582912,
+    "original_common_caller_seconds": 5,
+    "health_caller_seconds": 3,
+    "final_ownership_absolute_seconds": 5,
+    "no_retry": true,
+    "no_codec_replacement": true,
+    "no_validation_bypass": true,
+    "default_service_limits_unchanged": true
+  },
+  "diagnostic_changes": [
+    "Explicit DIAGNOSTIC-only test name/opt-in and CLI state/version/dirty/base/SHA validation.",
+    "Host standard go test CPU profile and exact -o binary; profile covers fixture construction, SDK, observers and recovery, not Linux service CPU.",
+    "Host MemStats/runtime CPU/GC before test and after subcase cleanup; these observations and profiling perturb timing.",
+    "Original independently discovered healthClient Read+Native preserved.",
+    "At original t0+1s issue one additional concurrent Read+Native pair through same SDK Client instance as32 Put; original3s deadlines.",
+    "Additional health pair has bounded join by original commondeadline+1s; original5s Put and absolute5s ownership recovery thresholds unchanged.",
+    "After all32 per-ID backend observations, attempt same original SDK client smallPut/read recovery even if diagnostic/test had already failed; final ownership+Docket cleanup still run."
+  ],
+  "connection_evidence_rule": "Same Client instance is not proof same TCP. Correlate traced gRPC streamID and remote/local TCP endpoint; proto.Marshal has no context/streamID0 and cannot alone identify request or peer.",
+  "required_before_unique_run": [
+    "Second combined pure compile must PASS.",
+    "Root verifies final command/map/modfile/diagnosticreceipt and grants one explicit real-run authorization."
+  ],
+  "forbidden_followups": [
+    "1024MiB case",
+    "B partial uploads",
+    "Lua real workload",
+    "formal600",
+    "automatic retry/pass selection"
+  ],
+  "preserved_baseline": {
+    "source": "/Users/liran/Projects/liran/go/weir/internal/app/ingress_memory_budget_integration_test.go",
+    "source_sha256": "941d8dbb37b1449dfdb0a8f6c33e5402eafc70b6ca97ab2c100b8c8f8df35c07",
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-process.txt",
+    "raw_sha256": "e9d7d060cbcaed89b1d7b74474aaf575db4489f17befe9dc4f9efe44ea0b23d2",
+    "manifest": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-memory-main-A-manifest.json",
+    "manifest_sha256": "2a97c8b0435bec57056bc22106fa4707f4388f87b5cb2d1184c284d99f5655e8"
+  },
+  "host_driver_overlay_sha256": "085aa834eb5214c6e24d9cf5f69905c446141044e5611d56b040cc5f8fdc1fc0",
+  "host_driver_source_sha256": "25b3a440c1088ea160778582d59a5719ff2f6dbdb7b2101739a381a7d6be8a72",
+  "first_compile": {
+    "actual_exit": 1,
+    "reason": "Diagnostic phase initially changed shared health function signature used by unselected Lua file; ignored copy restored original3-argument signature.",
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile.txt",
+    "raw_sha256": "a6702ed3d5c5928b913aef3016e02d5d204a328f96ad54aae3a3a9f522a7ace6",
+    "failed_source": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-driver-compile-failed-source.go.txt",
+    "failed_source_sha256": "8ccc9dc4afe921be2622161b69a0b75a444741a9eabe739e21dd9d3f00630bb4"
+  },
+  "second_compile": "Approved by root; combined pure compile next. Real workload still not authorized.",
+  "modfile": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC.mod",
+  "modfile_sha256": "dfb1933a5826d65c28f8ddbbd438ff6ed3afaf2e5c13d6edd1069df82b8c9fae",
+  "modsum_sha256": "7517d4ae3bd56df8c339776b81e0860cfe9c8e0cfa045983f3f2d78f75b0695f",
+  "combined_overlay_sha256": "4f24972ef031ceb6805542338b9321900d28fcf22f9f8e4bff01daad872c1fc6",
+  "source_map_count": 9,
+  "map_conflicts": [],
+  "author_receipt": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-DIAGNOSTIC-build-receipt.json",
+  "author_receipt_sha256": "714604291af193d48b5bbbc2cc095473a1800db92e71eca16c2dac3f002197bf",
+  "author_overlay_sha256": "8af076075d759a87bd53e1839167d761cdb49a36c1874d6b00579d2210af9afd",
+  "expected_DIAGNOSTIC_version": {
+    "version": "DIAGNOSTIC-ingress-stages",
+    "revision": "0288974d8b64c199da4f0d7fb7f03d8a33978eee",
+    "state": "DIAGNOSTIC-overlay",
+    "dirty": "true",
+    "target": "linux/arm64"
+  },
+  "grpc_copy_verified_count": 930
+}

@@ -1,0 +1,23 @@
+{
+  "actual_exit": 0,
+  "clean_after": true,
+  "comparison": {
+    "completed": true,
+    "export_directories": [
+      "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-package-first-a09i3q7c/source",
+      "/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/weir-package-second-8z0zhw14/source"
+    ],
+    "identical_archives": 4,
+    "identical_binaries": 4,
+    "oci_identical": false,
+    "receipt_sha256": "027a33bc4fa76b7f1ec93a50dd0a844177007960f7e93e8924fd6efc4b834d0c",
+    "source": "e264138ea0820a9664f3e5b6b7ee51925f3473fa"
+  },
+  "elapsed_seconds": 133.7929590830172,
+  "finished_at": "2026-10-16T20:53:46.809510+00:00",
+  "output_directory": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-release-M3-e264138",
+  "process_log_sha256": "660ea17cab99d046b0411cad3d35265786ce3ceeabad31c3e6fa8400582b9a31",
+  "source": "e264138ea0820a9664f3e5b6b7ee51925f3473fa",
+  "started_at": "2026-10-16T20:51:32.982699+00:00",
+  "status": "PASS"
+}

@@ -25,7 +25,7 @@ func TestExecutionMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
 	work.Command = nativeCall()
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -67,12 +67,12 @@ func TestExecutionMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 func TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) {
 	memory := NewExecutionMemory()
 	work := plan(1, "native", false)
-	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
+	if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_UNAVAILABLE {
 		t.Fatal("initial unknown memory looked like actual overload", failure)
 	}
 	sample := overload.Snapshot{RecoveryAllowance: 768 << 20, RecoveryAllowanceKnown: true}
 	memory.ObserveMemory(sample)
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -93,7 +93,7 @@ func TestExecutionMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) 
 	if snapshot := memory.Snapshot(); !snapshot.Known || snapshot.BudgetBytes != 0 || snapshot.InputReservedBytes != before.InputUsedBytes || snapshot.InputUsedBytes != before.InputUsedBytes || snapshot.UsedBytes != before.UsedBytes-(before.InputReservedBytes-before.InputUsedBytes) {
 		t.Fatal("known zero was confused with unknown or actual resources disappeared", snapshot)
 	}
-	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("a zero share admitted more work", failure)
 	}
 	started, _ := lease.beginRead(1)
@@ -116,13 +116,13 @@ func TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit(t *testing.
 	work.Command = nativeCall()
 	leases := make([]*executionLease, 0, nativeCountLimit)
 	for range nativeCountLimit {
-		lease, failure := memory.admit(work)
+		lease, failure, _ := memory.admit(work)
 		if failure != nil {
 			t.Fatal(failure)
 		}
 		leases = append(leases, lease)
 	}
-	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
+	if _, failure, _ := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("Node count limit grew with Store/input queues", failure)
 	}
 	for _, lease := range leases {
@@ -144,11 +144,11 @@ func TestExecutionMemoryCountIsSharedAndIndependentOfInputQueueLimit(t *testing.
 func TestNativeTerminalCannotGrowBeyondOwnedCapacity(t *testing.T) {
 	memory := testExecutionMemory(768 << 20)
 	work := plan(1, "native", false)
-	first, failure := memory.admit(work)
+	first, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	other, failure := memory.admit(work)
+	other, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -181,12 +181,12 @@ func TestNativeTerminalCannotGrowBeyondOwnedCapacity(t *testing.T) {
 func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 	memory := testExecutionMemory(96 << 20)
 	work := plan(1, "native", false)
-	first, failure := memory.admit(work)
+	first, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
 	defer first.release()
-	second, failure := memory.admit(work)
+	second, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -426,7 +426,7 @@ func TestNativeStartupCanBorrowReserveAfterSmallCapacityOutputsSettle(t *testing
 	work := plan(1, "native", false)
 	var leases []*executionLease
 	for range 3 {
-		lease, failure := memory.admit(work)
+		lease, failure, _ := memory.admit(work)
 		if failure != nil {
 			t.Fatal(failure)
 		}
@@ -439,7 +439,7 @@ func TestNativeStartupCanBorrowReserveAfterSmallCapacityOutputsSettle(t *testing
 		}
 		leases = append(leases, lease)
 	}
-	lease, failure := memory.admit(work)
+	lease, failure, _ := memory.admit(work)
 	if failure != nil {
 		t.Fatal(failure)
 	}

@@ -19,6 +19,7 @@ type Admission struct {
 	wireBytes         atomic.Int64
 	activeRPCs        atomic.Int64
 	activeConnections atomic.Int64
+	received          sync.Map
 	responses         sync.Map
 	reservations      sync.Map
 	memory            *store.ExecutionMemory

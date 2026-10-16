@@ -3,6 +3,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -517,15 +518,81 @@ func ingressMemoryDocker(t *testing.T, process *memoryRecoveryCLI) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	format := `{{index .Config.Labels "weir.owner"}} {{.State.Running}} {{.State.OOMKilled}} {{.State.ExitCode}}`
-	raw, err := exec.CommandContext(ctx, "docker", "inspect", "--type", "container", "--format", format, process.name).CombinedOutput()
-	fields := strings.Fields(string(raw))
-	t.Logf("ingress_Docker at=%s state=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), strings.TrimSpace(string(raw)), err)
+	raw, err := ingressMemoryDockerInspect(ctx, process.name)
+	fields := strings.Fields(raw)
+	t.Logf("ingress_Docker at=%s state=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), raw, err)
 	if err != nil || len(fields) != 4 || fields[0] != process.name {
 		t.Error("independent Docker ownership/state unknown", err)
 	} else if fields[1] != "true" || fields[2] != "false" || fields[3] != "0" {
 		t.Error("CLI stopped/OOM/nonzero exit during ingress profile", fields)
 	}
+}
+
+// Inspect only the owned test container over a local Docker Engine socket.
+// A fresh non-retrying request avoids spawning a Docker CLI every100ms.
+func ingressMemoryDockerInspect(ctx context.Context, name string) (string, error) {
+	socket := "/var/run/docker.sock"
+	if configured := os.Getenv("DOCKER_HOST"); configured != "" {
+		host, err := url.Parse(configured)
+		if err != nil || host.Scheme != "unix" || host.Host != "" || !filepath.IsAbs(host.Path) || host.RawQuery != "" || host.Fragment != "" || host.User != nil {
+			return "", fmt.Errorf("independent Docker observation requires a local Unix socket")
+		}
+		socket = host.Path
+	}
+	dialer := &net.Dialer{}
+	transport := &http.Transport{
+		DisableKeepAlives:  true,
+		DisableCompression: true,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", socket)
+		},
+	}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/containers/"+url.PathEscape(name)+"/json", nil)
+	if err != nil {
+		return "", err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("independent Docker inspect HTTP status=%d", response.StatusCode)
+	}
+	var metadata struct {
+		Config struct {
+			Labels map[string]string
+		}
+		State *struct {
+			Running   *bool
+			OOMKilled *bool
+			ExitCode  *int
+		}
+	}
+	const maximumInspectBytes = 2 << 20
+	raw, err := io.ReadAll(io.LimitReader(response.Body, maximumInspectBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("independent Docker inspect response: %w", err)
+	}
+	if len(raw) > maximumInspectBytes {
+		return "", fmt.Errorf("independent Docker inspect response exceeds bounded2MiB metadata")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if err := decoder.Decode(&metadata); err != nil {
+		return "", fmt.Errorf("independent Docker inspect metadata: %w", err)
+	}
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("independent Docker inspect has no complete unique JSON response: %v", err)
+	}
+	owner, owned := metadata.Config.Labels["weir.owner"]
+	if !owned || owner == "" || metadata.State == nil || metadata.State.Running == nil || metadata.State.OOMKilled == nil || metadata.State.ExitCode == nil {
+		return "", fmt.Errorf("independent Docker inspect ownership/state fields are missing")
+	}
+	state := fmt.Sprintf("%s %t %t %d", owner, *metadata.State.Running, *metadata.State.OOMKilled, *metadata.State.ExitCode)
+	return state, nil
 }
 
 func ingressMemoryEvents(t *testing.T, process *memoryRecoveryCLI, phase string) {
