@@ -1,17 +1,18 @@
 # Native memory ownership qualification, 2026-10-16
 
 The current clean Linux artifact is source
-`7787dc68794a60f9b76401522f433d0c993369f3`, SHA-256
-`77569a4b6428be103c9ac9aac7ebe65e9abcf21f337b08f943b7900ed8b0b71b`,
-Go 1.27.1 linux/arm64. Its production sources are unchanged from `ab48b327`;
-the later commit corrects the pressure-test ownership predicate and retains
-failure diagnostics. The [build receipt](native-memory-results-2026-10-16/native-memory-qualified-build.json)
-and [progress validation](native-memory-results-2026-10-16/native-memory-qualified-validation.json)
-record exact identities, source hashes and environment.
+`98ea9adfee65a315ed737c00dad4640364f18648`, SHA-256
+`1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214`,
+Go 1.27.1 linux/arm64. This includes the request-parser ownership correction
+found by independent review. Its [build receipt](native-memory-results-2026-10-16/native-memory-search-p1-final-build.json),
+[progress validation](native-memory-results-2026-10-16/native-memory-search-p1-final-validation.json)
+and [recovery summary](native-memory-results-2026-10-16/native-memory-search-p1-final-summary.json)
+record identities, hashes, environment and unchanged acceptance bounds.
 
-Status: independent review found a blocking parsed-request ownership gap;
-this candidate is not approved. A correction and new exact-head review are pending. Sustained mixed-load and backend-fault
-qualification remains a separate milestone.
+Status: corrected production sources passed independent core and transport
+review plus clean Linux focused qualification. Final PR review and CI gate
+merging. Sustained mixed-load and backend-fault qualification remain a separate
+milestone. Earlier artifacts and failures below are preserved as history.
 
 ## Reproduced failure and corrected ownership
 
@@ -90,7 +91,7 @@ left the old scheduler unchanged: all ten healthy probes still timed out, while
 all Store/RPC/queued accounts returned in 13.6–17.1 ms without a GC cycle. This
 separates transport-accounting evidence from scheduling evidence.
 
-## Clean-artifact checks
+## Prior clean-artifact checks (7787dc)
 
 Five formal 1 GiB/two-CPU Linux rounds retained all thirty-two 8 MiB replies
 with zero active/pending IO. Healthy typed/Native probes took 3.65–4.42 ms;
@@ -200,3 +201,32 @@ Explicit GC is confined to these allocation/reachability diagnostics, never the
 production path or process recovery qualification. No causal claim is made about
 a test observer retaining the request, and no transport join or GC workaround is
 added to production. A new clean-artifact validation follows this correction.
+
+## Corrected clean-artifact qualification (98ea9ad)
+
+All five new 32-by-8-MiB single-Store slow-output rounds pass. Healthy typed Read
+and short Native probes took 2.45–11.43 ms, cancellation returned every logical
+Store/RPC/wire/Native account in 8.64–13.75 ms, and GC remained at six cycles.
+All rounds reached 32 paused, zero active and zero pending; there was no latch,
+watchdog expiry or Native budget rejection. Diagnostics report 1086 fixed series.
+Mongo valid/malformed and Elasticsearch small-progress tests pass three rounds.
+Five CLI identities match the clean binary, all exit zero without OOM or residuals.
+
+The same corrected binary passed all twelve 256/512-MiB automatic/off cases and
+four shared-memory cases. Automatic recovery took 125.9–156.0 ms; the six off
+controls remained latched at five seconds. Shared 160/192-MiB cases recovered in
+164.5/157.4 ms while retaining their outside memory. Shared 344/368-MiB probes
+completed 29/28 healthy reads, each using 0.10 CPU seconds and one GC in about
+three seconds; they do not claim prior latching. All sixteen identities match,
+all exits are zero, and no OOM or owned CLI residual remains. These results
+supersede earlier artifacts as current qualification, without explaining away
+the preserved ab48 pressure-predicate failure.
+
+The fresh independent original 100,000-header probe also passes three race
+repetitions against the correction: three prepared plans retained 432/1688/336
+bytes; denial allocated 592 bytes and returned NOT_STARTED before any HTTP call.
+Its [review manifest](native-memory-results-2026-10-16/pr79-native-request-memory-review-after-manifest.json)
+retains the original input, permanent diagnostic overlay, command and raw output.
+Current-source CI also passed default CGO0 tests, CGO1 race, both vet variants and
+script checks before this evidence-only commit. Exact final-head CI remains a
+merge requirement.

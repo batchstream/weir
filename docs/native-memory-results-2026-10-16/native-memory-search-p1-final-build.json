@@ -1,0 +1,20 @@
+{
+  "source": "98ea9adfee65a315ed737c00dad4640364f18648",
+  "state": "clean-commit",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-memory-search-p1-final-linux",
+  "sha256": "1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214",
+  "target": "linux/arm64",
+  "toolchain": "go1.27.1",
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "build",
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid= -X main.sourceRevision=98ea9adfee65a315ed737c00dad4640364f18648",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-native-memory-search-p1-final-linux",
+    "./cmd/weir"
+  ],
+  "scope": "PR79 including request parser P1 correction; all production changes frozen"
+}

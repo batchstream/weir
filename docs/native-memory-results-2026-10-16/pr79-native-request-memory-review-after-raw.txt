@@ -1,0 +1,71 @@
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/large
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/many_lines
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/budget_full
+--- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser (0.12s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/large (0.08s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/many_lines (0.03s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/budget_full (0.01s)
+=== RUN   TestNativePrepareDoesNotAllocateParsedHeadersBeforeAdmission
+    native_request_memory_test.go:76: raw=1300044 unique_headers=100000 allocations_small=7 allocations_large=7 prepared3_retained=296 initial_working=65804040 request_working=61609736
+--- PASS: TestNativePrepareDoesNotAllocateParsedHeadersBeforeAdmission (0.49s)
+=== RUN   TestNativeRequestCapacityFailurePrecedesParserAndHTTP
+    native_request_memory_test.go:107: rejected_before_parse allocated=592 attempted_http=0
+--- PASS: TestNativeRequestCapacityFailurePrecedesParserAndHTTP (0.18s)
+=== RUN   TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal
+    native_request_memory_test.go:245: heap pre=1939152 head=15475104 terminal=9153536; objects pre=2565 head=202977 terminal=202676; allocated pre=79523376 head=121620896 terminal=121695360; request_alive head=true terminal_first_gc=false
+    native_request_memory_test.go:264: request_working=61609912 slow_used=64419966 terminal_used=2735846 immediate_heap_drop=6321568 later_weak_gc_observations=0 body_closed=true
+--- PASS: TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal (1.04s)
+=== RUN   TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow
+--- PASS: TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow (0.01s)
+=== RUN   TestReviewCorrectedNativePreparedInputOwnership
+    review_native_correction_test.go:56: raw_input=1300035 prepared3_retained_heap=432 routed_plan_input=2604244 request_bound=61609664 initial_working=65803968 rejected_execute_allocated=592
+--- PASS: TestReviewCorrectedNativePreparedInputOwnership (0.27s)
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/large
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/many_lines
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/budget_full
+--- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser (0.08s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/large (0.04s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/many_lines (0.03s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/budget_full (0.01s)
+=== RUN   TestNativePrepareDoesNotAllocateParsedHeadersBeforeAdmission
+    native_request_memory_test.go:76: raw=1300044 unique_headers=100000 allocations_small=7 allocations_large=7 prepared3_retained=200 initial_working=65804040 request_working=61609736
+--- PASS: TestNativePrepareDoesNotAllocateParsedHeadersBeforeAdmission (0.46s)
+=== RUN   TestNativeRequestCapacityFailurePrecedesParserAndHTTP
+    native_request_memory_test.go:107: rejected_before_parse allocated=592 attempted_http=0
+--- PASS: TestNativeRequestCapacityFailurePrecedesParserAndHTTP (0.19s)
+=== RUN   TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal
+    native_request_memory_test.go:245: heap pre=1947168 head=15483872 terminal=15468248; objects pre=2616 head=203029 terminal=202992; allocated pre=229758160 head=271754648 terminal=271823304; request_alive head=true terminal_first_gc=true
+    native_request_memory_test.go:264: request_working=61609912 slow_used=64419966 terminal_used=2735846 immediate_heap_drop=15624 later_weak_gc_observations=1 body_closed=true
+--- PASS: TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal (1.06s)
+=== RUN   TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow
+--- PASS: TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow (0.01s)
+=== RUN   TestReviewCorrectedNativePreparedInputOwnership
+    review_native_correction_test.go:56: raw_input=1300035 prepared3_retained_heap=1688 routed_plan_input=2604244 request_bound=61609664 initial_working=65803968 rejected_execute_allocated=592
+--- PASS: TestReviewCorrectedNativePreparedInputOwnership (0.28s)
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/large
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/many_lines
+=== RUN   TestNativeHeaderMemoryReservesBeforeHTTPParser/budget_full
+--- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser (0.08s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/large (0.03s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/many_lines (0.03s)
+    --- PASS: TestNativeHeaderMemoryReservesBeforeHTTPParser/budget_full (0.01s)
+=== RUN   TestNativePrepareDoesNotAllocateParsedHeadersBeforeAdmission
+    native_request_memory_test.go:76: raw=1300044 unique_headers=100000 allocations_small=7 allocations_large=7 prepared3_retained=104 initial_working=65804040 request_working=61609736
+--- PASS: TestNativePrepareDoesNotAllocateParsedHeadersBeforeAdmission (0.45s)
+=== RUN   TestNativeRequestCapacityFailurePrecedesParserAndHTTP
+    native_request_memory_test.go:107: rejected_before_parse allocated=592 attempted_http=0
+--- PASS: TestNativeRequestCapacityFailurePrecedesParserAndHTTP (0.18s)
+=== RUN   TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal
+    native_request_memory_test.go:245: heap pre=1953136 head=15490112 terminal=15474760; objects pre=2627 head=203042 terminal=203008; allocated pre=379884920 head=421882248 terminal=421951352; request_alive head=true terminal_first_gc=true
+    native_request_memory_test.go:264: request_working=61609912 slow_used=64419966 terminal_used=2735846 immediate_heap_drop=15352 later_weak_gc_observations=1 body_closed=true
+--- PASS: TestNativeParsedRequestWorkingLivesThroughSlowHeadAndEndsBeforeTerminal (1.04s)
+=== RUN   TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow
+--- PASS: TestNativeRequestWorkingExcludesBorrowedBodyAndChecksOverflow (0.01s)
+=== RUN   TestReviewCorrectedNativePreparedInputOwnership
+    review_native_correction_test.go:56: raw_input=1300035 prepared3_retained_heap=336 routed_plan_input=2604244 request_bound=61609664 initial_working=65803968 rejected_execute_allocated=592
+--- PASS: TestReviewCorrectedNativePreparedInputOwnership (0.27s)
+PASS
+ok  	github.com/batchstream/weir/internal/backend/search	8.606s

@@ -1,0 +1,207 @@
+{
+  "source": "98ea9adfee65a315ed737c00dad4640364f18648",
+  "binary_SHA256": "1089f782c7ba580f06b5818eb80d953719740df6acbd5f6d2f9422bdc28fc214",
+  "candidate": "P1_request_parser_final_clean_artifact",
+  "build_receipt": "native-memory-search-p1-final-build.json",
+  "driver": "Go1.27.1 darwin/arm64 race integration",
+  "gates": {
+    "real_pressure": "12MiB typed Read replies blocked by fixed flow-control windows; actual RSS/working-set latch=1",
+    "wire_predicate": "required=(count+1)*12MiB cumulative blocked response ownership; original3s timeout unchanged",
+    "automatic_recovery": "5s, all credits zero, accepted health Read, latch zero, working set <=70%",
+    "off_control": "observe fixed5s without forcing GC",
+    "floor_probes": "344/368MiB retained tmpfs with low positive/known zero allowance; 3s healthy Read/CPU/GC observation"
+  },
+  "failure_history": {
+    "retained_original": "native-memory-final-recovery-matrix.txt: ab48 512MiB/automatic=false/round=2 failed original net-increment wire threshold before pressure; missing diagnostic data prevents attribution",
+    "diagnosis": "separate10-round original-predicate diagnostic did not reproduce failure; cumulative wire predicate corrected and full metrics/Recv failure diagnostic retained; original failure not erased"
+  },
+  "matrix_cases": [
+    {
+      "case": "256MiB/automatic=true/round=1",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=8 RSS=223424512 working_set=236232704 heap=202735184 latch=1",
+      "recovery": "recovered=125.851417ms overload_rejections=1 RSS=150966272 working_set=164630528 heap=1432616"
+    },
+    {
+      "case": "256MiB/automatic=true/round=2",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=8 RSS=223715328 working_set=236146688 heap=202739984 latch=1",
+      "recovery": "recovered=144.938958ms overload_rejections=1 RSS=151908352 working_set=164573184 heap=1344672"
+    },
+    {
+      "case": "256MiB/automatic=true/round=3",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=8 RSS=222810112 working_set=235769856 heap=202761424 latch=1",
+      "recovery": "recovered=133.797834ms overload_rejections=1 RSS=150429696 working_set=164687872 heap=1476464"
+    },
+    {
+      "case": "256MiB/automatic=false/round=1",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=7 RSS=227491840 working_set=235552768 heap=207046704 latch=1",
+      "recovery": "explicit off control still latched after fixed 5s: RSS=240345088 working_set=248389632 heap=219215808 latch=1"
+    },
+    {
+      "case": "256MiB/automatic=false/round=2",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=7 RSS=227586048 working_set=235552768 heap=206949456 latch=1",
+      "recovery": "explicit off control still latched after fixed 5s: RSS=242507776 working_set=248389632 heap=219173248 latch=1"
+    },
+    {
+      "case": "256MiB/automatic=false/round=3",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=7 RSS=227147776 working_set=235278336 heap=206971328 latch=1",
+      "recovery": "explicit off control still latched after fixed 5s: RSS=240041984 working_set=248102912 heap=219175168 latch=1"
+    },
+    {
+      "case": "512MiB/automatic=true/round=1",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=16 RSS=426115072 working_set=440455168 heap=404399112 latch=1",
+      "recovery": "recovered=147.77075ms overload_rejections=1 RSS=297975808 working_set=318750720 heap=1606408"
+    },
+    {
+      "case": "512MiB/automatic=true/round=2",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=16 RSS=425365504 working_set=438226944 heap=404282632 latch=1",
+      "recovery": "recovered=155.996583ms overload_rejections=1 RSS=297054208 working_set=318521344 heap=1610280"
+    },
+    {
+      "case": "512MiB/automatic=true/round=3",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=16 RSS=425852928 working_set=438136832 heap=404297288 latch=1",
+      "recovery": "recovered=155.533041ms overload_rejections=1 RSS=298000384 working_set=314204160 heap=1457192"
+    },
+    {
+      "case": "512MiB/automatic=false/round=1",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=14 RSS=456527872 working_set=465244160 heap=357563304 latch=1",
+      "recovery": "explicit off control still latched after fixed 5s: RSS=456527872 working_set=465244160 heap=373149632 latch=1"
+    },
+    {
+      "case": "512MiB/automatic=false/round=2",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=14 RSS=456429568 working_set=464941056 heap=357560272 latch=1",
+      "recovery": "explicit off control still latched after fixed 5s: RSS=456429568 working_set=465723392 heap=372820224 latch=1"
+    },
+    {
+      "case": "512MiB/automatic=false/round=3",
+      "pressure": "live pressure kind=typed_Read response_document=12MiB requests=14 RSS=456581120 working_set=465190912 heap=357543816 latch=1",
+      "recovery": "explicit off control still latched after fixed 5s: RSS=456581120 working_set=465690624 heap=373103952 latch=1"
+    }
+  ],
+  "shared": [
+    {
+      "size_MiB": 160,
+      "go_test_exit": 0,
+      "identity_valid": true,
+      "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-shared-160.txt",
+      "residual_containers": [],
+      "observations": [
+        "live pressure kind=typed_Read response_document=12MiB requests=9 RSS=249118720 working_set=430063616 heap=227894968 latch=1",
+        "recovered=164.493875ms overload_rejections=1 RSS=166858752 working_set=350031872 heap=1498344",
+        "shared pressure final elapsed=3.2861295s shmem=167772160 RSS=166858752 working_set=350031872 heap_live=1750296 heap_idle=255942656 heap_released=111607808 GoLimit=155895070 recovery_allowance=194868838 recovery_known=1 latch=0 idle=true process_cpu_delta=0.57 GC_cycles=87 GC_pause_sum=0.010676749 GC_CPU=unavailable_in_supplied_binary"
+      ],
+      "CLI_exit_zero_no_OOM": 1
+    },
+    {
+      "size_MiB": 192,
+      "go_test_exit": 0,
+      "identity_valid": true,
+      "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-shared-192.txt",
+      "residual_containers": [],
+      "observations": [
+        "live pressure kind=typed_Read response_document=12MiB requests=8 RSS=223633408 working_set=437981184 heap=202769904 latch=1",
+        "recovered=157.439584ms overload_rejections=0 RSS=140247040 working_set=356052992 heap=1569104",
+        "shared pressure final elapsed=3.117509125s shmem=201326592 RSS=140247040 working_set=356052992 heap_live=1807080 heap_idle=222380032 heap_released=104333312 GoLimit=128376504 recovery_allowance=160470630 recovery_known=1 latch=0 idle=true process_cpu_delta=0.52 GC_cycles=83 GC_pause_sum=0.009487912 GC_CPU=unavailable_in_supplied_binary"
+      ],
+      "CLI_exit_zero_no_OOM": 1
+    },
+    {
+      "size_MiB": 344,
+      "go_test_exit": 0,
+      "identity_valid": true,
+      "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-shared-344.txt",
+      "residual_containers": [],
+      "observations": [
+        "low positive/zero recovery allowance probe completed=29 rejected=0",
+        "shared pressure final elapsed=3.113605792s shmem=360710144 RSS=20455424 working_set=390074368 heap_live=2442288 heap_idle=3612672 heap_released=2711552 GoLimit=16777216 recovery_allowance=7071334 recovery_known=1 latch=0 idle=true process_cpu_delta=0.09999999999999999 GC_cycles=1 GC_pause_sum=9.35e-05 GC_CPU=unavailable_in_supplied_binary"
+      ],
+      "CLI_exit_zero_no_OOM": 1
+    },
+    {
+      "size_MiB": 368,
+      "go_test_exit": 0,
+      "identity_valid": true,
+      "log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-shared-368.txt",
+      "residual_containers": [],
+      "observations": [
+        "low positive/zero recovery allowance probe completed=28 rejected=0",
+        "shared pressure final elapsed=3.039101416s shmem=385875968 RSS=20783104 working_set=414957568 heap_live=2394976 heap_idle=3760128 heap_released=3112960 GoLimit=19544145 recovery_allowance=0 recovery_known=1 latch=0 idle=true process_cpu_delta=0.1 GC_cycles=1 GC_pause_sum=4.9833e-05 GC_CPU=unavailable_in_supplied_binary"
+      ],
+      "CLI_exit_zero_no_OOM": 1
+    }
+  ],
+  "matrix_receipt": {
+    "matrix_exit_code": 0,
+    "identity_receipts": 12,
+    "expected_receipts": 12,
+    "invalid": []
+  },
+  "matrix_log": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/native-memory-search-p1-final-recovery-matrix.txt",
+  "matrix_case_outcomes": [
+    {
+      "outcome": "PASS",
+      "case": "256MiB/automatic=true/round=1",
+      "elapsed_seconds": 9.25
+    },
+    {
+      "outcome": "PASS",
+      "case": "256MiB/automatic=true/round=2",
+      "elapsed_seconds": 9.51
+    },
+    {
+      "outcome": "PASS",
+      "case": "256MiB/automatic=true/round=3",
+      "elapsed_seconds": 9.35
+    },
+    {
+      "outcome": "PASS",
+      "case": "256MiB/automatic=false/round=1",
+      "elapsed_seconds": 10.91
+    },
+    {
+      "outcome": "PASS",
+      "case": "256MiB/automatic=false/round=2",
+      "elapsed_seconds": 10.92
+    },
+    {
+      "outcome": "PASS",
+      "case": "256MiB/automatic=false/round=3",
+      "elapsed_seconds": 11.05
+    },
+    {
+      "outcome": "PASS",
+      "case": "512MiB/automatic=true/round=1",
+      "elapsed_seconds": 11.02
+    },
+    {
+      "outcome": "PASS",
+      "case": "512MiB/automatic=true/round=2",
+      "elapsed_seconds": 11.01
+    },
+    {
+      "outcome": "PASS",
+      "case": "512MiB/automatic=true/round=3",
+      "elapsed_seconds": 10.96
+    },
+    {
+      "outcome": "PASS",
+      "case": "512MiB/automatic=false/round=1",
+      "elapsed_seconds": 12.45
+    },
+    {
+      "outcome": "PASS",
+      "case": "512MiB/automatic=false/round=2",
+      "elapsed_seconds": 12.51
+    },
+    {
+      "outcome": "PASS",
+      "case": "512MiB/automatic=false/round=3",
+      "elapsed_seconds": 12.54
+    }
+  ],
+  "matrix_CLI_exit_zero_no_OOM": 12,
+  "matrix_residual_containers": [],
+  "all_passed": true,
+  "final_CLI_exit_zero_no_OOM_count": 16,
+  "owned_CLI_residual_containers": [],
+  "DB_window_returned": true
+}
