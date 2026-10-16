@@ -4,19 +4,25 @@
 one scale change per minute. It is not applied by the integration fixture.
 Each Pod runs one Weir process, including Lua evaluation.
 
-Weir does not cap business connections, RPCs, active executions or backend pool
-capacity. Each LocalStore owns an independent backend adapter. Connections grow
-with actual demand; every replica can increase aggregate database traffic.
+Each Store defaults to 16 simultaneous adapter invocations, shared by reads,
+mutations, Scan fetches and Native streaming. `batching.max_in_flight` controls
+this budget; explicit `0` removes the execution limit. Each Store and replica has
+its own budget, so their aggregate database demand can grow when scaling.
+Business connections, RPCs and backend pools have no additional concurrency cap.
+Each local Store owns an independent backend adapter. Connections grow with
+actual demand; every replica can increase aggregate database traffic.
 Observe backend connection ownership, active executions, queue count/bytes,
 completed throughput and latency together with backend CPU and memory.
 Use the container memory limit for the hard memory boundary; Weir detects the
 visible capacity and observes actual pressure automatically.
 
-The configured batch queue bounds waiting input. A full queue waits for dispatch
-or caller cancellation, and dispatch immediately returns its capacity. An active
-request does not hold waiting queue capacity. Increasing replicas can increase
-backend load, so use integration measurements to decide whether any additional
-limit is needed for the actual workload.
+The configured queue bounds waiting input. Reads and mutations form separate
+batches within that one queue. Reads use compatible reads already queued without
+waiting for new arrivals; they do not flush the write collection window. Both
+can wait for an occupied execution slot. A full queue waits for dispatch or caller
+cancellation, and dispatch immediately returns its capacity. An active request
+does not hold waiting queue capacity. Use integration measurements to select
+execution and replica budgets for the actual workload.
 
 During rolling updates, account for overlap with terminating Pods when measuring
 backend connections. `maxSurge: 0` and HPA `maxReplicas` do not cap that overlap.

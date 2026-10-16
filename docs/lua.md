@@ -56,6 +56,10 @@ no per-request language selector.
 one with dense integer keys from 1 is an array. Mixed keys, sparse arrays and
 cycles are rejected. Existing containers retain their kind even when emptied.
 Assigning nil removes a field; assigning `weir.null()` keeps an explicit null.
+Object field names in the Lua value model cannot contain NUL (`\u0000`). This
+constraint applies to documents crossing the Lua bridge, including current and
+input documents; it does not restrict ordinary Search JSON reads or Native
+payloads that do not enter that value model.
 
 Integers are exact through the full signed int64 range, including comparison and
 `tostring`. Lua integer arithmetic wraps on overflow; operations mixing integers

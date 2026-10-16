@@ -68,8 +68,9 @@ defaults and their calibration scope are described in [batching guidance](docs/b
 ## Build and run
 
 Requires Go **1.27.1**. Typed Read, Mutate and Scan require existing backend
-collections/indices; Native can provision them. MongoDB program transforms
-require a replica set with transactions.
+collections/indices; Native can provision them. MongoDB requires direct replica-set
+access and support for the native client `bulkWrite` command used by typed
+mutations. Lua transforms also require transactions.
 
 ```sh
 go build -o bin/weir ./cmd/weir
