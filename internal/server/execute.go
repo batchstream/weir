@@ -47,13 +47,13 @@ func (s *Server) Execute(stream grpc.BidiStreamingServer[pb.ExecuteRequest, pb.E
 		return status.Error(codes.Unavailable, "Store is not hosted here; ResolveStore before sending business requests")
 	}
 	kind := commandKind(request.Command)
-	if kind == "scan" || kind == "native" {
+	if kind == "native" {
 		_, err = s.receiveFrame(stream)
 		if err != io.EOF {
 			if err != nil {
 				return err
 			}
-			return status.Error(codes.InvalidArgument, "Scan and Native require exactly one request")
+			return status.Error(codes.InvalidArgument, "Native requires exactly one request")
 		}
 		return s.executeCommand(stream, runtime, request.Command)
 	}
@@ -216,8 +216,6 @@ func commandKind(command *pb.Command) string {
 		return "read"
 	case *pb.Command_Mutate:
 		return "mutate"
-	case *pb.Command_Scan:
-		return "scan"
 	default:
 		return "native"
 	}
@@ -238,13 +236,13 @@ func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteReques
 	ctx := stream.Context()
 	plan, failure := runtime.PrepareCommand(ctx, 1, command)
 	if failure != nil {
-		return s.sendEvent(stream, failedCommand(command, failure), 1)
+		return s.sendEvent(stream, failedCommand(failure), 1)
 	}
 	session := runtime.NewSession()
 	defer session.Close()
 	ticket, failure := s.submitPlan(ctx, runtime, plan, session)
 	if failure != nil {
-		return s.sendEvent(stream, failedCommand(command, failure), 1)
+		return s.sendEvent(stream, failedCommand(failure), 1)
 	}
 	for {
 		select {
@@ -268,15 +266,10 @@ func (s *Server) executeCommand(stream grpc.BidiStreamingServer[pb.ExecuteReques
 	}
 }
 
-func failedCommand(call *pb.Command, failure *pb.Failure) *pb.Event {
-	event := &pb.Event{}
-	if call.GetScan() != nil {
-		end := &pb.ScanEnd{Failure: failure}
-		event.Value = &pb.Event_ScanEnd{ScanEnd: end}
-	} else {
-		end := protocol.NativeFailure(false, failure)
-		event.Value = &pb.Event_NativeEnd{NativeEnd: end}
-	}
+func failedCommand(failure *pb.Failure) *pb.Event {
+	end := protocol.NativeFailure(false, failure)
+	value := &pb.Event_NativeEnd{NativeEnd: end}
+	event := &pb.Event{Value: value}
 	return event
 }
 

@@ -327,8 +327,8 @@ func (a *Adapter) readPrograms(ctx context.Context, plans []*execution.Plan) ([]
 		if err != nil {
 			return nil, err
 		}
-		fields, err := scanFields(raw)
-		valid := err == nil && scanOK(fields["ok"])
+		fields, err := bsonFields(raw)
+		valid := err == nil && bsonCommandOK(fields["ok"])
 		for key := range fields {
 			if key != "ok" && key != "cursor" && key != "operationTime" && key != "$clusterTime" {
 				valid = false
@@ -594,8 +594,8 @@ func (a *Adapter) abortProgramTransaction(session *mongo.Session, settled bool) 
 	stop()
 	_ = session.AbortTransaction(local)
 	if err == nil {
-		fields, parseErr := scanFields(raw)
-		return parseErr == nil && scanOK(fields["ok"]) && fields["writeConcernError"].Type == 0
+		fields, parseErr := bsonFields(raw)
+		return parseErr == nil && bsonCommandOK(fields["ok"]) && fields["writeConcernError"].Type == 0
 	}
 	var commandError mongo.CommandError
 	if !errors.As(err, &commandError) || commandError.Code != 251 {

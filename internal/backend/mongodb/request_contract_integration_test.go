@@ -3,9 +3,7 @@
 package mongodb
 
 import (
-	"bytes"
 	"context"
-	"net/url"
 	"testing"
 
 	pb "github.com/batchstream/weir-protocol/api/weir/v1"
@@ -13,56 +11,6 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmongo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
-
-func TestMongoScanNativeBSONProjectionAndConcreteNames(t *testing.T) {
-	fixture := testmongo.Open(t)
-	collectionName := "1记录.events"
-	if err := fixture.Admin.Database(fixture.DB).CreateCollection(t.Context(), collectionName); err != nil {
-		t.Fatal(err)
-	}
-	collection := fixture.Admin.Database(fixture.DB).Collection(collectionName)
-	timestamp := bson.Timestamp{T: 99, I: 3}
-	document := bson.D{{Key: "_id", Value: "original"}, {Key: "n", Value: int32(7)}, {Key: "timestamp", Value: timestamp}, {Key: "regex", Value: bson.Regex{Pattern: "^x", Options: "i"}}}
-	if _, err := collection.InsertOne(t.Context(), document); err != nil {
-		t.Fatal(err)
-	}
-	adapterOptions := adapterTestOptions{fixture: fixture}
-	adapter := testAdapter(t, adapterOptions)
-	filter := bson.D{{Key: "timestamp", Value: timestamp}}
-	raw, err := bson.Marshal(filter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	condition := &pb.Document{ContentType: "application/bson", Data: raw}
-	for _, mode := range []pb.ProjectionMode{pb.ProjectionMode_INCLUDE, pb.ProjectionMode_EXCLUDE} {
-		fields := []string{"_id"}
-		expected := document[1:]
-		if mode == pb.ProjectionMode_INCLUDE {
-			fields = []string{"timestamp"}
-			expected = bson.D{{Key: "timestamp", Value: timestamp}}
-		}
-		projection := &pb.Projection{Mode: mode, Fields: fields}
-		request := &pb.ScanRequest{Resource: fixture.DB + "/" + url.PathEscape(collectionName), Filter: condition, Projection: projection, PageSize: 1}
-		work, failure := adapter.prepareScan(request)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		page := adapter.fetchScan(context.Background(), work)
-		want, _ := bson.Marshal(expected)
-		if page.Failure != nil || len(page.Documents) != 1 || !bytes.Equal(page.Documents[0].Data, want) || !page.Complete || len(page.NextContinuationToken) == 0 {
-			t.Fatal("native BSON projection or concrete namespace changed", mode, page.Failure)
-		}
-		request.ContinuationToken = page.NextContinuationToken
-		resumed, failure := adapter.prepareScan(request)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		empty := adapter.fetchScan(t.Context(), resumed)
-		if empty.Failure != nil || !empty.Exhausted || len(empty.Documents) != 0 {
-			t.Fatal("hidden identity broke resume", empty.Failure)
-		}
-	}
-}
 
 func TestMongoLuaBusinessFunctionCreatesMissingRecord(t *testing.T) {
 	fixture := testmongo.Open(t)

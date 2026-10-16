@@ -69,7 +69,7 @@ func TestMongoNativeADSnapshotDatesAndConcurrentCreation(t *testing.T) {
 	initial := bson.D{{Key: "_id", Value: "ad"}, {Key: "description", Value: "$literal text"}, {Key: "url", Value: "https://example.test/old"}, {Key: "started_at", Value: time.UnixMilli(12345)}}
 	command := adSnapshotCommand("ad", initial)
 	reply, err := nativeBusinessReply(ctx, adapter, fixture.DB, command)
-	if err != nil || !scanOK(reply.Lookup("ok")) {
+	if err != nil || !bsonCommandOK(reply.Lookup("ok")) {
 		t.Fatal("initial AD snapshot", err, reply)
 	}
 	first := reply.Lookup("value").Document()
@@ -81,7 +81,7 @@ func TestMongoNativeADSnapshotDatesAndConcurrentCreation(t *testing.T) {
 	replacement := bson.D{{Key: "_id", Value: "ad"}, {Key: "description", Value: "updated"}}
 	command = adSnapshotCommand("ad", replacement)
 	reply, err = nativeBusinessReply(ctx, adapter, fixture.DB, command)
-	if err != nil || !scanOK(reply.Lookup("ok")) {
+	if err != nil || !bsonCommandOK(reply.Lookup("ok")) {
 		t.Fatal("replacement AD snapshot", err, reply)
 	}
 	second := reply.Lookup("value").Document()
@@ -98,7 +98,7 @@ func TestMongoNativeADSnapshotDatesAndConcurrentCreation(t *testing.T) {
 			incoming := bson.D{{Key: "_id", Value: "new-ad"}, {Key: "description", Value: fmt.Sprint(i)}}
 			mutation := adSnapshotCommand("new-ad", incoming)
 			response, err := nativeBusinessReply(ctx, adapter, fixture.DB, mutation)
-			if err != nil || !scanOK(response.Lookup("ok")) {
+			if err != nil || !bsonCommandOK(response.Lookup("ok")) {
 				errors <- fmt.Errorf("concurrent first snapshot: %v %v", err, response)
 				return
 			}
@@ -189,7 +189,7 @@ func TestMongoNativeJobUniquenessValidationAndSignaturePatch(t *testing.T) {
 	for _, command := range []bson.D{signature, save} {
 		workers.Go(func() {
 			reply, err := nativeBusinessReply(ctx, adapter, fixture.DB, command)
-			if err != nil || !scanOK(reply.Lookup("ok")) || reply.Lookup("writeErrors").Type != 0 || reply.Lookup("writeConcernError").Type != 0 {
+			if err != nil || !bsonCommandOK(reply.Lookup("ok")) || reply.Lookup("writeErrors").Type != 0 || reply.Lookup("writeConcernError").Type != 0 {
 				t.Error("concurrent lifecycle/signature update failed", err, reply)
 			}
 		})
@@ -286,17 +286,15 @@ func TestMongoNativeLargeDocumentsPaginateAndReleaseCursor(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	reply, err = nativeBusinessReply(ctx, adapter, fixture.DB, getMore)
-	if err != nil || scanOK(reply.Lookup("ok")) || reply.Lookup("code").Int32() != 43 {
+	if err != nil || bsonCommandOK(reply.Lookup("ok")) || reply.Lookup("code").Int32() != 43 {
 		t.Fatal("reclaimed cursor remained usable or native error was hidden", err, reply)
 	}
 }
 
-func TestMongoLargeTypedRecordsAndScanProgressBeyondByteWindow(t *testing.T) {
+func TestMongoLargeTypedRecordsBeyondByteWindow(t *testing.T) {
 	fixture := testmongo.Open(t)
 	settings := backend.DefaultOptions()
 	settings.ExchangeBytes = 4 << 20
-	settings.Scan.Bytes = 64 << 10
-	settings.Scan.Documents = 2
 	config := Config{Store: "mongo", URI: fixture.URI, Options: &settings}
 	config = mongoFixtureConfig(t, config)
 	adapter, err := Open(t.Context(), config)
@@ -327,29 +325,5 @@ func TestMongoLargeTypedRecordsAndScanProgressBeyondByteWindow(t *testing.T) {
 	read := results[0].GetReadResult()
 	if read.GetFailure() != nil || len(read.GetDocument().Data) <= 4<<20 || bson.Raw(read.GetDocument().Data).Lookup("pad").StringValue() != document[1].Value {
 		t.Fatal("large typed read retained its former document quota", read.GetFailure())
-	}
-	insert := bson.D{{Key: "insert", Value: "records"}, {Key: "documents", Value: bson.A{bson.D{{Key: "_id", Value: "b"}}}}}
-	runMongoNativeCommand(t, adapter, fixture.DB, insert)
-	request := &pb.ScanRequest{Resource: fixture.DB + "/records", PageSize: 2}
-	work, failure = adapter.prepareScan(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	defer adapter.closeScan(ctx, work)
-	var end *pb.ScanEnd
-	var seen []string
-	emit := func(_ *execution.Plan, event *pb.Event) error {
-		if document := event.GetDocument(); document != nil {
-			seen = append(seen, bson.Raw(document.Data).Lookup("_id").StringValue())
-		}
-		if event.GetScanEnd() != nil {
-			end = event.GetScanEnd()
-		}
-		return nil
-	}
-	for adapter.streamScan(ctx, work, emit) {
-	}
-	if end == nil || end.Failure != nil || end.DocumentCount != 2 || fmt.Sprint(seen) != "[a b]" {
-		t.Fatal("Scan did not progress past a document larger than its page byte target", seen, end)
 	}
 }

@@ -15,7 +15,6 @@ import (
 
 // Limits bounds waiting work, physical batch size and per-Store adapter invocations.
 type Limits struct {
-	Scan                        execution.ScanLimits
 	CleanupTimeout, BatchWait   time.Duration
 	QueueOperations, QueueBytes int
 	BatchOperations, BatchBytes int
@@ -23,7 +22,7 @@ type Limits struct {
 }
 
 func DefaultLimits() Limits {
-	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 128, BatchBytes: 4 << 20, BatchWait: 20 * time.Millisecond, MaxInFlight: 16, Scan: execution.DefaultScanLimits(), CleanupTimeout: 2 * time.Second}
+	limits := Limits{QueueOperations: 1024, QueueBytes: 32 << 20, BatchOperations: 128, BatchBytes: 4 << 20, BatchWait: 20 * time.Millisecond, MaxInFlight: 16, CleanupTimeout: 2 * time.Second}
 	return limits
 }
 
@@ -31,9 +30,6 @@ func (limits Limits) Validate() error {
 	if limits.QueueOperations < 1 || limits.QueueBytes < 1 ||
 		limits.BatchOperations < 1 || limits.BatchBytes < 1 || limits.MaxInFlight < 0 || limits.CleanupTimeout < 0 || limits.BatchWait < 0 {
 		return fmt.Errorf("invalid batch, execution or queue bounds")
-	}
-	if limits.Scan.Documents != 0 {
-		return limits.Scan.Validate()
 	}
 	return nil
 }
@@ -120,9 +116,6 @@ func newRuntime(adapter execution.Adapter, limits Limits) *Runtime {
 	if limits.CleanupTimeout == 0 {
 		limits.CleanupTimeout = DefaultLimits().CleanupTimeout
 	}
-	if limits.Scan.Documents == 0 {
-		limits.Scan = execution.DefaultScanLimits()
-	}
 	runtime := &Runtime{adapter: adapter, limits: limits, live: make(map[*Ticket]struct{}), batches: make(map[*batch]struct{}), keys: make(map[resourceKey]*Ticket), wake: make(chan struct{}, 1), changed: make(chan struct{}), done: make(chan struct{})}
 	runtime.metrics = newRuntimeMetrics()
 	return runtime
@@ -138,7 +131,7 @@ func (r *Runtime) PrepareRecord(ctx context.Context, record *execution.Record) (
 		r.metrics.rejections.WithLabelValues("prepare").Inc()
 		return nil, failure
 	}
-	if plan == nil || plan.Command != record.Command() || plan.ID != record.Index() || plan.Command.GetNative() != nil || plan.Command.GetScan() != nil {
+	if plan == nil || plan.Command != record.Command() || plan.ID != record.Index() || plan.Command.GetNative() != nil {
 		return nil, protocol.Fail(pb.FailureCode_INTERNAL, "invalid prepared record")
 	}
 	plan.Bytes = max(plan.Bytes, record.Bytes())
@@ -169,7 +162,7 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	if session != nil && (session.runtime != r || session.closed) {
 		return nil, protocol.Fail(pb.FailureCode_UNAVAILABLE, "session closed"), changed
 	}
-	singleton := plan != nil && (plan.Command.GetScan() != nil || plan.Command.GetNative() != nil)
+	singleton := plan != nil && plan.Command.GetNative() != nil
 	if singleton && session == nil {
 		return nil, protocol.Fail(pb.FailureCode_INVALID_ARGUMENT, "streaming plans require an event consumer"), changed
 	}
@@ -184,7 +177,7 @@ func (r *Runtime) Submit(ctx context.Context, plan *execution.Plan, session *Ses
 	}
 	ticketContext, cancel := context.WithCancel(ctx)
 	ticket := &Ticket{runtime: r, session: session, ctx: ticketContext, cancel: cancel, plan: plan, ready: make(chan struct{}), queuedAt: time.Now()}
-	if session != nil && (plan.Command.GetScan() != nil || plan.Command.GetNative() != nil) && session.Events == nil {
+	if session != nil && plan.Command.GetNative() != nil && session.Events == nil {
 		session.Events = make(chan *Emission, 1)
 	}
 	r.queue = append(r.queue, ticket)
@@ -318,15 +311,9 @@ func (r *Runtime) cancelQueuedLocked() {
 			if t.plan.Command.GetRead() != nil || t.plan.Command.GetMutate() != nil {
 				event = execution.FailedEvent(t.plan.Command, pb.MutationOutcome_NOT_STARTED, failure)
 			}
-			if t.plan.Command.GetScan() != nil {
-				t.state = 3
-			} else {
-				r.completeLocked(t, event)
-			}
+			r.completeLocked(t, event)
 			if t.session != nil && t.session.Events != nil && !t.acked {
-				var events []*pb.Event
-
-				r.startPublisherLocked(t, events, false)
+				r.startPublisherLocked(t)
 			}
 		} else {
 			keep = append(keep, t)
@@ -430,7 +417,7 @@ func (r *Runtime) selectLocked(now time.Time) (*batch, time.Time) {
 			}
 			seen[key] = true
 		}
-		singleton := t.plan.Command.GetScan() != nil || t.plan.Command.GetNative() != nil
+		singleton := t.plan.Command.GetNative() != nil
 		// Separate completion and collection windows for reads and mutations.
 		group := batchGroup{backend: t.plan.BatchKey, read: t.plan.Command.GetRead() != nil}
 		candidate := groups[group]
@@ -573,98 +560,33 @@ func (t *Ticket) emit(event *pb.Event) error {
 		return t.ctx.Err()
 	}
 }
-func (r *Runtime) startPublisherLocked(t *Ticket, events []*pb.Event, continuation bool) {
+func (r *Runtime) startPublisherLocked(t *Ticket) {
 	r.publishers++
 	t.publishing = true
 	go func() {
-		if !continuation && t.plan.Command.GetScan() != nil {
-			cleanup, cancel := context.WithTimeout(context.Background(), r.limits.CleanupTimeout)
-			failure := r.adapter.ClosePlan(cleanup, t.plan)
-			cancel()
-			if failure != nil {
-				for _, event := range events {
-					if end := event.GetScanEnd(); end != nil && end.Failure == nil {
-						end.Failure = failure
-						end.Exhausted = false
-						end.NextContinuationToken = nil
-					}
-				}
-			}
-			r.mu.Lock()
-			r.completeLocked(t, t.event)
-			r.mu.Unlock()
-		}
-		delivered := true
-		for index, event := range events {
-			if err := t.emit(event); err != nil {
-				delivered = false
-				break
-			}
-			events[index] = nil
-		}
-		if continuation && delivered && t.ctx.Err() == nil {
-			r.mu.Lock()
-			for !t.abandoned && !r.closed && !t.session.closed && t.ctx.Err() == nil &&
-				!r.queueCapacityLocked(t.plan) {
-				changed := r.changed
-				r.mu.Unlock()
-				select {
-				case <-changed:
-				case <-t.ctx.Done():
-				}
-				r.mu.Lock()
-			}
-			if !t.abandoned && !r.closed && !t.session.closed && t.ctx.Err() == nil {
-				t.publishing = false
-				r.publishers--
-				t.state = 0
-				t.queuedAt = time.Now()
-				r.pendingBytes += t.plan.Bytes
-				r.queue = append(r.queue, t)
-				r.notifyLocked()
-				r.mu.Unlock()
-				return
-			}
-			r.mu.Unlock()
-		}
-		if continuation {
-			cleanup, cancel := context.WithTimeout(context.Background(), r.limits.CleanupTimeout)
-			_ = r.adapter.ClosePlan(cleanup, t.plan)
-			cancel()
-			r.mu.Lock()
-			r.completeLocked(t, t.event)
-			r.mu.Unlock()
-		}
-		if delivered && t.session != nil {
-			emission := &Emission{done: make(chan struct{})}
+		emission := &Emission{done: make(chan struct{})}
+		select {
+		case t.session.Events <- emission:
 			select {
-			case t.session.Events <- emission:
+			case <-emission.done:
 			case <-t.ctx.Done():
-				delivered = false
 			}
-			if delivered {
-				select {
-				case <-emission.done:
-				case <-t.ctx.Done():
-				}
-			}
+		case <-t.ctx.Done():
 		}
 		r.mu.Lock()
 		r.publishers--
 		t.publishing = false
-		if t.acked || t.abandoned || t.session != nil && t.session.closed {
+		if t.acked || t.abandoned || t.session.closed {
 			r.releaseLocked(t)
 		}
 		r.notifyLocked()
 		r.mu.Unlock()
 	}()
 }
+
 func (r *Runtime) execute(b *batch) {
 	plans := make([]*execution.Plan, len(b.items))
 	positions := make(map[*execution.Plan]*Ticket, len(b.items))
-	// Scan batches are singleton; Record and Native results bypass this buffer.
-	var events []*pb.Event
-	var eventBytes, documentBytes int
 	for i, t := range b.items {
 		plan := *t.plan
 		plan.Context = t.ctx
@@ -698,42 +620,12 @@ func (r *Runtime) execute(b *batch) {
 			r.mu.Unlock()
 			return ticket.emit(event)
 		}
-		if plan.Command.GetScan() != nil {
-			if event.GetDocument() == nil && event.GetScanEnd() == nil {
-				return fmt.Errorf("adapter emitted wrong Scan result")
-			}
-			if len(events) != 0 && events[len(events)-1].GetScanEnd() != nil {
-				return fmt.Errorf("adapter emitted after Scan terminal result")
-			}
-			if len(events) >= r.limits.Scan.Documents+1 {
-				return fmt.Errorf("Scan batch exceeds document bound")
-			}
-			if document := event.GetDocument(); document != nil {
-				if len(events) >= r.limits.Scan.Documents || len(events) > 0 && len(document.Data) > r.limits.Scan.Bytes-documentBytes {
-					return fmt.Errorf("Scan batch exceeds retained output bound")
-				}
-				documentBytes += len(document.Data)
-			}
-			size := proto.Size(event)
-			eventBytes += size
-			r.mu.Lock()
-			r.retainResultLocked(ticket, eventBytes+execution.ResultOverheadBytes)
-			r.mu.Unlock()
-		} else if len(events) >= 2 {
-			return fmt.Errorf("adapter step exceeds two bounded events")
-		}
-		events = append(events, event)
-		return nil
+		return fmt.Errorf("adapter emitted unknown command result")
 	}
 	r.metrics.executions.WithLabelValues("execution").Inc()
 	r.metrics.batch.Observe(float64(len(plans)))
 	started := time.Now()
-	continuation := r.adapter.Execute(b.ctx, plans, emit)
-	// Only a singleton Scan can schedule another bounded fetch.
-	continuation = continuation && len(plans) == 1 && plans[0].Command.GetScan() != nil
-	if continuation && len(events) != 0 && events[len(events)-1].GetScanEnd() != nil {
-		continuation = false
-	}
+	r.adapter.Execute(b.ctx, plans, emit)
 	r.metrics.duration.WithLabelValues("execution").Observe(time.Since(started).Seconds())
 	b.cancel()
 	r.mu.Lock()
@@ -746,13 +638,9 @@ func (r *Runtime) execute(b *batch) {
 			failure := protocol.Fail(pb.FailureCode_INTERNAL, "adapter returned no result")
 			event = execution.FailedEvent(ticket.plan.Command, pb.MutationOutcome_UNKNOWN, failure)
 		}
-		if ticket.plan.Command.GetScan() != nil {
-			ticket.state = 3
-		} else {
-			r.completeLocked(ticket, event)
-		}
+		r.completeLocked(ticket, event)
 		if ticket.session != nil && ticket.session.Events != nil && !ticket.acked {
-			r.startPublisherLocked(ticket, events, continuation && ticket.plan.Command.GetScan() != nil)
+			r.startPublisherLocked(ticket)
 		}
 	}
 	r.notifyLocked()
@@ -780,7 +668,7 @@ func (r *Runtime) SetOverloaded(value bool) {
 func (r *Runtime) BeginDrain() { r.mu.Lock(); defer r.mu.Unlock(); r.draining = true; r.notifyLocked() }
 
 // Record results remain consumer-owned until Ack, including sessions used for
-// resource ordering. Scan and Native use session-owned event publishers.
+// resource ordering. Native uses a session-owned event publisher.
 func (r *Runtime) cancelTicketsLocked() {
 	for ticket := range r.live {
 		record := ticket.plan.Command.GetRead() != nil || ticket.plan.Command.GetMutate() != nil

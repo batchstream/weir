@@ -112,7 +112,7 @@ func TestMongoNativeRealErrorsBoundsAndReplyLoss(t *testing.T) {
 				if reply.Validate() != nil {
 					t.Fatal("invalid raw BSON")
 				}
-				if mode == "native_error" && scanOK(reply.Lookup("ok")) {
+				if mode == "native_error" && bsonCommandOK(reply.Lookup("ok")) {
 					t.Fatal("lost native error", reply)
 				}
 				if mode == "multiframe" && capture.chunks < 2 {
@@ -153,7 +153,7 @@ func runMongoNativeCommand(t *testing.T, adapter *Adapter, resource string, comm
 		t.Fatal("native command incomplete", command, end)
 	}
 	reply := bson.Raw(capture.body.Bytes())
-	if reply.Validate() != nil || !scanOK(reply.Lookup("ok")) {
+	if reply.Validate() != nil || !bsonCommandOK(reply.Lookup("ok")) {
 		t.Fatal("native backend command failed", command, reply)
 	}
 	return reply

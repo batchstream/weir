@@ -71,7 +71,7 @@ func TestLuaRecordBatchIsolatesActionsAndPreservesBusinessSources(t *testing.T) 
 		work.Backend.(*plan).program.Source = sources[i]
 		// Independent RPCs all begin at ordinal 1; ownership is by plan pointer.
 		work.ID = 1
-		if work.Command.GetScan() != nil || work.Command.GetNative() != nil {
+		if work.Command.GetNative() != nil {
 			t.Fatal("Lua plan excluded from record batching")
 		}
 		works = append(works, work)

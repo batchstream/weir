@@ -35,11 +35,9 @@ item failures. Different streams retain backend concurrency semantics. Mutate is
 not an atomic transaction; a later invalid request cannot undo earlier effects.
 There is no durable request identity, deduplication or exactly-once guarantee.
 
-Scan and Native each send one command with index 1 and half-close input. A scan
-page emits business documents then ScanEnd; Native emits optional opaque Document
-metadata, body chunks and NativeEnd. Adapters own the native payload formats.
-Success requires the terminal event and final gRPC OK. A scan checkpoint additionally
-requires the terminal document count to match complete delivery.
+Native sends one command with index 1 and half-closes input. It emits optional
+opaque Document metadata, body chunks and NativeEnd. Adapters own the native
+payload formats. Success requires the terminal event and final gRPC OK.
 
 Individual business failures are typed results or terminal Events. RPC failures
 are gRPC status. NOT_STARTED requires evidence of no backend attempt; NOT_APPLIED
@@ -86,7 +84,7 @@ finite publication window, so a stopped reader cannot accumulate unlimited resul
 inside that stream. Protocol frame boundaries are checked before protobuf construction.
 The validator walks the transport's existing buffer fragments directly, including
 nested message spans, without copying payloads or changing buffer references.
-Queue, batch and Scan byte settings are aggregation windows. A larger individual
+Queue and batch byte settings are aggregation windows. A larger individual
 input or document proceeds alone; completed-result accounting grows to its actual size.
 
 Process and container memory observations drive overload admission. Memory capacity
@@ -115,10 +113,8 @@ actual input bytes, `batching.max_operations` and `batching.max_bytes`. Reads us
 already queued reads; mutations retain the bounded write collection window. A
 session/resource key serializes same-resource mutations within a stream; distinct
 resources and streams can share a batch of the same kind.
-Scan and Native use the same scheduler with their required singleton lifecycle.
-Execution mode and cleanup follow the command type. A Scan adapter returns whether
-another bounded fetch is needed; the scheduler retains no duplicate mode flags or
-mutable continuation flag on the plan.
+Native uses the same scheduler as a singleton invocation with incremental output.
+There is no scheduler continuation or traversal state.
 
 Every record keeps its owning RPC context, result reservation and ordinal. Backend
 results are assigned by dispatched plan identity, because different RPCs can use
@@ -152,7 +148,7 @@ One Store timer wakes the scheduler for the earliest eligible collection deadlin
 Reads use already queued compatible reads without waiting for future arrivals.
 They neither join mutation batches nor flush their collection window, so a completed
 read does not wait for unrelated writes in the same adapter invocation. Both kinds
-still share the Store queue and execution budget. Full batches, Scan/Native, draining Stores and shorter
+still share the Store queue and execution budget. Full batches, Native, draining Stores and shorter
 caller deadlines bypass collection. Ready groups can pass another group still collecting; once
 both are ready, the oldest eligible group runs first. Credit returns at execution completion,
 independently of result acknowledgement. Each Store owns its budget. No Store workspace ceiling or backend connection-pool
@@ -164,40 +160,13 @@ The budget covers the whole adapter invocation, including Search `refresh=wait_f
 and synchronous Native output. It cannot distinguish waiting for visibility from
 database application; a small budget can therefore reduce visible-write throughput.
 Long Native calls should use a separate Store when isolation from record traffic is
-required. Scan releases credit before publication and queues its next page at the
-tail after the consumer releases the previous page. Abandoning all callers cancels
+required. Abandoning all callers cancels
 an invocation but returns its credit only when the adapter actually stops.
 
 Metrics observe execution rather than control scheduling.
 Queue occupancy and capacity metrics describe waiting operations. Active execution
 limits report zero for unlimited operation. Execution and per-record outcome counters
 retain actual backend evidence, including unknown writes.
-
-Scan fetches up to `scan.max_batch_documents` (default 128) per backend
-call, bounded by the remaining logical page size. It validates the complete native response and retains an
-ordered prefix using `scan.max_batch_bytes` (default 4 MiB), with a larger
-individual document retained alone, then
-finishes backend execution before publication.
-The result remains owned through publication and request completion. A blocked
-Scan reader does not stop independent work. MongoDB estimates 48 MiB and Search
-64 MiB of working bytes for native buffers and validation; these metrics do not
-limit execution or measure process RSS. Only a validated empty response establishes
-exhaustion. An unretained tail is fetched again from the last accepted record.
-
-Both backends learn a smaller fetch capacity from the retained prefix size.
-They share the Scan event publication and count state; native fetching and
-checkpoint cleanup remain backend responsibilities.
-Fetch capacity belongs to the current page and is separate from the remaining
-logical page size. Continuations carry the native traversal checkpoint.
-Each new page is a new Execute RPC and can select another
-instance. MongoDB uses ascending original BSON _id keysets without a retained
-cursor or cross-page snapshot. Search carries the latest PIT and search_after
-values; the backend snapshot has a 60-second keep-alive. Expiration fails
-explicitly. A previously published PIT remains available after a later
-failed/exhausted page until expiry.
-Search uses `_shard_doc` PIT sorting for both Elasticsearch and OpenSearch;
-the backend must implement that native sort. Checkpoint tokens are opaque and tied to the target/filter/projection;
-the checksum detects corruption and is not authentication.
 
 Native execution is a singleton with incremental streaming. Opaque commands and
 publication inherit the caller context, without an added backend execution
@@ -241,7 +210,7 @@ stalls may close the affected transport; business writes are never replayed.
 
 ## Validation
 
-The versioned Go SDK exposes typed Read, Mutate, single-record helpers, Scan and
+The versioned Go SDK exposes typed Read, Mutate, single-record helpers and
 Native. It depends on weir-protocol, not the Weir server module. Default Go/Python
 tests are offline safe. Real databases, process lifecycle, memory pressure and
 Kubernetes tests require explicit opt-ins. Standalone weir-tests verifies public

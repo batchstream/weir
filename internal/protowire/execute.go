@@ -24,22 +24,19 @@ const (
 	wireCommand
 	wireRead
 	wireMutate
-	wireScan
 	wireNative
 	wireDocument
 	wireEmpty
 	wireTransform
 	wireLua
-	wireProjection
 	wireMutationOptions
 )
 
 type wireField struct {
-	number   uint64
-	scalar   bool
-	repeated bool
-	nested   wireKind
-	oneof    bool
+	number uint64
+	scalar bool
+	nested wireKind
+	oneof  bool
 }
 
 var requestShapes = [...][]wireField{
@@ -47,8 +44,7 @@ var requestShapes = [...][]wireField{
 		{number: 2, scalar: true}, {number: 3, nested: wireCommand}},
 	wireCommand: {{number: 1, nested: wireRead, oneof: true},
 		{number: 2, nested: wireMutate, oneof: true},
-		{number: 3, nested: wireScan, oneof: true},
-		{number: 4, nested: wireNative, oneof: true}},
+		{number: 3, nested: wireNative, oneof: true}},
 	wireRead: {{number: 1}},
 	wireMutate: {{number: 1},
 		{number: 2, nested: wireDocument, oneof: true},
@@ -57,11 +53,6 @@ var requestShapes = [...][]wireField{
 		{number: 5, nested: wireEmpty, oneof: true},
 		{number: 6, nested: wireTransform, oneof: true},
 		{number: 7, nested: wireMutationOptions}},
-	wireScan: {{number: 1},
-		{number: 2, nested: wireDocument},
-		{number: 3, nested: wireProjection},
-		{number: 4, scalar: true},
-		{number: 5}},
 	wireNative: {{number: 1},
 		{number: 2, nested: wireDocument}},
 	wireDocument: {{number: 1},
@@ -71,8 +62,6 @@ var requestShapes = [...][]wireField{
 		{number: 2, nested: wireDocument, oneof: true}},
 	wireLua: {{number: 1},
 		{number: 2, nested: wireDocument}},
-	wireProjection: {{number: 1, scalar: true},
-		{number: 2, repeated: true}},
 	wireMutationOptions: {{number: 1, scalar: true}},
 }
 
@@ -96,7 +85,7 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 				break
 			}
 		}
-		if shape == nil || !shape.repeated && seen&(1<<number) != 0 || shape.oneof && oneof {
+		if shape == nil || seen&(1<<number) != 0 || shape.oneof && oneof {
 			return invalidExecuteFraming()
 		}
 		seen |= 1 << number
@@ -111,9 +100,6 @@ func validateMessageFrame(reader *frameCursor, kind wireKind, remaining uint64) 
 				return err
 			}
 			if kind == wireMutationOptions && number == 1 && value != uint64(pb.MutationVisibility_APPLICATION_ACKNOWLEDGED) && value != uint64(pb.MutationVisibility_QUERY_VISIBLE) {
-				return invalidExecuteFraming()
-			}
-			if kind == wireProjection && number == 1 && value != uint64(pb.ProjectionMode_PROJECTION_MODE_UNSPECIFIED) && value != uint64(pb.ProjectionMode_INCLUDE) && value != uint64(pb.ProjectionMode_EXCLUDE) {
 				return invalidExecuteFraming()
 			}
 			remaining -= consumed

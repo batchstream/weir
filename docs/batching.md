@@ -20,7 +20,7 @@ dependent business phases and shared-key writes further limit aggregation.
   arrivals. They do not join mutation batches or flush write collection. Both
   kinds share the Store queue and execution budget, so reads can still wait for
   an occupied execution slot.
-- Full batches, drain, Native/Scan and shorter caller deadlines bypass collection.
+- Full batches, drain, Native and shorter caller deadlines bypass collection.
 - A positive `batching.max_in_flight` bounds simultaneous adapter invocations.
   Excess work stays in the bounded queue, where it can combine or be canceled.
   Completed execution releases the slot independently of response acknowledgement.

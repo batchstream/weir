@@ -1,9 +1,9 @@
 # Store payload contracts
 
 Configured MongoDB, Elasticsearch and OpenSearch Stores accept typed Read/Mutate
-streams and one Scan or Native Command per Execute RPC. Execute emits typed
+streams and one Native Command per Execute RPC. Execute emits typed
 Events. Unknown protobuf fields and missing oneof variants fail validation.
-Document content types identify native bytes. Scan projection is a public type; Native carries an opaque request Document interpreted by the owning adapter. New Stores do not require a new public request variant.
+Document content types identify native bytes. Native carries an opaque request Document interpreted by the owning adapter. New Stores do not require a new public request variant.
 BSON and JSON retain their native semantics.
 
 The outer `store_name` selects the adapter. Resource paths are canonical relative
@@ -15,10 +15,6 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Record target | `db/collection/s:string`, `db/collection/i:canonical-int64`, or `db/collection/oid:lowercase-hex` | `index/s:string`, string ID 1–512 bytes |
 | Read output content type | `application/bson` | `application/json` |
 | Put/create/replace document | raw BSON, explicit first `_id` matching the target | JSON object; target supplies the document ID |
-| Scan target | `db/collection` | one concrete index or single-index alias |
-| Scan filter | native BSON filter object without an outer wrapper | native JSON query object without an outer wrapper |
-| Scan projection | typed INCLUDE or EXCLUDE field paths; complete `_id` supported, `_id.*` unsupported | typed INCLUDE or EXCLUDE field paths applied to `_source` |
-| Scan output | native BSON records, including types outside the Lua value model | business JSON `_source`, identical to Read |
 | Backend expression content type | `application/vnd.weir.mongodb-update.v1+bson` | `application/vnd.weir.search-update.v1+json` |
 | Expression structure | `$set`, `$unset`, `$inc` operator documents with validated paths | exactly one `doc` object, with validated fields |
 | Lua input | optional BSON document | optional JSON document |
@@ -26,20 +22,11 @@ are invalid on the wire. Each Read/Mutate request is validated before its backen
 | Native target | `db`, or empty with explicit `$db` | optional canonical path prefix; empty selects the backend root |
 | Native request size | native MongoDB command boundary | native backend HTTP boundary |
 
-Weir imposes no document, Native, filter, expression, Lua source or typed-value
+Weir imposes no document, Native, expression, Lua source or typed-value
 size/count quotas. BSON follows MongoDB native nesting rules and JSON follows
 its parser's syntax rules. Caller cancellation, schema validity and native
 backend limits still apply. Lua remains an in-process trusted-program facility
 with optional VM execution budgets and the allocation limitations in the architecture.
-
-Projection has one mode and distinct dot-separated paths. INCLUDE publishes only
-listed fields; EXCLUDE publishes all other fields. Paths cannot overlap, contain
-wildcards or empty segments. MongoDB additionally rejects dollar-prefixed path
-segments; Search can project a literal dollar-prefixed business field. MongoDB always reads the original `_id`
-for keyset pagination but removes it before publication when it is not selected.
-Search keeps PIT sort and hit identity internally. These pagination fields need
-not be present in business results. Changing filter or projection invalidates a
-continuation token.
 
 Database names follow MongoDB's native nonempty, less-than-64-byte limit and
 cross-platform forbidden characters. Collections may contain dots, numeric
@@ -47,11 +34,10 @@ prefixes and Unicode; system collections and `$` are unsupported, and the full
 `database.collection` namespace is at most 255 bytes. Search indices are lowercase,
 nonempty and at most 255 bytes, with the native forbidden characters and no
 wildcard, index list or traversal syntax. Each concrete index is escaped as one
-HTTP path segment. Typed Read, Mutate and Scan require existing collections/indices.
+HTTP path segment. Typed Read and Mutate require existing collections/indices.
 Search accepts single-index aliases without filters or routing overrides and
 binds each operation to its resolved physical index. CRUD and Lua support
-multiple primary shards. Scan uses PIT with `_shard_doc` sorting, which the
-backend must support. Native forwards administrative commands, including target creation,
+multiple primary shards. Native forwards administrative commands, including target creation,
 using the configured backend identity.
 
 A missing record is successful `ReadResult.missing`. A missing collection/index
@@ -141,24 +127,9 @@ Mutation options are passed as one typed message by the protocol and SDK. New
 mutation settings belong in that message and are validated against the current
 contract.
 
-A record stream returns one indexed result per input record. A scan emits one finite page of zero or more
-Document Events and exactly one ScanEnd containing that page's matching document
-count and optional failure. `ScanRequest.page_size` defaults to 128 when zero.
-Successful ScanEnd has exactly one of a nonempty
-`next_continuation_token` or `exhausted=true`; failure carries neither. The next
-ScanRequest repeats the same resource, filter and projection, with the token
-in `continuation_token`. Start it in a new Execute RPC to allow another Weir instance
-to process the page. Tokens are opaque and validated before backend work;
-they are not authentication credentials.
-
-Only accept a page checkpoint after the matching document count, ScanEnd and final gRPC OK. On an interrupted page, reuse the previous checkpoint and handle
-repeated documents in the consumer. MongoDB uses an ascending `_id` keyset and
-has no cross-page snapshot. Search uses a backend PIT and fails if its configured
-`backend.search.pit_keep_alive` (default `60s`) expires; it never restarts an
-expired snapshot automatically. A PIT
-already passed to the client remains alive until that timeout, including after
-exhaustion or a failed page, so losing the final page response does not immediately
-invalidate the client's previous checkpoint.
+A record stream returns one indexed result per input record. Queries, counts and
+traversal use Native and retain the backend's own pagination, cursor and response
+semantics.
 A native request emits NativeHead before chunks if it starts, then exactly one
 NativeEnd. The head may omit its metadata Document; a rejected unstarted request
 can emit NativeEnd without a head.

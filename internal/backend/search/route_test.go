@@ -82,7 +82,7 @@ func TestRouteLuaParticipatesInNativeRecordBatch(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	if work.Command.GetScan() != nil || work.Command.GetNative() != nil || work.BatchKey != "records" || work.Backend.(*plan).program == nil {
+	if work.Command.GetNative() != nil || work.BatchKey != "records" || work.Backend.(*plan).program == nil {
 		t.Fatal("Lua cannot join its index's bounded conditional record batch")
 	}
 }

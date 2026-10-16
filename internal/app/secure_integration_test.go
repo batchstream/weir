@@ -156,30 +156,6 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if err != nil || bson.Raw(found.GetDocument().GetData()).Lookup("n").AsInt64() != 9007199254740995 {
 				t.Fatal("expression replay/type change", err)
 			}
-			scanRequest := &pb.ScanRequest{Resource: root}
-			scanVariant := &pb.Command_Scan{Scan: scanRequest}
-			scanCall := &pb.Command{Operation: scanVariant}
-			scan, err := testutil.ExecuteEvents(ctx, client, "mongo", scanCall)
-			if err != nil {
-				t.Fatal(err)
-			}
-			count := uint64(0)
-			for {
-				frame, err := scan.Recv()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if end := frame.GetScanEnd(); end != nil {
-					if end.Failure != nil || end.DocumentCount != count || count < 1 {
-						t.Fatal(end)
-					}
-					break
-				}
-				count++
-			}
-			if _, err := scan.Recv(); err != io.EOF {
-				t.Fatal(err)
-			}
 			command := bson.D{{Key: "count", Value: "records"}}
 			body, _ := bson.Marshal(command)
 			nativeRequest := &pb.Document{ContentType: "application/bson", Data: body}
@@ -210,7 +186,7 @@ func TestMongoTLSApplicationAssemblyAllOperations(t *testing.T) {
 			if bson.Raw(response).Lookup("ok").AsInt64() != 1 {
 				t.Fatal("Native lost response")
 			}
-			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Scan End/EOF, Native End/EOF passed")
+			t.Log("production basic/routing YAML Load/Open: CRUD, conflict/missing, opaque int64, expression, batch mutation, Native End/EOF passed")
 		})
 	}
 }

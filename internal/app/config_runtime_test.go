@@ -23,9 +23,6 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
     queue:
       max_operations: 8192
       max_bytes: 256MiB
-    scan:
-      max_batch_documents: 17
-      max_batch_bytes: 8MiB
 `
 	cfg, err := DecodeRouting(strings.NewReader(input))
 	if err != nil {
@@ -34,11 +31,11 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 	local := cfg.Stores[0].Local
 	native := local.searchConfig("search")
 	settings := *native.Options
-	if settings.ConnectTimeout != 17*time.Millisecond || settings.ExchangeBytes != 16<<20 || settings.Scan.Documents != 17 || settings.Scan.Bytes != 8<<20 {
+	if settings.ConnectTimeout != 17*time.Millisecond || settings.ExchangeBytes != 16<<20 {
 		t.Fatal(settings)
 	}
 	limits := local.runtimeLimits()
-	if limits.BatchOperations != 256 || limits.BatchBytes != 64<<20 || limits.MaxInFlight != 11 || limits.QueueOperations != 8192 || limits.QueueBytes != 256<<20 || limits.Scan != settings.Scan {
+	if limits.BatchOperations != 256 || limits.BatchBytes != 64<<20 || limits.MaxInFlight != 11 || limits.QueueOperations != 8192 || limits.QueueBytes != 256<<20 {
 		t.Fatal(limits)
 	}
 	encoded, err := json.Marshal(cfg)
@@ -49,7 +46,7 @@ func TestStructuredRuntimeConfigurationReachesAdaptersAndScheduler(t *testing.T)
 	if err != nil || !reflect.DeepEqual(decoded, cfg) {
 		t.Fatal("structured runtime configuration did not round trip", err)
 	}
-	for _, old := range []string{"max_batch_operations: 4", "max_batch_bytes: 4MiB", "batch_queue: {}", "mongodb: {}", "search: {}", "streaming: {}", "lua: {}", "batching: {queue: {}}", "batching: {max_exchange_bytes: 4MiB}"} {
+	for _, old := range []string{"max_batch_operations: 4", "max_batch_bytes: 4MiB", "batch_queue: {}", "mongodb: {}", "search: {}", "streaming: {}", "lua: {}", "batching: {queue: {}}", "batching: {max_exchange_bytes: 4MiB}", "scan: {}"} {
 		if _, err := DecodeRouting(strings.NewReader(queueRoutingPrefix + "    " + old + "\n")); err == nil {
 			t.Fatal("old field accepted", old)
 		}
@@ -112,7 +109,7 @@ overload:
 	}
 }
 
-func TestBackendSpecificRetryAndPITConfiguration(t *testing.T) {
+func TestBackendSpecificRetryConfiguration(t *testing.T) {
 	input := `stores:
   - name: mongo
     backend:
@@ -126,7 +123,6 @@ func TestBackendSpecificRetryAndPITConfiguration(t *testing.T) {
       search:
         url: http://127.0.0.1:9200
         retry_attempts: 2
-        pit_keep_alive: 17500ms
         idle_timeout: 0s
 `
 	cfg, err := DecodeRouting(strings.NewReader(input))
@@ -135,17 +131,16 @@ func TestBackendSpecificRetryAndPITConfiguration(t *testing.T) {
 	}
 	mongo := cfg.Stores[0].backendOptions()
 	search := cfg.Stores[1].backendOptions()
-	if mongo.MetadataCacheEntries != 0 || mongo.RetryAttempts != 3 || mongo.RetryBackoff != 0 || search.RetryAttempts != 2 || search.PITKeepAlive != 17500*time.Millisecond || search.IdleTimeout != 0 {
-		t.Fatal("retry and PIT policy did not reach adapters", mongo, search)
+	if mongo.MetadataCacheEntries != 0 || mongo.RetryAttempts != 3 || mongo.RetryBackoff != 0 || search.RetryAttempts != 2 || search.IdleTimeout != 0 {
+		t.Fatal("retry policy did not reach adapters", mongo, search)
 	}
 	for _, replacement := range [][2]string{
 		{"retry_attempts: 3", "retry_attempts: -1"},
 		{"retry_backoff: 0s", "retry_backoff: -1s"},
 		{"retry_attempts: 2", "retry_attempts: -1"},
 		{"retry_attempts: 2", "retry_attempts: '2'"},
-		{"pit_keep_alive: 17500ms", "pit_keep_alive: 0s"},
-		{"pit_keep_alive: 17500ms", "pit_keep_alive: 1500us"},
 		{"idle_timeout: 0s", "idle_timeout: -1s"},
+		{"idle_timeout: 0s", "pit_keep_alive: 1s"},
 		{"retry_backoff: 0s", "pit_keep_alive: 1s"},
 		{"        retry_attempts: 2", "        retry_attempts: 2\n        retry_backoff: 1ms"},
 	} {

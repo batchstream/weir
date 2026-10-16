@@ -18,8 +18,8 @@ type lifecycleAdapter struct{ closes atomic.Int32 }
 func (a *lifecycleAdapter) PrepareCommand(context.Context, uint64, *pb.Command) (*execution.Plan, *pb.Failure) {
 	return nil, nil
 }
-func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) bool {
-	return false
+func (a *lifecycleAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) {
+	return
 }
 func (a *lifecycleAdapter) Close() error { a.closes.Add(1); return nil }
 func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
@@ -56,8 +56,6 @@ func TestRuntimeOwnsAdapterExactlyOnce(t *testing.T) {
 	}
 }
 
-func (*lifecycleAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
-
 func (a *lifecycleAdapter) PrepareRecord(ctx context.Context, record *execution.Record) (*execution.Plan, *pb.Failure) {
 	command := record.Command()
 	prepared := &execution.Plan{ID: record.Index(), Command: command, Key: record.Key(), BatchKey: "records", Bytes: 1024, ResultBytes: execution.ResultOverheadBytes, WorkingBytes: 1024}
@@ -75,10 +73,10 @@ type blockedCleanupAdapter struct {
 	release chan struct{}
 }
 
-func (a *blockedCleanupAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) bool {
+func (a *blockedCleanupAdapter) Execute(context.Context, []*execution.Plan, execution.Emit) {
 	close(a.started)
 	<-a.release
-	return false
+	return
 }
 
 func (a *blockedCleanupAdapter) Close() error {
@@ -167,7 +165,7 @@ func TestForcedCloseCancelsQueuedWorkBehindFullExecutionBudget(t *testing.T) {
 	}
 }
 
-func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	for _, work := range plans {
 		outcome := pb.MutationOutcome_APPLIED
 		var failure *pb.Failure
@@ -180,7 +178,7 @@ func (adapter *forcedCloseAdapter) Execute(ctx context.Context, plans []*executi
 		event := execution.FailedEvent(work.Command, outcome, failure)
 		_ = emit(work, event)
 	}
-	return false
+	return
 }
 func TestForcedClosePreservesRecordEvidenceUntilAckOrSessionClose(t *testing.T) {
 	for _, sessionOwned := range []bool{false, true} {

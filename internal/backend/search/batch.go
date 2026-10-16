@@ -58,7 +58,7 @@ func (a *Adapter) mgetIndex(ctx context.Context, index string, works []*executio
 		end := start
 		bound := getFramingLimit
 		for end < len(works) {
-			item := a.options().Scan.Bytes + len(works[end].Backend.(*plan).id) + getFramingLimit
+			item := a.options().BatchBytes + len(works[end].Backend.(*plan).id) + getFramingLimit
 			if end > start && bound+item > a.options().ExchangeBytes {
 				break
 			}
@@ -368,7 +368,7 @@ func (a *Adapter) executeRecords(ctx context.Context, works []*execution.Plan) [
 				work := works[positions[end]]
 				native := work.Backend.(*plan)
 				if batch.results[positions[end]] == nil && (native.action == "read" || native.action == "replace" || native.action == "program") {
-					bound := a.options().Scan.Bytes + getFramingLimit
+					bound := a.options().BatchBytes + getFramingLimit
 					if end > start && bound > a.options().ExchangeBytes-readBytes {
 						break
 					}

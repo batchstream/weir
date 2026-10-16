@@ -18,13 +18,13 @@ type nativeAccountingAdapter struct {
 	events []*pb.Event
 }
 
-func (a *nativeAccountingAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (a *nativeAccountingAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) {
 	for _, event := range a.events {
 		if err := emit(plans[0], event); err != nil {
-			return false
+			return
 		}
 	}
-	return false
+	return
 }
 
 func TestLargeNativePublicationAccountingAndCancellation(t *testing.T) {

@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	pb "github.com/batchstream/weir-protocol/api/weir/v1"
-	"github.com/batchstream/weir/internal/backend"
-	"github.com/batchstream/weir/internal/execution"
 	"net/http"
 	"strings"
 	"testing"
+
+	pb "github.com/batchstream/weir-protocol/api/weir/v1"
+	"github.com/batchstream/weir/internal/backend"
+	"github.com/batchstream/weir/internal/execution"
 )
 
 func TestOrdinaryReadAcceptsLargeJSONArrays(t *testing.T) {
@@ -18,7 +19,7 @@ func TestOrdinaryReadAcceptsLargeJSONArrays(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, `{"docs":[{"_index":"records","_id":"item","found":true,"_seq_no":1,"_primary_term":1,"_source":%s}]}`, source)
 	})
-	adapter := scanBatchAdapter(t, handler)
+	adapter := testHTTPAdapter(t, handler)
 	settings := backend.DefaultOptions()
 	adapter.config.Options = &settings
 	document := &pb.Document{ContentType: "application/json", Data: []byte(source)}

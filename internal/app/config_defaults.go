@@ -67,14 +67,10 @@ func (cfg RoutingConfig) resolved() RoutingConfig {
 		if local.Batching.MaxOperations == 0 {
 			local.Batching.MaxOperations = defaults.BatchOperations
 		}
-		if local.Scan.MaxBatchDocuments == 0 {
-			local.Scan.MaxBatchDocuments = options.Scan.Documents
-		}
 		local.Queue.MaxBytes = configDefault(local.Queue.MaxBytes, ByteSize(defaults.QueueBytes))
 		local.Batching.MaxBytes = configDefault(local.Batching.MaxBytes, ByteSize(defaults.BatchBytes))
 		local.Batching.MaxInFlight = configDefault(local.Batching.MaxInFlight, defaults.MaxInFlight)
 		local.Batching.MaxWait = configDefault(local.Batching.MaxWait, Duration(defaults.BatchWait))
-		local.Scan.MaxBatchBytes = configDefault(local.Scan.MaxBatchBytes, ByteSize(options.Scan.Bytes))
 		local.Backend.ConnectTimeout = configDefault(local.Backend.ConnectTimeout, Duration(options.ConnectTimeout))
 		local.Backend.MaxExchangeBytes = configDefault(local.Backend.MaxExchangeBytes, ByteSize(options.ExchangeBytes))
 		if local.Backend.MongoDB != nil {
@@ -94,7 +90,6 @@ func (cfg RoutingConfig) resolved() RoutingConfig {
 			if search.RetryAttempts == 0 {
 				search.RetryAttempts = options.RetryAttempts
 			}
-			search.PITKeepAlive = configDefault(search.PITKeepAlive, Duration(options.PITKeepAlive))
 			search.IdleTimeout = configDefault(search.IdleTimeout, Duration(options.IdleTimeout))
 			local.Backend.Search = &search
 		}

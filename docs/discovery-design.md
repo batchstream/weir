@@ -1,7 +1,7 @@
 # Store discovery and direct business traffic
 
 The public StoreService exposes ResolveStore and bidirectional Execute for
-individual Read/Mutate requests or one Scan/Native command. PeerDiscoveryService exchanges Store
+individual Read/Mutate requests or one Native command. PeerDiscoveryService exchanges Store
 ownership announcements with SyncDirectory. All run in one Weir process.
 
 The public and peer schemas are independent; see [protocol boundaries and names](protocols.md).
@@ -130,7 +130,7 @@ targets and DNS answer sets are validated before installation, without count quo
 
 DNS updates add/remove physical channels without migrating or replaying an active
 business RPC. A drained/failed active connection leaves incomplete writes indeterminate.
-The same rules cover finite native exchanges and scan pages. Explicit client Close
+The same rules cover finite native exchanges. Explicit client Close
 cancels background work, closes owned channels and joins refresh/DNS work.
 
 ## Acceptance

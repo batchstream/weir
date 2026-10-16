@@ -120,7 +120,7 @@ func TestSearchLuaBatchUsesNativeOCCWithoutBusinessMetadataOrReplay(t *testing.T
 				work := batchTestPlan(t, adapter, "program", searchResource(backend.Index, id))
 				work.Backend.(*plan).program.Source = `return function(current, incoming) current.n = current.n + 1; current.updated_at = weir.time.now(); return current end`
 				work.Backend.(*plan).program.ObservedAt = observedAt
-				if work.Command.GetScan() != nil || work.Command.GetNative() != nil {
+				if work.Command.GetNative() != nil {
 					t.Fatal("Lua plan cannot enter scheduler batch")
 				}
 				works = append(works, work)

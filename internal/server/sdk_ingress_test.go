@@ -37,20 +37,19 @@ func (a *sdkIngressReadAdapter) PrepareRecord(ctx context.Context, record *execu
 	return plan, nil
 }
 
-func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (a *sdkIngressReadAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) {
 	for _, plan := range plans {
 		read := protocol.Missing()
 		result := &pb.Event{Value: &pb.Event_ReadResult{ReadResult: read}}
 		output := result
 		if err := emit(plan, output); err != nil {
-			return false
+			return
 		}
 	}
-	return false
+	return
 }
 
-func (a *sdkIngressReadAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
-func (a *sdkIngressReadAdapter) Close() error                                           { return nil }
+func (a *sdkIngressReadAdapter) Close() error { return nil }
 
 func TestOpenAndRefreshAtApplicationConnectionLimit(t *testing.T) {
 	for _, count := range []int{1, 16} {

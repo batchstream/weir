@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -112,113 +111,5 @@ func TestTargetAliasesRejectAmbiguousOrChangedSemantics(t *testing.T) {
 				t.Fatal("ambiguous alias or changed query/routing semantics accepted", failure)
 			}
 		})
-	}
-}
-
-func TestScanAliasCheckpointRetainsMultiShardPhysicalPIT(t *testing.T) {
-	var metadataRequests atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/catalog":
-			metadataRequests.Add(1)
-			fmt.Fprint(w, `{"left":{"settings":{"index.uuid":"l","index.number_of_shards":"3"},"aliases":{"catalog":{}}}}`)
-		case "/left/_pit":
-			fmt.Fprint(w, `{"id":"left-pit","_shards":{"total":3,"successful":3,"skipped":0,"failed":0}}`)
-		case "/_search":
-			var request struct {
-				PIT   struct{ ID string }
-				After []int64 `json:"search_after"`
-				Sort  []string
-			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.PIT.ID != "left-pit" || len(request.Sort) != 1 || request.Sort[0] != "_shard_doc" {
-				t.Error("PIT identity or globally unique sort lost", request, err)
-			}
-			rows := `{"_index":"left","_id":"a","_score":null,"_source":{"id":"a"},"sort":[0]},{"_index":"left","_id":"b","_score":null,"_source":{"id":"b"},"sort":[4294967296]}`
-			if len(request.After) != 0 {
-				if request.After[0] != 4294967296 {
-					t.Error("checkpoint truncated the shard/document sort", request.After)
-				}
-				rows = ""
-			}
-			fmt.Fprintf(w, `{"pit_id":"left-pit","took":1,"timed_out":false,"_shards":{"total":3,"successful":3,"skipped":1,"failed":0},"hits":{"max_score":null,"hits":[%s]}}`, rows)
-		case "/_pit":
-			fmt.Fprint(w, `{"succeeded":true,"num_freed":3}`)
-		default:
-			t.Error("Scan did not pin the physical index", r.URL.Path)
-		}
-	})
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
-	adapter := &Adapter{dialect: ElasticsearchProduct, config: config, ctx: context.Background(), client: server.Client()}
-	request := &pb.ScanRequest{Resource: "catalog", PageSize: 2}
-	work, failure := adapter.prepareScan(context.Background(), request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	page := adapter.fetchScan(t.Context(), work)
-	if page.Failure != nil || len(page.Documents) != 2 || len(page.NextContinuationToken) == 0 {
-		t.Fatal(page)
-	}
-	resumedRequest := &pb.ScanRequest{Resource: "catalog", PageSize: 2, ContinuationToken: page.NextContinuationToken}
-	resumed, failure := adapter.prepareScan(context.Background(), resumedRequest)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	page = adapter.fetchScan(t.Context(), resumed)
-	if page.Failure != nil || !page.Exhausted || metadataRequests.Load() != 1 || resumed.Backend.(*scanPlan).index != "left" {
-		t.Fatal("resumed alias Scan was re-resolved or lost physical hit validation", page, metadataRequests.Load())
-	}
-	if failure := adapter.closeScan(t.Context(), work); failure != nil {
-		t.Fatal("multi-shard PIT cleanup", failure)
-	}
-}
-
-func TestOpenSearchScanUsesBackendSortCapability(t *testing.T) {
-	var pitRequests atomic.Int32
-	var searchRequests atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/records":
-			fmt.Fprint(w, strings.Replace(testIndexReply, `"index.number_of_shards":"1"`, `"index.number_of_shards":"3"`, 1))
-		case "/records/_mget":
-			fmt.Fprint(w, `{"docs":[{"_index":"records","_id":"item","found":true,"_seq_no":1,"_primary_term":1,"_source":{"n":1}}]}`)
-		case "/records/_search/point_in_time":
-			pitRequests.Add(1)
-			fmt.Fprint(w, `{"pit_id":"opened","creation_time":1,"_shards":{"total":3,"successful":3,"skipped":0,"failed":0}}`)
-		case "/_search":
-			searchRequests.Add(1)
-			var request struct{ Sort []string }
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Sort) != 1 || request.Sort[0] != "_shard_doc" {
-				t.Error("Scan chose a compatibility sort", request, err)
-			}
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, `{"error":{"type":"search_phase_execution_exception","reason":"No mapping found for [_shard_doc] in order to sort on"},"status":400}`)
-		case "/_search/point_in_time":
-			fmt.Fprint(w, `{"pits":[{"pit_id":"opened","successful":true}]}`)
-		default:
-			t.Error("unexpected Scan request", r.URL.Path)
-		}
-	})
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	config := Config{Store: "search", URL: server.URL}
-	adapter := &Adapter{dialect: OpenSearchProduct, config: config, ctx: context.Background(), client: server.Client()}
-	read := batchTestPlan(t, adapter, "read", "records/s:item")
-	reads := []*execution.Plan{read}
-	if reply := adapter.executeRecords(t.Context(), reads)[0].GetReadResult(); reply.GetFailure() != nil || reply.GetDocument() == nil {
-		t.Fatal("ordinary read retained Scan-only shard restriction", reply)
-	}
-	request := &pb.ScanRequest{Resource: "records"}
-	work, failure := adapter.prepareScan(context.Background(), request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	page := adapter.fetchScan(t.Context(), work)
-	if page.Failure == nil || page.Failure.GetCode() == pb.FailureCode_UNSUPPORTED || pitRequests.Load() != 1 || searchRequests.Load() != 1 {
-		t.Fatal("backend sort rejection was replaced by a local shard gate or fallback", page, pitRequests.Load(), searchRequests.Load())
-	}
-	if failure := adapter.closeScan(t.Context(), work); failure != nil {
-		t.Fatal("failed backend query leaked its PIT", failure)
 	}
 }

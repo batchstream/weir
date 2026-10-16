@@ -81,7 +81,7 @@ stores:
       # Operations per scheduled batch. Default: 128; 0 selects 128; positive integer.
       max_operations: 128
       # Input plus scheduler metadata per batch. Default: 4MiB; positive size.
-      # A larger input executes alone; Scan/Native use singleton plans.
+      # A larger input executes alone; Native uses singleton plans.
       max_bytes: 4MiB
       # Simultaneous adapter invocations per Store. Default: 16.
       # Omit for the default; explicit 0 keeps executions unlimited.
@@ -91,18 +91,10 @@ stores:
       # Maximum write collection wait from the oldest eligible admission.
       # Default: 20ms; nonnegative duration; 0s disables collection.
       # Full batches bypass collection.
-      # Read, Scan, Native, drain and shorter caller deadlines bypass this wait.
+      # Read, Native, drain and shorter caller deadlines bypass this wait.
       # Reads and mutations form separate batches in the same queue; reads do not
       # flush write collection. Both share the Store's max_in_flight budget.
       max_wait: 20ms
-
-    # Retained fetch/publication batch size; total Scan output is not limited.
-    scan:
-      # Default: 128; positive integer, or 0 selects 128.
-      max_batch_documents: 128
-      # Default: 4MiB; positive size, fits platform integer plus result framing.
-      # A larger document is retained alone. Smaller pages are learned automatically.
-      max_batch_bytes: 4MiB
 
   - name: search
     backend:
@@ -118,10 +110,6 @@ stores:
         # Total confirmed-version-conflict attempts, including the first.
         # Default: 5; 0 selects 5; 1 disables retries.
         retry_attempts: 5
-        # Retention renewed on PIT open/fetch; bounds scan checkpoint availability.
-        # Default: 60s; positive duration with whole milliseconds, minimum 1ms.
-        # Backend maximum retention settings remain authoritative.
-        pit_keep_alive: 60s
         # Reap unused pooled HTTP connections after this time; no business deadline.
         # Default: 30s; nonnegative duration; 0s disables expiry.
         idle_timeout: 30s

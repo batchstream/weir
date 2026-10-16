@@ -3,7 +3,6 @@
 package search
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -86,54 +85,4 @@ func TestSearchSingleIndexAliasMultiplePrimaryShards(t *testing.T) {
 	if reply.GetFailure() != nil || !strings.Contains(string(reply.GetDocument().GetData()), `"n":42`) {
 		t.Fatal("alias read did not follow current target", reply)
 	}
-	var body strings.Builder
-	for i := range 30 {
-		fmt.Fprintf(&body, "{\"index\":{\"_id\":\"%d\"}}\n{\"id\":\"%d\",\"n\":%d}\n", i, i, i)
-	}
-	status, raw = backend.Do(t, "POST", "/"+right+"/_bulk?refresh=true", body.String())
-	if status != 200 || !strings.Contains(string(raw), `"errors":false`) {
-		t.Fatal("seed multi-shard traversal", status, string(raw))
-	}
-	seen := make(map[string]bool)
-	request := &pb.ScanRequest{Resource: alias, PageSize: 7}
-	for pageNumber := 0; pageNumber < 10; pageNumber++ {
-		work, failure := adapter.prepareScan(context.Background(), request)
-		if failure != nil {
-			t.Fatal(failure)
-		}
-		page := adapter.fetchScan(t.Context(), work)
-		if page.Failure != nil {
-			t.Fatal("multi-shard alias PIT traversal", page.Failure)
-		}
-		for _, document := range page.Documents {
-			var source struct{ ID string }
-			if json.Unmarshal(document.Data, &source) != nil || source.ID == "" || seen[source.ID] {
-				t.Fatal("duplicate, missing or malformed scan document", string(document.Data))
-			}
-			seen[source.ID] = true
-		}
-		if pageNumber == 0 {
-			setAlias(right, left)
-		}
-		if page.Exhausted {
-			if len(seen) != 31 {
-				t.Fatal("alias switch changed the existing PIT snapshot", len(seen))
-			}
-			return
-		}
-		if !page.Complete {
-			work.Backend.(*scanPlan).Count += uint64(len(page.Documents))
-			finalPage := adapter.fetchScan(t.Context(), work)
-			if finalPage.Failure != nil || !finalPage.Exhausted || len(finalPage.Documents) != 0 || len(seen) != 31 {
-				t.Fatal("final multi-shard PIT page", finalPage, len(seen))
-			}
-			return
-		}
-		work.Backend.(*scanPlan).transferred = true
-		request.ContinuationToken = page.NextContinuationToken
-		if failure := adapter.closeScan(t.Context(), work); failure != nil {
-			t.Fatal(failure)
-		}
-	}
-	t.Fatal("multi-shard PIT did not exhaust")
 }

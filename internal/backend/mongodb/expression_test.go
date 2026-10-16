@@ -1,8 +1,8 @@
 package mongodb
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -139,7 +139,7 @@ func TestMongoExpressionEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fields, err := scanFields(expressionBSON(t, tc.doc))
+			fields, err := bsonFields(expressionBSON(t, tc.doc))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -158,7 +158,7 @@ func FuzzMongoExpression(f *testing.F) {
 		a := &Adapter{}
 		d := &pb.Document{ContentType: ExpressionContentType, Data: raw}
 		_ = a.prepareExpression(context.Background(), d)
-		fields, err := scanFields(raw)
+		fields, err := bsonFields(raw)
 		if err == nil {
 			item := &plan{action: "expression"}
 			_ = bulkItemReply(item, fields, false)

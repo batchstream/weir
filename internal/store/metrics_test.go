@@ -11,9 +11,9 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testmetrics"
 )
 
-type metricAdapter struct{ scanTestAdapter }
+type metricAdapter struct{ lifecycleAdapter }
 
-func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit execution.Emit) {
 	results := make([]*pb.Event, len(plans))
 	outcomes := []pb.MutationOutcome{pb.MutationOutcome_APPLIED, pb.MutationOutcome_NOT_APPLIED, pb.MutationOutcome_UNKNOWN}
 	for i, p := range plans {
@@ -27,7 +27,7 @@ func (a *metricAdapter) Execute(_ context.Context, plans []*execution.Plan, emit
 		output := result
 		_ = emit(plans[i], output)
 	}
-	return false
+	return
 }
 func TestMetricsExactBatchOutcomesAdmissionAndConfiguredCapacity(t *testing.T) {
 	limits := DefaultLimits()

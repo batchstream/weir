@@ -115,7 +115,7 @@ func TestBulkFramingUsesSmallerConfiguredByteWindow(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &wireBatchFixture{t: t}
 			handler := http.HandlerFunc(fixture.serveHTTP)
-			adapter := scanBatchAdapter(t, handler)
+			adapter := testHTTPAdapter(t, handler)
 			settings := backend.DefaultOptions()
 			settings.BatchBytes, settings.ExchangeBytes = tc.batch, tc.exchange
 			adapter.config.Options = &settings
@@ -178,11 +178,11 @@ func TestLuaGeneratedBytesFlushBeforeNextRead(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &wireBatchFixture{t: t, source: `{"payload":"` + strings.Repeat("x", 350) + `"}`}
 			handler := http.HandlerFunc(fixture.serveHTTP)
-			adapter := scanBatchAdapter(t, handler)
+			adapter := testHTTPAdapter(t, handler)
 			settings := backend.DefaultOptions()
 			if tc.splitReads {
 				settings.ExchangeBytes = 2048
-				settings.Scan.Bytes = 2048
+				settings.BatchBytes = 2048
 			}
 			source := `{"payload":"` + strings.Repeat("x", 700) + `"}`
 			header := `{"index":{"_id":"id-0","_index":"records","if_primary_term":1,"if_seq_no":1,"pipeline":"_none"}}`

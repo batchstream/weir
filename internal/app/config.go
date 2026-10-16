@@ -72,7 +72,6 @@ type Local struct {
 	Backend  BackendConfig  `json:"backend" yaml:"backend"`
 	Queue    QueueConfig    `json:"queue" yaml:"queue"`
 	Batching BatchingConfig `json:"batching" yaml:"batching"`
-	Scan     ScanConfig     `json:"scan" yaml:"scan"`
 }
 
 type BackendConfig struct {
@@ -93,11 +92,6 @@ type BatchingConfig struct {
 	MaxBytes      *ByteSize `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
 	MaxInFlight   *int      `json:"max_in_flight,omitempty" yaml:"max_in_flight,omitempty"`
 	MaxWait       *Duration `json:"max_wait,omitempty" yaml:"max_wait,omitempty"`
-}
-
-type ScanConfig struct {
-	MaxBatchDocuments int       `json:"max_batch_documents" yaml:"max_batch_documents"`
-	MaxBatchBytes     *ByteSize `json:"max_batch_bytes,omitempty" yaml:"max_batch_bytes,omitempty"`
 }
 
 type LuaConfig struct {
@@ -151,7 +145,6 @@ type Credentials struct {
 type Search struct {
 	URL           string    `json:"url" yaml:"url"`
 	RetryAttempts int       `json:"retry_attempts" yaml:"retry_attempts"`
-	PITKeepAlive  *Duration `json:"pit_keep_alive,omitempty" yaml:"pit_keep_alive,omitempty"`
 	IdleTimeout   *Duration `json:"idle_timeout,omitempty" yaml:"idle_timeout,omitempty"`
 }
 
@@ -397,7 +390,7 @@ func (l *Local) runtimeLimits() store.Limits {
 		QueueOperations: l.Queue.MaxOperations, QueueBytes: boundedSize(*l.Queue.MaxBytes),
 		BatchOperations: l.Batching.MaxOperations, BatchBytes: boundedSize(*l.Batching.MaxBytes),
 		MaxInFlight: *l.Batching.MaxInFlight, BatchWait: time.Duration(*l.Batching.MaxWait),
-		Scan: l.backendOptions().Scan, CleanupTimeout: backend.DefaultOptions().CleanupTimeout,
+		CleanupTimeout: backend.DefaultOptions().CleanupTimeout,
 	}
 	return limits
 }
@@ -407,8 +400,6 @@ func (l *Local) backendOptions() backend.Options {
 	opts.ConnectTimeout = time.Duration(*l.Backend.ConnectTimeout)
 	opts.BatchBytes = boundedSize(*l.Batching.MaxBytes)
 	opts.ExchangeBytes = boundedSize(*l.Backend.MaxExchangeBytes)
-	opts.Scan.Documents = l.Scan.MaxBatchDocuments
-	opts.Scan.Bytes = boundedSize(*l.Scan.MaxBatchBytes)
 	if mongo := l.Backend.MongoDB; mongo != nil {
 		opts.MetadataCacheEntries = *mongo.MetadataCacheEntries
 		opts.RetryAttempts = mongo.RetryAttempts
@@ -417,7 +408,6 @@ func (l *Local) backendOptions() backend.Options {
 	if search := l.Backend.Search; search != nil {
 		opts.RetryAttempts = search.RetryAttempts
 		opts.IdleTimeout = time.Duration(*search.IdleTimeout)
-		opts.PITKeepAlive = time.Duration(*search.PITKeepAlive)
 	}
 	return opts
 }

@@ -24,7 +24,7 @@ func (pool *ownershipPool) Put(*[]byte) {
 func TestValidatorsLeaveTransportOwnershipAndDataIntact(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), 4096)
 	document := append(wireMessage(1, []byte("application/vnd.test")), wireMessage(2, payload)...)
-	native := wireMessage(3, wireMessage(4, append(wireMessage(1, []byte("records")), wireMessage(2, document)...)))
+	native := wireMessage(3, wireMessage(3, append(wireMessage(1, []byte("records")), wireMessage(2, document)...)))
 	repeated := wireMessage(2, payload)
 	cases := []struct {
 		name     string

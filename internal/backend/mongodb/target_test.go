@@ -24,11 +24,6 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			request := &pb.ScanRequest{Resource: resource}
-			scan, failure := adapter.prepareScan(request)
-			if failure != nil {
-				t.Fatal(failure)
-			}
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: database, Request: nativeBody}
 			native, failure := adapter.prepareNative(open)
@@ -37,10 +32,9 @@ func TestMongoResourceTargetsPrepareWithoutIO(t *testing.T) {
 			}
 			want := namespace{database: database, collection: collection}
 			operation.Command.GetRead().Resource = "changed/changed/s:changed"
-			request.Resource = "changed/changed"
 			open.Resource = "changed"
-			if work.Backend.(*plan).target != want || scan.Backend.(*scanPlan).target != want || native.Backend.(string) != database {
-				t.Fatal("prepared target changed with request", work, scan, native)
+			if work.Backend.(*plan).target != want || native.Backend.(string) != database {
+				t.Fatal("prepared target changed with request", work, native)
 			}
 		}
 	}
@@ -55,10 +49,6 @@ func TestMongoInvalidResourceTargetsDoNotAccessClient(t *testing.T) {
 			opts := batchOperationOptions{resource: resource + "/s:id", action: "read"}
 			if _, failure := prepareTestRecord(adapter, batchOperation(t, opts)); failure == nil {
 				t.Fatal("invalid record target accepted")
-			}
-			request := &pb.ScanRequest{Resource: resource}
-			if _, failure := adapter.prepareScan(request); failure == nil {
-				t.Fatal("invalid Scan target accepted")
 			}
 			nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 			open := &pb.NativeRequest{Resource: resource, Request: nativeBody}
@@ -220,15 +210,6 @@ func TestMongoCanceledTargetsDoNotContactBackend(t *testing.T) {
 		if results[0] == nil {
 			t.Fatal(results)
 		}
-	}
-	request := &pb.ScanRequest{Resource: "db/records"}
-	scan, failure := adapter.prepareScan(request)
-	if failure != nil {
-		t.Fatal(failure)
-	}
-	page := adapter.fetchScan(ctx, scan)
-	if page.Failure.GetCode() != pb.FailureCode_CANCELLED {
-		t.Fatal(page)
 	}
 	nativeBody := &pb.Document{ContentType: "application/bson", Data: []byte{5, 0, 0, 0, 0}}
 	open := &pb.NativeRequest{Resource: "db", Request: nativeBody}

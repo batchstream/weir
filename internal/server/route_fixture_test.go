@@ -55,7 +55,7 @@ func (a *peerAdapter) PrepareRecord(ctx context.Context, record *execution.Recor
 	return plan, nil
 }
 
-func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) bool {
+func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
 	a.mu.Lock()
 	a.batchSizes = append(a.batchSizes, len(plans))
 	a.mu.Unlock()
@@ -67,7 +67,7 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 		select {
 		case <-a.block:
 		case <-ctx.Done():
-			return false
+			return
 		}
 	}
 	for _, plan := range plans {
@@ -108,11 +108,10 @@ func (a *peerAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit
 		output := event
 		_ = emit(plan, output)
 	}
-	return false
+	return
 }
 
-func (a *peerAdapter) Close() error                                         { a.closed.Add(1); return nil }
-func (*peerAdapter) ClosePlan(context.Context, *execution.Plan) *pb.Failure { return nil }
+func (a *peerAdapter) Close() error { a.closed.Add(1); return nil }
 
 func peerLocal(t *testing.T, name string) (*peerAdapter, *store.Runtime) {
 	t.Helper()

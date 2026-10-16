@@ -49,7 +49,7 @@ weir check --config weir.yaml --routes routes.yaml --effective
 
 One normalization path fills defaults for file loading, programmatic startup and
 inspection. Runtime assembly only maps the resolved fields; inspection only
-redacts the same configuration. This reports `basic`, `routing` and `automatic`. Store queue, batch, scan and
+redacts the same configuration. This reports `basic`, `routing` and `automatic`. Store queue, batch and
 backend defaults are materialized; Lua call and stack limits show the actual
 native defaults instead of the input sentinel `0`. Explicit overrides remain
 visible. The automatic section identifies values that require startup, such as
@@ -86,7 +86,7 @@ Record exchange targets split grouped work into native requests. One item larger
 than the target proceeds alone. MongoDB also respects its advertised BSON command
 boundary, normally `16MiB`; response paging remains controlled by MongoDB, with a
 document-count hint only below that boundary. Search uses the exchange target for
-record request/response groups. Scan publication has separate windows, and Native
+record request/response groups. Native
 requests follow the backend's own command/message boundaries. Exchange targets
 do not define a Lua workspace budget.
 
@@ -95,8 +95,10 @@ final framed NDJSON aggregation. Lua-generated documents count at their actual
 encoded size. Search flushes when the smaller of this target and
 `backend.max_exchange_bytes` is reached, before processing another item. One legal
 item larger than a target is sent alone; these are aggregation targets, not a
-per-document rejection limit. The mget, Scan and metadata exchange budgets remain
-independent of this write target. See [batching guidance](batching.md) for joint
+per-document rejection limit. Search also uses `batching.max_bytes` as its
+per-record retained-result estimate when grouping multi-get responses within
+`backend.max_exchange_bytes`. Metadata exchanges retain their own budget. See
+[batching guidance](batching.md) for joint
 batch-size, wait and execution-concurrency calibration.
 
 The configuration review makes these decisions:
@@ -109,14 +111,14 @@ The configuration review makes these decisions:
 | Separate directory heartbeat and seed schedules | Remove; renew and visit a bootstrap seed during each synchronization cycle | One cadence controls the same directory lifecycle. There is no independent hidden five-second timer. |
 | `discovery.lease`, `discovery.sync_interval`, `discovery.sync_timeout` | Expose | Operators control announcement lifetime, exchange frequency and unreachable-peer deadlines. Defaults are `60s`, `1s` and `2s`. The lease uses positive whole milliseconds; local interval and timeout accept any positive duration. The relation `lease > 2 * sync_timeout + sync_interval` leaves room for one peer and one seed exchange. There are no fixed policy maximums. |
 | Memory capacity and advertised concrete listener addresses | Discover automatically | The process observes the container/OS limits and actual bound endpoints. Wildcard binds still require explicit reachable advertisements. |
-| `queue`, `batching`, `scan`, transport windows and progress deadlines | Retain | These govern different retained work and progress boundaries. Removing them would replace useful control with an invisible threshold. |
+| `queue`, `batching`, transport windows and progress deadlines | Retain | These govern different retained work and progress boundaries. Removing them would replace useful control with an invisible threshold. |
 | `batching.max_wait` | Expose; default `20ms` | A positive duration bounds write collection from the oldest eligible admission; explicit `0s` disables collection. Reads form separate batches from already queued compatible reads without waiting for future arrivals; they do not flush write collection. Both kinds share the Store queue and execution budget. Full batches, streaming commands, drain and shorter caller deadlines also bypass collection. The resolved value is visible in effective configuration and Store metrics. |
 | `diagnostics.allow_intranet` | Retain | A non-loopback diagnostics bind needs an explicit opt-in because it exposes operational endpoints. |
 | `discovery.peer_address_env` | Retain | Dynamic instances need one explicit public address source, including Kubernetes downward-API values. General string substitution stays unsupported. |
 | Backend authentication and trust roots | Retain | These are deployment identity inputs; inferring them could select an unintended identity or trust boundary. |
-| `lifecycle.cleanup_timeout` | Expose one shared budget | Store scan release, forced runtime joins and backend session/cursor/disconnect cleanup use one process control, default `2s`. Startup rollback uses the same budget. |
+| `lifecycle.cleanup_timeout` | Expose one shared budget | Forced runtime joins and backend session/cursor/disconnect cleanup use one process control, default `2s`. Startup rollback uses the same budget. |
 | MongoDB and Search transform retries | Expose adapter-specific controls | `backend.mongodb.retry_attempts` and `backend.search.retry_attempts` default to `5`; `1` prevents a second attempt. MongoDB also exposes `retry_backoff`, default `5ms`; `0s` skips the pause. Search has no backoff setting. Only confirmed conflicts or aborts allow reevaluation; MongoDB uses the same bound separately to confirm an existing commit without replaying its writes. |
-| Search PIT retention and idle HTTP connections | Expose | `backend.search.pit_keep_alive` defaults to `60s`, with whole milliseconds and a minimum of `1ms`. `backend.search.idle_timeout` defaults to `30s`; `0s` disables idle connection expiry. |
+| Search idle HTTP connections | Expose | `backend.search.idle_timeout` defaults to `30s`; `0s` disables idle connection expiry. |
 | CLI probe deadline | Expose `weir probe --timeout` | The loopback health check has a separate default `750ms` deadline. |
 | MongoDB connection creation workers | Retain | `backend.mongodb.max_connecting` controls connection establishment bursts. The native default of `2` is shared by adapter assembly and effective inspection. |
 
