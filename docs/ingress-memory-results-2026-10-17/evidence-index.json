@@ -267,6 +267,198 @@
       "sha256": "2b553e6b41b516c68b21dcd6d7babaca5bb390d013f5a7927f6b136c317e8404"
     },
     {
+      "bytes": 3889,
+      "name": "implementation-repair-r4-checks.py",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-checks.py",
+      "sha256": "98be7e3f4ae14385ee2605ec2a7bb0075d7e00b9f1cd32315b1b9d97c8957bd2"
+    },
+    {
+      "bytes": 24700,
+      "name": "implementation-repair-r4-failed-execution_memory.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-failed-execution_memory.go.txt",
+      "sha256": "34459a06ff570403f0af701379e7b2e8ba2ceac6b5142d01819d29ab84d9e0d8"
+    },
+    {
+      "bytes": 8028,
+      "name": "implementation-repair-r4-failed-ingress_memory.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-failed-ingress_memory.go.txt",
+      "sha256": "1552ef234214c1f97fa4c2f86fbf709a6bb613081bc5dcc9f87c0ab2313d5188"
+    },
+    {
+      "bytes": 5207,
+      "name": "implementation-repair-r4-failed-ingress_progress_reserve_test.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-failed-ingress_progress_reserve_test.go.txt",
+      "sha256": "4677707f9cfe4cfae3ef9434d2d2f457f6ba5d2214c30fa5827d0f3906d9ccbd"
+    },
+    {
+      "bytes": 501,
+      "name": "implementation-repair-r4-failed-source-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-failed-source-receipt.json",
+      "sha256": "31d3e70ba9d2cc33143db0a1542c84ab6d4ce0c088976eb5e869f4c5deb071ce"
+    },
+    {
+      "bytes": 4613,
+      "name": "implementation-repair-r4-final-all-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-final-all-race.txt",
+      "sha256": "ccb2fc1ae612f48a5e723bc255ecd9257264f90c889e4163c0acd0a242ebf81b"
+    },
+    {
+      "bytes": 999,
+      "name": "implementation-repair-r4-final-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-final-receipt.json",
+      "sha256": "1822c1e309e017e414d0a657e6f23d584e610215dc3ad0c764dce512fbed34a4"
+    },
+    {
+      "bytes": 111,
+      "name": "implementation-repair-r4-focused-race-five.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-focused-race-five.txt",
+      "sha256": "42067411f9abe46fe4e0746f46f0a6b2c4622a5f3823164bb12a380837262f4b"
+    },
+    {
+      "bytes": 55,
+      "name": "implementation-repair-r4-progress-after-first.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-progress-after-first.txt",
+      "sha256": "e0df75e4cf3f8441ca32a10005b8651e237390536dd881238e3518d51c485df0"
+    },
+    {
+      "bytes": 1000,
+      "name": "implementation-repair-r4-progress-before-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-progress-before-receipt.json",
+      "sha256": "d0b1630cb26742d0e23d91c1135b8a2fc1791a03b63f840f5d7b49b751570c3c"
+    },
+    {
+      "bytes": 5221,
+      "name": "implementation-repair-r4-progress-before-test.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-progress-before-test.go.txt",
+      "sha256": "cb2e492cfe39bdfaba1e448ed5dcc0953c1897b9e1e2e40c21cc593b641f75ad"
+    },
+    {
+      "bytes": 9129,
+      "name": "implementation-repair-r4-progress-before.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-progress-before.txt",
+      "sha256": "4da5516a93960667239c46603b6a5b7d78c71b49a668094a6ea524e08fb2fc86"
+    },
+    {
+      "bytes": 112506,
+      "name": "implementation-repair-r4-source-after.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-source-after.json",
+      "sha256": "fd094a050ec534cf23b9bc36133a6a9c639108b8e0e08c4f2910fe3b531d5d5d"
+    },
+    {
+      "bytes": 112506,
+      "name": "implementation-repair-r4-source-before.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r4-source-before.json",
+      "sha256": "fd094a050ec534cf23b9bc36133a6a9c639108b8e0e08c4f2910fe3b531d5d5d"
+    },
+    {
+      "bytes": 24503,
+      "name": "implementation-repair-r5-failed-execution_memory.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r5-failed-execution_memory.go.txt",
+      "sha256": "5a655adf028a206da9b485ab1bf1310a0ea1dcb6b86bb6c09b242364265ce654"
+    },
+    {
+      "bytes": 8028,
+      "name": "implementation-repair-r5-failed-ingress_memory.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r5-failed-ingress_memory.go.txt",
+      "sha256": "1552ef234214c1f97fa4c2f86fbf709a6bb613081bc5dcc9f87c0ab2313d5188"
+    },
+    {
+      "bytes": 5207,
+      "name": "implementation-repair-r5-failed-ingress_progress_reserve_test.go.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r5-failed-ingress_progress_reserve_test.go.txt",
+      "sha256": "4677707f9cfe4cfae3ef9434d2d2f457f6ba5d2214c30fa5827d0f3906d9ccbd"
+    },
+    {
+      "bytes": 781,
+      "name": "implementation-repair-r5-failed-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r5-failed-receipt.json",
+      "sha256": "98c1a82bfc58374142ecd4a72af90039a29b79ae62a9f178d5918600f80ac224"
+    },
+    {
+      "bytes": 112506,
+      "name": "implementation-repair-r5-failed-source-inventory.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r5-failed-source-inventory.json",
+      "sha256": "408c4d3915ace1aacc0ccaba3a839568b571db8d9987adc8ef6d26f86669df0c"
+    },
+    {
+      "bytes": 267,
+      "name": "implementation-repair-r5-full-store-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r5-full-store-race.txt",
+      "sha256": "e4aa6bf5873123b449d846fba33f5ef52f1f8f21c058cbc02df367bde3d5fbb4"
+    },
+    {
+      "bytes": 3889,
+      "name": "implementation-repair-r6-checks.py",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-checks.py",
+      "sha256": "e088f071c99db935c6c13a6dd5d14747b0393d24ea0da78c09b47dae6cdf6b06"
+    },
+    {
+      "bytes": 1370,
+      "name": "implementation-repair-r6-final-all-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-all-race.txt",
+      "sha256": "11f9c92b825b087bdc416fcfaa9cbefdf743c89a214da14a11741ae7e60a0325"
+    },
+    {
+      "bytes": 0,
+      "name": "implementation-repair-r6-final-integration-vet.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-integration-vet.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "name": "implementation-repair-r6-final-linux-build.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-linux-build.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 128,
+      "name": "implementation-repair-r6-final-nested-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-nested-race.txt",
+      "sha256": "20e671682425d82f230da18e19d5558a01fec3e88b50ee4ba4799f3ae4af78e3"
+    },
+    {
+      "bytes": 53,
+      "name": "implementation-repair-r6-final-observer-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-observer-race.txt",
+      "sha256": "b03f89e92dddaa7bd583d4ecd7e05a1306cab14c0dea6d566b443a83e7a68cc7"
+    },
+    {
+      "bytes": 3962,
+      "name": "implementation-repair-r6-final-receipt.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-receipt.json",
+      "sha256": "13c0251b0ea9e6ee8637d9b06f18ba865023fe60e289296e797de898892c338e"
+    },
+    {
+      "bytes": 0,
+      "name": "implementation-repair-r6-final-vet.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-final-vet.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 111,
+      "name": "implementation-repair-r6-focused-race-five.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-focused-race-five.txt",
+      "sha256": "a160b62dae35d47a2d9aa207cb1272bf82a2762e3b720d3f316ae1f277b27920"
+    },
+    {
+      "bytes": 55,
+      "name": "implementation-repair-r6-full-store-race.txt",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-full-store-race.txt",
+      "sha256": "5605eb38014691bccc6d06949618e81b4b364beb961f250c270fb40288555c01"
+    },
+    {
+      "bytes": 112506,
+      "name": "implementation-repair-r6-source-after.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-source-after.json",
+      "sha256": "cd0bc79a543347d9c3fb28bad59816e88417a9db3735a3ffd23eb33322893306"
+    },
+    {
+      "bytes": 112506,
+      "name": "implementation-repair-r6-source-before.json",
+      "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/repair-r6-source-before.json",
+      "sha256": "cd0bc79a543347d9c3fb28bad59816e88417a9db3735a3ffd23eb33322893306"
+    },
+    {
       "bytes": 2,
       "name": "implementation-vet-final.exit",
       "original_path": "/Users/liran/.codex/worktrees/native-burst-admission/weir/.testdata/ingress-offline/vet-final.exit",
@@ -1005,6 +1197,30 @@
       "sha256": "bdaf4491354c47da8ba84edb73d77206c3e2b802154b823a2b095257dbeae9ee"
     },
     {
+      "bytes": 24700,
+      "name": "ingress-production-r4-failed-execution_memory.go.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-r4-failed-execution_memory.go.txt",
+      "sha256": "34459a06ff570403f0af701379e7b2e8ba2ceac6b5142d01819d29ab84d9e0d8"
+    },
+    {
+      "bytes": 8028,
+      "name": "ingress-production-r4-failed-ingress_memory.go.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-r4-failed-ingress_memory.go.txt",
+      "sha256": "1552ef234214c1f97fa4c2f86fbf709a6bb613081bc5dcc9f87c0ab2313d5188"
+    },
+    {
+      "bytes": 5207,
+      "name": "ingress-production-r4-failed-ingress_progress_reserve_test.go.txt",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-r4-failed-ingress_progress_reserve_test.go.txt",
+      "sha256": "4677707f9cfe4cfae3ef9434d2d2f457f6ba5d2214c30fa5827d0f3906d9ccbd"
+    },
+    {
+      "bytes": 1813,
+      "name": "ingress-production-r4-failed-source-reconstruction.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-r4-failed-source-reconstruction.json",
+      "sha256": "0862dab75a045ff2a07559787842e2a1a02541f742053b35c683ef57bc1c8b36"
+    },
+    {
       "bytes": 468,
       "name": "ingress-production-root-source-audit.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-root-source-audit.json",
@@ -1141,6 +1357,12 @@
       "name": "ingress-production-v2-validation.json",
       "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v2-validation.json",
       "sha256": "b86a744c301acd89ce406eb643de417f8550b7ea23df362b1f5b4dc215041fc3"
+    },
+    {
+      "bytes": 1132,
+      "name": "ingress-production-v3-root-source-audit.json",
+      "original_path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/ingress-production-v3-root-source-audit.json",
+      "sha256": "53d4fe1462075ac9866e2cbaef9c95d361a06f2d10b9673de766a24893c61a0a"
     },
     {
       "bytes": 31188,

@@ -1,0 +1,16 @@
+{
+  "status": "FAIL",
+  "check": "full-store-race",
+  "exit": 1,
+  "source_files": 932,
+  "baseline_head": "9dbf1d11414ba834b7e62ce7cb85309fc694889a",
+  "reconstruction": "Baseline git HEAD plus three exact inert overlay sources; full inventory retained.",
+  "overlays": {
+    "internal/store/execution_memory.go": "5a655adf028a206da9b485ab1bf1310a0ea1dcb6b86bb6c09b242364265ce654",
+    "internal/store/ingress_memory.go": "1552ef234214c1f97fa4c2f86fbf709a6bb613081bc5dcc9f87c0ab2313d5188",
+    "internal/store/ingress_progress_reserve_test.go": "4677707f9cfe4cfae3ef9434d2d2f457f6ba5d2214c30fa5827d0f3906d9ccbd"
+  },
+  "raw": "repair-r5-full-store-race.txt",
+  "raw_sha256": "e4aa6bf5873123b449d846fba33f5ef52f1f8f21c058cbc02df367bde3d5fbb4",
+  "remaining_checks_not_run": true
+}

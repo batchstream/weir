@@ -20,6 +20,11 @@ const executionBorrowWindow = 4*protocol.NativeChunk + execution.ResultOverheadB
 const executionBorrowLimit = 2
 const executionProgressReserve = executionBorrowLimit*executionBorrowWindow + 2*protocol.NativeChunk
 
+// Unused queue promises and large receive promises both leave entry space for
+// bounded short RPCs. This is unused capacity in the same Node ledger, never a
+// second pool or a revocable allowance for already held inputs and buffers.
+const ingressProgressReserve = 1 << 20
+
 var errExecutionMemory = execution.ErrExecutionMemory
 
 const (
@@ -174,9 +179,13 @@ func (m *ExecutionMemory) resizeInputLocked() {
 		m.used -= delta
 		m.resident -= delta
 	} else if target > m.inputReserved && m.used < m.budget && m.resident < m.residentLimitLocked() {
-		// A larger trusted capacity may promise only space actually available.
-		// A shrink revokes unused promises, never a live input or response.
-		delta := min(target-m.inputReserved, m.budget-m.used, m.residentLimitLocked()-m.resident)
+		// New automatic credit leaves short-RPC entry space. Existing input
+		// promises remain intact while other resident owners grow; only the
+		// trusted-capacity shrink above may revoke their unused portion.
+		available := m.residentLimitLocked() - m.resident
+		progress := min(uint64(ingressProgressReserve), m.residentLimitLocked()/2)
+		available -= min(available, progress)
+		delta := min(target-m.inputReserved, m.budget-m.used, available)
 		m.inputReserved += delta
 		m.used += delta
 		m.resident += delta
@@ -230,7 +239,12 @@ func (m *ExecutionMemory) admit(plan *execution.Plan) (*executionLease, *pb.Fail
 	used, resident := m.used-credit, m.resident-credit
 	reserved := m.inputReserved
 	if len(m.leases) == 0 {
-		reserved = max(bytes, min(m.inputTargetLocked(), m.budget-min(used, m.budget), m.residentLimitLocked()-min(resident, m.residentLimitLocked())))
+		available := m.residentLimitLocked() - min(resident, m.residentLimitLocked())
+		// At very small capacities the existing half-resident queue policy
+		// already leaves half for progress; do not consume that entire queue.
+		progress := min(uint64(ingressProgressReserve), m.residentLimitLocked()/2)
+		automatic := min(m.inputTargetLocked(), m.budget-min(used, m.budget), available-min(available, progress))
+		reserved = max(bytes, automatic)
 	}
 	// A single input larger than the normal queue promise can proceed alone,
 	// provided its full initial execution peak genuinely fits the same budget.

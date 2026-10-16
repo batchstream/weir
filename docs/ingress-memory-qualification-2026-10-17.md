@@ -278,6 +278,44 @@ owned CLI exited normally and was removed. The A512/A1024 successes are retained
 B1024 and the Native burst were stopped without running, and no failed profile
 was retried. This candidate remains unqualified.
 
+## Follow-up queue-promise regression checks
+
+A deterministic unit regression reproduced the B ledger, including its
+245,436,142-byte budget, 171,152,904-byte formation ownership, 34 connections
+and three incomplete large-message promises. The first short Read established
+an automatic queue promise and filled the resident limit; four subsequent short
+RPC owners were rejected at ingress. The same failure was reproduced when
+ObserveMemory refilled a deliberately reduced queue promise. This establishes
+the shared-ledger contention path without relying on asynchronous per-ID
+inferences. NewIngress refusals currently do not increment the execution-memory
+rejection counter; a zero counter does not prove absence of ingress refusals.
+
+The first follow-up (R4) kept short-entry headroom by recomputing the automatic
+queue target from current resident occupancy. Its focused tests passed, but the
+complete race suite failed existing short-output handoff, hard-capacity and
+blocked-dispatch tests. Reclaiming an existing queue promise as other real output
+ownership grew changed the original prepayment contract. The failed logs,
+932-file inventory and exact source snapshots are preserved; a pinned baseline
+plus the three changed source snapshots reconstructs every recorded hash.
+
+The next follow-up (R5) restored the original target and shrink behavior and
+limited only new queue-promise growth. All R4 handoff/capacity failures recovered,
+but the full Store race run exposed the original one-MiB-resident boundary: a
+fixed one-MiB entry allowance left no automatic input queue. Its failed source
+and raw output are also preserved. Existing tests and budgets were unchanged.
+
+R6 limits only new automatic queue promises and top-ups, keeping original
+promises and actual input/raw/output ownership. The entry headroom is capped by
+half of the trusted resident limit on tiny Nodes; the actual B512 profile still
+retains the entire original one MiB. This is a stable capacity-derived bound,
+not a fraction of current free space that repeated observations could consume.
+The complete Store race suite and the focused receive/progress race tests five
+times passed. The final complete repository race suite, nested gRPC receive race
+tests five times, Docker-observer integration race tests, ordinary and integration
+vet, and Linux amd64 build then all passed. All 932 source/provenance hashes
+were identical before and after and independently matched the current files and
+the pinned gRPC manifest. A new clean Linux arm64 runtime matrix remains pending.
+
 ## Required acceptance
 
 The repair must account for raw transport buffers before business admission,

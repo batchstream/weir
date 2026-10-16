@@ -40,7 +40,7 @@ func (m *ExecutionMemory) ingressFitsLocked(additional uint64, large bool) bool 
 	// Keep a bounded 1MiB inside the existing resident budget for fresh short
 	// requests, cancellation and capacity responses while large uploads wait.
 	if large {
-		limit -= min(limit, uint64(1<<20))
+		limit -= min(limit, uint64(ingressProgressReserve))
 	}
 	return m.trusted && m.used <= m.budget && additional <= m.budget-m.used && m.resident <= limit && additional <= limit-m.resident
 }
@@ -108,7 +108,7 @@ func (a *IngressMemory) ReserveMessage(length int) error {
 		target := a.rawPromise + 2*uint64(length) + 4096
 		limit := m.residentLimitLocked()
 		if length > 64<<10 {
-			limit -= min(limit, uint64(1<<20))
+			limit -= min(limit, uint64(ingressProgressReserve))
 		}
 		if a.fixed > limit || target > limit-a.fixed {
 			m.rejections++

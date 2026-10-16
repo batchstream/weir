@@ -1,0 +1,25 @@
+{
+  "status": "FAIL",
+  "checks": [
+    {
+      "name": "all-race",
+      "command": [
+        "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+        "test",
+        "-race",
+        "./...",
+        "-count=1"
+      ],
+      "cwd": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+      "started": "2026-10-16T20:41:44.196054+00:00",
+      "log": ".testdata/ingress-offline/repair-r4-final-all-race.txt",
+      "exit": 1,
+      "elapsed_seconds": 64.77070166601334
+    }
+  ],
+  "qualification_profiles_unchanged": true,
+  "unit_fixture_note": "No existing budgets, workload counts or deadlines changed. New regression reproduces B formation budget 245436142, used 171152904, 34 connection reservations and 3 incomplete 12MiB message promises; first/refill Q must permit four concurrent short RPC ingress owners. Original IO/input promise semantics remain covered.",
+  "source_files": 932,
+  "source_unchanged": true,
+  "changed_during_checks": []
+}

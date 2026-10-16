@@ -1,0 +1,5 @@
+--- FAIL: TestExecutionMemoryBlockedDispatchDoesNotHideEligibleTypedAndDrainReleases (0.00s)
+    native_memory_test.go:274: code:RESOURCE_EXHAUSTED message:"execution working memory capacity exhausted"
+FAIL
+FAIL	github.com/batchstream/weir/internal/store	1.504s
+FAIL
