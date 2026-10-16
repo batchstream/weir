@@ -66,7 +66,7 @@ func (m *searchMetrics) initialize() {
 func (m *searchMetrics) observeHTTP(observation httpObservation) {
 	operation := observation.call.operation
 	switch operation {
-	case "metadata", "mget", "bulk", "refresh", "search":
+	case "metadata", "mget", "bulk", "refresh":
 	default:
 		operation = "other"
 	}
