@@ -205,7 +205,7 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 	stopped := false
 	if valid {
 		state.session = session
-		defer a.closeRecordCursor(state)
+		defer a.closeRecordCursor(ctx, state)
 		ctx = mongo.NewSessionContext(ctx, session)
 		for page := 0; page < len(ids); page++ {
 			attempt := ctx
@@ -242,6 +242,18 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				valid = false
 				break
 			}
+			if state.cursorKnown && state.cursor == 0 {
+				// The uncompressed driver reply is now one retained backing
+				// allocation. cap includes trailing bytes; 36 also covers the
+				// wire prefix before the returned OP_MSG or OP_REPLY document.
+				// Known frame and parser metadata charges remain in the base.
+				extra := cap(raw) + 36 - a.nativeReplyBytes()
+				if budgetErr := reserveRecordWorking(ctx, plans, extra); budgetErr != nil {
+					err = budgetErr
+					valid = false
+					break
+				}
+			}
 			for _, raw := range documents {
 				id, validID := rawRecordID(raw.Lookup("_id"))
 				matches, found := positions[id]
@@ -275,6 +287,11 @@ func (a *Adapter) executeReads(ctx context.Context, plans []*execution.Plan) []*
 				}
 				received++
 			}
+			clear(documents)
+			documents = nil
+			clear(fields)
+			fields = nil
+			raw = nil
 			if !valid || state.cursor == 0 {
 				break
 			}
@@ -341,6 +358,15 @@ func rawRecordID(raw bson.RawValue) (any, bool) {
 
 func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []*pb.Event {
 	results := make([]*pb.Event, len(plans))
+	if err := reserveRecordWorking(ctx, plans, 0); err != nil {
+		for i, work := range plans {
+			results[i] = unstarted(ctx, work)
+			if results[i] == nil {
+				results[i] = execution.FailedEvent(work.Command, pb.MutationOutcome_NOT_STARTED, recordMemoryFailure())
+			}
+		}
+		return results
+	}
 	active := make([]*execution.Plan, 0, len(plans))
 	positions := make([]int, 0, len(plans))
 	ops := make(bson.A, 0, len(plans))
@@ -424,7 +450,7 @@ func (a *Adapter) executeWrites(ctx context.Context, plans []*execution.Plan) []
 	state.cursor.session = session
 	state.cursor.items = len(active)
 	state.cursor.target = namespace{database: "admin", collection: "$cmd.bulkWrite"}
-	defer a.closeRecordCursor(&state.cursor)
+	defer a.closeRecordCursor(ctx, &state.cursor)
 	ctx = mongo.NewSessionContext(ctx, session)
 	raw, err := a.client.Database("admin").RunCommand(ctx, command).Raw()
 	if err != nil && len(raw) == 0 {
@@ -496,8 +522,8 @@ type writeBatch struct {
 	authorizationRejected bool
 }
 
-func (a *Adapter) closeRecordCursor(state *recordCursor) {
-	ctx, cancel := context.WithTimeout(context.Background(), a.options().CleanupTimeout)
+func (a *Adapter) closeRecordCursor(ctx context.Context, state *recordCursor) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.options().CleanupTimeout)
 	defer cancel()
 	_ = a.closeRecordCursorState(ctx, state)
 }

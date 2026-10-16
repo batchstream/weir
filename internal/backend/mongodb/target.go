@@ -70,6 +70,9 @@ func (a *Adapter) qualifyTarget(ctx context.Context, target namespace) *pb.Failu
 }
 
 func (a *Adapter) inspectTarget(ctx context.Context, target namespace) *pb.Failure {
+	if err := reserveRecordWorking(ctx, nil, 0); err != nil {
+		return recordMemoryFailure()
+	}
 	filter := bson.D{{Key: "name", Value: target.collection}}
 	specs, err := a.client.Database(target.database).ListCollectionSpecifications(ctx, filter)
 	if err != nil {

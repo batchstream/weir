@@ -1,0 +1,264 @@
+{
+  "created": "2026-10-16T16:58:41.684196+00:00",
+  "base_commit": "45356f57972ee9a4032a84a3c11808426a6baea4",
+  "scope": "Offline core execution memory repair only; no database/container/prod load, retry, budget/count/config/gate changes; parent performs exact-source Linux qualification after committing combined candidate.",
+  "source_frozen": true,
+  "owned_files": {
+    "internal/store/execution_memory.go": {
+      "sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+      "copy": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-final-execution_memory.go.txt"
+    },
+    "internal/store/execution_memory_single_owner_test.go": {
+      "sha256": "14cc2f078c9494d3f7c6519ceccc35ae5c5c3909120358a69e9de392f23053ef",
+      "copy": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-final-execution_memory_single_owner_test.go.txt"
+    }
+  },
+  "design": [
+    "One existing Node ledger; only sole waiting start or sole typed first ReserveResult may revoke unused input promise.",
+    "Require sole current owner, no wire/extra/existing result, fixed queued window, Resident=Q and Used=Q+own working; input actual I remains owned.",
+    "Validate complete Used<=B and Resident<=B-R after removing at most Q-I before any mutation; revoke only max(required Used deficit, required Resident deficit), using safe differences.",
+    "Never revoke another input/output/wire promise, never borrow from multi-owner work or later output growth; failed actual peaks leave Q/I/Used/Resident unchanged.",
+    "ReserveResult prepays existing 512-byte result overhead for real source publication before copy; fixed tiny terminal stays at 2049 bytes; finish converges to actual encoded size and source capacity remains held.",
+    "The largest uint64 ExecuteResponse index and real fixed 16-byte backend content type produce 49-byte envelope for nearMax document; 512 covers both conservative source estimate and wire wrapping."
+  ],
+  "before_evidence": [
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-all-cases.txt",
+      "expected_exit": 1,
+      "meaning": "453 ledger rejects real SDK-shaped BSON16777152 start while actual input+working fits; exact locked Read and phase-shrunk Read fail solely on unused Q. Deterministic Put is not claimed to identify original unsampled Put stage."
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-runtime-before.txt",
+      "expected_exit": 1,
+      "meaning": "After first Q fix but before wrapper prepayment, full Runtime drops valid nearMax result at completion due to protobuf wrapping growth."
+    }
+  ],
+  "causal_context": {
+    "locked_read": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-causal-observations.json",
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-causal-process.txt",
+    "original_clean_453_failure": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-fixed-process.txt",
+    "diagnostic_overlay_manifest": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-denial-diagnostic-manifest.json"
+  },
+  "numerical_results": {
+    "budget": 113544396,
+    "reserve": 48401920,
+    "put_bson": 16777152,
+    "put_actual_input": 16780464,
+    "put_IO_working": 81557342,
+    "put_unused_Q_revoked": 584184,
+    "read_actual_input": 3296,
+    "read_old_locked_next": 33553279,
+    "read_new_prepaid_next": 33553791,
+    "read_unused_Q_revoked": 982553,
+    "max_uint64_wire_wrapper": 49
+  },
+  "coverage": [
+    "Exact locked Read plus phase-shrunk working",
+    "SDK-shaped large Put admitted/executed once/APPLIED/Ack/zero",
+    "Runtime large Read max uint64 with cap=len and cap=len+4096 through actual wire reservation/Ack/free",
+    "Large live wire retained while short Native completes RESPONSE_COMPLETE then Ack",
+    "Additional input or wire-only owner prohibits reclaim",
+    "Same live wire, existing result, extra IO, genuine oversize and known-zero fail without changing promises",
+    "Unknown sample retains bound; only actual IO release allows normal promise restoration",
+    "Existing fixed terminal/fullresident borrow/128 small batch/PR80 transient input and same-byte cross-Store wake"
+  ],
+  "full_core_race": {
+    "command": [
+      "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+      "test",
+      "-race",
+      "-count=1",
+      "./internal/store",
+      "./internal/server",
+      "./internal/execution",
+      "./internal/app",
+      "./cmd/weir"
+    ],
+    "working_directory": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+    "started": "2026-10-16T16:57:45.148224+00:00",
+    "finished": "2026-10-16T16:58:07.572434+00:00",
+    "exit_code": 0,
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-affected-race.txt",
+    "raw_sha256": "2726211e1245d4b0f086046e1895cdbe1531a99ccf1066afa5b432a9142e9adc",
+    "source_before": {
+      "internal/store/execution_memory.go": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+      "internal/store/execution_memory_single_owner_test.go": "14cc2f078c9494d3f7c6519ceccc35ae5c5c3909120358a69e9de392f23053ef",
+      "internal/store/runtime.go": "bbed7b4c743769bfdf754344fadf3318821e18b8f76f5e1f35e9275e0bb44fd5",
+      "internal/server/codec.go": "37a30a42f8e240144e850c52393da93b21526e4785777893e1cb8ce8cc52994e",
+      "internal/server/execute.go": "c8fb03525b21dd107b07d991a71dbc8940cd0af238b4950a1f47fd2a23bde106",
+      "internal/execution/adapter.go": "f3fecc6ba5370ee98879e1e681b109539c991c12190c0eb4e95141c39cf38875",
+      "internal/execution/event.go": "2dea383d46b3cfd2dd880e9f2fccb73f0c017b52edb363b68848ef48b069adc2"
+    },
+    "source_after": {
+      "internal/store/execution_memory.go": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+      "internal/store/execution_memory_single_owner_test.go": "14cc2f078c9494d3f7c6519ceccc35ae5c5c3909120358a69e9de392f23053ef",
+      "internal/store/runtime.go": "bbed7b4c743769bfdf754344fadf3318821e18b8f76f5e1f35e9275e0bb44fd5",
+      "internal/server/codec.go": "37a30a42f8e240144e850c52393da93b21526e4785777893e1cb8ce8cc52994e",
+      "internal/server/execute.go": "c8fb03525b21dd107b07d991a71dbc8940cd0af238b4950a1f47fd2a23bde106",
+      "internal/execution/adapter.go": "f3fecc6ba5370ee98879e1e681b109539c991c12190c0eb4e95141c39cf38875",
+      "internal/execution/event.go": "2dea383d46b3cfd2dd880e9f2fccb73f0c017b52edb363b68848ef48b069adc2"
+    },
+    "environment": {
+      "GOROOT": "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64",
+      "GOENV": "off",
+      "GOTOOLCHAIN": "local",
+      "GOPROXY": "off",
+      "GOSUMDB": "off",
+      "GOWORK": "off"
+    }
+  },
+  "core_vet": {
+    "command": [
+      "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+      "vet",
+      "./internal/store",
+      "./internal/server",
+      "./internal/execution",
+      "./internal/app",
+      "./cmd/weir"
+    ],
+    "working_directory": "/Users/liran/.codex/worktrees/native-burst-admission/weir",
+    "finished": "2026-10-16T16:58:14.109891+00:00",
+    "exit_code": 0,
+    "raw": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-vet.txt",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "diff_check_exit_code": 0,
+  "all_before_after_artifacts": [
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-after-boundaries-first-command.json",
+      "sha256": "e9cf817b2e8e443b42cb24cfd5498beecb7bcdf7aec7defe601ab9881a5d4f19",
+      "bytes": 388
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-after-boundaries-first.txt",
+      "sha256": "78be15103422c2c0ec5c58a1a02a5de2f8e508a86ac1491ca7d4029eeb2be270",
+      "bytes": 5320
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-after-first-command.json",
+      "sha256": "87c0cc2f271f7cbbb7a66daefdbf164852d9cbb995c5b8de91841cf92d8d0866",
+      "bytes": 377
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-after-first.txt",
+      "sha256": "41c3e500afd8da27b2df6257358fd47d03f777f815b9d8ec95142f0b58e51d2d",
+      "bytes": 2962
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-after-wrapper-first-command.json",
+      "sha256": "c5c88aeeeba7861af4b679e00efcadcbdde007a2ea6434ec5c22752b2274f848",
+      "bytes": 586
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-after-wrapper-first.txt",
+      "sha256": "8d0741b939c2b6ec71ddc42eda183b3a3fae28c4302851df8ab08908e40cfd95",
+      "bytes": 10379
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-all-cases-command.json",
+      "sha256": "fc35bc7e578073be4a6625a0f6c2d13fa75240e93a716a2542e65577fbc17339",
+      "bytes": 703
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-all-cases-test.go.txt",
+      "sha256": "169de78f8ec145413bda87d06a04622f6e1adfb5cb13e44f33e0f5c271e56e9f",
+      "bytes": 6594
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-all-cases.txt",
+      "sha256": "20b3e8f369440d90ec623c335325398b3cb2e4191b936cbfe2c20af04864a546",
+      "bytes": 1749
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-command.json",
+      "sha256": "b56518092f6064929b4fcff419c6327f64c13e2b2c82382e50befa18877e92ef",
+      "bytes": 372
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-ledger.go.txt",
+      "sha256": "46a0360261e245d0f5b2f82856421d150781c67b3a6b82a334bfd790923691c8",
+      "bytes": 18840
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-source.json",
+      "sha256": "750ba0afe745b8e98abcbc70001cadcacd6cc122e054a99224b5af4ce70e44af",
+      "bytes": 785
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before-test.go.txt",
+      "sha256": "05be17b7f60b901b8dd9e90da00cbffbdd7f8ecd541079ce031e88be5fff3ab7",
+      "bytes": 6491
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-before.txt",
+      "sha256": "dd475f977e0603e74a89bb031c2d3e199980a6acd547e53ea5bf2c5d4b938b93",
+      "bytes": 1033
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-affected-race-command.json",
+      "sha256": "1fd2950ff9159569d45369831d4d5c4eb6a4fcc95b77f2bed89fae7c654c174d",
+      "bytes": 2457
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-affected-race.txt",
+      "sha256": "2726211e1245d4b0f086046e1895cdbe1531a99ccf1066afa5b432a9142e9adc",
+      "bytes": 274
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-vet-command.json",
+      "sha256": "d7bfd8c8c5c6baa8d16ada69cbcb4b4b1880a6c317b2f3e14d50d3a57a3a0286",
+      "bytes": 594
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-core-vet.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-diffcheck.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-final-execution_memory.go.txt",
+      "sha256": "08a0c1c36bb2e8f155f9f3d50884547c64bd8afa332f14d3c9b8fe1503a6b33d",
+      "bytes": 20816
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-final-execution_memory_single_owner_test.go.txt",
+      "sha256": "14cc2f078c9494d3f7c6519ceccc35ae5c5c3909120358a69e9de392f23053ef",
+      "bytes": 16252
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-runtime-before-command.json",
+      "sha256": "ec6bc71cc0af40524a6d466cc80edd885b01deb2102fd489e928ae6495d0eed7",
+      "bytes": 500
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-runtime-before-ledger.go.txt",
+      "sha256": "c9139e1fa3e1123c31f659a38130360b43e53d4c477dcebcc2aaaf8d63b69350",
+      "bytes": 20457
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-runtime-before-test.go.txt",
+      "sha256": "fdb7b5973f2ad76429b9ddc6a51ab19ca9b8b18666a31b38fde34a290d3ffbd8",
+      "bytes": 15341
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-runtime-before.txt",
+      "sha256": "68ec058675e1cec0465ba1b50663dc9c69cda812815a80e73e1f990f2ef8f3da",
+      "bytes": 523
+    },
+    {
+      "path": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-single-owner-runtime.diff",
+      "sha256": "08a908a873891a45eeec2d2ce8bfa50e268737eb50fdadca8738398a544c3d00",
+      "bytes": 3111
+    }
+  ],
+  "limitations": [
+    "No result is claimed for the new Linux CLI candidate before clean build and fresh real-backend qualification.",
+    "The original clean453 SDKPut failure was not lock-instrumented; deterministic start failure and diagnostic Read failure remain distinct evidence.",
+    "Real physical RSS, Go caches and transport ingress are separate from logical execution reservations."
+  ]
+}

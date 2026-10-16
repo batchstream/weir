@@ -34,6 +34,12 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
 	if n.session == nil {
 		return nil
 	}
+	if n.cursorKnown && n.cursor == 0 {
+		return nil
+	}
+	if err := reserveRecordWorking(ctx, nil, 0); err != nil {
+		return recordMemoryFailure()
+	}
 	if !n.cursorKnown {
 		// A lost find reply can hide a newly allocated cursor. The explicit
 		// session is still known and exclusively held, so target only that
@@ -47,9 +53,6 @@ func (a *Adapter) closeRecordCursorState(ctx context.Context, n *recordCursor) *
 		if err != nil || !bsonCommandOK(fields["ok"]) {
 			return protocol.Fail(pb.FailureCode_UNAVAILABLE, "remote record session cleanup unconfirmed")
 		}
-		return nil
-	}
-	if n.cursor == 0 {
 		return nil
 	}
 	command := bson.D{{Key: "killCursors", Value: n.target.collection}, {Key: "cursors", Value: bson.A{n.cursor}}}

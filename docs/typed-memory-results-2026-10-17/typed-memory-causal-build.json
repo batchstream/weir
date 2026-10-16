@@ -1,0 +1,24 @@
+{
+  "scope": "DIAGNOSTIC ONLY, not clean-artifact qualification; locked numeric logs only. No sourceRevision injection: runtime state/version must be dev, base revision453 visible viaVCS.",
+  "base_source": "45356f57972ee9a4032a84a3c11808426a6baea4",
+  "binary": "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-DIAGNOSTIC-linux",
+  "sha256": "a5949736cca1acd492db67fcc209c3615b44e703383d3fdef1212354d4b39b8c",
+  "overlay_sha256": "ad02ad1514f9640d01aff74ca731b8f24e07910ff8252b60e0fc93b29a4cf767",
+  "ledger_sha256": "5e7d73e17e8bf696266a4f7ef2bd25e05c4248f9bbd6e302054f84ce28aa5316",
+  "command": [
+    "/Users/liran/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.1.darwin-arm64/bin/go",
+    "build",
+    "-overlay=/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/typed-memory-denial-diagnostic-overlay.json",
+    "-trimpath",
+    "-buildvcs=true",
+    "-mod=readonly",
+    "-ldflags=-buildid=",
+    "-o",
+    "/Users/liran/Projects/liran/go/weir/.testdata/reliability-2026-10-16/weir-typed-memory-DIAGNOSTIC-linux",
+    "./cmd/weir"
+  ],
+  "target": "linux/arm64",
+  "toolchain": "go1.27.1",
+  "build_exit": 0,
+  "working_tree_before_after": "clean453; overlay changes excluded fromVCS and explicitly diagnostic"
+}

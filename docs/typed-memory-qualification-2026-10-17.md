@@ -98,3 +98,89 @@ Its reviewer independently repeated 2560/2560 mixed calls and 20 persisted-data
 oracles, p99 37.37–65.17 ms, no Native budget denial or Guard latch, all logical
 ownership zero and no OOM. The [review raw log](typed-memory-results-2026-10-17/review80-burst.txt)
 retains that separate admission qualification; it does not repair this typed OOM.
+
+## First clean candidate failed acceptance
+
+Clean candidate `45356f57972ee9a4032a84a3c11808426a6baea4`, Linux CLI SHA256
+`cab795a3a2e55c150b2a2fe605317b720f64d76eaec636e24e030930b4518f77`,
+passed the original 512/1024 MiB slow-reader cases. Five and sixteen responses,
+respectively, completed with full document hashes and RPC OK; remaining calls
+received explicit capacity failures. Healthy probes completed within the
+original deadline, and logical ownership returned to zero within 5 seconds.
+
+The subsequent 256 MiB unstalled case failed: both seeded large reads and the
+12 MiB SDK Put/Read/Delete chain succeeded, but the near-maximum 16,777,152-byte
+BSON Put returned NOT_STARTED / RESOURCE_EXHAUSTED. The actual test exit was 1.
+All three CLI processes survived without OOM and exited zero during cleanup;
+cleanup does not count as completing the failing case's acceptance gates.
+No later cases or dependent regressions ran. The [original log](typed-memory-results-2026-10-17/typed-memory-fixed-process.txt)
+and [validation manifest](typed-memory-results-2026-10-17/typed-memory-fixed-process-validation.json)
+preserve the failure without retrying for a passing outcome.
+
+A single diagnostic run added mutex-held numeric denial logs and auxiliary
+business-step metric snapshots. Its binary used an explicit source overlay,
+reported dev identity and is not a clean qualification artifact. The auxiliary
+HTTP snapshots could change timing. This run reached APPLIED for the same
+near-maximum Put, independently verified its content hash, then failed its next
+SDK Read at result reservation. It therefore does not establish the original
+Put's precise rejection branch.
+
+At that Read denial, the mutex-held budget was 113,544,396 bytes, usage
+80,574,244 bytes and the requested increase 33,553,279 bytes: a 583,127-byte
+deficit. One lease still held 48,003,006 bytes of working reservation after
+receiving its actual reply, alongside an input promise of 32,571,238 bytes
+with only 3,296 bytes used. No previous wire owner or other lease existed.
+The [diagnostic manifest](typed-memory-results-2026-10-17/typed-memory-causal-manifest.json),
+[raw output](typed-memory-results-2026-10-17/typed-memory-causal-process.txt) and
+[locked observations](typed-memory-results-2026-10-17/typed-memory-causal-observations.json)
+record these values and distinguish precondition samples from the rejection
+instant. All CLI processes survived, but the diagnostic test also exited 1.
+
+The next correction must release genuinely unused reply workspace at its
+actual lifetime boundary and preserve useful admission for a single legal
+large input. It must retain the shared budget and original deadlines, sizes,
+small-request burst gates and ownership checks. No PR has been opened for this
+candidate; production qualification remains incomplete.
+
+## Follow-up correction awaiting clean-process acceptance
+
+A single owner can now exchange only unused input-queue promises for its
+actual first execution or first typed-result peak. The decision simultaneously
+checks the total and resident budgets before changing any account. Real input,
+working memory and the protected IO reserve remain charged. Multiple owners,
+existing result/wire owners and genuine capacity failures retain their prior
+decisions. No budget, timeout or count limit increased.
+
+Mongo retains the complete negotiated message allowance before IO and throughout
+nonterminal cursor pages. Only a validated terminal page shrinks its working
+allowance to the actual reply backing capacity plus the maximum normal wire
+prefix and already charged request bookkeeping. Later metadata/write IO
+restores the complete allowance first. Cursor cleanup preserves its budget
+context and does not send unapproved IO.
+
+The first typed result also prepays the existing 512-byte metadata allowance
+for its protobuf wrapper. A complete Runtime regression had shown the source
+reservation succeeding but the subsequent encoded envelope causing another
+capacity denial. The source backing-capacity charge remains intact; future
+wire ownership converges to the actual encoded length. The fixed tiny-terminal
+reservation stays unchanged.
+
+Deterministic regressions preserve the old large-Put start failure, both
+first-result budget failures, the complete Runtime wrapper failure, and the
+Mongo reply-lifetime over-reservation. The final focused checks include actual
+Mongo Adapter + Runtime + network ownership, a TCP SDK Read through the actual
+codec, maximum uint64 response index, spare source capacity, live-wire healthy
+Native progress, cursor pages/cleanup, malformed responses and subsequent IO.
+These focused checks pass. Full affected-package race/vet and a new clean
+Linux artifact's original process qualification remain required.
+
+Full affected-package race and vet now pass on the frozen correction: Store
+3.209 s, Server 20.576 s, Execution 2.304 s, App 8.600 s, CLI 19.697 s, Mongo
+8.701 s and Search 54.934 s. Source hashes stayed unchanged. The
+[runtime receipt](typed-memory-results-2026-10-17/typed-memory-single-owner-validation.json)
+and [backend receipt](typed-memory-results-2026-10-17/typed-memory-mongo-phase-final-receipt.json)
+include exact commands, actual exits and preserved before/after evidence.
+An intermediate phase-test run incorrectly counted the driver's endSessions
+cleanup as business IO; its failed output is retained, and the corrected
+command-specific oracle passes. This does not convert either failed Linux
+process candidate into a pass.

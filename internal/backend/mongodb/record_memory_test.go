@@ -17,22 +17,60 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 )
 
-type recordMemoryProbe struct{ limit, resultLimit, peak, result, calls int }
+type recordMemoryProbe struct {
+	limit, resultLimit, peak, result, calls, working int
+	resultWorking                                    []int
+	denyRestore, reduced                             bool
+}
 
 func (p *recordMemoryProbe) SetWorking(bytes int) error {
 	if p.limit != 0 && bytes > p.limit {
 		return execution.ErrExecutionMemory
 	}
+	if p.denyRestore && p.reduced && bytes > p.working {
+		return execution.ErrExecutionMemory
+	}
+	p.reduced = p.reduced || bytes < p.working
 	p.peak = max(p.peak, bytes)
+	p.working = bytes
 	return nil
 }
 func (p *recordMemoryProbe) ReserveResult(bytes int) error {
 	p.calls++
+	p.resultWorking = append(p.resultWorking, p.working)
 	if p.resultLimit != 0 && bytes > p.resultLimit {
 		return execution.ErrExecutionMemory
 	}
 	p.result = bytes
 	return nil
+}
+
+func TestMongoTerminalReplyReleasesSpeculativeWindowBeforeCopy(t *testing.T) {
+	document := bson.D{{Key: "_id", Value: "item"}, {Key: "pad", Value: strings.Repeat("x", 1234)}}
+	cursor := bson.D{{Key: "id", Value: int64(0)}, {Key: "ns", Value: "db.records"}, {Key: "firstBatch", Value: bson.A{document}}}
+	responses := []bson.D{collectionQualificationResponse("db", "records"), readCursorResponse(cursor)}
+	replyLength, replyCapacity := 0, 0
+	monitor := &event.CommandMonitor{Succeeded: func(_ context.Context, event *event.CommandSucceededEvent) {
+		if event.CommandName == "find" {
+			replyLength, replyCapacity = len(event.Reply), cap(event.Reply)
+		}
+	}}
+	adapter := batchMockAdapter(t, responses, monitor)
+	opts := batchOperationOptions{resource: "db/records/s:item", action: "read"}
+	work, failure := prepareTestRecord(adapter, batchOperation(t, opts))
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	probe := &recordMemoryProbe{limit: 64 << 20}
+	work.Memory = probe
+	result := adapter.executeRecords(t.Context(), []*execution.Plan{work})[0].GetReadResult()
+	if result.GetDocument() == nil || !bytes.Equal(result.GetDocument().Data, expressionBSON(t, document)) {
+		t.Fatal("terminal response was not returned intact", result.GetFailure())
+	}
+	expected := work.WorkingBytes + replyCapacity + 36
+	if replyCapacity <= replyLength || len(probe.resultWorking) != 1 || probe.resultWorking[0] != expected {
+		t.Fatal("returned reply retained a speculative message window or lost backing capacity", "raw_len", replyLength, "raw_cap", replyCapacity, "working_at_copy", probe.resultWorking, "expected", expected)
+	}
 }
 
 func TestMongoSmallReadBatchReservesOneReplyAndActualDocuments(t *testing.T) {
