@@ -13,6 +13,8 @@ import (
 	"github.com/batchstream/weir/internal/testutil/testsearch"
 )
 
+const batchBodyLimit = execution.BackendBatchBytes
+
 func setupSearch(t *testing.T) (*Adapter, *testsearch.Backend) {
 	t.Helper()
 	backend := testsearch.Open(t)
