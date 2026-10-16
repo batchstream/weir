@@ -92,18 +92,20 @@ func (n *Node) Collect(ch chan<- prometheus.Metric) {
 		nativeKnown = 1
 	}
 	for name, value := range map[string]float64{
-		"budget_bytes":     float64(native.BudgetBytes),
-		"used_bytes":       float64(native.UsedBytes),
-		"resident_bytes":   float64(native.ResidentBytes),
-		"io_reserve_bytes": float64(native.IOReserveBytes),
-		"budget_known":     nativeKnown,
-		"leases":           float64(native.Count),
-		"leases_limit":     float64(native.CountLimit),
-		"starting":         float64(native.Starting),
-		"settled":          float64(native.Settled),
-		"borrowed":         float64(native.Borrowed),
-		"waiting":          float64(native.Waiting),
-		"terminal":         float64(native.Terminal),
+		"budget_bytes":         float64(native.BudgetBytes),
+		"used_bytes":           float64(native.UsedBytes),
+		"resident_bytes":       float64(native.ResidentBytes),
+		"input_reserved_bytes": float64(native.InputReservedBytes),
+		"input_used_bytes":     float64(native.InputUsedBytes),
+		"io_reserve_bytes":     float64(native.IOReserveBytes),
+		"budget_known":         nativeKnown,
+		"leases":               float64(native.Count),
+		"leases_limit":         float64(native.CountLimit),
+		"starting":             float64(native.Starting),
+		"settled":              float64(native.Settled),
+		"borrowed":             float64(native.Borrowed),
+		"waiting":              float64(native.Waiting),
+		"terminal":             float64(native.Terminal),
 	} {
 		desc := prometheus.NewDesc(
 			"weir_native_memory_"+name,

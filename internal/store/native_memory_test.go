@@ -28,14 +28,16 @@ func TestNativeMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 	if failure != nil {
 		t.Fatal(failure)
 	}
-	input := uint64(work.Bytes + max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes))
-	if snapshot := memory.Snapshot(); snapshot.Count != 1 || snapshot.Waiting != 1 || snapshot.UsedBytes != input || snapshot.BudgetBytes != 512<<20 {
+	input := uint64(work.Bytes + nativeQueuedWindow)
+	publication := uint64(max(work.ResultBytes, 2*protocol.NativeChunk+execution.ResultOverheadBytes) - nativeQueuedWindow)
+	reserved := uint64(DefaultLimits().QueueBytes)
+	if snapshot := memory.Snapshot(); snapshot.Count != 1 || snapshot.Waiting != 1 || snapshot.UsedBytes != reserved || snapshot.InputReservedBytes != reserved || snapshot.InputUsedBytes != input || snapshot.BudgetBytes != 512<<20 {
 		t.Fatal("queued input or event credit was not reserved exactly once", snapshot)
 	}
 	if started, waiting := lease.start(48<<20, defaultNativeIOReserve); !started || waiting {
 		t.Fatal("initial backend working set did not reserve before dispatch")
 	}
-	if snapshot := memory.Snapshot(); snapshot.Starting != 1 || snapshot.UsedBytes != input+(48<<20) {
+	if snapshot := memory.Snapshot(); snapshot.Starting != 1 || snapshot.UsedBytes != reserved+publication+(48<<20) {
 		t.Fatal("initial response working reservation was not charged", snapshot)
 	}
 	if err := lease.settle(8<<20, 1); err != nil {
@@ -44,19 +46,19 @@ func TestNativeMemoryConservesOneLeaseAcrossEveryOwner(t *testing.T) {
 	if started, _ := lease.beginRead(2 << 20); !started {
 		t.Fatal("a settled output consumed the reserved IO workspace")
 	}
-	if snapshot := memory.Snapshot(); snapshot.Settled != 1 || snapshot.UsedBytes != input+(10<<20) {
+	if snapshot := memory.Snapshot(); snapshot.Settled != 1 || snapshot.UsedBytes != reserved+publication+(10<<20) {
 		t.Fatal("body read lost its transient allocation window", snapshot)
 	}
 	if err := lease.settle(8<<20, protocol.NativeChunk); err != nil {
 		t.Fatal(err)
 	}
 	lease.terminal(20)
-	if snapshot := memory.Snapshot(); snapshot.Terminal != 1 || snapshot.UsedBytes != input {
+	if snapshot := memory.Snapshot(); snapshot.Terminal != 1 || snapshot.UsedBytes != reserved+publication || snapshot.InputUsedBytes != input {
 		t.Fatal("terminal publication retained a cleaned response peak", snapshot)
 	}
 	lease.release()
 	lease.release()
-	if snapshot := memory.Snapshot(); snapshot.UsedBytes != 0 || snapshot.Count != 0 || memory.io != 0 {
+	if snapshot := memory.Snapshot(); snapshot.UsedBytes != 0 || snapshot.Count != 0 || snapshot.InputReservedBytes != 0 || snapshot.InputUsedBytes != 0 || memory.io != 0 {
 		t.Fatal("final ownership did not release once", snapshot)
 	}
 }
@@ -87,7 +89,7 @@ func TestNativeMemoryUnknownZeroAndShrinkNeverInventFreeCredit(t *testing.T) {
 	}
 	sample.Unknown, sample.RecoveryAllowanceKnown, sample.RecoveryAllowance = false, true, 0
 	memory.ObserveMemory(sample)
-	if snapshot := memory.Snapshot(); !snapshot.Known || snapshot.BudgetBytes != 0 || snapshot.UsedBytes != before.UsedBytes {
+	if snapshot := memory.Snapshot(); !snapshot.Known || snapshot.BudgetBytes != 0 || snapshot.InputReservedBytes != before.InputUsedBytes || snapshot.InputUsedBytes != before.InputUsedBytes || snapshot.UsedBytes != before.UsedBytes-(before.InputReservedBytes-before.InputUsedBytes) {
 		t.Fatal("known zero was confused with unknown or actual resources disappeared", snapshot)
 	}
 	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
@@ -120,6 +122,14 @@ func TestNativeMemoryCountIsSharedAndIndependentOfInputQueueLimit(t *testing.T) 
 	}
 	if _, failure := memory.admit(work); failure.GetCode() != pb.FailureCode_RESOURCE_EXHAUSTED {
 		t.Fatal("Node count limit grew with Store/input queues", failure)
+	}
+	for _, lease := range leases {
+		if err := lease.terminal(200); err != nil {
+			t.Fatal("queued terminal required a future IO/publication reservation", err)
+		}
+	}
+	if snapshot := memory.Snapshot(); snapshot.Terminal != nativeCountLimit || snapshot.UsedBytes != snapshot.InputReservedBytes || snapshot.InputUsedBytes > snapshot.InputReservedBytes {
+		t.Fatal("terminal count or bytes escaped the input promise", snapshot)
 	}
 	for _, lease := range leases {
 		lease.release()
@@ -179,13 +189,15 @@ func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 		t.Fatal(failure)
 	}
 	defer second.release()
-	if started, _ := first.start(31<<20, defaultNativeIOReserve); !started {
+	publication := uint64(first.publication - nativeQueuedWindow)
+	held := int((memory.budget - memory.inputReserved - 2*publication - (1 << 20)) / 2)
+	if started, _ := first.start(held, defaultNativeIOReserve); !started {
 		t.Fatal("first response could not start")
 	}
-	if err := first.settle(31<<20, 1); err != nil {
+	if err := first.settle(held, 1); err != nil {
 		t.Fatal(err)
 	}
-	if started, _ := second.start(31<<20, defaultNativeIOReserve); !started {
+	if started, _ := second.start(held, defaultNativeIOReserve); !started {
 		t.Fatal("second initial IO could not start")
 	}
 	if started, waiting := first.beginRead(2 << 20); started || !waiting {
@@ -197,13 +209,14 @@ func TestNativeReadWorkspaceWaitsOnlyForConvergingIO(t *testing.T) {
 	if started, waiting := first.beginRead(2 << 20); !started || waiting {
 		t.Fatal("released initial estimate did not let a real body read proceed", started, waiting)
 	}
-	if started, waiting := second.beginRead(32 << 20); started || !waiting {
+	readWindow := int(memory.Snapshot().BudgetBytes-memory.Snapshot().UsedBytes) + 1024
+	if started, waiting := second.beginRead(readWindow); started || !waiting {
 		t.Fatal("a real ongoing body read was mistaken for fixed output pressure", started, waiting)
 	}
 	if err := first.settle(1<<20, 1); err != nil {
 		t.Fatal(err)
 	}
-	if started, waiting := second.beginRead(32 << 20); !started || waiting {
+	if started, waiting := second.beginRead(readWindow); !started || waiting {
 		t.Fatal("body IO convergence did not release its allocation window", started, waiting)
 	}
 	if snapshot := memory.Snapshot(); snapshot.BudgetRejections != 0 || snapshot.UsedBytes > snapshot.BudgetBytes {

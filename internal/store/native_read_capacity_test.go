@@ -15,6 +15,7 @@ import (
 type nativeReadCapacityAdapter struct {
 	lifecycleAdapter
 	reads atomic.Int32
+	held  int
 }
 
 func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execution.Plan, emit execution.Emit) {
@@ -24,10 +25,10 @@ func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execut
 		_ = emit(work, event)
 		return
 	}
-	if err := work.NativeIO.GrowIO((31 << 20) + (512 << 10)); err != nil {
+	if err := work.NativeIO.GrowIO(a.held + (512 << 10)); err != nil {
 		return
 	}
-	work.WorkingBytes = 31 << 20
+	work.WorkingBytes = a.held
 	if err := work.NativeIO.EndIO(work.WorkingBytes, 0); err != nil {
 		return
 	}
@@ -58,8 +59,10 @@ func (a *nativeReadCapacityAdapter) Execute(ctx context.Context, plans []*execut
 }
 
 func TestNativeFastConsumersFailIncompleteWhenBodyWorkspaceCannotConverge(t *testing.T) {
-	memory := testNativeMemory(96 << 20) // B=64 MiB; two 31 MiB held replies leave <2 MiB.
-	adapter := &nativeReadCapacityAdapter{}
+	memory := testNativeMemory(96 << 20)
+	publication := 2*protocol.NativeChunk + execution.ResultOverheadBytes - nativeQueuedWindow
+	held := int((memory.budget - memory.inputTargetLocked() - 2*uint64(publication) - (1 << 20)) / 2)
+	adapter := &nativeReadCapacityAdapter{held: held}
 	limits := DefaultLimits()
 	runtime, err := New(adapter, limits, memory)
 	if err != nil {

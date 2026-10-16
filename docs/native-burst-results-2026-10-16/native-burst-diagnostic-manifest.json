@@ -1,0 +1,252 @@
+{
+  "source": "fde3b1775b0a36dbb4f4044be1299f731db43314",
+  "scope": "Bounded causal diagnosis only; not clean-source production qualification",
+  "tracked_source_changed": false,
+  "original_formal_result": "FAIL preserved, stopped at measurement300s and not a complete600s run",
+  "plan": {
+    "rounds": 10,
+    "per_round_rpc": 256,
+    "method": "index%3 Read/Put/Native",
+    "backend": "index%2 Mongo/Search",
+    "payload_pad_bytes": 1024,
+    "caller_deadline_seconds": 3,
+    "driver_race": true,
+    "normal_background_200rps": false,
+    "metrics_target_ms": 10,
+    "retry": false,
+    "replay": false,
+    "container_hard_memory_bytes": 1073741824,
+    "container_cpu": 2,
+    "resource_policy": "defaults unchanged"
+  },
+  "artifacts_sha256": {
+    "native-burst-diagnostic-test.go.txt": "106465c69e4851ad7329d88f55db84578cc95e56771ec4277714e52ae816afea",
+    "native-burst-diagnostic-test-overlay.json": "d2eb8e4162e618503fab7cdecbf77aaad52b0cba39cf98238eca396b02dd02b9",
+    "native-burst-memory-diagnostic.go.txt": "00fb23a23227c302f97f98f2294aacc643d0e57860713e4d15f040d6241cc0ea",
+    "native-burst-memory-diagnostic-overlay.json": "95ef459355e682e1599cde203605691a52ac5c800e578a35195e160647b408f8",
+    "weir-native-burst-DIAGNOSTIC-linux": "1f2396e924d708182362d6e3b543647dcfcb55777e150a06231f46607e37ffb2",
+    "native-burst-diagnostic-baseline.txt": "360c1e1c804c9d178056d4b90d4a2a5e690d9746474cd8521a5fddaa960f683d",
+    "native-burst-diagnostic-denials.txt": "ac166caec9741b8c7a97379084a0d6c020ca78267fd100823ab55329cd09228e",
+    "weir-production-qualified-linux": "795601c60e8f4398a8108843939361032f88249acc8f75ee42ae322ca7269c79",
+    "production-qualification-formal600-first.txt": "9a988b182c18d149f3fca22bd56fd282f14eec45de099f740b3f85683bbac644",
+    "production-qualification-final-build.json": "db073b8b6233d553986c832867e152a9d8b3bee36d5a264be4c508fc0bdde940"
+  },
+  "source_files_sha256": {
+    "internal/store/native_memory.go": "b11e75adfba27b131da65e0191e4fde22d21de89b3bbdd7eeb619ce802948cb1",
+    "internal/app/production_qualification_integration_test.go": "e9f300a16287dc35ef1ff2d12499782c3cc2213f0e4a09ccb62a9d141dbc1b5a",
+    "internal/app/memory_recovery_integration_test.go": "a55dc5822e8852e35a63506d67e2d939167edf22e33b36d5688e5d19d4fc54a9"
+  },
+  "runs": {
+    "baseline": {
+      "raw": "native-burst-diagnostic-baseline.txt",
+      "exit": 1,
+      "rounds": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "1",
+          "0"
+        ],
+        [
+          "2",
+          "0"
+        ],
+        [
+          "3",
+          "0"
+        ],
+        [
+          "4",
+          "0"
+        ],
+        [
+          "5",
+          "0"
+        ],
+        [
+          "6",
+          "0"
+        ],
+        [
+          "7",
+          "0"
+        ],
+        [
+          "8",
+          "0"
+        ],
+        [
+          "9",
+          "1"
+        ]
+      ],
+      "results_received": 2560,
+      "success": 2559,
+      "failures": [
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=9 seq=128333 backend=search method=Native e2e=23.83875ms service=16.15425ms lag=7.684625ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}"
+      ],
+      "denial_snapshots": [],
+      "oracle_checks": 20,
+      "final_ownership_all0": true,
+      "cli_no_oom_exit0": true,
+      "sample_lag_us": {
+        "p50": 20782,
+        "p95": 25780,
+        "max": 230537
+      }
+    },
+    "metadata_denials_overlay": {
+      "raw": "native-burst-diagnostic-denials.txt",
+      "exit": 1,
+      "rounds": [
+        [
+          "0",
+          "3"
+        ],
+        [
+          "1",
+          "0"
+        ],
+        [
+          "2",
+          "0"
+        ],
+        [
+          "3",
+          "0"
+        ],
+        [
+          "4",
+          "0"
+        ],
+        [
+          "5",
+          "0"
+        ],
+        [
+          "6",
+          "0"
+        ],
+        [
+          "7",
+          "0"
+        ],
+        [
+          "8",
+          "3"
+        ],
+        [
+          "9",
+          "0"
+        ]
+      ],
+      "results_received": 2560,
+      "success": 2554,
+      "failures": [
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=0 seq=126224 backend=mongo method=Native e2e=40.160125ms service=18.881917ms lag=21.27825ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}",
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=0 seq=126110 backend=mongo method=Native e2e=40.210333ms service=21.240292ms lag=18.970083ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}",
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=0 seq=126080 backend=mongo method=Native e2e=40.260833ms service=22.653833ms lag=17.607ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}",
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=8 seq=128110 backend=mongo method=Native e2e=32.239333ms service=26.748583ms lag=5.490792ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}",
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=8 seq=128296 backend=mongo method=Native e2e=32.278333ms service=26.7845ms lag=5.493875ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}",
+        "native_burst_diagnostic_integration_test.go:70: DIAGNOSTIC result round=8 seq=128107 backend=search method=Native e2e=34.6085ms service=29.121125ms lag=5.487458ms error=Native incomplete: &{<nil> NATIVE_NOT_STARTED code:RESOURCE_EXHAUSTED message:\"Native working memory capacity exhausted\"}"
+      ],
+      "denial_snapshots": [
+        {
+          "stage": "admit",
+          "used": 495491940,
+          "resident": 6115284,
+          "budget": 495604530,
+          "resident_limit": 447465266,
+          "io": 0,
+          "io_reserve": 48139264,
+          "leases": 45,
+          "preparing": 14,
+          "need": 135918,
+          "remaining_budget": 112590
+        },
+        {
+          "stage": "admit",
+          "used": 495491940,
+          "resident": 6115284,
+          "budget": 495604530,
+          "resident_limit": 447465266,
+          "io": 0,
+          "io_reserve": 48139264,
+          "leases": 45,
+          "preparing": 14,
+          "need": 135918,
+          "remaining_budget": 112590
+        },
+        {
+          "stage": "admit",
+          "used": 495491940,
+          "resident": 6115284,
+          "budget": 495604530,
+          "resident_limit": 447465266,
+          "io": 0,
+          "io_reserve": 48139264,
+          "leases": 45,
+          "preparing": 14,
+          "need": 135918,
+          "remaining_budget": 112590
+        },
+        {
+          "stage": "admit",
+          "used": 491793694,
+          "resident": 4966494,
+          "budget": 491822557,
+          "resident_limit": 443683293,
+          "io": 2097152,
+          "io_reserve": 48139264,
+          "leases": 34,
+          "preparing": 12,
+          "need": 135864,
+          "remaining_budget": 28863
+        },
+        {
+          "stage": "admit",
+          "used": 491793694,
+          "resident": 4966494,
+          "budget": 491822557,
+          "resident_limit": 443683293,
+          "io": 2097152,
+          "io_reserve": 48139264,
+          "leases": 34,
+          "preparing": 12,
+          "need": 135918,
+          "remaining_budget": 28863
+        },
+        {
+          "stage": "admit",
+          "used": 491793694,
+          "resident": 4966494,
+          "budget": 491822557,
+          "resident_limit": 443683293,
+          "io": 2097152,
+          "io_reserve": 48139264,
+          "leases": 34,
+          "preparing": 12,
+          "need": 135918,
+          "remaining_budget": 28863
+        }
+      ],
+      "oracle_checks": 20,
+      "final_ownership_all0": true,
+      "cli_no_oom_exit0": true,
+      "sample_lag_us": {
+        "p50": 20774,
+        "p95": 25665,
+        "max": 196786
+      }
+    }
+  },
+  "conclusion": "Baseline reproduced identical Native not-started capacity failure. All 6 metadata-overlay denials were admission: Used left < required input/window while Resident remained <7MB and 12-14 initial calls were preparing; one group also had 2MiB active IO. No start/grow/beginRead/settle/terminal denial appeared. Existing conservative initial IO reservations caused transient admission denial before convergence.",
+  "limits": [
+    "Denial observation modifies scheduling slightly by logging under the ledger mutex; failure rates across the two runs are not a performance comparison.",
+    "10ms is target scrape interval; recorded lag includes HTTP scrape and race-driver scheduling, so metrics cannot pinpoint the deny instant. The per-denial mutex-held log provides the actual ledger snapshot.",
+    "No request body, document value, URL or credential was logged by the production overlay.",
+    "No test passes or complete qualification claim is inferred from successful cleanup or oracles."
+  ]
+}
