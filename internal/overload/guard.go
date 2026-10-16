@@ -43,14 +43,16 @@ type Guard struct {
 }
 
 type Snapshot struct {
-	Budget, Bytes     uint64
-	Source            string
-	Observed, Latched bool
-	ProcessValid      bool
-	Unknown           bool
-	Cgroup            CgroupSnapshot
-	GoRuntimeLimit    uint64
-	GoRuntimeManaged  bool
+	Budget, Bytes          uint64
+	Source                 string
+	Observed, Latched      bool
+	ProcessValid           bool
+	Unknown                bool
+	Cgroup                 CgroupSnapshot
+	GoRuntimeLimit         uint64
+	GoRuntimeManaged       bool
+	RecoveryAllowance      uint64
+	RecoveryAllowanceKnown bool
 }
 
 // Cgroup is the most pressured finite visible level, with its own working-set/max
@@ -67,11 +69,13 @@ type CgroupSnapshot struct {
 }
 
 type observation struct {
-	bytes        uint64
-	source       string
-	processValid bool
-	cgroup       CgroupSnapshot
-	high, low    bool
+	bytes                  uint64
+	source                 string
+	processValid           bool
+	cgroup                 CgroupSnapshot
+	high, low              bool
+	recoveryAllowance      uint64
+	recoveryAllowanceKnown bool
 }
 
 func New(targets []Target, limits Limits) *Guard {
@@ -119,6 +123,14 @@ func (g *Guard) sample(o observation) {
 			capacity = o.cgroup.Limit
 		}
 		g.state.Budget = smallerBudget(g.state.Budget, capacity)
+	}
+	g.state.RecoveryAllowanceKnown = !g.state.Unknown && g.state.Budget != 0
+	g.state.RecoveryAllowance = watermark(g.state.Budget, limits.LowWatermark, false)
+	if !g.state.Unknown && o.recoveryAllowanceKnown {
+		if !g.state.RecoveryAllowanceKnown || o.recoveryAllowance < g.state.RecoveryAllowance {
+			g.state.RecoveryAllowance = o.recoveryAllowance
+		}
+		g.state.RecoveryAllowanceKnown = true
 	}
 	g.updateRuntimeMemoryLocked(limits)
 	// Missing observations do not manufacture overload. Actual process or

@@ -79,7 +79,7 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 					if automatic {
 						limit := testmetrics.Sum(initial, "weir_memory_go_runtime_limit_bytes")
 						want := uint64(capacity<<20) * 70 / 100 * 80 / 100
-						if limit != float64(want) {
+						if limit <= 0 || limit > float64(want) {
 							t.Fatal("unexpected default soft limit", limit, want)
 						}
 						t.Logf("automatic Go soft limit=%g", limit)
@@ -97,9 +97,10 @@ func TestCLIBusinessHeapRecovery(t *testing.T) {
 }
 
 type memoryRecoveryOptions struct {
-	binary      string
-	capacityMiB int
-	automatic   bool
+	binary          string
+	capacityMiB     int
+	sharedMemoryMiB int
+	automatic       bool
 }
 
 type memoryRecoveryCLI struct {
@@ -139,6 +140,9 @@ func startMemoryRecoveryCLI(t *testing.T, opts memoryRecoveryOptions) *memoryRec
 		"--mount", "type=bind,src=" + directory + ",dst=/fixture,readonly", "--mount", "type=bind,src=" + opts.binary + ",dst=/weir,readonly"}
 	if !opts.automatic {
 		args = append(args, "--env=GOMEMLIMIT=off")
+	}
+	if opts.sharedMemoryMiB > 0 {
+		args = append(args, fmt.Sprintf("--shm-size=%dm", opts.sharedMemoryMiB))
 	}
 	args = append(args, "busybox:1.37.0", "/weir", "serve", "--config", "/fixture/node.yaml", "--routes", "/fixture/node-routing.yaml")
 	t.Cleanup(func() {

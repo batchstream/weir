@@ -8,7 +8,8 @@ Linux sustained-load boundaries.
 | --- | --- |
 | Reclaimable file cache and baseline verification | [PR 75](https://github.com/batchstream/weir/pull/75) merged after independent review and Linux CI |
 | Native consumer progress and output ownership | [PR 76](https://github.com/batchstream/weir/pull/76) merged after new independent review, repeated race checks and Linux CI |
-| Automatic recovery after Go memory bursts with default configuration | Implemented and locally qualified below; awaiting this change's independent review and CI |
+| Automatic recovery after Go memory bursts with default configuration | [PR 77](https://github.com/batchstream/weir/pull/77) merged after new independent review and Linux CI; initial isolated-cgroup evidence below |
+| Recovery with shared cgroup memory outside the process | Reproduced a remaining 160/192 MiB boundary; correction and qualification in progress |
 | Linux complete-process sustained mixed workload and failure recovery | Pending |
 
 The [initial reliability study](production-reliability-2026-10-16.md) is a
@@ -118,8 +119,8 @@ in a 256 MiB cgroup. Admission correctly remained closed because actual resident
 pressure was still high. The missing piece was a runtime budget that encouraged
 GC and page release before the process reached its recovery threshold.
 
-The CLI now explicitly manages the standard Go soft memory limit. It assigns
-80% of the recovery-watermark budget to Go, or 56% of detected capacity with the
+PR 77 introduced explicit CLI management of the standard Go soft memory limit,
+using 80% of the recovery-watermark budget, or 56% of detected capacity with the
 default 80/70 watermarks. The remaining space below recovery is for the binary,
 kernel buffers and other resident memory outside Go. The existing Guard sampler
 updates this limit after complete trusted capacity observations; there is no
@@ -210,3 +211,44 @@ The owned Mongo fixture must already be available on `127.0.0.1:27028`; the
 service uses `host.docker.internal` with direct connection. The test creates
 unique records and containers and verifies their cleanup. It is skipped without
 the explicit opt-in and does not pull images or access production.
+
+## Recovery while the cgroup contains memory outside the process
+
+Further qualification retained tmpfs shared memory while releasing real Native
+business replies. With 128 MiB retained in a 512 MiB container, PR 77 recovered
+in 1.887 s. With 160 and 192 MiB retained, all Store/RPC/output ownership returned
+to zero, but the default policy remained overloaded beyond five seconds. Go
+itself stayed below its full-capacity soft limit, so low-frequency business
+probes did not trigger timely reclamation. The
+[160 MiB](shared-recovery-results-2026-10-16/shared-pressure-160-old77.txt) and
+[192 MiB](shared-recovery-results-2026-10-16/shared-pressure-192-old77.txt)
+failures preserve this boundary. These exploratory artifacts report their old,
+dirty build identity explicitly; they are not qualified exact-source releases.
+
+The automatic policy now uses the process's remaining recovery allowance at
+**every** trusted finite cgroup level:
+
+```
+external = max(working_set - process_RSS, 0)
+process_allowance = max(low_watermark(limit) - external, 0)
+```
+
+The smallest allowance is combined with the host/process recovery budget, then
+80% is assigned to Go. The actual admission thresholds remain unchanged. This
+lets ordinary runtime GC respond when shared users consume part of the recovery
+budget, even if Go remains below the old full-capacity limit. The reported
+memory capacity retains its original meaning; separate fixed gauges expose the
+remaining allowance and whether that observation is known.
+
+Experiments with only a few MiB of usable allowance also exposed unproductive GC:
+a complete CLI did 296 collections and used 0.57 process CPU seconds over about
+three seconds of very low business activity. Automatic limits therefore have a
+16 MiB runtime floor, capped by the original total-capacity target for smaller
+process budgets. This prevents an unattainably small automatic limit from
+continually collecting necessary runtime memory. Explicit runtime settings
+still take precedence. A known zero allowance preserves the prior owned limit;
+it never installs zero. Actual outside pressure can keep the Guard latched
+until sufficient memory is released.
+
+Qualification of the final clean artifact is in progress. The sustained mixed
+workload and backend-fault milestone remains pending.
